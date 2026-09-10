@@ -485,12 +485,8 @@ function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embed
           <p style={{ margin: '-4px 0 12px', fontSize: 11, color: '#8A9A8E', lineHeight: 1.4 }}>
             Double-click the text to edit it.
           </p>
-          <Row label="Face">
-            <select value={obj.face} onChange={e => set({ face: e.target.value })}
-              style={{ ...inputStyle, background: '#fff' }}>
-              {Object.entries(FACES).map(([k, f]) => <option key={k} value={k}>{f.label}</option>)}
-            </select>
-          </Row>
+          {/* ⚠️ NO FACE ROW HERE. It is in the toolbar, where it can be chosen BEFORE writing rather
+              than only after selecting something — and one control for one value. */}
         </>
       )}
 
@@ -593,6 +589,26 @@ function FitCamera({ bottomInset = 0 }) {
     camera.updateProjectionMatrix();
   }, [camera, size.width, size.height, bottomInset]);
   return null;
+}
+
+/* The list of faces, as a drawer of names set in their own face where that is possible. A dropdown
+   of font NAMES is the thing every card-topper site gets wrong: the one question is what it looks
+   like, and a name in the browser's UI font cannot answer it. */
+function FaceList({ value, onPick }) {
+  return (
+    <div style={{ display: 'grid', gap: 4, minWidth: 168 }}>
+      {Object.entries(FACES).map(([k, f]) => (
+        <button key={k} type="button" onClick={() => onPick(k)}
+          style={{ textAlign: 'left', padding: '9px 11px', borderRadius: 9, cursor: 'pointer',
+            fontFamily: 'inherit', fontSize: 12.5, fontWeight: k === value ? 800 : 600,
+            color: '#2C3E33',
+            background: k === value ? '#EFF4F0' : '#fff',
+            border: `1.5px solid ${k === value ? '#3D5A44' : '#E2E8E3'}` }}>
+          {f.label}
+        </button>
+      ))}
+    </div>
+  );
 }
 
 function PickerButton({ label, count, children, open, onToggle }) {
@@ -796,8 +812,42 @@ export default function TopperComposer({
     return id;
   }, [objects.length]);
 
+  /* ⚠️ DECLARED ABOVE EVERYTHING THAT READS THEM. A `useEffect`'s dependency ARRAY is evaluated
+   * during render, so a hook written above these lines reads them before `useState` has run and
+   * throws "cannot access before initialization" — a blank studio, and the file already carries one
+   * note about this exact ordering trap. */
+  /* True only for the frames being photographed for the shelf tile — see ThumbFit. */
+  const [capturing, setCapturing] = useState(false);
+  // Which phone drawer is showing, if any. One at a time: two open cover the canvas entirely.
+  const [drawer, setDrawer] = useState(null);
+  /* ⚠️ THE FACE IS A TOOL SETTING, NOT ONLY A PROPERTY. In the panel it could only be reached by
+   * selecting a word first, which is backwards for the commonest wish — choose a face, then write.
+   * So it works the way it does in every editor: it changes the SELECTED word if there is one, and
+   * otherwise sets what the next word is cut in. Either way the control always means something,
+   * which is what earns it a place in the toolbar (INVARIANTS #12). */
+  const [defaultFace, setDefaultFace] = useState(BLOCK_KEY);
+
+  /* Choosing a face: the selected words take it, or it becomes what the next word is cut in. */
+  const chooseFace = useCallback((key) => {
+    setDefaultFace(key);
+    setObjects(list => list.map(o => (
+      selectedIds.includes(o.id) && o.kind === 'text' ? { ...o, face: key } : o)));
+    setDrawer(null);
+  }, [selectedIds]);
+
+  /* Loaded when it is CHOSEN, not when a word is first drawn in it. A face arriving late means a
+     word that is briefly block and then jumps, which reads as a glitch rather than a font. */
+  useEffect(() => {
+    if (defaultFace === BLOCK_KEY || fonts[defaultFace]) return;
+    let alive = true;
+    loadTopperFace(defaultFace)
+      .then(f => alive && setFonts(m => (m[defaultFace] ? m : { ...m, [defaultFace]: f })))
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [defaultFace, fonts]);
+
   const addText = () => add({
-    kind: 'text', text: 'TEST', size: 1.2, face: BLOCK_KEY,
+    kind: 'text', text: 'TEST', size: 1.2, face: defaultFace,
     // A band by default, because a card topper almost always has one and a baker who does not want
     // it can drag it to none — easier than discovering a control that starts at zero.
     offset: 0.06, offsetColour: '#FFFFFF',
@@ -948,10 +998,6 @@ export default function TopperComposer({
   const [alsoSave, setAlsoSave] = useState(true);
   const stageRef = useRef(null);
   const piecesRef = useRef(null);
-  /* True only for the frames being photographed for the shelf tile — see ThumbFit. */
-  const [capturing, setCapturing] = useState(false);
-  // Which phone drawer is showing, if any. One at a time: two open cover the canvas entirely.
-  const [drawer, setDrawer] = useState(null);
   /* ⚠️ THE STICK BELONGS TO THE WHOLE TOPPER, not to any one piece on it — a card has one stick
    * however many words and shapes are cut into it, so it lives at the payload's root rather than on
    * an object. Off by default: a topper that is laid flat on the cake needs no stick, and one that
@@ -1163,6 +1209,14 @@ export default function TopperComposer({
               ))}
             </PickerButton>
 
+            {/* ⚠️ NEXT TO THE THINGS YOU ADD, because choosing a face is part of writing rather than
+                part of editing a word you already wrote. It names the face it is set to, so the
+                toolbar answers "what will this be written in" without anything being selected. */}
+            <PickerButton label={FACES[defaultFace]?.label ?? 'Face'} open={drawer === 'face'}
+              onToggle={() => setDrawer(d => (d === 'face' ? null : 'face'))}>
+              <FaceList value={defaultFace} onPick={chooseFace} />
+            </PickerButton>
+
             {objects.length > 0 && (
               <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
                 style={{ marginLeft: 'auto', minHeight: 46, padding: '0 14px', borderRadius: 10,
@@ -1196,6 +1250,27 @@ export default function TopperComposer({
               <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
             </RailButton>
           </div>
+        </div>
+
+        <div style={{ position: 'relative' }}>
+          <span style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
+            textTransform: 'uppercase', color: '#9AA8A0', marginBottom: 7 }}>Face</span>
+          <button type="button" onClick={() => setDrawer(d => (d === 'face' ? null : 'face'))}
+            aria-expanded={drawer === 'face'} title="The face words are cut in"
+            style={{ width: '100%', minHeight: 40, padding: '0 8px', borderRadius: 10,
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: 11, fontWeight: 800,
+              color: '#3D5A44', background: drawer === 'face' ? '#EFF4F0' : '#fff',
+              border: `1.5px solid ${drawer === 'face' ? '#3D5A44' : '#E2E8E3'}`,
+              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {FACES[defaultFace]?.label ?? 'Face'}
+          </button>
+          {drawer === 'face' && (
+            <div style={{ position: 'absolute', top: 'calc(100% + 6px)', left: 0, zIndex: 8,
+              padding: 10, borderRadius: 12, background: '#fff', border: '1.5px solid #E2E8E3',
+              boxShadow: '0 10px 26px rgba(0,0,0,0.13)' }}>
+              <FaceList value={defaultFace} onPick={chooseFace} />
+            </div>
+          )}
         </div>
 
         <div>
