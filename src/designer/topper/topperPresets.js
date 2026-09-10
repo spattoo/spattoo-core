@@ -81,24 +81,32 @@ export const TOPPER_PRESETS = Object.freeze([
     ],
   },
   {
-    /* A couple cake. TWO hearts and two words, which is also the clearest thing in the rail: every
-       other preset is one piece, and this one says without a sentence that a topper can be several.
-       ⚠️ The two words are sized to a COMMON LETTER HEIGHT, not a common width — see the note in the
-       birthday preset. "You" is 2.377 wide at height 1 and "Me" is 1.774, so 0.50 pairs with 0.373;
-       giving both 0.50 would set "Me" in visibly larger letters than "You". */
+    /* A couple cake, and the clearest thing in the rail: every other preset is one piece, and this
+       one says without a sentence that a topper can be several. */
     key: 'you-and-me',
     label: 'Two hearts for a couple',
     objects: [
-      { kind: 'shape', family: 'heart', size: 0.48, x: -0.58, y: 0,
+      /* ⚠️ THEY OVERLAP, AND THE ORDER IS WHAT MAKES THAT READ. Set side by side with a gap they are
+         two hearts near each other; overlapped, they are a pair — which is the whole point of the
+         piece. The front heart's white band is what separates them: without it the two colours meet
+         and the join reads as one odd shape rather than one card in front of another.
+
+         ⚠️ EACH WORD FOLLOWS ITS OWN HEART, rather than both hearts then both words. Order is depth,
+         so a word listed after both hearts would sit on top of the FRONT one even where it belongs
+         to the heart behind — "You" would print across "Me"'s heart in the overlap. */
+      { kind: 'shape', family: 'heart', size: 0.48, x: -0.40, y: 0,
         colour: '#D94F6E', offset: 0.05, offsetColour: '#FFFFFF' },
-      { kind: 'shape', family: 'heart', size: 0.48, x: 0.58, y: 0,
-        colour: '#8E2F45', offset: 0.05, offsetColour: '#FFFFFF' },
-      { kind: 'text', text: 'You', face: '__block', size: 0.50, x: -0.58, y: -0.02,
+      { kind: 'text', text: 'You', face: '__block', size: 0.46, x: -0.46, y: -0.02,
         colour: '#FFFFFF', offset: 0, offsetColour: '#FFFFFF' },
-      { kind: 'text', text: 'Me', face: '__block', size: 0.373, x: 0.58, y: -0.02,
+      { kind: 'shape', family: 'heart', size: 0.48, x: 0.40, y: 0,
+        colour: '#8E2F45', offset: 0.06, offsetColour: '#FFFFFF' },
+      /* "You" is 2.377 wide at height 1 and "Me" is 1.774, so these two sizes are one letter height
+         — see the note in the birthday preset. */
+      { kind: 'text', text: 'Me', face: '__block', size: 0.343, x: 0.44, y: -0.02,
         colour: '#FFFFFF', offset: 0, offsetColour: '#FFFFFF' },
     ],
   },
+
   {
     /* Two lines, because "Happy Birthday" on one line is a wide thin strip that reads as nothing on a
        round cake top — and two objects is also the honest way to show that a topper is a COMPOSITION
