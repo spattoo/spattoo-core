@@ -88,6 +88,17 @@ describe('a saved design comes back as the same cake', () => {
     garnishes: [{ id: 'g1', kind: 'piped', theta: 0.4, radius: 0.5, mode: 'stand', zone: 'top',
                   paths: [[[10, 10], [40, 40]]], rings: [], color: '#4A2C1B', rope: 6, plate: 420,
                   parts: [{ color: '#4A2C1B', paths: [[[10, 10], [40, 40]]], rings: [] }] }],
+    /* ⚠️ A REAL ONE, because an absent key cannot be seen to be lost. `toppers` was hydrated and
+       never saved, and the structural check below — written after `garnishes` to stop exactly that
+       — compared an empty array against an empty array and passed. A topper's PAYLOAD is the thing
+       that has to survive, not just the row: it is the words, and a template whose topper comes back
+       blank is a template with a blank card on it. */
+    toppers:  [{ id: 'ct1', name: 'Ten', theta: 0.2, radius: 0.35, yaw: 0, mode: 'stand', scale: 1,
+                 tierIndex: 0,
+                 payload: { v: 1, stick: { on: true, bury: 0.5 }, objects: [
+                   { id: 1, kind: 'text', text: '10', size: 1.2, x: 0, y: 0, face: '__block',
+                     colour: '#D94F6E', offset: 0.08, offsetColour: '#FFFFFF' },
+                 ] } }],
   };
 
   const roundTrip = d => normalizeDesign(buildDesignSnapshot(d));
@@ -104,7 +115,7 @@ describe('a saved design comes back as the same cake', () => {
     });
   }
 
-  for (const key of ['boardGrass', 'nameBlocks', 'writings', 'texts', 'ages', 'stickers', 'piping', 'garnishes']) {
+  for (const key of ['boardGrass', 'nameBlocks', 'writings', 'texts', 'ages', 'stickers', 'piping', 'garnishes', 'toppers']) {
     it(`design.${key} survives`, () => {
       expect(roundTrip(FULL)[key]).toEqual(FULL[key]);
     });
