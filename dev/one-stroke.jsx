@@ -37,6 +37,13 @@ function creamMaterial() {
            sheenColor: m.sheenColor, clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness };
 }
 
+/* `?n=` strokes, centred on the camera's side of the cake and spaced the way the wall spaces them. */
+function strokeAngles() {
+  const n = Math.max(1, Math.round(Number(q.get('n') || 1)));
+  const step = (Math.PI * 2) / ropeSection(R, P).ropes;
+  return Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * step);
+}
+
 function Stroke({ x = 0, z = 0, roll: r }) {
   const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, 1.0 - i * 0.5, z));
   const geo = buildPipingStroke(pts, noz, t, { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 }, null, r);
@@ -63,8 +70,12 @@ createRoot(document.getElementById('root')).render(
       <SceneLights shadows />
       {onCake ? <>
         <Cake />
-        {/* On the side, at angle 0 (facing +x), rolled by that angle exactly as the wall does. */}
-        <Stroke x={R - t} z={0} roll={0} />
+        {/* ⚠️ SPACED AND ROLLED BY THE WALL'S OWN NUMBERS. `ropeSection` says how many go round at
+            this nozzle width, so `?n=` neighbours land exactly where the tier would put them — the
+            point of the page is to see what the tip leaves, not a spacing invented for a demo. */}
+        {strokeAngles().map((a, i) => (
+          <Stroke key={i} x={(R - t) * Math.cos(a)} z={(R - t) * Math.sin(a)} roll={a} />
+        ))}
       </> : <Stroke roll={roll} />}
       {q.get('orbit') === '1' && <OrbitControls />}
     </Canvas>
