@@ -62,16 +62,33 @@ function lobedProfile(lobes, depth, notch = LOBE_NOTCH, perArc = 14, perV = 4) {
   const span = (Math.PI * 2) / lobes, half = span / 2, nw = notch * half;
   const at = (a, r) => [Math.cos(a) * r, Math.sin(a) * r];
   const out = [];
+  /* ⚠️ EVERY CORNER IS EMITTED TWICE, and without that the star has no edges at all.
+   *
+   * `computeVertexNormals` averages the faces meeting at a vertex. A point and a V floor are each
+   * shared by the two faces either side of them, so a single vertex there gets the MEAN of the two
+   * — and the ridge it was supposed to be rolls over into a smooth shoulder. On screen, neighbouring
+   * faces come out at almost the same brightness and read as ONE merged face; the wall looks like a
+   * wide flat panel with a couple of faint lines on it rather than a row of ribs.
+   *
+   * Duplicating the corner gives each face its own vertex and therefore its own normal, which is
+   * what makes a crease a crease. The zero-area quad between the pair costs nothing: it contributes
+   * no face normal and draws no pixels.
+   */
+  const corner = (p) => { out.push(p); out.push(p); };
   for (let k = 0; k < lobes; k++) {
     const c = k * span;
     // The lobe: an arc at full radius — or a single sharp point when the notch takes the whole span.
     const arc = 2 * (half - nw);
-    if (arc < 1e-4) out.push(at(c, 1));
-    else for (let j = 0; j <= perArc; j++) out.push(at(c - half + nw + arc * (j / perArc), 1));
-    /* The slot. ⚠️ Its SIDES are sampled, not just its floor: a V that is one lone vertex between
-     * two arcs has no surface for `computeVertexNormals` to average, and the sweep comes out with
-     * ill-defined normals down every crease — which reads as a black seam, not a shadow. */
-    for (let j = 1; j <= perV; j++) out.push(at(c + half - nw * (1 - j / perV), 1 - depth * (j / perV)));
+    if (arc < 1e-4) corner(at(c, 1));
+    else {
+      for (let j = 0; j <= perArc; j++) {
+        const p = at(c - half + nw + arc * (j / perArc), 1);
+        if (j === 0 || j === perArc) corner(p); else out.push(p);   // the arc's own two shoulders
+      }
+    }
+    // The slot's sides, with its floor doubled for the same reason.
+    for (let j = 1; j < perV; j++) out.push(at(c + half - nw * (1 - j / perV), 1 - depth * (j / perV)));
+    corner(at(c + half, 1 - depth));
     for (let j = perV - 1; j >= 1; j--) out.push(at(c + half + nw * (1 - j / perV), 1 - depth * (j / perV)));
   }
   return out;
