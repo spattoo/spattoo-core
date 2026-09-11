@@ -158,7 +158,16 @@ const design = {
    * the TIER (`tier.clouds`, `tier.rainbows`), not off the design root, which is why they are here
    * rather than beside `nameBlocks`. Single-colour rainbow bands on purpose: a measurement wants one
    * colour it asked for, not six it has to disentangle. */
-  tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
+  /* ⚠️ `?style=swirl&sp=twist:0,lobes:28` — the cream STYLE and its params, so a wall texture can be
+     seen on the real scene instead of only in a studio preview. `sp` is key:value pairs; the keys are
+     whatever that style declares in CREAM_STYLES, so a new texture needs no change here. */
+  tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream',
+            frostingStyle: _q.get('style') || 'smooth',
+            styleParams: _q.get('sp')
+              ? Object.fromEntries(_q.get('sp').split(',').map(kv => {
+                  const [k, v] = kv.split(':'); return [k, Number(v)];
+                }))
+              : null,
             /* ⚠️ `?grad=1` — A GRADIENT WALL, and it is not a cosmetic option. The gradient patches
                the shader and writes `diffuseColor.rgb` outright, which REPLACES whatever the albedo
                map put there — including a gold-leaf shard. A finish judged on a solid-colour tier

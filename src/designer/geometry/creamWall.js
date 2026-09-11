@@ -66,6 +66,26 @@ function displaceRibbed(geo, radius, { amp, bands, round }) {
   return displaceSide(geo, (_u, v) => a * ribbedProfile(v, bands, round));
 }
 
+/* PIPED — the SAME rounded tube, stood on end: vertical ropes run bottom to top, the way a star tip
+ * is dragged straight up a chilled cake. `ribbedProfile` on the ANGLE axis instead of the height one,
+ * and that is the whole difference between the two finishes.
+ *
+ * ⚠️ WHY NOT `swirl` WITH twist 0, which also gives vertical ridges. Two reasons, both visible:
+ *   • swirl is a plain `sin`, so the crest is as sharp as the groove and the wall reads as a PLEATED
+ *     lampshade. `ribbedProfile` is sin²(π·frac) — a rounded tube with a thin shadow groove between,
+ *     which is what a piped rope actually looks like.
+ *   • swirl is ZERO-NET: half the wave cuts INSIDE the original radius. The flat cap stays at full
+ *     radius, so it overhangs the grooves and you see daylight under the rim — visible on the real
+ *     scene at amp 0.09. This profile is POSITIVE-ONLY, like `ribbed`: the wall only ever grows
+ *     outward, so the cap sits flush on the groove line and there is nothing to see under.
+ *
+ * Integer `ropes` keeps the ±π seam continuous, the same rule swirl's integer lobes follow: u/τ+0.5
+ * runs 0..1 across the seam and sin(0) = sin(π) = 0, so the groove lands exactly on the join. */
+function displacePiped(geo, radius, { amp, ropes, round }) {
+  const a = amp * radius;
+  return displaceSide(geo, (u, _v) => a * ribbedProfile(u / TAU + 0.5, ropes, round));
+}
+
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
 // Shared by the image-relief displacement and the weave relief sampler so both read the field the same.
 export function sampleFieldWrap(field, fu, fv) {
@@ -132,6 +152,15 @@ export function buildStyledWall(wall, radius, height, params = {}) {
       return displaceRibbed(denseCylinder(radius, height, 160, heightSeg), radius,
         { amp: params.relief ?? 0.04, bands, round: params.round ?? 1.0 });
     }
+    case 'piped': {
+      // Vertical ropes need RADIAL tessellation that scales with the rope count (else the tubes
+      // facet) — the mirror of ribbed, which scales height segments instead. Up the wall they are
+      // constant, so the height count can stay modest.
+      const ropes = params.ropes ?? 24;
+      const radial = Math.min(512, Math.max(220, ropes * 12));
+      return displacePiped(denseCylinder(radius, height, radial, 64), radius,
+        { amp: params.relief ?? 0.05, ropes, round: params.round ?? 1.0 });
+    }
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
       // as a normal map, baked from the same field in CakeTier). Tessellation scales with the line
@@ -174,6 +203,12 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
       const a = (params.relief ?? 0.04) * radius;
       const bands = params.bands ?? 12, round = params.round ?? 1.0;
       return (_theta, v) => a * ribbedProfile(v, bands, round);   // constant around → depends only on v
+    }
+    case 'piped': {
+      const a = (params.relief ?? 0.05) * radius;
+      const ropes = params.ropes ?? 24, round = params.round ?? 1.0;
+      // Constant UP the wall → depends only on theta, the mirror of ribbed's v-only sampler.
+      return (theta, _v) => a * ribbedProfile(theta / TAU + 0.5, ropes, round);
     }
     case 'weave': {
       // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.

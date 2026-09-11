@@ -51,6 +51,18 @@ export const CREAM_STYLES = {
       { key: 'round',  label: 'Roundness', min: 0.4, max: 2,    step: 0.1,   default: 1.0,  user: false },
     ],
   },
+  // Piped — vertical ROPES dragged straight up the wall with a star tip. The same rounded tube as
+  // `ribbed` (one shared `ribbedProfile`), turned through ninety degrees: ribbed repeats up the
+  // height, this repeats around the circumference. `relief` = rope depth (coeff of radius), `ropes` =
+  // how many around, `round` fattens (>1) or flattens (<1) the tube.
+  piped: {
+    label: 'Piped Ropes', wall: 'piped',
+    params: [
+      { key: 'relief', label: 'Depth',     min: 0,   max: 0.12, step: 0.005, default: 0.05, user: true },
+      { key: 'ropes',  label: 'Ropes',     min: 8,   max: 48,   step: 1,     default: 24,   user: true },
+      { key: 'round',  label: 'Roundness', min: 0.4, max: 2,    step: 0.1,   default: 1.0,  user: false },
+    ],
+  },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
   // displacement can't carry comb lines at sane mesh density). wall stays smooth; surfaceMap drives
   // the material. `depth` = normalScale (bump strength); `scale` = stroke-tiling density on the wall.
