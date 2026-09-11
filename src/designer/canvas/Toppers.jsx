@@ -6,7 +6,7 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topperSheets, topperBox, topperStick } from '../geometry/topperPiece.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
-import { CardStock, cardAlbedo } from './CardStock.jsx';
+import { CardStock, cardAlbedo, cardExtrude, cardFront } from './CardStock.jsx';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { planeHit } from '../utils/raycasting.js';
 
@@ -146,11 +146,17 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
         const at = (q) => new THREE.Vector2((q.x + sheet.x - box.cx) * k, (q.y + sheet.y - originY) * k);
         const shape = new THREE.Shape(p.outer.map(at));
         shape.holes = (p.holes ?? []).map(h => new THREE.Path(h.map(at)));
-        const g = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false });
+        /* ⚠️ ONE ANSWER TO "HOW THICK IS THIS SHEET", shared with the studio — a metallic sheet is
+           thicker and chamfered, and that edge is what makes it read as metal rather than as a
+           drawing. See `cardExtrude`. */
+        const cut = cardExtrude(depth, sheet.finish, box.w * k);
+        const g = new THREE.ExtrudeGeometry(shape, cut);
         /* ⚠️ The stacking again: coplanar sheets interpenetrate, so each is nudged forward by a
            fraction of the card's own thickness. Small enough that the finished topper is still one
            flat card, decisive enough for the depth test. */
-        g.translate(0, 0, sheet.layer * depth * LAYER_STEP);
+        /* ⚠️ BY THE FRONT FACE — see `cardFront`. A metallic sheet is thicker, and stacking by the
+           back would push it forward past the piece it sits behind. */
+        g.translate(0, 0, sheet.layer * depth * LAYER_STEP - cardFront(cut));
         return g;
       });
       return { geos, colour: sheet.colour, finish: sheet.finish };

@@ -9,7 +9,7 @@ import { offsetParts, followsBox} from '../geometry/topperShape.js';
 import { topperContours, topperBox, topperSheets, topperStick } from '../geometry/topperPiece.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
 import { SceneLights, SceneEnv, SceneBackground, CakePreview } from '../canvas/CakeCanvas.jsx';
-import { CardStock, cardAlbedo, isMetallicCard } from '../canvas/CardStock.jsx';
+import { CardStock, cardAlbedo, isMetallicCard, cardExtrude, cardFront } from '../canvas/CardStock.jsx';
 import { drawTopperMatcap } from '../geometry/topperMatcap.js';
 import { TOPPER_FINISHES, finishesOf } from '../geometry/topperFinishes.js';
 import SelectionBox from '../canvas/SelectionBox.jsx';
@@ -173,13 +173,28 @@ function planeHit(ray) {
   return ray.intersectPlane(DRAG_PLANE, p) ? p : null;
 }
 
-const extrude = (parts, z) => (parts ?? []).map((p) => {
+/* ⚠️ `cardExtrude` DECIDES THE THICKNESS, not this file — the cake asks the same function. A
+   metallic sheet is thicker and its edge is chamfered, and that edge is the whole of what makes it
+   read as metal rather than as a drawing; a studio that skipped it would be showing a flat gold for
+   a piece that arrives glossy (INVARIANTS #15). */
+const extrude = (parts, z, finish = null) => (parts ?? []).map((p) => {
   const shape = new THREE.Shape(p.outer.map(q => new THREE.Vector2(q.x, q.y)));
   shape.holes = (p.holes ?? []).map(h => new THREE.Path(h.map(q => new THREE.Vector2(q.x, q.y))));
-  const g = new THREE.ExtrudeGeometry(shape, { depth: CARD_THICK, bevelEnabled: false });
-  g.translate(0, 0, z - CARD_THICK / 2);
+  const cut = cardExtrude(CARD_THICK, finish, spanOf(p));
+  const g = new THREE.ExtrudeGeometry(shape, cut);
+  // ⚠️ BY THE FRONT FACE, for the reason `cardFront` gives — a thicker metallic sheet must grow
+  // BACKWARD, or it comes forward through the piece stacked in front of it.
+  g.translate(0, 0, z - cardFront(cut));
   return g;
 });
+
+// How wide one part is, so a chamfer can be capped by the piece it runs round rather than by a
+// constant that is too fat for a small shape and too mean for a big one.
+const spanOf = (p) => {
+  let lo = Infinity, hi = -Infinity;
+  for (const q of p.outer) { if (q.x < lo) lo = q.x; if (q.x > hi) hi = q.x; }
+  return Number.isFinite(lo) ? hi - lo : 1;
+};
 
 /* ⚠️ EVERY OBJECT ON ITS OWN LAYER, or they interpenetrate. Coplanar extrusions do not stack — a
  * word laid on a disc at the same z has half its letters INSIDE the disc, so the disc wins wherever
@@ -316,8 +331,9 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
    * behind its own face. The whole stack is still about one card thick. */
   const bandZ = layer * 2 * LAYER_Z;
   const faceZ = (layer * 2 + 1) * LAYER_Z;
-  const geos = useMemo(() => extrude(parts, faceZ), [parts, faceZ]);
-  const backGeos = useMemo(() => extrude(backParts, bandZ), [backParts, bandZ]);
+  const geos = useMemo(() => extrude(parts, faceZ, obj.finish), [parts, faceZ, obj.finish]);
+  const backGeos = useMemo(() => extrude(backParts, bandZ, obj.offsetFinish),
+    [backParts, bandZ, obj.offsetFinish]);
   useEffect(() => () => { geos.forEach(g => g.dispose()); backGeos.forEach(g => g.dispose()); },
     [geos, backGeos]);
 

@@ -49,6 +49,67 @@ export const cardAlbedo = (hex) => albedoForLight(hex || '#FFFFFF', CARD_LIGHT, 
 /** Is this finish key one the card studio knows how to draw? Unknown or absent reads as plain card. */
 export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'card';
 
+/* ── How thick a sheet is, and whether its edge is chamfered ─────────────────────────────────────
+ *
+ * ⚠️ A METALLIC SHEET IS THICKER AND ITS EDGE IS CHAMFERED, and that is the whole of what makes it
+ * look GLOSSY rather than drawn. Reported from the app: "not as glossy as my reference", and "the
+ * ring is just an outline of a ring" — which is one complaint, not two.
+ *
+ * The cause is that a cut card's face is PERFECTLY FLAT, and both ways of lighting a flat face give
+ * it a single tone:
+ *
+ *   a matcap  is indexed by the surface NORMAL, and a flat face has one — so it samples one texel
+ *   a lit metal is indexed by the REFLECTION, and under this scene's environment — a bright,
+ *             largely featureless field — that is one sheet of pale gold
+ *
+ * Measured, rather than argued: with a lit metal at metalness 0.95 the digits came back rgb(244,
+ * 226, 143), chroma 101, and a brightness spread across the piece of 0.037 — against the gold BOARD
+ * in the same frame at chroma 149 and a spread of 0.219. Six times less variation. The board is not
+ * better lit; it is CURVED, so it has a spread of normals and breaks the environment into bands.
+ * `topperMatcap.js` says exactly this and says it is about geometry rather than material.
+ *
+ * So the gloss has to be geometry, and a real one has it: a topper is cut from 3mm acrylic or from
+ * board, and the cut EDGE catches the light all the way round every contour. That edge was being
+ * thrown away — the sheets extruded at about 1.2% of their width with `bevelEnabled: false`, which
+ * is a foil, not a card. A metallic sheet is now about 3% (a real 3mm on a real 100mm piece) with a
+ * chamfer of half of it, so every contour carries a bright rim that turns with the cake.
+ *
+ * ⚠️ PLAIN CARD IS LEFT ALONE, thin and unchamfered. Printed card IS a foil-thin matte thing, it has
+ * no shine to catch, and thickening it would move every topper already saved.
+ *
+ * ⚠️ AND THE CHAMFER IS CAPPED BY THE PIECE, not just by the depth. `ExtrudeGeometry` walks the
+ * outline inward by `bevelSize`, and a bevel wider than a thin feature — the counter of an "8", the
+ * band of a ring — turns it inside out. Tied to the smaller of the depth and a fraction of the
+ * piece's own size, so a big topper gets a proper edge and a small one still cuts cleanly.
+ */
+export function cardExtrude(depth, finish, pieceSize = 1) {
+  if (!isMetallicCard(finish)) return { depth, bevelEnabled: false };
+  const thick = depth * 2.5;
+  const bevel = Math.min(thick * 0.5, pieceSize * 0.012);
+  return {
+    depth: thick,
+    bevelEnabled: true,
+    bevelThickness: bevel,
+    bevelSize: bevel,
+    bevelOffset: 0,
+    bevelSegments: 2,
+  };
+}
+
+/* How far a sheet's FRONT face sits in front of its extrusion origin.
+ *
+ * ⚠️ SHEETS ARE STACKED BY THEIR FRONT FACE, NOT THEIR BACK, and that only started to matter when
+ * metallic sheets became thicker than plain ones. Layers are a third of a card thickness apart —
+ * enough for the depth buffer, small enough that the finished topper is still one flat card — and
+ * both renderers used to place each piece by its BACK, which is the same thing while every piece is
+ * the same thickness and quietly wrong the moment one is not. A gold band is two and a half card
+ * thicknesses deep against a plain word's one, so it would have come forward past the word it sits
+ * behind and swallowed it: white lettering disappearing into its own outline. It does not show on
+ * the rings preset, where every piece is gold; it shows on the commonest metallic topper there is, a
+ * white word on a gold band. Stacked by the front, the extra depth goes BACKWARD, where nothing can
+ * see it. */
+export const cardFront = (cut) => cut.depth + (cut.bevelThickness ?? 0);
+
 /**
  * The material for one sheet of a card topper.
  *
