@@ -137,7 +137,7 @@ export const NOZZLES = [
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
    * under two, eight give under three, and twelve give four. Counting the ribs in a photograph of one
    * vertical line and dividing by three is how you pick a tip. */
-  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.34), twist: 1,   ruffle: 1 },
+  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.52), twist: 1,   ruffle: 1 },
   { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038 },
   { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1 },
   { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },
@@ -319,7 +319,7 @@ function fixedUpFrames(samples, up) {
 //   opts.ruffleAmp    — fractional radius swell (0 = off)
 //   opts.ruffleFreq   — radians of squeeze phase per unit arc length
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
-  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, up = null, roll = 0 } = opts;
+  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -356,8 +356,13 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
      * repeating rhythm immediately. The 0.61 ratio is irrational enough that the pattern never
      * closes over any stroke a person will draw, and it is a CONSTANT, so a reloaded stroke is
      * identical to the one that was piped. */
+    /* ⚠️ `rufflePhase` MATTERS THE MOMENT THERE IS MORE THAN ONE STROKE. The rhythm is deterministic,
+     * which is right — a stroke must rebuild identically on reload — but with no phase every stroke
+     * swells in exactly the same places, and a wall of them grows horizontal BANDS. Nothing says
+     * machine louder than forty ropes breathing in unison. */
     const swell = ruffleAmp
-      ? 1 + ruffleAmp * (0.66 * Math.sin(ruffleFreq * s) + 0.34 * Math.sin(ruffleFreq * 0.61 * s + 1.7))
+      ? 1 + ruffleAmp * (0.66 * Math.sin(ruffleFreq * s + rufflePhase)
+                       + 0.34 * Math.sin(ruffleFreq * 0.61 * s + 1.7 + rufflePhase * 1.7))
       : 1;
     const r = radiusAt(i, segs, s, arc[segs]) * swell;
     /* `roll` is the WRIST, and for a slit tip it is the whole difference between a petal and a
@@ -477,6 +482,7 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     twistPerLen: (noz.twist  ?? 0) * feel.twistTurnsPerDia * 2 * Math.PI / dia,
     ruffleAmp:   (noz.ruffle ?? 0) * feel.swellAmp,
     ruffleFreq:  feel.swellPerDia * 2 * Math.PI / dia,
+    rufflePhase: feel.rufflePhase ?? 0,
     /* A slit tip needs a known attitude; a rope tip does not care and is better off with the
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
      * a caller with the real surface normal (or a nail's axis) should pass it. */

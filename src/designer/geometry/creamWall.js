@@ -238,12 +238,24 @@ function buildPipedWall(radius, height, p) {
    * it came out as a torn fringe with the board showing through it. These strokes do not end, they
    * are CUT OFF by the board — so the taper is off and the centreline runs past the base, putting
    * the blunt end inside the board where nothing can see it. */
-  /* ⚠️ AND NO TWIST. The pen corkscrews a rope's ribs a little, which is right for a squiggle drawn
-   * in mid-air. A stroke dragged straight up a wall does not — the wrist never turns — and on a
-   * SQUASHED section the twist is catastrophic rather than subtle: half a turn along the stroke
-   * rolls the flat face away from the wall, so the ribbon presents its edge and reads as a thin
-   * sheet peeling off the cake. That was the "hanging flaps", not the tip and not the squash. */
-  const feel = { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 };
+  /* ⚠️ EVERYTHING ELSE THE PEN DOES TO KEEP A ROPE ALIVE STAYS ON, and switching it all off is what
+   * made the wall read as machined — dead-straight, dead-uniform, every stroke the twin of its
+   * neighbour. Three cues, each doing a different job:
+   *
+   *   swell        the rope thickens and thins slowly along its length. Cream does not extrude at a
+   *                constant rate, and a dead-uniform width is the one thing no hand can produce.
+   *   rufflePhase  ⚠️ PER STROKE, or every rope swells in the same places and the wall grows
+   *                horizontal BANDS. Nothing says machine louder than forty ropes breathing together.
+   *   twist        the ribs corkscrew very slightly as the cream leaves the tip. A HINT: the pen's
+   *                own 0.03/diameter is sized for a freehand squiggle a few diameters long, and a
+   *                wall stroke is twenty — at that length it becomes a barber pole.
+   */
+  const feel = (i) => ({
+    speedWidth: 0, tailDias: 0,
+    twistTurnsPerDia: 0.008,
+    swellAmp: 0.13,
+    rufflePhase: ropeHash(i + 1300) * TAU,
+  });
   /* ⚠️ HOW MUCH A ROPE MAY MOVE IS SET BY HOW FAR IT OVERLAPS ITS NEIGHBOUR, and getting that
    * wrong is what made every star tip look like a FRINGE of hanging strips. Two ropes touch with
    * `margin` to spare on each side; if they wander independently by more than that, a gap opens
@@ -263,7 +275,7 @@ function buildPipedWall(radius, height, p) {
      * cake — the wall comes out patchy, some ropes a wide flat panel and their neighbours a thin
      * line. It is invisible on a freehand squiggle and unmissable on thirty-six parallel ones. */
     parts.push(buildPipingStroke(
-      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel, null, theta));
+      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel(i), null, theta));
   }
   return mergeWithCylindricalUv(parts, radius, height);
 }
@@ -323,8 +335,8 @@ export function pipedParams(params = {}) {
     width:   Math.max(0.05, params.width ?? 0.5),
     overlap: params.overlap ?? 0.08,
     press:   Math.min(1, Math.max(0, params.press ?? 0)),
-    vary:    params.vary    ?? 0.22,
-    wobble:  params.wobble  ?? 0.6,
+    vary:    params.vary    ?? 0.34,
+    wobble:  params.wobble  ?? 0.85,
     /* The top. ⚠️ A DIFFERENT TOOL, so a different shape: not the tip, and an order of magnitude
      * shallower than a rope. See buildStyledTop. */
     swirl:      params.swirl ?? 0.012,

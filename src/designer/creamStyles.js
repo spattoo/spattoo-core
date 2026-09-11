@@ -44,8 +44,8 @@ function pipedParams(over = {}) {
      * the notches between them — and a star tip's creases run most of the way down a stroke's side,
      * so burying it buried them. The notches have their own answer: a collar at the foot. */
     { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0), user: true },
-    { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.22),  user: false },
-    { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.6), user: false },
+    { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.34),  user: false },
+    { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.85), user: false },
     /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat
      * with a few soft rings in it — a palette knife set in the middle of a smoothed top while the
      * turntable spins. A coil of the same rope up there reads as heavy and busy, and that was the
