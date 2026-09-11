@@ -373,8 +373,8 @@ export function pipedParams(params = {}) {
     nozzle,
     // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
     width:   Math.max(0.05, params.width ?? 0.5),
-    overlap: Math.max(-0.3, params.overlap ?? 0.3),
-    press:   Math.min(1, Math.max(0, params.press ?? 0.72)),
+    overlap: Math.max(-0.3, params.overlap ?? 0.55),
+    press:   Math.min(1, Math.max(0, params.press ?? 0.35)),
     // How dark a crease goes — see bakeCreaseAO. 0 is the render with no occlusion at all.
     ao:      Math.min(1, Math.max(0, params.ao ?? 0.6)),
     vary:    params.vary    ?? 0.34,
