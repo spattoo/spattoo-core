@@ -40,20 +40,20 @@ function pipedParams(over = {}) {
      * valley between two of them only reaches the circle their spines ride — a 7% dip, which reads
      * as a scratch. Spaced slightly APART, the valley floor is the cake's own side a whole stroke
      * further in, and the rib stands up. It cannot show a hole: the body is right there behind. */
-    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', 0.1), user: false },
+    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', 0.3), user: false },
     /* ⚠️ WITHOUT THIS THE STAR HAS NO VISIBLE SIDES. The scene's light is nearly a uniform dome, and
      * under one of those a surface's brightness barely depends on which way it faces — so two flanks
      * fifteen degrees apart shade identically and the whole stroke reads as one flat panel. Measured:
      * sheen, roughness and clearcoat all change it by nothing. What separates the faces in a
      * photograph is that a crease's own walls block the sky from it. See bakeCreaseAO. */
-    { key: 'ao',      label: 'Crease shade', min: 0, max: 1, step: 0.05, default: d('ao', 0.8), user: true },
+    { key: 'ao',      label: 'Crease shade', min: 0, max: 1, step: 0.05, default: d('ao', 0.6), user: true },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
      * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
      * SIDE, NOT SUNK IN. You cannot pipe inside a cake.
      * The body used to be raised until it swallowed the strokes — to stop the board showing through
      * the notches between them — and a star tip's creases run most of the way down a stroke's side,
      * so burying it buried them. The notches have their own answer: a collar at the foot. */
-    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0), user: true },
+    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0.72), user: true },
     { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.34),  user: false },
     { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.85), user: false },
     /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat
@@ -120,11 +120,19 @@ export const CREAM_STYLES = {
    * So the tip is chosen so that a stroke reads as ONE fat column: five points put under two on the
    * face, which is a broad rib with a hint of a line down it, exactly what the photograph shows.
    * `star12` is still in the registry for a close-up, where the twelve do resolve. */
-  /* ⚠️ TWELVE POINTS, because the SIDES have to be narrow. Counted against a photograph of one
-   * vertical line: it shows four or five narrow faces across the stroke, and a five-point star shows
-   * two wide ones. Narrow sides come from MORE POINTS — not from a narrower notch, which was tried
-   * and fattens each lobe into a broad round column, the opposite of what the photograph has. */
-  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star12', params: pipedParams() },
+  /* ⚠️ THE TIP IS SOLVED FROM THE PHOTOGRAPH, not chosen. Measured off a finished cake: the ribs
+   * are about 11% of the tier's RADIUS each, so the circumference carries roughly 59 of them. A
+   * stroke shows `lobes/3` ribs on its face and is `2·t` wide, which fixes the tip once the rib
+   * width is known — and the four that hit 59 ribs are:
+   *
+   *     5 points → 0.60in nozzle, 35 strokes    8 points → 0.95in, 21 strokes
+   *     6 points → 0.71in, 29 strokes          12 points → 1.43in, 13 strokes
+   *
+   * ⚠️ TWELVE IS OUT, and that is what the photograph settles: it needs a stroke 43% of the radius
+   * wide and only thirteen of them round the cake, and the photograph plainly has more strokes than
+   * that. Five points at 0.60in is the one whose STROKE also looks like the photograph's, not just
+   * whose rib count does. */
+  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams({ width: 0.6 }) },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
