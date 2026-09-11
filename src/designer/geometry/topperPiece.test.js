@@ -38,6 +38,54 @@ describe('topperContours', () => {
   });
 });
 
+/* ── Shapes with a hole ───────────────────────────────────────────────────────────────────────── */
+describe('the ring, the first family with a hole', () => {
+  it('cuts a hole, where a circle of the same family does not', () => {
+    const [ring]   = topperContours(shape({ family: 'ring' }), null);
+    const [circle] = topperContours(shape({ family: 'circle' }), null);
+    expect(ring.holes).toHaveLength(1);
+    expect(circle.holes).toHaveLength(0);
+  });
+
+  /* ⚠️ THE HOLE WINDS THE OTHER WAY FROM ITS OUTER. `ExtrudeGeometry` triangulates by winding, so a
+   * hole wound WITH its outer is not reliably a hole — it can come back as a second solid disc on
+   * top of the first. Even-odd fills (the print sheet, the cutting file) are the forgiving case
+   * rather than the rule, which is exactly why this is asserted here and not left to whichever
+   * consumer happens to notice. */
+  it('winds the hole against the outer, or it is not a hole to every consumer', () => {
+    const [ring] = topperContours(shape({ family: 'ring' }), null);
+    const area = (pts) => {
+      let a = 0;
+      for (let i = 0; i < pts.length; i++) {
+        const p = pts[i], q = pts[(i + 1) % pts.length];
+        a += p.x * q.y - q.x * p.y;
+      }
+      return a / 2;
+    };
+    expect(Math.sign(area(ring.outer))).not.toBe(Math.sign(area(ring.holes[0])));
+  });
+
+  it('leaves a band, not a hairline and not a disc', () => {
+    const [ring] = topperContours(shape({ family: 'ring' }), null);
+    const span = (pts) => {
+      const xs = pts.map(q => q.x);
+      return Math.max(...xs) - Math.min(...xs);
+    };
+    const rim = (span(ring.outer) - span(ring.holes[0])) / 2 / span(ring.outer);
+    expect(rim).toBeGreaterThan(0.06);   // thick enough to cut from card and lift off the mat
+    expect(rim).toBeLessThan(0.18);      // thin enough to read as a band rather than a fat washer
+  });
+
+  /* An offset on a ring is an ordinary thing for a baker to ask for, and `offsetParts` redraws a
+     shape at a distance from EVERY ring it has — so the hole must not make it fall over. */
+  it('takes an offset band without falling over', () => {
+    const sheets = topperSheets({ objects: [shape({ family: 'ring', offset: 0.08 })] }, fontOf);
+    expect(sheets).toHaveLength(2);
+    const wide = (parts) => Math.max(...parts.flatMap(p => p.outer.map(q => q.x)));
+    expect(wide(sheets[0].parts)).toBeGreaterThan(wide(sheets[1].parts));   // the band is outside
+  });
+});
+
 describe('topperSheets', () => {
   it('is empty for an empty payload', () => {
     expect(topperSheets({ objects: [] }, fontOf)).toEqual([]);

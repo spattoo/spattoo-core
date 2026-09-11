@@ -763,7 +763,98 @@ function ringsTouch(a, b) {
  * wide" control needs the same answer: on a circle that control would do nothing at all, and a
  * control that cannot act is one the reader has to rule out before finding the one that can
  * (INVARIANTS #12). Restating it in the UI is how the two would come to disagree. */
-export const followsBox = (family) => family === 'rect';
+
+/* ── The shapes a topper can be cut in ───────────────────────────────────────────────────────────
+ *
+ * ⚠️ A TABLE, NOT A LADDER OF `if (family === …)`. It was a ladder, which was fine for three
+ * families and is the thing rule 2 names: a second variant of an existing thing is a ROW, never
+ * another branch. Adding the ring and the gem to a ladder would have meant touching the outline
+ * branch, the `followsBox` rule and the heart's bias correction in three separate places, and
+ * missing one of the three is silent — the shape simply comes out wrong in one of its uses.
+ *
+ * Each row is an outline in [-1,1]^2 and, optionally:
+ *
+ *   `followsBox`  take the PROPORTION of what it is fitted around rather than forcing itself square
+ *   `biasY`       shift the plate relative to the word, as a fraction of its half-height
+ *   `hole`        cut a concentric copy of the outline out of the middle, at this fraction of it
+ */
+const disc = (segments) => Array.from({ length: segments }, (_, i) => {
+  const a = (i / segments) * Math.PI * 2;
+  return { x: Math.cos(a), y: Math.sin(a) };
+});
+
+/* A box with rounded corners. The radius is a fraction of the half-extent so a wide plate and a tall
+   one round by the same visual amount. */
+const roundedBox = (segments) => {
+  const r = 0.22, k = 1 - r;
+  const arc = Math.max(4, Math.round(segments / 8));
+  const out = [];
+  /* Four quarter-arcs, each about its OWN corner centre and each starting where the last ended,
+   * walked anticlockwise from the top-right. The first attempt mirrored the arc with a sign on
+   * cos/sin as well as placing the centre, which reflected two of the corners back across their
+   * own centres and tore a notch out of the left edge. */
+  for (const [ccx, ccy, a0] of [[k, k, 0], [-k, k, Math.PI / 2], [-k, -k, Math.PI], [k, -k, 1.5 * Math.PI]]) {
+    for (let i = 0; i <= arc; i++) {
+      const a = a0 + (i / arc) * (Math.PI / 2);
+      out.push({ x: ccx + r * Math.cos(a), y: ccy + r * Math.sin(a) });
+    }
+  }
+  return out;
+};
+
+/* ⚠️ y = -z, NOT z. A cake's outline lives in (x, z) where +Z is the FRONT, and a heart cake's point
+ * faces front — so mapping z straight onto y stands the heart on its head, lobes down and point in
+ * the air. It renders perfectly and is obviously wrong the moment you look at it. */
+const heartUnit = () => {
+  const o = outlineOf('heart', {});
+  return o ? o.map(q => ({ x: q.x, y: -q.z })) : null;
+};
+
+/* A brilliant cut seen face on: a flat table across the top, shoulders out to the girdle, and the
+ * pavilion tapering to a point.
+ *
+ * ⚠️ NO FACET LINES. On a real acrylic topper the facets are CUT THROUGH — you see the cake through
+ * them — and as card they would be slivers a blade cannot hold and a baker cannot lift off the mat.
+ * The silhouette alone reads as a gem at the size this is met at; drawn facets would also be the one
+ * thing on a topper that is a picture of a material rather than a piece of one.
+ *
+ * Anticlockwise from the table's right corner, matching the disc, so every family winds one way. */
+const gemUnit = () => ([
+  /* ⚠️ A NARROW TABLE AND A HIGH GIRDLE, or it is a hexagon. The first cut had the table at ±0.42
+     and the girdle at 0.34, which gives a short crown slope and a long even taper — six sides of
+     roughly equal length, which the eye reads as a hexagon rather than a stone. A brilliant's crown
+     is about a third of its depth and its pavilion the rest, and the table is much narrower than the
+     girdle; those two facts are what make the silhouette recognisable at 30px in the rail. */
+  { x: 0.30, y: 1.00 }, { x: -0.30, y: 1.00 },
+  { x: -1.00, y: 0.45 }, { x: 0.00, y: -1.00 }, { x: 1.00, y: 0.45 },
+]);
+
+const TOPPER_SHAPES = Object.freeze({
+  circle: { outline: disc },
+  /* A rounded rectangle is exactly the shape that is SUPPOSED to follow what is written on it —
+     see the note in `backingPlate`. It is the only one. */
+  rect:   { outline: roundedBox, followsBox: true },
+  heart:  { outline: heartUnit, biasY: -0.20 },
+  /* ⚠️ THE FIRST FAMILY WITH A HOLE, and the reason `backingPlate` returned `holes: []` for so long
+   * is that nothing needed one. A ring is a band: 0.78 leaves a rim about an eighth of the diameter
+   * on each side, which is what a wedding band looks like — measured off a real one rather than
+   * guessed, since the first try at 0.72 came out visibly chunkier than the reference. Thin enough
+   * to read as a band at thumbnail size, thick enough to cut from card and lift off the mat. */
+  ring:   { outline: disc, hole: 0.78 },
+  gem:    { outline: gemUnit },
+});
+
+/* Does this family take the PROPORTION of what it is fitted around, or force itself square?
+ *
+ * ⚠️ ONE PLACE ANSWERS THIS. The rule is the table's (see the note in `backingPlate` — a stretched
+ * circle is an ellipse and a stretched heart is a squashed cartoon), and a studio offering a "how
+ * wide" control needs the same answer: on a circle that control would do nothing at all, and a
+ * control that cannot act is one the reader has to rule out before finding the one that can
+ * (INVARIANTS #12). Restating it in the UI is how the two would come to disagree. */
+export const followsBox = (family) => TOPPER_SHAPES[family]?.followsBox === true;
+
+/** Every shape a topper can be cut in, by key — so a studio's rail is the table, never a second list. */
+export const TOPPER_SHAPE_KEYS = Object.freeze(Object.keys(TOPPER_SHAPES));
 
 export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96, minHalf = null } = {}) {
   if (!Array.isArray(parts) || !parts.length) return null;
@@ -793,41 +884,11 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96,
    * (a POSITIVE bias) drops the word into the wide part. Measured on a "4": at bias 0 the heart came
    * out 3.68 wide, at -0.16 it grew to 3.98, and at +0.25 it fell to 3.41. Guessing the sign here
    * cost a render, and the sign flipped again when the heart was turned the right way up. */
-  const biasY = family === 'heart' ? -hh * 0.20 : 0;
+  const spec = TOPPER_SHAPES[family] ?? TOPPER_SHAPES.circle;
+  const biasY = (spec.biasY ?? 0) * hh;
 
   // An outline in [-1,1]^2, in this file's (x, y) rather than the cake's (x, z).
-  const unit = (() => {
-    if (family === 'heart') {
-      /* ⚠️ y = -z, NOT z. A cake's outline lives in (x, z) where +Z is the FRONT, and a heart cake's
-       * point faces front — so mapping z straight onto y stands the heart on its head, lobes down and
-       * point in the air. It renders perfectly and is obviously wrong the moment you look at it. */
-      const o = outlineOf('heart', {});
-      return o ? o.map(q => ({ x: q.x, y: -q.z })) : null;
-    }
-    if (family === 'rect') {
-      // A box with rounded corners, in [-1,1]^2. The radius is a fraction of the half-extent so a
-      // wide plate and a tall one round by the same visual amount.
-      const r = 0.22, k = 1 - r;
-      const arc = Math.max(4, Math.round(segments / 8));
-      const out = [];
-      /* Four quarter-arcs, each about its OWN corner centre and each starting where the last ended,
-       * walked anticlockwise from the top-right. The first attempt mirrored the arc with a sign on
-       * cos/sin as well as placing the centre, which reflected two of the corners back across their
-       * own centres and tore a notch out of the left edge. */
-      for (const [ccx, ccy, a0] of [[k, k, 0], [-k, k, Math.PI / 2], [-k, -k, Math.PI], [k, -k, 1.5 * Math.PI]]) {
-        for (let i = 0; i <= arc; i++) {
-          const a = a0 + (i / arc) * (Math.PI / 2);
-          out.push({ x: ccx + r * Math.cos(a), y: ccy + r * Math.sin(a) });
-        }
-      }
-      return out;
-    }
-    // A disc.
-    return Array.from({ length: segments }, (_, i) => {
-      const a = (i / segments) * Math.PI * 2;
-      return { x: Math.cos(a), y: Math.sin(a) };
-    });
-  })();
+  const unit = spec.outline(segments);
   if (!unit?.length) return null;
 
   const at = (m) => unit.map(q => ({ x: cx + q.x * hw * m, y: cy + biasY + q.y * hh * m }));
@@ -854,7 +915,12 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96,
   if (minHalf) m = Math.max(m, (minHalf.w ?? 0) / hw, (minHalf.h ?? 0) / hh);
   // The half-extents it actually settled on, so a caller sizing a PAIR can ask for both again with
   // the larger of the two as a floor.
-  return { kind: 'plate', outer: at(m), holes: [], half: { w: hw * m, h: hh * m } };
+  /* ⚠️ THE HOLE IS WOUND THE OTHER WAY. A hole that winds with its outer is not reliably a hole:
+     `ExtrudeGeometry` triangulates by winding, and even-odd fills — which the print sheet and the
+     cutting file both use — are the forgiving case rather than the rule. Reversing it here means
+     every consumer gets a ring rather than each having to know. */
+  const holes = spec.hole > 0 ? [at(m * spec.hole).slice().reverse()] : [];
+  return { kind: 'plate', outer: at(m), holes, half: { w: hw * m, h: hh * m } };
 }
 
 

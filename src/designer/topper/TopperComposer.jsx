@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef, useCallback } from 'react';
+import { useState, useMemo, useEffect, useRef, useCallback, useId } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
@@ -7,7 +7,6 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { HexColorPicker } from 'react-colorful';
 import { offsetParts, followsBox} from '../geometry/topperShape.js';
 import { topperContours, topperBox, topperSheets, topperStick } from '../geometry/topperPiece.js';
-import { outlineOf } from '../geometry/shapes.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
 import { SceneLights, SceneEnv, SceneBackground, CakePreview } from '../canvas/CakeCanvas.jsx';
 import { CardStock, cardAlbedo, isMetallicCard } from '../canvas/CardStock.jsx';
@@ -79,6 +78,11 @@ const SHAPES = [
   { key: 'circle', label: 'Circle' },
   { key: 'rect',   label: 'Panel' },
   { key: 'heart',  label: 'Heart' },
+  /* ⚠️ OFFERED, NOT ONLY PRESET. The ring pair arrives as a ready-made, and a preset a baker cannot
+     REBUILD is a picture rather than a starting point: delete one ring and there would have been no
+     way to get it back. Both were added for that preset and both are ordinary shapes. */
+  { key: 'ring',   label: 'Ring' },
+  { key: 'gem',    label: 'Gem' },
 ];
 
 /* ⚠️ THE ICON IS THE SHAPE'S OWN OUTLINE, drawn from the same function that builds it. A hand-drawn
@@ -86,22 +90,32 @@ const SHAPES = [
  * keeps looking right after the curve behind it has been retuned. */
 function ShapeIcon({ family, size = 22 }) {
   const d = useMemo(() => {
-    const pts = family === 'heart'
-      ? (outlineOf('heart', {}) || []).map(p => ({ x: p.x, y: -p.z }))
-      : family === 'rect'
-        ? [{ x: -1, y: -0.72 }, { x: 1, y: -0.72 }, { x: 1, y: 0.72 }, { x: -1, y: 0.72 }]
-        : Array.from({ length: 48 }, (_, i) => {
-            const a = (i / 48) * Math.PI * 2;
-            return { x: Math.cos(a), y: Math.sin(a) };
-          });
-    if (!pts.length) return '';
-    const k = size / 2.4;
-    return pts.map((p, i) => `${i ? 'L' : 'M'} ${(p.x * k).toFixed(2)} ${(-p.y * k).toFixed(2)}`).join(' ') + ' Z';
+    /* ⚠️ THE REAL CONTOURS, from the function that cuts the shape — not a second outline drawn here
+     * to look like it. This icon used to hand-roll a disc, a plain rectangle and a heart borrowed
+     * from `outlineOf`, which was three approximations of two families: the rectangle had no rounded
+     * corners and neither the circle nor the heart knew about the fit. It survived because it was
+     * close enough to not look wrong, which is exactly how an icon starts lying (INVARIANTS #14).
+     * And it could not have drawn a RING at all — a hole is not something an outline has. */
+    const parts = topperContours({ kind: 'shape', family, size: 2 }, null);
+    if (!parts?.length) return '';
+    let lo = Infinity, hi = -Infinity, bo = Infinity, to = -Infinity;
+    for (const p of parts) for (const q of p.outer) {
+      if (q.x < lo) lo = q.x; if (q.x > hi) hi = q.x;
+      if (q.y < bo) bo = q.y; if (q.y > to) to = q.y;
+    }
+    const span = Math.max(hi - lo, to - bo);
+    if (!(span > 0)) return '';
+    const k = size / span, cx = (lo + hi) / 2, cy = (bo + to) / 2;
+    // y is flipped: SVG grows downward and the composer grows up.
+    const ring = (pts) => pts.map((q, i) =>
+      `${i ? 'L' : 'M'} ${((q.x - cx) * k).toFixed(2)} ${(-(q.y - cy) * k).toFixed(2)}`).join(' ') + ' Z';
+    return parts.map(p => ring(p.outer) + (p.holes ?? []).map(ring).join(' ')).join(' ');
   }, [family, size]);
   return (
     <svg width={size} height={size} viewBox={`${-size / 2} ${-size / 2} ${size} ${size}`}
       aria-hidden="true" focusable="false">
-      <path d={d} fill="currentColor" />
+      {/* evenodd, or a ring is a disc — the hole is a subpath of the same path. */}
+      <path d={d} fill="currentColor" fillRule="evenodd" />
     </svg>
   );
 }
@@ -795,6 +809,23 @@ function StudioStick({ objects, fontOf, stick }) {
 
 function PresetIcon({ objects, font, size = 46 }) {
   const built = useMemo(() => presetPaths(objects, font), [objects, font]);
+  /* ⚠️ UNIQUE PER ICON. Every preset in the rail draws its own <svg>, and a pattern id is global to
+     the document — two icons sharing "gold" would have the second one's definition win for both. */
+  const uid = useId().replace(/:/g, '');
+
+  /* ⚠️ A METALLIC PATH IS FILLED WITH THE MATERIAL, not with a flat hex (INVARIANTS #14/#15). The
+     card's own colour is what the sheet REPORTS — right for a cutting file, where it names which
+     card to use — and dead wrong as a picture: flat #C9A227 is mustard. The same matcap the mesh
+     wears is the only thing that cannot promise a gold the cake will not deliver, and it costs one
+     <pattern> per finish used.
+     Drawn at 1.5x and centred, so the shape shows the metal's FACE rather than a ball in a box —
+     the matcap's rim and its transparent corners both fall outside the crop. The swatch does this
+     the same way and for the same reason. */
+  const metals = useMemo(() => {
+    const keys = [...new Set((built?.paths ?? []).map(p => p.finish).filter(isMetallicCard))];
+    return keys.map(k => ({ key: k, href: drawTopperMatcap(k, 64).toDataURL() }));
+  }, [built]);
+
   if (!built) return null;
   return (
     /* ⚠️ NOT `overflow: visible`. A two-line topper is far wider than it is tall, and letting it
@@ -802,8 +833,22 @@ function PresetIcon({ objects, font, size = 46 }) {
        preserveAspectRatio already fits a wide piece inside a square box. */
     <svg viewBox={built.viewBox} width={size} height={size}
       style={{ display: 'block', overflow: 'hidden' }} aria-hidden="true">
+      {metals.length > 0 && (
+        <defs>
+          {metals.map(m => (
+            <pattern key={m.key} id={`${uid}-${m.key}`} patternContentUnits="objectBoundingBox"
+              patternUnits="objectBoundingBox" width="1" height="1">
+              <image href={m.href} x="-0.25" y="-0.25" width="1.5" height="1.5"
+                preserveAspectRatio="none" />
+            </pattern>
+          ))}
+        </defs>
+      )}
       {/* evenodd, so a hole in a letter — the middle of an O — stays a hole. */}
-      {built.paths.map(p => <path key={p.key} d={p.d} fill={p.colour} fillRule="evenodd" />)}
+      {built.paths.map(p => (
+        <path key={p.key} d={p.d} fillRule="evenodd"
+          fill={isMetallicCard(p.finish) ? `url(#${uid}-${p.finish})` : p.colour} />
+      ))}
     </svg>
   );
 }
@@ -1322,7 +1367,8 @@ export default function TopperComposer({
           {/* ⚠️ SHAPES ARE BEHIND A BUTTON; PRESETS ARE NOT — and the difference is what each is FOR.
               A preset is a picture of a finished topper and it is the fastest way to start, so it
               has to be seen to be chosen. A shape is a component you reach for once you are already
-              composing, and three of them on show cost a row that the canvas wanted more. */}
+              composing, and three of them on show cost a row that the canvas wanted more — five,
+              since the ring and the gem, would cost nearly two. */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <RailButton onClick={() => { setDrawer(null); addText(); }} title="Add text">
               <span style={{ fontSize: 19, fontWeight: 800, lineHeight: 1 }}>T</span>
@@ -1348,8 +1394,9 @@ export default function TopperComposer({
 
           </div>
 
-          {/* Six at 46px fit a 390px phone with room over; `auto` is the guard for a narrower one,
-              where scrolling a strip is better than wrapping it into a second block. */}
+          {/* Seven at 46px overflow a 390px phone, which is what `overflowX: auto` is here for —
+              scrolling a strip sideways is better than wrapping it into a second block that eats a
+              row of the canvas. The strip shows about six and a half, so its edge says it scrolls. */}
           <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
             {TOPPER_PRESETS.map(pre => (
               <RailButton key={pre.key} onClick={() => { setDrawer(null); usePreset(pre); }}
@@ -1397,10 +1444,16 @@ export default function TopperComposer({
         <div>
           <span style={{ display: 'block', fontSize: 10, fontWeight: 800, letterSpacing: 0.6,
             textTransform: 'uppercase', color: '#9AA8A0', marginBottom: 7 }}>Shapes</span>
-          <div className="tcGroup" style={{ display: 'grid', gap: 7 }}>
+          {/* ⚠️ TWO COLUMNS, FOR THE REASON THE PRESETS BELOW ALREADY RECORD. One per row was fine
+              at three shapes and pushed the presets off the bottom at five — and the rail gives no
+              sign that it scrolls, so an example below the fold is not an example. The note under
+              Presets is the same argument, written the first time this happened. Paired, five rows
+              become three and the rail fits a 1280x720 laptop again. */}
+          <div className="tcGroup" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             {SHAPES.map(sh => (
-              <RailButton key={sh.key} onClick={() => addShape(sh.key)} title={`Add ${sh.label.toLowerCase()}`} wide>
-                <ShapeIcon family={sh.key} />
+              <RailButton key={sh.key} onClick={() => addShape(sh.key)}
+                title={`Add ${sh.label.toLowerCase()}`} wide compact>
+                <ShapeIcon family={sh.key} size={26} />
               </RailButton>
             ))}
           </div>

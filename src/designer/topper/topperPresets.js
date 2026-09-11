@@ -108,6 +108,46 @@ export const TOPPER_PRESETS = Object.freeze([
   },
 
   {
+    /* ⚠️ THE ONE PRESET WHOSE JOB IS THE MATERIAL, not the layout. Every other preset here shows an
+       arrangement — a word on a shape, two hearts, two lines — and a baker who has never opened the
+       Card control has no reason to. This says, without a sentence, that a piece can be cut from
+       metallic card, and it picks the piece that is ALWAYS cut from it: nobody makes a pair of
+       wedding rings in pink card.
+
+       ⚠️ TWO RINGS AND A STONE, EACH ITS OWN OBJECT — not one clever outline. A baker can drag the
+       stone, drop it, recolour a single ring, or keep the pair and throw the rest away, which is
+       what makes this a starting point rather than a picture. It is also how the studio already
+       works, so nothing here needs a mechanism of its own.
+
+       ⚠️ THEY OVERLAP AND THEY DO NOT INTERLOCK, and that is honest rather than a shortcut. A real
+       card topper is ONE FLAT PIECE: a band cannot pass over its neighbour at the top and under it
+       at the bottom, because there is only one thickness of card. The photographs that show rings
+       genuinely threaded are a single cut silhouette, and cutting that is a different thing from
+       composing two rings. One in front of the other is what the card does.
+
+       ⚠️ THE STONE BELONGS TO THE FRONT RING. Listed last so it sits on top of the band it is set
+       into — listed before it, the ring would print across its own stone. Order is depth here, the
+       same rule the couple preset above records. */
+    key: 'rings',
+    label: 'Two rings for a wedding',
+    objects: [
+      /* ⚠️ `size` IS THE BOX A SHAPE IS FITTED AROUND, never the shape's own width — the note on the
+         heart preset above records what reasoning about this cost. A ring fitted to a 0.81 box comes
+         out about 1.15 across, and the pair is measured in topperPresets.test.js rather than
+         believed. */
+      { kind: 'shape', family: 'ring', size: 0.81, x: 0.39, y: 0,
+        colour: '#C9A227', finish: 'card_gold', offset: 0, offsetColour: '#FFFFFF' },
+      { kind: 'shape', family: 'ring', size: 0.81, x: -0.39, y: 0,
+        colour: '#C9A227', finish: 'card_gold', offset: 0, offsetColour: '#FFFFFF' },
+      /* ⚠️ ITS POINT REACHES PAST THE BAND, into the ring's opening. A stone sits IN a setting. Set
+         so the point lands ON the band instead, the pavilion's two sloping sides meet the band's
+         outer edge either side of it and leave a little V of the ring's HOLE showing between them —
+         a notch that reads as a badly drawn join. Crossing the band entirely covers it. */
+      { kind: 'shape', family: 'gem', size: 0.26, x: -0.39, y: 0.68,
+        colour: '#C9A227', finish: 'card_gold', offset: 0, offsetColour: '#FFFFFF' },
+    ],
+  },
+  {
     /* Two lines, because "Happy Birthday" on one line is a wide thin strip that reads as nothing on a
        round cake top — and two objects is also the honest way to show that a topper is a COMPOSITION
        rather than a single word. */
@@ -166,6 +206,10 @@ export function presetPaths(objects, font) {
   const paths = sheets.map((sh, i) => ({
     key: i,
     colour: sh.colour,
+    /* ⚠️ THE FINISH TRAVELS WITH THE PATH, or a metallic preset draws as a flat fill of the card's
+       own hex — which is MUSTARD, the exact thing metallic gold exists to answer. The icon is a plan
+       of the piece and not a render, but "gold" is not a layout fact it can leave out. */
+    finish: sh.finish ?? null,
     d: sh.parts.map(p => ring(p.outer, sh.x ?? 0, sh.y ?? 0)
       + (p.holes ?? []).map(h => ring(h, sh.x ?? 0, sh.y ?? 0)).join('')).join(''),
   }));
