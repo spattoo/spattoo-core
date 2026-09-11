@@ -52,7 +52,11 @@ import * as THREE from 'three';
  * CIRCLES (round at last, but two round things meeting make a WIDE V, which is the one thing this
  * needed not to be).
  */
-const LOBE_NOTCH = 0.22;         // the V's angular width, as a fraction of one point's span
+/* ⚠️ ONE, i.e. a plain star polygon — the cut begins where the last one ended. Narrowing it was
+ * tried and is wrong: it fattens each lobe into a broad round column, and the photograph's sides are
+ * NARROWER than that, not wider. Narrow sides come from MORE POINTS, not from a narrower notch. The
+ * knob stays because a wider lobe is a real tip (a drop-flower), but the piping star is 1. */
+const LOBE_NOTCH = 1;            // the V's angular width, as a fraction of one point's span
 
 function lobedProfile(lobes, depth, notch = LOBE_NOTCH, perArc = 14, perV = 4) {
   const span = (Math.PI * 2) / lobes, half = span / 2, nw = notch * half;
@@ -60,9 +64,10 @@ function lobedProfile(lobes, depth, notch = LOBE_NOTCH, perArc = 14, perV = 4) {
   const out = [];
   for (let k = 0; k < lobes; k++) {
     const c = k * span;
-    for (let j = 0; j <= perArc; j++) {          // the lobe: an arc at full radius
-      out.push(at(c - half + nw + (2 * (half - nw)) * (j / perArc), 1));
-    }
+    // The lobe: an arc at full radius — or a single sharp point when the notch takes the whole span.
+    const arc = 2 * (half - nw);
+    if (arc < 1e-4) out.push(at(c, 1));
+    else for (let j = 0; j <= perArc; j++) out.push(at(c - half + nw + arc * (j / perArc), 1));
     /* The slot. ⚠️ Its SIDES are sampled, not just its floor: a V that is one lone vertex between
      * two arcs has no surface for `computeVertexNormals` to average, and the sweep comes out with
      * ill-defined normals down every crease — which reads as a black seam, not a shadow. */
@@ -125,7 +130,7 @@ export const NOZZLES = [
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
    * under two, eight give under three, and twelve give four. Counting the ribs in a photograph of one
    * vertical line and dividing by three is how you pick a tip. */
-  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.62), twist: 1,   ruffle: 1 },
+  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.45), twist: 1,   ruffle: 1 },
   { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038 },
   { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1 },
   { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },

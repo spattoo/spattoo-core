@@ -114,7 +114,11 @@ export const CREAM_STYLES = {
    * So the tip is chosen so that a stroke reads as ONE fat column: five points put under two on the
    * face, which is a broad rib with a hint of a line down it, exactly what the photograph shows.
    * `star12` is still in the registry for a close-up, where the twelve do resolve. */
-  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams() },
+  /* ⚠️ TWELVE POINTS, because the SIDES have to be narrow. Counted against a photograph of one
+   * vertical line: it shows four or five narrow faces across the stroke, and a five-point star shows
+   * two wide ones. Narrow sides come from MORE POINTS — not from a narrower notch, which was tried
+   * and fattens each lobe into a broad round column, the opposite of what the photograph has. */
+  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star12', params: pipedParams() },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
