@@ -28,13 +28,23 @@ import * as THREE from 'three';
  * crest without touching either extreme: below 1 the profile leaves the valley faster than a cosine
  * and dwells longer at the ridge. Judged against a photograph of one vertical line of star piping.
  */
-const LOBE_CREASE = 0.6;
-function lobedProfile(lobes, depth, pts = lobes * 10) {
+const LOBE_FAT = 0.7;
+function lobedProfile(lobes, depth, pts = lobes * 14) {
   const out = [];
   for (let i = 0; i < pts; i++) {
     const a = (i / pts) * Math.PI * 2;
-    const valley = Math.pow(0.5 - 0.5 * Math.cos(lobes * a), LOBE_CREASE);
-    const r = 1 - depth * valley;                          // ridge = 1 at the peaks, 1−depth in the creases
+    /* ⚠️ `|sin|`, NOT A COSINE, and that is the whole of the crease. A cosine is smooth at BOTH
+     * ends: it rounds the ridge (right) and rounds the trough between two ridges (wrong) — there is
+     * no fold in it anywhere, so a swept star renders as soft flutes. `|sin(L·a/2)|` has a CORNER at
+     * its zeros, which is where the creases land, and is smooth at its peaks, which is where the
+     * ribs are. The exponent then fattens the rib: below 1 it reaches full height early and dwells
+     * there, so the section is a row of broad rounded ribs meeting in sharp Vs.
+     *
+     * ⚠️ An earlier attempt raised a cosine to 0.6 to do this and got it exactly backwards — that
+     * leaves the ridge FAST, so the ribs came out as thin spikes with broad flats between them, and
+     * the stroke ends around the rim rendered as little blocks. */
+    const rib = Math.pow(Math.abs(Math.sin(lobes * a / 2)), LOBE_FAT);
+    const r = 1 - depth * (1 - rib);                       // ridge = 1 at the peaks, 1−depth in the creases
     out.push([Math.cos(a) * r, Math.sin(a) * r]);
   }
   return out;
