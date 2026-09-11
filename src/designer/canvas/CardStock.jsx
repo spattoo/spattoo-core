@@ -1,6 +1,6 @@
 import { useMemo, useEffect } from 'react';
+import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { drawTopperMatcap } from '../geometry/topperMatcap.js';
 import { TOPPER_FINISHES } from '../geometry/topperFinishes.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
 
@@ -110,6 +110,123 @@ export function cardExtrude(depth, finish, pieceSize = 1) {
  * see it. */
 export const cardFront = (cut) => cut.depth + (cut.bevelThickness ?? 0);
 
+/* ── The room a metallic card reflects ───────────────────────────────────────────────────────────
+ *
+ * ⚠️ A METAL IS ITS REFLECTION, SO GLOSS IS A PROPERTY OF THE ROOM, NOT OF THE MATERIAL. This was
+ * arrived at by exhausting the alternatives, and each one is worth keeping written down because each
+ * looks like it should work:
+ *
+ *   a baked matcap      indexed by the surface NORMAL — a flat face has ONE, so it renders in one
+ *                       flat tone however contrasty the picture behind it is
+ *   a lit metal under   indexed by the REFLECTION, which is right — but `lebombo_256.hdr` is a
+ *   `scene.environment` bright, largely featureless field, so a mirror has nothing but white to
+ *                       show. Measured: chroma 101 and a brightness spread across the piece of
+ *                       0.037, against the gold BOARD in the same frame at 149 and 0.219
+ *   a chamfered edge    real, and only an EDGE: a bright rim a few pixels wide round a face that is
+ *                       still one tone. Necessary, nowhere near sufficient
+ *
+ * `topperMatcap.js` reaches the same conclusion from the other side and states the fix: "the cause
+ * that is left is the HDRI's own CONTENT ... The fix is a different environment map, not a different
+ * number." This is that environment.
+ *
+ * ⚠️ THE STRUCTURE IS NEAR THE HORIZON, AND THAT IS THE WHOLE DESIGN. A topper STANDS, so its face
+ * is vertical and it reflects sideways — into a band of the room a few degrees either side of level.
+ * A small flat piece fans the view by perhaps ten degrees corner to corner, so anything smooth over
+ * that span averages to one colour again. Hard bands there are what turn ten degrees of sweep into
+ * light-to-dark ACROSS the piece, which is what a mirror-gold topper looks like in a photograph and
+ * what a featureless sky can never give.
+ *
+ * ⚠️ AND IT IS BRIGHT BEHIND THE CAMERA. Face on, a mirror shows you what is behind you; a dark
+ * ceiling there is why `metalness: 1` under the scene environment came out brown. A big soft source
+ * on the viewer's side is how jewellery is lit in every catalogue, for the same reason.
+ *
+ * ⚠️ AND THE MAIN SOURCE IS BELOW LEVEL, NOT ABOVE IT, which is the opposite of the obvious guess
+ * and cost a round of this. A cake is looked at from ABOVE. Reflect a downward view off a VERTICAL
+ * face and the ray goes back out and DOWNWARD — so a standing topper shows you the floor behind the
+ * viewer, not the ceiling. Lit ceiling-first, the piece measured luminance 105 against the gold
+ * board's 164: a dark brown, which is exactly what it looked like. The bright band belongs where the
+ * piece is actually looking.
+ *
+ * ⚠️ BUILT ONCE PER RENDERER AND NEVER DISPOSED — deliberately, and this is the failure it is
+ * written against. A shared environment here once produced BLACK toppers after an add/remove/re-add,
+ * because something disposed a texture other meshes were still holding. Keyed on the renderer in a
+ * WeakMap and never freed, there is no ref-count to get wrong and no disposed texture to hand out:
+ * it lives exactly as long as the GL context that can use it, and dies with it. It is one small
+ * prefiltered map per canvas, which is a price worth paying to make that class of bug impossible.
+ */
+const ENV_BY_RENDERER = new WeakMap();
+
+/* Bands of a room, as an equirectangular strip. Values are deliberately hard-edged: see above — a
+   gradient is what the sky already was. Top to bottom is ceiling to floor. */
+const ENV_STOPS = [
+  /* ⚠️ RAMPS, NOT STEPS. Hard-edged bands gave the structure this needs and then showed it: mirrored
+   * off the CURVED inner wall of a "0", the steps came back as visible stripes running round the
+   * counter — a staircase, not a room. Every real edge in a room is a little soft, and the ramp
+   * between two stops is what makes the difference between a highlight and a stripe. The structure
+   * survives; only the staircase goes.
+   *
+   * ⚠️ THE MAIN SOURCE SITS BELOW LEVEL, and that is the opposite of the obvious guess. A cake is
+   * looked at from ABOVE; reflect a downward view off a VERTICAL face and the ray goes back out and
+   * DOWNWARD, so a standing topper shows you the floor behind the viewer rather than the ceiling.
+   * Lit ceiling-first, the piece measured luminance 105 against the gold board's 164 — a dark brown,
+   * which is exactly how it looked.
+   *
+   * ⚠️ AND IT IS BROKEN BY A DARK LINE, because one unbroken white band there is bright and FLAT:
+   * luminance 196 with a spread of 0.117, which is a well-lit sticker rather than a metal. A real
+   * room has a mullion, a shelf, an edge. The break has to fall INSIDE the few degrees a small flat
+   * piece actually sweeps, or it is never seen at all.
+   */
+  [1.00, '#E8E8E8'],   // ceiling
+  [0.74, '#E8E8E8'],
+  [0.64, '#6E6E6E'],   // a dark band above level — seen when a piece tips back
+  [0.58, '#FFFFFF'],
+  [0.50, '#FFFFFF'],
+  [0.45, '#585858'],   // ⚠️ the break, inside the sweep
+  [0.40, '#FFFFFF'],
+  [0.30, '#FFFFFF'],   // the main source, below level, where a standing piece looks
+  [0.22, '#6A6A6A'],
+  [0.12, '#CFCFCF'],
+  [0.00, '#2E2E2E'],   // the floor: the dark a gold needs to be gold against
+];
+
+function drawCardEnv(w = 512, h = 256) {
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = h;
+  const g = cv.getContext('2d');
+  const sky = g.createLinearGradient(0, 0, 0, h);
+  // v = 1 is the top of the image, so a stop's offset is 1 - v.
+  for (const [v, colour] of ENV_STOPS) sky.addColorStop(Math.min(1, Math.max(0, 1 - v)), colour);
+  g.fillStyle = sky;
+  g.fillRect(0, 0, w, h);
+
+  /* One window, so the piece is not identical all the way round and turning the cake changes
+     something. Soft-edged on purpose: a hard vertical edge reads as a seam. */
+  const win = g.createLinearGradient(w * 0.18, 0, w * 0.46, 0);
+  win.addColorStop(0, 'rgba(255,255,255,0)');
+  win.addColorStop(0.5, 'rgba(255,255,255,0.75)');
+  win.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = win;
+  g.fillRect(w * 0.18, h * 0.22, w * 0.28, h * 0.5);
+  return cv;
+}
+
+function cardEnvMap(gl) {
+  if (!gl) return null;
+  const held = ENV_BY_RENDERER.get(gl);
+  if (held) return held;
+  const src = new THREE.CanvasTexture(drawCardEnv());
+  src.mapping = THREE.EquirectangularReflectionMapping;
+  src.colorSpace = THREE.SRGBColorSpace;
+  /* Prefiltered, because a standard material samples an environment by roughness and wants the mip
+     chain that goes with it. The generator is disposed; what it produced is kept. */
+  const pmrem = new THREE.PMREMGenerator(gl);
+  const target = pmrem.fromEquirectangular(src);
+  pmrem.dispose();
+  src.dispose();
+  ENV_BY_RENDERER.set(gl, target.texture);
+  return target.texture;
+}
+
 /**
  * The material for one sheet of a card topper.
  *
@@ -121,19 +238,32 @@ export const cardFront = (cut) => cut.depth + (cut.bevelThickness ?? 0);
  */
 export function CardStock({ colour, finish = null, selected = false }) {
   const metallic = isMetallicCard(finish);
+  const { gl } = useThree();
 
   /* ⚠️ THE HOOK RUNS EITHER WAY and returns null for plain card. A hook under a condition is the
      thing `check:hooks` fails the build for, and a piece whose finish is cleared must not change how
      many hooks its mesh calls. */
-  const matcap = useMemo(() => {
-    if (!metallic) return null;
-    const t = new THREE.CanvasTexture(drawTopperMatcap(finish));
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
-  }, [metallic, finish]);
-  useEffect(() => () => matcap?.dispose(), [matcap]);
+  const envMap = useMemo(() => (metallic ? cardEnvMap(gl) : null), [metallic, gl]);
 
-  if (matcap) return <meshMatcapMaterial matcap={matcap} />;
+  if (metallic) {
+    const f = TOPPER_FINISHES[finish];
+    /* ⚠️ `metalness: 1` AND NOTHING ELSE HOLDING IT UP. A metal has no diffuse: it is its
+     * reflection, tinted by its own colour. That was the reason this could not be done under the
+     * scene's environment — face on, the reflected direction is BEHIND the camera, which in a field
+     * of sky is nothing in particular, and the piece came out brown. `cardEnvMap` puts the bright
+     * part of the room exactly there, which is also how anybody photographs jewellery.
+     *
+     * ⚠️ `roughness` LOW ENOUGH TO KEEP THE BANDS. Blur them away and the environment's structure —
+     * the entire point of building one — averages back to a single tone, which is where this
+     * started. 0.12 keeps the edges; much below it the bands turn into a hard mirror and the piece
+     * starts showing seams where the chamfer meets the face. */
+    return (
+      <meshStandardMaterial
+        color={f.color} metalness={1} roughness={0.16}
+        envMap={envMap} envMapIntensity={1.45}
+      />
+    );
+  }
 
   return (
     <meshStandardMaterial

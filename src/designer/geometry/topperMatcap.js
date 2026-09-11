@@ -139,21 +139,21 @@ const LOOKS = {
    * whose bright edge needs something to be bright against; a flat card has no edge to read, so the
    * body IS the colour, and the picture has to be flatter. Which is also what satin means.
    *
-   * ⚠️ MEASURED ON BOTH SCREENS, not judged on one. Median face colour over the piece's pixels, the
-   * metric the note above argues for (contrast is the wrong one on a flat face — nearly all of it is
-   * the letters' antialiased edges):
+   * ⚠️ AND SINCE 2026-09-11 THESE THREE DRAW THE SWATCH AND THE RAIL ICON, NOT THE PIECE. The card
+   * finishes are rendered in 3D as a real mirror against a built environment — see
+   * `canvas/CardStock.jsx`, which sets out why a baked picture could never look glossy on a face as
+   * flat as a cut card. What is left here is the 2D job: the chip in the Card control and the fill
+   * of a metallic path in a preset's icon, both of which are pictures rather than surfaces and
+   * neither of which has a reflection to show.
    *
-   *     studio, head-on      rgb(200, 164, 57)   chroma 143
-   *     cake, tilted         rgb(221, 186, 78)   chroma 143
-   *     the gold BOARD       rgb(204, 165, 55)   chroma 149   ← the metal in the same frame that
-   *                                                             nobody has ever called dull
-   *
-   * Equal chroma either side is the thing to hold: the two views must be the same METAL, and the
-   * cake's is brighter because the card catches the key light there, which is what a card does. The
-   * first attempt read chroma 135 against 108 — visibly two different golds. */
-  card_gold:   { base: [180, 140, 46],  sheen: [255, 190, 62],  rim: [116, 86, 26],  tight: 0.64, spec: 0.30 },
-  card_silver: { base: [180, 185, 191], sheen: [255, 255, 255], rim: [116, 122, 130], tight: 0.64, spec: 0.30 },
-  card_rose:   { base: [194, 142, 122], sheen: [255, 186, 160], rim: [128, 86, 72],  tight: 0.64, spec: 0.30 },
+   * ⚠️ SO THEY ARE TUNED TO WHAT THE RENDER MEASURES, and they have to be: a swatch that promises a
+   * gold the cake does not deliver is the thing INVARIANTS #14 is about. The hue cannot drift — both
+   * sides take `TOPPER_FINISHES[key].color` as their starting point — but the brightness can, and
+   * did: these were set against the old flat gold at rgb(200, 164, 57), while the mirror measures
+   * rgb(224, 200, 82) on the cake. Re-matched. Re-measure if the environment moves. */
+  card_gold:   { base: [212, 186, 74],  sheen: [255, 232, 140], rim: [140, 108, 34], tight: 0.64, spec: 0.34 },
+  card_silver: { base: [206, 210, 215], sheen: [255, 255, 255], rim: [134, 140, 148], tight: 0.64, spec: 0.34 },
+  card_rose:   { base: [216, 168, 148], sheen: [255, 214, 194], rim: [146, 100, 84],  tight: 0.64, spec: 0.34 },
 };
 
 const rgb = ([r, g, b], a = 1) => `rgba(${r}, ${g}, ${b}, ${a})`;
