@@ -1686,7 +1686,10 @@ export default function CakeTier({
   // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
   // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
   const wallKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).wall : 'smooth';
-  const styleVals = resolveStyleParams(frostingStyle, styleParams);
+  /* ⚠️ `nozzle` IS A KEY ON THE STYLE, not one of its sliders, and it is folded in here so the
+   * geometry reads one bag. Two styles can share a `wall` algorithm and differ only in which tip the
+   * cream came out of — that is what `piped` and `piped_round` are. */
+  const styleVals = { ...resolveStyleParams(frostingStyle, styleParams), nozzle: styleDef(frostingStyle).nozzle };
   const styleSig = JSON.stringify(styleVals);
   const styledGeo = useMemo(
     () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,

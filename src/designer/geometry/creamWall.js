@@ -107,17 +107,45 @@ const ropeHash = (i) => {
   return x - Math.floor(x);
 };
 
-/* ONE definition of what a star tip's section looks like, shared by the wall's vertical strokes and
- * the top's coil — they are the same nozzle, and a second copy of this curve is a second place for
- * the two to drift apart. `t` runs 0..1 across the stroke; returns ~0 at the grooves, ~1 at the face.
- *   body  — quick rise off the groove, flattish face (`round` < 1 flattens; see creamStyles).
- *   ridge — the tip's teeth running ALONG the stroke, fading at its edges so the groove between
- *           strokes stays the deepest line. This is the part that reads as piped.
+/* ── THE NOZZLE ────────────────────────────────────────────────────────────────
+ *
+ * What the TIP leaves across one stroke. `t` runs 0..1 from one groove to the next; the result is
+ * ~0 at the grooves and ~1 on the face. One definition, shared by the wall's vertical strokes and
+ * the top's coil — it is the same bag of cream, and a second copy of this curve is a second place
+ * for the two to drift apart.
+ *
+ * ⚠️ THE NOZZLE IS THE SHAPE, NOT A DETAIL ON TOP OF ONE. The first star tip was a shallow ripple
+ * ADDED to a round tube, and it read as exactly that: a round-tip stroke with texture on it. A star
+ * tip's opening IS a star — the metal between two points reaches almost to the centre, so the cream
+ * comes out as separate fins with deep grooves between them, and the fins are the whole section.
+ * So the teeth MULTIPLY the body here. That is the difference between the two entries below, and
+ * it is why they are a registry rather than a `teethDepth` of zero.
+ *
+ * A registry keyed by name (CLAUDE.md rule 2): a third tip is an entry here plus a row in
+ * creamStyles, never a branch anywhere else.
  */
-export function strokeSection(t, round, teeth, teethDepth) {
-  const body  = Math.pow(Math.sin(Math.PI * t) ** 2, round);
-  const ridge = teethDepth * Math.sin(Math.PI * t) * (0.5 - 0.5 * Math.cos(TAU * teeth * t));
-  return body + ridge;
+export const NOZZLES = {
+  // A plain round tip: one smooth tube per stroke. `round` < 1 flattens its face (see creamStyles).
+  round: (t, { round }) => Math.pow(Math.sin(Math.PI * t) ** 2, round),
+
+  /* A star tip: `points` fins across the stroke, with grooves between them that cut `groove` of the
+   * way to the wall. The whole thing still sits inside the stroke's own envelope, so the fins at the
+   * edges of a stroke are shorter than the ones in the middle — which is what tells a viewer where
+   * one stroke ends and the next begins.
+   *
+   * The exponent fattens the fins and narrows the grooves: a bare cosine gives fins and grooves the
+   * same width, and a piped fin is the fatter of the two. */
+  star: (t, { round, points, groove }) => {
+    const body = Math.pow(Math.sin(Math.PI * t) ** 2, round);
+    const fins = Math.pow(0.5 - 0.5 * Math.cos(TAU * points * t), 0.55);
+    return body * (1 - groove + groove * fins);
+  },
+};
+
+export const DEFAULT_NOZZLE = 'star';
+
+export function strokeSection(t, nozzle, opts) {
+  return (NOZZLES[nozzle] ?? NOZZLES[DEFAULT_NOZZLE])(t, opts);
 }
 
 /* The wall's height field, shared by the geometry and the relief sampler so a decoration cannot seat
@@ -133,7 +161,7 @@ export function strokeSection(t, round, teeth, teethDepth) {
  * The first and last edges are pinned at 0 and 1: they are the ±π seam, and a seam that wandered
  * would split the wall.
  */
-export function makeRopeField({ ropes, round, vary, wobble = 0, teeth, teethDepth }) {
+export function makeRopeField({ nozzle, ropes, round, vary, wobble = 0, points, groove }) {
   // Per-stroke widths, normalised to sum to 1 — see the seam note above.
   const w = [], depth = [];
   let total = 0;
@@ -144,11 +172,18 @@ export function makeRopeField({ ropes, round, vary, wobble = 0, teeth, teethDept
   }
   const edge = [0];
   for (let i = 0; i < ropes; i++) edge.push(edge[i] + w[i] / total);
-  // Per-edge wander. Amplitude is a fraction of ONE stroke's width, so it cannot cross a neighbour:
-  // the closest two edges ever come is (1 − vary)/ropes, and the most they move toward each other is
-  // wobble/(2·ropes).
+  /* Per-edge wander.
+   *
+   * ⚠️ MEASURED IN FINS, NOT IN STROKES. A hand wobbles by a DISTANCE, and that distance does not
+   * grow because the baker picked a wider tip. Scaled per stroke, the star tip — whose strokes are
+   * three times as wide as the round tip's — wandered three times as far and the wall came out
+   * looking melted. `ropes × points` is the width of the finest thing on the wall either way.
+   *
+   * It still cannot cross a neighbour: the closest two edges come is (1 − vary)/ropes, and the most
+   * they move toward each other is wobble/(ropes·points). */
+  const fins = Math.max(1, points ?? 1);
   const sway = (k, v) => (k === 0 || k === ropes) ? 0
-    : wobble * (ropeHash(k + 2000) - 0.5) * Math.sin(TAU * (v * (0.8 + ropeHash(k + 3000)) + ropeHash(k + 4000))) / ropes;
+    : wobble * (ropeHash(k + 2000) - 0.5) * Math.sin(TAU * (v * (0.8 + ropeHash(k + 3000)) + ropeHash(k + 4000))) / (ropes * fins);
 
   return (frac, v = 0) => {
     const f = frac - Math.floor(frac);                  // wrap into 0..1
@@ -158,13 +193,13 @@ export function makeRopeField({ ropes, round, vary, wobble = 0, teeth, teethDept
     for (let k = 1; k <= ropes; k++) if (f < edge[k] + sway(k, v)) { i = k - 1; break; }
     const lo = edge[i] + sway(i, v), hi = edge[i + 1] + sway(i + 1, v);
     const t = (f - lo) / (hi - lo);                     // 0..1 across THIS stroke
-    return depth[i] * strokeSection(t, round, teeth, teethDepth);
+    return depth[i] * strokeSection(t, nozzle, { round, points, groove });
   };
 }
 
-function displacePiped(geo, radius, { amp, ropes, round, vary, wobble, teeth, teethDepth }) {
+function displacePiped(geo, radius, { amp, nozzle, ropes, round, vary, wobble, points, groove }) {
   const a = amp * radius;
-  const field = makeRopeField({ ropes, round, vary, wobble, teeth, teethDepth });
+  const field = makeRopeField({ nozzle, ropes, round, vary, wobble, points, groove });
   return displaceSide(geo, (u, v) => a * field(u / TAU + 0.5, v));
 }
 
@@ -208,6 +243,27 @@ export function displaceByHeightField(geo, field, { repeatX = 1, repeatY = 1, re
   return geo;
 }
 
+/* ONE place that fills in what a `piped` wall did not say. The geometry, the relief sampler and the
+ * top all read the wall's shape, and three copies of `params.ropes ?? 44` is three chances for the
+ * cake, the thing seated on it and the lid over it to be built from different numbers.
+ *
+ * ⚠️ `nozzle` IS A KEY, NOT A NUMBER, and it rides in the same bag because it reaches here the same
+ * way the numbers do: `CakeTier` folds the style entry's `nozzle` into the resolved params. It is
+ * resolved through `NOZZLES`, never branched on.
+ */
+export function pipedParams(params = {}) {
+  return {
+    nozzle: params.nozzle ?? DEFAULT_NOZZLE,
+    relief: params.relief ?? 0.06,
+    ropes:  params.ropes  ?? 14,
+    round:  params.round  ?? 0.45,
+    vary:   params.vary   ?? 0.28,
+    wobble: params.wobble ?? 0.45,
+    points: Math.max(1, params.points ?? 4),
+    groove: params.groove ?? 0.8,
+  };
+}
+
 // `params` is the resolved style param set (defaults ← authored overrides) from creamStyles.js.
 // `relief`/`amp` are coefficients of radius; the rest map straight onto the field/strategy.
 export function buildStyledWall(wall, radius, height, params = {}) {
@@ -236,16 +292,13 @@ export function buildStyledWall(wall, radius, height, params = {}) {
         { amp: params.relief ?? 0.04, bands, round: params.round ?? 1.0 });
     }
     case 'piped': {
-      // Vertical ropes need RADIAL tessellation that scales with the rope count (else the tubes
-      // facet) — the mirror of ribbed, which scales height segments instead. Up the wall they are
-      // constant, so the height count can stay modest.
-      const ropes = params.ropes ?? 44;
-      const radial = Math.min(640, Math.max(220, ropes * 12));
-      // Height segments carry the WOBBLE now, so they can no longer be a token 64.
-      return displacePiped(denseCylinder(radius, height, radial, 96), radius,
-        { amp: params.relief ?? 0.06, ropes, round: params.round ?? 0.45,
-          vary: params.vary ?? 0.28, wobble: params.wobble ?? 0.45,
-          teeth: params.teeth ?? 2, teethDepth: params.teethDepth ?? 0.18 });
+      const p = pipedParams(params);
+      // ⚠️ RADIAL TESSELLATION IS PER FIN, NOT PER STROKE. A star tip puts `points` fins inside every
+      // stroke, so the finest thing on the wall is `ropes × points` wide, not `ropes` — resolve the
+      // stroke and the fins alias into a shimmer. Up the wall the strokes are near-constant, so the
+      // height count stays modest; it carries the per-stroke WANDER, so it can no longer be a token 64.
+      const radial = Math.min(1024, Math.max(240, p.ropes * p.points * 10));
+      return displacePiped(denseCylinder(radius, height, radial, 96), radius, { ...p, amp: p.relief });
     }
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
@@ -291,15 +344,12 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
       return (_theta, v) => a * ribbedProfile(v, bands, round);   // constant around → depends only on v
     }
     case 'piped': {
-      const a = (params.relief ?? 0.06) * radius;
+      const p = pipedParams(params);
       // ⚠️ THE SAME FIELD THE GEOMETRY USES, imported rather than re-derived. A sampler that kept its
       // own copy of the profile is a second place for the two to disagree, and the symptom is a
       // decoration hovering off a wall that moved underneath it.
-      const field = makeRopeField({
-        ropes: params.ropes ?? 44, round: params.round ?? 0.45, vary: params.vary ?? 0.28,
-        wobble: params.wobble ?? 0.45, teeth: params.teeth ?? 2, teethDepth: params.teethDepth ?? 0.18,
-      });
-      return (theta, v) => a * field(theta / TAU + 0.5, v);
+      const field = makeRopeField(p);
+      return (theta, v) => p.relief * radius * field(theta / TAU + 0.5, v);
     }
     case 'weave': {
       // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.
@@ -326,10 +376,10 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
  * The centre gets a small MOUND — where the piping bag lifts off, a real spiral finishes in a peak,
  * and without it the coils crowd into a flat knot.
  */
-export function makeSpiralField({ coils, round, teeth, teethDepth, centre }) {
+export function makeSpiralField({ nozzle, coils, round, points, groove, centre }) {
   return (rFrac, theta) => {
     const s = coils * (1 - rFrac) + theta / TAU;
-    const coil = strokeSection(s - Math.floor(s), round, teeth, teethDepth);
+    const coil = strokeSection(s - Math.floor(s), nozzle, { round, points, groove });
     const x = rFrac * coils;                       // distance from the middle, in coil widths
     return coil + centre * Math.exp(-x * x * 0.7);
   };
@@ -395,16 +445,17 @@ function polarDisc(rim, rNominal, rings, segs, h) {
  */
 export function buildStyledTop(wall, top, radius, height, params = {}) {
   if (top !== 'spiral') return null;
+  const p = pipedParams(params);
   const coils  = params.coils ?? 6;
-  const relief = (params.relief ?? 0.06) * radius;
+  const relief = p.relief * radius;
   const wallAt = makeWallReliefSampler(wall, radius, params, height);
   /* ⚠️ THE RIM TAKES THE WALL'S MAXIMUM ACROSS THE SEGMENT IT SPANS, not the crest at its own angle.
    * The lid and the wall sample the circle at different angles (different counts, and three's
    * cylinder starts its θ elsewhere), so a rim vertex sitting exactly ON the crest line lets the
    * wall bulge past the lid's chord in between and opens a pinhole there. Sampling the max over the
-   * span it has to cover closes every one of them without a lip: at 44 strokes the field climbs from
-   * groove to crest in about four degrees, so "a small constant margin" is not a fix. */
-  const segs = Math.min(640, Math.max(240, (params.ropes ?? 44) * 12));
+   * span it has to cover closes every one of them without a lip: a star tip's fins climb from groove
+   * to crest in about a degree, so "a small constant margin" is not a fix. */
+  const segs = Math.min(1024, Math.max(240, p.ropes * p.points * 10));
   const span = Math.PI / segs;                                   // half a segment either side
   const rim = wallAt
     ? (theta) => {
@@ -413,16 +464,8 @@ export function buildStyledTop(wall, top, radius, height, params = {}) {
         return radius + Math.max(0, m) + 0.002 * radius;          // + a hair for the chord itself
       }
     : () => radius;
-  // Across a coil the teeth have to resolve, so rings scale with the coil count.
-  const rings = Math.min(320, Math.max(120, coils * 22));
-  /* ⚠️ THE TOP HAS ITS OWN TOOTH COUNT, and it defaults to NONE. The wall is a star tip dragged up a
-   * chilled cake, so its strokes carry the tip's lines. The top of this finish is not piped at all —
-   * it is a spatula turned through the cream, which leaves a smooth coil. Rendered both: the wall's
-   * teeth on the top read as the groove of a record. */
-  const field = makeSpiralField({
-    coils, round: params.round ?? 0.45,
-    teeth: params.topTeeth ?? 0, teethDepth: params.teethDepth ?? 0.18,
-    centre: params.centre ?? 0.9,
-  });
+  // Across a coil the fins have to resolve, so rings scale with both the coil count and the tip.
+  const rings = Math.min(420, Math.max(120, coils * p.points * 8));
+  const field = makeSpiralField({ ...p, coils, centre: params.centre ?? 0.9 });
   return polarDisc(rim, radius, rings, segs, (rFrac, theta) => relief * field(rFrac, theta));
 }
