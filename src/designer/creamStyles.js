@@ -120,19 +120,18 @@ export const CREAM_STYLES = {
    * So the tip is chosen so that a stroke reads as ONE fat column: five points put under two on the
    * face, which is a broad rib with a hint of a line down it, exactly what the photograph shows.
    * `star12` is still in the registry for a close-up, where the twelve do resolve. */
-  /* ⚠️ THE TIP IS SOLVED FROM THE PHOTOGRAPH, not chosen. Measured off a finished cake: the ribs
-   * are about 11% of the tier's RADIUS each, so the circumference carries roughly 59 of them. A
-   * stroke shows `lobes/3` ribs on its face and is `2·t` wide, which fixes the tip once the rib
-   * width is known — and the four that hit 59 ribs are:
+  /* ⚠️ TWELVE POINTS WAS TRIED AND PUT BACK, and the arithmetic is why. Six points land in the
+   * visible HALF of a tube, but the two nearest ±90° sit at the SILHOUETTE — edge-on they compress
+   * to a line, and on a wall the silhouette is exactly where the neighbouring stroke meets it, so
+   * the neighbour covers them too. `lobes/3` read, never `lobes/2`.
    *
-   *     5 points → 0.60in nozzle, 35 strokes    8 points → 0.95in, 21 strokes
-   *     6 points → 0.71in, 29 strokes          12 points → 1.43in, 13 strokes
-   *
-   * ⚠️ TWELVE IS OUT, and that is what the photograph settles: it needs a stroke 43% of the radius
-   * wide and only thirteen of them round the cake, and the photograph plainly has more strokes than
-   * that. Five points at 0.60in is the one whose STROKE also looks like the photograph's, not just
-   * whose rib count does. */
-  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams({ width: 0.6 }) },
+   * Which makes twelve points a BIG tip: the ribs a viewer counts are `ropes × lobes/3`, so four
+   * ribs per stroke means a quarter as many strokes for the same rib count — 15 strokes each 40% of
+   * the radius wide, against 35 at 18%. It renders, and it is in the harness as `?noz=star12`, but
+   * it is not this wall. Five points at 0.60in is.
+   */
+  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5',
+           params: pipedParams({ width: 0.6 }) },
   /* ⚠️ KEPT BECAUSE IT IS A LOOK, not because it is a stage on the way to another one. Fine ropes
    * standing close together on the cake's side, each barely wider than a pencil — it reads as a
    * curtain of vertical strands rather than as the bold ribbed wall `piped` is aiming at, and
