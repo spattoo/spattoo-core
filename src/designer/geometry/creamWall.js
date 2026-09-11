@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
 import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
-import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from './creamPen.js';
+import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PRESSED_STAND } from './creamPen.js';
 
 // ── Styled cream walls — geometry strategies for the frosting STYLE axis ───────
 //
@@ -111,19 +111,20 @@ const ropeHash = (i) => {
 /* The stroke's size, in world units, DERIVED from how many go round — not a second knob that can
  * disagree with the first.
  *
- * The pen's PRESSED section spans −1…1 across the stroke and 0…1 out of the wall, so one `thickness`
- * gives a ribbon twice as wide as it is deep — which is what a vertical line of star piping measures.
+ * The pen's PRESSED section spans −1…1 across the stroke and 0…`PRESSED_STAND` out of the wall, so
+ * width and depth are two different numbers and both fall out of `ropes`:
  *
- *   • `ropes` strokes sit shoulder to shoulder when 2·thickness·ropes = 2π·Rc;
- *   • their crest is the tier radius, so Rc = radius − thickness.
+ *   • `ropes` strokes sit shoulder to shoulder when 2·w·ropes = 2π·Rc, w being the HALF-WIDTH;
+ *   • their crest is the tier radius, so Rc = radius − d, d being the DEPTH.
  *
  * Two lines that solve exactly, which is why there is no tolerance to tune here.
  */
 export function ropeSection(radius, { ropes, overlap }) {
-  //  t = π·k·(radius − t)/ropes  ⇒  t = π·k·radius / (ropes + π·k)
+  //  half-width w = t, depth d = t·PRESSED_STAND, spines on the (radius − d) circle:
+  //  t = π·k·(radius − t·stand)/ropes  ⇒  t = π·k·radius / (ropes + π·k·stand)
   const k = 1 + overlap;
-  const thickness = Math.PI * k * radius / (ropes + Math.PI * k);
-  return { thickness, w: thickness, d: thickness };
+  const thickness = Math.PI * k * radius / (ropes + Math.PI * k * PRESSED_STAND);
+  return { thickness, w: thickness, d: thickness * PRESSED_STAND };
 }
 
 // The stroke's DEPTH — how far it stands off the cake. Kept as its own name because it is what the
@@ -220,8 +221,8 @@ function buildPipedWall(radius, height, p) {
    * narrower, so a viewer above the cake sees a ring of gold sawteeth around its base — the loudest
    * thing in three renders. A short collar out at the crest line closes them. It is not a cheat:
    * cream squeezed out at the foot of a vertical stroke is what a real one has there. */
-  const foot = new THREE.CylinderGeometry(radius - 0.15 * d, radius - 0.15 * d, 1.2 * thickness, 96, 1);
-  foot.translate(0, -height / 2 + 0.6 * thickness, 0);
+  const foot = new THREE.CylinderGeometry(radius - 0.15 * d, radius - 0.15 * d, 1.2 * d, 96, 1);
+  foot.translate(0, -height / 2 + 0.6 * d, 0);
   parts.push(foot);
   // ⚠️ The pen's own speed→width cue is OFF here. It reads the SPACING of hand-captured points, and
   // these are machine-even, so it would return a flat 1 and cost the work of finding that out. The
@@ -256,7 +257,7 @@ function buildPipedWall(radius, height, p) {
      * cake — the wall comes out patchy, some ropes a wide flat panel and their neighbours a thin
      * line. It is invisible on a freehand squiggle and unmissable on thirty-six parallel ones. */
     parts.push(buildPipingStroke(
-      ropeCentreline(theta, d, thickness, radius, height, sway0, i), p.nozzle, ti, feel, null, theta));
+      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel, null, theta));
   }
   return mergeWithCylindricalUv(parts, radius, height);
 }
@@ -513,5 +514,5 @@ export function buildStyledTop(wall, top, radius, height, params = {}) {
   const field = makeSwirlField({ turns: p.swirlTurns, rOut: radius });
   // Rings have to resolve the ripple across the radius; around, it is one wave per revolution.
   return polarDisc(radius, Math.min(360, Math.max(80, p.swirlTurns * 16)), 180,
-    (r, theta) => depth * field(r, theta), -1.4 * ropeSection(radius, p).thickness);
+    (r, theta) => depth * field(r, theta), -1.2 * ropeSection(radius, p).d);
 }

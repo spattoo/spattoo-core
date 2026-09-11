@@ -56,22 +56,31 @@ function roundProfile(n) {
  *
  *   x  outward, away from the surface   y  across the stroke, −1 … 1
  */
-function pressedProfile(lobes, depth, n = Math.max(64, lobes * 22)) {
+function pressedProfile(lobes, depth, stand = 1.05, n = Math.max(64, lobes * 22)) {
   const front = [], back = [];
   for (let i = 0; i <= n; i++) {
     const u = i / n;                                   // 0 … 1 across the width
     const y = 2 * u - 1;
-    // Fat in the middle, easing to nothing at the edges — the stroke's own silhouette.
-    const env = Math.pow(Math.sin(Math.PI * u), 0.45);
+    /* Fat in the middle, easing to nothing at the edges — the stroke's own silhouette.
+     *
+     * ⚠️ THE ENVELOPE EXPONENT IS WHY IT IS CREAM AND NOT CARD. Much under 0.5 and the sides go
+     * vertical — that is the knife edge a slab has and a rope does not, and it rendered as a wall
+     * of paper strips. `stand` sets how proud the section is against its own half-width; ABOUT ONE
+     * is what a pressed stroke measures, and 1.5 was tried and is wrong: the strokes stop touching
+     * and stand off the cake as separate slats with the body visible between them. */
+    const env = Math.pow(Math.sin(Math.PI * u), 0.62);
     // The tip's ribs. ⚠️ The exponent is what makes a RIB rather than a corrugation: a bare cosine
     // gives ribs and grooves the same width, and a piped rib is much the fatter of the two.
     const groove = Math.pow(0.5 - 0.5 * Math.cos(TAU_2D * lobes * u + Math.PI), 1.7);
-    front.push([env * (1 - depth * groove), y]);
+    front.push([stand * env * (1 - depth * groove), y]);
     // A shallow rounded back, so it is a solid pressed on rather than a zero-thickness sheet.
     back.push([-0.16 * env, y]);
   }
   return [...front, ...back.reverse()];
 }
+// How proud a pressed stroke stands, as a multiple of its half-width. Exported because the caller
+// sizing a wall of them has to know the section's aspect to place their spines.
+export const PRESSED_STAND = 1.05;
 const TAU_2D = Math.PI * 2;
 
 /* ── A PETAL APERTURE, which is not a radius ─────────────────────────────────────────────────────

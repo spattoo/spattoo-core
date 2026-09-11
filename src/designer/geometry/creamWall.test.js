@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ropeRadius, pipedBodyRadius, pipedParams, makeSwirlField,
+  ropeRadius, ropeSection, pipedBodyRadius, pipedParams, makeSwirlField,
   buildStyledWall, buildStyledTop, makeWallReliefSampler,
 } from './creamWall.js';
 import { NOZZLE_BY_KEY, mergePenGeometries } from './creamPen.js';
@@ -32,10 +32,11 @@ describe('the tip comes from the cream pen, not from here', () => {
 
 describe('rope size is DERIVED, so nothing can disagree with it', () => {
   it('lays `ropes` strokes shoulder to shoulder with no overlap', () => {
-    // The pen's PRESSED section spans −1…1 across and 0…1 out, so half-width = depth = thickness.
+    // The pen's PRESSED section spans −1…1 across and 0…PRESSED_STAND out, so a stroke's half-width
+    // and its depth are two different numbers — and the spines ride the (radius − depth) circle.
     const p = { ropes: 36, overlap: 0 };
-    const t = ropeRadius(1, p);
-    expect(2 * t * p.ropes).toBeCloseTo(TAU * (1 - t), 6);   // spines on the (radius − t) circle
+    const { w, d } = ropeSection(1, p);
+    expect(2 * w * p.ropes).toBeCloseTo(TAU * (1 - d), 6);
   });
 
   it('⚠️ puts the CREST on the tier radius — the cake is the size it says it is', () => {
