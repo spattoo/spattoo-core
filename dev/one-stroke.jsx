@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import './scene.js';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import { Canvas } from '@react-three/fiber';
+import { useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { buildPipingStroke } from '../src/designer/geometry/creamPen.js';
@@ -30,6 +31,44 @@ const t = Number(q.get('t') || (onCake ? ropeSection(R, P).w : 0.16));
  * only faces the viewer at a quarter turn. On a cake this is the SAME roll the wall applies to every
  * stroke (its own angle), which is what keeps the tip presenting the same face all the way round. */
 const roll = Number(q.get('roll') ?? Math.PI / 2);
+const stack = Number(q.get('stack') || 0);   // ?stack=N — N flat stars, laid one on another
+
+/* ⚠️ A STACK OF FLAT STARS — the construction Sandeep described, built literally rather than
+ * approximated by a sweep. Cut a sharp star out of card, lay it on the floor, and keep laying more
+ * on top: that stack IS a piped stroke. `?stack=N` builds exactly that, N thin star SLABS, so the
+ * structure can be looked at instead of argued about. Each slab is the same sharp star polygon —
+ * no rounding, no relaxing, no gaussian slots — and they are stacked with a whisper of turn and
+ * size between them, which is the only thing a hand adds.
+ */
+function starSlabShape(points, depth) {
+  const shape = new THREE.Shape();
+  for (let k = 0; k < 2 * points; k++) {
+    const a = (k * Math.PI) / points, r = (k % 2 === 0) ? 1 : 1 - depth;
+    const x = Math.cos(a) * r, y = Math.sin(a) * r;
+    if (k === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+  }
+  shape.closePath();
+  return shape;
+}
+
+function StarStack({ points, depth, n, height, thickness, wobble, turn, roll, x = 0, z = 0 }) {
+  const geos = useMemo(() => {
+    const shape = starSlabShape(points, depth);
+    const slab = height / n;
+    return Array.from({ length: n }, (_, i) => {
+      const g = new THREE.ExtrudeGeometry(shape, { depth: slab, bevelEnabled: false, curveSegments: 1 });
+      g.rotateX(-Math.PI / 2);                                  // lay the star flat, extrude upward
+      const wob = 1 + wobble * (Math.sin(i * 0.31) * 0.6 + Math.sin(i * 0.13 + 1.7) * 0.4);
+      g.scale(thickness * wob, 1, thickness * wob);
+      g.rotateY(roll + i * turn);            // a POINT faces the viewer, and the stack turns a hair as it rises
+      g.translate(x, -height / 2 + i * slab, z);
+      return g;
+    });
+  }, [points, depth, n, height, thickness, wobble, turn, roll, x, z]);
+  return geos.map((g, i) => (
+    <mesh key={i} geometry={g} castShadow receiveShadow><meshPhysicalMaterial color="#F6EBD8" {...creamMaterial()} /></mesh>
+  ));
+}
 
 function creamMaterial() {
   const m = frostingDef('buttercream').material;
@@ -68,7 +107,12 @@ createRoot(document.getElementById('root')).render(
     <Canvas camera={onCake ? { position: [5.0, 0.3, 0.9], fov: 34 } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
       <SceneLights shadows />
-      {onCake ? <>
+      {stack ? (
+        <StarStack points={Number(q.get('points') || 5)} depth={Number(q.get('depth') || 0.55)}
+          n={stack} height={2.0} thickness={t}
+          wobble={Number(q.get('wob') ?? 0.012)} turn={Number(q.get('turn') ?? 0.002)}
+          roll={Number(q.get('roll') ?? Math.PI / 2)} />
+      ) : onCake ? <>
         <Cake />
         {/* ⚠️ SPACED AND ROLLED BY THE WALL'S OWN NUMBERS. `ropeSection` says how many go round at
             this nozzle width, so `?n=` neighbours land exactly where the tier would put them — the

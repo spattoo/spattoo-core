@@ -188,7 +188,7 @@ function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
      * depth, the end caps came out three times longer than the tuck allowed for and hung below the
      * cake as flat white flaps lying on the board. */
     const f = k / N;
-    const y = height / 2 - 0.7 * cap - f * (height - 0.2 * cap);
+    const y = height / 2 - 1.3 * cap - f * (height - 0.8 * cap);
     const sway = sway0 * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
     const th = theta + sway;
     pts.push([Rc * Math.cos(th), y, Rc * Math.sin(th)]);
@@ -333,7 +333,7 @@ export function pipedParams(params = {}) {
     nozzle,
     // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
     width:   Math.max(0.05, params.width ?? 0.5),
-    overlap: Math.max(-0.3, params.overlap ?? -0.06),
+    overlap: Math.max(-0.3, params.overlap ?? 0.1),
     press:   Math.min(1, Math.max(0, params.press ?? 0)),
     vary:    params.vary    ?? 0.34,
     wobble:  params.wobble  ?? 0.85,
@@ -535,7 +535,11 @@ export function buildStyledTop(wall, top, radius, height, params = {}) {
    * stroke's section was half swallowed by the lid, which reads exactly like piping done inside the
    * cake. You cannot pipe inside a cake. The strokes sit ON the side; the top ends where the side
    * begins, and their ends stand proud of it as the crown a real vertical piped tier has. */
-  const rLid = pipedBodyRadius(radius, p);
+  /* ⚠️ OUT TO THE CREST. Left at the body radius the lid stops a whole stroke short, and from
+   * DIRECTLY ABOVE the tier becomes a disc ringed by every stroke's cut-off end — a torn-looking
+   * crown of star sections, which is not what any cake has. The reference photograph's top is a
+   * clean disc with the ribs only on the side. */
+  const rLid = radius - 0.15 * ropeSection(radius, p).w;
   const depth = p.swirl * radius;
   const field = makeSwirlField({ turns: p.swirlTurns, rOut: rLid });
   // Rings have to resolve the ripple across the radius; around, it is one wave per revolution.

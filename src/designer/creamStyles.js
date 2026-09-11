@@ -40,7 +40,7 @@ function pipedParams(over = {}) {
      * valley between two of them only reaches the circle their spines ride — a 7% dip, which reads
      * as a scratch. Spaced slightly APART, the valley floor is the cake's own side a whole stroke
      * further in, and the rib stands up. It cannot show a hole: the body is right there behind. */
-    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', -0.06), user: false },
+    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', 0.1), user: false },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
      * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
      * SIDE, NOT SUNK IN. You cannot pipe inside a cake.
