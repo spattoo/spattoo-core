@@ -81,9 +81,38 @@ function displaceRibbed(geo, radius, { amp, bands, round }) {
  *
  * Integer `ropes` keeps the ±π seam continuous, the same rule swirl's integer lobes follow: u/τ+0.5
  * runs 0..1 across the seam and sin(0) = sin(π) = 0, so the groove lands exactly on the join. */
-function displacePiped(geo, radius, { amp, ropes, round }) {
+/* ⚠️ AND IT HAS TO BE IRREGULAR, or it reads as a FLUTED VASE rather than as cream.
+ *
+ * A perfectly periodic profile is the signature of a manufactured object — turned, moulded or
+ * extruded. Nothing about the lighting or the material rescues it; it was called "paper" on sight.
+ * A baker holds a bag and drags it up a chilled cake by hand, so real ropes differ in thickness and
+ * wander a little on the way up. Two cheap deviations buy all of that:
+ *
+ *   vary   per-rope DEPTH. Each rope keeps its own multiplier the whole way up, so one is fatter
+ *          than its neighbour exactly as a hand-squeezed one is.
+ *   wobble a slow ANGULAR drift with height, so a rope leans instead of running dead plumb.
+ *
+ * ⚠️ BOTH MUST SURVIVE THE ±π SEAM. `wobble` depends only on v, so it shifts every rope together and
+ * cannot open a gap. `vary` is indexed by rope MODULO the count, so the rope at u = −π and the rope
+ * at u = +π are the same rope and get the same multiplier. Index by raw floor() instead and the
+ * cake has one visible vertical scar down the back.
+ */
+const ropeHash = (i) => {
+  // Deterministic per-rope value in 0..1. A cake must look the same on every reload and on every
+  // device — Math.random() here would make the same design render differently twice.
+  const x = Math.sin((i + 1) * 12.9898) * 43758.5453;
+  return x - Math.floor(x);
+};
+
+function displacePiped(geo, radius, { amp, ropes, round, vary, wobble }) {
   const a = amp * radius;
-  return displaceSide(geo, (u, _v) => a * ribbedProfile(u / TAU + 0.5, ropes, round));
+  return displaceSide(geo, (u, v) => {
+    const drift = wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes;   // scaled by rope width
+    const f = u / TAU + 0.5 + drift;
+    const idx = ((Math.floor(f * ropes) % ropes) + ropes) % ropes;  // modulo → seam-safe
+    const depth = 1 + vary * (ropeHash(idx) - 0.5) * 2;
+    return a * depth * ribbedProfile(f, ropes, round);
+  });
 }
 
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
@@ -156,10 +185,12 @@ export function buildStyledWall(wall, radius, height, params = {}) {
       // Vertical ropes need RADIAL tessellation that scales with the rope count (else the tubes
       // facet) — the mirror of ribbed, which scales height segments instead. Up the wall they are
       // constant, so the height count can stay modest.
-      const ropes = params.ropes ?? 24;
+      const ropes = params.ropes ?? 30;
       const radial = Math.min(512, Math.max(220, ropes * 12));
-      return displacePiped(denseCylinder(radius, height, radial, 64), radius,
-        { amp: params.relief ?? 0.05, ropes, round: params.round ?? 1.0 });
+      // Height segments carry the WOBBLE now, so they can no longer be a token 64.
+      return displacePiped(denseCylinder(radius, height, radial, 96), radius,
+        { amp: params.relief ?? 0.06, ropes, round: params.round ?? 0.45,
+          vary: params.vary ?? 0.28, wobble: params.wobble ?? 0.10 });
     }
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
@@ -205,10 +236,16 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
       return (_theta, v) => a * ribbedProfile(v, bands, round);   // constant around → depends only on v
     }
     case 'piped': {
-      const a = (params.relief ?? 0.05) * radius;
-      const ropes = params.ropes ?? 24, round = params.round ?? 1.0;
-      // Constant UP the wall → depends only on theta, the mirror of ribbed's v-only sampler.
-      return (theta, _v) => a * ribbedProfile(theta / TAU + 0.5, ropes, round);
+      const a = (params.relief ?? 0.06) * radius;
+      const ropes = params.ropes ?? 30, round = params.round ?? 0.45;
+      const vary = params.vary ?? 0.28, wobble = params.wobble ?? 0.10;
+      // ⚠️ Mirrors displacePiped EXACTLY, drift and per-rope depth included. A sampler that kept the
+      // tidy periodic version would seat decorations on a wall that is no longer there.
+      return (theta, v) => {
+        const f = theta / TAU + 0.5 + wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes;
+        const idx = ((Math.floor(f * ropes) % ropes) + ropes) % ropes;
+        return a * (1 + vary * (ropeHash(idx) - 0.5) * 2) * ribbedProfile(f, ropes, round);
+      };
     }
     case 'weave': {
       // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.

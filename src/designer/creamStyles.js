@@ -58,9 +58,16 @@ export const CREAM_STYLES = {
   piped: {
     label: 'Piped Ropes', wall: 'piped',
     params: [
-      { key: 'relief', label: 'Depth',     min: 0,   max: 0.12, step: 0.005, default: 0.05, user: true },
-      { key: 'ropes',  label: 'Ropes',     min: 8,   max: 48,   step: 1,     default: 24,   user: true },
-      { key: 'round',  label: 'Roundness', min: 0.4, max: 2,    step: 0.1,   default: 1.0,  user: false },
+      { key: 'relief', label: 'Depth',     min: 0,   max: 0.12, step: 0.005, default: 0.06, user: true },
+      { key: 'ropes',  label: 'Ropes',     min: 8,   max: 48,   step: 1,     default: 30,   user: true },
+      // ⚠️ BELOW 1, and that is the whole difference between cream and folded card. `round` is an
+      // exponent on sin²: at 1.0 the profile sits near zero across a wide band, so the wall is FLAT
+      // PANELS meeting at a fold. Below 0.5 it climbs straight off the valley — a narrow groove with
+      // a round tube either side, which is what a star tip leaves. Judged on the real scene.
+      { key: 'round',  label: 'Roundness', min: 0.3, max: 1.2,  step: 0.05,  default: 0.45, user: false },
+      // The two that stop it reading as a turned vase — see displacePiped.
+      { key: 'vary',   label: 'Hand vary', min: 0,   max: 0.6,  step: 0.02,  default: 0.28, user: false },
+      { key: 'wobble', label: 'Lean',      min: 0,   max: 1.5,  step: 0.05,  default: 0.10, user: false },
     ],
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
