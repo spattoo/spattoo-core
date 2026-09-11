@@ -51,9 +51,15 @@ export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'c
 
 /* ── How thick a sheet is, and whether its edge is chamfered ─────────────────────────────────────
  *
- * ⚠️ A METALLIC SHEET IS THICKER AND ITS EDGE IS CHAMFERED, and that is the whole of what makes it
- * look GLOSSY rather than drawn. Reported from the app: "not as glossy as my reference", and "the
- * ring is just an outline of a ring" — which is one complaint, not two.
+ * ⚠️ A METALLIC SHEET CARRIES A HAIRLINE CHAMFER ON ITS CUT EDGE, AND NOTHING ELSE. It is exactly
+ * as thick as plain card, because it IS card.
+ *
+ * ⚠️ IT WAS TWO AND A HALF TIMES THICKER FOR ONE ROUND, and that is worth keeping written down. The
+ * gloss was being chased through geometry at the time — a chamfer needs depth to sit on — and the
+ * result was reported back as "this is like metal not metallic paper". Correct: a deep bevelled edge
+ * is a piece cut from PLATE. Metallic card is foil laminated onto board, and its edge is a cut, not
+ * a moulding. Once the gloss moved to the reflection it needed no thickness at all, so the thickness
+ * went back to what a card is.
  *
  * The cause is that a cut card's face is PERFECTLY FLAT, and both ways of lighting a flat face give
  * it a single tone:
@@ -68,14 +74,11 @@ export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'c
  * better lit; it is CURVED, so it has a spread of normals and breaks the environment into bands.
  * `topperMatcap.js` says exactly this and says it is about geometry rather than material.
  *
- * So the gloss has to be geometry, and a real one has it: a topper is cut from 3mm acrylic or from
- * board, and the cut EDGE catches the light all the way round every contour. That edge was being
- * thrown away — the sheets extruded at about 1.2% of their width with `bevelEnabled: false`, which
- * is a foil, not a card. A metallic sheet is now about 3% (a real 3mm on a real 100mm piece) with a
- * chamfer of half of it, so every contour carries a bright rim that turns with the cake.
+ * The chamfer is what a guillotined edge does: a fine bright line all the way round every contour.
+ * It is a real part of the look and it is NOT where the gloss comes from — that lesson cost a round.
  *
- * ⚠️ PLAIN CARD IS LEFT ALONE, thin and unchamfered. Printed card IS a foil-thin matte thing, it has
- * no shine to catch, and thickening it would move every topper already saved.
+ * ⚠️ PLAIN CARD IS LEFT ALONE, unchamfered. Printed card has no shine to catch on its edge, and the
+ * thickness of every topper already saved must not move.
  *
  * ⚠️ AND THE CHAMFER IS CAPPED BY THE PIECE, not just by the depth. `ExtrudeGeometry` walks the
  * outline inward by `bevelSize`, and a bevel wider than a thin feature — the counter of an "8", the
@@ -84,15 +87,23 @@ export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'c
  */
 export function cardExtrude(depth, finish, pieceSize = 1) {
   if (!isMetallicCard(finish)) return { depth, bevelEnabled: false };
-  const thick = depth * 2.5;
-  const bevel = Math.min(thick * 0.5, pieceSize * 0.012);
+  /* ⚠️ A HAIRLINE, NOT A SLAB — AND IT USED TO BE A SLAB. The chamfer arrived when the gloss was
+   * being chased through geometry, so the sheet was thickened two and a half times to give the
+   * chamfer something to sit on. That worked and it made the wrong thing: reported as "this is like
+   * metal not metallic paper". It was — a 3mm bevelled edge is a piece cut from PLATE, and metallic
+   * card is foil laminated onto board. The gloss now comes from the reflection (see `cardEnvMap`),
+   * which needs no thickness at all, so the thickness goes back to what a card actually is.
+   *
+   * The chamfer stays, at a hairline. A guillotined card really does carry a fine bright line along
+   * its cut edge, and at this size it reads as the edge of a sheet rather than as a moulding. */
+  const bevel = Math.min(depth * 0.28, pieceSize * 0.0025);
   return {
-    depth: thick,
+    depth,
     bevelEnabled: true,
     bevelThickness: bevel,
     bevelSize: bevel,
     bevelOffset: 0,
-    bevelSegments: 2,
+    bevelSegments: 1,
   };
 }
 
@@ -176,17 +187,30 @@ const ENV_STOPS = [
    * room has a mullion, a shelf, an edge. The break has to fall INSIDE the few degrees a small flat
    * piece actually sweeps, or it is never seen at all.
    */
-  [1.00, '#E8E8E8'],   // ceiling
-  [0.74, '#E8E8E8'],
-  [0.64, '#6E6E6E'],   // a dark band above level — seen when a piece tips back
+  /* ⚠️ THE DARKS HAVE A FLOOR, AND FINDING IT TOOK BOTH MISTAKES. Run down to #2E2E2E the piece went
+   * BROWN at the angles that sampled them — the same complaint that started all this, arriving from
+   * the other end; a gold in a real room is never brown, because a room bounces light back at it
+   * from everywhere. Lifted to #909090 and above, it measured a spread of 0.001: one flat colour,
+   * with no metal in it at all. The contrast that makes a metal read has to happen between BRIGHT
+   * and MID, not between bright and unlit — a room is a room, not a void with a lamp in it. These
+   * are the middle, and both failures are written down because each looked like the fix for the
+   * other.
+   *
+   * ⚠️ AND A ONE-ANGLE MEASUREMENT WILL MISLEAD YOU HERE, which is how the flat version got as far
+   * as it did. A mirror's spread depends entirely on where it is looked at from — the same piece
+   * read 0.001 from one camera and far more from another. Judge a change from two camera positions
+   * at least, and look for the piece staying GOLD at both rather than for one good number. */
+  [1.00, '#EAEAEA'],   // ceiling
+  [0.74, '#EAEAEA'],
+  [0.64, '#8A8A8A'],   // a band above level — seen when a piece tips back
   [0.58, '#FFFFFF'],
   [0.50, '#FFFFFF'],
-  [0.45, '#585858'],   // ⚠️ the break, inside the sweep
+  [0.45, '#7C7C7C'],   // ⚠️ the break, inside the sweep
   [0.40, '#FFFFFF'],
   [0.30, '#FFFFFF'],   // the main source, below level, where a standing piece looks
-  [0.22, '#6A6A6A'],
-  [0.12, '#CFCFCF'],
-  [0.00, '#2E2E2E'],   // the floor: the dark a gold needs to be gold against
+  [0.22, '#828282'],
+  [0.12, '#D2D2D2'],
+  [0.00, '#565656'],   // the floor: mid, never black
 ];
 
 function drawCardEnv(w = 512, h = 256) {
