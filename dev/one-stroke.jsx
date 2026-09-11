@@ -86,10 +86,18 @@ function StarStack({ points, depth, notch, n, height, thickness, wobble, turn, r
   ));
 }
 
+/* ⚠️ `?rough=` / `?sheen=` / `?coat=` OVERRIDE THE CREAM, because a shape can be right and still be
+ * invisible. Buttercream ships near-Lambertian (roughness 0.95, sheen 0, clearcoat 0) and under a
+ * soft environment a Lambertian surface gives two faces fifteen degrees apart almost the same
+ * brightness — so a star's flanks read as ONE merged panel however sharp the geometry between them
+ * is. These let the material be ruled in or out without touching the frosting table. */
 function creamMaterial() {
   const m = frostingDef('buttercream').material;
-  return { roughness: m.roughness, metalness: 0, sheen: m.sheen, sheenRoughness: m.sheenRoughness,
-           sheenColor: m.sheenColor, clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness };
+  return {
+    roughness: Number(q.get('rough') ?? m.roughness), metalness: 0,
+    sheen: Number(q.get('sheen') ?? m.sheen), sheenRoughness: m.sheenRoughness, sheenColor: m.sheenColor,
+    clearcoat: Number(q.get('coat') ?? m.clearcoat), clearcoatRoughness: m.clearcoatRoughness,
+  };
 }
 
 /* `?n=` strokes, centred on the camera's side of the cake and spaced the way the wall spaces them. */
@@ -99,11 +107,39 @@ function strokeAngles() {
   return Array.from({ length: n }, (_, i) => (i - (n - 1) / 2) * step);
 }
 
+/* ⚠️ A CREASE IS DARK BECAUSE IT IS OCCLUDED, and nothing in the render was doing occlusion.
+ *
+ * Measured before reaching for this: sheen, roughness and clearcoat all change the stroke by
+ * NOTHING. That is not a surprise once stated — the scene's light is very nearly a uniform dome, and
+ * under a uniform dome a surface's brightness barely depends on which way it faces. So two flanks
+ * fifteen degrees apart come out the same shade and the star reads as one merged panel, however
+ * sharp the geometry between them is. The normals were already right; there was simply no cue.
+ *
+ * What makes a crease dark in a photograph is that its own walls block most of the sky from it.
+ * That is ambient occlusion, and it can be baked straight onto the vertices here: a vertex's depth
+ * inside the section is exactly how occluded it is. No texture, no UVs, no post pass.
+ *
+ * `?ao=` scales it; 0 is the render as it was.
+ */
+function bakeCreaseAO(geo, thickness, ao) {
+  const pos = geo.getAttribute('position');
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const d = Math.hypot(pos.getX(i), pos.getZ(i)) / thickness;   // 1 at the crest, less in a crease
+    const k = 1 - ao * (1 - Math.min(1, Math.max(0, d)));
+    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return geo;
+}
+
 function Stroke({ x = 0, z = 0, roll: r }) {
   const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, 1.0 - i * 0.5, z));
   const geo = buildPipingStroke(pts, noz, t, { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 }, null, r);
   if (!geo) return null;
-  return <mesh geometry={geo} castShadow receiveShadow><meshPhysicalMaterial color="#F6EBD8" {...creamMaterial()} /></mesh>;
+  bakeCreaseAO(geo, t, Number(q.get('ao') ?? 0.55));
+  return <mesh geometry={geo} castShadow receiveShadow>
+    <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;
 }
 
 /* The cake under it, placed by `pipedBodyRadius` — the same call the wall makes. At press 0 the

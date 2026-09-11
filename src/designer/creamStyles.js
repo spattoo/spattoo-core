@@ -41,6 +41,12 @@ function pipedParams(over = {}) {
      * as a scratch. Spaced slightly APART, the valley floor is the cake's own side a whole stroke
      * further in, and the rib stands up. It cannot show a hole: the body is right there behind. */
     { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', 0.1), user: false },
+    /* ⚠️ WITHOUT THIS THE STAR HAS NO VISIBLE SIDES. The scene's light is nearly a uniform dome, and
+     * under one of those a surface's brightness barely depends on which way it faces — so two flanks
+     * fifteen degrees apart shade identically and the whole stroke reads as one flat panel. Measured:
+     * sheen, roughness and clearcoat all change it by nothing. What separates the faces in a
+     * photograph is that a crease's own walls block the sky from it. See bakeCreaseAO. */
+    { key: 'ao',      label: 'Crease shade', min: 0, max: 1, step: 0.05, default: d('ao', 0.6), user: true },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
      * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
      * SIDE, NOT SUNK IN. You cannot pipe inside a cake.

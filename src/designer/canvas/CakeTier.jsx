@@ -1345,7 +1345,12 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, stripes = null, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
+                    gradient, stripes = null, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null,
+                    /* ⚠️ Baked crease occlusion, for geometry that carries a `color` attribute (the piped
+                     * wall). The scene's light is nearly a uniform dome, so a sharp crease has no shading
+                     * of its own — it reads as a flat panel unless something darkens it. See bakeCreaseAO. */
+                    vertexColors = false,
+                    children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
@@ -1402,7 +1407,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
+      <meshPhysicalMaterial ref={matRef} vertexColors={vertexColors} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
         map={finishMaps?.map ?? null}
         roughness={finishMaps ? 1 : (surf?.roughness ?? 0.68)}
         metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}
@@ -1875,6 +1880,7 @@ export default function CakeTier({
               The texture and gradient flow over the whole wall. */}
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
             grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
+            vertexColors={!!styledGeo.getAttribute?.('color')}
             gradient={effGradient} stripes={effStripes} geoSig={styledGeo.uuid} castShadow receiveShadow>
             {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
                 changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
