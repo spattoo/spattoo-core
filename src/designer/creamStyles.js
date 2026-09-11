@@ -35,16 +35,23 @@ function pipedParams(over = {}) {
     { key: 'ropes',   label: 'Strokes',  min: 10, max: 90, step: 1,    default: d('ropes', 36),    user: true },
     // How hard neighbours are pressed together. A hand overlaps; butted exactly, a crevice between
     // two ropes can reach the body underneath.
-    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.4, step: 0.02, default: d('overlap', 0.12), user: false },
+    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.3), user: false },
+    /* ⚠️ HOW FAR THE TIP WAS PUSHED IN, and the single most important number here. A baker does not
+     * balance ropes on a cake — they press the tip against it, so most of each rope is buried and
+     * what shows is a shallow rib. At 0 the ropes stand half proud with valleys a seventh of the
+     * tier deep between them, and every tip in the pen rendered as a curtain of hanging strips. */
+    { key: 'press',   label: 'Pressed in', min: 0, max: 0.95, step: 0.05, default: d('press', 0.6), user: true },
     // The two that stop it reading as a turned vase — no two strokes the same width, and each one
     // wandering on its own up the wall rather than the whole wall leaning together.
     { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.22),  user: false },
-    { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.02, default: d('wobble', 0.15), user: false },
-    /* The top coil, in rope DIAMETERS between turns: 1 is shoulder to shoulder, more spaces them out
-     * and lets the lid show between. ⚠️ There is no turn COUNT, on purpose — turns sit a diameter
-     * apart or they do not touch, so the count is a consequence of the tip and an authored one was
-     * free to contradict the tip it was drawn with. */
-    { key: 'coilGap', label: 'Top spacing', min: 0.6, max: 2.5, step: 0.05, default: d('coilGap', 1.0), user: true },
+    { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.6), user: false },
+    /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat
+     * with a few soft rings in it — a palette knife set in the middle of a smoothed top while the
+     * turntable spins. A coil of the same rope up there reads as heavy and busy, and that was the
+     * verdict on every version of it. `swirl` is a coefficient of radius, and it is an order of
+     * magnitude shallower than a rope on purpose. */
+    { key: 'swirlTurns', label: 'Top rings', min: 2, max: 16,   step: 1,     default: d('swirlTurns', 7),  user: true },
+    { key: 'swirl',      label: 'Top depth', min: 0, max: 0.04, step: 0.002, default: d('swirl', 0.012),   user: false },
   ];
 }
 
@@ -93,11 +100,20 @@ export const CREAM_STYLES = {
    * `wall`, `top` and the schema are identical across the rows; only the tip and its numbers differ.
    */
   piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams() },
+  piped_french: {
+    label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
+    // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
+    params: pipedParams({ ropes: 30 }),
+  },
+  piped_closed: {
+    label: 'Piped — closed star', wall: 'piped', top: 'spiral', nozzle: 'closed',
+    params: pipedParams({ ropes: 30 }),
+  },
   piped_round: {
     label: 'Piped — round tip', wall: 'piped', top: 'spiral', nozzle: 'round',
     // A smooth rope reads as one rib where a star reads as five, so it takes a finer, denser stroke
     // to cover the same cake without looking like a bundle of sausages.
-    params: pipedParams({ ropes: 48, coilGap: 1.05 }),
+    params: pipedParams({ ropes: 48 }),
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
   // displacement can't carry comb lines at sane mesh density). wall stays smooth; surfaceMap drives
@@ -129,7 +145,7 @@ export const CREAM_STYLES = {
   },
 };
 
-export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_round', 'rustic', 'chevron_weave'];
+export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
 export const DEFAULT_STYLE = 'smooth';
 
 export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_STYLE];

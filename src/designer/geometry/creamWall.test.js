@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import {
-  ropeRadius, pipedBodyRadius, pipedParams, spiralCentreline,
+  ropeRadius, pipedBodyRadius, pipedParams, makeSwirlField,
   buildStyledWall, buildStyledTop, makeWallReliefSampler,
 } from './creamWall.js';
 import { NOZZLE_BY_KEY, mergePenGeometries } from './creamPen.js';
@@ -58,9 +58,16 @@ describe('rope size is DERIVED, so nothing can disagree with it', () => {
   });
 });
 
-describe('pipedBodyRadius — the cake behind the ropes', () => {
-  it('reaches the line where two neighbouring ropes cross, so nothing shows between them', () => {
-    for (const p of [STAR, ROUND, pipedParams({ ropes: 12, overlap: 0 })]) {
+describe('pipedBodyRadius — how far the tip was pressed in', () => {
+  it('⚠️ buries most of each rope, or the wall is a curtain of hanging strips', () => {
+    // Left at the crevice line, half of every rope stands proud and the valleys are a seventh of the
+    // tier deep. `press` is what turns thirty-six ropes into a surface.
+    const t = ropeRadius(1, STAR);
+    expect(1 - pipedBodyRadius(1, STAR)).toBeLessThan(0.6 * t);
+  });
+
+  it('never goes below the line where two ropes cross — that would show the board through them', () => {
+    for (const p of [STAR, ROUND, pipedParams({ ropes: 12, overlap: 0, press: 0 })]) {
       const t = ropeRadius(1, p), Rc = 1 - t;
       const a = Rc * Math.sin(Math.PI / p.ropes);
       const crevice = Rc * Math.cos(Math.PI / p.ropes) - (a < t ? Math.sqrt(t * t - a * a) : 0);
@@ -68,8 +75,8 @@ describe('pipedBodyRadius — the cake behind the ropes', () => {
     }
   });
 
-  it('never reaches the crest, or there would be no ropes to see', () => {
-    expect(pipedBodyRadius(1, STAR)).toBeLessThan(1);
+  it('never reaches the crest, or there would be no ribs to see', () => {
+    expect(pipedBodyRadius(1, pipedParams({ press: 1 }))).toBeLessThan(1);
   });
 });
 
@@ -106,42 +113,39 @@ describe('makeWallReliefSampler describes the same wall the geometry builds', ()
   });
 });
 
-describe('the top coil', () => {
+describe('the top — a spatula swirl, not a coil', () => {
   it('is null for every style that leaves the top flat', () => {
     expect(buildStyledTop('piped', undefined, 1, 1.4, STAR)).toBeNull();
     expect(buildStyledTop('wave', null, 1, 1.4, {})).toBeNull();
   });
 
-  it('winds from the CENTRE outward, so the blunt start is the peak and the taper dies at the rim', () => {
-    const pts = spiralCentreline(1, 0.09, 1, 0.09);
-    expect(Math.hypot(pts[0][0], pts[0][2])).toBeCloseTo(0, 9);
-    expect(Math.hypot(pts.at(-1)[0], pts.at(-1)[2])).toBeGreaterThan(0.5);
+  it('joins itself at the ±π seam — a ring that did not would show as a crack to the middle', () => {
+    const f = makeSwirlField({ turns: 7, rOut: 1 });
+    for (const r of [0.15, 0.5, 0.95]) {
+      expect(f(r, Math.PI - 1e-7)).toBeCloseTo(f(r, -Math.PI + 1e-7), 5);
+    }
   });
 
-  it('spaces its turns by `coilGap` rope DIAMETERS — the pitch is the tip, not a free number', () => {
-    const turns = (coilGap) => {
-      const pts = spiralCentreline(1, 0.09, coilGap, 0);
-      let wound = 0;
-      for (let i = 1; i < pts.length; i++) {
-        const a0 = Math.atan2(pts[i - 1][2], pts[i - 1][0]), a1 = Math.atan2(pts[i][2], pts[i][0]);
-        let d = a1 - a0;
-        while (d > Math.PI) d -= TAU;
-        while (d < -Math.PI) d += TAU;
-        wound += d;
-      }
-      return Math.abs(wound) / TAU;
-    };
-    expect(turns(1)).toBeCloseTo((1 - 2 * 0.09) / (2 * 0.09), 1);
-    expect(turns(2)).toBeCloseTo(turns(1) / 2, 1);
+  it('is a spiral, not rings: one turn moves it exactly one ring inward', () => {
+    const turns = 7, f = makeSwirlField({ turns, rOut: 1 });
+    expect(f(0.5, 0)).toBeCloseTo(f(0.5 - 1 / turns, TAU), 9);
   });
 
-  it('covers the tier top and carries uvs, or a gradient has nothing to read', () => {
+  it('⚠️ stays SHALLOW — an order of magnitude under a rope, or the lid fights the wall', () => {
+    const geo = buildStyledTop('piped', 'spiral', 1, 1.4, STAR);
+    const pos = geo.getAttribute('position');
+    let top = -Infinity;
+    for (let i = 0; i < pos.count; i++) top = Math.max(top, pos.getY(i));
+    expect(top).toBeLessThan(0.4 * ropeRadius(1, STAR));
+  });
+
+  it('reaches the tier radius and carries uvs — it is the lid AND it covers the ropes\' ends', () => {
     const geo = buildStyledTop('piped', 'spiral', 1, 1.4, STAR);
     expect(geo.getAttribute('uv')).toBeTruthy();
     const pos = geo.getAttribute('position');
     let max = 0;
     for (let i = 0; i < pos.count; i++) max = Math.max(max, Math.hypot(pos.getX(i), pos.getZ(i)));
-    expect(max).toBeGreaterThanOrEqual(pipedBodyRadius(1, STAR) - 1e-9);
+    expect(max).toBeCloseTo(1, 6);
   });
 });
 
@@ -172,6 +176,20 @@ describe('the wall geometry', () => {
     expect(uMin).toBeGreaterThanOrEqual(0);
     expect(uMax).toBeLessThanOrEqual(1);
     expect(vMax - vMin).toBeGreaterThan(0.9);
+  });
+
+  it('⚠️ rolls every rope to face outward — without it the wall comes out patchy', () => {
+    // Each rope must reach the crest. `rmFrames` starts every vertical stroke from the same world
+    // direction, so an unrolled 1M shows a lobe to some ropes and a valley to others: those fall
+    // short of the radius and the wall reads as wide panels beside thin lines.
+    const pos = buildStyledWall('piped', 1, 1.4, STAR).getAttribute('position');
+    const reach = new Array(STAR.ropes).fill(0);
+    for (let i = 0; i < pos.count; i++) {
+      const th = Math.atan2(pos.getZ(i), pos.getX(i));
+      const k = Math.floor(((th + Math.PI) / TAU) * STAR.ropes) % STAR.ropes;
+      reach[k] = Math.max(reach[k], Math.hypot(pos.getX(i), pos.getZ(i)));
+    }
+    for (const r of reach) expect(r).toBeGreaterThan(0.985);
   });
 
   it('is deterministic — the same design must render the same twice', () => {

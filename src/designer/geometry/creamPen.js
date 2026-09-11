@@ -387,7 +387,15 @@ const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1
 // Build one freehand stroke: sweep the chosen nozzle profile (constant radius) through the
 // seated centerline points. `points` is [[x,y,z]…] or Vector3[]. Returns a BufferGeometry,
 // or null if there's nothing to draw.
-export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null) {
+/* `roll` turns the tip about its own axis, in radians.
+ *
+ * ⚠️ A ROPE TIP'S ROLL IS INVISIBLE ON A FREEHAND STROKE, WHICH IS WHY THIS DEFAULTED TO NOTHING —
+ * you cannot tell which of a 1M's five points is facing you on a single squiggle. Lay thirty-six of
+ * them side by side up a cake wall and you can tell instantly: `rmFrames` starts every vertical
+ * stroke from the same WORLD direction, so which lobe faces the viewer depends on where the rope sits
+ * round the cake, and the wall comes out patchy — some ropes a wide flat panel, their neighbours a
+ * thin line. Rolling each rope by its own angle makes every one present the same face. */
+export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null, roll = 0) {
   const noz = NOZZLE_BY_KEY[nozzleKey] || NOZZLE_BY_KEY[DEFAULT_NOZZLE];
   const feel = feelOverride ? { ...PEN_FEEL, ...feelOverride } : PEN_FEEL;
   let pts = points.map(toVec).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
@@ -405,8 +413,8 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
      * a caller with the real surface normal (or a nail's axis) should pass it. */
     up: noz.flat ? (upVec ? toVec(upVec) : new THREE.Vector3(0, 1, 0)) : null,
-    // Only a slit has an attitude worth setting; a rope's roll is invisible, so leaning it is noise.
-    roll: noz.flat ? (feel.leanDeg * Math.PI) / 180 : 0,
+    // A slit's own lean, plus whatever the caller asked for (see the note on `roll` above).
+    roll: roll + (noz.flat ? (feel.leanDeg * Math.PI) / 180 : 0),
   };
 
   /* The hand's own speed, mapped onto the swept samples. pushSweep resamples the control points

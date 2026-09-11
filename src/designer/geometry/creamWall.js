@@ -137,14 +137,22 @@ export function pipedBodyRadius(radius, p) {
   const a = Rc * Math.sin(Math.PI / p.ropes);          // half the gap between two centres
   const m = Rc * Math.cos(Math.PI / p.ropes);
   const h = a < t ? Math.sqrt(t * t - a * a) : 0;      // 0 when they only just touch
-  return Math.max(0.1 * radius, m - h);
+  const crevice = Math.max(0.1 * radius, m - h);
+  /* ⚠️ AND `press` IS WHAT MAKES IT A WALL RATHER THAN A FRINGE. A baker does not balance ropes on
+   * a cake, they push the tip against it — so most of each rope is IN the frosting and what shows
+   * is a shallow rib. Left at the crevice line, half of every rope stands proud, the valleys between
+   * them are a seventh of the tier deep, and the wall reads as a curtain of hanging strips. It looked
+   * like that with every tip in the pen, which is the tell that the tip was never the problem.
+   * Raising the body SWALLOWS the ropes; it cannot poke through them, because it stops at the crest.
+   */
+  return Math.min(radius - 0.05 * t, Math.max(crevice, radius - t * (1 - p.press)));
 }
 
 /* Where each rope's centreline runs. The centres ride a circle OUTSIDE the tier's nominal radius,
  * so the wall only ever grows outward — the same rule every other style here follows, and what lets
  * a flat cap sit under it without overhanging anything.
  */
-function ropeCentreline(theta, t, radius, height, wobble, seed) {
+function ropeCentreline(theta, t, radius, height, sway0, seed) {
   const Rc = radius - t;
   const pts = [];
   const N = 7;
@@ -157,11 +165,8 @@ function ropeCentreline(theta, t, radius, height, wobble, seed) {
      * turns into a crown of spikes. Run past the base, and the tapered ends finish inside the board
      * instead of hanging over it as a torn fringe. */
     const f = k / N;
-    const y = height / 2 - 0.3 * t - f * (height + 0.1 * t);
-    // ⚠️ A FRACTION OF A ROPE'S WIDTH, and a small one. This is a hand not holding a perfectly
-    // straight line, not a snake: at half a rope the strokes cross over each other and the wall
-    // reads as seaweed — which is what 0.5 looked like on the real scene.
-    const sway = wobble * t * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
+    const y = height / 2 - 0.9 * t - f * (height - 0.5 * t);
+    const sway = sway0 * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
     const th = theta + sway;
     pts.push([Rc * Math.cos(th), y, Rc * Math.sin(th)]);
   }
@@ -210,11 +215,26 @@ function buildPipedWall(radius, height, p) {
    * are CUT OFF by the board — so the taper is off and the centreline runs past the base, putting
    * the blunt end inside the board where nothing can see it. */
   const feel = { speedWidth: 0, tailDias: 0 };
+  /* ⚠️ HOW MUCH A ROPE MAY MOVE IS SET BY HOW FAR IT OVERLAPS ITS NEIGHBOUR, and getting that
+   * wrong is what made every star tip look like a FRINGE of hanging strips. Two ropes touch with
+   * `margin` to spare on each side; if they wander independently by more than that, a gap opens
+   * between them and the wall stops being a surface. The wander was an absolute distance before,
+   * which happened to be four times the margin — so the ropes were literally coming apart, and no
+   * amount of choosing a different tip was ever going to fix it.
+   *
+   * For the same reason `vary` may only ever make a rope FATTER. A rope 11% thinner than nominal is
+   * a rope that no longer reaches its neighbour. */
+  const margin = Math.max(0, t - Math.PI * (radius - t) / p.ropes);
+  const sway0 = p.wobble * 0.4 * margin;
   for (let i = 0; i < p.ropes; i++) {
-    const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.5 * (ropeHash(i + 700) - 0.5)) / p.ropes;
-    const ti = t * (1 + p.vary * (ropeHash(i) - 0.5));
+    const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.4 * (ropeHash(i + 700) - 0.5)) / p.ropes;
+    const ti = t * (1 + p.vary * 0.5 * ropeHash(i));
+    /* ⚠️ ROLLED TO FACE OUTWARD. `rmFrames` starts every vertical stroke from the same world
+     * direction, so without this the lobe a rope shows the viewer depends on where it sits round the
+     * cake — the wall comes out patchy, some ropes a wide flat panel and their neighbours a thin
+     * line. It is invisible on a freehand squiggle and unmissable on thirty-six parallel ones. */
     parts.push(buildPipingStroke(
-      ropeCentreline(theta, t, radius, height, p.wobble, i), p.nozzle, ti, feel));
+      ropeCentreline(theta, t, radius, height, sway0, i), p.nozzle, ti, feel, null, theta));
   }
   return mergeWithCylindricalUv(parts, radius, height);
 }
@@ -271,10 +291,14 @@ export function pipedParams(params = {}) {
   return {
     nozzle,
     ropes:   Math.max(6, params.ropes ?? 36),
-    overlap: params.overlap ?? 0.12,
+    overlap: params.overlap ?? 0.3,
+    press:   Math.min(0.95, Math.max(0, params.press ?? 0.6)),
     vary:    params.vary    ?? 0.22,
-    wobble:  params.wobble  ?? 0.15,
-    coilGap: params.coilGap ?? 1.0,
+    wobble:  params.wobble  ?? 0.6,
+    /* The top. ⚠️ A DIFFERENT TOOL, so a different shape: not the tip, and an order of magnitude
+     * shallower than a rope. See buildStyledTop. */
+    swirl:      params.swirl ?? 0.012,
+    swirlTurns: Math.max(1, params.swirlTurns ?? 7),
   };
 }
 
@@ -382,69 +406,91 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
   }
 }
 
-/* ── The cream SPIRAL on the tier top ──────────────────────────────────────────
+/* ── The tier TOP — a SPATULA SWIRL, not a coil ────────────────────────────────
  *
- * The other half of the reference cake, and the same rope: one long stroke wound from the rim in to
- * the middle, piped with the tip the wall was piped with. It ends where the bag lifts off, which
- * `buildPipingStroke` already thins to a point — so the peak in the centre of a piped top is not a
- * mound anybody had to model, it is what the tool does at the end of a stroke.
+ * ⚠️ THE REFERENCE CAKE'S TOP IS NEARLY FLAT. It carries a few soft concentric rings, the marks a
+ * palette knife leaves when it is set in the middle of a smoothed top and the turntable is spun.
+ * Piping a rope coil up there — the same tip the sides were piped with — gives a bold, busy lid that
+ * fights the wall for attention, and "not heavy spirals on the top" was the verdict on every one of
+ * them. The two surfaces are made with different tools and it shows.
  *
- * ⚠️ THE PITCH IS NOT A FREE NUMBER. Turns sit a rope's DIAMETER apart or they do not touch, so the
- * turn count is derived from the tip: (radius − t) / (2t · coilGap), with `coilGap` the only knob —
- * 1 is shoulder to shoulder, more is a spaced coil with the cake showing between. An authored turn
- * count was free to contradict the tip it was drawn with, and did.
+ * So the top is a DISC with a shallow ripple: the spiral is a pattern IN a flat surface, an order of
+ * magnitude shallower than a rope, and it carries no tip profile at all because no tip touched it.
  */
-export function spiralCentreline(radius, t, coilGap, y) {
-  const pitch = 2 * t * Math.max(0.4, coilGap);
-  const rOut = Math.max(2 * t, radius - 2 * t);     // outermost turn, tucked inside the wall's ropes
-  const turns = Math.max(1, rOut / pitch);
-  const n = Math.max(24, Math.round(turns * 24));  // ~15° per control point
-  const pts = [];
-  for (let k = 0; k <= n; k++) {
-    /* ⚠️ CENTRE OUTWARD, not rim inward, and it is the ends that decide it. A stroke begins at full
-     * width with a rounded cap and ENDS thinned to a point. Wound from the rim in, that puts a blunt
-     * cap sitting proud at the tier's edge — a stray blob, plainly visible — and tapers the coil
-     * away to nothing in the middle. Wound from the centre out, the cap IS the little peak a real
-     * spiral has where the bag was set down, and the taper dies against the wall's own ropes. */
-    const f = k / n;                               // 0 in the middle, 1 at the rim
-    const r = rOut * f;
-    const a = turns * TAU * f;
-    pts.push([r * Math.cos(a), y, r * Math.sin(a)]);
+export function makeSwirlField({ turns, rOut }) {
+  return (r, theta) => {
+    // One Archimedean coordinate: a turn inward per revolution, `turns` of them from rim to middle.
+    const sp = turns * (1 - Math.min(1, r / rOut)) + theta / TAU;
+    return 0.5 - 0.5 * Math.cos(TAU * sp);
+  };
+}
+
+/* A flat disc as a dense polar GRID.
+ *
+ * ⚠️ NOT `CircleGeometry`, and not a cylinder cap either: both are triangle FANS — every vertex sits
+ * on the rim and there is nothing in between to displace, so a height field applied to one gives a
+ * flat disc with a wavy edge. The centre is ONE vertex, not a ring of coincident ones, which would
+ * make degenerate triangles and NaN normals.
+ */
+function polarDisc(rOut, rings, segs, h, skirtY) {
+  const pos = [], idx = [], uv = [];
+  const push = (x, y, z) => { pos.push(x, y, z); uv.push(x / (2 * rOut) + 0.5, z / (2 * rOut) + 0.5); };
+  push(0, h(0, 0), 0);
+  for (let j = 1; j <= rings; j++) {
+    const r = rOut * j / rings;
+    for (let i = 0; i < segs; i++) {
+      const theta = -Math.PI + TAU * i / segs;
+      push(r * Math.cos(theta), h(r, theta), r * Math.sin(theta));
+    }
   }
-  return pts;
+  const ring = (j) => 1 + (j - 1) * segs;
+  for (let i = 0; i < segs; i++) idx.push(0, ring(1) + (i + 1) % segs, ring(1) + i);
+  for (let j = 1; j < rings; j++)
+    for (let i = 0; i < segs; i++) {
+      const a = ring(j) + i, b = ring(j) + (i + 1) % segs;
+      const c = ring(j + 1) + i, d = ring(j + 1) + (i + 1) % segs;
+      idx.push(a, b, c, b, d, c);
+    }
+  // A rim skirt, dropped far enough to overlap the tops of the wall's ropes: the lid has an edge
+  // instead of ending as a sheet of paper, and there is no ring of daylight under it.
+  const base = pos.length / 3;
+  for (let i = 0; i < segs; i++) { const o = (ring(rings) + i) * 3; push(pos[o], skirtY, pos[o + 2]); }
+  for (let i = 0; i < segs; i++) {
+    const a = ring(rings) + i, b = ring(rings) + (i + 1) % segs;
+    const c = base + i, d = base + (i + 1) % segs;
+    idx.push(a, b, c, b, d, c);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  geo.computeBoundingBox();
+  return geo;
 }
 
 /* The tier TOP for a styled cream finish, or `null` when the style leaves the top flat (every style
  * but `piped` today — the caller then renders the wall's own flat cap, exactly as before).
  *
- * ⚠️ THE RIM LOOKS AFTER ITSELF NOW, and that is worth recording because two commits went on fixing
- * it the hard way. While the wall was a DISPLACED cylinder it grew outward past its own flat cap,
- * so the cap stopped short, daylight showed under the rim, and the lid had to trace the wall's crest
- * line and skirt down to meet it. Ropes are laid OUTSIDE the body instead: the disc at the tier's
- * nominal radius is covered by the ropes' inner halves at every angle, by construction. The fix was
- * to model the thing correctly, not to chase the symptom.
+ * ⚠️ THE RIM LOOKS AFTER ITSELF, and that is worth recording because two commits went on fixing it
+ * the hard way. While the wall was a DISPLACED cylinder it grew outward past its own flat cap, so
+ * the cap stopped short, daylight showed under the rim, and the lid had to trace the wall's crest
+ * line and skirt down to meet it. Ropes are laid INSIDE the nominal radius instead, so a disc that
+ * reaches the body radius is covered by their inner halves at every angle, by construction. The fix
+ * was to model the thing correctly, not to chase the symptom.
  */
 export function buildStyledTop(wall, top, radius, height, params = {}) {
   if (top !== 'spiral') return null;
   const p = pipedParams(params);
   const t = ropeRadius(radius, p);
-  // A plain lid at the tier's radius, with the coil resting on it.
-  const rBody = pipedBodyRadius(radius, p);
-  const disc = new THREE.CylinderGeometry(rBody, rBody, 0.02 * t, 96, 1);
-  disc.translate(0, -0.01 * t, 0);
-  const coil = buildPipingStroke(spiralCentreline(radius, t, p.coilGap, t), p.nozzle, t,
-    { speedWidth: 0, tailDias: 1.3, tailEnd: 0.18 });
-  const geo = mergePenGeometries([disc, coil]);
-  if (geo) {
-    // Polar uvs, so a gradient or a stripe reads across the lid the way it reads around the wall.
-    const pos = geo.getAttribute('position');
-    const uv = new Float32Array(pos.count * 2);
-    for (let i = 0; i < pos.count; i++) {
-      uv[i * 2] = Math.atan2(pos.getZ(i), pos.getX(i)) / TAU + 0.5;
-      uv[i * 2 + 1] = Math.hypot(pos.getX(i), pos.getZ(i)) / rBody;
-    }
-    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
-    geo.computeBoundingBox();
-  }
-  return geo;
+  /* ⚠️ THE LID GOES OUT TO THE CREST, not to the body, and it is what COVERS the ropes' ends. A
+   * stroke is dragged up the wall and stops; what it presents upward is the tip's own cross-section,
+   * so a star tip left a ring of little five-pointed stars around the rim — a crown that no cake has
+   * and that read as the loudest thing on the tier. The top is smoothed over them, which is what a
+   * baker does, and the rim becomes the clean edge the reference photo has. */
+  const depth = p.swirl * radius;
+  const field = makeSwirlField({ turns: p.swirlTurns, rOut: radius });
+  // Rings have to resolve the ripple across the radius; around, it is one wave per revolution.
+  return polarDisc(radius, Math.min(360, Math.max(80, p.swirlTurns * 16)), 180,
+    (r, theta) => depth * field(r, theta), -0.7 * t);
 }
