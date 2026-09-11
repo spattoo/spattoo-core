@@ -2,6 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topperContours, topperSheets, topperBox, topperStick } from './topperPiece.js';
+import { TOPPER_FINISHES, finishesOf } from './topperFinishes.js';
+import { acrylicFinishes } from './acrylicConfig.js';
 
 const font = new FontLoader().parse(helvetikerBold);
 const fontOf = () => font;
@@ -97,6 +99,76 @@ describe('topperSheets', () => {
 
   it('leaves out a word that cannot be cut', () => {
     expect(topperSheets({ objects: [text({ text: '' })] }, fontOf)).toEqual([]);
+  });
+
+  /* ── Metallic card ────────────────────────────────────────────────────────────────────────────
+   * A piece is CUT FROM a stock, so the stock travels with the sheet and decides what colour that
+   * sheet reads as. Everything downstream asks this one function. */
+  it('carries a piece\'s finish onto its sheet', () => {
+    const [sheet] = topperSheets({ objects: [text({ finish: 'card_gold' })] }, fontOf);
+    expect(sheet.finish).toBe('card_gold');
+  });
+
+  /* ⚠️ THE CARD'S COLOUR, NOT THE WHEEL'S. A baker picks pink, then chooses gold — the pink is still
+   * on the object. The cutting file writes `sheet.colour` as the layer's fill, which is the one
+   * place whose whole job is to say WHICH CARD to cut from, so a gold "10" arriving as a pink layer
+   * would send the baker to the wrong sheet. */
+  it('reports the CARD\'s colour for a metallic sheet, not the hex underneath', () => {
+    const [sheet] = topperSheets({ objects: [text({ colour: '#F2AEC4', finish: 'card_gold' })] }, fontOf);
+    expect(sheet.colour).not.toBe('#F2AEC4');
+    expect(sheet.colour).toBe(TOPPER_FINISHES.card_gold.color);
+  });
+
+  /* ⚠️ AND THE OBJECT IS NOT REWRITTEN — only what the sheet reports. A baker who changes their mind
+   * about gold gets their own colour back; storing the swatch over it would lose what they picked. */
+  it('leaves the object\'s own colour alone', () => {
+    const obj = text({ colour: '#F2AEC4', finish: 'card_gold' });
+    topperSheets({ objects: [obj] }, fontOf);
+    expect(obj.colour).toBe('#F2AEC4');
+  });
+
+  /* ⚠️ THE BAND HAS ITS OWN CARD. A white word on a gold band is the commonest metallic topper made
+   * — commoner than a gold word — so the two are cut from two sheets and must not share a key. */
+  it('gives the offset band a stock of its own', () => {
+    const [band, face] = topperSheets({ objects: [
+      text({ offset: 0.08, offsetFinish: 'card_gold', finish: null, colour: '#FFFFFF' }),
+    ] }, fontOf);
+    expect(band.finish).toBe('card_gold');
+    expect(band.colour).toBe(TOPPER_FINISHES.card_gold.color);
+    expect(face.finish).toBeNull();
+    expect(face.colour).toBe('#FFFFFF');
+  });
+
+  it('is plain card when nothing says otherwise, so every topper saved before this is unchanged', () => {
+    const [sheet] = topperSheets({ objects: [text({ colour: '#F2AEC4' })] }, fontOf);
+    expect(sheet.finish).toBeNull();
+    expect(sheet.colour).toBe('#F2AEC4');
+  });
+
+  /* A finish an admin has since withdrawn must not take the colour with it — the piece still cuts,
+     in the hex it carries, rather than vanishing or arriving as `undefined`. */
+  it('falls back to the hex when the finish is unknown', () => {
+    const [sheet] = topperSheets({ objects: [text({ colour: '#F2AEC4', finish: 'nonesuch' })] }, fontOf);
+    expect(sheet.colour).toBe('#F2AEC4');
+  });
+});
+
+describe('card stock and acrylic stay apart', () => {
+  /* ⚠️ ONE TABLE, ASKED BY MEDIUM. They are both "topper finishes" and they are different materials:
+   * mirror acrylic is a sheet of plastic, metallic card is foil on board. Before `medium`, the
+   * acrylic message's default was "every key in the table" — so the day card stock was added, a
+   * message seeded from no row would have started offering "Gold card" for a piece of acrylic. */
+  it('offers card stock to the card studio and none of it to acrylic', () => {
+    expect(finishesOf('card')).toContain('card_gold');
+    expect(finishesOf('card')).not.toContain('gold');
+    expect(acrylicFinishes()).toContain('gold');
+    expect(acrylicFinishes()).not.toContain('card_gold');
+  });
+
+  it('every finish says what it is made of, so neither list can silently gain a row', () => {
+    for (const [key, f] of Object.entries(TOPPER_FINISHES)) {
+      expect(['acrylic', 'card'], key).toContain(f.medium);
+    }
   });
 });
 

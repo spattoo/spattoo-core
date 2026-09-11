@@ -30,11 +30,16 @@ const objects = [
   /* `?plateOffset=` — a SHAPE's own offset band. It could not be asked for at all until shapes got
      one, so the harness could not have shown the bug that was missing. */
   ...(family ? [{ id: 1, kind: 'shape', family, size: 1.5, x: 0, y: 0,
-                  colour: q.get('plate') ?? '#F2AEC4',
-                  offset: num('plateOffset', 0), offsetColour: q.get('plateOffsetColour') ?? '#FFFFFF' }] : []),
+                  colour: q.get('plate') ?? '#F2AEC4', finish: q.get('plateFinish') ?? null,
+                  offset: num('plateOffset', 0), offsetColour: q.get('plateOffsetColour') ?? '#FFFFFF',
+                  offsetFinish: q.get('plateOffsetFinish') ?? null }] : []),
+  /* `?finish=card_gold` — metallic CARD, which is what these toppers are really cut from. It is the
+     one property that cannot be judged from a still hex: a matcap is sampled by the normal in VIEW
+     space, so the only way to know whether a gold reads as gold is to turn it. Leave the spin on. */
   { id: 2, kind: 'text', text: word, size: num('size', 0.6), x: 0, y: 0,
-    colour: q.get('colour') ?? '#4A2C1B',
+    colour: q.get('colour') ?? '#4A2C1B', finish: q.get('finish') ?? null,
     offset: num('offset', 0.06), offsetColour: q.get('offsetColour') ?? '#FFFFFF',
+    offsetFinish: q.get('offsetFinish') ?? null,
     face: '__block' },
 ];
 

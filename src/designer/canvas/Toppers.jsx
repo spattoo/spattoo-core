@@ -6,7 +6,7 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { topperSheets, topperBox, topperStick } from '../geometry/topperPiece.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
-import { albedoForLight } from '../shared/albedoForLight.js';
+import { CardStock, cardAlbedo } from './CardStock.jsx';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { planeHit } from '../utils/raycasting.js';
 
@@ -31,9 +31,6 @@ import { planeHit } from '../utils/raycasting.js';
 const BLOCK_KEY = '__block';
 const blockFont = new FontLoader().parse(helvetikerBold);
 
-// Measured for this material under the designer's rig — see dev/card-colour.jsx and INVARIANTS #16.
-const CARD_LIGHT = Object.freeze([3.193, 2.940, 3.028]);
-
 /* How far apart consecutive sheets sit, as a fraction of the card's own thickness.
  *
  * ⚠️ IT IS A THIRD, NOT A TWENTIETH, AND THAT IS A DEPTH-BUFFER FACT RATHER THAN A TASTE. It started
@@ -45,7 +42,6 @@ const CARD_LIGHT = Object.freeze([3.193, 2.940, 3.028]);
  *
  * A whole topper still spans about one card thickness front to back, so it is one flat card. */
 const LAYER_STEP = 1 / 3;
-const asRendered = (hex) => albedoForLight(hex || '#FFFFFF', CARD_LIGHT, { rolloff: 6 });
 
 /* Faces resolve asynchronously and a cake cannot wait for them.
  *
@@ -157,7 +153,7 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
         g.translate(0, 0, sheet.layer * depth * LAYER_STEP);
         return g;
       });
-      return { geos, colour: sheet.colour };
+      return { geos, colour: sheet.colour, finish: sheet.finish };
     });
 
     /* A rod, not a sheet: built here rather than extruded from contours. Behind the card in z, so
@@ -207,21 +203,16 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
           one part of a topper nobody paints, and a matte pale beech is what a cake-pop stick is. */}
       {built.stickGeo && (
         <mesh geometry={built.stickGeo} castShadow receiveShadow {...grabProps}>
-          <meshStandardMaterial color={asRendered('#D8BE93')} roughness={0.85} metalness={0} />
+          <meshStandardMaterial color={cardAlbedo('#D8BE93')} roughness={0.85} metalness={0} />
         </mesh>
       )}
       {built.sheets.map((sheet, si) => sheet.geos.map((g, i) => (
         <mesh key={`${si}-${i}`} geometry={g} castShadow receiveShadow {...grabProps}>
-          {/* Printed card: matte, no clearcoat. A coat lives on the environment map and ADDS light
-              rather than multiplying it, so no albedo correction can divide it back out — which is
-              why the card cutout studio dropped it too. */}
-          <meshStandardMaterial
-            color={asRendered(sheet.colour)}
-            roughness={0.86}
-            metalness={0}
-            emissive={selected ? '#ffffff' : '#000000'}
-            emissiveIntensity={selected ? 0.06 : 0}
-          />
+          {/* ⚠️ THE SAME MATERIAL THE STUDIO DRAWS, from one file. Both used to hold their own copy
+              of the reference light and their own matte standard material — identical then, and two
+              things to keep in step forever (INVARIANTS #15). The studio is where the card is
+              CHOSEN, so it is the worst place in the app for a shade to drift. */}
+          <CardStock colour={sheet.colour} finish={sheet.finish} selected={selected} />
         </mesh>
       )))}
     </group>

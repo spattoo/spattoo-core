@@ -12,6 +12,21 @@
 // happens here on the way in — which is also why an improvement to `topperShapes` or `offsetParts`
 // reaches every topper already kept.
 import { topperShapes, backingPlate, offsetParts } from './topperShape.js';
+import { TOPPER_FINISHES } from './topperFinishes.js';
+
+/* What colour a sheet READS as, which is not always the colour on the object.
+ *
+ * ⚠️ A METALLIC SHEET'S COLOUR COMES FROM ITS CARD, not from the wheel. A piece cut from gold card
+ * has whatever hex it last carried still sitting on it — the baker picked pink, then chose gold —
+ * and everything downstream of here reads `sheet.colour`: the cutting file writes it as the layer's
+ * fill, and the print sheet fills the shape with it. Left alone, a gold "10" would arrive in the
+ * baker's cutting software as a PINK layer, which is the one place the colour's whole job is to say
+ * which card to cut it from.
+ *
+ * ⚠️ AND THE OBJECT'S OWN HEX IS NOT OVERWRITTEN, only what this function reports. A baker who
+ * chooses gold and changes their mind gets their colour back; storing the swatch over it would lose
+ * what they picked. One place decides, and it is the place both renderers already ask. */
+const sheetColour = (colour, finish) => TOPPER_FINISHES[finish]?.color ?? colour;
 
 /* One object's outline. `font` is the face already loaded for it — resolving faces is asynchronous
  * and belongs to the caller, which knows whether it can wait (a studio) or must draw what it has
@@ -72,14 +87,22 @@ export function topperSheets(payload, fontOf) {
          hearts went to x = ±0.58, both their white bands stacked up in the gap between them and ate
          the white letters of the word on top. On a cake it is worse than it looks in a studio — the
          band is part of the CUT, so the piece would be cut wrong. */
+      /* ⚠️ THE BAND HAS ITS OWN CARD. A white word on a GOLD band is the commonest metallic topper
+         there is — commoner than a gold word — so the band carries `offsetFinish` exactly as the
+         face carries `finish`. They are two pieces of card and the baker cuts them from two
+         sheets. */
       sheets.push({
-        parts: offsetParts(parts, obj.offset * obj.size), colour: obj.offsetColour, layer: i * 2,
-        x: obj.x ?? 0, y: obj.y ?? 0,
+        parts: offsetParts(parts, obj.offset * obj.size),
+        colour: sheetColour(obj.offsetColour, obj.offsetFinish), finish: obj.offsetFinish ?? null,
+        layer: i * 2, x: obj.x ?? 0, y: obj.y ?? 0,
       });
     }
-    sheets.push({ parts, colour: obj.colour, layer: i * 2 + 1, x: obj.x ?? 0, y: obj.y ?? 0 });
+    sheets.push({
+      parts, colour: sheetColour(obj.colour, obj.finish), finish: obj.finish ?? null,
+      layer: i * 2 + 1, x: obj.x ?? 0, y: obj.y ?? 0,
+    });
   });
-  return sheets.map(s => ({ x: 0, y: 0, ...s }));
+  return sheets.map(s => ({ x: 0, y: 0, finish: null, ...s }));
 }
 
 /* How big the finished topper is, in the composer's own units — the bounding box of everything on

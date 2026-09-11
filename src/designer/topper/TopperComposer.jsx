@@ -10,9 +10,11 @@ import { topperContours, topperBox, topperSheets, topperStick } from '../geometr
 import { outlineOf } from '../geometry/shapes.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
 import { SceneLights, SceneEnv, SceneBackground, CakePreview } from '../canvas/CakeCanvas.jsx';
+import { CardStock, cardAlbedo, isMetallicCard } from '../canvas/CardStock.jsx';
+import { drawTopperMatcap } from '../geometry/topperMatcap.js';
+import { TOPPER_FINISHES, finishesOf } from '../geometry/topperFinishes.js';
 import SelectionBox from '../canvas/SelectionBox.jsx';
 import { DESIGNER_GROUND, SELECTION_COLOR } from '../constants.js';
-import { albedoForLight } from '../shared/albedoForLight.js';
 import { Panel } from '../../shared/Panel.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { TOPPER_PRESETS, presetPaths } from './topperPresets.js';
@@ -58,10 +60,10 @@ const GRID_HALF = 2.2;        // how far the drawing surface extends from the mi
 const GRID_STEP = 0.2;
 const CARD_THICK = 0.02;
 
-/* Measured for this exact material under the designer's rig — see CardCutoutStudio for the working,
- * and re-measure if the HDRI, SceneLights or the roughness moves (INVARIANTS #16). */
-const CARD_LIGHT = Object.freeze([3.193, 2.940, 3.028]);
-const asRendered = (hex) => albedoForLight(hex, CARD_LIGHT, { rolloff: 6 });
+/* ⚠️ THE REFERENCE LIGHT AND THE MATERIAL BOTH MOVED TO `canvas/CardStock.jsx`, and are imported
+ * rather than restated. This file and the cake's `Toppers.jsx` each used to hold their own copy —
+ * identical, and two things to keep in step forever. A studio half a shade off the cake is what
+ * INVARIANTS #15 is about, and it is at its worst here, because this is where the card is CHOSEN. */
 
 const blockFont = new FontLoader().parse(helvetikerBold);
 
@@ -323,14 +325,14 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
       {backGeos.map((g, i) => (
         <mesh key={`b${i}`} geometry={g} castShadow receiveShadow
           onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
-          <meshStandardMaterial color={asRendered(obj.offsetColour)} roughness={0.86} metalness={0} />
+          <CardStock colour={obj.offsetColour} finish={obj.offsetFinish} />
         </mesh>
       ))}
       {geos.map((g, i) => (
         <mesh key={i} geometry={g} castShadow receiveShadow
           onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}
           onDoubleClick={(e) => { if (obj.kind === 'text') { e.stopPropagation(); onEdit(obj.id); } }}>
-          <meshStandardMaterial color={asRendered(obj.colour)} roughness={0.86} metalness={0} />
+          <CardStock colour={obj.colour} finish={obj.finish} />
         </mesh>
       ))}
       {/* ⚠️ EDITED WHERE IT IS. The words were also a field in the side panel, which meant typing in
@@ -426,7 +428,47 @@ function Slide({ label, value, min, max, step, onChange, fmt }) {
   );
 }
 
-function Colour({ label, value, onChange, open, onToggle }) {
+/* The card stocks on offer, asked by MEDIUM rather than listed here — an admin can author one and it
+   appears, which is the whole bargain `applyTopperFinishConfig` makes (rule 3). */
+const CARD_STOCKS = finishesOf('card');
+
+/* ⚠️ A METALLIC SWATCH IS DRAWN FROM THE MATERIAL ITSELF, not from a gradient somebody chose to look
+ * gold. `drawTopperMatcap` is a picture of a sphere wearing the finish — the same picture the mesh
+ * wears — so a swatch cannot promise a gold the cake does not deliver (INVARIANTS #14/#15). A flat
+ * fill of the finish's own hex would have read as MUSTARD, which is exactly the complaint that gold
+ * metallic is here to answer.
+ *
+ * Zoomed past the sphere's rim (`150%`), so a square swatch shows the metal's face rather than a
+ * ball sitting in a box. Plain card stays a flat chip of its own hex, because that is what it is. */
+function StockChip({ colour, finish, size = 19 }) {
+  const url = useMemo(
+    () => (isMetallicCard(finish) ? drawTopperMatcap(finish, 64).toDataURL() : null), [finish]);
+  return (
+    <span style={{
+      width: size, height: size, borderRadius: 5, flexShrink: 0,
+      border: '1px solid rgba(0,0,0,0.12)',
+      ...(url ? { backgroundImage: `url(${url})`, backgroundSize: '150%',
+                  backgroundPosition: 'center' }
+              : { background: colour }),
+    }} />
+  );
+}
+
+/* ── What this piece is cut from ─────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ ONE CONTROL FOR COLOUR AND FINISH, because a baker is answering ONE question: what card is this
+ * piece cut from. Plain card comes in a colour; metallic card comes in gold, silver or rose. A
+ * separate "finish" row beside a "colour" row would be two controls where only one can be in force
+ * at a time, and the panel would grow a row that is meaningless most of the time (INVARIANTS #12).
+ *
+ * ⚠️ AND IT SERVES THE BAND AS WELL AS THE FACE, from the same component — a white word on a GOLD
+ * band is the commonest metallic topper made, commoner than a gold word, so gold has to be reachable
+ * from both. Because this is one control used twice, that cost nothing.
+ *
+ * ⚠️ PICKING A COLOUR CLEARS THE FINISH. Gold and "#F2AEC4" are two answers to the same question, so
+ * the wheel is not a second thing that can also be true — reaching for it means plain card.
+ */
+function Stock({ label, value, finish, onChange, onFinish, open, onToggle }) {
   const wrap = useRef(null);
   /* ⚠️ CLOSES ON A CLICK OUTSIDE IT. Opened, the wheel is 130px of panel sitting between the colour
    * and everything below it, and the only way out was to find the same swatch again — so it stayed
@@ -441,19 +483,44 @@ function Colour({ label, value, onChange, open, onToggle }) {
     return () => document.removeEventListener('mousedown', away);
   }, [open, onToggle]);
 
+  const chosen = isMetallicCard(finish) ? TOPPER_FINISHES[finish] : null;
+
   return (
     <div ref={wrap} style={{ marginBottom: 10 }}>
       <button type="button" onClick={onToggle}
         style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9, minHeight: 42,
           padding: '0 11px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
           border: '1.5px solid #E2E8E3', background: '#fff' }}>
-        <span style={{ width: 19, height: 19, borderRadius: 5, background: value,
-          border: '1px solid rgba(0,0,0,0.12)' }} />
+        <StockChip colour={value} finish={finish} />
         <span style={{ fontSize: 11.5, fontWeight: 700, color: '#3D5A44' }}>{label}</span>
-        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#8A9A8E' }}>{value}</span>
+        {/* The finish's NAME where the hex would be — "#C9A227" tells a baker nothing about a card
+            they would buy, and it is not even the colour they would see. */}
+        <span style={{ marginLeft: 'auto', fontSize: 11, color: '#8A9A8E' }}>
+          {chosen ? chosen.label : value}
+        </span>
       </button>
-      {open && <HexColorPicker color={value} onChange={onChange}
-        style={{ width: '100%', height: 132, marginTop: 8 }} />}
+      {open && (
+        <>
+          {/* ⚠️ ABOVE THE WHEEL, because it is the shorter list and the one with names. A row of
+              three named cards under 130px of colour wheel is a row nobody scrolls to. */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            {CARD_STOCKS.map(k => (
+              <button key={k} type="button" onClick={() => onFinish(k)}
+                title={TOPPER_FINISHES[k].label} aria-label={TOPPER_FINISHES[k].label}
+                aria-pressed={finish === k}
+                style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  gap: 6, minHeight: 34, borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 10.5, fontWeight: 700, color: '#3D5A44', background: '#fff',
+                  border: finish === k ? '1.5px solid #3D5A44' : '1.5px solid #E2E8E3' }}>
+                <StockChip finish={k} size={15} />
+                {TOPPER_FINISHES[k].label.replace(/ card$/, '')}
+              </button>
+            ))}
+          </div>
+          <HexColorPicker color={value} onChange={v => { onFinish(null); onChange(v); }}
+            style={{ width: '100%', height: 132, marginTop: 8 }} />
+        </>
+      )}
     </div>
   );
 }
@@ -512,7 +579,8 @@ function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embed
           onChange={v => set({ ratio: v })} fmt={v => `${v.toFixed(2)}x`} />
       )}
 
-      <Colour label="Colour" value={obj.colour} onChange={v => set({ colour: v })}
+      <Stock label="Card" value={obj.colour} finish={obj.finish}
+        onChange={v => set({ colour: v })} onFinish={f => set({ finish: f })}
         open={wheel === 'c'} onToggle={() => setWheel(wheel === 'c' ? null : 'c')} />
 
       {/* ⚠️ EVERY PIECE CAN HAVE ONE. This was text-only, on the reasoning that a shape is already a
@@ -522,8 +590,8 @@ function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embed
       <Slide label="Offset" value={obj.offset ?? 0} min={0} max={0.22} step={0.005}
         onChange={v => set({ offset: v })} fmt={v => (v === 0 ? 'none' : v.toFixed(3))} />
       {obj.offset > 0 && (
-        <Colour label="Offset colour" value={obj.offsetColour ?? '#FFFFFF'}
-          onChange={v => set({ offsetColour: v })}
+        <Stock label="Offset card" value={obj.offsetColour ?? '#FFFFFF'} finish={obj.offsetFinish}
+          onChange={v => set({ offsetColour: v })} onFinish={f => set({ offsetFinish: f })}
           open={wheel === 'o'} onToggle={() => setWheel(wheel === 'o' ? null : 'o')} />
       )}
 
@@ -720,7 +788,7 @@ function StudioStick({ objects, fontOf, stick }) {
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow receiveShadow>
-      <meshStandardMaterial color={asRendered('#D8BE93')} roughness={0.85} metalness={0} />
+      <meshStandardMaterial color={cardAlbedo('#D8BE93')} roughness={0.85} metalness={0} />
     </mesh>
   );
 }

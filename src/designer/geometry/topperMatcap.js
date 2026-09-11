@@ -109,6 +109,51 @@ const LOOKS = {
   rose:   { base: [132, 92, 80],  sheen: [255, 176, 150], rim: [104, 60, 48], tight: 0.55, spec: 0.90 },
   black:  { base: [26, 26, 28],   sheen: [236, 236, 240], rim: [6, 6, 8],     tight: 0.80, spec: 0.75 },
   white:  { base: [232, 230, 226], sheen: [255, 255, 255], rim: [150, 148, 144], tight: 0.80, spec: 0.55 },
+
+  /* ── Metallic CARD ────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ SATIN, NOT MIRROR, and that is the whole difference from the three above. These are a foil
+   * laminated onto board: it scatters. So the body is LIGHTER than mirror acrylic's (a satin metal's
+   * dark is not as dark), the bright band is WIDER and softer, and `spec` is well down — a card has
+   * a sheen, not a hard highlight. Reusing the acrylic golds here would have put a mirror finish on
+   * a paper cut-out, which is the tell that a render borrowed whatever gold was lying about.
+   *
+   * ⚠️ THE SHEEN IS STILL TINTED, because that lesson is about metals and not about acrylic: a metal
+   * has no white specular, it COLOURS what it reflects. See the long note above — a silver highlight
+   * on a gold object is what "dull" meant when it was reported, and a satin gold washes out the same
+   * way for the same reason.
+   *
+   * ⚠️ AND A CARD TOPPER'S FACE IS PERFECTLY FLAT — no chamfer at all, unlike the acrylic word's
+   * geometry. So it samples ONE texel and renders as ONE colour, changing as the cake turns. That is
+   * not a shortcoming here; it is what a flat sheet of metallic card actually does in the hand — a
+   * single tone head-on that flashes when you tilt it. The trade the note above calls a trade is,
+   * for this material, the behaviour.
+   *
+   * ⚠️ WHICH IS EXACTLY WHY THESE CANNOT BE AS CONTRASTY AS THE ACRYLIC LOOKS ABOVE, and the first
+   * attempt here was. Copying mirror gold's deliberately dark body gave a topper that read GOLD on
+   * the cake and DARK OLIVE in the studio — and it is one material, so that is INVARIANTS #15
+   * failing in the worst place there is, the screen where the card is chosen. The cause is the
+   * flatness: the STUDIO looks dead-on through an orthographic camera, so the face normal points
+   * straight at it and samples the matcap's CENTRE — the dark body. On the cake the same card is
+   * tilted away and samples the bright ring instead. A dark body is right for a chamfered piece,
+   * whose bright edge needs something to be bright against; a flat card has no edge to read, so the
+   * body IS the colour, and the picture has to be flatter. Which is also what satin means.
+   *
+   * ⚠️ MEASURED ON BOTH SCREENS, not judged on one. Median face colour over the piece's pixels, the
+   * metric the note above argues for (contrast is the wrong one on a flat face — nearly all of it is
+   * the letters' antialiased edges):
+   *
+   *     studio, head-on      rgb(200, 164, 57)   chroma 143
+   *     cake, tilted         rgb(221, 186, 78)   chroma 143
+   *     the gold BOARD       rgb(204, 165, 55)   chroma 149   ← the metal in the same frame that
+   *                                                             nobody has ever called dull
+   *
+   * Equal chroma either side is the thing to hold: the two views must be the same METAL, and the
+   * cake's is brighter because the card catches the key light there, which is what a card does. The
+   * first attempt read chroma 135 against 108 — visibly two different golds. */
+  card_gold:   { base: [180, 140, 46],  sheen: [255, 190, 62],  rim: [116, 86, 26],  tight: 0.64, spec: 0.30 },
+  card_silver: { base: [180, 185, 191], sheen: [255, 255, 255], rim: [116, 122, 130], tight: 0.64, spec: 0.30 },
+  card_rose:   { base: [194, 142, 122], sheen: [255, 186, 160], rim: [128, 86, 72],  tight: 0.64, spec: 0.30 },
 };
 
 const rgb = ([r, g, b], a = 1) => `rgba(${r}, ${g}, ${b}, ${a})`;

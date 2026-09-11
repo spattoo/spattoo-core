@@ -1,5 +1,5 @@
 import { faceFit, TOPPER_FACES, DEFAULT_TOPPER_FACE } from './topperFaces.js';
-import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH } from './topperFinishes.js';
+import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, finishesOf } from './topperFinishes.js';
 
 /* ── Every number an acrylic word is made of, in ONE place ───────────────────────────────────────
  *
@@ -38,7 +38,7 @@ export const ACRYLIC_DEFAULTS = Object.freeze({
    * otherwise. One authored number applied to both would quietly fatten every side name. */
   sheetStand: 0.063,
   sheetFlat: 0.030,
-  finishes: Object.keys(TOPPER_FINISHES),
+  finishes: finishesOf('acrylic'),
   defaultFinish: DEFAULT_TOPPER_FINISH,
 });
 
@@ -154,5 +154,9 @@ export function writingFromAcrylicRow(acrylic) {
 // never seeded from a row. An unknown key is dropped rather than rendered in a colour nobody chose.
 export function acrylicFinishes(writing = {}) {
   const offered = writing.acrylicFinishes?.filter(k => TOPPER_FINISHES[k]);
-  return offered?.length ? offered : Object.keys(TOPPER_FINISHES);
+  /* ⚠️ THE ACRYLIC ONES, not every row in the table. The table also holds metallic CARD now, and
+     "all of them" was a fine default only while acrylic was the only thing in it — the day card
+     stock arrived, a message that had never been seeded from a row would have started offering
+     "Gold card" as a finish for a piece of acrylic. Asked by medium, so neither list can drift. */
+  return offered?.length ? offered : finishesOf('acrylic');
 }
