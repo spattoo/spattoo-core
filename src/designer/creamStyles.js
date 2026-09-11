@@ -100,7 +100,13 @@ export const CREAM_STYLES = {
    *
    * `wall`, `top` and the schema are identical across the rows; only the tip and its numbers differ.
    */
-  piped: { label: 'Piped — 8-point star', wall: 'piped', top: 'spiral', nozzle: 'star8', params: pipedParams() },
+  /* ⚠️ TWELVE POINTS, BECAUSE FOUR OF THEM HAVE TO LAND ON THE FACE. A stroke is a tube: a viewer
+   * sees a little over half of it, and only the middle ±60° reads as ribs — the rest is silhouette,
+   * and on a wall the silhouette is exactly where the neighbouring stroke meets it. So the ribs a
+   * person counts are `lobes/3`. Five points give under two, eight give under three, twelve give
+   * four, which is what a photograph of one vertical line shows. `star8` is still in the registry
+   * and is one key away. */
+  piped: { label: 'Piped — 12-point star', wall: 'piped', top: 'spiral', nozzle: 'star12', params: pipedParams() },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.

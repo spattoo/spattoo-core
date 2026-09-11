@@ -109,6 +109,12 @@ export const NOZZLES = [
   { key: 'star5',  label: 'Open Star',   hint: '1M — the classic',          profile: lobedProfile(5,  0.50), twist: 1,   ruffle: 1 },
   { key: 'star6',  label: '6-Star',      hint: 'Tighter ribs',              profile: lobedProfile(6,  0.52), twist: 1,   ruffle: 1 },
   { key: 'star8',  label: '8-Star',      hint: 'Eight points, open cut',    profile: lobedProfile(8,  0.50), twist: 1,   ruffle: 1 },
+  /* ⚠️ TWELVE IS WHAT PUTS FOUR RIBS ON THE FACE. A stroke is a tube, so a viewer sees a little over
+   * half of it and only the middle ±60° reads as ribs — the rest is silhouette, and on a wall the
+   * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
+   * under two, eight give under three, and twelve give four. Counting the ribs in a photograph of one
+   * vertical line and dividing by three is how you pick a tip. */
+  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.50), twist: 1,   ruffle: 1 },
   { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038 },
   { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1 },
   { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },
