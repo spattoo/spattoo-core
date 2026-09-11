@@ -42,7 +42,7 @@ import * as THREE from 'three';
  *
  * `depth` is how deep the cut goes: the inner vertices sit at `1 − depth`.
  */
-function lobedProfile(lobes, depth, perEdge = 6) {
+function lobedProfile(lobes, depth, soft = LOBE_SOFT, perEdge = 10) {
   const out = [];
   const step = Math.PI / lobes;                  // outer → inner is half a lobe
   const vert = (k) => {
@@ -51,12 +51,35 @@ function lobedProfile(lobes, depth, perEdge = 6) {
   };
   for (let k = 0; k < 2 * lobes; k++) {
     const [x0, y0] = vert(k), [x1, y1] = vert(k + 1);
-    // The corner itself, then along the cut. `perEdge` samples keep the sweep's quads well shaped;
-    // the edge is flat, so they cost nothing but let the corner stay a corner once normals average.
     for (let j = 0; j < perEdge; j++) {
       const t = j / perEdge;
       out.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
     }
+  }
+  return relax(out, Math.max(0, Math.round(soft * perEdge)));
+}
+
+/* ⚠️ CREAM CANNOT HOLD THE APERTURE'S EDGE. The star above is the hole in the metal, and for a while
+ * that is what was being swept — which renders as folded card: flat facets, knife-sharp corners, a
+ * silhouette like a cog. Put a photograph of one piped line beside it and the difference is not the
+ * rib COUNT, it is that every corner in the real one is ROUNDED. Cream leaves the tip and relaxes:
+ * the points swell over, the creases stay as soft folds, and nothing anywhere is a straight facet.
+ *
+ * A moving average round the closed outline, over a window that is a fraction of one cut, does
+ * exactly that — it rounds the corners and leaves the middle of each straight cut alone.
+ */
+const LOBE_SOFT = 0.5;
+function relax(pts, half) {
+  if (half < 1) return pts;
+  const n = pts.length, out = [];
+  for (let i = 0; i < n; i++) {
+    let x = 0, y = 0, w = 0;
+    for (let d = -half; d <= half; d++) {
+      const p = pts[(i + d + n) % n];
+      const k = 1 - Math.abs(d) / (half + 1);    // triangular, so the corner eases rather than flattens
+      x += p[0] * k; y += p[1] * k; w += k;
+    }
+    out.push([x / w, y / w]);
   }
   return out;
 }
@@ -114,7 +137,7 @@ export const NOZZLES = [
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
    * under two, eight give under three, and twelve give four. Counting the ribs in a photograph of one
    * vertical line and dividing by three is how you pick a tip. */
-  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.50), twist: 1,   ruffle: 1 },
+  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.34), twist: 1,   ruffle: 1 },
   { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038 },
   { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1 },
   { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },
