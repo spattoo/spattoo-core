@@ -30,71 +30,46 @@ import * as THREE from 'three';
  */
 /* ── WHAT COMES OUT OF A STAR TIP ────────────────────────────────────────────────────────────────
  *
- * ⚠️ THE METAL IS A STAR. THE CREAM IS NOT, AND THAT IS THE WHOLE THING. Put a photograph of one
- * piped line next to a swept star polygon at the same scale and the gap is not the rib count, the
- * depth, or the sharpness of the points — it is that the photograph has NO STRAIGHT EDGE ANYWHERE.
- * Every lobe is a fat circular BULGE. The only sharp lines in it are the CREASES where two bulges
- * meet, and those are sharp because two round things touching make a V, not because any edge was
- * cut that way.
+ * ⚠️ THE CAVITY IS A SLOT, NOT A VALLEY. Hold a photograph of one piped line against any of the
+ * sections tried before this one and the difference is in the CREASES: in the photograph they are
+ * narrow, deep and dark — slots cut into a body that is otherwise nearly round — while every model
+ * produced a wide shallow dip. That is not a depth setting, it is the wrong shape of curve.
  *
- * Which is what cream does: it leaves a star-shaped hole under pressure and immediately relaxes into
- * the roundest shape that still fits through it — a rosette of overlapping circles.
+ * It is also why a ROSETTE OF CIRCLES cannot do it, which was the previous attempt: two round things
+ * meeting always make a WIDE V, and pushing the circles apart to deepen it only opens gaps in the
+ * section. A circle has one radius; a cavity needs to be deep AND narrow, which takes two numbers.
  *
- * So the section is the OUTER ENVELOPE of `lobes` circles arranged round the axis. For one circle of
- * radius `a` whose centre sits `d` out along direction φ,
+ * So the body is round and the cavities are cut INTO it, each a narrow gaussian slot:
  *
- *     r(θ) = d·cos(θ−φ) + √(a² − d²·sin²(θ−φ))
+ *     r(θ) = 1 − depth · Σ exp(−((θ − θₖ)/width)²)
  *
- * and the profile is the largest of those. Adjacent circles cross, and where they cross is the
- * crease — sharp, and deep in proportion to how far the circles overlap. `d + a = 1` puts the crest
- * on the unit circle; `depth` says where the crease lands, and the pair is solved for it.
+ * `depth` is how far the slot cuts, `width` how wide it is as a fraction of the gap between two of
+ * them. Between slots the surface stays at full radius, which is what makes the lobes read as fat
+ * bulges rather than as facets — nothing there is flat, and nothing there is a straight cut.
  *
- * ⚠️ FIVE SHAPES WERE TRIED BEFORE THIS ONE and each is recorded because each is wrong in its own
- * instructive way: a COSINE (smooth at both ends — no fold anywhere, sweeps as soft flutes);
- * `|sin|^0.7` (a cusp in the crease but a domed point — a flower tip, and rejected on sight as one);
- * a TRIANGLE WAVE in r(θ) (corners, but bowed sides); a STAR POLYGON (the right aperture, swept as
- * though cream were sheet metal); and a star polygon with its corners smoothed (rounder, but the
- * middle of every cut still dead straight, so it still read as folded card).
+ * ⚠️ SIX SHAPES HAVE BEEN TRIED FOR THIS SECTION and each is recorded because each is wrong in its
+ * own instructive way: a COSINE (smooth at both ends — no fold anywhere, sweeps as soft flutes);
+ * `|sin|^0.7` (a cusp in the crease but a domed point — a flower tip, rejected on sight as one); a
+ * TRIANGLE WAVE in r(θ) (corners, but bowed sides); a STAR POLYGON (the right aperture, swept as
+ * though cream were sheet metal); a star polygon with smoothed corners (rounder, but the middle of
+ * every cut still dead straight, so it still read as folded card); and a ROSETTE OF CIRCLES (round
+ * at last, but its creases are as wide as its lobes).
  */
-function lobeArc(theta, d, a) {
-  const s = d * Math.sin(theta), c = d * Math.cos(theta);
-  const k = a * a - s * s;
-  return k <= 0 ? -Infinity : c + Math.sqrt(k);
-}
+/* ⚠️ NARROW. A gaussian's tails are wide, so a slot much over a sixth of the gap stops being a slot
+ * and becomes the whole lobe — the section rises and falls in one smooth sweep with no fat body left
+ * between the cuts, which is the flute this is trying not to be. At 0.14 the surface is back at full
+ * radius a quarter of the way out of the cut. */
+const LOBE_SLOT = 0.14;          // slot width, as a fraction of the gap between two slots
 
-/* `depth` is where the crease sits, as a fraction in from the crest. Solved rather than tuned: the
- * circles' size is whatever puts the crease exactly there, so every tip keeps the number it was
- * authored with and means the same thing by it.
- */
-function lobeGeometry(lobes, depth) {
-  const half = Math.PI / lobes;                      // half the angle between two lobes
-  const crease = (d) => lobeArc(half, d, 1 - d);     // where two neighbouring circles cross
-  /* ⚠️ THERE IS A DEEPEST CREASE A ROSETTE CAN HAVE, and asking past it does not deepen anything —
-   * it pulls the circles apart and leaves the section with GAPS in it, angles at which no lobe
-   * reaches and the radius is zero. Neighbours still meet while `a > d·sin(π/lobes)`, which caps the
-   * crease at `1 − cos/(1+sin)`: about 23% in at twelve lobes, 30% at eight.
-   *
-   * That cap is not a limitation to work around, it is the answer. Cream relaxes into round lobes,
-   * round lobes can only cut so deep into each other, and the creases in a photograph of one piped
-   * line are about that deep. A deeper groove than this is not cream — it is a groove cut in
-   * something that holds an edge. */
-  const dMax = 1 / (1 + Math.sin(half)) - 1e-6;
-  let lo = 1e-4, hi = dMax;                          // bisect: crease falls as d grows
-  for (let i = 0; i < 60; i++) {
-    const m = (lo + hi) / 2;
-    if (crease(m) > 1 - depth) lo = m; else hi = m;
-  }
-  const d = Math.min(dMax, (lo + hi) / 2);
-  return { d, a: 1 - d };
-}
-
-function lobedProfile(lobes, depth, pts = lobes * 18) {
-  const { d, a } = lobeGeometry(lobes, depth);
+function lobedProfile(lobes, depth, slot = LOBE_SLOT, pts = lobes * 54) {
+  const gap = (Math.PI * 2) / lobes;
+  const w = slot * gap;
   const out = [];
   for (let i = 0; i < pts; i++) {
     const t = (i / pts) * Math.PI * 2;
-    let r = 0;
-    for (let k = 0; k < lobes; k++) r = Math.max(r, lobeArc(t - k * 2 * Math.PI / lobes, d, a));
+    // Nearest slot centre, measured the short way round, so the seam at 2π is continuous.
+    let d = t - Math.round(t / gap) * gap;
+    const r = 1 - depth * Math.exp(-(d / w) * (d / w));
     out.push([Math.cos(t) * r, Math.sin(t) * r]);
   }
   return out;
