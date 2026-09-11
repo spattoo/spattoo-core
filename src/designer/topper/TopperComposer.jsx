@@ -741,7 +741,7 @@ function PresetIcon({ objects, font, size = 46 }) {
 }
 
 export default function TopperComposer({
-  open = true, apiClient = null, openWith = null, preset = null, onSave, onCancel,
+  open = true, apiClient = null, openWith = null, editWith = null, preset = null, onSave, onCancel,
 }) {
   const isMobile = useNarrow();
   const [objects, setObjects] = useState([]);          // ⚠️ EMPTY. Nothing is on the canvas until asked for.
@@ -770,21 +770,31 @@ export default function TopperComposer({
   const [saving, setSaving] = useState(false);
   const [name, setName] = useState('');
 
-  /* ⚠️ TWO DOORS PRE-FILL THIS CANVAS, AND THEY ARE NOT THE SAME DOOR.
+  /* ⚠️ THREE DOORS PRE-FILL THIS CANVAS, AND THEY ARE NOT THE SAME DOOR.
    *
    *   `openWith` — a topper the baker already KEPT, reopened from My Decorations.
+   *   `editWith` — a topper already ON THE CAKE, reopened from its card to be changed.
    *   `preset`   — a ready-made from the catalogue: a starting point, kept by nobody.
    *
-   * Both put objects on the canvas, so it is tempting to make them one prop. They differ on the one
-   * thing that matters at the end: keeping. A kept topper must not offer to be kept again, because
-   * the row is INSERTED and never updated, so reusing one would save a second copy every time. A
-   * preset is the opposite — the baker has kept nothing yet, and a ready-made they edited into their
-   * own is exactly the thing worth keeping. One prop would have to pick one behaviour and be wrong
-   * about the other half of the time.
+   * All three put objects on the canvas, so it is tempting to make them one prop. They differ on
+   * what happens at the END, and no one prop can be right about all three:
+   *
+   *   `openWith` must not offer KEEPING, because the shelf row is INSERTED and never updated, so
+   *     reusing one would save a second copy every time. It places a NEW topper on the cake.
+   *   `editWith` places nothing — it CHANGES the topper it came from, keeping its id and therefore
+   *     where it stands, how big it is and which way it faces. Offering "put it on the cake" here
+   *     would leave the old one behind and give the baker two.
+   *   `preset` is the opposite of the first — the baker has kept nothing yet, and a ready-made they
+   *     edited into their own is exactly the thing worth keeping.
+   *
+   * ⚠️ `editWith` IS WHY A TEMPLATE IS USABLE. A baker loads a template whose card topper reads
+   * "10" and their customer's child is turning 7; without a way back into the studio the only move
+   * is to delete the topper and compose a new one from nothing, which throws away the placement and
+   * the composition that made the template worth loading.
    *
    * Either way the objects come back and the geometry is REBUILT from them, which is the whole
    * reason the geometry is not stored. */
-  const openFrom = openWith ?? preset;
+  const openFrom = openWith ?? editWith ?? preset;
   useEffect(() => {
     if (!openFrom) return;
     const p = openFrom.payload ?? {};
@@ -956,7 +966,36 @@ export default function TopperComposer({
      existed is byte-identical and `v` stays 1 — an absent key reads as "no stick". */
   const payloadOf = () => ({ v: PAYLOAD_VERSION, objects, ...(stick.on ? { stick } : {}) });
 
-  const useOnCake = () => onSave?.({ name: name.trim() || 'Card topper', payload: payloadOf() });
+  /* What the topper looked like when the editing door opened it — measured, not remembered, so it
+     costs nothing until somebody edits. See `handBack` for what it is for. */
+  const startBox = useMemo(
+    () => (editWith ? topperBox(editWith.payload, fontOf) : null), [editWith, fontOf]);
+
+  /* Hands the composition back to whoever opened the studio. ⚠️ IT DOES NOT DECIDE WHAT HAPPENS TO
+     IT — placing a new topper and changing the one that was opened for editing are the SAME call,
+     and the caller knows which door it opened. The studio's job ends at the objects.
+   *
+   * ⚠️ EXCEPT FOR ONE NUMBER, AND IT IS THE WHOLE POINT OF EDITING. A topper is fitted to the cake
+   * by its WIDTH — `Toppers.jsx` takes `world / box.w` — so the rendered width is the same whatever
+   * is on the card, and the HEIGHT follows the shape. Change a "10" to a "7" and the card keeps the
+   * width of two digits while carrying one, so the number comes out nearly twice as tall. A baker
+   * who loaded a template because they liked it, and changed only the number, has just had the
+   * topper resized on them.
+   *
+   * So the studio hands back what `scale` must be multiplied by to keep the topper the HEIGHT it
+   * already was. Height, not width, because that is what a card topper is cut at — a real "7" beside
+   * a real "10" is the same height and narrower, and this makes the cake agree. Only on the editing
+   * door: a topper being PLACED has no earlier size to keep. */
+  const handBack = () => {
+    const payload = payloadOf();
+    let scaleBy;
+    if (startBox?.w > 0 && startBox.h > 0) {
+      const now = topperBox(payload, fontOf);
+      // Aspect, because width is what the cake normalises and height is what must not move.
+      if (now?.w > 0 && now.h > 0) scaleBy = (startBox.h / startBox.w) / (now.h / now.w);
+    }
+    onSave?.({ name: name.trim() || 'Card topper', payload, scaleBy });
+  };
 
   /* The tile is the piece itself, photographed off the working canvas — a true sample rather than an
      illustration. `capturing` has already taken the grid and the selection away and framed it.
@@ -1005,16 +1044,19 @@ export default function TopperComposer({
       console.error('Could not save the card topper to my decorations', e);
     } finally {
       setSaving(false);
-      useOnCake();
+      handBack();
     }
   }
 
   /* ⚠️ `openWith`, NOT `openFrom`. A preset still offers saving — see the note above. */
   const canKeep = !!apiClient?.saveCardTopper && !openWith;
-  /* ⚠️ ON BY DEFAULT. A baker who composes something good almost always wants it again, so the
-   * quieter decision is the one that needs the deliberate act — GarnishStudio's call, kept when the
-   * pair of buttons became a button and a tick. */
-  const [alsoSave, setAlsoSave] = useState(true);
+  /* ⚠️ ON BY DEFAULT WHEN SOMETHING IS BEING MADE, OFF WHEN SOMETHING IS BEING FIXED. A baker who
+   * composes something good almost always wants it again, so the quieter decision is the one that
+   * needs the deliberate act — GarnishStudio's call, kept when the pair of buttons became a button
+   * and a tick. Editing a topper that is already on the cake is not that act: changing "10" to "7"
+   * on a loaded template is a correction, and defaulting it to save would put a near-copy on the
+   * shelf every time a template was made to fit its customer. */
+  const [alsoSave, setAlsoSave] = useState(!editWith);
   const stageRef = useRef(null);
   const piecesRef = useRef(null);
   /* ⚠️ THE STICK BELONGS TO THE WHOLE TOPPER, not to any one piece on it — a card has one stick
@@ -1151,9 +1193,9 @@ export default function TopperComposer({
               </span>
             </label>
           )}
-          <button onClick={canKeep && alsoSave ? keepAndUse : useOnCake} disabled={empty || saving}
+          <button onClick={canKeep && alsoSave ? keepAndUse : handBack} disabled={empty || saving}
             style={btn(true, empty || saving)}>
-            {saving ? 'Saving…' : 'Use it on the cake'}
+            {saving ? 'Saving…' : editWith ? 'Save the changes' : 'Use it on the cake'}
           </button>
           </div>
         </>

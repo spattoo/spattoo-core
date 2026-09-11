@@ -77,6 +77,21 @@ const CAT_ELEMENTS = [
   default_color: '#F0DEB8', sort_order: i,
 }));
 
+/* ⚠️ THE CARD TOPPER STUDIO, which nothing here could reach. It is a PROCEDURAL row — tapping it
+ * opens a studio instead of dropping a picture on the cake — so it carries `placement_config.
+ * procedural` and no image, and it cannot come out of the `.map` above with the rest. Without it
+ * the whole topper chain (compose → place → tap it → open it again) was only ever testable against
+ * a real database. */
+CAT_ELEMENTS.push({
+  id: 'e8', name: 'Card topper studio', description: 'numbers and names cut from card',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f0d9dd'), thumbnail_url: CAT_THUMB('#f0d9dd'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, delete: true, resize: true },
+  placement_config: { procedural: 'card_topper' },
+  default_color: '#D94F6E', sort_order: 9,
+});
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.
@@ -162,6 +177,10 @@ const STUBS = {
   // because `{}` is not nullish, and opening Decorations threw
   // "(savedGarnishes ?? []).filter is not a function" — the whole panel, not just the shelf.
   fetchGarnishes:      async () => ([]),
+  /* ⚠️ AN ARRAY, not the Proxy's empty object. The shelf `.map`s what comes back, so a `{}` from the
+     catch-all stub took the whole designer down the moment a card topper row existed — the same
+     shape `fetchGarnishes` is stubbed for, and for the same reason. */
+  fetchCardToppers:    async () => ([]),
   // Real occasion tags. The catch-all Proxy below answers unknown methods with an OBJECT, and the
   // save-as-template modal maps over this — so without a stub the modal threw
   // "filterTags.filter is not a function" and had never once opened in this harness.

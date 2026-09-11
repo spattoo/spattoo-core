@@ -1882,9 +1882,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * studio and they are different doors: this one is a topper the baker ALREADY KEPT, so the studio
    * must not offer to keep it again — the row is inserted rather than updated, so a reused piece
    * would quietly become two. `pendingTopper` is a catalogue ready-made, kept by nobody, where the
-   * offer belongs. See the note on the two doors in TopperComposer. */
+   * offer belongs. See the note on the three doors in TopperComposer. */
   const [savedToppers, setSavedToppers] = useState([]);
   const [openTopper, setOpenTopper] = useState(null);
+  /* ⚠️ A THIRD STATE, for the same reason there is a second: a topper ALREADY ON THE CAKE, reopened
+   * from its own card to be changed. It is neither of the others — it is not a shelf row and it is
+   * not a catalogue ready-made — and what happens when the studio closes is different again: this
+   * one is UPDATED IN PLACE, so it keeps its id and therefore where it stands, how big it is and
+   * which way it faces. Placing a new one would leave the old one behind and give the baker two.
+   *
+   * This is the door a LOADED TEMPLATE needs. A template whose topper reads "10" is worth loading
+   * for a child turning 7, but only if the 10 can be changed; without this the only move is to
+   * delete the topper and compose another from nothing, which throws the placement away too. */
+  const [editTopper, setEditTopper] = useState(null);
   useEffect(() => {
     let alive = true;
     apiClient?.fetchCardToppers?.()
@@ -7547,8 +7557,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function renderTopperBody(t) {
     if (!t) return null;
     const tiers = design.tiers ?? [];
+    /* What the topper SAYS, so the card can name the thing it is about to open. A topper is words
+       cut out of card; "Card topper" is the only other name it has, and on a cake with two of them
+       that names neither. */
+    const words = (t.payload?.objects ?? [])
+      .filter(o => o.kind === 'text' && String(o.text ?? '').trim())
+      .map(o => String(o.text).trim()).join(' ');
+    const said = words.length > 42 ? `${words.slice(0, 41)}…` : words;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ⚠️ FIRST ON THE CARD, ABOVE EVERY PLACEMENT CONTROL (INVARIANTS #12). On a LOADED TEMPLATE
+            this is the whole reason the topper was tapped: the template is liked and the number on it
+            belongs to somebody else's birthday. Tier, size and turn are settings a baker touches once;
+            changing what it says is the thing they came for, and it must not be below them.
+
+            ⚠️ AND IT OPENS THE STUDIO RATHER THAN PUTTING A TEXT BOX HERE. A topper is a COMPOSITION —
+            words, shapes, colours, offset bands, how they overlap — and a card in a side panel can
+            only ever offer the first of those. Half the composition editable here and the other half
+            unreachable is worse than one door to all of it, and it would be a second answer to
+            "what is a topper made of" (INVARIANTS #15). The studio already knows.
+
+            ⚠️ IT IS NOT "EDIT", IT IS A PLACE. The word says what happens next — the same screen
+            they composed it in comes back, with everything on it. */}
+        <div>
+          <button onClick={() => {
+            setPendingTopper(null);
+            setOpenTopper(null);
+            setEditTopper(t);
+            setTopperStudio(true);
+          }}
+            style={{ width: '100%', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                     border: '1.5px solid #C5D4C8', background: '#fff', color: '#3D5A44',
+                     fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800 }}>
+            Open in studio
+          </button>
+          <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+            {said
+              ? `It says “${said}”. Change the words, the colours or the shapes — it stays where it is on the cake.`
+              : 'Change the words, the colours or the shapes — it stays where it is on the cake.'}
+          </div>
+        </div>
+
         {/* ⚠️ ONLY WHERE THERE IS A CHOICE — a tier chooser on a one-tier cake is a control with a
             single answer, and it pushes down what the baker actually came for. */}
         {tiers.length > 1 && (
@@ -10870,16 +10919,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              still offered "keep it". See the note on the two doors in TopperComposer. */
           preset={pendingTopper}
           openWith={openTopper}
-          onCancel={() => { setTopperStudio(false); setPendingTopper(null); setOpenTopper(null); }}
+          /* ⚠️ A SNAPSHOT, NOT AN ID LOOKED UP EACH RENDER. The studio pre-fills its canvas from this
+             prop in a `useEffect`, so a fresh object every render would re-seed the canvas on every
+             keystroke and no edit would ever survive being typed. */
+          editWith={editTopper}
+          onCancel={() => {
+            setTopperStudio(false); setPendingTopper(null); setOpenTopper(null); setEditTopper(null);
+          }}
           /* Selected the moment it lands, like a garnish: the thing you just made is the thing you
              want to move, and having to hunt for it is a step nobody wants. */
           onSave={topper => {
-            const id = crypto.randomUUID();
-            addTopper({ ...topper, id });
+            /* ⚠️ EDITING UPDATES; EVERY OTHER DOOR PLACES. `updateTopper` MERGES, so the piece keeps
+               its id and with it every placement key — where it stands, how big it is, which way it
+               faces, which tier it is on. Adding a new one instead would leave the old one on the
+               cake and quietly give the baker two. */
+            // `scaleBy` is a message to this handler, not part of the piece — see below.
+            const { scaleBy, ...piece } = topper;
+            const id = editTopper ? editTopper.id : crypto.randomUUID();
+            if (editTopper) {
+              /* ⚠️ AND THE SIZE IS CORRECTED, or changing the words resizes the topper. The cake
+                 fits a topper by its WIDTH, so a "10" turned into a "7" keeps the width of two
+                 digits and comes out twice as tall. The studio measures what `scale` must become to
+                 leave the HEIGHT where it was; clamped to the range the card's own Size slider
+                 offers, so the number it shows is always one the baker could have set. */
+              const scale = Number.isFinite(scaleBy) && scaleBy > 0
+                ? Math.max(0.4, Math.min(2, (editTopper.scale ?? 1) * scaleBy))
+                : null;
+              updateTopper(id, { ...piece, ...(scale ? { scale } : {}) });
+            } else addTopper({ ...piece, id });
             selectExclusive({ type: 'topper', id });
             setTopperStudio(false);
             setPendingTopper(null);
             setOpenTopper(null);
+            setEditTopper(null);
           }}
         />
       )}

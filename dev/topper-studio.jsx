@@ -10,6 +10,8 @@ import TopperComposer from '../src/designer/topper/TopperComposer.jsx';
  *
  *   ?w=375   the phone width rule 5 asks for
  *   ?saved=1 opened from the shelf — the tick must be GONE, not unticked
+ *   ?edit=1  opened from a topper already ON THE CAKE — the tick is offered but UNTICKED, and the
+ *            button says "Save the changes", because nothing is being placed
  */
 const q = new URLSearchParams(location.search);
 
@@ -22,6 +24,15 @@ const apiClient = {
     window.__tile = thumbBase64 ?? null;
     return new Promise(r => setTimeout(r, 1200));
   },
+};
+
+/* The third door. Same shape as a kept topper — a name and a payload — because a topper on the cake
+   IS one; what differs is only what the caller does with what comes back. */
+const ON_CAKE = {
+  id: 'topper-on-a-cake',
+  name: 'Ten',
+  payload: { v: 1, objects: [{ id: 1, kind: 'text', text: '10', size: 1.2, x: 0, y: 0,
+    colour: '#D94F6E', offset: 0.08, offsetColour: '#FFFFFF', face: '__block' }] },
 };
 
 const KEPT = {
@@ -38,7 +49,12 @@ function App() {
         <TopperComposer
           apiClient={apiClient}
           openWith={q.has('saved') ? KEPT : null}
-          onSave={t => { console.log('[harness] used on the cake:', t.name); setOpen(false); }}
+          editWith={q.has('edit') ? ON_CAKE : null}
+          onSave={t => {
+            console.log(q.has('edit') ? '[harness] changed in place:' : '[harness] used on the cake:',
+              t.name, JSON.stringify(t.payload.objects.map(o => o.text ?? o.family)));
+            setOpen(false);
+          }}
           onCancel={() => setOpen(false)}
         />
       )}
