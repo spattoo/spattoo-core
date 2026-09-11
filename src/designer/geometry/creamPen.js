@@ -20,11 +20,21 @@ import * as THREE from 'three';
 // of the old straight-line star (which swept into a hard-edged gear). `lobes` = rib count,
 // `depth` = groove depth (0 = round … higher = deeper grooves). Sampled densely so the
 // rounded ribs read smoothly once normals are computed.
-function lobedProfile(lobes, depth, pts = lobes * 8) {
+/* ⚠️ ROUNDED CRESTS, SHARP VALLEYS — and it used to be rounded at both ends. The note above is
+ * half right: a rib IS a puffy rounded ridge, so the old straight-line star (a hard-edged gear) was
+ * wrong to replace. But the line BETWEEN two ribs is not a rounded trough, it is a CREASE, where two
+ * faces of cream fold into each other — that is what draws the crisp dark line down a piped stroke,
+ * and a bare cosine has no crease in it at all. The exponent sharpens the valley and broadens the
+ * crest without touching either extreme: below 1 the profile leaves the valley faster than a cosine
+ * and dwells longer at the ridge. Judged against a photograph of one vertical line of star piping.
+ */
+const LOBE_CREASE = 0.6;
+function lobedProfile(lobes, depth, pts = lobes * 10) {
   const out = [];
   for (let i = 0; i < pts; i++) {
     const a = (i / pts) * Math.PI * 2;
-    const r = 1 - depth * 0.5 * (1 - Math.cos(lobes * a)); // ridge=1 at peaks, 1-depth in valleys
+    const valley = Math.pow(0.5 - 0.5 * Math.cos(lobes * a), LOBE_CREASE);
+    const r = 1 - depth * valley;                          // ridge = 1 at the peaks, 1−depth in the creases
     out.push([Math.cos(a) * r, Math.sin(a) * r]);
   }
   return out;
@@ -34,57 +44,6 @@ function roundProfile(n) {
   for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; out.push([Math.cos(a), Math.sin(a)]); }
   return out;
 }
-
-/* ── A TIP PRESSED AGAINST A SURFACE, which is not a tube ────────────────────────────────────────
- *
- * ⚠️ A ROPE PIPED IN MID-AIR AND A LINE PIPED ONTO A WALL ARE DIFFERENT SHAPES, and this is the one
- * that took four rounds to see. Look at a single vertical line of star piping: THREE bold ribs run
- * down its face with the outermost points curling at its edges. Now look at `lobedProfile` from
- * outside — measured, not guessed:
- *
- *     0.31 0.35 … 0.43 0.43 0.43 | 0.67 0.81 0.92 1.00 0.92 0.81 0.67 | 0.43 0.43 … 0.35
- *
- * ONE central rib and a flat plateau either side, because the other four points are wrapped round
- * the far side of the tube where nobody can see them. Squashing the section does not help: an affine
- * scale cannot move a point from the back to the front, which is exactly why flattening it looked
- * like faint scratches on a smooth cylinder.
- *
- * Pressing the tip against a cake makes the cream SPREAD SIDEWAYS, and the star opens out: every
- * point lands on the face. So the pressed section is authored as a face, not as a radius —
- * `lobes` rounded ribs across the width, narrow grooves between them (a piped rib is much fatter
- * than the groove beside it), a rounded back that sits in the frosting, and edges that curl.
- *
- *   x  outward, away from the surface   y  across the stroke, −1 … 1
- */
-/* ⚠️ SAMPLED SPARINGLY, because a wall is not one stroke. A freehand squiggle can afford a section
- * of 130 points; ninety of them up a cake wall cannot — that came to 474k vertices for one tier. Ten
- * points per rib resolves a rounded rib with normals to spare. */
-function pressedProfile(lobes, depth, stand = 1.05, n = Math.max(24, lobes * 10)) {
-  const front = [], back = [];
-  for (let i = 0; i <= n; i++) {
-    const u = i / n;                                   // 0 … 1 across the width
-    const y = 2 * u - 1;
-    /* Fat in the middle, easing to nothing at the edges — the stroke's own silhouette.
-     *
-     * ⚠️ THE ENVELOPE EXPONENT IS WHY IT IS CREAM AND NOT CARD. Much under 0.5 and the sides go
-     * vertical — that is the knife edge a slab has and a rope does not, and it rendered as a wall
-     * of paper strips. `stand` sets how proud the section is against its own half-width; ABOUT ONE
-     * is what a pressed stroke measures, and 1.5 was tried and is wrong: the strokes stop touching
-     * and stand off the cake as separate slats with the body visible between them. */
-    const env = Math.pow(Math.sin(Math.PI * u), 0.62);
-    // The tip's ribs. ⚠️ The exponent is what makes a RIB rather than a corrugation: a bare cosine
-    // gives ribs and grooves the same width, and a piped rib is much the fatter of the two.
-    const groove = Math.pow(0.5 - 0.5 * Math.cos(TAU_2D * lobes * u + Math.PI), 1.7);
-    front.push([stand * env * (1 - depth * groove), y]);
-    // A shallow rounded back, so it is a solid pressed on rather than a zero-thickness sheet.
-    back.push([-0.16 * env, y]);
-  }
-  return [...front, ...back.reverse()];
-}
-// How proud a pressed stroke stands, as a multiple of its half-width. Exported because the caller
-// sizing a wall of them has to know the section's aspect to place their spines.
-export const PRESSED_STAND = 1.05;
-const TAU_2D = Math.PI * 2;
 
 /* ── A PETAL APERTURE, which is not a radius ─────────────────────────────────────────────────────
  *
@@ -123,15 +82,15 @@ function petalProfile(n = 36) {
 // lobes/depth tuned to the real tips: 1M open star, deep 8-point closed star (the classic
 // ruffled rope), fine French flutes, plus the Phase-1 additions (bead, drop, jumbo, fine).
 export const NOZZLES = [
-  { key: 'round',  label: 'Round',       hint: 'Writing / smooth rope',     profile: roundProfile(20),      twist: 0,   ruffle: 0, pressed: pressedProfile(1, 0.0) },
-  { key: 'bead',   label: 'Bead',        hint: 'Fat smooth bead / outline', profile: roundProfile(24),      twist: 0,   ruffle: 0,   thickness: 0.05, pressed: pressedProfile(1, 0.0) },
-  { key: 'star5',  label: 'Open Star',   hint: '1M — the classic',          profile: lobedProfile(5,  0.50), twist: 1,   ruffle: 1, pressed: pressedProfile(3, 0.55) },
-  { key: 'star6',  label: '6-Star',      hint: 'Tighter ribs',              profile: lobedProfile(6,  0.52), twist: 1,   ruffle: 1, pressed: pressedProfile(4, 0.55) },
-  { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038, pressed: pressedProfile(7, 0.45) },
-  { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1, pressed: pressedProfile(5, 0.62) },
-  { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055, pressed: pressedProfile(4, 0.7) },
-  { key: 'french', label: 'French',      hint: 'Fine fluted ribs',          profile: lobedProfile(16, 0.26), twist: 0.6, ruffle: 0.6, pressed: pressedProfile(9, 0.3) },
-  { key: 'fine',   label: 'Fine French', hint: 'Silky many-rib flutes',     profile: lobedProfile(26, 0.18), twist: 0.5, ruffle: 0.5, thickness: 0.024, pressed: pressedProfile(14, 0.22) },
+  { key: 'round',  label: 'Round',       hint: 'Writing / smooth rope',     profile: roundProfile(20),      twist: 0,   ruffle: 0 },
+  { key: 'bead',   label: 'Bead',        hint: 'Fat smooth bead / outline', profile: roundProfile(24),      twist: 0,   ruffle: 0,   thickness: 0.05 },
+  { key: 'star5',  label: 'Open Star',   hint: '1M — the classic',          profile: lobedProfile(5,  0.50), twist: 1,   ruffle: 1 },
+  { key: 'star6',  label: '6-Star',      hint: 'Tighter ribs',              profile: lobedProfile(6,  0.52), twist: 1,   ruffle: 1 },
+  { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038 },
+  { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1 },
+  { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },
+  { key: 'french', label: 'French',      hint: 'Fine fluted ribs',          profile: lobedProfile(16, 0.26), twist: 0.6, ruffle: 0.6 },
+  { key: 'fine',   label: 'Fine French', hint: 'Silky many-rib flutes',     profile: lobedProfile(26, 0.18), twist: 0.5, ruffle: 0.5, thickness: 0.024 },
   /* ⚠️ `flat` is the flag that changes the FRAME, not the profile. A petal tip only means anything
    * if it is held at a known attitude — wide end down, slit square to the direction of travel — so
    * this nozzle asks pushSweep for a fixed-up frame instead of the rotation-minimising one every
@@ -455,9 +414,6 @@ const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1
 export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null, roll = 0) {
   const noz = NOZZLE_BY_KEY[nozzleKey] || NOZZLE_BY_KEY[DEFAULT_NOZZLE];
   const feel = feelOverride ? { ...PEN_FEEL, ...feelOverride } : PEN_FEEL;
-  // ⚠️ A tip PRESSED against a surface is a different section from the same tip in mid-air — see
-  // pressedProfile. The caller says which it is, because only the caller knows.
-  const profile = (feel.pressed && noz.pressed) ? noz.pressed : noz.profile;
   let pts = points.map(toVec).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
   if (pts.length === 0) return null;
   // A lone tap can't sweep — stub it upward so a dot still reads as piped cream.
@@ -505,7 +461,7 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     return thickness * f;
   };
 
-  pushSweep(pos, idx, pts, profile, radiusAt, opts);
+  pushSweep(pos, idx, pts, noz.profile, radiusAt, opts);
   return finishGeo(pos, idx);
 }
 

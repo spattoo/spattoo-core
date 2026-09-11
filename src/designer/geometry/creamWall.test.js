@@ -72,26 +72,23 @@ describe('rope size is DERIVED, so nothing can disagree with it', () => {
   });
 });
 
-describe('pipedBodyRadius — how far the tip was pressed in', () => {
-  it('⚠️ buries most of each rope, or the wall is a curtain of hanging strips', () => {
-    // Left at the crevice line, half of every rope stands proud and the valleys are a seventh of the
-    // tier deep. `press` is what turns thirty-six ropes into a surface.
-    const t = ropeRadius(1, STAR);
-    expect(1 - pipedBodyRadius(1, STAR)).toBeLessThan(0.9 * t);
+describe('pipedBodyRadius — the cake under the piping', () => {
+  it('⚠️ puts the CAKE a stroke inside the crest: the piping is done ON the side, not sunk into it', () => {
+    /* The body used to be raised until it swallowed the strokes — to stop the board showing through
+     * the notches between them — and a star tip's creases run most of the way down a stroke's side,
+     * so burying it buried them and the wall came out as a smooth cylinder with slits. */
+    const w = ropeSection(1, STAR).w;
+    const proud = 1 - pipedBodyRadius(1, { ...STAR, press: 0 });
+    expect(proud).toBeCloseTo(2 * w, 9);            // press 0: tangent to the cake, all of it showing
   });
 
-  it('never goes below the line where two ropes cross — that would show the board through them', () => {
-    for (const p of [STAR, ROUND, pipedParams({ width: 0.8, overlap: 0, press: 0 })]) {
-      const { w, d, ropes } = ropeSection(1, p);
-      const Rc = 1 - d;
-      const a = Rc * Math.sin(Math.PI / ropes);
-      const crevice = Rc * Math.cos(Math.PI / ropes) - (a < w ? d * Math.sqrt(1 - (a / w) ** 2) : 0);
-      expect(pipedBodyRadius(1, p)).toBeGreaterThanOrEqual(crevice - 1e-9);
-    }
+  it('press 1 buries half of one, and no more', () => {
+    const w = ropeSection(1, STAR).w;
+    expect(1 - pipedBodyRadius(1, { ...STAR, press: 1 })).toBeCloseTo(w, 9);
   });
 
-  it('never reaches the crest, or there would be no ribs to see', () => {
-    expect(pipedBodyRadius(1, pipedParams({ press: 1 }))).toBeLessThan(1);
+  it('never reaches the crest, or there would be no piping to see', () => {
+    for (const press of [0, 0.3, 1]) expect(pipedBodyRadius(1, { ...STAR, press })).toBeLessThan(1);
   });
 });
 
@@ -155,13 +152,14 @@ describe('the top — a spatula swirl, not a coil', () => {
     expect(top).toBeLessThan(0.4 * ropeRadius(1, STAR));
   });
 
-  it('reaches the tier radius and carries uvs — it is the lid AND it covers the ropes\' ends', () => {
+  it('ends where the CAKE does, not at the crest — a lid out to the crest is a plate on the piping', () => {
     const geo = buildStyledTop('piped', 'spiral', 1, 1.4, STAR);
     expect(geo.getAttribute('uv')).toBeTruthy();
     const pos = geo.getAttribute('position');
     let max = 0;
     for (let i = 0; i < pos.count; i++) max = Math.max(max, Math.hypot(pos.getX(i), pos.getZ(i)));
-    expect(max).toBeCloseTo(1, 6);
+    expect(max).toBeGreaterThan(pipedBodyRadius(1, STAR));   // past the body, into the strokes
+    expect(max).toBeLessThan(1 - 0.2 * ropeSection(1, STAR).w);  // …and well short of the crest
   });
 });
 

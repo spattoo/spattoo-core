@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
 import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
-import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PRESSED_STAND } from './creamPen.js';
+import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from './creamPen.js';
 import { NOMINAL_MM_PER_UNIT } from '../constants.js';
 
 // One inch, in world units. ⚠️ Asked of the scale the rest of the app already uses (an 8" cake is
@@ -116,25 +116,25 @@ const ropeHash = (i) => {
 
 /* The stroke's section, and HOW MANY OF THEM GO ROUND.
  *
- * ⚠️ THE WIDTH BELONGS TO THE NOZZLE, NOT TO THE CAKE, and having that backwards is what made every
- * version of this wrong. A tip leaves the stroke it leaves — about a third of an inch for the one
- * this style ships with — whether it is dragged up a 6" cake or a 10" one. So `width` is the knob
- * and the COUNT is what falls out: a bigger cake gets more strokes, never fatter ones. Authored the
- * other way round (a stroke count, with the width derived), every change of tier size silently
- * changed which nozzle the baker appeared to be holding.
+ * ⚠️ A PIPED STROKE IS A CYLINDER, and the tip's ribs wrap AROUND it: one faces the viewer, the
+ * next two curve away left and right, and between them are deep cavities. It is not a ribbon with
+ * ribs laid across a flat face — that was tried, from the reasoning that pressing a tip must spread
+ * it, and it renders as a wall of cards. The section is the tip's own `lobedProfile`, unmodified.
+ *
+ * ⚠️ THE WIDTH BELONGS TO THE NOZZLE, NOT TO THE CAKE. A tip leaves the stroke it leaves — about a
+ * third of an inch for the one this style ships with — whether it is dragged up a 6" cake or a 10"
+ * one. So `width` is the knob and the COUNT is what falls out: a bigger cake gets more strokes,
+ * never fatter ones. Authored the other way round, every change of tier size silently changed which
+ * nozzle the baker appeared to be holding.
  *
  * `overlap` lays them CLOSER than their own width, the way a hand does; it does not fatten them.
- *
- * The pen's pressed section spans −1…1 across and 0…`PRESSED_STAND` out, so `thickness` is the
- * half-width and the depth follows from it. The spines ride the (radius − depth) circle, which puts
- * the crest on the tier's radius.
+ * The spines ride the (radius − thickness) circle, which puts the crest on the tier's radius.
  */
 export function ropeSection(radius, { width, overlap }) {
   const thickness = Math.max(1e-4, width * INCH) / 2;
-  const d = thickness * PRESSED_STAND;
   const spacing = 2 * thickness / (1 + overlap);
-  const ropes = Math.max(6, Math.round(TAU * (radius - d) / spacing));
-  return { thickness, w: thickness, d, ropes };
+  const ropes = Math.max(6, Math.round(TAU * (radius - thickness) / spacing));
+  return { thickness, w: thickness, d: thickness, ropes };
 }
 
 // The stroke's DEPTH — how far it stands off the cake. Kept as its own name because it is what the
@@ -143,32 +143,25 @@ export function ropeRadius(radius, p) {
   return ropeSection(radius, p).d;
 }
 
-/* How wide the BODY under the ropes has to be.
+/* Where the CAKE is, under the piping.
  *
- * ⚠️ NOT THE TIER'S NOMINAL RADIUS, which is what it was, and the board showed through. Ropes stand
- * a diameter proud of whatever they are laid on, so between two of them there is a notch — and a
- * viewer looking even slightly down sees straight through that notch onto the cake board, as a ring
- * of gold sawteeth round the foot. The body is therefore pushed out to where two neighbouring ropes
- * actually meet: centres on a circle of radius Rc, `ropes` of them, so they cross at
- * `Rc·cos(π/ropes) − √(t² − (Rc·sin(π/ropes))²)`. Below that line there is cake, not daylight.
+ * ⚠️ THE PIPING IS DONE ON THE SIDE OF THE CAKE, NOT SUNK INTO IT, and getting that backwards is
+ * what flattened every version of this. The body had been raised until it swallowed the strokes —
+ * because a body left too far back showed the board through the notches between them — and the
+ * result was a smooth cylinder with slits in it: most of every rope was inside the cake, so the
+ * star's creases, which run most of the way down a rope's side, were buried where nobody could see
+ * them. The notch problem has its own answer (a collar at the foot, see buildPipedWall); the body
+ * does not have to pay for it.
+ *
+ * So the cake's own side sits a stroke's DIAMETER inside the crest, and `press` — how hard the tip
+ * was held against it — buries at most half a stroke:
+ *
+ *   press 0   the stroke is tangent to the cake: laid on, all of it showing
+ *   press 1   half of it is in the frosting
  */
 export function pipedBodyRadius(radius, p) {
-  const { w, d, ropes } = ropeSection(radius, p);
-  const Rc = radius - d;
-  const a = Rc * Math.sin(Math.PI / ropes);            // half the gap between two centres
-  const m = Rc * Math.cos(Math.PI / ropes);
-  // The crevice, with the section's real ASPECT: its depth at the half-way point across.
-  const h = a < w ? d * Math.sqrt(1 - (a / w) * (a / w)) : 0;
-  const crevice = Math.max(0.1 * radius, m - h);
-  const t = d;
-  /* ⚠️ AND `press` IS WHAT MAKES IT A WALL RATHER THAN A FRINGE. A baker does not balance ropes on
-   * a cake, they push the tip against it — so most of each rope is IN the frosting and what shows
-   * is a shallow rib. Left at the crevice line, half of every rope stands proud, the valleys between
-   * them are a seventh of the tier deep, and the wall reads as a curtain of hanging strips. It looked
-   * like that with every tip in the pen, which is the tell that the tip was never the problem.
-   * Raising the body SWALLOWS the ropes; it cannot poke through them, because it stops at the crest.
-   */
-  return Math.min(radius - 0.05 * t, Math.max(crevice, radius - t * (1 - p.press)));
+  const { w } = ropeSection(radius, p);
+  return radius - 2 * w + p.press * w;
 }
 
 /* Where each rope's centreline runs. The centres ride a circle OUTSIDE the tier's nominal radius,
@@ -195,7 +188,7 @@ function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
      * depth, the end caps came out three times longer than the tuck allowed for and hung below the
      * cake as flat white flaps lying on the board. */
     const f = k / N;
-    const y = height / 2 - 1.2 * cap - f * (height - 0.7 * cap);
+    const y = height / 2 - 0.7 * cap - f * (height - 0.2 * cap);
     const sway = sway0 * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
     const th = theta + sway;
     pts.push([Rc * Math.cos(th), y, Rc * Math.sin(th)]);
@@ -250,7 +243,7 @@ function buildPipedWall(radius, height, p) {
    * SQUASHED section the twist is catastrophic rather than subtle: half a turn along the stroke
    * rolls the flat face away from the wall, so the ribbon presents its edge and reads as a thin
    * sheet peeling off the cake. That was the "hanging flaps", not the tip and not the squash. */
-  const feel = { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0, pressed: true };
+  const feel = { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 };
   /* ⚠️ HOW MUCH A ROPE MAY MOVE IS SET BY HOW FAR IT OVERLAPS ITS NEIGHBOUR, and getting that
    * wrong is what made every star tip look like a FRINGE of hanging strips. Two ropes touch with
    * `margin` to spare on each side; if they wander independently by more than that, a gap opens
@@ -327,9 +320,9 @@ export function pipedParams(params = {}) {
   return {
     nozzle,
     // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
-    width:   Math.max(0.05, params.width ?? 0.3),
-    overlap: params.overlap ?? 0.15,
-    press:   Math.min(0.95, Math.max(0, params.press ?? 0.2)),
+    width:   Math.max(0.05, params.width ?? 0.5),
+    overlap: params.overlap ?? 0.08,
+    press:   Math.min(1, Math.max(0, params.press ?? 0.3)),
     vary:    params.vary    ?? 0.22,
     wobble:  params.wobble  ?? 0.6,
     /* The top. ⚠️ A DIFFERENT TOOL, so a different shape: not the tip, and an order of magnitude
@@ -519,14 +512,16 @@ function polarDisc(rOut, rings, segs, h, skirtY) {
 export function buildStyledTop(wall, top, radius, height, params = {}) {
   if (top !== 'spiral') return null;
   const p = pipedParams(params);
-  /* ⚠️ THE LID GOES OUT TO THE CREST, not to the body, and it is what COVERS the ropes' ends. A
-   * stroke is dragged up the wall and stops; what it presents upward is the tip's own cross-section,
-   * so a star tip left a ring of little five-pointed stars around the rim — a crown that no cake has
-   * and that read as the loudest thing on the tier. The top is smoothed over them, which is what a
-   * baker does, and the rim becomes the clean edge the reference photo has. */
+  /* ⚠️ THE LID IS THE CAKE'S TOP, SO IT ENDS WHERE THE CAKE DOES — a little past the body, tucked
+   * into the strokes' inner halves. Taken all the way out to the crest it becomes a plate
+   * overhanging the piping, which is what a tier looked like while the body was swallowing the
+   * strokes. The strokes' own ends stand proud of it, and that crown is what a real vertical piped
+   * tier has around its rim. */
+  const { w } = ropeSection(radius, p);
+  const rLid = pipedBodyRadius(radius, p) + 0.7 * w;
   const depth = p.swirl * radius;
-  const field = makeSwirlField({ turns: p.swirlTurns, rOut: radius });
+  const field = makeSwirlField({ turns: p.swirlTurns, rOut: rLid });
   // Rings have to resolve the ripple across the radius; around, it is one wave per revolution.
-  return polarDisc(radius, Math.min(360, Math.max(80, p.swirlTurns * 16)), 180,
-    (r, theta) => depth * field(r, theta), -1.2 * ropeSection(radius, p).d);
+  return polarDisc(rLid, Math.min(360, Math.max(80, p.swirlTurns * 16)), 180,
+    (r, theta) => depth * field(r, theta), -1.2 * w);
 }

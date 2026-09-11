@@ -33,15 +33,16 @@ function pipedParams(over = {}) {
      * say is how wide the tip is; the number of strokes is what falls out of the tier's
      * circumference. Authored as a stroke COUNT — which is how this shipped — every change of tier
      * size silently changed which nozzle the baker appeared to be holding. */
-    { key: 'width',   label: 'Nozzle (in)', min: 0.1, max: 1.2, step: 0.05, default: d('width', 0.3), user: true },
+    { key: 'width',   label: 'Nozzle (in)', min: 0.1, max: 1.2, step: 0.05, default: d('width', 0.5), user: true },
     // How hard neighbours are pressed together. A hand overlaps; butted exactly, a crevice between
     // two ropes can reach the body underneath.
-    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.15), user: false },
-    /* ⚠️ HOW FAR THE TIP WAS PUSHED IN, and the single most important number here. A baker does not
-     * balance ropes on a cake — they press the tip against it, so most of each rope is buried and
-     * what shows is a shallow rib. At 0 the ropes stand half proud with valleys a seventh of the
-     * tier deep between them, and every tip in the pen rendered as a curtain of hanging strips. */
-    { key: 'press',   label: 'Pressed in', min: 0, max: 0.95, step: 0.05, default: d('press', 0.2), user: true },
+    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.08), user: false },
+    /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
+     * it showing; 1 = half of it is in the frosting. ⚠️ AND THE PIPING IS ON THE SIDE, NOT SUNK IN.
+     * The body used to be raised until it swallowed the strokes — to stop the board showing through
+     * the notches between them — and a star tip's creases run most of the way down a stroke's side,
+     * so burying it buried them. The notches have their own answer: a collar at the foot. */
+    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0.3), user: true },
     { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.22),  user: false },
     { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.6), user: false },
     /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat
@@ -112,7 +113,7 @@ export const CREAM_STYLES = {
     label: 'Piped — round tip', wall: 'piped', top: 'spiral', nozzle: 'round',
     // A smooth rope reads as one rib where a star reads as five, so it takes a finer, denser stroke
     // to cover the same cake without looking like a bundle of sausages.
-    params: pipedParams({ width: 0.28 }),
+    params: pipedParams({ width: 0.38 }),
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
   // displacement can't carry comb lines at sane mesh density). wall stays smooth; surfaceMap drives
