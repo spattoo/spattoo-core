@@ -55,40 +55,50 @@ export const CREAM_STYLES = {
   // `ribbed` (one shared `ribbedProfile`), turned through ninety degrees: ribbed repeats up the
   // height, this repeats around the circumference. `relief` = rope depth (coeff of radius), `ropes` =
   // how many around, `round` fattens (>1) or flattens (<1) the tube.
-  /* `top: 'spiral'` is the OTHER half of the reference cake: the same star tip coiled flat across the
-   * lid. It is a separate KEY from `wall` because the two axes are independent — a future style can
-   * pipe the sides and leave the top smooth, or the reverse — and because a top is resolved by the
-   * same `buildStyledTop(wall, top, …)` switch that `wall` gets, never by a branch on the style name. */
+  /* `top: 'spiral'` is the OTHER half of the reference cake: a coil turned flat across the lid. It is
+   * a separate KEY from `wall` because the two axes are independent — a future style can pipe the
+   * sides and leave the top smooth, or the reverse — and because a top is resolved by the same
+   * `buildStyledTop(wall, top, …)` switch that `wall` gets, never by a branch on the style name. */
   piped: {
     label: 'Piped Ropes', wall: 'piped', top: 'spiral',
     params: [
       { key: 'relief', label: 'Depth',     min: 0,   max: 0.12, step: 0.005, default: 0.06, user: true },
-      { key: 'ropes',  label: 'Ropes',     min: 8,   max: 48,   step: 1,     default: 30,   user: true },
+      /* ⚠️ 44, counted off the reference photo, not chosen. Across its front half there are ~28
+       * ribbons, so ~50 around the cake before perspective is taken off the edges. At the 30 this
+       * shipped with, the strokes are half as wide again as the photo's and the wall reads as a
+       * fluted column; past ~56 it turns into corrugated cardboard. */
+      { key: 'ropes',  label: 'Ropes',     min: 8,   max: 64,   step: 1,     default: 44,   user: true },
       // ⚠️ BELOW 1, and that is the whole difference between cream and folded card. `round` is an
       // exponent on sin²: at 1.0 the profile sits near zero across a wide band, so the wall is FLAT
       // PANELS meeting at a fold. Below 0.5 it climbs straight off the valley — a narrow groove with
       // a round tube either side, which is what a star tip leaves. Judged on the real scene.
+      // (Swept 0.30 / 0.35 / 0.45 at 44 ropes: below 0.45 nothing visibly changes. It is the stroke
+      // COUNT that sets how flat a face reads, not this.)
       { key: 'round',  label: 'Roundness', min: 0.3, max: 1.2,  step: 0.05,  default: 0.45, user: false },
-      // The two that stop it reading as a turned vase — see displacePiped.
+      // The two that stop it reading as a turned vase — see makeRopeField.
       { key: 'vary',   label: 'Hand vary', min: 0,   max: 0.6,  step: 0.02,  default: 0.28, user: false },
-      { key: 'wobble', label: 'Lean',      min: 0,   max: 1.5,  step: 0.05,  default: 0.10, user: false },
-      // The star tip's teeth — fine ridges running ALONG each stroke. This is what separates a piped
-      // rope from a moulded flute, and no amount of roundness substitutes for it.
-      { key: 'teeth',      label: 'Tip points', min: 0, max: 8,   step: 1,    default: 4,    user: false },
+      /* ⚠️ THIS IS PER-STROKE WANDER, NOT A LEAN, and the difference is the whole point. It used to
+       * shift every stroke by the same amount at a given height: the wall leaned as one piece and
+       * read as WOOD GRAIN, while the strokes stayed identical to each other. Now each groove
+       * wanders on its own. Rendered 0 / 0.45 / 0.8 — 0 is machined, 0.8 is back to wood grain. */
+      { key: 'wobble', label: 'Hand wander', min: 0, max: 1.5,  step: 0.05,  default: 0.45, user: false },
+      /* The star tip's teeth — fine ridges running ALONG each stroke. ⚠️ 2, not 4: at 44 ropes a
+       * stroke is little more than half as wide as it was, so four lines on it read as shredding
+       * rather than as a nozzle. */
+      { key: 'teeth',      label: 'Tip points', min: 0, max: 8,   step: 1,    default: 2,    user: false },
       // ⚠️ 0.18, NOT deeper. Rendered 0.10 / 0.18 / 0.30 side by side: at 0.30 the teeth cut most of
       // the way through the stroke and the wall reads SHREDDED — torn paper strips, not cream — and
       // the crown at the rim turns to spikes. At 0.10 the strokes are smooth flutes with no tip in
       // them at all. 0.18 is the one that keeps a whole rounded stroke with the star's lines on it.
       { key: 'teethDepth', label: 'Tip depth',  min: 0, max: 0.4, step: 0.02, default: 0.18, user: false },
-      // The top coil. `relief`, `round`, `teeth` and `teethDepth` are SHARED with the wall — it is the
-      // same nozzle, so a coil that could be sized apart from the strokes would only ever be set wrong.
-      /* ⚠️ 5 BECAUSE THE WALL HAS 30 ROPES, not because 5 looked nice. It is the same nozzle, so the
-       * coil has to be as wide as a stroke: a stroke is 2πr/ropes ≈ 0.21r across, a coil's pitch is
-       * r/coils, and those agree at coils = ropes/τ ≈ 5. Rendered 4 / 5 / 6 / 7 / 10 — 7 and above
-       * read as the groove of a record, and only the widths that match the wall read as one bag of
-       * cream finishing a cake. Change `ropes` and this wants changing with it. */
-      { key: 'coils',  label: 'Top coils',  min: 3, max: 14,  step: 1,    default: 5,   user: true },
-      { key: 'centre', label: 'Top peak',   min: 0, max: 2,   step: 0.1,  default: 0.9, user: false },
+      /* The top coil. It shares `relief`, `round` and `teethDepth` with the wall — it is the same
+       * bag of cream — but NOT the pitch and NOT the teeth, because it is not the same action: the
+       * wall is a star tip dragged upward, the top is a spatula turned through the cream. Counted
+       * off the reference, the top has ~6 turns where the wall has 44 strokes; they are not the same
+       * width and pretending otherwise made the top read as the groove of a record. */
+      { key: 'coils',    label: 'Top coils',  min: 3, max: 14, step: 1,   default: 6,   user: true },
+      { key: 'topTeeth', label: 'Top points', min: 0, max: 6,  step: 1,   default: 0,   user: false },
+      { key: 'centre',   label: 'Top peak',   min: 0, max: 2,  step: 0.1, default: 0.9, user: false },
     ],
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry

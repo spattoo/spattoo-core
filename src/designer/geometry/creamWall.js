@@ -107,11 +107,6 @@ const ropeHash = (i) => {
   return x - Math.floor(x);
 };
 
-/* The wall's height field for ONE point around the cake, shared by the geometry and the relief
- * sampler so a decoration cannot seat on a wall that is no longer there.
- *
- * Returns f(frac) → 0..~1, where `frac` is the position around the cake in 0..1.
- */
 /* ONE definition of what a star tip's section looks like, shared by the wall's vertical strokes and
  * the top's coil — they are the same nozzle, and a second copy of this curve is a second place for
  * the two to drift apart. `t` runs 0..1 across the stroke; returns ~0 at the grooves, ~1 at the face.
@@ -125,7 +120,20 @@ export function strokeSection(t, round, teeth, teethDepth) {
   return body + ridge;
 }
 
-export function makeRopeField({ ropes, round, vary, teeth, teethDepth }) {
+/* The wall's height field, shared by the geometry and the relief sampler so a decoration cannot seat
+ * on a wall that is no longer there. `f(frac, v)` → 0..~1, where `frac` is the position around the
+ * cake in 0..1 and `v` the height fraction.
+ *
+ * ⚠️ THE GROOVES WANDER PER STROKE, and that is the whole of `wobble`. It used to shift the WHOLE
+ * lookup by one number that depended only on height: every stroke leaned together, the wall read as
+ * wood grain, and the strokes were still identical to each other. What a hand actually leaves is
+ * each stroke wandering on its own. So the EDGES move — each with its own amplitude and phase — and
+ * because two neighbours share an edge, a moving edge cannot open a gap between them.
+ *
+ * The first and last edges are pinned at 0 and 1: they are the ±π seam, and a seam that wandered
+ * would split the wall.
+ */
+export function makeRopeField({ ropes, round, vary, wobble = 0, teeth, teethDepth }) {
   // Per-stroke widths, normalised to sum to 1 — see the seam note above.
   const w = [], depth = [];
   let total = 0;
@@ -136,26 +144,28 @@ export function makeRopeField({ ropes, round, vary, teeth, teethDepth }) {
   }
   const edge = [0];
   for (let i = 0; i < ropes; i++) edge.push(edge[i] + w[i] / total);
+  // Per-edge wander. Amplitude is a fraction of ONE stroke's width, so it cannot cross a neighbour:
+  // the closest two edges ever come is (1 − vary)/ropes, and the most they move toward each other is
+  // wobble/(2·ropes).
+  const sway = (k, v) => (k === 0 || k === ropes) ? 0
+    : wobble * (ropeHash(k + 2000) - 0.5) * Math.sin(TAU * (v * (0.8 + ropeHash(k + 3000)) + ropeHash(k + 4000))) / ropes;
 
-  return (frac) => {
+  return (frac, v = 0) => {
     const f = frac - Math.floor(frac);                  // wrap into 0..1
     // Which stroke, and where inside it. Linear scan: `ropes` is tens, and this runs per vertex on a
     // build, not per frame.
     let i = ropes - 1;
-    for (let k = 1; k <= ropes; k++) if (f < edge[k]) { i = k - 1; break; }
-    const t = (f - edge[i]) / (edge[i + 1] - edge[i]);  // 0..1 across THIS stroke
+    for (let k = 1; k <= ropes; k++) if (f < edge[k] + sway(k, v)) { i = k - 1; break; }
+    const lo = edge[i] + sway(i, v), hi = edge[i + 1] + sway(i + 1, v);
+    const t = (f - lo) / (hi - lo);                     // 0..1 across THIS stroke
     return depth[i] * strokeSection(t, round, teeth, teethDepth);
   };
 }
 
 function displacePiped(geo, radius, { amp, ropes, round, vary, wobble, teeth, teethDepth }) {
   const a = amp * radius;
-  const field = makeRopeField({ ropes, round, vary, teeth, teethDepth });
-  return displaceSide(geo, (u, v) => {
-    // A slow lean with height: depends only on v, so every stroke shifts together and the seam holds.
-    const drift = wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes;
-    return a * field(u / TAU + 0.5 + drift);
-  });
+  const field = makeRopeField({ ropes, round, vary, wobble, teeth, teethDepth });
+  return displaceSide(geo, (u, v) => a * field(u / TAU + 0.5, v));
 }
 
 
@@ -229,13 +239,13 @@ export function buildStyledWall(wall, radius, height, params = {}) {
       // Vertical ropes need RADIAL tessellation that scales with the rope count (else the tubes
       // facet) — the mirror of ribbed, which scales height segments instead. Up the wall they are
       // constant, so the height count can stay modest.
-      const ropes = params.ropes ?? 30;
-      const radial = Math.min(512, Math.max(220, ropes * 12));
+      const ropes = params.ropes ?? 44;
+      const radial = Math.min(640, Math.max(220, ropes * 12));
       // Height segments carry the WOBBLE now, so they can no longer be a token 64.
       return displacePiped(denseCylinder(radius, height, radial, 96), radius,
         { amp: params.relief ?? 0.06, ropes, round: params.round ?? 0.45,
-          vary: params.vary ?? 0.28, wobble: params.wobble ?? 0.10,
-          teeth: params.teeth ?? 4, teethDepth: params.teethDepth ?? 0.18 });
+          vary: params.vary ?? 0.28, wobble: params.wobble ?? 0.45,
+          teeth: params.teeth ?? 2, teethDepth: params.teethDepth ?? 0.18 });
     }
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
@@ -282,15 +292,14 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
     }
     case 'piped': {
       const a = (params.relief ?? 0.06) * radius;
-      const ropes = params.ropes ?? 30, wobble = params.wobble ?? 0.10;
       // ⚠️ THE SAME FIELD THE GEOMETRY USES, imported rather than re-derived. A sampler that kept its
       // own copy of the profile is a second place for the two to disagree, and the symptom is a
       // decoration hovering off a wall that moved underneath it.
       const field = makeRopeField({
-        ropes, round: params.round ?? 0.45, vary: params.vary ?? 0.28,
-        teeth: params.teeth ?? 4, teethDepth: params.teethDepth ?? 0.18,
+        ropes: params.ropes ?? 44, round: params.round ?? 0.45, vary: params.vary ?? 0.28,
+        wobble: params.wobble ?? 0.45, teeth: params.teeth ?? 2, teethDepth: params.teethDepth ?? 0.18,
       });
-      return (theta, v) => a * field(theta / TAU + 0.5 + wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes);
+      return (theta, v) => a * field(theta / TAU + 0.5, v);
     }
     case 'weave': {
       // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.
@@ -386,22 +395,34 @@ function polarDisc(rim, rNominal, rings, segs, h) {
  */
 export function buildStyledTop(wall, top, radius, height, params = {}) {
   if (top !== 'spiral') return null;
-  const coils  = params.coils ?? 5;          // ≈ ropes/τ — the coil is as wide as a stroke (creamStyles)
+  const coils  = params.coils ?? 6;
   const relief = (params.relief ?? 0.06) * radius;
   const wallAt = makeWallReliefSampler(wall, radius, params, height);
-  /* ⚠️ A HAIR WIDER than the crest it traces. The lid and the wall sample the circle at different
-   * angles (different segment counts, and three's cylinder starts its θ elsewhere), so a rim sitting
-   * exactly ON the crest line dips INSIDE the wall between samples and opens a pinhole there. The
-   * margin is smaller than a chord, so it costs nothing visible and closes all of them. */
-  const margin = 0.006 * radius;
-  const rim = wallAt ? (theta) => radius + margin + Math.max(0, wallAt(theta, 1)) : () => radius + margin;
-  // Across a coil the teeth have to resolve, so rings scale with the coil count; around, the teeth
-  // run ALONG the coil and the rim is the longest arc, so the segment count stays high and fixed.
+  /* ⚠️ THE RIM TAKES THE WALL'S MAXIMUM ACROSS THE SEGMENT IT SPANS, not the crest at its own angle.
+   * The lid and the wall sample the circle at different angles (different counts, and three's
+   * cylinder starts its θ elsewhere), so a rim vertex sitting exactly ON the crest line lets the
+   * wall bulge past the lid's chord in between and opens a pinhole there. Sampling the max over the
+   * span it has to cover closes every one of them without a lip: at 44 strokes the field climbs from
+   * groove to crest in about four degrees, so "a small constant margin" is not a fix. */
+  const segs = Math.min(640, Math.max(240, (params.ropes ?? 44) * 12));
+  const span = Math.PI / segs;                                   // half a segment either side
+  const rim = wallAt
+    ? (theta) => {
+        let m = 0;
+        for (let k = -3; k <= 3; k++) m = Math.max(m, wallAt(theta + k * span / 3, 1));
+        return radius + Math.max(0, m) + 0.002 * radius;          // + a hair for the chord itself
+      }
+    : () => radius;
+  // Across a coil the teeth have to resolve, so rings scale with the coil count.
   const rings = Math.min(320, Math.max(120, coils * 22));
+  /* ⚠️ THE TOP HAS ITS OWN TOOTH COUNT, and it defaults to NONE. The wall is a star tip dragged up a
+   * chilled cake, so its strokes carry the tip's lines. The top of this finish is not piped at all —
+   * it is a spatula turned through the cream, which leaves a smooth coil. Rendered both: the wall's
+   * teeth on the top read as the groove of a record. */
   const field = makeSpiralField({
     coils, round: params.round ?? 0.45,
-    teeth: params.teeth ?? 4, teethDepth: params.teethDepth ?? 0.18,
+    teeth: params.topTeeth ?? 0, teethDepth: params.teethDepth ?? 0.18,
     centre: params.centre ?? 0.9,
   });
-  return polarDisc(rim, radius, rings, 360, (rFrac, theta) => relief * field(rFrac, theta));
+  return polarDisc(rim, radius, rings, segs, (rFrac, theta) => relief * field(rFrac, theta));
 }
