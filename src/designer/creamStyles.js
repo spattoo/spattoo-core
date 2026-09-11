@@ -19,39 +19,32 @@
 // the geometry strategy and the control UI both read it, so a new texture = one entry here.
 /* The `piped` param schema, built once and shared by every nozzle row (see the note on those rows).
  * `over` replaces DEFAULTS only — a row may want different numbers, never a different set of knobs.
+ *
+ * ⚠️ THE TIP'S OWN SHAPE IS NOT IN HERE. Rib count, groove depth, how much the ribs corkscrew: those
+ * belong to the nozzle, they live in `geometry/creamPen.js` beside the freehand pen's ten real tips,
+ * and a slider here that could contradict them would only ever be a way to get a 1M that is not a
+ * 1M. What a wall gets to say is how many strokes go round it and how they were laid.
  */
 function pipedParams(over = {}) {
   const d = (key, fallback) => (over[key] ?? fallback);
   return [
-    { key: 'relief', label: 'Depth',     min: 0,   max: 0.12, step: 0.005, default: d('relief', 0.06), user: true },
-    /* ⚠️ THIS IS STROKES, NOT RIBS, and the two are only the same number for a round tip. Counted off
-     * the reference photo: ~28 ribs across its front half, so ~50 ribs around the cake. A star tip
-     * with 4 fins gets there in 14 strokes; a round tip needs all 44. Setting the star tip to 44
-     * strokes produced ~176 ribs and a wall of corrugated cardboard. */
-    { key: 'ropes',  label: 'Strokes',   min: 6,   max: 64,   step: 1,     default: d('ropes', 14),    user: true },
-    /* ⚠️ FINS PER STROKE — the star's points, and the whole reason a star tip does not look like a
-     * round one. They are not a texture ON the stroke: the metal between two points of a star tip
-     * reaches nearly to the centre, so the cream leaves as separate fins. Ignored by the round tip,
-     * which has no points at all. */
-    { key: 'points', label: 'Tip points', min: 1,  max: 8,    step: 1,     default: d('points', 4),    user: false },
-    // How far the groove between two fins cuts toward the wall. 0 = a plain tube (the round tip).
-    { key: 'groove', label: 'Tip depth',  min: 0,  max: 1,    step: 0.05,  default: d('groove', 0.65),  user: false },
-    // ⚠️ BELOW 1, and that is the whole difference between cream and folded card. `round` is an
-    // exponent on sin²: at 1.0 the profile sits near zero across a wide band, so the wall is FLAT
-    // PANELS meeting at a fold. Below 0.5 it climbs straight off the valley. Judged on the real scene.
-    { key: 'round',  label: 'Roundness', min: 0.3, max: 1.2,  step: 0.05,  default: d('round', 0.45),  user: false },
-    // The two that stop it reading as a turned vase — see makeRopeField.
-    { key: 'vary',   label: 'Hand vary', min: 0,   max: 0.6,  step: 0.02,  default: d('vary', 0.28),   user: false },
-    /* ⚠️ THIS IS PER-STROKE WANDER, NOT A LEAN, and the difference is the whole point. It used to
-     * shift every stroke by the same amount at a given height: the wall leaned as one piece and
-     * read as WOOD GRAIN, while the strokes stayed identical to each other. Now each groove
-     * wanders on its own. Rendered 0 / 0.45 / 0.8 — 0 is machined, 0.8 is back to wood grain. */
-    { key: 'wobble', label: 'Hand wander', min: 0, max: 1.5,  step: 0.05,  default: d('wobble', 0.45), user: false },
-    /* The top coil. It is the same cream and the same tip, but NOT the same pitch: counted off the
-     * reference, the top has ~6 turns where the wall has ~50 ribs. They are not the same width, and
-     * pretending otherwise made the top read as the groove of a record. */
-    { key: 'coils',  label: 'Top coils', min: 3,   max: 14,   step: 1,     default: d('coils', 4),     user: true },
-    { key: 'centre', label: 'Top peak',  min: 0,   max: 2,    step: 0.1,   default: d('centre', 0.9),  user: false },
+    /* ⚠️ THE ROPE'S SIZE COMES FROM THIS, and there is deliberately no second knob for it. `ropes`
+     * ropes shoulder to shoulder around the cake fixes the diameter exactly; a separate "depth"
+     * would be free to disagree and leave either gaps or a mound. Counted off the reference photo:
+     * ~28 ribs across its front half, so ~50 around — and with real ropes a rib IS a rope. */
+    { key: 'ropes',   label: 'Strokes',  min: 10, max: 90, step: 1,    default: d('ropes', 36),    user: true },
+    // How hard neighbours are pressed together. A hand overlaps; butted exactly, a crevice between
+    // two ropes can reach the body underneath.
+    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.4, step: 0.02, default: d('overlap', 0.12), user: false },
+    // The two that stop it reading as a turned vase — no two strokes the same width, and each one
+    // wandering on its own up the wall rather than the whole wall leaning together.
+    { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.22),  user: false },
+    { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.02, default: d('wobble', 0.15), user: false },
+    /* The top coil, in rope DIAMETERS between turns: 1 is shoulder to shoulder, more spaces them out
+     * and lets the lid show between. ⚠️ There is no turn COUNT, on purpose — turns sit a diameter
+     * apart or they do not touch, so the count is a consequence of the tip and an authored one was
+     * free to contradict the tip it was drawn with. */
+    { key: 'coilGap', label: 'Top spacing', min: 0.6, max: 2.5, step: 0.05, default: d('coilGap', 1.0), user: true },
   ];
 }
 
@@ -89,27 +82,22 @@ export const CREAM_STYLES = {
       { key: 'round',  label: 'Roundness', min: 0.4, max: 2,    step: 0.1,   default: 1.0,  user: false },
     ],
   },
-  /* Piped — vertical STROKES dragged straight up the wall, and the same cream coiled across the top.
+  /* Piped — vertical STROKES piped up the wall, and the same rope coiled across the top.
    *
-   * ⚠️ TWO ROWS, ONE ALGORITHM, AND THE DIFFERENCE IS THE NOZZLE. `wall`, `top` and the param schema
-   * are identical; `nozzle` picks which tip the cream came out of, and it is resolved through the
-   * `NOZZLES` registry in geometry/creamWall.js — never branched on. A third tip is another row here
-   * plus another entry there. The schema is built by one function so the two cannot drift apart, but
-   * each row carries its OWN defaults, because a star tip and a round tip do not want the same
-   * numbers: a star puts several fins inside every stroke, so it takes far fewer strokes to cover
-   * the same cake.
+   * ⚠️ ONE ROW PER TIP, AND THE TIP IS A CREAM PEN NOZZLE. `nozzle` names a key in
+   * `geometry/creamPen.js` — the ten real tips the freehand pen already pipes with (Open Star 1M,
+   * 6-Star, Closed Star, Jumbo, French, Fine French, Round, Bead, Drop, Petal). The wall sweeps that
+   * tip's own cross-section, so a 1M on a wall and a 1M in the pen are the same object, and adding
+   * "Piped — French tip" is a row here and nothing else anywhere.
    *
-   * `relief` = stroke depth (coeff of radius); `ropes` = strokes around; `round` fattens (>1) or
-   * flattens (<1) the stroke's face.
+   * `wall`, `top` and the schema are identical across the rows; only the tip and its numbers differ.
    */
-  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star', params: pipedParams() },
+  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams() },
   piped_round: {
     label: 'Piped — round tip', wall: 'piped', top: 'spiral', nozzle: 'round',
-    /* A round tip leaves ONE tube per stroke, so it needs about as many strokes as the star tip
-     * leaves fins — otherwise the same cake comes out with a third of the ribs on it. `points: 1`
-     * says the same thing twice over: the shape function ignores it, but the mesh density is per
-     * FIN, and a round tip asking for four fins it will never draw is four times the triangles. */
-    params: pipedParams({ ropes: 44, points: 1, coils: 6 }),
+    // A smooth rope reads as one rib where a star reads as five, so it takes a finer, denser stroke
+    // to cover the same cake without looking like a bundle of sausages.
+    params: pipedParams({ ropes: 48, coilGap: 1.05 }),
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
   // displacement can't carry comb lines at sane mesh density). wall stays smooth; surfaceMap drives

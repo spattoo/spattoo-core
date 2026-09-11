@@ -26,7 +26,7 @@ export { thumbnailFromImage } from './designer/utils/thumbnail.js';
  * a studio that tunes a renderer no customer ever sees: exactly the mock-up the root CLAUDE.md warns
  * about, and the drift INVARIANTS #15 exists to stop. `PEN_FEEL` is the tunable set it drives.
  */
-export { buildPipingStroke, buildPipingHeap, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
+export { buildPipingStroke, buildPipingHeap, mergePenGeometries, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
   from './designer/geometry/creamPen.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
@@ -109,7 +109,7 @@ export { default as AcrylicWord } from './designer/canvas/AcrylicWord.jsx';
 // Every acrylic number in one place — the seam a catalogue row reaches the cake through.
 export { ACRYLIC_DEFAULTS, acrylicCfg, acrylicFitAspect, writingFromAcrylicRow, acrylicFinishes,
          NOMINAL_MM_PER_UNIT } from './designer/geometry/acrylicConfig.js';
-export { buildStyledWall, buildStyledTop, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
+export { buildStyledWall, buildStyledTop, displaceByHeightField, makeWallReliefSampler, ropeRadius, pipedBodyRadius, pipedParams } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';

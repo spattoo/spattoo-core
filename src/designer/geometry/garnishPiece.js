@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { buildPipingStroke } from './creamPen.js';
+import { buildPipingStroke, mergePenGeometries } from './creamPen.js';
 
 // ── A drawn garnish, as a piece you can pick up ──────────────────────────────────────────────────
 //
@@ -55,7 +55,7 @@ export function buildGarnishGeometry(paths, { rope = 6, plateSize = 420, worldSi
   }
   if (!parts.length) return null;
 
-  const merged = mergeGeometries(parts);
+  const merged = mergePenGeometries(parts);
   merged.computeBoundingBox();
   /* ⚠️ CLONED BEFORE THE TRANSLATE BELOW. `BufferGeometry.translate` moves the bounding box with the
      vertices, so a caller collecting several parts' boxes to build a shared frame would be unioning
@@ -71,36 +71,6 @@ export function buildGarnishGeometry(paths, { rope = 6, plateSize = 420, worldSi
   // standing piece turn about the point where it touches the cake.
   merged.translate(-(bounds.min.x + bounds.max.x) / 2, -bounds.min.y, -(bounds.min.z + bounds.max.z) / 2);
   return { geometry: merged, size, bounds, ropeWorld };
-}
-
-/* Merging by hand rather than pulling in three's BufferGeometryUtils for twenty lines.
- *
- * ⚠️ EXPAND THE INDEX FIRST. The pen's sweep IS indexed (`creamPen.js` calls `setIndex`), and the
- * first version of this ignored that and copied only the position buffer — so the triangles were
- * addressed by an index that no longer existed and the garnish rendered as a scatter of stray
- * fragments. It had a comment claiming the sweep returned non-indexed geometry, which I had not
- * checked. `toNonIndexed()` is core THREE, costs a copy that is then discarded, and makes the buffers
- * say exactly what they mean. */
-function mergeGeometries(input) {
-  const list = input.map(g => (g.getIndex() ? g.toNonIndexed() : g));
-  if (list.length === 1) return list[0];
-  let posCount = 0;
-  for (const g of list) posCount += g.getAttribute('position').count;
-
-  const pos = new Float32Array(posCount * 3);
-  const nor = new Float32Array(posCount * 3);
-  let at = 0;
-  for (const g of list) {
-    const p = g.getAttribute('position'), n = g.getAttribute('normal');
-    pos.set(p.array.subarray(0, p.count * 3), at * 3);
-    if (n) nor.set(n.array.subarray(0, n.count * 3), at * 3);
-    at += p.count;
-    g.dispose();                       // each part is consumed here and never referenced again
-  }
-  const out = new THREE.BufferGeometry();
-  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
-  return out;
 }
 
 /**

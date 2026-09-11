@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
 import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
+import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from './creamPen.js';
 
 // ── Styled cream walls — geometry strategies for the frosting STYLE axis ───────
 //
@@ -81,24 +82,24 @@ function displaceRibbed(geo, radius, { amp, bands, round }) {
  *
  * Integer `ropes` keeps the ±π seam continuous, the same rule swirl's integer lobes follow: u/τ+0.5
  * runs 0..1 across the seam and sin(0) = sin(π) = 0, so the groove lands exactly on the join. */
-/* ⚠️ A STAR NOZZLE DRAGGED UP THE WALL, which is a different object from a corrugation.
+/* ── PIPED — REAL ROPES, SWEPT FROM THE CREAM PEN'S OWN TIPS ─────────────────────────────────────
  *
- * The first version modelled the wall as one continuous periodic ripple. That is not the technique.
- * The baker holds a STAR tip against a chilled cake and pulls it from the bottom to the top, then
- * moves along and does it again. What that leaves is a row of SEPARATE STROKES, and three things
- * follow from it that a ripple cannot express — all three were called out on sight, twice:
+ * ⚠️ THIS IS NOT A DISPLACED CYLINDER, and three attempts at making it one is why it kept coming
+ * back. "You are looking at these as grooves, but here is what it is" — piped cream is not a groove
+ * cut into a wall, it is a ROPE LAID ON one. A rope has a side that overhangs, a cap where the bag
+ * lifted off, and a cross-section that belongs to a specific tip. A radial displacement of a
+ * cylinder can express none of those: every point on it is one radius at one angle, so the best it
+ * can ever do is a fluted column, which is exactly what it looked like.
  *
- *   1. Each stroke has its OWN WIDTH. A hand does not space them evenly, and identical widths are
- *      the single loudest tell that a shape was generated. `vary` now moves the width as well as the
- *      depth, so no two neighbours match.
- *   2. Each stroke carries FINE RIDGES ALONG ITS LENGTH — the star's teeth, several per stroke.
- *      This is the detail that actually says "piped" rather than "moulded", and no amount of
- *      roundness or lean substitutes for it.
- *   3. A stroke is a RIBBON pressed on, not a half-round tube: it rises quickly off the groove and
- *      sits fairly flat across its face.
+ * ⚠️ AND THE TIPS ALREADY EXISTED. `geometry/creamPen.js` carries ten real ones — Open Star 1M,
+ * 6-Star, Closed Star, Jumbo, French, Fine French, Round, Bead, Drop, Petal — as cross-sections,
+ * with `buildPipingStroke` to sweep one along a path, complete with the lift-off taper and the end
+ * caps. The freehand pen has been piping with them in admin the whole time. A second star profile
+ * invented here was a worse copy of one that was already right (CLAUDE.md rule 1), so the wall now
+ * asks the pen for its geometry and the two can never disagree about what a 1M leaves behind.
  *
- * ⚠️ THE WIDTHS MUST SUM TO EXACTLY ONE or the ±π seam splits. They are normalised here for that
- * reason, and the lookup wraps, so the last stroke meets the first exactly.
+ * The style's `nozzle` is therefore a CREAM PEN TIP KEY. A new tip is a row in creamStyles naming
+ * one of those keys — no code here, and none there either.
  */
 const ropeHash = (i) => {
   // Deterministic per-stroke value in 0..1. A cake must look the same on every reload and on every
@@ -107,102 +108,116 @@ const ropeHash = (i) => {
   return x - Math.floor(x);
 };
 
-/* ── THE NOZZLE ────────────────────────────────────────────────────────────────
+/* The rope's radius, in world units, DERIVED from how many go round — not a second knob that can
+ * disagree with the first. `ropes` ropes of radius `t` whose spines ride a circle of radius
+ * (radius − t) sit shoulder to shoulder when 2·t·ropes = 2π(radius − t), and `overlap` then presses
+ * neighbours into each other the way a hand does.
  *
- * What the TIP leaves across one stroke. `t` runs 0..1 from one groove to the next; the result is
- * ~0 at the grooves and ~1 on the face. One definition, shared by the wall's vertical strokes and
- * the top's coil — it is the same bag of cream, and a second copy of this curve is a second place
- * for the two to drift apart.
- *
- * ⚠️ THE NOZZLE IS THE SHAPE, NOT A DETAIL ON TOP OF ONE. The first star tip was a shallow ripple
- * ADDED to a round tube, and it read as exactly that: a round-tip stroke with texture on it. A star
- * tip's opening IS a star — the metal between two points reaches almost to the centre, so the cream
- * comes out as separate fins with deep grooves between them, and the fins are the whole section.
- * So the teeth MULTIPLY the body here. That is the difference between the two entries below, and
- * it is why they are a registry rather than a `teethDepth` of zero.
- *
- * A registry keyed by name (CLAUDE.md rule 2): a third tip is an entry here plus a row in
- * creamStyles, never a branch anywhere else.
+ * ⚠️ THE ROPES' CREST IS THE TIER'S RADIUS, so they are laid INSIDE it and the finished cake is the
+ * size it says it is. Every other style here grows outward from the nominal radius, and doing that
+ * with real ropes made a 6" cake render as a 7¼" one — the radius is what sizing and pricing are
+ * quoted from, so it is the crest that has to honour it, not the crumb coat underneath.
  */
-export const NOZZLES = {
-  // A plain round tip: one smooth tube per stroke. `round` < 1 flattens its face (see creamStyles).
-  round: (t, { round }) => Math.pow(Math.sin(Math.PI * t) ** 2, round),
-
-  /* A star tip: `points` fins across the stroke, with grooves between them that cut `groove` of the
-   * way to the wall. The whole thing still sits inside the stroke's own envelope, so the fins at the
-   * edges of a stroke are shorter than the ones in the middle — which is what tells a viewer where
-   * one stroke ends and the next begins.
-   *
-   * The exponent fattens the fins and narrows the grooves: a bare cosine gives fins and grooves the
-   * same width, and a piped fin is the fatter of the two. */
-  star: (t, { round, points, groove }) => {
-    const body = Math.pow(Math.sin(Math.PI * t) ** 2, round);
-    const fins = Math.pow(0.5 - 0.5 * Math.cos(TAU * points * t), 0.55);
-    return body * (1 - groove + groove * fins);
-  },
-};
-
-export const DEFAULT_NOZZLE = 'star';
-
-export function strokeSection(t, nozzle, opts) {
-  return (NOZZLES[nozzle] ?? NOZZLES[DEFAULT_NOZZLE])(t, opts);
+export function ropeRadius(radius, { ropes, overlap }) {
+  return (Math.PI * radius / (ropes + Math.PI)) * (1 + overlap);
 }
 
-/* The wall's height field, shared by the geometry and the relief sampler so a decoration cannot seat
- * on a wall that is no longer there. `f(frac, v)` → 0..~1, where `frac` is the position around the
- * cake in 0..1 and `v` the height fraction.
+/* How wide the BODY under the ropes has to be.
  *
- * ⚠️ THE GROOVES WANDER PER STROKE, and that is the whole of `wobble`. It used to shift the WHOLE
- * lookup by one number that depended only on height: every stroke leaned together, the wall read as
- * wood grain, and the strokes were still identical to each other. What a hand actually leaves is
- * each stroke wandering on its own. So the EDGES move — each with its own amplitude and phase — and
- * because two neighbours share an edge, a moving edge cannot open a gap between them.
- *
- * The first and last edges are pinned at 0 and 1: they are the ±π seam, and a seam that wandered
- * would split the wall.
+ * ⚠️ NOT THE TIER'S NOMINAL RADIUS, which is what it was, and the board showed through. Ropes stand
+ * a diameter proud of whatever they are laid on, so between two of them there is a notch — and a
+ * viewer looking even slightly down sees straight through that notch onto the cake board, as a ring
+ * of gold sawteeth round the foot. The body is therefore pushed out to where two neighbouring ropes
+ * actually meet: centres on a circle of radius Rc, `ropes` of them, so they cross at
+ * `Rc·cos(π/ropes) − √(t² − (Rc·sin(π/ropes))²)`. Below that line there is cake, not daylight.
  */
-export function makeRopeField({ nozzle, ropes, round, vary, wobble = 0, points, groove }) {
-  // Per-stroke widths, normalised to sum to 1 — see the seam note above.
-  const w = [], depth = [];
-  let total = 0;
-  for (let i = 0; i < ropes; i++) {
-    const wi = 1 + vary * (ropeHash(i) - 0.5) * 2;
-    w.push(wi); total += wi;
-    depth.push(1 + vary * (ropeHash(i + 1000) - 0.5) * 2);
+export function pipedBodyRadius(radius, p) {
+  const t = ropeRadius(radius, p);
+  const Rc = radius - t;
+  const a = Rc * Math.sin(Math.PI / p.ropes);          // half the gap between two centres
+  const m = Rc * Math.cos(Math.PI / p.ropes);
+  const h = a < t ? Math.sqrt(t * t - a * a) : 0;      // 0 when they only just touch
+  return Math.max(0.1 * radius, m - h);
+}
+
+/* Where each rope's centreline runs. The centres ride a circle OUTSIDE the tier's nominal radius,
+ * so the wall only ever grows outward — the same rule every other style here follows, and what lets
+ * a flat cap sit under it without overhanging anything.
+ */
+function ropeCentreline(theta, t, radius, height, wobble, seed) {
+  const Rc = radius - t;
+  const pts = [];
+  const N = 7;
+  for (let k = 0; k <= N; k++) {
+    // ⚠️ TOP TO BOTTOM, because `buildPipingStroke` thins the END of a stroke — that is the
+    // lift-off, and on a cake side it belongs at the board, not at the rim where it would open a
+    // gap under the lid.
+    /* ⚠️ BOTH ENDS ARE TUCKED, because `pushSweep` caps a stroke 0.6 radii BEYOND its last point.
+     * Started level with the rim, the caps stand a whole rope proud of the lid and the top silhouette
+     * turns into a crown of spikes. Run past the base, and the tapered ends finish inside the board
+     * instead of hanging over it as a torn fringe. */
+    const f = k / N;
+    const y = height / 2 - 0.3 * t - f * (height + 0.1 * t);
+    // ⚠️ A FRACTION OF A ROPE'S WIDTH, and a small one. This is a hand not holding a perfectly
+    // straight line, not a snake: at half a rope the strokes cross over each other and the wall
+    // reads as seaweed — which is what 0.5 looked like on the real scene.
+    const sway = wobble * t * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
+    const th = theta + sway;
+    pts.push([Rc * Math.cos(th), y, Rc * Math.sin(th)]);
   }
-  const edge = [0];
-  for (let i = 0; i < ropes; i++) edge.push(edge[i] + w[i] / total);
-  /* Per-edge wander.
-   *
-   * ⚠️ MEASURED IN FINS, NOT IN STROKES. A hand wobbles by a DISTANCE, and that distance does not
-   * grow because the baker picked a wider tip. Scaled per stroke, the star tip — whose strokes are
-   * three times as wide as the round tip's — wandered three times as far and the wall came out
-   * looking melted. `ropes × points` is the width of the finest thing on the wall either way.
-   *
-   * It still cannot cross a neighbour: the closest two edges come is (1 − vary)/ropes, and the most
-   * they move toward each other is wobble/(ropes·points). */
-  const fins = Math.max(1, points ?? 1);
-  const sway = (k, v) => (k === 0 || k === ropes) ? 0
-    : wobble * (ropeHash(k + 2000) - 0.5) * Math.sin(TAU * (v * (0.8 + ropeHash(k + 3000)) + ropeHash(k + 4000))) / (ropes * fins);
-
-  return (frac, v = 0) => {
-    const f = frac - Math.floor(frac);                  // wrap into 0..1
-    // Which stroke, and where inside it. Linear scan: `ropes` is tens, and this runs per vertex on a
-    // build, not per frame.
-    let i = ropes - 1;
-    for (let k = 1; k <= ropes; k++) if (f < edge[k] + sway(k, v)) { i = k - 1; break; }
-    const lo = edge[i] + sway(i, v), hi = edge[i + 1] + sway(i + 1, v);
-    const t = (f - lo) / (hi - lo);                     // 0..1 across THIS stroke
-    return depth[i] * strokeSection(t, nozzle, { round, points, groove });
-  };
+  return pts;
 }
 
-function displacePiped(geo, radius, { amp, nozzle, ropes, round, vary, wobble, points, groove }) {
-  const a = amp * radius;
-  const field = makeRopeField({ nozzle, ropes, round, vary, wobble, points, groove });
-  return displaceSide(geo, (u, v) => a * field(u / TAU + 0.5, v));
+// Merge pen strokes into one mesh, then give the result CYLINDRICAL uvs — the pen's sweep carries
+// none, and without them a gradient or a stripe on a piped tier has nothing to read.
+function mergeWithCylindricalUv(parts, radius, height) {
+  const geo = mergePenGeometries(parts.filter(Boolean));
+  if (!geo) return null;
+  const pos = geo.getAttribute('position');
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    uv[i * 2] = Math.atan2(pos.getZ(i), pos.getX(i)) / TAU + 0.5;
+    uv[i * 2 + 1] = (pos.getY(i) + height / 2) / height;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  geo.computeBoundingBox();
+  return geo;
 }
 
+/* The whole piped wall: a plain body cylinder with a rope piped up it, over and over.
+ *
+ * The body is at the tier's nominal radius and is never seen — the ropes sit outside it and, with
+ * any overlap at all, close over it. It is there so that a gap cannot show the inside of the cake.
+ */
+function buildPipedWall(radius, height, p) {
+  const t = ropeRadius(radius, p);
+  const rBody = pipedBodyRadius(radius, p);
+  const parts = [new THREE.CylinderGeometry(rBody, rBody, height, 96, 1)];
+  /* ⚠️ A FOOT, because the notch between two ropes is open at the bottom and looks straight at the
+   * board. The ropes' crest is the tier's radius but the body behind them is a rope-diameter
+   * narrower, so a viewer above the cake sees a ring of gold sawteeth around its base — the loudest
+   * thing in three renders. A short collar out at the crest line closes them. It is not a cheat:
+   * cream squeezed out at the foot of a vertical stroke is what a real one has there. */
+  const foot = new THREE.CylinderGeometry(radius - 0.12 * t, radius - 0.12 * t, 1.6 * t, 96, 1);
+  foot.translate(0, -height / 2 + 0.8 * t, 0);
+  parts.push(foot);
+  // ⚠️ The pen's own speed→width cue is OFF here. It reads the SPACING of hand-captured points, and
+  // these are machine-even, so it would return a flat 1 and cost the work of finding that out. The
+  // variation a wall wants is between one stroke and the next, which is `vary`.
+  /* ⚠️ AND THERE IS NO LIFT-OFF. The pen thins the END of a stroke to a point, which is right for a
+   * stroke that finishes in mid-air and wrong for forty-six of them arriving together at the board:
+   * it came out as a torn fringe with the board showing through it. These strokes do not end, they
+   * are CUT OFF by the board — so the taper is off and the centreline runs past the base, putting
+   * the blunt end inside the board where nothing can see it. */
+  const feel = { speedWidth: 0, tailDias: 0 };
+  for (let i = 0; i < p.ropes; i++) {
+    const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.5 * (ropeHash(i + 700) - 0.5)) / p.ropes;
+    const ti = t * (1 + p.vary * (ropeHash(i) - 0.5));
+    parts.push(buildPipingStroke(
+      ropeCentreline(theta, t, radius, height, p.wobble, i), p.nozzle, ti, feel));
+  }
+  return mergeWithCylindricalUv(parts, radius, height);
+}
 
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
 // Shared by the image-relief displacement and the weave relief sampler so both read the field the same.
@@ -244,23 +259,22 @@ export function displaceByHeightField(geo, field, { repeatX = 1, repeatY = 1, re
 }
 
 /* ONE place that fills in what a `piped` wall did not say. The geometry, the relief sampler and the
- * top all read the wall's shape, and three copies of `params.ropes ?? 44` is three chances for the
+ * lid all read the wall's shape, and three copies of `params.ropes ?? 46` is three chances for the
  * cake, the thing seated on it and the lid over it to be built from different numbers.
  *
- * ⚠️ `nozzle` IS A KEY, NOT A NUMBER, and it rides in the same bag because it reaches here the same
- * way the numbers do: `CakeTier` folds the style entry's `nozzle` into the resolved params. It is
- * resolved through `NOZZLES`, never branched on.
+ * ⚠️ `nozzle` IS A CREAM PEN TIP KEY, not a number, and it rides in the same bag because it reaches
+ * here the same way the numbers do: `CakeTier` folds the style entry's `nozzle` into the resolved
+ * params. It is looked up in `NOZZLE_BY_KEY`, never branched on.
  */
 export function pipedParams(params = {}) {
+  const nozzle = NOZZLE_BY_KEY[params.nozzle] ? params.nozzle : DEFAULT_NOZZLE;
   return {
-    nozzle: params.nozzle ?? DEFAULT_NOZZLE,
-    relief: params.relief ?? 0.06,
-    ropes:  params.ropes  ?? 14,
-    round:  params.round  ?? 0.45,
-    vary:   params.vary   ?? 0.28,
-    wobble: params.wobble ?? 0.45,
-    points: Math.max(1, params.points ?? 4),
-    groove: params.groove ?? 0.8,
+    nozzle,
+    ropes:   Math.max(6, params.ropes ?? 36),
+    overlap: params.overlap ?? 0.12,
+    vary:    params.vary    ?? 0.22,
+    wobble:  params.wobble  ?? 0.15,
+    coilGap: params.coilGap ?? 1.0,
   };
 }
 
@@ -291,15 +305,7 @@ export function buildStyledWall(wall, radius, height, params = {}) {
       return displaceRibbed(denseCylinder(radius, height, 160, heightSeg), radius,
         { amp: params.relief ?? 0.04, bands, round: params.round ?? 1.0 });
     }
-    case 'piped': {
-      const p = pipedParams(params);
-      // ⚠️ RADIAL TESSELLATION IS PER FIN, NOT PER STROKE. A star tip puts `points` fins inside every
-      // stroke, so the finest thing on the wall is `ropes × points` wide, not `ropes` — resolve the
-      // stroke and the fins alias into a shimmer. Up the wall the strokes are near-constant, so the
-      // height count stays modest; it carries the per-stroke WANDER, so it can no longer be a token 64.
-      const radial = Math.min(1024, Math.max(240, p.ropes * p.points * 10));
-      return displacePiped(denseCylinder(radius, height, radial, 96), radius, { ...p, amp: p.relief });
-    }
+    case 'piped': return buildPipedWall(radius, height, pipedParams(params));
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
       // as a normal map, baked from the same field in CakeTier). Tessellation scales with the line
@@ -344,12 +350,26 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
       return (_theta, v) => a * ribbedProfile(v, bands, round);   // constant around → depends only on v
     }
     case 'piped': {
+      /* The rope surface, analytically — there is no height field to share any more, so this is the
+       * one place the two descriptions of a piped wall could drift apart. It reads the SAME
+       * `pipedParams` and the same geometry: centres on a circle of radius (r + t), so the surface
+       * runs from t in the crevice between two ropes to 2t over a rope's spine. The tip's own fine
+       * ribs are deliberately not modelled — a decoration seats on the rope, not in a flute.
+       */
       const p = pipedParams(params);
-      // ⚠️ THE SAME FIELD THE GEOMETRY USES, imported rather than re-derived. A sampler that kept its
-      // own copy of the profile is a second place for the two to disagree, and the symptom is a
-      // decoration hovering off a wall that moved underneath it.
-      const field = makeRopeField(p);
-      return (theta, v) => p.relief * radius * field(theta / TAU + 0.5, v);
+      const t = ropeRadius(radius, p);
+      const Rc = radius - t;
+      const floor = pipedBodyRadius(radius, p) - radius;        // the cake between two ropes
+      /* ⚠️ NEGATIVE, AND THAT IS RIGHT. Every other style grows outward from the nominal radius, so
+       * every other sampler returns ≥ 0. Piped ropes are laid INSIDE it — their crest IS the radius —
+       * so the surface runs from 0 on a rope's spine down to the crevice between two of them. Decor
+       * seats a little inside the nominal wall here, which is exactly where the cream is. */
+      return (theta, _v) => {
+        const step = TAU / p.ropes;
+        const centre = Math.round(theta / step - 0.5) + 0.5;    // nearest rope, in step units
+        const d = Math.abs(theta - centre * step) * Rc;          // arc distance from its spine
+        return Math.max(floor, -t + (d < t ? Math.sqrt(t * t - d * d) : 0));
+      };
     }
     case 'weave': {
       // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.
@@ -364,108 +384,67 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
 
 /* ── The cream SPIRAL on the tier top ──────────────────────────────────────────
  *
- * The other half of the piped reference cake: the same star tip, but laid in a COIL from the rim in
- * to the centre instead of dragged up the wall. It is the same nozzle, so it is `strokeSection` —
- * the wall's own profile — read across the coil instead of across a stroke.
+ * The other half of the reference cake, and the same rope: one long stroke wound from the rim in to
+ * the middle, piped with the tip the wall was piped with. It ends where the bag lifts off, which
+ * `buildPipingStroke` already thins to a point — so the peak in the centre of a piped top is not a
+ * mound anybody had to model, it is what the tool does at the end of a stroke.
  *
- * The spiral coordinate is `coils·(1 − r/R) + θ/τ`: one full turn per revolution, `coils` turns from
- * the rim to the middle, constant radial pitch (an Archimedean spiral, which is what a hand piping a
- * flat top actually makes). Its FRACTIONAL part is the position across the rope, and a fractional
- * part is blind to the ±1 jump at the θ = ±π seam, so the coil joins itself exactly.
- *
- * The centre gets a small MOUND — where the piping bag lifts off, a real spiral finishes in a peak,
- * and without it the coils crowd into a flat knot.
+ * ⚠️ THE PITCH IS NOT A FREE NUMBER. Turns sit a rope's DIAMETER apart or they do not touch, so the
+ * turn count is derived from the tip: (radius − t) / (2t · coilGap), with `coilGap` the only knob —
+ * 1 is shoulder to shoulder, more is a spaced coil with the cake showing between. An authored turn
+ * count was free to contradict the tip it was drawn with, and did.
  */
-export function makeSpiralField({ nozzle, coils, round, points, groove, centre }) {
-  return (rFrac, theta) => {
-    const s = coils * (1 - rFrac) + theta / TAU;
-    const coil = strokeSection(s - Math.floor(s), nozzle, { round, points, groove });
-    const x = rFrac * coils;                       // distance from the middle, in coil widths
-    return coil + centre * Math.exp(-x * x * 0.7);
-  };
-}
-
-/* A disc built as a dense polar GRID, with a skirt at the rim that drops to y = 0.
- *
- * ⚠️ NOT `CircleGeometry`, and not a cylinder cap either: both are triangle FANS — every vertex sits
- * on the rim and there is nothing in between to displace, so a height field applied to one produces a
- * flat disc with a wavy edge. This carries interior vertices.
- *
- * `rim(θ)` is the outer radius, which VARIES: it traces the displaced wall's own crest line, so the
- * lid ends exactly where the wall surface is. The skirt then closes the remaining gap by dropping
- * each rim vertex to y = 0 — the wall's top edge — so the two weld shut at every angle instead of
- * leaving the undercut a constant-radius disc leaves.
- */
-function polarDisc(rim, rNominal, rings, segs, h) {
-  const pos = [], idx = [], uv = [];
-  const push = (x, y, z) => { pos.push(x, y, z); uv.push(x / (2 * rNominal) + 0.5, z / (2 * rNominal) + 0.5); };
-  const at = (frac, i) => {
-    const theta = -Math.PI + TAU * i / segs;
-    const r = rim(theta) * frac;
-    push(r * Math.cos(theta), h(r / rNominal, theta), r * Math.sin(theta));
-  };
-  push(0, h(0, 0), 0);                                        // the centre is ONE vertex — a ring of
-  for (let j = 1; j <= rings; j++)                            // coincident ones makes degenerate
-    for (let i = 0; i < segs; i++) at(j / rings, i);          // triangles and NaN normals.
-  const ring = (j) => 1 + (j - 1) * segs;                     // first vertex index of ring j
-  for (let i = 0; i < segs; i++) idx.push(0, ring(1) + (i + 1) % segs, ring(1) + i);
-  for (let j = 1; j < rings; j++)
-    for (let i = 0; i < segs; i++) {
-      const a = ring(j) + i, b = ring(j) + (i + 1) % segs;
-      const c = ring(j + 1) + i, d = ring(j + 1) + (i + 1) % segs;
-      idx.push(a, b, c, b, d, c);
-    }
-  const base = pos.length / 3;                                // skirt: the rim dropped to the wall top
-  for (let i = 0; i < segs; i++) {
-    const o = (ring(rings) + i) * 3;
-    push(pos[o], 0, pos[o + 2]);
+export function spiralCentreline(radius, t, coilGap, y) {
+  const pitch = 2 * t * Math.max(0.4, coilGap);
+  const rOut = Math.max(2 * t, radius - 2 * t);     // outermost turn, tucked inside the wall's ropes
+  const turns = Math.max(1, rOut / pitch);
+  const n = Math.max(24, Math.round(turns * 24));  // ~15° per control point
+  const pts = [];
+  for (let k = 0; k <= n; k++) {
+    /* ⚠️ CENTRE OUTWARD, not rim inward, and it is the ends that decide it. A stroke begins at full
+     * width with a rounded cap and ENDS thinned to a point. Wound from the rim in, that puts a blunt
+     * cap sitting proud at the tier's edge — a stray blob, plainly visible — and tapers the coil
+     * away to nothing in the middle. Wound from the centre out, the cap IS the little peak a real
+     * spiral has where the bag was set down, and the taper dies against the wall's own ropes. */
+    const f = k / n;                               // 0 in the middle, 1 at the rim
+    const r = rOut * f;
+    const a = turns * TAU * f;
+    pts.push([r * Math.cos(a), y, r * Math.sin(a)]);
   }
-  for (let i = 0; i < segs; i++) {
-    const a = ring(rings) + i, b = ring(rings) + (i + 1) % segs;
-    const c = base + i, d = base + (i + 1) % segs;
-    idx.push(a, b, c, b, d, c);           // outward-facing: t̂ × (−ŷ) is the radial normal
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  return geo;
+  return pts;
 }
 
 /* The tier TOP for a styled cream finish, or `null` when the style leaves the top flat (every style
  * but `piped` today — the caller then renders the wall's own flat cap, exactly as before).
  *
- * ⚠️ ITS RIM IS NOT A CIRCLE. A displaced wall grows OUTWARD while the cylinder's flat cap stays at
- * the original radius, so the cap no longer reaches the wall: you look straight down the gap between
- * them at the board, and the crests standing above it read as a crown of spikes. Both were plainly
- * visible on the piped render. The rim therefore asks `makeWallReliefSampler` where the wall's crest
- * line actually is at v = 1 — the SAME function the geometry was built from, never a second guess at
- * it — and the skirt drops to meet it.
+ * ⚠️ THE RIM LOOKS AFTER ITSELF NOW, and that is worth recording because two commits went on fixing
+ * it the hard way. While the wall was a DISPLACED cylinder it grew outward past its own flat cap,
+ * so the cap stopped short, daylight showed under the rim, and the lid had to trace the wall's crest
+ * line and skirt down to meet it. Ropes are laid OUTSIDE the body instead: the disc at the tier's
+ * nominal radius is covered by the ropes' inner halves at every angle, by construction. The fix was
+ * to model the thing correctly, not to chase the symptom.
  */
 export function buildStyledTop(wall, top, radius, height, params = {}) {
   if (top !== 'spiral') return null;
   const p = pipedParams(params);
-  const coils  = params.coils ?? 6;
-  const relief = p.relief * radius;
-  const wallAt = makeWallReliefSampler(wall, radius, params, height);
-  /* ⚠️ THE RIM TAKES THE WALL'S MAXIMUM ACROSS THE SEGMENT IT SPANS, not the crest at its own angle.
-   * The lid and the wall sample the circle at different angles (different counts, and three's
-   * cylinder starts its θ elsewhere), so a rim vertex sitting exactly ON the crest line lets the
-   * wall bulge past the lid's chord in between and opens a pinhole there. Sampling the max over the
-   * span it has to cover closes every one of them without a lip: a star tip's fins climb from groove
-   * to crest in about a degree, so "a small constant margin" is not a fix. */
-  const segs = Math.min(1024, Math.max(240, p.ropes * p.points * 10));
-  const span = Math.PI / segs;                                   // half a segment either side
-  const rim = wallAt
-    ? (theta) => {
-        let m = 0;
-        for (let k = -3; k <= 3; k++) m = Math.max(m, wallAt(theta + k * span / 3, 1));
-        return radius + Math.max(0, m) + 0.002 * radius;          // + a hair for the chord itself
-      }
-    : () => radius;
-  // Across a coil the fins have to resolve, so rings scale with both the coil count and the tip.
-  const rings = Math.min(420, Math.max(120, coils * p.points * 8));
-  const field = makeSpiralField({ ...p, coils, centre: params.centre ?? 0.9 });
-  return polarDisc(rim, radius, rings, segs, (rFrac, theta) => relief * field(rFrac, theta));
+  const t = ropeRadius(radius, p);
+  // A plain lid at the tier's radius, with the coil resting on it.
+  const rBody = pipedBodyRadius(radius, p);
+  const disc = new THREE.CylinderGeometry(rBody, rBody, 0.02 * t, 96, 1);
+  disc.translate(0, -0.01 * t, 0);
+  const coil = buildPipingStroke(spiralCentreline(radius, t, p.coilGap, t), p.nozzle, t,
+    { speedWidth: 0, tailDias: 1.3, tailEnd: 0.18 });
+  const geo = mergePenGeometries([disc, coil]);
+  if (geo) {
+    // Polar uvs, so a gradient or a stripe reads across the lid the way it reads around the wall.
+    const pos = geo.getAttribute('position');
+    const uv = new Float32Array(pos.count * 2);
+    for (let i = 0; i < pos.count; i++) {
+      uv[i * 2] = Math.atan2(pos.getZ(i), pos.getX(i)) / TAU + 0.5;
+      uv[i * 2 + 1] = Math.hypot(pos.getX(i), pos.getZ(i)) / rBody;
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.computeBoundingBox();
+  }
+  return geo;
 }

@@ -337,6 +337,51 @@ function finishGeo(pos, idx) {
   return geo;
 }
 
+/* Merge swept strokes into ONE mesh, by hand rather than pulling in three's BufferGeometryUtils for
+ * thirty lines. Lives here because everything that merges pen strokes has to know this:
+ *
+ * ⚠️ THE SWEEP IS INDEXED (`pushSweep` calls `setIndex`), and an early version of this ignored that
+ * and copied only the position buffer — so the triangles were addressed by an index that no longer
+ * existed and a garnish rendered as a scatter of stray fragments. It had a comment claiming the
+ * sweep returned non-indexed geometry, which nobody had checked.
+ *
+ * ⚠️ THE INDEX IS CARRIED, NOT EXPANDED. `toNonIndexed()` is the two-line way to be safe, and it
+ * costs SIX TIMES the vertices — a tube shares every vertex between six triangles. On one garnish
+ * nobody notices; a piped tier is forty-six ropes, and expanding took it from 75k vertices to 454k.
+ * Offsetting each part's index is barely more code and is what makes the wall affordable.
+ *
+ * Positions and normals only: a swept rope carries no uv, and a caller that needs one knows the
+ * surface it is wrapping far better than this does.
+ */
+export function mergePenGeometries(input) {
+  const list = input.filter(Boolean);
+  if (!list.length) return null;
+  if (list.length === 1) return list[0];
+  let posCount = 0, idxCount = 0;
+  for (const g of list) {
+    posCount += g.getAttribute('position').count;
+    idxCount += g.getIndex() ? g.getIndex().count : g.getAttribute('position').count;
+  }
+  const pos = new Float32Array(posCount * 3);
+  const nor = new Float32Array(posCount * 3);
+  const idx = posCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
+  let at = 0, ai = 0;
+  for (const g of list) {
+    const p = g.getAttribute('position'), n = g.getAttribute('normal'), ix = g.getIndex();
+    pos.set(p.array.subarray(0, p.count * 3), at * 3);
+    if (n) nor.set(n.array.subarray(0, n.count * 3), at * 3);
+    if (ix) for (let k = 0; k < ix.count; k++) idx[ai++] = ix.getX(k) + at;
+    else    for (let k = 0; k < p.count; k++)  idx[ai++] = k + at;
+    at += p.count;
+    g.dispose();                       // each part is consumed here and never referenced again
+  }
+  const out = new THREE.BufferGeometry();
+  out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  out.setIndex(new THREE.BufferAttribute(idx, 1));
+  return out;
+}
+
 const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1], p[2]));
 
 // Build one freehand stroke: sweep the chosen nozzle profile (constant radius) through the
