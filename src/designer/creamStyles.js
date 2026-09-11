@@ -133,6 +133,16 @@ export const CREAM_STYLES = {
    * that. Five points at 0.60in is the one whose STROKE also looks like the photograph's, not just
    * whose rib count does. */
   piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams({ width: 0.6 }) },
+  /* ⚠️ KEPT BECAUSE IT IS A LOOK, not because it is a stage on the way to another one. Fine ropes
+   * standing close together on the cake's side, each barely wider than a pencil — it reads as a
+   * curtain of vertical strands rather than as the bold ribbed wall `piped` is aiming at, and
+   * Sandeep asked for it to be saved rather than tuned away. Every number is the state it was in
+   * when that was decided; change `piped` freely, leave this alone.
+   */
+  piped_fine: {
+    label: 'Piped — fine ropes', wall: 'piped', top: 'spiral', nozzle: 'star5',
+    params: pipedParams({ width: 0.6, overlap: 0.85, press: 0, ao: 0.6, vary: 0.34, wobble: 0.85 }),
+  },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
@@ -178,7 +188,7 @@ export const CREAM_STYLES = {
   },
 };
 
-export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
+export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_fine', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
 export const DEFAULT_STYLE = 'smooth';
 
 export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_STYLE];

@@ -67,7 +67,7 @@ function starSlabShape(points, depth, notch = 0.42, per = 7) {
   return shape;
 }
 
-function StarStack({ points, depth, notch, n, height, thickness, wobble, turn, roll, x = 0, z = 0 }) {
+function StarStack({ points, depth, notch, n, height, thickness, wobble, turn, roll, ao, x = 0, z = 0 }) {
   const geos = useMemo(() => {
     const shape = starSlabShape(points, depth, notch);
     const slab = height / n;
@@ -78,11 +78,19 @@ function StarStack({ points, depth, notch, n, height, thickness, wobble, turn, r
       g.scale(thickness * wob, 1, thickness * wob);
       g.rotateY(roll + i * turn);            // a POINT faces the viewer, and the stack turns a hair as it rises
       g.translate(x, -height / 2 + i * slab, z);
+      /* ⚠️ THE SAME TWO THINGS THE SWEPT PATH NEEDED, and without them the stack reads as one merged
+       * panel exactly as the sweep did. `ExtrudeGeometry` SHARES the vertices at the shape's corners,
+       * so `computeVertexNormals` averages the two faces meeting there and rolls every edge over into
+       * a smooth shoulder; and the scene's light is nearly a uniform dome, so faces a few degrees
+       * apart shade identically unless something darkens the creases. Flat shading gives each face
+       * its own normal; the AO is measured from the crease to the crest, the same as the wall's. */
+      bakeCreaseAO(g, thickness, ao, x, z);
       return g;
     });
-  }, [points, depth, notch, n, height, thickness, wobble, turn, roll, x, z]);
+  }, [points, depth, notch, n, height, thickness, wobble, turn, roll, ao, x, z]);
   return geos.map((g, i) => (
-    <mesh key={i} geometry={g} castShadow receiveShadow><meshPhysicalMaterial color="#F6EBD8" {...creamMaterial()} /></mesh>
+    <mesh key={i} geometry={g} castShadow receiveShadow>
+      <meshPhysicalMaterial color="#F6EBD8" flatShading vertexColors {...creamMaterial()} /></mesh>
   ));
 }
 
@@ -121,16 +129,17 @@ function strokeAngles() {
  *
  * `?ao=` scales it; 0 is the render as it was.
  */
-function bakeCreaseAO(geo, thickness, ao) {
+function bakeCreaseAO(geo, thickness, ao, cx = 0, cz = 0) {
   const pos = geo.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
   /* ⚠️ The range is the CREASE to the CREST, from the tip's own profile — not the geometry's own
    * min and max radius, whose minimum is the end cap's apex sitting on the axis. See creamWall. */
-  let rMin = 1;
-  for (const [px, py] of (NOZZLE_BY_KEY[noz] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).profile) rMin = Math.min(rMin, Math.hypot(px, py));
+  // For the stack the section is the flat star itself, so its crease sits at 1 − depth.
+  const rMin = stack ? 1 - Number(q.get('depth') || 0.55)
+    : (() => { let m = 1; for (const [px, py] of (NOZZLE_BY_KEY[noz] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).profile) m = Math.min(m, Math.hypot(px, py)); return m; })();
   const crest = thickness, floor = thickness * rMin, span = Math.max(1e-6, crest - floor);
   for (let i = 0; i < pos.count; i++) {
-    const d = (Math.hypot(pos.getX(i), pos.getZ(i)) - floor) / span;
+    const d = (Math.hypot(pos.getX(i) - cx, pos.getZ(i) - cz) - floor) / span;
     const k = 1 - ao * (1 - Math.min(1, Math.max(0, d)));
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
   }
@@ -150,7 +159,10 @@ function Stroke({ x = 0, z = 0, roll: r }) {
 /* The cake under it, placed by `pipedBodyRadius` — the same call the wall makes. At press 0 the
  * stroke is TANGENT to this cylinder: its inner edge is the cake's side. */
 function Cake() {
-  const rBody = pipedBodyRadius(R, P);
+  /* ⚠️ In stack mode the cake is sized to the STACK, not to the style's own stroke. `?t=` sets the
+   * stack's radius, and a body built for a different width leaves the stroke half sunk into it —
+   * which is the one thing this page exists to show is wrong. */
+  const rBody = stack ? R - 2 * t : pipedBodyRadius(R, P);
   return (
     <mesh position={[0, -0.25, 0]} receiveShadow castShadow>
       <cylinderGeometry args={[rBody, rBody, 2.6, 96]} />
@@ -161,15 +173,26 @@ function Cake() {
 
 createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%', background: '#fff' }}>
-    <Canvas camera={onCake ? { position: [5.0, 0.3, 0.9], fov: 34 } : { position: [0, 0, 4.2], fov: 32 }} shadows>
+    <Canvas camera={onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
       <SceneLights shadows />
-      {stack ? (
+      {stack && onCake ? <>
+        {/* The stack, laid ON the cake's side: tangent to it, and rolled so a POINT faces outward —
+            the same placement the wall gives a swept stroke. `?n=` repeats it round the tier. */}
+        <Cake />
+        {strokeAngles().map((a, i) => (
+          <StarStack key={i} points={Number(q.get('points') || 5)} depth={Number(q.get('depth') || 0.55)}
+            notch={Number(q.get('notch') ?? 0.42)} n={stack} height={2.0} thickness={t}
+            wobble={Number(q.get('wob') ?? 0.012)} turn={Number(q.get('turn') ?? 0.002)}
+            roll={a} ao={Number(q.get('ao') ?? 0.8)}
+            x={(R - t) * Math.cos(a)} z={(R - t) * Math.sin(a)} />
+        ))}
+      </> : stack ? (
         <StarStack points={Number(q.get('points') || 5)} depth={Number(q.get('depth') || 0.55)}
           notch={Number(q.get('notch') ?? 0.42)}
           n={stack} height={2.0} thickness={t}
           wobble={Number(q.get('wob') ?? 0.012)} turn={Number(q.get('turn') ?? 0.002)}
-          roll={Number(q.get('roll') ?? Math.PI / 2)} />
+          roll={Number(q.get('roll') ?? Math.PI / 2)} ao={Number(q.get('ao') ?? 0.8)} />
       ) : onCake ? <>
         <Cake />
         {/* ⚠️ SPACED AND ROLLED BY THE WALL'S OWN NUMBERS. `ropeSection` says how many go round at
