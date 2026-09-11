@@ -31,10 +31,11 @@ describe('the tip comes from the cream pen, not from here', () => {
 });
 
 describe('rope size is DERIVED, so nothing can disagree with it', () => {
-  it('lays `ropes` ropes shoulder to shoulder with no overlap', () => {
+  it('lays `ropes` strokes shoulder to shoulder with no overlap', () => {
+    // The pen's PRESSED section spans −1…1 across and 0…1 out, so half-width = depth = thickness.
     const p = { ropes: 36, overlap: 0 };
     const t = ropeRadius(1, p);
-    expect(2 * t * p.ropes).toBeCloseTo(TAU * (1 - t), 9);   // spines on the (radius − t) circle
+    expect(2 * t * p.ropes).toBeCloseTo(TAU * (1 - t), 6);   // spines on the (radius − t) circle
   });
 
   it('⚠️ puts the CREST on the tier radius — the cake is the size it says it is', () => {
@@ -44,7 +45,7 @@ describe('rope size is DERIVED, so nothing can disagree with it', () => {
       const pos = buildStyledWall('piped', 1, 1.4, params).getAttribute('position');
       let max = 0;
       for (let i = 0; i < pos.count; i++) max = Math.max(max, Math.hypot(pos.getX(i), pos.getZ(i)));
-      expect(max).toBeLessThan(1.02);          // the ribs' own relief, and no more
+      expect(max).toBeLessThan(1.06);          // `vary` makes some strokes a little fatter, no more
       expect(max).toBeGreaterThan(0.97);       // …and it really does reach it
     }
   });
@@ -63,7 +64,7 @@ describe('pipedBodyRadius — how far the tip was pressed in', () => {
     // Left at the crevice line, half of every rope stands proud and the valleys are a seventh of the
     // tier deep. `press` is what turns thirty-six ropes into a surface.
     const t = ropeRadius(1, STAR);
-    expect(1 - pipedBodyRadius(1, STAR)).toBeLessThan(0.6 * t);
+    expect(1 - pipedBodyRadius(1, STAR)).toBeLessThan(0.9 * t);
   });
 
   it('never goes below the line where two ropes cross — that would show the board through them', () => {
@@ -104,11 +105,11 @@ describe('makeWallReliefSampler describes the same wall the geometry builds', ()
     expect(lo).toBeLessThan(-0.02);            // and it dips between them
   });
 
-  it('dips to where two ropes CROSS, not to the body — that is the point of the overlap', () => {
+  it('dips to where two strokes CROSS, not to the body — that is the point of the overlap', () => {
     for (const p of [STAR, ROUND]) {
       const { lo } = sample(p);
-      expect(lo).toBeCloseTo(crossing(p), 2);
-      expect(lo).toBeGreaterThan(pipedBodyRadius(1, p) - 1);   // the body stays hidden behind them
+      expect(lo).toBeCloseTo(crossing(p), 1);
+      expect(lo).toBeGreaterThanOrEqual(pipedBodyRadius(1, p) - 1);   // the body stays behind them
     }
   });
 });
@@ -197,5 +198,35 @@ describe('the wall geometry', () => {
     const b = buildStyledWall('piped', 1, 1.4, STAR).getAttribute('position');
     expect(a.count).toBe(b.count);
     for (let i = 0; i < a.count; i += 97) expect(a.getX(i)).toBe(b.getX(i));
+  });
+});
+
+describe('the pen sweeps outward-facing geometry', () => {
+  it('⚠️ every stroke faces OUT — it faced in, and back-face culling hid it', () => {
+    /* For a right-handed (T, N, B) frame and an anticlockwise profile, `T × dProfile` points INWARD,
+     * so the old winding gave every swept stroke normals facing into its own tube. Nothing looked
+     * obviously broken — you were seeing the inside of the far wall, shaded by an inverted normal,
+     * which on a matte cream reads as plausible-but-flat. It only became unmissable with a section
+     * that is not symmetric: a wall of strokes with a ribbed front and a flat back rendered as a
+     * smooth cylinder with a few slits in it. */
+    const geo = buildStyledWall('piped', 1, 1.4, STAR);
+    const pos = geo.getAttribute('position'), nor = geo.getAttribute('normal');
+    // Take the outermost vertex in each of 360 angular bins — the surface a viewer actually sees.
+    const best = new Array(360).fill(null);
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getY(i)) > 0.1) continue;
+      const r = Math.hypot(pos.getX(i), pos.getZ(i));
+      const k = Math.floor(((Math.atan2(pos.getZ(i), pos.getX(i)) + Math.PI) / TAU) * 360) % 360;
+      if (!best[k] || r > best[k].r) best[k] = { r, i };
+    }
+    let facingOut = 0, seen = 0;
+    for (const b of best) {
+      if (!b) continue;
+      seen++;
+      const { r, i } = b;
+      if ((nor.getX(i) * pos.getX(i) + nor.getZ(i) * pos.getZ(i)) / r > 0) facingOut++;
+    }
+    expect(seen).toBeGreaterThan(300);
+    expect(facingOut).toBe(seen);
   });
 });

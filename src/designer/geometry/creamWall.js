@@ -108,18 +108,28 @@ const ropeHash = (i) => {
   return x - Math.floor(x);
 };
 
-/* The rope's radius, in world units, DERIVED from how many go round — not a second knob that can
- * disagree with the first. `ropes` ropes of radius `t` whose spines ride a circle of radius
- * (radius − t) sit shoulder to shoulder when 2·t·ropes = 2π(radius − t), and `overlap` then presses
- * neighbours into each other the way a hand does.
+/* The stroke's size, in world units, DERIVED from how many go round — not a second knob that can
+ * disagree with the first.
  *
- * ⚠️ THE ROPES' CREST IS THE TIER'S RADIUS, so they are laid INSIDE it and the finished cake is the
- * size it says it is. Every other style here grows outward from the nominal radius, and doing that
- * with real ropes made a 6" cake render as a 7¼" one — the radius is what sizing and pricing are
- * quoted from, so it is the crest that has to honour it, not the crumb coat underneath.
+ * The pen's PRESSED section spans −1…1 across the stroke and 0…1 out of the wall, so one `thickness`
+ * gives a ribbon twice as wide as it is deep — which is what a vertical line of star piping measures.
+ *
+ *   • `ropes` strokes sit shoulder to shoulder when 2·thickness·ropes = 2π·Rc;
+ *   • their crest is the tier radius, so Rc = radius − thickness.
+ *
+ * Two lines that solve exactly, which is why there is no tolerance to tune here.
  */
-export function ropeRadius(radius, { ropes, overlap }) {
-  return (Math.PI * radius / (ropes + Math.PI)) * (1 + overlap);
+export function ropeSection(radius, { ropes, overlap }) {
+  //  t = π·k·(radius − t)/ropes  ⇒  t = π·k·radius / (ropes + π·k)
+  const k = 1 + overlap;
+  const thickness = Math.PI * k * radius / (ropes + Math.PI * k);
+  return { thickness, w: thickness, d: thickness };
+}
+
+// The stroke's DEPTH — how far it stands off the cake. Kept as its own name because it is what the
+// tier's radius, the body and the relief sampler are all expressed in.
+export function ropeRadius(radius, p) {
+  return ropeSection(radius, p).d;
 }
 
 /* How wide the BODY under the ropes has to be.
@@ -132,12 +142,14 @@ export function ropeRadius(radius, { ropes, overlap }) {
  * `Rc·cos(π/ropes) − √(t² − (Rc·sin(π/ropes))²)`. Below that line there is cake, not daylight.
  */
 export function pipedBodyRadius(radius, p) {
-  const t = ropeRadius(radius, p);
-  const Rc = radius - t;
+  const { w, d } = ropeSection(radius, p);
+  const Rc = radius - d;
   const a = Rc * Math.sin(Math.PI / p.ropes);          // half the gap between two centres
   const m = Rc * Math.cos(Math.PI / p.ropes);
-  const h = a < t ? Math.sqrt(t * t - a * a) : 0;      // 0 when they only just touch
+  // The crevice, with the section's real ASPECT: its depth at the half-way point across.
+  const h = a < w ? d * Math.sqrt(1 - (a / w) * (a / w)) : 0;
   const crevice = Math.max(0.1 * radius, m - h);
+  const t = d;
   /* ⚠️ AND `press` IS WHAT MAKES IT A WALL RATHER THAN A FRINGE. A baker does not balance ropes on
    * a cake, they push the tip against it — so most of each rope is IN the frosting and what shows
    * is a shallow rib. Left at the crevice line, half of every rope stands proud, the valleys between
@@ -152,8 +164,8 @@ export function pipedBodyRadius(radius, p) {
  * so the wall only ever grows outward — the same rule every other style here follows, and what lets
  * a flat cap sit under it without overhanging anything.
  */
-function ropeCentreline(theta, t, radius, height, sway0, seed) {
-  const Rc = radius - t;
+function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
+  const Rc = radius - d;
   const pts = [];
   const N = 7;
   for (let k = 0; k <= N; k++) {
@@ -164,8 +176,12 @@ function ropeCentreline(theta, t, radius, height, sway0, seed) {
      * Started level with the rim, the caps stand a whole rope proud of the lid and the top silhouette
      * turns into a crown of spikes. Run past the base, and the tapered ends finish inside the board
      * instead of hanging over it as a torn fringe. */
+    /* ⚠️ MEASURED IN CAP LENGTHS, NOT IN DEPTHS. `pushSweep` closes a stroke 0.6 RADII beyond its
+     * last point, and a squashed section's radius is nothing like its depth — written against the
+     * depth, the end caps came out three times longer than the tuck allowed for and hung below the
+     * cake as flat white flaps lying on the board. */
     const f = k / N;
-    const y = height / 2 - 0.9 * t - f * (height - 0.5 * t);
+    const y = height / 2 - 1.2 * cap - f * (height - 0.7 * cap);
     const sway = sway0 * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
     const th = theta + sway;
     pts.push([Rc * Math.cos(th), y, Rc * Math.sin(th)]);
@@ -195,7 +211,8 @@ function mergeWithCylindricalUv(parts, radius, height) {
  * any overlap at all, close over it. It is there so that a gap cannot show the inside of the cake.
  */
 function buildPipedWall(radius, height, p) {
-  const t = ropeRadius(radius, p);
+  const { thickness, w, d } = ropeSection(radius, p);
+  const t = d;
   const rBody = pipedBodyRadius(radius, p);
   const parts = [new THREE.CylinderGeometry(rBody, rBody, height, 96, 1)];
   /* ⚠️ A FOOT, because the notch between two ropes is open at the bottom and looks straight at the
@@ -203,8 +220,8 @@ function buildPipedWall(radius, height, p) {
    * narrower, so a viewer above the cake sees a ring of gold sawteeth around its base — the loudest
    * thing in three renders. A short collar out at the crest line closes them. It is not a cheat:
    * cream squeezed out at the foot of a vertical stroke is what a real one has there. */
-  const foot = new THREE.CylinderGeometry(radius - 0.12 * t, radius - 0.12 * t, 1.6 * t, 96, 1);
-  foot.translate(0, -height / 2 + 0.8 * t, 0);
+  const foot = new THREE.CylinderGeometry(radius - 0.15 * d, radius - 0.15 * d, 1.2 * thickness, 96, 1);
+  foot.translate(0, -height / 2 + 0.6 * thickness, 0);
   parts.push(foot);
   // ⚠️ The pen's own speed→width cue is OFF here. It reads the SPACING of hand-captured points, and
   // these are machine-even, so it would return a flat 1 and cost the work of finding that out. The
@@ -214,7 +231,12 @@ function buildPipedWall(radius, height, p) {
    * it came out as a torn fringe with the board showing through it. These strokes do not end, they
    * are CUT OFF by the board — so the taper is off and the centreline runs past the base, putting
    * the blunt end inside the board where nothing can see it. */
-  const feel = { speedWidth: 0, tailDias: 0 };
+  /* ⚠️ AND NO TWIST. The pen corkscrews a rope's ribs a little, which is right for a squiggle drawn
+   * in mid-air. A stroke dragged straight up a wall does not — the wrist never turns — and on a
+   * SQUASHED section the twist is catastrophic rather than subtle: half a turn along the stroke
+   * rolls the flat face away from the wall, so the ribbon presents its edge and reads as a thin
+   * sheet peeling off the cake. That was the "hanging flaps", not the tip and not the squash. */
+  const feel = { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0, pressed: true };
   /* ⚠️ HOW MUCH A ROPE MAY MOVE IS SET BY HOW FAR IT OVERLAPS ITS NEIGHBOUR, and getting that
    * wrong is what made every star tip look like a FRINGE of hanging strips. Two ropes touch with
    * `margin` to spare on each side; if they wander independently by more than that, a gap opens
@@ -224,17 +246,17 @@ function buildPipedWall(radius, height, p) {
    *
    * For the same reason `vary` may only ever make a rope FATTER. A rope 11% thinner than nominal is
    * a rope that no longer reaches its neighbour. */
-  const margin = Math.max(0, t - Math.PI * (radius - t) / p.ropes);
+  const margin = Math.max(0, w - Math.PI * (radius - d) / p.ropes);
   const sway0 = p.wobble * 0.4 * margin;
   for (let i = 0; i < p.ropes; i++) {
     const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.4 * (ropeHash(i + 700) - 0.5)) / p.ropes;
-    const ti = t * (1 + p.vary * 0.5 * ropeHash(i));
+    const ti = thickness * (1 + p.vary * 0.5 * ropeHash(i));
     /* ⚠️ ROLLED TO FACE OUTWARD. `rmFrames` starts every vertical stroke from the same world
      * direction, so without this the lobe a rope shows the viewer depends on where it sits round the
      * cake — the wall comes out patchy, some ropes a wide flat panel and their neighbours a thin
      * line. It is invisible on a freehand squiggle and unmissable on thirty-six parallel ones. */
     parts.push(buildPipingStroke(
-      ropeCentreline(theta, t, radius, height, sway0, i), p.nozzle, ti, feel, null, theta));
+      ropeCentreline(theta, d, thickness, radius, height, sway0, i), p.nozzle, ti, feel, null, theta));
   }
   return mergeWithCylindricalUv(parts, radius, height);
 }
@@ -290,9 +312,9 @@ export function pipedParams(params = {}) {
   const nozzle = NOZZLE_BY_KEY[params.nozzle] ? params.nozzle : DEFAULT_NOZZLE;
   return {
     nozzle,
-    ropes:   Math.max(6, params.ropes ?? 36),
+    ropes:   Math.max(6, params.ropes ?? 26),
     overlap: params.overlap ?? 0.3,
-    press:   Math.min(0.95, Math.max(0, params.press ?? 0.6)),
+    press:   Math.min(0.95, Math.max(0, params.press ?? 0.2)),
     vary:    params.vary    ?? 0.22,
     wobble:  params.wobble  ?? 0.6,
     /* The top. ⚠️ A DIFFERENT TOOL, so a different shape: not the tip, and an order of magnitude
@@ -482,7 +504,6 @@ function polarDisc(rOut, rings, segs, h, skirtY) {
 export function buildStyledTop(wall, top, radius, height, params = {}) {
   if (top !== 'spiral') return null;
   const p = pipedParams(params);
-  const t = ropeRadius(radius, p);
   /* ⚠️ THE LID GOES OUT TO THE CREST, not to the body, and it is what COVERS the ropes' ends. A
    * stroke is dragged up the wall and stops; what it presents upward is the tip's own cross-section,
    * so a star tip left a ring of little five-pointed stars around the rim — a crown that no cake has
@@ -492,5 +513,5 @@ export function buildStyledTop(wall, top, radius, height, params = {}) {
   const field = makeSwirlField({ turns: p.swirlTurns, rOut: radius });
   // Rings have to resolve the ripple across the radius; around, it is one wave per revolution.
   return polarDisc(radius, Math.min(360, Math.max(80, p.swirlTurns * 16)), 180,
-    (r, theta) => depth * field(r, theta), -0.7 * t);
+    (r, theta) => depth * field(r, theta), -1.4 * ropeSection(radius, p).thickness);
 }
