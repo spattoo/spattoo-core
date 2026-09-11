@@ -198,6 +198,13 @@ function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
 
 /* ⚠️ A CREASE IS DARK BECAUSE IT IS OCCLUDED, and nothing in this render was doing occlusion.
  *
+ * ⚠️ AND THE RANGE IT IS MEASURED OVER IS THE WHOLE TRICK. Taken from the geometry's own minimum
+ * and maximum radius, it silently does almost nothing: a swept stroke's END CAP is a cone whose
+ * apex sits ON THE AXIS, so the minimum is zero, and a crease — which is only a fraction of a
+ * stroke in from the crest — lands two thirds of the way up the ramp. The darkest point on the wall
+ * then reaches about a third of the asked-for shade and the whole effect reads as broken. The range
+ * is the CREASE to the CREST, worked out from the tip's own profile, and nothing else.
+ *
  * Measured before reaching for it: sheen, roughness and clearcoat change a piped stroke by NOTHING.
  * Which is not a surprise once said out loud — the scene's light is very nearly a uniform dome, and
  * under a uniform dome a surface's brightness barely depends on which way it faces. So two flanks
@@ -209,12 +216,12 @@ function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
  * point sits INSIDE the crest is how occluded it is. No texture, no uv unwrap, no post pass — and it
  * darkens the body between the strokes for the same reason and by the same rule.
  */
-function bakeCreaseAO(geo, radius, floor, ao) {
+function bakeCreaseAO(geo, crest, floor, ao) {
   const pos = geo.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
-  const span = Math.max(1e-6, radius - floor);
+  const span = Math.max(1e-6, crest - floor);
   for (let i = 0; i < pos.count; i++) {
-    const d = (Math.hypot(pos.getX(i), pos.getZ(i)) - floor) / span;   // 1 at the crest, 0 at the cake
+    const d = (Math.hypot(pos.getX(i), pos.getZ(i)) - floor) / span;   // 1 on a crest, 0 in a crease
     const k = 1 - ao * (1 - Math.min(1, Math.max(0, d)));
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
   }
@@ -303,7 +310,14 @@ function buildPipedWall(radius, height, p) {
     parts.push(buildPipingStroke(
       ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel(i), null, theta));
   }
-  return bakeCreaseAO(mergeWithCylindricalUv(parts, radius, height), radius, rBody, p.ao);
+  /* The visible surface runs from a rope's own crease out to its crest, and those come straight from
+   * the tip: the profile's smallest radius is where a crease sits. */
+  let rMin = 1;
+  for (const [px, py] of (NOZZLE_BY_KEY[p.nozzle] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).profile) {
+    rMin = Math.min(rMin, Math.hypot(px, py));
+  }
+  return bakeCreaseAO(mergeWithCylindricalUv(parts, radius, height),
+    radius, radius - thickness * (1 - rMin), p.ao);
 }
 
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
@@ -362,7 +376,7 @@ export function pipedParams(params = {}) {
     overlap: Math.max(-0.3, params.overlap ?? 0.1),
     press:   Math.min(1, Math.max(0, params.press ?? 0)),
     // How dark a crease goes — see bakeCreaseAO. 0 is the render with no occlusion at all.
-    ao:      Math.min(1, Math.max(0, params.ao ?? 0.6)),
+    ao:      Math.min(1, Math.max(0, params.ao ?? 0.8)),
     vary:    params.vary    ?? 0.34,
     wobble:  params.wobble  ?? 0.85,
     /* The top. ⚠️ A DIFFERENT TOOL, so a different shape: not the tip, and an order of magnitude

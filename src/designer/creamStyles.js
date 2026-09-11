@@ -46,7 +46,7 @@ function pipedParams(over = {}) {
      * fifteen degrees apart shade identically and the whole stroke reads as one flat panel. Measured:
      * sheen, roughness and clearcoat all change it by nothing. What separates the faces in a
      * photograph is that a crease's own walls block the sky from it. See bakeCreaseAO. */
-    { key: 'ao',      label: 'Crease shade', min: 0, max: 1, step: 0.05, default: d('ao', 0.6), user: true },
+    { key: 'ao',      label: 'Crease shade', min: 0, max: 1, step: 0.05, default: d('ao', 0.8), user: true },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
      * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
      * SIDE, NOT SUNK IN. You cannot pipe inside a cake.

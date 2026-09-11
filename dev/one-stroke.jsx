@@ -5,7 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { buildPipingStroke } from '../src/designer/geometry/creamPen.js';
+import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from '../src/designer/geometry/creamPen.js';
 import { ropeSection, pipedBodyRadius, pipedParams } from '../src/designer/geometry/creamWall.js';
 import { frostingDef } from '../src/designer/frostings.js';
 
@@ -124,8 +124,13 @@ function strokeAngles() {
 function bakeCreaseAO(geo, thickness, ao) {
   const pos = geo.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
+  /* ⚠️ The range is the CREASE to the CREST, from the tip's own profile — not the geometry's own
+   * min and max radius, whose minimum is the end cap's apex sitting on the axis. See creamWall. */
+  let rMin = 1;
+  for (const [px, py] of (NOZZLE_BY_KEY[noz] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).profile) rMin = Math.min(rMin, Math.hypot(px, py));
+  const crest = thickness, floor = thickness * rMin, span = Math.max(1e-6, crest - floor);
   for (let i = 0; i < pos.count; i++) {
-    const d = Math.hypot(pos.getX(i), pos.getZ(i)) / thickness;   // 1 at the crest, less in a crease
+    const d = (Math.hypot(pos.getX(i), pos.getZ(i)) - floor) / span;
     const k = 1 - ao * (1 - Math.min(1, Math.max(0, d)));
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
   }
@@ -137,7 +142,7 @@ function Stroke({ x = 0, z = 0, roll: r }) {
   const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, 1.0 - i * 0.5, z));
   const geo = buildPipingStroke(pts, noz, t, { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 }, null, r);
   if (!geo) return null;
-  bakeCreaseAO(geo, t, Number(q.get('ao') ?? 0.55));
+  bakeCreaseAO(geo, t, Number(q.get('ao') ?? 0.8));
   return <mesh geometry={geo} castShadow receiveShadow>
     <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;
 }
