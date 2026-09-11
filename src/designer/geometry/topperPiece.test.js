@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperContours, topperSheets, topperBox, topperStick } from './topperPiece.js';
+import { topperContours, topperSheets, topperBox, topperStick, stickStock } from './topperPiece.js';
 import { TOPPER_FINISHES, finishesOf } from './topperFinishes.js';
 import { acrylicFinishes } from './acrylicConfig.js';
 
@@ -300,6 +300,35 @@ describe('topperBox', () => {
   });
 });
 
+/* ── What the stick is made of ──────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A METALLIC TOPPER'S STICK IS PART OF THE PIECE. Gold card and acrylic toppers are cut in ONE
+ * shape, so the stem is a tab of the same sheet in the same colour — not a lolly stick taped on.
+ */
+describe('stickStock', () => {
+  it('is nothing for plain card, so a printed topper keeps its wooden pick', () => {
+    expect(stickStock({ objects: [text(), shape()] })).toBeNull();
+  });
+
+  it('takes the finish when the piece is metallic', () => {
+    expect(stickStock({ objects: [shape({ finish: 'card_gold' })] })).toBe('card_gold');
+  });
+
+  /* ⚠️ THE BACKMOST SHEET DECIDES, and on the commonest metallic topper there is — a white word on a
+   * gold band — that is the BAND. It is the piece at the back, it reaches lowest, and gold is the
+   * answer a baker would give. Read the face first and this topper would get a white stick. */
+  it('follows the band, not the word in front of it', () => {
+    const stock = stickStock({ objects: [
+      text({ colour: '#FFFFFF', offset: 0.1, offsetFinish: 'card_gold' }),
+    ] });
+    expect(stock).toBe('card_gold');
+  });
+
+  it('ignores a finish an admin has withdrawn rather than picking a colour nobody chose', () => {
+    expect(stickStock({ objects: [shape({ finish: 'nonesuch' })] })).toBeNull();
+  });
+});
+
 describe('topperStick', () => {
   const box = { w: 2, h: 1, cx: 0, cy: 0 };
 
@@ -335,6 +364,15 @@ describe('topperStick', () => {
 
   /* ⚠️ THE STICK IS NOT A SHEET. If it ever entered topperSheets/topperBox the card would shrink to
    * fit a box that is mostly rod, and the print sheet would print a picture of a stick. */
+  /* A tab is cut from the sheet and a rod is bought by the metre, so they are not the same size —
+     and both have to scale with the card, or a resized topper grows a stem that does not. */
+  it('sizes a tab wider than the rod, and both with the card', () => {
+    const small = topperStick({ ...box, h: 1 }, { on: true });
+    const big   = topperStick({ ...box, h: 2 }, { on: true });
+    expect(small.width).toBeGreaterThan(small.radius * 2);
+    expect(big.width / small.width).toBeCloseTo(2, 6);
+  });
+
   it('never reaches the sheets or the measured box', () => {
     const withStick = { v: 1, objects: [text()], stick: { on: true, bury: 0.5 } };
     const without   = { v: 1, objects: [text()] };

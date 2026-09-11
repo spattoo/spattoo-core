@@ -102,6 +102,8 @@ export const TOPPER_FINISHES = {
 /* The finishes made of one thing. ⚠️ ASKED BY MEDIUM RATHER THAN LISTED PER STUDIO: a studio that
  * kept its own list would go stale the day an admin authored a finish, which is the whole point of
  * the overlay below. Sorted by nothing — the table's own order is the order they are offered in. */
+export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'card';
+
 export function finishesOf(medium) {
   return Object.keys(TOPPER_FINISHES).filter(k => TOPPER_FINISHES[k].medium === medium);
 }

@@ -28,14 +28,15 @@
 function pipedParams(over = {}) {
   const d = (key, fallback) => (over[key] ?? fallback);
   return [
-    /* ⚠️ THE ROPE'S SIZE COMES FROM THIS, and there is deliberately no second knob for it. `ropes`
-     * ropes shoulder to shoulder around the cake fixes the diameter exactly; a separate "depth"
-     * would be free to disagree and leave either gaps or a mound. Counted off the reference photo:
-     * ~28 ribs across its front half, so ~50 around — and with real ropes a rib IS a rope. */
-    { key: 'ropes',   label: 'Strokes',  min: 10, max: 90, step: 1,    default: d('ropes', 26),    user: true },
+    /* ⚠️ THE NOZZLE'S OWN SIZE, IN INCHES, and it is the cause rather than the effect. A tip leaves
+     * the stroke it leaves whether it is dragged up a 6" cake or a 10" one, so what a wall gets to
+     * say is how wide the tip is; the number of strokes is what falls out of the tier's
+     * circumference. Authored as a stroke COUNT — which is how this shipped — every change of tier
+     * size silently changed which nozzle the baker appeared to be holding. */
+    { key: 'width',   label: 'Nozzle (in)', min: 0.1, max: 1.2, step: 0.05, default: d('width', 0.3), user: true },
     // How hard neighbours are pressed together. A hand overlaps; butted exactly, a crevice between
     // two ropes can reach the body underneath.
-    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.3), user: false },
+    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.15), user: false },
     /* ⚠️ HOW FAR THE TIP WAS PUSHED IN, and the single most important number here. A baker does not
      * balance ropes on a cake — they press the tip against it, so most of each rope is buried and
      * what shows is a shallow rib. At 0 the ropes stand half proud with valleys a seventh of the
@@ -101,17 +102,17 @@ export const CREAM_STYLES = {
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
-    params: pipedParams({ ropes: 26 }),
+    params: pipedParams({}),
   },
   piped_closed: {
     label: 'Piped — closed star', wall: 'piped', top: 'spiral', nozzle: 'closed',
-    params: pipedParams({ ropes: 26 }),
+    params: pipedParams({}),
   },
   piped_round: {
     label: 'Piped — round tip', wall: 'piped', top: 'spiral', nozzle: 'round',
     // A smooth rope reads as one rib where a star reads as five, so it takes a finer, denser stroke
     // to cover the same cake without looking like a bundle of sausages.
-    params: pipedParams({ ropes: 40 }),
+    params: pipedParams({ width: 0.28 }),
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
   // displacement can't carry comb lines at sane mesh density). wall stays smooth; surfaceMap drives

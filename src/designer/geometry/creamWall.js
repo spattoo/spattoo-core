@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
 import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
 import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PRESSED_STAND } from './creamPen.js';
+import { NOMINAL_MM_PER_UNIT } from '../constants.js';
+
+// One inch, in world units. ⚠️ Asked of the scale the rest of the app already uses (an 8" cake is
+// 2.4 units across) rather than declared again here — a second opinion about how big an inch is
+// would put a nozzle's output at the wrong size on every cake.
+const INCH = 25.4 / NOMINAL_MM_PER_UNIT;
 
 // ── Styled cream walls — geometry strategies for the frosting STYLE axis ───────
 //
@@ -108,23 +114,27 @@ const ropeHash = (i) => {
   return x - Math.floor(x);
 };
 
-/* The stroke's size, in world units, DERIVED from how many go round — not a second knob that can
- * disagree with the first.
+/* The stroke's section, and HOW MANY OF THEM GO ROUND.
  *
- * The pen's PRESSED section spans −1…1 across the stroke and 0…`PRESSED_STAND` out of the wall, so
- * width and depth are two different numbers and both fall out of `ropes`:
+ * ⚠️ THE WIDTH BELONGS TO THE NOZZLE, NOT TO THE CAKE, and having that backwards is what made every
+ * version of this wrong. A tip leaves the stroke it leaves — about a third of an inch for the one
+ * this style ships with — whether it is dragged up a 6" cake or a 10" one. So `width` is the knob
+ * and the COUNT is what falls out: a bigger cake gets more strokes, never fatter ones. Authored the
+ * other way round (a stroke count, with the width derived), every change of tier size silently
+ * changed which nozzle the baker appeared to be holding.
  *
- *   • `ropes` strokes sit shoulder to shoulder when 2·w·ropes = 2π·Rc, w being the HALF-WIDTH;
- *   • their crest is the tier radius, so Rc = radius − d, d being the DEPTH.
+ * `overlap` lays them CLOSER than their own width, the way a hand does; it does not fatten them.
  *
- * Two lines that solve exactly, which is why there is no tolerance to tune here.
+ * The pen's pressed section spans −1…1 across and 0…`PRESSED_STAND` out, so `thickness` is the
+ * half-width and the depth follows from it. The spines ride the (radius − depth) circle, which puts
+ * the crest on the tier's radius.
  */
-export function ropeSection(radius, { ropes, overlap }) {
-  //  half-width w = t, depth d = t·PRESSED_STAND, spines on the (radius − d) circle:
-  //  t = π·k·(radius − t·stand)/ropes  ⇒  t = π·k·radius / (ropes + π·k·stand)
-  const k = 1 + overlap;
-  const thickness = Math.PI * k * radius / (ropes + Math.PI * k * PRESSED_STAND);
-  return { thickness, w: thickness, d: thickness * PRESSED_STAND };
+export function ropeSection(radius, { width, overlap }) {
+  const thickness = Math.max(1e-4, width * INCH) / 2;
+  const d = thickness * PRESSED_STAND;
+  const spacing = 2 * thickness / (1 + overlap);
+  const ropes = Math.max(6, Math.round(TAU * (radius - d) / spacing));
+  return { thickness, w: thickness, d, ropes };
 }
 
 // The stroke's DEPTH — how far it stands off the cake. Kept as its own name because it is what the
@@ -143,10 +153,10 @@ export function ropeRadius(radius, p) {
  * `Rc·cos(π/ropes) − √(t² − (Rc·sin(π/ropes))²)`. Below that line there is cake, not daylight.
  */
 export function pipedBodyRadius(radius, p) {
-  const { w, d } = ropeSection(radius, p);
+  const { w, d, ropes } = ropeSection(radius, p);
   const Rc = radius - d;
-  const a = Rc * Math.sin(Math.PI / p.ropes);          // half the gap between two centres
-  const m = Rc * Math.cos(Math.PI / p.ropes);
+  const a = Rc * Math.sin(Math.PI / ropes);            // half the gap between two centres
+  const m = Rc * Math.cos(Math.PI / ropes);
   // The crevice, with the section's real ASPECT: its depth at the half-way point across.
   const h = a < w ? d * Math.sqrt(1 - (a / w) * (a / w)) : 0;
   const crevice = Math.max(0.1 * radius, m - h);
@@ -168,7 +178,10 @@ export function pipedBodyRadius(radius, p) {
 function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
   const Rc = radius - d;
   const pts = [];
-  const N = 7;
+  // ⚠️ FIVE, not eight. The centreline is very nearly a straight line, and `pushSweep` samples the
+  // curve at five times the control count — on ninety strokes that is a third of the tier's mesh
+  // spent describing a wobble a millimetre wide.
+  const N = 4;
   for (let k = 0; k <= N; k++) {
     // ⚠️ TOP TO BOTTOM, because `buildPipingStroke` thins the END of a stroke — that is the
     // lift-off, and on a cake side it belongs at the board, not at the rim where it would open a
@@ -212,7 +225,7 @@ function mergeWithCylindricalUv(parts, radius, height) {
  * any overlap at all, close over it. It is there so that a gap cannot show the inside of the cake.
  */
 function buildPipedWall(radius, height, p) {
-  const { thickness, w, d } = ropeSection(radius, p);
+  const { thickness, w, d, ropes } = ropeSection(radius, p);
   const t = d;
   const rBody = pipedBodyRadius(radius, p);
   const parts = [new THREE.CylinderGeometry(rBody, rBody, height, 96, 1)];
@@ -247,10 +260,10 @@ function buildPipedWall(radius, height, p) {
    *
    * For the same reason `vary` may only ever make a rope FATTER. A rope 11% thinner than nominal is
    * a rope that no longer reaches its neighbour. */
-  const margin = Math.max(0, w - Math.PI * (radius - d) / p.ropes);
+  const margin = Math.max(0, w - Math.PI * (radius - d) / ropes);
   const sway0 = p.wobble * 0.4 * margin;
-  for (let i = 0; i < p.ropes; i++) {
-    const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.4 * (ropeHash(i + 700) - 0.5)) / p.ropes;
+  for (let i = 0; i < ropes; i++) {
+    const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.4 * (ropeHash(i + 700) - 0.5)) / ropes;
     const ti = thickness * (1 + p.vary * 0.5 * ropeHash(i));
     /* ⚠️ ROLLED TO FACE OUTWARD. `rmFrames` starts every vertical stroke from the same world
      * direction, so without this the lobe a rope shows the viewer depends on where it sits round the
@@ -313,8 +326,9 @@ export function pipedParams(params = {}) {
   const nozzle = NOZZLE_BY_KEY[params.nozzle] ? params.nozzle : DEFAULT_NOZZLE;
   return {
     nozzle,
-    ropes:   Math.max(6, params.ropes ?? 26),
-    overlap: params.overlap ?? 0.3,
+    // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
+    width:   Math.max(0.05, params.width ?? 0.3),
+    overlap: params.overlap ?? 0.15,
     press:   Math.min(0.95, Math.max(0, params.press ?? 0.2)),
     vary:    params.vary    ?? 0.22,
     wobble:  params.wobble  ?? 0.6,
@@ -404,7 +418,7 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
        * ribs are deliberately not modelled — a decoration seats on the rope, not in a flute.
        */
       const p = pipedParams(params);
-      const t = ropeRadius(radius, p);
+      const { d: t, ropes } = ropeSection(radius, p);
       const Rc = radius - t;
       const floor = pipedBodyRadius(radius, p) - radius;        // the cake between two ropes
       /* ⚠️ NEGATIVE, AND THAT IS RIGHT. Every other style grows outward from the nominal radius, so
@@ -412,7 +426,7 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
        * so the surface runs from 0 on a rope's spine down to the crevice between two of them. Decor
        * seats a little inside the nominal wall here, which is exactly where the cream is. */
       return (theta, _v) => {
-        const step = TAU / p.ropes;
+        const step = TAU / ropes;
         const centre = Math.round(theta / step - 0.5) + 0.5;    // nearest rope, in step units
         const d = Math.abs(theta - centre * step) * Rc;          // arc distance from its spine
         return Math.max(floor, -t + (d < t ? Math.sqrt(t * t - d * d) : 0));

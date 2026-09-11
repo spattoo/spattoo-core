@@ -12,7 +12,7 @@
 // happens here on the way in — which is also why an improvement to `topperShapes` or `offsetParts`
 // reaches every topper already kept.
 import { topperShapes, backingPlate, offsetParts } from './topperShape.js';
-import { TOPPER_FINISHES } from './topperFinishes.js';
+import { TOPPER_FINISHES, isMetallicCard } from './topperFinishes.js';
 
 /* What colour a sheet READS as, which is not always the colour on the object.
  *
@@ -168,7 +168,36 @@ export function topperStick(box, stick) {
     bury,
     buried: len * bury,
     radius: Math.max(box.h * 0.014, 0.006),
+    /* A metallic stick is not a rod but a TAB, cut from the same sheet — see `stickStock`. Carried
+       here beside the rod's radius so one function still answers "how big is the stick", whichever
+       of the two it turns out to be. */
+    width: Math.max(box.h * 0.060, 0.018),
     topY: bottom + tuck,        // where it ends, hidden behind the card
     bottomY: bottom - len,      // the end that goes into the cake
   };
+}
+
+/**
+ * What the stick is made of: a metallic finish key, or null for a plain wooden pick.
+ *
+ * ⚠️ A METALLIC TOPPER'S STICK IS PART OF THE PIECE. Gold card and acrylic toppers are cut in ONE
+ * shape — the pick is a tab of the same sheet, the same colour, the same thickness — which is why
+ * the reference photographs show a gold stem and not a lolly stick. A plain printed card topper is
+ * the other thing entirely: it is taped to a wooden pick, and that is what the rod is for.
+ *
+ * ⚠️ THE BACKMOST SHEET DECIDES, because that is the one a stick is attached to — and for a metallic
+ * topper it is the one the stick is cut FROM. On a white word over a gold band, the band is at the
+ * back and reaches lowest, so the stick is gold: the answer a baker would give.
+ *
+ * ⚠️ AND IT IS ONE FUNCTION, asked by the studio and by the cake. Two copies of "is this stick gold"
+ * is how a baker ticks the box in the studio, sees gold, and gets a wooden pick on the cake
+ * (INVARIANTS #15).
+ */
+export function stickStock(payload) {
+  for (const obj of (Array.isArray(payload?.objects) ? payload.objects : [])) {
+    // Back to front within an object too: its offset band is behind its own face.
+    if (obj.offset > 0 && isMetallicCard(obj.offsetFinish)) return obj.offsetFinish;
+    if (isMetallicCard(obj.finish)) return obj.finish;
+  }
+  return null;
 }

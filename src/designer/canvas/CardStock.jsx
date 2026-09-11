@@ -1,7 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { TOPPER_FINISHES } from '../geometry/topperFinishes.js';
+import { TOPPER_FINISHES, isMetallicCard } from '../geometry/topperFinishes.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
 
 /* ── What a card topper's sheet is MADE OF ────────────────────────────────────────────────────────
@@ -46,8 +46,9 @@ const CARD_LIGHT = Object.freeze([3.193, 2.940, 3.028]);
 /** The colour a plain card sheet is drawn in, corrected for the rig. */
 export const cardAlbedo = (hex) => albedoForLight(hex || '#FFFFFF', CARD_LIGHT, { rolloff: 6 });
 
-/** Is this finish key one the card studio knows how to draw? Unknown or absent reads as plain card. */
-export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'card';
+/* ⚠️ RE-EXPORTED, NOT REDEFINED. "Is this metallic" is a question about the finish TABLE and lives
+   with it; the UI and the geometry both need it, and this file is only one of the askers. */
+export { isMetallicCard };
 
 /* ── How thick a sheet is, and whether its edge is chamfered ─────────────────────────────────────
  *

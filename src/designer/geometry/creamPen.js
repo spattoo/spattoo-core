@@ -56,7 +56,10 @@ function roundProfile(n) {
  *
  *   x  outward, away from the surface   y  across the stroke, −1 … 1
  */
-function pressedProfile(lobes, depth, stand = 1.05, n = Math.max(64, lobes * 22)) {
+/* ⚠️ SAMPLED SPARINGLY, because a wall is not one stroke. A freehand squiggle can afford a section
+ * of 130 points; ninety of them up a cake wall cannot — that came to 474k vertices for one tier. Ten
+ * points per rib resolves a rounded rib with normals to spare. */
+function pressedProfile(lobes, depth, stand = 1.05, n = Math.max(24, lobes * 10)) {
   const front = [], back = [];
   for (let i = 0; i <= n; i++) {
     const u = i / n;                                   // 0 … 1 across the width

@@ -31,12 +31,25 @@ describe('the tip comes from the cream pen, not from here', () => {
 });
 
 describe('rope size is DERIVED, so nothing can disagree with it', () => {
-  it('lays `ropes` strokes shoulder to shoulder with no overlap', () => {
+  it('lays them shoulder to shoulder with no overlap', () => {
     // The pen's PRESSED section spans −1…1 across and 0…PRESSED_STAND out, so a stroke's half-width
     // and its depth are two different numbers — and the spines ride the (radius − depth) circle.
-    const p = { ropes: 36, overlap: 0 };
-    const { w, d } = ropeSection(1, p);
-    expect(2 * w * p.ropes).toBeCloseTo(TAU * (1 - d), 6);
+    const { w, d, ropes } = ropeSection(1, { width: 0.3, overlap: 0 });
+    expect(2 * w * ropes).toBeCloseTo(TAU * (1 - d), 1);
+  });
+
+  it('⚠️ takes its WIDTH FROM THE NOZZLE — a bigger cake gets more strokes, never fatter ones', () => {
+    const p = { width: 0.3, overlap: 0.15 };
+    const small = ropeSection(1, p), big = ropeSection(2, p);
+    expect(big.w).toBeCloseTo(small.w, 12);              // the tip did not change
+    expect(big.ropes / small.ropes).toBeGreaterThan(1.9); // the cake did
+  });
+
+  it('a wider nozzle lays fewer, fatter strokes', () => {
+    const fine = ropeSection(1, { width: 0.3, overlap: 0.15 });
+    const fat  = ropeSection(1, { width: 0.6, overlap: 0.15 });
+    expect(fat.w).toBeCloseTo(2 * fine.w, 12);
+    expect(fat.ropes).toBeLessThan(fine.ropes);
   });
 
   it('⚠️ puts the CREST on the tier radius — the cake is the size it says it is', () => {
@@ -51,12 +64,11 @@ describe('rope size is DERIVED, so nothing can disagree with it', () => {
     }
   });
 
-  it('overlap only ever makes a rope fatter — a hand presses neighbours together', () => {
-    expect(ropeRadius(1, { ropes: 36, overlap: 0.2 })).toBeGreaterThan(ropeRadius(1, { ropes: 36, overlap: 0 }));
-  });
-
-  it('scales with the tier: a bigger cake gets the same cream, not the same millimetres', () => {
-    expect(ropeRadius(2, STAR) / ropeRadius(1, STAR)).toBeCloseTo(2, 12);
+  it('overlap lays them CLOSER, it does not fatten them — a hand presses neighbours together', () => {
+    const butted  = ropeSection(1, { width: 0.3, overlap: 0 });
+    const pressed = ropeSection(1, { width: 0.3, overlap: 0.3 });
+    expect(pressed.w).toBeCloseTo(butted.w, 12);
+    expect(pressed.ropes).toBeGreaterThan(butted.ropes);
   });
 });
 
@@ -69,10 +81,11 @@ describe('pipedBodyRadius — how far the tip was pressed in', () => {
   });
 
   it('never goes below the line where two ropes cross — that would show the board through them', () => {
-    for (const p of [STAR, ROUND, pipedParams({ ropes: 12, overlap: 0, press: 0 })]) {
-      const t = ropeRadius(1, p), Rc = 1 - t;
-      const a = Rc * Math.sin(Math.PI / p.ropes);
-      const crevice = Rc * Math.cos(Math.PI / p.ropes) - (a < t ? Math.sqrt(t * t - a * a) : 0);
+    for (const p of [STAR, ROUND, pipedParams({ width: 0.8, overlap: 0, press: 0 })]) {
+      const { w, d, ropes } = ropeSection(1, p);
+      const Rc = 1 - d;
+      const a = Rc * Math.sin(Math.PI / ropes);
+      const crevice = Rc * Math.cos(Math.PI / ropes) - (a < w ? d * Math.sqrt(1 - (a / w) ** 2) : 0);
       expect(pipedBodyRadius(1, p)).toBeGreaterThanOrEqual(crevice - 1e-9);
     }
   });
@@ -95,9 +108,10 @@ describe('makeWallReliefSampler describes the same wall the geometry builds', ()
 
   // Where two neighbouring ropes actually cross, measured the way the geometry lays them out.
   const crossing = (p) => {
-    const t = ropeRadius(1, p), Rc = 1 - t;
-    const a = Rc * Math.sin(Math.PI / p.ropes);
-    return Rc * Math.cos(Math.PI / p.ropes) + Math.sqrt(Math.max(0, t * t - a * a)) - 1;
+    const { w, d, ropes } = ropeSection(1, p);
+    const Rc = 1 - d;
+    const a = Rc * Math.sin(Math.PI / ropes);
+    return Rc * Math.cos(Math.PI / ropes) + (a < w ? d * Math.sqrt(1 - (a / w) ** 2) : 0) - 1;
   };
 
   it('⚠️ reads NEGATIVE — piped ropes are laid inside the nominal radius, not grown outside it', () => {
@@ -185,10 +199,11 @@ describe('the wall geometry', () => {
     // direction, so an unrolled 1M shows a lobe to some ropes and a valley to others: those fall
     // short of the radius and the wall reads as wide panels beside thin lines.
     const pos = buildStyledWall('piped', 1, 1.4, STAR).getAttribute('position');
-    const reach = new Array(STAR.ropes).fill(0);
+    const n = ropeSection(1, STAR).ropes;
+    const reach = new Array(n).fill(0);
     for (let i = 0; i < pos.count; i++) {
       const th = Math.atan2(pos.getZ(i), pos.getX(i));
-      const k = Math.floor(((th + Math.PI) / TAU) * STAR.ropes) % STAR.ropes;
+      const k = Math.floor(((th + Math.PI) / TAU) * n) % n;
       reach[k] = Math.max(reach[k], Math.hypot(pos.getX(i), pos.getZ(i)));
     }
     for (const r of reach) expect(r).toBeGreaterThan(0.985);

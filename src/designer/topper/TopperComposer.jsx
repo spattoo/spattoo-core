@@ -6,7 +6,7 @@ import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { HexColorPicker } from 'react-colorful';
 import { offsetParts, followsBox} from '../geometry/topperShape.js';
-import { topperContours, topperBox, topperSheets, topperStick } from '../geometry/topperPiece.js';
+import { topperContours, topperBox, topperSheets, topperStick, stickStock } from '../geometry/topperPiece.js';
 import { TOPPER_FACES, loadTopperFace } from '../geometry/topperFaces.js';
 import { SceneLights, SceneEnv, SceneBackground, CakePreview } from '../canvas/CakeCanvas.jsx';
 import { CardStock, cardAlbedo, isMetallicCard, cardExtrude, cardFront } from '../canvas/CardStock.jsx';
@@ -804,21 +804,34 @@ function ThumbFit({ active, target }) {
    function the cake's shapes come from, so this cannot drift from what gets made. */
 /* The stick as the composer shows it: hanging below the card and tucked up behind it, at negative z
    so the card hides the overlap — which is what attaches it on a real one. */
+/* ⚠️ A ROD OR A TAB, AND `stickStock` DECIDES — the same function the cake asks. A printed card
+ * topper is taped to a wooden pick; a metallic one is cut in ONE shape, so its stem is a tab of the
+ * same sheet in the same colour. Deciding it here as well as on the cake is how a baker ticks the
+ * box, sees gold, and then finds a lolly stick on the cake (INVARIANTS #15). */
 function StudioStick({ objects, fontOf, stick }) {
+  const finish = stickStock({ v: 1, objects });
   const geo = useMemo(() => {
     if (!stick?.on) return null;
     const box = topperBox({ v: 1, objects }, fontOf);
     const s2 = topperStick(box, stick);
     if (!s2) return null;
+    const seat = (s2.len + s2.tuck) / 2 - s2.len + (box.cy - box.h / 2);
+    if (finish) {
+      const g = new THREE.BoxGeometry(s2.width, s2.len + s2.tuck, CARD_THICK);
+      g.translate(box.cx, seat, -CARD_THICK * 0.6);
+      return g;
+    }
     const g = new THREE.CylinderGeometry(s2.radius, s2.radius, s2.len + s2.tuck, 14);
-    g.translate(box.cx, (s2.len + s2.tuck) / 2 - s2.len + (box.cy - box.h / 2), -CARD_THICK * 1.6);
+    g.translate(box.cx, seat, -CARD_THICK * 1.6);
     return g;
-  }, [objects, fontOf, stick]);
+  }, [objects, fontOf, stick, finish]);
   useEffect(() => () => geo?.dispose(), [geo]);
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow receiveShadow>
-      <meshStandardMaterial color={cardAlbedo('#D8BE93')} roughness={0.85} metalness={0} />
+      {finish
+        ? <CardStock colour="#FFFFFF" finish={finish} />
+        : <meshStandardMaterial color={cardAlbedo('#D8BE93')} roughness={0.85} metalness={0} />}
     </mesh>
   );
 }
@@ -1262,8 +1275,14 @@ export default function TopperComposer({
                 <Slide label="How far into the cake" value={stick.bury} min={0} max={1} step={0.02}
                   onChange={v => setStick(s2 => ({ ...s2, bury: v }))}
                   fmt={v => (v <= 0.01 ? 'resting on top' : `${Math.round(v * 100)}% of the stick`)} />
+                {/* ⚠️ IT SAYS WHAT THE BAKER'S OWN PIECE IS, not what a card topper usually is. A
+                    metallic piece is CUT IN ONE SHAPE, stem included — telling its maker it is taped
+                    on is telling them something false about the thing in front of them, and it is
+                    the line they would read while deciding how to make it. */}
                 <p style={{ margin: '4px 0 0', fontSize: 11, lineHeight: 1.5, color: '#8A9A8E' }}>
-                  Taped to the back and running up behind the card, so the join never shows.
+                  {stickStock({ v: 1, objects })
+                    ? 'Cut from the same sheet as the topper, so it is all one piece.'
+                    : 'Taped to the back and running up behind the card, so the join never shows.'}
                 </p>
               </div>
             ) : (

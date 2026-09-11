@@ -42,6 +42,22 @@ export const BOTTOM_H    = 1.45;
 // tier size (no hard-coded height). The Height control nudges from here.
 export const BEND_ANCHOR_FRAC = 0.55;
 
+
+/* ── How big a world unit is, and why this is an ASSUMPTION rather than a lookup ──────────────────
+ *
+ * "The thinnest acrylic must clear what the cutter holds" needs a real millimetre, and the designer
+ * has no true scale to give one. The only inches-to-units constant in the codebase is
+ * SHEET_INCH_TO_WORLD (0.12), and it does not mean what it looks like: at that rate one unit is
+ * ~212mm, which makes the default bottom tier — diameter 2.4 — a TWENTY INCH cake. Its own comment
+ * says why: it was chosen so a half sheet reads beside a round tier, not as a conversion.
+ *
+ * So this is declared, not derived: the default bottom tier is taken to be an 8-inch cake, which
+ * puts a unit at 8 x 25.4 / 2.4 mm. Stated in one place with the arithmetic shown, so the day an
+ * order pins a REAL size the caller passes it and this stops being used — the same bargain
+ * rainbow.js makes with its own optional `mmPerUnit`.
+ */
+export const NOMINAL_MM_PER_UNIT = (8 * 25.4) / 2.4;   // ≈ 84.7
+
 // ── Sheet (rectangular) cakes ─────────────────────────────────────────────────
 // Standard US bakery sheet/square sizes, full width × depth in inches, scaled to
 // world units so a half sheet's long side (~2.16) reads at roughly the round bottom

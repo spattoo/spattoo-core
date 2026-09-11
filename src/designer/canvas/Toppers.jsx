@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperSheets, topperBox, topperStick } from '../geometry/topperPiece.js';
+import { topperSheets, topperBox, topperStick, stickStock } from '../geometry/topperPiece.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
 import { CardStock, cardAlbedo, cardExtrude, cardFront } from './CardStock.jsx';
@@ -162,18 +162,40 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
       return { geos, colour: sheet.colour, finish: sheet.finish };
     });
 
-    /* A rod, not a sheet: built here rather than extruded from contours. Behind the card in z, so
-       the overlap that attaches it is hidden exactly as it is on a real one. */
+    /* Built here rather than extruded from contours, and behind the card in z so the overlap that
+       attaches it is hidden exactly as it is on a real one.
+     *
+     * ⚠️ A ROD OR A TAB, AND THE CARD DECIDES WHICH. A printed card topper is taped to a wooden
+     * pick — a round stick, pale beech, the thing it actually is. A metallic one is CUT IN ONE
+     * SHAPE: the stem is a tab of the same sheet, same colour and same thickness, which is why the
+     * reference photographs show a gold stem rather than a lolly stick. `stickStock` is the one
+     * place that decides, so the studio and the cake cannot disagree. */
     let stickGeo = null;
+    const stickFinish = stick ? stickStock(t.payload) : null;
     if (stick) {
-      stickGeo = new THREE.CylinderGeometry(stick.radius * k, stick.radius * k, (stick.len + stick.tuck) * k, 14);
-      // The cylinder is built about its own middle; slide it so its ends land where the stick's do.
-      stickGeo.translate(0, ((stick.len + stick.tuck) / 2 - stick.len) * k, -depth * 0.9);
+      /* ⚠️ THE STICK'S BOTTOM IS THE GROUP'S ORIGIN, so it is seated at HALF ITS LENGTH and nothing
+       * more. `originY` above is `stick.bottomY` — the whole mesh is already measured from the end
+       * that goes into the cake — and this subtracted a further `len` on top of that, which dropped
+       * the stick a full stick-length below where it belongs. The card then floated with a gap under
+       * it and the stick's top never reached the card at all.
+       *
+       * It hid because a pale beech rod against a pale cake, with its lower half buried, shows
+       * almost nothing: what is left is a short pin near the icing that reads as the stick doing its
+       * job. A GOLD stem is the same geometry in a colour you can see, and it was obvious at once.
+       * The studio always had this right — it draws in the composer's own coordinates, where there
+       * is no origin to forget. */
+      const run = (stick.len + stick.tuck) * k;
+      stickGeo = stickFinish
+        ? new THREE.BoxGeometry(stick.width * k, run, depth)
+        : new THREE.CylinderGeometry(stick.radius * k, stick.radius * k, run, 14);
+      // Built about its own middle; slide it up so its lower end sits on the origin.
+      stickGeo.translate(0, run / 2, -depth * (stickFinish ? 0.6 : 0.9));
     }
 
     return {
       sheets,
       stickGeo,
+      stickFinish,
       // What the placement must bury: the stick's buried length, in the cake's units.
       sink: stick ? stick.buried * k : undefined,
       size: { w: box.w * k, h: box.h * k },
@@ -205,11 +227,15 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
 
   return (
     <group position={place.position} rotation={place.rotation}>
-      {/* Drawn first, so the card's own sheets cover the tuck. Wood rather than card: a stick is the
-          one part of a topper nobody paints, and a matte pale beech is what a cake-pop stick is. */}
+      {/* Drawn first, so the card's own sheets cover the tuck. */}
       {built.stickGeo && (
         <mesh geometry={built.stickGeo} castShadow receiveShadow {...grabProps}>
-          <meshStandardMaterial color={cardAlbedo('#D8BE93')} roughness={0.85} metalness={0} />
+          {/* Wood rather than card for a plain topper: a pick is the one part of it nobody paints,
+              and a matte pale beech is what a cake-pop stick is. A metallic topper's stem is the
+              SAME STOCK as the piece, because it was cut out of it. */}
+          {built.stickFinish
+            ? <CardStock colour="#FFFFFF" finish={built.stickFinish} />
+            : <meshStandardMaterial color={cardAlbedo('#D8BE93')} roughness={0.85} metalness={0} />}
         </mesh>
       )}
       {built.sheets.map((sheet, si) => sheet.geos.map((g, i) => (
