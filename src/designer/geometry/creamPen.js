@@ -28,27 +28,30 @@ import * as THREE from 'three';
  * crest without touching either extreme: below 1 the profile leaves the valley faster than a cosine
  * and dwells longer at the ridge. Judged against a photograph of one vertical line of star piping.
  */
-const LOBE_FAT = 0.7;
-function lobedProfile(lobes, depth, pts = lobes * 14) {
+/* ⚠️ A STAR TIP IS CUT, AND A CUT HAS CORNERS AT BOTH ENDS. The aperture is a metal star: straight
+ * sides running from a sharp point down to a sharp valley. So the section is a TRIANGLE WAVE in the
+ * radius — sharp at the points, sharp in the creases, straight in between.
+ *
+ * Two smooth curves were tried here and both are wrong, in opposite directions:
+ *   • a cosine is smooth at BOTH ends, so it has no fold anywhere and sweeps as soft flutes;
+ *   • `|sin|^0.7` is a cusp in the crease but a fat ROUNDED dome at the point, which is a flower
+ *     tip (a drop-flower), not a star. That was the one on screen when this was called out.
+ *
+ * The sample count is a multiple of the lobe count so that every point and every crease lands
+ * exactly on a vertex — sampled off the corners, a triangle wave rounds itself off again.
+ */
+function lobedProfile(lobes, depth, pts = lobes * 12) {
   const out = [];
   for (let i = 0; i < pts; i++) {
     const a = (i / pts) * Math.PI * 2;
-    /* ⚠️ `|sin|`, NOT A COSINE, and that is the whole of the crease. A cosine is smooth at BOTH
-     * ends: it rounds the ridge (right) and rounds the trough between two ridges (wrong) — there is
-     * no fold in it anywhere, so a swept star renders as soft flutes. `|sin(L·a/2)|` has a CORNER at
-     * its zeros, which is where the creases land, and is smooth at its peaks, which is where the
-     * ribs are. The exponent then fattens the rib: below 1 it reaches full height early and dwells
-     * there, so the section is a row of broad rounded ribs meeting in sharp Vs.
-     *
-     * ⚠️ An earlier attempt raised a cosine to 0.6 to do this and got it exactly backwards — that
-     * leaves the ridge FAST, so the ribs came out as thin spikes with broad flats between them, and
-     * the stroke ends around the rim rendered as little blocks. */
-    const rib = Math.pow(Math.abs(Math.sin(lobes * a / 2)), LOBE_FAT);
-    const r = 1 - depth * (1 - rib);                       // ridge = 1 at the peaks, 1−depth in the creases
+    const f = (lobes * a) / (Math.PI * 2);
+    const rib = Math.abs(2 * (f - Math.floor(f)) - 1);     // 1 at the points, 0 in the creases
+    const r = 1 - depth * (1 - rib);
     out.push([Math.cos(a) * r, Math.sin(a) * r]);
   }
   return out;
 }
+
 function roundProfile(n) {
   const out = [];
   for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; out.push([Math.cos(a), Math.sin(a)]); }
