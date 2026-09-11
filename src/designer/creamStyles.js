@@ -100,7 +100,7 @@ export const CREAM_STYLES = {
    *
    * `wall`, `top` and the schema are identical across the rows; only the tip and its numbers differ.
    */
-  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams() },
+  piped: { label: 'Piped — 8-point star', wall: 'piped', top: 'spiral', nozzle: 'star8', params: pipedParams() },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
