@@ -3543,6 +3543,26 @@ export default function CakeCanvas({
           // Guarded like the age topper: a drag that happens to end on the piece must not select it.
           if (!pointerRef.current.dragged) onGarnishSelect?.(id);
         }}
+        /* ⚠️ THE CARD TOPPER'S THREE, WHICH WERE MISSING — so a topper on the cake could not be
+           dragged and could not be tapped. Everything else was wired: the designer passed them to
+           `CakeCanvas`, `CakeScene` put them into `edit`, `CakeContent` read them out and `Toppers`
+           spread its grab props. Only this one hop was never written, so `onTopperMove` arrived as
+           the `null` default and `onTopperSelect` as the NOOP.
+        
+           ⚠️ AND IT PRESENTED AS "NOTHING HAPPENS AT ALL", which is what made it hard to place: the
+           press DOES hit the topper, so the capture-phase gate stands orbit down and the cake does
+           not rotate either. A decoration that swallows the gesture and then does nothing with it
+           looks like a dead mesh, not like a missing prop. `hasMove: false` in the drag hook was
+           what named it.
+        
+           ⚠️ A GARNISH AND A TOPPER ARE THE SAME PROBLEM (they share `garnishPlacement`, the drag
+           hook and the resolve), so these lines sit against the garnish's and read the same, down to
+           the guard that stops a drag ending on the piece from selecting it. */
+        selectedTopperId={selectedTopperId}
+        onTopperMove={onTopperMove}
+        onTopperSelect={id => {
+          if (!pointerRef.current.dragged) onTopperSelect?.(id);
+        }}
         onTextContentChange={onTextContentChange}
         textToolbar={textToolbar}
         orbitRef={orbitRef}
