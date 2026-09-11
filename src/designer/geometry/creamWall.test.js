@@ -152,14 +152,22 @@ describe('the top — a spatula swirl, not a coil', () => {
     expect(top).toBeLessThan(0.4 * ropeRadius(1, STAR));
   });
 
-  it('ends where the CAKE does, not at the crest — a lid out to the crest is a plate on the piping', () => {
+  it('⚠️ ends exactly where the CAKE\'S SIDE is — a lid past it lies OVER the strokes', () => {
+    /* Reaching into the strokes, the lid lay over their inner halves: from above every stroke's
+     * section came out half swallowed, which reads exactly like piping done inside the cake. You
+     * cannot pipe inside a cake. */
     const geo = buildStyledTop('piped', 'spiral', 1, 1.4, STAR);
     expect(geo.getAttribute('uv')).toBeTruthy();
     const pos = geo.getAttribute('position');
     let max = 0;
     for (let i = 0; i < pos.count; i++) max = Math.max(max, Math.hypot(pos.getX(i), pos.getZ(i)));
-    expect(max).toBeGreaterThan(pipedBodyRadius(1, STAR));   // past the body, into the strokes
-    expect(max).toBeLessThan(1 - 0.2 * ropeSection(1, STAR).w);  // …and well short of the crest
+    expect(max).toBeCloseTo(pipedBodyRadius(1, STAR), 6);   // float32 positions
+  });
+
+  it('and at press 0 the strokes are TANGENT to that side — laid on it, not sunk into it', () => {
+    const w = ropeSection(1, STAR).w;
+    const body = pipedBodyRadius(1, { ...STAR, press: 0 });
+    expect(1 - 2 * w).toBeCloseTo(body, 9);   // the stroke's inner edge IS the cake's side
   });
 });
 

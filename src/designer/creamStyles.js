@@ -38,11 +38,12 @@ function pipedParams(over = {}) {
     // two ropes can reach the body underneath.
     { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.08), user: false },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
-     * it showing; 1 = half of it is in the frosting. ⚠️ AND THE PIPING IS ON THE SIDE, NOT SUNK IN.
+     * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
+     * SIDE, NOT SUNK IN. You cannot pipe inside a cake.
      * The body used to be raised until it swallowed the strokes — to stop the board showing through
      * the notches between them — and a star tip's creases run most of the way down a stroke's side,
      * so burying it buried them. The notches have their own answer: a collar at the foot. */
-    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0.3), user: true },
+    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0), user: true },
     { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.22),  user: false },
     { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.6), user: false },
     /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat

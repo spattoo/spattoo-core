@@ -322,7 +322,7 @@ export function pipedParams(params = {}) {
     // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
     width:   Math.max(0.05, params.width ?? 0.5),
     overlap: params.overlap ?? 0.08,
-    press:   Math.min(1, Math.max(0, params.press ?? 0.3)),
+    press:   Math.min(1, Math.max(0, params.press ?? 0)),
     vary:    params.vary    ?? 0.22,
     wobble:  params.wobble  ?? 0.6,
     /* The top. ⚠️ A DIFFERENT TOOL, so a different shape: not the tip, and an order of magnitude
@@ -518,7 +518,12 @@ export function buildStyledTop(wall, top, radius, height, params = {}) {
    * strokes. The strokes' own ends stand proud of it, and that crown is what a real vertical piped
    * tier has around its rim. */
   const { w } = ropeSection(radius, p);
-  const rLid = pipedBodyRadius(radius, p) + 0.7 * w;
+  /* ⚠️ THE LID IS THE CAKE'S TOP, SO IT ENDS WHERE THE CAKE'S SIDE IS — at the body radius, not a
+   * little past it. Reaching into the strokes, it lay OVER their inner halves: from above every
+   * stroke's section was half swallowed by the lid, which reads exactly like piping done inside the
+   * cake. You cannot pipe inside a cake. The strokes sit ON the side; the top ends where the side
+   * begins, and their ends stand proud of it as the crown a real vertical piped tier has. */
+  const rLid = pipedBodyRadius(radius, p);
   const depth = p.swirl * radius;
   const field = makeSwirlField({ turns: p.swirlTurns, rOut: rLid });
   // Rings have to resolve the ripple across the radius; around, it is one wave per revolution.
