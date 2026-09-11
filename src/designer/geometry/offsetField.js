@@ -209,8 +209,26 @@ export function offsetByDistance(parts, d) {
     }
   }
 
-  const rings = stitch(march(grid, N, x0, y0, w, h, d), Math.max(w, h) / N / 4);
-  if (!rings.length) return parts;
+  return fieldToParts(grid, N, x0, y0, w, h, d) ?? parts;
+}
+
+/**
+ * Turn a sampled field into `[{ outer, holes }]` — march it, stitch the segments into rings, and
+ * sort those rings into outers and the holes they contain.
+ *
+ * ⚠️ SHARED, BECAUSE THE OFFSET IS NOT THE ONLY THING THAT DRAWS A SHAPE FROM A FIELD. A union is
+ * one too: `min(a, b)` over two signed distances is the union of two shapes, and a cut is
+ * `max(field, -tool)`. That is how the interlocked rings are built (see `topperShape.js`) — a
+ * boolean library would be the other way to get them, and this file already had four fifths of one.
+ *
+ * `grid` is `(N+1)²` samples of a field, row-major, NEGATIVE INSIDE. `level` is the contour to cut
+ * at — zero for a shape's own boundary, `d` for an offset.
+ *
+ * Returns null when nothing crosses the level, so a caller can fall back rather than draw nothing.
+ */
+export function fieldToParts(grid, N, x0, y0, w, h, level) {
+  const rings = stitch(march(grid, N, x0, y0, w, h, level), Math.max(w, h) / N / 4);
+  if (!rings.length) return null;
 
   /* ⚠️ WHICH WINDING MEANS "OUTER" IS READ OFF THE RINGS, NOT ASSUMED. The marching table decides
      it, and getting that backwards classifies every outer boundary as a hole — which is silent:
@@ -222,7 +240,7 @@ export function offsetByDistance(parts, d) {
 
   const outers = [], holes = [];
   for (const r of rings) (Math.sign(areaOf(r)) === outerSign ? outers : holes).push(r);
-  if (!outers.length) return parts;
+  if (!outers.length) return null;
 
   /* Handed on wound the way the rest of this file expects — outer anticlockwise, holes clockwise —
      so a caller never has to know which way the marching happened to go. */
@@ -233,4 +251,21 @@ export function offsetByDistance(parts, d) {
     if (owner) owner.holes.push(facing(hole, -1));
   }
   return built;
+}
+
+/**
+ * Sample a signed field over a box and return its contours. `sample(x, y)` must be negative inside.
+ *
+ * ⚠️ THE GRID HAS TO RESOLVE THE THINNEST THING IN THE FIELD, not the shape's overall size. A cut a
+ * hundredth of a shape wide simply is not there on a grid coarser than the cut, and nothing warns
+ * you — the piece comes back whole and looks like the cut was never asked for.
+ */
+export function contoursOfField(sample, { x0, y0, w, h, n }) {
+  const N = Math.max(MIN_N, Math.min(MAX_N, Math.round(n)));
+  const grid = new Float32Array((N + 1) * (N + 1));
+  for (let j = 0; j <= N; j++) {
+    const y = y0 + (h * j) / N;
+    for (let i = 0; i <= N; i++) grid[j * (N + 1) + i] = sample(x0 + (w * i) / N, y);
+  }
+  return fieldToParts(grid, N, x0, y0, w, h, 0);
 }

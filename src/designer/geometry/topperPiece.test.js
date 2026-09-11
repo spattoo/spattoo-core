@@ -86,6 +86,65 @@ describe('the ring, the first family with a hole', () => {
   });
 });
 
+/* ── The threaded pair ─────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ EVERY ONE OF THESE GUARDS A SILENT FAILURE. A field-built shape never throws: it comes back as
+ * the wrong shape, looking plausible, and only rendering it shows anything. Each of these was a real
+ * wrong shape on the way here.
+ */
+describe('the interlocked rings', () => {
+  const rings = () => topperContours(shape({ family: 'rings', size: 2 }), null);
+
+  /* ⚠️ ONE PIECE. The first cut wove BOTH crossings, and two thin rings touch at exactly two places
+   * — so cutting both left nothing holding them together and the "welded pair" came back as two
+   * loose rings that merely overlapped, which is the very thing this shape exists to stop. It looked
+   * almost right. `parts.length` is the only thing that says otherwise. */
+  it('is ONE welded piece, not two rings that happen to overlap', () => {
+    expect(rings()).toHaveLength(1);
+  });
+
+  /* The right ring's opening survives as a hole. The LEFT one deliberately does not — the weave slit
+     opens it to the outside, which is what "this band passes behind" looks like as a cut. */
+  it('keeps an opening you can see through', () => {
+    const [piece] = rings();
+    expect(piece.holes.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('spans its box, so `size` means what it says on a shape nobody writes on', () => {
+    const [piece] = rings();
+    const xs = piece.outer.map(q => q.x);
+    expect(Math.max(...xs) - Math.min(...xs)).toBeCloseTo(2, 1);
+  });
+
+  /* ⚠️ AND IT IS NOT GROWN TO CONTAIN A WORD. `backingPlate` fits a shape AROUND a word by growing
+   * it until the corners of a box fall inside — which a threaded pair can never satisfy, so the
+   * search ran to its cap and returned a piece TWENTY TIMES the size asked for. Nothing threw; the
+   * topper was simply enormous. `plate: false` is what stops it. */
+  it('is not inflated by the fit search', () => {
+    const [piece] = rings();
+    const ys = piece.outer.map(q => q.y);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeLessThan(2);
+  });
+
+  /* ⚠️ THE WEAVE IS ACTUALLY CUT. The slit is about 1.5% of the shape across, and a grid coarser
+   * than the cut simply does not see it: the rings come back welded at both crossings and look like
+   * the weave was never asked for. Asserted as the piece being NARROWER at the top crossing than at
+   * the bottom one — cut on one side, welded on the other. */
+  it('breaks one band at the top crossing and welds them at the bottom', () => {
+    const [piece] = rings();
+    // How much material the piece has in a thin horizontal slice near the middle column.
+    const spanNear = (yWant) => {
+      const xs = piece.outer.concat(...piece.holes)
+        .filter(q => Math.abs(q.y - yWant) < 0.03 && Math.abs(q.x) < 0.25)
+        .map(q => q.x);
+      return xs.length;
+    };
+    // The crossing sits at y = ±0.438 for this pair. A cut edge puts contour points there; a weld
+    // puts none, because there is no boundary inside solid material.
+    expect(spanNear(0.438)).toBeGreaterThan(spanNear(-0.438));
+  });
+});
+
 describe('topperSheets', () => {
   it('is empty for an empty payload', () => {
     expect(topperSheets({ objects: [] }, fontOf)).toEqual([]);

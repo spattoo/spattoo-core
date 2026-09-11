@@ -114,36 +114,28 @@ export const TOPPER_PRESETS = Object.freeze([
        metallic card, and it picks the piece that is ALWAYS cut from it: nobody makes a pair of
        wedding rings in pink card.
 
-       ⚠️ TWO RINGS AND A STONE, EACH ITS OWN OBJECT — not one clever outline. A baker can drag the
-       stone, drop it, recolour a single ring, or keep the pair and throw the rest away, which is
-       what makes this a starting point rather than a picture. It is also how the studio already
-       works, so nothing here needs a mechanism of its own.
+       ⚠️ ONE SHAPE, NOT TWO RINGS. Composed from two `ring` objects the pair overlaps with one band
+       wholly in front of the other, which is what a flat card can do and is NOT what a wedding
+       topper looks like — the real ones THREAD, one band over at the top and under at the bottom. A
+       single cut piece can show that, and it is how they are actually made: the bands are welded
+       where they cross and thin slits tell the eye which passes behind. `rings` is that piece; see
+       the note on `RING_PAIR` in topperShape.js for how it is built.
 
-       ⚠️ THEY OVERLAP AND THEY DO NOT INTERLOCK, and that is honest rather than a shortcut. A real
-       card topper is ONE FLAT PIECE: a band cannot pass over its neighbour at the top and under it
-       at the bottom, because there is only one thickness of card. The photographs that show rings
-       genuinely threaded are a single cut silhouette, and cutting that is a different thing from
-       composing two rings. One in front of the other is what the card does.
-
-       ⚠️ THE STONE BELONGS TO THE FRONT RING. Listed last so it sits on top of the band it is set
-       into — listed before it, the ring would print across its own stone. Order is depth here, the
-       same rule the couple preset above records. */
+       ⚠️ THE STONE IS STILL ITS OWN OBJECT. It could have gone into the silhouette too, and then a
+       baker could not have moved it, recoloured it or thrown it away — which is the difference
+       between a starting point and a picture. */
     key: 'rings',
     label: 'Two rings for a wedding',
     objects: [
       /* ⚠️ `size` IS THE BOX A SHAPE IS FITTED AROUND, never the shape's own width — the note on the
-         heart preset above records what reasoning about this cost. A ring fitted to a 0.81 box comes
-         out about 1.15 across, and the pair is measured in topperPresets.test.js rather than
-         believed. */
-      { kind: 'shape', family: 'ring', size: 0.81, x: 0.39, y: 0,
+         heart preset above records what reasoning about this cost. Measured in topperPresets.test.js
+         rather than believed. */
+      { kind: 'shape', family: 'rings', size: 1.95, x: 0, y: -0.10,
         colour: '#C9A227', finish: 'card_gold', offset: 0, offsetColour: '#FFFFFF' },
-      { kind: 'shape', family: 'ring', size: 0.81, x: -0.39, y: 0,
-        colour: '#C9A227', finish: 'card_gold', offset: 0, offsetColour: '#FFFFFF' },
-      /* ⚠️ ITS POINT REACHES PAST THE BAND, into the ring's opening. A stone sits IN a setting. Set
-         so the point lands ON the band instead, the pavilion's two sloping sides meet the band's
-         outer edge either side of it and leave a little V of the ring's HOLE showing between them —
-         a notch that reads as a badly drawn join. Crossing the band entirely covers it. */
-      { kind: 'shape', family: 'gem', size: 0.26, x: -0.39, y: 0.68,
+      /* Tucked into the left ring's top, its point reaching past the band into the opening — a stone
+         sits IN a setting, and landing it ON the band leaves a V of the ring's hole showing between
+         the pavilion's two sides. */
+      { kind: 'shape', family: 'gem', size: 0.26, x: -0.39, y: 0.60,
         colour: '#C9A227', finish: 'card_gold', offset: 0, offsetColour: '#FFFFFF' },
     ],
   },

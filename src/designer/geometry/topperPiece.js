@@ -54,7 +54,10 @@ export function topperContours(obj, font) {
     holes: [],
   }];
   const plate = backingPlate(box, { family: obj.family, pad: 0 });
-  return plate ? [plate] : null;
+  /* ⚠️ EVERY PART, not just the first. A family built from a FIELD can come back as more than one
+     piece — the interlocked rings are welded into one, but nothing guarantees that for the next one,
+     and taking `[plate]` would silently drop the rest. */
+  return plate ? (plate.parts ?? [plate]) : null;
 }
 
 /* Every sheet of a topper, back to front, ready to extrude:

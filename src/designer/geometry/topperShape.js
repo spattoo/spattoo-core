@@ -10,7 +10,7 @@ import * as THREE from 'three';
  * decision the way a heart's plump/cleft/tip are, and shapes.js says outright that those two stay
  * analytic in surface.js so no existing cake regresses. */
 import { outlineOf, pointInPolygon } from './shapes.js';
-import { offsetByDistance } from './offsetField.js';
+import { offsetByDistance, contoursOfField } from './offsetField.js';
 
 /* ── An acrylic cake topper, as one cut-out ──────────────────────────────────────────────────────
  *
@@ -829,6 +829,86 @@ const gemUnit = () => ([
   { x: -1.00, y: 0.45 }, { x: 0.00, y: -1.00 }, { x: 1.00, y: 0.45 },
 ]);
 
+/* ── Two rings, threaded ─────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ ONE PIECE, AND THAT IS THE POINT. Composing two ring objects gives two overlapping annuli with
+ * one wholly in front of the other, which is what a flat card can do and is NOT what a wedding
+ * topper looks like: the reference threads them, one band over at the top and under at the bottom.
+ * A single cut piece CAN show that, and it is how every one of them is made — the bands are welded
+ * where they cross, and two thin slits at each crossing tell the eye which one passes behind.
+ *
+ * ⚠️ BUILT AS A FIELD, NOT AS ARCS. The union of two annuli, minus four slits, is a handful of
+ * boolean operations, and a signed distance field does booleans for free: `min` is union, `max` is
+ * intersection, and `max(a, -b)` is a cut. Working it out as circular arcs means finding every
+ * intersection of every pair of circles, deciding which arc of each survives, and ordering them into
+ * rings — four shapes' worth of case analysis, each case wrong the first time. `offsetField.js`
+ * already marches a field into contours for the offset band; this asks it the same question.
+ *
+ * ⚠️ THE SLITS RUN ALONG THE OTHER RING'S EDGES. A band does not stop at a straight line — it
+ * disappears where its neighbour covers it, so the cut follows the neighbour's two boundary circles
+ * exactly. That is also why they are placed by intersecting three regions rather than drawn: near
+ * the other ring's edge, AND inside this band, AND in the right half of the piece.
+ */
+const RING_PAIR = {
+  /* Solved from the pair spanning x ∈ [-1, 1]: centres at ±c, outer radius R, c + R = 1. The ratio
+     between them is the one the composed version used and was judged to look right — a pair that
+     overlaps by about a third of a ring. */
+  ratio: 0.678,          // centre separation over outer radius
+  band: 0.78,            // inner radius over outer, matching the plain `ring` family
+  slit: 0.030,           // width of a weave cut: about 1.5mm on a 100mm topper — cuttable, and seen
+};
+
+function ringPairParts() {
+  const R = 1 / (1 + RING_PAIR.ratio);
+  const c = R * RING_PAIR.ratio;
+  const r = R * RING_PAIR.band;
+  const mid = (R + r) / 2, half = (R - r) / 2;
+  const t = RING_PAIR.slit;
+
+  // The exact signed distance to an annulus: negative inside the band.
+  const annulus = (x, y, cx) => Math.abs(Math.hypot(x - cx, y) - mid) - half;
+  /* ⚠️ THE CUT RUNS BESIDE THE COVERING BAND, NOT ALONG ITS CENTRELINE — and the first version ran
+   * along the centreline, which SEVERED the piece. A slit centred on the other ring's boundary takes
+   * `t` off each side of it, and half of that is the other ring's own material: cut it and the two
+   * bands stop touching anywhere, so the "welded pair" came out as two loose strips that happened to
+   * overlap. Hugging the outside of the covering band instead leaves every scrap of it intact, and
+   * the piece stays one.
+   *
+   * `beside` is negative in a thin strip JUST OUTSIDE the outer circle, or JUST INSIDE the inner one
+   * — the two places where a band that passes behind would emerge. */
+  const beside = (x, y, cx) => {
+    const d = Math.hypot(x - cx, y);
+    const past = Math.max(R - d, d - (R + t));       // outside the outer edge
+    const within = Math.max(d - r, (r - t) - d);     // inside the inner edge
+    return Math.min(past, within);
+  };
+
+  const field = (x, y) => {
+    const left = annulus(x, y, -c), right = annulus(x, y, c);
+    let v = Math.min(left, right);                       // union: one welded piece
+    /* ⚠️ THE WEAVE IS CUT AT ONE CROSSING, NOT BOTH — and that is a physical constraint, not a
+       shortcut. Two thin rings touch at exactly two places. Show the weave at both and there is
+       nothing left holding them together: the "welded pair" comes apart into two loose rings that
+       merely overlap, which is the thing this shape exists to stop. Cut at the top, the bands merge
+       at the BOTTOM and that weld is what makes it one piece. The eye reads a pair as linked from
+       one crossing — going behind once is enough — and a real cut topper does exactly this.
+
+       The cut is an intersection of three regions, so it is the MAX of their three signed values,
+       and taking it out of the piece is `max(v, -cut)`. */
+    const over = Math.max(beside(x, y, c), left, -y);    // right over left, upper crossing
+    return Math.max(v, -over);
+  };
+
+  /* ⚠️ THE GRID IS SIZED BY THE SLIT, NOT BY THE PIECE. A cut 1.6% of the shape across is simply not
+     there on a grid coarser than the cut — and nothing warns you: the rings come back welded and
+     look like the weave was never asked for. Four cells across the narrowest thing in the field. */
+  const pad = 0.02;
+  const n = Math.ceil((2 + pad * 2) / (t / 2));
+  return contoursOfField(field, {
+    x0: -1 - pad, y0: -R - pad, w: 2 + pad * 2, h: (R + pad) * 2, n,
+  });
+}
+
 const TOPPER_SHAPES = Object.freeze({
   circle: { outline: disc },
   /* A rounded rectangle is exactly the shape that is SUPPOSED to follow what is written on it —
@@ -842,6 +922,10 @@ const TOPPER_SHAPES = Object.freeze({
    * to read as a band at thumbnail size, thick enough to cut from card and lift off the mat. */
   ring:   { outline: disc, hole: 0.78 },
   gem:    { outline: gemUnit },
+  /* ⚠️ A `parts` PRODUCER RATHER THAN AN `outline`, because this one is not a loop with an optional
+     hole in the middle — it is a welded pair with two crescent openings and four cuts, and no
+     amount of "an outline plus a hole" describes it. The table takes either. */
+  rings:  { parts: ringPairParts, plate: false },
 });
 
 /* Does this family take the PROPORTION of what it is fitted around, or force itself square?
@@ -887,22 +971,56 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96,
   const spec = TOPPER_SHAPES[family] ?? TOPPER_SHAPES.circle;
   const biasY = (spec.biasY ?? 0) * hh;
 
-  // An outline in [-1,1]^2, in this file's (x, y) rather than the cake's (x, z).
-  const unit = spec.outline(segments);
-  if (!unit?.length) return null;
+  /* The shape in [-1,1]^2, in this file's (x, y) rather than the cake's (x, z).
+   *
+   * ⚠️ A ROW GIVES EITHER AN `outline` OR A `parts` PRODUCER. Most families are a loop, optionally
+   * with one concentric hole, and an outline says that in one line. A welded pair of rings is not:
+   * it has crescent openings and cut slits, and "an outline plus a hole" cannot describe it. Rather
+   * than bend every family into the harder shape, the table takes whichever fits and this normalises
+   * to the harder one. */
+  const unitParts = spec.parts
+    ? spec.parts(segments)
+    : (() => {
+        const outline = spec.outline(segments);
+        if (!outline?.length) return null;
+        /* ⚠️ THE HOLE IS WOUND THE OTHER WAY. A hole that winds with its outer is not reliably a
+           hole: `ExtrudeGeometry` triangulates by winding, and even-odd fills — which the print
+           sheet and the cutting file both use — are the forgiving case rather than the rule.
+           Reversing it here means every consumer gets a ring rather than each having to know. */
+        const holes = spec.hole > 0
+          ? [outline.map(q => ({ x: q.x * spec.hole, y: q.y * spec.hole })).reverse()]
+          : [];
+        return [{ outer: outline, holes }];
+      })();
+  if (!unitParts?.length || !unitParts[0]?.outer?.length) return null;
 
-  const at = (m) => unit.map(q => ({ x: cx + q.x * hw * m, y: cy + biasY + q.y * hh * m }));
+  const mapPt = (q, m) => ({ x: cx + q.x * hw * m, y: cy + biasY + q.y * hh * m });
+  const at = (m) => unitParts.map(p => ({
+    outer: p.outer.map(q => mapPt(q, m)),
+    holes: (p.holes ?? []).map(h => h.map(q => mapPt(q, m))),
+  }));
   const corners = (m) => {
-    const ring = at(m).map(q => ({ x: q.x, z: q.y }));
+    // Fitted against the LARGEST outer — a word has to sit inside the body of the shape, not inside
+    // whichever fragment the field happened to emit first.
+    const outers = at(m).map(p => p.outer);
+    const ring = outers.reduce((big, o) => (o.length > big.length ? o : big), outers[0])
+      .map(q => ({ x: q.x, z: q.y }));
     return [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]]
       .every(([dx, dy]) => pointInPolygon(ring, cx + dx, cy + dy));
   };
 
   /* Grow until it holds, then stop. Capped: a shape that cannot hold a very wide word at any
    * sensible size should give up rather than return a plate the size of the room — the caller shows
-   * what it got and the baker picks a different shape or a shorter word. */
+   * what it got and the baker picks a different shape or a shorter word.
+   *
+   * ⚠️ UNLESS THE FAMILY IS NOT A PLATE. The search exists to fit a shape AROUND a word, and it
+   * assumes the shape can contain a rectangle — true of a disc, a panel, a heart. A threaded pair of
+   * rings can never contain the corners of its own bounding box, so the search runs to its cap and
+   * returns a piece twenty times the size asked for. Nothing throws; the topper is simply enormous.
+   * A row that says `plate: false` is sized straight to the box instead, which for a shape nobody
+   * writes on is the only thing `size` could have meant anyway. */
   let m = 1;
-  for (let i = 0; i < 40 && !corners(m); i++) m *= 1.08;
+  if (spec.plate !== false) for (let i = 0; i < 40 && !corners(m); i++) m *= 1.08;
 
   /* ⚠️ A FLOOR ON THE FINISHED SIZE, for a PAIR — applied to the SETTLED multiplier, not to the
    * starting half-extents. Two hearts on a couple's cake are the same size: "Jo" and "Alexandra" get
@@ -915,12 +1033,16 @@ export function backingPlate(parts, { family = 'circle', pad = 0, segments = 96,
   if (minHalf) m = Math.max(m, (minHalf.w ?? 0) / hw, (minHalf.h ?? 0) / hh);
   // The half-extents it actually settled on, so a caller sizing a PAIR can ask for both again with
   // the larger of the two as a floor.
-  /* ⚠️ THE HOLE IS WOUND THE OTHER WAY. A hole that winds with its outer is not reliably a hole:
-     `ExtrudeGeometry` triangulates by winding, and even-odd fills — which the print sheet and the
-     cutting file both use — are the forgiving case rather than the rule. Reversing it here means
-     every consumer gets a ring rather than each having to know. */
-  const holes = spec.hole > 0 ? [at(m * spec.hole).slice().reverse()] : [];
-  return { kind: 'plate', outer: at(m), holes, half: { w: hw * m, h: hh * m } };
+  /* ⚠️ `parts` IS THE WHOLE ANSWER; `outer`/`holes` ARE THE FIRST OF THEM, for the callers that
+     only ever wanted a plate to sit a word on. A shape that comes out as several pieces — which the
+     field families can — is only fully described by the list. */
+  // `built`, not `parts`: this function's own first argument is called `parts`.
+  const built = at(m);
+  return {
+    kind: 'plate', parts: built,
+    outer: built[0].outer, holes: built[0].holes,
+    half: { w: hw * m, h: hh * m },
+  };
 }
 
 
