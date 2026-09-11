@@ -36,7 +36,11 @@ function pipedParams(over = {}) {
     { key: 'width',   label: 'Nozzle (in)', min: 0.1, max: 1.2, step: 0.05, default: d('width', 0.5), user: true },
     // How hard neighbours are pressed together. A hand overlaps; butted exactly, a crevice between
     // two ropes can reach the body underneath.
-    { key: 'overlap', label: 'Overlap',  min: 0,  max: 0.6, step: 0.02, default: d('overlap', 0.08), user: false },
+    /* ⚠️ MAY GO NEGATIVE, and that is what makes a rib a RIB. At 0 the strokes are tangent and the
+     * valley between two of them only reaches the circle their spines ride — a 7% dip, which reads
+     * as a scratch. Spaced slightly APART, the valley floor is the cake's own side a whole stroke
+     * further in, and the rib stands up. It cannot show a hole: the body is right there behind. */
+    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', -0.06), user: false },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
      * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
      * SIDE, NOT SUNK IN. You cannot pipe inside a cake.
@@ -100,13 +104,17 @@ export const CREAM_STYLES = {
    *
    * `wall`, `top` and the schema are identical across the rows; only the tip and its numbers differ.
    */
-  /* ⚠️ TWELVE POINTS, BECAUSE FOUR OF THEM HAVE TO LAND ON THE FACE. A stroke is a tube: a viewer
-   * sees a little over half of it, and only the middle ±60° reads as ribs — the rest is silhouette,
-   * and on a wall the silhouette is exactly where the neighbouring stroke meets it. So the ribs a
-   * person counts are `lobes/3`. Five points give under two, eight give under three, twelve give
-   * four, which is what a photograph of one vertical line shows. `star8` is still in the registry
-   * and is one key away. */
-  piped: { label: 'Piped — 12-point star', wall: 'piped', top: 'spiral', nozzle: 'star12', params: pipedParams() },
+  /* ⚠️ THE RIB A VIEWER COUNTS IS THE STROKE, NOT A POINT OF THE STAR — which is the whole reason
+   * this kept reading as hatching. Counted off a photograph of a finished cake: about 22 ribs across
+   * the visible width, each roughly a tenth of the radius. Forty-odd strokes round the tier, and ONE
+   * RIB IS ONE STROKE. A twelve-point tip draws twelve slots inside every one of those, so the wall
+   * carried five hundred lines where the photograph has forty — sub-pixel detail that adds up to
+   * nothing but noise.
+   *
+   * So the tip is chosen so that a stroke reads as ONE fat column: five points put under two on the
+   * face, which is a broad rib with a hint of a line down it, exactly what the photograph shows.
+   * `star12` is still in the registry for a close-up, where the twelve do resolve. */
+  piped: { label: 'Piped — star tip', wall: 'piped', top: 'spiral', nozzle: 'star5', params: pipedParams() },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.

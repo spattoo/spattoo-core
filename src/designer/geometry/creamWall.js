@@ -333,7 +333,7 @@ export function pipedParams(params = {}) {
     nozzle,
     // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
     width:   Math.max(0.05, params.width ?? 0.5),
-    overlap: params.overlap ?? 0.08,
+    overlap: Math.max(-0.3, params.overlap ?? -0.06),
     press:   Math.min(1, Math.max(0, params.press ?? 0)),
     vary:    params.vary    ?? 0.34,
     wobble:  params.wobble  ?? 0.85,
