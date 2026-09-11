@@ -81,39 +81,76 @@ function displaceRibbed(geo, radius, { amp, bands, round }) {
  *
  * Integer `ropes` keeps the ±π seam continuous, the same rule swirl's integer lobes follow: u/τ+0.5
  * runs 0..1 across the seam and sin(0) = sin(π) = 0, so the groove lands exactly on the join. */
-/* ⚠️ AND IT HAS TO BE IRREGULAR, or it reads as a FLUTED VASE rather than as cream.
+/* ⚠️ A STAR NOZZLE DRAGGED UP THE WALL, which is a different object from a corrugation.
  *
- * A perfectly periodic profile is the signature of a manufactured object — turned, moulded or
- * extruded. Nothing about the lighting or the material rescues it; it was called "paper" on sight.
- * A baker holds a bag and drags it up a chilled cake by hand, so real ropes differ in thickness and
- * wander a little on the way up. Two cheap deviations buy all of that:
+ * The first version modelled the wall as one continuous periodic ripple. That is not the technique.
+ * The baker holds a STAR tip against a chilled cake and pulls it from the bottom to the top, then
+ * moves along and does it again. What that leaves is a row of SEPARATE STROKES, and three things
+ * follow from it that a ripple cannot express — all three were called out on sight, twice:
  *
- *   vary   per-rope DEPTH. Each rope keeps its own multiplier the whole way up, so one is fatter
- *          than its neighbour exactly as a hand-squeezed one is.
- *   wobble a slow ANGULAR drift with height, so a rope leans instead of running dead plumb.
+ *   1. Each stroke has its OWN WIDTH. A hand does not space them evenly, and identical widths are
+ *      the single loudest tell that a shape was generated. `vary` now moves the width as well as the
+ *      depth, so no two neighbours match.
+ *   2. Each stroke carries FINE RIDGES ALONG ITS LENGTH — the star's teeth, several per stroke.
+ *      This is the detail that actually says "piped" rather than "moulded", and no amount of
+ *      roundness or lean substitutes for it.
+ *   3. A stroke is a RIBBON pressed on, not a half-round tube: it rises quickly off the groove and
+ *      sits fairly flat across its face.
  *
- * ⚠️ BOTH MUST SURVIVE THE ±π SEAM. `wobble` depends only on v, so it shifts every rope together and
- * cannot open a gap. `vary` is indexed by rope MODULO the count, so the rope at u = −π and the rope
- * at u = +π are the same rope and get the same multiplier. Index by raw floor() instead and the
- * cake has one visible vertical scar down the back.
+ * ⚠️ THE WIDTHS MUST SUM TO EXACTLY ONE or the ±π seam splits. They are normalised here for that
+ * reason, and the lookup wraps, so the last stroke meets the first exactly.
  */
 const ropeHash = (i) => {
-  // Deterministic per-rope value in 0..1. A cake must look the same on every reload and on every
-  // device — Math.random() here would make the same design render differently twice.
+  // Deterministic per-stroke value in 0..1. A cake must look the same on every reload and on every
+  // device — Math.random() here would render the same design differently twice.
   const x = Math.sin((i + 1) * 12.9898) * 43758.5453;
   return x - Math.floor(x);
 };
 
-function displacePiped(geo, radius, { amp, ropes, round, vary, wobble }) {
+/* The wall's height field for ONE point around the cake, shared by the geometry and the relief
+ * sampler so a decoration cannot seat on a wall that is no longer there.
+ *
+ * Returns f(frac) → 0..~1, where `frac` is the position around the cake in 0..1.
+ */
+export function makeRopeField({ ropes, round, vary, teeth, teethDepth }) {
+  // Per-stroke widths, normalised to sum to 1 — see the seam note above.
+  const w = [], depth = [];
+  let total = 0;
+  for (let i = 0; i < ropes; i++) {
+    const wi = 1 + vary * (ropeHash(i) - 0.5) * 2;
+    w.push(wi); total += wi;
+    depth.push(1 + vary * (ropeHash(i + 1000) - 0.5) * 2);
+  }
+  const edge = [0];
+  for (let i = 0; i < ropes; i++) edge.push(edge[i] + w[i] / total);
+
+  return (frac) => {
+    const f = frac - Math.floor(frac);                  // wrap into 0..1
+    // Which stroke, and where inside it. Linear scan: `ropes` is tens, and this runs per vertex on a
+    // build, not per frame.
+    let i = ropes - 1;
+    for (let k = 1; k <= ropes; k++) if (f < edge[k]) { i = k - 1; break; }
+    const t = (f - edge[i]) / (edge[i + 1] - edge[i]);  // 0..1 across THIS stroke
+
+    // The stroke's own section: quick rise off the groove, flattish face.
+    const body = Math.pow(Math.sin(Math.PI * t) ** 2, round);
+    // The star tip's teeth, riding ON the stroke and fading out at its edges so the grooves between
+    // strokes stay the deepest line. This is the bit that reads as piped.
+    const ridge = teethDepth * Math.sin(Math.PI * t) * (0.5 - 0.5 * Math.cos(TAU * teeth * t));
+    return depth[i] * (body + ridge);
+  };
+}
+
+function displacePiped(geo, radius, { amp, ropes, round, vary, wobble, teeth, teethDepth }) {
   const a = amp * radius;
+  const field = makeRopeField({ ropes, round, vary, teeth, teethDepth });
   return displaceSide(geo, (u, v) => {
-    const drift = wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes;   // scaled by rope width
-    const f = u / TAU + 0.5 + drift;
-    const idx = ((Math.floor(f * ropes) % ropes) + ropes) % ropes;  // modulo → seam-safe
-    const depth = 1 + vary * (ropeHash(idx) - 0.5) * 2;
-    return a * depth * ribbedProfile(f, ropes, round);
+    // A slow lean with height: depends only on v, so every stroke shifts together and the seam holds.
+    const drift = wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes;
+    return a * field(u / TAU + 0.5 + drift);
   });
 }
+
 
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
 // Shared by the image-relief displacement and the weave relief sampler so both read the field the same.
@@ -190,7 +227,8 @@ export function buildStyledWall(wall, radius, height, params = {}) {
       // Height segments carry the WOBBLE now, so they can no longer be a token 64.
       return displacePiped(denseCylinder(radius, height, radial, 96), radius,
         { amp: params.relief ?? 0.06, ropes, round: params.round ?? 0.45,
-          vary: params.vary ?? 0.28, wobble: params.wobble ?? 0.10 });
+          vary: params.vary ?? 0.28, wobble: params.wobble ?? 0.10,
+          teeth: params.teeth ?? 4, teethDepth: params.teethDepth ?? 0.18 });
     }
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
@@ -237,15 +275,15 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
     }
     case 'piped': {
       const a = (params.relief ?? 0.06) * radius;
-      const ropes = params.ropes ?? 30, round = params.round ?? 0.45;
-      const vary = params.vary ?? 0.28, wobble = params.wobble ?? 0.10;
-      // ⚠️ Mirrors displacePiped EXACTLY, drift and per-rope depth included. A sampler that kept the
-      // tidy periodic version would seat decorations on a wall that is no longer there.
-      return (theta, v) => {
-        const f = theta / TAU + 0.5 + wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes;
-        const idx = ((Math.floor(f * ropes) % ropes) + ropes) % ropes;
-        return a * (1 + vary * (ropeHash(idx) - 0.5) * 2) * ribbedProfile(f, ropes, round);
-      };
+      const ropes = params.ropes ?? 30, wobble = params.wobble ?? 0.10;
+      // ⚠️ THE SAME FIELD THE GEOMETRY USES, imported rather than re-derived. A sampler that kept its
+      // own copy of the profile is a second place for the two to disagree, and the symptom is a
+      // decoration hovering off a wall that moved underneath it.
+      const field = makeRopeField({
+        ropes, round: params.round ?? 0.45, vary: params.vary ?? 0.28,
+        teeth: params.teeth ?? 4, teethDepth: params.teethDepth ?? 0.18,
+      });
+      return (theta, v) => a * field(theta / TAU + 0.5 + wobble * Math.sin(TAU * v * 1.5 + 0.7) / ropes);
     }
     case 'weave': {
       // Same field & tiling as buildStyledWall's weave case, so decor seats on the real groove relief.

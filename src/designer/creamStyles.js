@@ -68,6 +68,14 @@ export const CREAM_STYLES = {
       // The two that stop it reading as a turned vase — see displacePiped.
       { key: 'vary',   label: 'Hand vary', min: 0,   max: 0.6,  step: 0.02,  default: 0.28, user: false },
       { key: 'wobble', label: 'Lean',      min: 0,   max: 1.5,  step: 0.05,  default: 0.10, user: false },
+      // The star tip's teeth — fine ridges running ALONG each stroke. This is what separates a piped
+      // rope from a moulded flute, and no amount of roundness substitutes for it.
+      { key: 'teeth',      label: 'Tip points', min: 0, max: 8,   step: 1,    default: 4,    user: false },
+      // ⚠️ 0.18, NOT deeper. Rendered 0.10 / 0.18 / 0.30 side by side: at 0.30 the teeth cut most of
+      // the way through the stroke and the wall reads SHREDDED — torn paper strips, not cream — and
+      // the crown at the rim turns to spikes. At 0.10 the strokes are smooth flutes with no tip in
+      // them at all. 0.18 is the one that keeps a whole rounded stroke with the star's lines on it.
+      { key: 'teethDepth', label: 'Tip depth',  min: 0, max: 0.4, step: 0.02, default: 0.18, user: false },
     ],
   },
   // Rustic is a NORMAL-MAP finish (palette-knife strokes are fine directional detail — geometry
