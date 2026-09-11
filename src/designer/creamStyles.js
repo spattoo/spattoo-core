@@ -40,7 +40,7 @@ function pipedParams(over = {}) {
      * valley between two of them only reaches the circle their spines ride — a 7% dip, which reads
      * as a scratch. Spaced slightly APART, the valley floor is the cake's own side a whole stroke
      * further in, and the rib stands up. It cannot show a hole: the body is right there behind. */
-    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', 0.55), user: false },
+    { key: 'overlap', label: 'Overlap',  min: -0.2, max: 0.6, step: 0.02, default: d('overlap', 0.85), user: false },
     /* ⚠️ WITHOUT THIS THE STAR HAS NO VISIBLE SIDES. The scene's light is nearly a uniform dome, and
      * under one of those a surface's brightness barely depends on which way it faces — so two flanks
      * fifteen degrees apart shade identically and the whole stroke reads as one flat panel. Measured:
@@ -53,7 +53,7 @@ function pipedParams(over = {}) {
      * The body used to be raised until it swallowed the strokes — to stop the board showing through
      * the notches between them — and a star tip's creases run most of the way down a stroke's side,
      * so burying it buried them. The notches have their own answer: a collar at the foot. */
-    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0.35), user: true },
+    { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0), user: true },
     { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.34),  user: false },
     { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.85), user: false },
     /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat

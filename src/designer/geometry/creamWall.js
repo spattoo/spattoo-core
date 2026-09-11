@@ -372,9 +372,13 @@ export function pipedParams(params = {}) {
   return {
     nozzle,
     // ⚠️ INCHES OF NOZZLE, not a count of strokes. See ropeSection.
-    width:   Math.max(0.05, params.width ?? 0.5),
-    overlap: Math.max(-0.3, params.overlap ?? 0.55),
-    press:   Math.min(1, Math.max(0, params.press ?? 0.35)),
+    width:   Math.max(0.05, params.width ?? 0.6),
+    overlap: Math.max(-0.3, params.overlap ?? 0.85),
+    /* ⚠️ ZERO. Piping happens ON a surface — there is no reason to bury it, and every value above 0
+     * hides a stroke's flanks and leaves one flat face showing. The gaps that opening it up used to
+     * leave are closed by `overlap`, which is the right lever: a hand lays strokes into each other,
+     * it does not push them into the cake. */
+    press:   Math.min(1, Math.max(0, params.press ?? 0)),
     // How dark a crease goes — see bakeCreaseAO. 0 is the render with no occlusion at all.
     ao:      Math.min(1, Math.max(0, params.ao ?? 0.6)),
     vary:    params.vary    ?? 0.34,
