@@ -253,7 +253,7 @@ function buildPipedWall(radius, height, p) {
   const feel = (i) => ({
     speedWidth: 0, tailDias: 0,
     twistTurnsPerDia: 0.008,
-    swellAmp: 0.13,
+    swellAmp: 0.16,
     rufflePhase: ropeHash(i + 1300) * TAU,
   });
   /* ⚠️ HOW MUCH A ROPE MAY MOVE IS SET BY HOW FAR IT OVERLAPS ITS NEIGHBOUR, and getting that

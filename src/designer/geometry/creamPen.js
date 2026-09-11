@@ -28,58 +28,74 @@ import * as THREE from 'three';
  * crest without touching either extreme: below 1 the profile leaves the valley faster than a cosine
  * and dwells longer at the ridge. Judged against a photograph of one vertical line of star piping.
  */
-/* ⚠️ A STAR TIP IS CUT, SO ITS EDGES ARE STRAIGHT LINES. The aperture is a metal star polygon:
- * `lobes` outer vertices and `lobes` inner ones, alternating, joined by straight cuts.
+/* ── WHAT COMES OUT OF A STAR TIP ────────────────────────────────────────────────────────────────
  *
- * ⚠️ AND A STRAIGHT CUT IS STRAIGHT IN X AND Y, NOT IN r(θ). Interpolating the RADIUS linearly
- * against the angle — which is what a triangle wave does — bows every edge outward into a spiral
- * arc, so the points come out fat and the star reads as a cog. The vertices are placed here and the
- * edges walked between them in the plane, which is what makes it the shape on a flag.
+ * ⚠️ THE METAL IS A STAR. THE CREAM IS NOT, AND THAT IS THE WHOLE THING. Put a photograph of one
+ * piped line next to a swept star polygon at the same scale and the gap is not the rib count, the
+ * depth, or the sharpness of the points — it is that the photograph has NO STRAIGHT EDGE ANYWHERE.
+ * Every lobe is a fat circular BULGE. The only sharp lines in it are the CREASES where two bulges
+ * meet, and those are sharp because two round things touching make a V, not because any edge was
+ * cut that way.
  *
- * Two smooth curves were tried before this and both are wrong, in opposite directions:
- *   • a cosine is smooth at BOTH ends, so it has no fold anywhere and sweeps as soft flutes;
- *   • `|sin|^0.7` is a cusp in the crease but a fat rounded DOME at the point — a drop-flower tip.
+ * Which is what cream does: it leaves a star-shaped hole under pressure and immediately relaxes into
+ * the roundest shape that still fits through it — a rosette of overlapping circles.
  *
- * `depth` is how deep the cut goes: the inner vertices sit at `1 − depth`.
+ * So the section is the OUTER ENVELOPE of `lobes` circles arranged round the axis. For one circle of
+ * radius `a` whose centre sits `d` out along direction φ,
+ *
+ *     r(θ) = d·cos(θ−φ) + √(a² − d²·sin²(θ−φ))
+ *
+ * and the profile is the largest of those. Adjacent circles cross, and where they cross is the
+ * crease — sharp, and deep in proportion to how far the circles overlap. `d + a = 1` puts the crest
+ * on the unit circle; `depth` says where the crease lands, and the pair is solved for it.
+ *
+ * ⚠️ FIVE SHAPES WERE TRIED BEFORE THIS ONE and each is recorded because each is wrong in its own
+ * instructive way: a COSINE (smooth at both ends — no fold anywhere, sweeps as soft flutes);
+ * `|sin|^0.7` (a cusp in the crease but a domed point — a flower tip, and rejected on sight as one);
+ * a TRIANGLE WAVE in r(θ) (corners, but bowed sides); a STAR POLYGON (the right aperture, swept as
+ * though cream were sheet metal); and a star polygon with its corners smoothed (rounder, but the
+ * middle of every cut still dead straight, so it still read as folded card).
  */
-function lobedProfile(lobes, depth, soft = LOBE_SOFT, perEdge = 10) {
-  const out = [];
-  const step = Math.PI / lobes;                  // outer → inner is half a lobe
-  const vert = (k) => {
-    const a = k * step, r = (k % 2 === 0) ? 1 : 1 - depth;
-    return [Math.cos(a) * r, Math.sin(a) * r];
-  };
-  for (let k = 0; k < 2 * lobes; k++) {
-    const [x0, y0] = vert(k), [x1, y1] = vert(k + 1);
-    for (let j = 0; j < perEdge; j++) {
-      const t = j / perEdge;
-      out.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
-    }
-  }
-  return relax(out, Math.max(0, Math.round(soft * perEdge)));
+function lobeArc(theta, d, a) {
+  const s = d * Math.sin(theta), c = d * Math.cos(theta);
+  const k = a * a - s * s;
+  return k <= 0 ? -Infinity : c + Math.sqrt(k);
 }
 
-/* ⚠️ CREAM CANNOT HOLD THE APERTURE'S EDGE. The star above is the hole in the metal, and for a while
- * that is what was being swept — which renders as folded card: flat facets, knife-sharp corners, a
- * silhouette like a cog. Put a photograph of one piped line beside it and the difference is not the
- * rib COUNT, it is that every corner in the real one is ROUNDED. Cream leaves the tip and relaxes:
- * the points swell over, the creases stay as soft folds, and nothing anywhere is a straight facet.
- *
- * A moving average round the closed outline, over a window that is a fraction of one cut, does
- * exactly that — it rounds the corners and leaves the middle of each straight cut alone.
+/* `depth` is where the crease sits, as a fraction in from the crest. Solved rather than tuned: the
+ * circles' size is whatever puts the crease exactly there, so every tip keeps the number it was
+ * authored with and means the same thing by it.
  */
-const LOBE_SOFT = 0.5;
-function relax(pts, half) {
-  if (half < 1) return pts;
-  const n = pts.length, out = [];
-  for (let i = 0; i < n; i++) {
-    let x = 0, y = 0, w = 0;
-    for (let d = -half; d <= half; d++) {
-      const p = pts[(i + d + n) % n];
-      const k = 1 - Math.abs(d) / (half + 1);    // triangular, so the corner eases rather than flattens
-      x += p[0] * k; y += p[1] * k; w += k;
-    }
-    out.push([x / w, y / w]);
+function lobeGeometry(lobes, depth) {
+  const half = Math.PI / lobes;                      // half the angle between two lobes
+  const crease = (d) => lobeArc(half, d, 1 - d);     // where two neighbouring circles cross
+  /* ⚠️ THERE IS A DEEPEST CREASE A ROSETTE CAN HAVE, and asking past it does not deepen anything —
+   * it pulls the circles apart and leaves the section with GAPS in it, angles at which no lobe
+   * reaches and the radius is zero. Neighbours still meet while `a > d·sin(π/lobes)`, which caps the
+   * crease at `1 − cos/(1+sin)`: about 23% in at twelve lobes, 30% at eight.
+   *
+   * That cap is not a limitation to work around, it is the answer. Cream relaxes into round lobes,
+   * round lobes can only cut so deep into each other, and the creases in a photograph of one piped
+   * line are about that deep. A deeper groove than this is not cream — it is a groove cut in
+   * something that holds an edge. */
+  const dMax = 1 / (1 + Math.sin(half)) - 1e-6;
+  let lo = 1e-4, hi = dMax;                          // bisect: crease falls as d grows
+  for (let i = 0; i < 60; i++) {
+    const m = (lo + hi) / 2;
+    if (crease(m) > 1 - depth) lo = m; else hi = m;
+  }
+  const d = Math.min(dMax, (lo + hi) / 2);
+  return { d, a: 1 - d };
+}
+
+function lobedProfile(lobes, depth, pts = lobes * 18) {
+  const { d, a } = lobeGeometry(lobes, depth);
+  const out = [];
+  for (let i = 0; i < pts; i++) {
+    const t = (i / pts) * Math.PI * 2;
+    let r = 0;
+    for (let k = 0; k < lobes; k++) r = Math.max(r, lobeArc(t - k * 2 * Math.PI / lobes, d, a));
+    out.push([Math.cos(t) * r, Math.sin(t) * r]);
   }
   return out;
 }
@@ -137,7 +153,7 @@ export const NOZZLES = [
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
    * under two, eight give under three, and twelve give four. Counting the ribs in a photograph of one
    * vertical line and dividing by three is how you pick a tip. */
-  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.52), twist: 1,   ruffle: 1 },
+  { key: 'star12', label: '12-Star',     hint: 'Four ribs across the face',  profile: lobedProfile(12, 0.62), twist: 1,   ruffle: 1 },
   { key: 'drop',   label: 'Drop-Star',   hint: 'Dense drop-flower rope',    profile: lobedProfile(12, 0.42), twist: 1,   ruffle: 1,   thickness: 0.038 },
   { key: 'closed', label: 'Closed Star', hint: 'Deep ruffled rope',         profile: lobedProfile(8,  0.62), twist: 1,   ruffle: 1 },
   { key: 'jumbo',  label: 'Jumbo Star',  hint: 'Bold chunky grooves',       profile: lobedProfile(6,  0.72), twist: 1,   ruffle: 1,   thickness: 0.055 },
@@ -256,6 +272,20 @@ export const HEAP_HEIGHT_PER_DIAMETER = 0.9;   // default mound height; calibrat
 const HEAP_TWIST_TURNS = 0.18;   // total turns over the whole height — a slight pinwheel
 const HEAP_TAPER_EXP = 0.62;     // <1 = stays fat then tapers near the tip (kiss/star shape)
 
+/* Deterministic 1-D value noise in −1…1, two octaves. Deterministic because a stroke has to rebuild
+ * identically on reload and on every device — `Math.random()` here would render the same design
+ * differently twice. Smoothstep between lattice points, so the rope's width changes the way cream
+ * does: continuously, and at no fixed interval.
+ */
+const hash1 = (i) => { const x = Math.sin(i * 127.1 + 311.7) * 43758.5453; return (x - Math.floor(x)) * 2 - 1; };
+function noise1(t) {
+  const oct = (u) => {
+    const i = Math.floor(u), f = u - i, k = f * f * (3 - 2 * f);
+    return hash1(i) * (1 - k) + hash1(i + 1) * k;
+  };
+  return oct(t) * 0.7 + oct(t * 2.37 + 11.3) * 0.3;
+}
+
 // Rotation-minimizing frames (double-reflection method, Wang et al.) along a sampled curve.
 // THREE's computeFrenetFrames flips the normal at inflection points, which twists the
 // cross-section and pinches the tube to near-zero width — the "sometimes it gets thin"
@@ -356,14 +386,16 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
      * repeating rhythm immediately. The 0.61 ratio is irrational enough that the pattern never
      * closes over any stroke a person will draw, and it is a CONSTANT, so a reloaded stroke is
      * identical to the one that was piped. */
-    /* ⚠️ `rufflePhase` MATTERS THE MOMENT THERE IS MORE THAN ONE STROKE. The rhythm is deterministic,
-     * which is right — a stroke must rebuild identically on reload — but with no phase every stroke
-     * swells in exactly the same places, and a wall of them grows horizontal BANDS. Nothing says
-     * machine louder than forty ropes breathing in unison. */
-    const swell = ruffleAmp
-      ? 1 + ruffleAmp * (0.66 * Math.sin(ruffleFreq * s + rufflePhase)
-                       + 0.34 * Math.sin(ruffleFreq * 0.61 * s + 1.7 + rufflePhase * 1.7))
-      : 1;
+    /* ⚠️ NOISE, NOT SINES, and that is the difference between "varying" and "alive". Two summed
+     * sine waves vary — the amplitude moves, the numbers change — but the eye reads a beat, and a
+     * beat is a machine. Put a photograph of one piped line beside a sine-swelled rope and the
+     * photograph is lumpy in a way no periodic function is: swells that are not the same size, and
+     * not the same distance apart.
+     *
+     * ⚠️ `rufflePhase` matters the moment there is more than one stroke. The field is deterministic,
+     * which is right — a stroke must rebuild identically on reload — but with no offset every rope
+     * swells in exactly the same places and a wall of them grows horizontal BANDS. */
+    const swell = ruffleAmp ? 1 + ruffleAmp * noise1(ruffleFreq * s / 6.283 + rufflePhase) : 1;
     const r = radiusAt(i, segs, s, arc[segs]) * swell;
     /* `roll` is the WRIST, and for a slit tip it is the whole difference between a petal and a
      * standing loop of ribbon. Nobody pipes a petal with the bag upright — it is held leaning away
