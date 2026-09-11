@@ -112,6 +112,19 @@ const ropeHash = (i) => {
  *
  * Returns f(frac) → 0..~1, where `frac` is the position around the cake in 0..1.
  */
+/* ONE definition of what a star tip's section looks like, shared by the wall's vertical strokes and
+ * the top's coil — they are the same nozzle, and a second copy of this curve is a second place for
+ * the two to drift apart. `t` runs 0..1 across the stroke; returns ~0 at the grooves, ~1 at the face.
+ *   body  — quick rise off the groove, flattish face (`round` < 1 flattens; see creamStyles).
+ *   ridge — the tip's teeth running ALONG the stroke, fading at its edges so the groove between
+ *           strokes stays the deepest line. This is the part that reads as piped.
+ */
+export function strokeSection(t, round, teeth, teethDepth) {
+  const body  = Math.pow(Math.sin(Math.PI * t) ** 2, round);
+  const ridge = teethDepth * Math.sin(Math.PI * t) * (0.5 - 0.5 * Math.cos(TAU * teeth * t));
+  return body + ridge;
+}
+
 export function makeRopeField({ ropes, round, vary, teeth, teethDepth }) {
   // Per-stroke widths, normalised to sum to 1 — see the seam note above.
   const w = [], depth = [];
@@ -131,13 +144,7 @@ export function makeRopeField({ ropes, round, vary, teeth, teethDepth }) {
     let i = ropes - 1;
     for (let k = 1; k <= ropes; k++) if (f < edge[k]) { i = k - 1; break; }
     const t = (f - edge[i]) / (edge[i + 1] - edge[i]);  // 0..1 across THIS stroke
-
-    // The stroke's own section: quick rise off the groove, flattish face.
-    const body = Math.pow(Math.sin(Math.PI * t) ** 2, round);
-    // The star tip's teeth, riding ON the stroke and fading out at its edges so the grooves between
-    // strokes stay the deepest line. This is the bit that reads as piped.
-    const ridge = teethDepth * Math.sin(Math.PI * t) * (0.5 - 0.5 * Math.cos(TAU * teeth * t));
-    return depth[i] * (body + ridge);
+    return depth[i] * strokeSection(t, round, teeth, teethDepth);
   };
 }
 
@@ -294,4 +301,107 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
     }
     default: return null;
   }
+}
+
+/* ── The cream SPIRAL on the tier top ──────────────────────────────────────────
+ *
+ * The other half of the piped reference cake: the same star tip, but laid in a COIL from the rim in
+ * to the centre instead of dragged up the wall. It is the same nozzle, so it is `strokeSection` —
+ * the wall's own profile — read across the coil instead of across a stroke.
+ *
+ * The spiral coordinate is `coils·(1 − r/R) + θ/τ`: one full turn per revolution, `coils` turns from
+ * the rim to the middle, constant radial pitch (an Archimedean spiral, which is what a hand piping a
+ * flat top actually makes). Its FRACTIONAL part is the position across the rope, and a fractional
+ * part is blind to the ±1 jump at the θ = ±π seam, so the coil joins itself exactly.
+ *
+ * The centre gets a small MOUND — where the piping bag lifts off, a real spiral finishes in a peak,
+ * and without it the coils crowd into a flat knot.
+ */
+export function makeSpiralField({ coils, round, teeth, teethDepth, centre }) {
+  return (rFrac, theta) => {
+    const s = coils * (1 - rFrac) + theta / TAU;
+    const coil = strokeSection(s - Math.floor(s), round, teeth, teethDepth);
+    const x = rFrac * coils;                       // distance from the middle, in coil widths
+    return coil + centre * Math.exp(-x * x * 0.7);
+  };
+}
+
+/* A disc built as a dense polar GRID, with a skirt at the rim that drops to y = 0.
+ *
+ * ⚠️ NOT `CircleGeometry`, and not a cylinder cap either: both are triangle FANS — every vertex sits
+ * on the rim and there is nothing in between to displace, so a height field applied to one produces a
+ * flat disc with a wavy edge. This carries interior vertices.
+ *
+ * `rim(θ)` is the outer radius, which VARIES: it traces the displaced wall's own crest line, so the
+ * lid ends exactly where the wall surface is. The skirt then closes the remaining gap by dropping
+ * each rim vertex to y = 0 — the wall's top edge — so the two weld shut at every angle instead of
+ * leaving the undercut a constant-radius disc leaves.
+ */
+function polarDisc(rim, rNominal, rings, segs, h) {
+  const pos = [], idx = [], uv = [];
+  const push = (x, y, z) => { pos.push(x, y, z); uv.push(x / (2 * rNominal) + 0.5, z / (2 * rNominal) + 0.5); };
+  const at = (frac, i) => {
+    const theta = -Math.PI + TAU * i / segs;
+    const r = rim(theta) * frac;
+    push(r * Math.cos(theta), h(r / rNominal, theta), r * Math.sin(theta));
+  };
+  push(0, h(0, 0), 0);                                        // the centre is ONE vertex — a ring of
+  for (let j = 1; j <= rings; j++)                            // coincident ones makes degenerate
+    for (let i = 0; i < segs; i++) at(j / rings, i);          // triangles and NaN normals.
+  const ring = (j) => 1 + (j - 1) * segs;                     // first vertex index of ring j
+  for (let i = 0; i < segs; i++) idx.push(0, ring(1) + (i + 1) % segs, ring(1) + i);
+  for (let j = 1; j < rings; j++)
+    for (let i = 0; i < segs; i++) {
+      const a = ring(j) + i, b = ring(j) + (i + 1) % segs;
+      const c = ring(j + 1) + i, d = ring(j + 1) + (i + 1) % segs;
+      idx.push(a, b, c, b, d, c);
+    }
+  const base = pos.length / 3;                                // skirt: the rim dropped to the wall top
+  for (let i = 0; i < segs; i++) {
+    const o = (ring(rings) + i) * 3;
+    push(pos[o], 0, pos[o + 2]);
+  }
+  for (let i = 0; i < segs; i++) {
+    const a = ring(rings) + i, b = ring(rings) + (i + 1) % segs;
+    const c = base + i, d = base + (i + 1) % segs;
+    idx.push(a, b, c, b, d, c);           // outward-facing: t̂ × (−ŷ) is the radial normal
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
+/* The tier TOP for a styled cream finish, or `null` when the style leaves the top flat (every style
+ * but `piped` today — the caller then renders the wall's own flat cap, exactly as before).
+ *
+ * ⚠️ ITS RIM IS NOT A CIRCLE. A displaced wall grows OUTWARD while the cylinder's flat cap stays at
+ * the original radius, so the cap no longer reaches the wall: you look straight down the gap between
+ * them at the board, and the crests standing above it read as a crown of spikes. Both were plainly
+ * visible on the piped render. The rim therefore asks `makeWallReliefSampler` where the wall's crest
+ * line actually is at v = 1 — the SAME function the geometry was built from, never a second guess at
+ * it — and the skirt drops to meet it.
+ */
+export function buildStyledTop(wall, top, radius, height, params = {}) {
+  if (top !== 'spiral') return null;
+  const coils  = params.coils ?? 5;          // ≈ ropes/τ — the coil is as wide as a stroke (creamStyles)
+  const relief = (params.relief ?? 0.06) * radius;
+  const wallAt = makeWallReliefSampler(wall, radius, params, height);
+  /* ⚠️ A HAIR WIDER than the crest it traces. The lid and the wall sample the circle at different
+   * angles (different segment counts, and three's cylinder starts its θ elsewhere), so a rim sitting
+   * exactly ON the crest line dips INSIDE the wall between samples and opens a pinhole there. The
+   * margin is smaller than a chord, so it costs nothing visible and closes all of them. */
+  const margin = 0.006 * radius;
+  const rim = wallAt ? (theta) => radius + margin + Math.max(0, wallAt(theta, 1)) : () => radius + margin;
+  // Across a coil the teeth have to resolve, so rings scale with the coil count; around, the teeth
+  // run ALONG the coil and the rim is the longest arc, so the segment count stays high and fixed.
+  const rings = Math.min(320, Math.max(120, coils * 22));
+  const field = makeSpiralField({
+    coils, round: params.round ?? 0.45,
+    teeth: params.teeth ?? 4, teethDepth: params.teethDepth ?? 0.18,
+    centre: params.centre ?? 0.9,
+  });
+  return polarDisc(rim, radius, rings, 360, (rFrac, theta) => relief * field(rFrac, theta));
 }

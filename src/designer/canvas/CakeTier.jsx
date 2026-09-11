@@ -17,7 +17,7 @@ import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTe
 import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
-import { buildStyledWall } from '../geometry/creamWall.js';
+import { buildStyledWall, buildStyledTop } from '../geometry/creamWall.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
@@ -1693,6 +1693,15 @@ export default function CakeTier({
     // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
     [isPrism, roundEdge, wallKey, radius, height, styleSig],
   );
+  /* The styled TOP (piped's cream spiral). Its own strategy key on the style, so a style can texture
+   * the wall and leave the lid flat — which is what every style but `piped` still does (null here →
+   * the branches below render exactly what they rendered before). */
+  const topKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).top : null;
+  const styledTop = useMemo(
+    () => (!isPrism && !roundEdge && styledGeo) ? buildStyledTop(wallKey, topKey, radius, height, styleVals) : null,
+    // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
+    [isPrism, roundEdge, !!styledGeo, wallKey, topKey, radius, height, styleSig],
+  );
   // Normal-map STYLE (rustic): a surface texture on the plain wall instead of geometry. Built when the
   // style declares a surfaceMap; `depth` → normalScale, `scale` → tiling density.
   const surfaceMapKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).surfaceMap : null;
@@ -1858,15 +1867,28 @@ export default function CakeTier({
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
       ) : styledGeo ? (
-        // Cream STYLE wall (wave/swirl/rustic): a displaced cylinder, one centred mesh (caps flat),
-        // no separate lid — the texture and gradient flow over the whole wall.
-        <TierBody position={[0, centerY, 0]} color={color} surf={mat}
-          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
-          gradient={effGradient} stripes={effStripes} geoSig={styledGeo.uuid} castShadow receiveShadow>
-          {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
-              changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
-          <primitive key={styledGeo.uuid} object={styledGeo} attach="geometry" />
-        </TierBody>
+        <>
+          {/* Cream STYLE wall (wave/swirl/piped): a displaced cylinder, one centred mesh (caps flat).
+              The texture and gradient flow over the whole wall. */}
+          <TierBody position={[0, centerY, 0]} color={color} surf={mat}
+            grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
+            gradient={effGradient} stripes={effStripes} geoSig={styledGeo.uuid} castShadow receiveShadow>
+            {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
+                changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
+            <primitive key={styledGeo.uuid} object={styledGeo} attach="geometry" />
+          </TierBody>
+          {/* Styled TOP (piped's cream spiral). It is the LID as well as the decoration: it is sized
+              to overhang the displaced wall, which is what closes the gap the flat cap leaves. Takes
+              `capColor` — the top-most stop — for the same reason the smooth lid does: its own frame
+              is far too shallow to show a vertical gradient, so a blend across it would read as a
+              flat band of the wrong colour. */}
+          {styledTop && (
+            <TierBody position={[0, topY, 0]} color={capColor} surf={mat} grainExtent={null}
+              gradient={null} geoSig={styledTop.uuid} castShadow receiveShadow>
+              <primitive key={styledTop.uuid} object={styledTop} attach="geometry" />
+            </TierBody>
+          )}
+        </>
       ) : (
         <>
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
