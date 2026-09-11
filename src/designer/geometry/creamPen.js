@@ -28,26 +28,35 @@ import * as THREE from 'three';
  * crest without touching either extreme: below 1 the profile leaves the valley faster than a cosine
  * and dwells longer at the ridge. Judged against a photograph of one vertical line of star piping.
  */
-/* ⚠️ A STAR TIP IS CUT, AND A CUT HAS CORNERS AT BOTH ENDS. The aperture is a metal star: straight
- * sides running from a sharp point down to a sharp valley. So the section is a TRIANGLE WAVE in the
- * radius — sharp at the points, sharp in the creases, straight in between.
+/* ⚠️ A STAR TIP IS CUT, SO ITS EDGES ARE STRAIGHT LINES. The aperture is a metal star polygon:
+ * `lobes` outer vertices and `lobes` inner ones, alternating, joined by straight cuts.
  *
- * Two smooth curves were tried here and both are wrong, in opposite directions:
+ * ⚠️ AND A STRAIGHT CUT IS STRAIGHT IN X AND Y, NOT IN r(θ). Interpolating the RADIUS linearly
+ * against the angle — which is what a triangle wave does — bows every edge outward into a spiral
+ * arc, so the points come out fat and the star reads as a cog. The vertices are placed here and the
+ * edges walked between them in the plane, which is what makes it the shape on a flag.
+ *
+ * Two smooth curves were tried before this and both are wrong, in opposite directions:
  *   • a cosine is smooth at BOTH ends, so it has no fold anywhere and sweeps as soft flutes;
- *   • `|sin|^0.7` is a cusp in the crease but a fat ROUNDED dome at the point, which is a flower
- *     tip (a drop-flower), not a star. That was the one on screen when this was called out.
+ *   • `|sin|^0.7` is a cusp in the crease but a fat rounded DOME at the point — a drop-flower tip.
  *
- * The sample count is a multiple of the lobe count so that every point and every crease lands
- * exactly on a vertex — sampled off the corners, a triangle wave rounds itself off again.
+ * `depth` is how deep the cut goes: the inner vertices sit at `1 − depth`.
  */
-function lobedProfile(lobes, depth, pts = lobes * 12) {
+function lobedProfile(lobes, depth, perEdge = 6) {
   const out = [];
-  for (let i = 0; i < pts; i++) {
-    const a = (i / pts) * Math.PI * 2;
-    const f = (lobes * a) / (Math.PI * 2);
-    const rib = Math.abs(2 * (f - Math.floor(f)) - 1);     // 1 at the points, 0 in the creases
-    const r = 1 - depth * (1 - rib);
-    out.push([Math.cos(a) * r, Math.sin(a) * r]);
+  const step = Math.PI / lobes;                  // outer → inner is half a lobe
+  const vert = (k) => {
+    const a = k * step, r = (k % 2 === 0) ? 1 : 1 - depth;
+    return [Math.cos(a) * r, Math.sin(a) * r];
+  };
+  for (let k = 0; k < 2 * lobes; k++) {
+    const [x0, y0] = vert(k), [x1, y1] = vert(k + 1);
+    // The corner itself, then along the cut. `perEdge` samples keep the sweep's quads well shaped;
+    // the edge is flat, so they cost nothing but let the corner stay a corner once normals average.
+    for (let j = 0; j < perEdge; j++) {
+      const t = j / perEdge;
+      out.push([x0 + (x1 - x0) * t, y0 + (y1 - y0) * t]);
+    }
   }
   return out;
 }
