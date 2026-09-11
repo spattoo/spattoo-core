@@ -30,47 +30,44 @@ import * as THREE from 'three';
  */
 /* ── WHAT COMES OUT OF A STAR TIP ────────────────────────────────────────────────────────────────
  *
- * ⚠️ THE CAVITY IS A SLOT, NOT A VALLEY. Hold a photograph of one piped line against any of the
- * sections tried before this one and the difference is in the CREASES: in the photograph they are
- * narrow, deep and dark — slots cut into a body that is otherwise nearly round — while every model
- * produced a wide shallow dip. That is not a depth setting, it is the wrong shape of curve.
+ * ⚠️ THE V IS NARROW AND THE POINTS ARE BROAD, and those are two different numbers. A plain star
+ * polygon ties them together: its cut starts the moment the last one ended, so the "points" are
+ * wedges and the valleys between them are as wide as the points themselves. A piped line is the
+ * opposite — fat round lobes sitting shoulder to shoulder with a NARROW SLOT between each pair.
  *
- * It is also why a ROSETTE OF CIRCLES cannot do it, which was the previous attempt: two round things
- * meeting always make a WIDE V, and pushing the circles apart to deepen it only opens gaps in the
- * section. A circle has one radius; a cavity needs to be deep AND narrow, which takes two numbers.
+ * ⚠️ AND DEEPENING A STAR DOES NOT NARROW ITS V. It narrows the angle at the bottom, but it does so
+ * by pulling the inner radius in, which thins the whole stroke: the silhouette comes in with it and
+ * you get a thin spiky thing rather than a fat ribbed one. Rendered 0.55 / 0.72 / 0.84 to be sure.
+ * The V's width is ANGULAR and belongs to its own parameter.
  *
- * So the body is round and the cavities are cut INTO it, each a narrow gaussian slot:
+ * So each point is an ARC AT FULL RADIUS over most of its share of the circle, and the V is a wedge
+ * cut into the gap between two of them. `notch` is that wedge's angular width as a fraction of one
+ * point's span: small = a narrow slot between fat lobes, 1 = the plain star polygon again.
  *
- *     r(θ) = 1 − depth · Σ exp(−((θ − θₖ)/width)²)
- *
- * `depth` is how far the slot cuts, `width` how wide it is as a fraction of the gap between two of
- * them. Between slots the surface stays at full radius, which is what makes the lobes read as fat
- * bulges rather than as facets — nothing there is flat, and nothing there is a straight cut.
- *
- * ⚠️ SIX SHAPES HAVE BEEN TRIED FOR THIS SECTION and each is recorded because each is wrong in its
- * own instructive way: a COSINE (smooth at both ends — no fold anywhere, sweeps as soft flutes);
- * `|sin|^0.7` (a cusp in the crease but a domed point — a flower tip, rejected on sight as one); a
- * TRIANGLE WAVE in r(θ) (corners, but bowed sides); a STAR POLYGON (the right aperture, swept as
- * though cream were sheet metal); a star polygon with smoothed corners (rounder, but the middle of
- * every cut still dead straight, so it still read as folded card); and a ROSETTE OF CIRCLES (round
- * at last, but its creases are as wide as its lobes).
+ * ⚠️ SIX SHAPES WERE TRIED BEFORE THIS and each is recorded because each is wrong in its own way: a
+ * COSINE (smooth at both ends — no fold anywhere, sweeps as soft flutes); `|sin|^0.7` (a cusp in the
+ * crease but a domed point — a flower tip); a TRIANGLE WAVE in r(θ) (corners, but bowed sides); a
+ * STAR POLYGON (right aperture, swept as though cream were sheet metal); a star polygon with
+ * smoothed corners (rounder, but the middle of every cut still dead straight); and a ROSETTE OF
+ * CIRCLES (round at last, but two round things meeting make a WIDE V, which is the one thing this
+ * needed not to be).
  */
-/* ⚠️ NARROW. A gaussian's tails are wide, so a slot much over a sixth of the gap stops being a slot
- * and becomes the whole lobe — the section rises and falls in one smooth sweep with no fat body left
- * between the cuts, which is the flute this is trying not to be. At 0.14 the surface is back at full
- * radius a quarter of the way out of the cut. */
-const LOBE_SLOT = 0.14;          // slot width, as a fraction of the gap between two slots
+const LOBE_NOTCH = 0.22;         // the V's angular width, as a fraction of one point's span
 
-function lobedProfile(lobes, depth, slot = LOBE_SLOT, pts = lobes * 54) {
-  const gap = (Math.PI * 2) / lobes;
-  const w = slot * gap;
+function lobedProfile(lobes, depth, notch = LOBE_NOTCH, perArc = 14, perV = 4) {
+  const span = (Math.PI * 2) / lobes, half = span / 2, nw = notch * half;
+  const at = (a, r) => [Math.cos(a) * r, Math.sin(a) * r];
   const out = [];
-  for (let i = 0; i < pts; i++) {
-    const t = (i / pts) * Math.PI * 2;
-    // Nearest slot centre, measured the short way round, so the seam at 2π is continuous.
-    let d = t - Math.round(t / gap) * gap;
-    const r = 1 - depth * Math.exp(-(d / w) * (d / w));
-    out.push([Math.cos(t) * r, Math.sin(t) * r]);
+  for (let k = 0; k < lobes; k++) {
+    const c = k * span;
+    for (let j = 0; j <= perArc; j++) {          // the lobe: an arc at full radius
+      out.push(at(c - half + nw + (2 * (half - nw)) * (j / perArc), 1));
+    }
+    /* The slot. ⚠️ Its SIDES are sampled, not just its floor: a V that is one lone vertex between
+     * two arcs has no surface for `computeVertexNormals` to average, and the sweep comes out with
+     * ill-defined normals down every crease — which reads as a black seam, not a shadow. */
+    for (let j = 1; j <= perV; j++) out.push(at(c + half - nw * (1 - j / perV), 1 - depth * (j / perV)));
+    for (let j = perV - 1; j >= 1; j--) out.push(at(c + half + nw * (1 - j / perV), 1 - depth * (j / perV)));
   }
   return out;
 }

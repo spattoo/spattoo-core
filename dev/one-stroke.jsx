@@ -40,20 +40,36 @@ const stack = Number(q.get('stack') || 0);   // ?stack=N — N flat stars, laid 
  * no rounding, no relaxing, no gaussian slots — and they are stacked with a whisper of turn and
  * size between them, which is the only thing a hand adds.
  */
-function starSlabShape(points, depth) {
+/* ⚠️ `notch` IS THE ANGLE OF THE V, AND IT IS NOT THE DEPTH. Deepening a star narrows its valleys,
+ * but it does so by thinning the whole stroke — the inner radius falls and the silhouette comes in
+ * with it. What a piped line has is a NARROW V between BROAD points: the cut occupies a small
+ * fraction of each point's share of the circle, and the rest of that share stays out at full radius.
+ * So the point is an ARC at r = 1 and the V is a wedge cut into the gap between two of them.
+ *
+ * `notch` is that wedge's angular width as a fraction of one point's span. Small = a narrow slot
+ * between fat lobes; 1 = the classic star polygon, where the cut starts the moment the last one ends.
+ */
+function starSlabShape(points, depth, notch = 0.42, per = 7) {
   const shape = new THREE.Shape();
-  for (let k = 0; k < 2 * points; k++) {
-    const a = (k * Math.PI) / points, r = (k % 2 === 0) ? 1 : 1 - depth;
-    const x = Math.cos(a) * r, y = Math.sin(a) * r;
-    if (k === 0) shape.moveTo(x, y); else shape.lineTo(x, y);
+  const span = (Math.PI * 2) / points, half = span / 2, nw = notch * half;
+  const at = (a, r) => [Math.cos(a) * r, Math.sin(a) * r];
+  let first = true;
+  for (let k = 0; k < points; k++) {
+    const c = k * span;
+    for (let j = 0; j <= per; j++) {            // the point: an arc at full radius
+      const [x, y] = at(c - half + nw + (2 * (half - nw)) * (j / per), 1);
+      if (first) { shape.moveTo(x, y); first = false; } else shape.lineTo(x, y);
+    }
+    const [vx, vy] = at(c + half, 1 - depth);   // the V, cut into the gap
+    shape.lineTo(vx, vy);
   }
   shape.closePath();
   return shape;
 }
 
-function StarStack({ points, depth, n, height, thickness, wobble, turn, roll, x = 0, z = 0 }) {
+function StarStack({ points, depth, notch, n, height, thickness, wobble, turn, roll, x = 0, z = 0 }) {
   const geos = useMemo(() => {
-    const shape = starSlabShape(points, depth);
+    const shape = starSlabShape(points, depth, notch);
     const slab = height / n;
     return Array.from({ length: n }, (_, i) => {
       const g = new THREE.ExtrudeGeometry(shape, { depth: slab, bevelEnabled: false, curveSegments: 1 });
@@ -64,7 +80,7 @@ function StarStack({ points, depth, n, height, thickness, wobble, turn, roll, x 
       g.translate(x, -height / 2 + i * slab, z);
       return g;
     });
-  }, [points, depth, n, height, thickness, wobble, turn, roll, x, z]);
+  }, [points, depth, notch, n, height, thickness, wobble, turn, roll, x, z]);
   return geos.map((g, i) => (
     <mesh key={i} geometry={g} castShadow receiveShadow><meshPhysicalMaterial color="#F6EBD8" {...creamMaterial()} /></mesh>
   ));
@@ -109,6 +125,7 @@ createRoot(document.getElementById('root')).render(
       <SceneLights shadows />
       {stack ? (
         <StarStack points={Number(q.get('points') || 5)} depth={Number(q.get('depth') || 0.55)}
+          notch={Number(q.get('notch') ?? 0.42)}
           n={stack} height={2.0} thickness={t}
           wobble={Number(q.get('wob') ?? 0.012)} turn={Number(q.get('turn') ?? 0.002)}
           roll={Number(q.get('roll') ?? Math.PI / 2)} />
