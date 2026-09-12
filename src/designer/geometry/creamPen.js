@@ -339,6 +339,19 @@ export const PEN_FEEL = Object.freeze({
   twistTurnsPerDia: 0.008,
   wanderDeg: 6,
   wanderPerDia: 0.11,          // one lazy excursion every ~9 diameters
+  /* ⚠️ RIB EDGES ARE NOT STRAIGHT LINES, and neither twist nor wander can bend them — both turn the
+   * whole section as ONE rigid piece, so every rib leans or wanders together and the edges stay
+   * parallel rulings. What a photograph shows is each rib drifting sideways by a DIFFERENT amount
+   * at a different height: the ribs crowd a little on one flank and open on the other, and which
+   * flank it is changes slowly up the stroke.
+   *
+   * That is a shear of the section, not a rotation. Each point is turned about the axis by
+   * `sin(its own angle + a phase that drifts with height)`, which squeezes one side and spreads the
+   * other; because the warp is a whole number of cycles round the section it stays closed, and
+   * because it is built from the point's own angle it costs one sine per vertex and no new ones.
+   * Two harmonics so the crowding never lands in the same place twice. */
+  ribWanderDeg: 5,
+  ribWanderPerDia: 0.09,
   /* One lazy swell every ~8 diameters instead of one ripple per diameter, and irregular: two
    * incommensurate waves, so the rhythm never repeats. Deterministic — no random, because a stroke
    * must rebuild identically on reload. */
@@ -516,7 +529,7 @@ function fixedUpFrames(samples, up) {
  */
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = null) {
   const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0, ao = 0,
-          wanderAmp = 0, wanderFreq = 0 } = opts;
+          wanderAmp = 0, wanderFreq = 0, ribAmp = 0, ribFreq = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -540,6 +553,9 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
   const frames = up ? fixedUpFrames(samples, up) : rmFrames(samples);
   const P = profile.length;
   const base = pos.length / 3;
+  // Each profile point in polar, so the rib shear (see ribWanderDeg) can turn it about the axis.
+  const pa = new Float64Array(P), pr = new Float64Array(P);
+  for (let j = 0; j < P; j++) { pa[j] = Math.atan2(profile[j][1], profile[j][0]); pr[j] = Math.hypot(profile[j][0], profile[j][1]); }
 
   /* One shade per profile point, reused for every ring. ⚠️ The ramp is linear in the ANGLE round
    * the lobe, not in the radius: a rosette's radius is flat at its peak, so a radius-linear ramp
@@ -589,9 +605,16 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
      * on its edge. Constant along the stroke, added to the rib spiral, which is zero for a slit. */
     const phi = roll + twistPerLen * s
       + (wanderAmp ? wanderAmp * noise1(wanderFreq * s / 6.283 + rufflePhase + 11.3) : 0);
+    // The rib shear's two slowly-drifting phases, one per ring.
+    const q1 = ribAmp ? 6.283 * noise1(ribFreq * s / 6.283 + rufflePhase + 3.1) : 0;
+    const q2 = ribAmp ? 6.283 * noise1(ribFreq * 1.7 * s / 6.283 + rufflePhase + 8.4) : 0;
     const cs = Math.cos(phi), sn = Math.sin(phi);
     for (let j = 0; j < P; j++) {
-      const ax = profile[j][0] * r, ay = profile[j][1] * r;
+      let ax, ay;
+      if (ribAmp) {
+        const w = pa[j] + ribAmp * (0.62 * Math.sin(pa[j] + q1) + 0.38 * Math.sin(2 * pa[j] + q2));
+        ax = Math.cos(w) * pr[j] * r; ay = Math.sin(w) * pr[j] * r;
+      } else { ax = profile[j][0] * r; ay = profile[j][1] * r; }
       const px = ax * cs - ay * sn, py = ax * sn + ay * cs;  // rotate in the N/B plane
       pos.push(C.x + N.x * px + B.x * py, C.y + N.y * px + B.y * py, C.z + N.z * px + B.z * py);
       if (col) { const k = shade ? shade[j] : 1; col.push(k, k, k); }
@@ -754,6 +777,9 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     // The roll's own slow wander (see wanderDeg). Rope tips only — a slit tip's attitude is the technique itself.
     wanderAmp:   (noz.twist ?? 0) * ((feel.wanderDeg ?? 0) * Math.PI) / 180,
     wanderFreq:  (feel.wanderPerDia ?? 0) * 2 * Math.PI / dia,
+    // The ribs' own sideways drift, which bends their edges. Rope tips only.
+    ribAmp:      (noz.twist ?? 0) * ((feel.ribWanderDeg ?? 0) * Math.PI) / 180,
+    ribFreq:     (feel.ribWanderPerDia ?? 0) * 2 * Math.PI / dia,
     rufflePhase: feel.rufflePhase ?? 0,
     /* A slit tip needs a known attitude; a rope tip does not care and is better off with the
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
