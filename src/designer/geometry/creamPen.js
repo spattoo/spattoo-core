@@ -293,8 +293,19 @@ export const PEN_FEEL = Object.freeze({
   speedWidth: 1,
   widthMin:   0.72,   // clamps, because a stalled pointer would otherwise balloon
   widthMax:   1.55,
-  /* Ribs corkscrew a LITTLE as cream extrudes — not 0.16 of a turn per diameter, which is a rope. */
-  twistTurnsPerDia: 0.03,
+  /* ⚠️ A ROPE WANDERS, IT DOES NOT CORKSCREW — and 0.03 of a turn per diameter is a corkscrew the
+   * moment a stroke is long. On a vertical up a cake side, eight diameters, it comes to 86°: the
+   * ribs sweep two and a half lobes sideways over the length, wrap round the silhouette, and read
+   * as piping lines CROSSING each other. Nothing in a photograph does that.
+   *
+   * The mesh says so too, and it was measured and then not acted on: sliced at nineteen heights,
+   * the rib phase sits between −40° and −53° the whole way up. That is a ±6° WANDER with no
+   * monotonic drift at all — the tip is not rotating, the hand is not perfectly steady. A constant
+   * rate is a spiral; noise is a hand. Twist stays as a hint (0.008 over eight diameters is 23°,
+   * which is character rather than a barber pole) and `wanderDeg` carries what was measured. */
+  twistTurnsPerDia: 0.008,
+  wanderDeg: 6,
+  wanderPerDia: 0.11,          // one lazy excursion every ~9 diameters
   /* One lazy swell every ~8 diameters instead of one ripple per diameter, and irregular: two
    * incommensurate waves, so the rhythm never repeats. Deterministic — no random, because a stroke
    * must rebuild identically on reload. */
@@ -471,7 +482,8 @@ function fixedUpFrames(samples, up) {
  * radius the stroke is ever scaled to. No world positions, no ranges to get wrong.
  */
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = null) {
-  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0, ao = 0 } = opts;
+  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0, ao = 0,
+          wanderAmp = 0, wanderFreq = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -542,7 +554,8 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
      * standing loop of ribbon. Nobody pipes a petal with the bag upright — it is held leaning away
      * from the flower's centre, which is what makes the sheet lie over and cup instead of standing
      * on its edge. Constant along the stroke, added to the rib spiral, which is zero for a slit. */
-    const phi = roll + twistPerLen * s;
+    const phi = roll + twistPerLen * s
+      + (wanderAmp ? wanderAmp * noise1(wanderFreq * s / 6.283 + rufflePhase + 11.3) : 0);
     const cs = Math.cos(phi), sn = Math.sin(phi);
     for (let j = 0; j < P; j++) {
       const ax = profile[j][0] * r, ay = profile[j][1] * r;
@@ -705,6 +718,9 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     twistPerLen: (noz.twist  ?? 0) * feel.twistTurnsPerDia * 2 * Math.PI / dia,
     ruffleAmp:   (noz.ruffle ?? 0) * feel.swellAmp,
     ruffleFreq:  feel.swellPerDia * 2 * Math.PI / dia,
+    // The roll's own slow wander (see wanderDeg). Rope tips only — a slit tip's attitude is the technique itself.
+    wanderAmp:   (noz.twist ?? 0) * ((feel.wanderDeg ?? 0) * Math.PI) / 180,
+    wanderFreq:  (feel.wanderPerDia ?? 0) * 2 * Math.PI / dia,
     rufflePhase: feel.rufflePhase ?? 0,
     /* A slit tip needs a known attitude; a rope tip does not care and is better off with the
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
