@@ -193,12 +193,26 @@ function petalProfile(n = 36) {
  * rib is a little wider or narrower than the last and the pattern never repeats. Same total depth,
  * no extra vertices, and it is closed (every term is a whole number of cycles), so the section
  * still joins itself. `uneven` scales both, 0 for the plain rosette. */
-function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0) {
+/* ⚠️ `crease` — BROAD ROUND RIBS WITH A NARROW SLOT BETWEEN THEM, which a cosine cannot do. A
+ * cosine spends most of its travel in the middle, so every rib is a gentle swell and the face reads
+ * FLAT: the photograph's ribs are standing fins that project, separated by a thin dark slot you
+ * could put a knife into. Raising the amplitude alone does not fix it — it makes the whole section
+ * lumpier without ever giving the ribs an edge.
+ *
+ * The shaping pushes the mid-range towards the crest and leaves only the last part of the travel to
+ * dive: with `crease` below 1, a point half way round a lobe sits at 41% of the way out instead of
+ * 0%, so the rib is broad and round to well past its own shoulder and the valley is a narrow cusp.
+ * 1 is the plain cosine the mesh measured. ⚠️ The mesh IS a plain cosine, and it is the smoothed
+ * average of a generated model; the photograph is one real tip and its ribs are sharper than that.
+ * Where the two disagree the photograph wins — it is the thing being matched.
+ */
+function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0, crease = 1) {
   const out = [], shade = [];
   const a6 = amp * 0.28 * uneven, a10 = amp * 0.21 * uneven;   // the measured ratios, 4.8/17, 3.6/17
   const k = 1 / (1 + amp + a6 + a10);
   const N = lobes * n;
-  const radius = (a) => (1 + amp * Math.cos(lobes * a)
+  const shaped = (c) => 2 * Math.pow((c + 1) / 2, crease) - 1;      // 1 on a crest, -1 in a crease
+  const radius = (a) => (1 + amp * shaped(Math.cos(lobes * a))
                            + a6 * Math.cos((lobes - 2) * a + 1.7)
                            + a10 * Math.cos((lobes + 2) * a + 0.6)) * k;
   /* ⚠️ THE TALLEST RIB IS PUT AT LOCAL ANGLE ZERO, because every caller's roll assumes it is there.
@@ -222,6 +236,13 @@ function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0) {
      * columns. `cos(lobes·a)` is the rib pattern itself, +1 on a crest and −1 in a crease, known
      * here for free and true at any squash. Linear in the ANGLE round the lobe, which is what stops
      * a cosine's flat peak painting the middle half of every rib the same value. */
+    /* ⚠️ LINEAR IN THE ANGLE ROUND THE LOBE, and ⚠️ NOT the section's own depth, which was tried
+     * and is much worse. It seems obvious that a point's shade should follow how deep it sits —
+     * `shaped` is exactly that number and it is right here for free. But `crease` deliberately
+     * makes the section broad and flat over most of a rib, so a depth-driven shade paints nearly
+     * the whole surface at the crest value and dives only in the slot: the stroke goes back to a
+     * flat white thing with one dark line down it. The angle keeps moving where the radius does
+     * not, which is the whole reason this ramp exists. */
     shade.push(Math.abs((((a + a0) * lobes / Math.PI) % 2 + 2) % 2 - 1));   // 0 crest, 1 crease
   }
   out.shade = shade;
@@ -251,7 +272,7 @@ export const NOZZLES = [
    * of the width; a crease at a fraction f of a tube's projected width sits at asin(2f − 1) from
    * the centre, which gives ±15° and ±53°, so the ribs are about 35° apart. That is ten, not the
    * mesh's eight — a generated model is a smoothed average, a photograph is one real tip. */
-  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.18, 20, 1, 1), twist: 1,  ruffle: 1 },
+  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 1, 0.5), twist: 1,  ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, ruffle: 1, squash: 0.55 },
