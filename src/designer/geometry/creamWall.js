@@ -359,11 +359,23 @@ export function strokeWallLayout(radius, height, size, p) {
   const naturalH = size.y * scale;                       // what this stroke is, at this tip
   const rigidH = (p.foot + (1 - p.tip)) * naturalH;      // the foot and the tip, never stretched
   const middleH = (p.tip - p.foot) * naturalH;
+  /* ⚠️ THE STROKE RUNS PAST THE TOP EDGE, or the piping stops short of it. A stroke ends in a POINT —
+   * the last 15% of this mesh narrows away to nothing, which on a standard tier is the top 12% of
+   * the wall. Ending that taper level with the rim means neighbours stop touching exactly where the
+   * eye is looking: the wall opens into a ring of V-notches with the cake showing through them, and
+   * the piping reads as finishing below the edge it actually reaches.
+   *
+   * So the stroke is made longer than the tier by as much of its own tip as `crown` asks for. At 1
+   * the full-width body arrives exactly at the top edge and the whole taper stands above it, which
+   * is what piping up the side of a cake leaves. The BODY still ends at `height`: the cake is the
+   * size the design says, and the cream is what overshoots it. */
+  const crownRise = p.crown * (1 - p.tip) * naturalH;
+  const spanH = height + crownRise;                      // how long the stroke itself has to be
   /* ⚠️ A TIER SHORTER THAN THE TWO ENDS CANNOT KEEP THEM, so it stops pretending to: the whole
    * stroke is scaled down instead. Squeezing a fixed foot and a fixed tip into less than their own
    * combined height would fold one through the other. */
-  const uniform = height < rigidH * 1.02 ? height / naturalH : null;
-  const middleStretch = uniform ? null : (height - rigidH) / middleH;
+  const uniform = spanH < rigidH * 1.02 ? spanH / naturalH : null;
+  const middleStretch = uniform ? null : (spanH - rigidH) / middleH;
   /* ⚠️ THE BODY SITS A STROKE-DEPTH INSIDE THE TIER'S RADIUS, so the cake keeps the size the design
    * says. Cream really is added ON TOP of a frosted cake, so the physical thing grows outward — but
    * a 6" cake that renders 6.4" wide the moment a style is picked is a sizing bug, not a finish.
@@ -372,7 +384,7 @@ export function strokeWallLayout(radius, height, size, p) {
   const R = radius - wz / 2 + p.press * wz / 2;          // the circle the strokes' own axes ride
   const spacing = wx * (1 - p.overlap);
   const count = Math.max(6, Math.round(TAU * R / spacing));
-  return { scale, wx, wz, R, bodyRadius, count, naturalH, rigidH, middleH, middleStretch, uniform };
+  return { scale, wx, wz, R, bodyRadius, count, naturalH, rigidH, middleH, middleStretch, uniform, crownRise, spanH };
 }
 
 /* Make a stroke as long as the tier by moving ONLY its middle — see strokeWallLayout for why the
@@ -637,6 +649,8 @@ export function strokeWallParams(params = {}) {
      * different ones, which is why they are overlaid with it rather than hardcoded beside it. */
     foot:    Math.min(0.45, Math.max(0, params.foot ?? 0.29)),
     tip:     Math.min(1, Math.max(0.55, params.tip ?? 0.85)),
+    // How much of the pointed tip stands above the tier's top edge. See strokeWallLayout.
+    crown:   Math.min(1.5, Math.max(0, params.crown ?? 1)),
     /* ⚠️ AN OVERLAP, NOT A COUNT — the count falls out of it and the tier's circumference, so a 6"
      * and a 10" cake get strokes of the same SIZE rather than the same number. Authored as a count,
      * every change of cake size silently re-piped the cake with a different tip. (Same reasoning as

@@ -52,6 +52,12 @@ function strokeParams(over = {}) {
      * ones, which is why they are overlaid alongside `strokeGlb` rather than hardcoded. */
     { key: 'foot',    label: 'Foot ends at',  min: 0,    max: 0.45, step: 0.01, default: d('foot', 0.29), user: false },
     { key: 'tip',     label: 'Tip starts at', min: 0.55, max: 1,    step: 0.01, default: d('tip', 0.85),  user: false },
+    /* ⚠️ HOW FAR THE TIPS STAND ABOVE THE TOP EDGE, in tips. A stroke ends in a POINT, and ending
+     * that point level with the rim opens a ring of V-notches right where the eye is looking — the
+     * piping reads as stopping below the edge it actually reaches. At 1 the full-width body arrives
+     * exactly at the top edge and the taper stands above it, which is what piping up the side of a
+     * cake leaves. The cake's own body still ends at its height; the cream is what overshoots. */
+    { key: 'crown',   label: 'Tips above rim', min: 0, max: 1.5, step: 0.05, default: d('crown', 1), user: true },
     /* ⚠️ AN OVERLAP, NOT A COUNT. The stroke's size is fixed by the tier's HEIGHT (one stroke spans
      * the side, which is what a piped stroke does), so the count falls out of the circumference —
      * and a 6" and a 10" cake get strokes of the same size rather than the same number. Authored as

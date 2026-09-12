@@ -276,11 +276,27 @@ describe("strokes wall — placing a modelled stroke", () => {
   const SIZE = { x: 0.442, y: 1.893, z: 0.432 };
   const P = strokeWallParams({});
 
-  it('makes the stroke exactly as long as the tier', () => {
+  it('makes the stroke exactly as long as it needs to be', () => {
     for (const h of [1.21, 1.29, 1.37, 1.45]) {
-      const { rigidH, middleH, middleStretch } = strokeWallLayout(0.9, h, SIZE, P);
-      expect(rigidH + middleH * middleStretch).toBeCloseTo(h, 6);
+      const { rigidH, middleH, middleStretch, spanH } = strokeWallLayout(0.9, h, SIZE, P);
+      expect(rigidH + middleH * middleStretch).toBeCloseTo(spanH, 6);
     }
+  });
+
+  /* ⚠️ THE STROKE RUNS PAST THE TOP EDGE, or the piping stops short of it. A stroke ends in a POINT —
+   * the top 15% of this mesh narrows away to nothing, which is the top 12% of a standard wall. Ended
+   * level with the rim, neighbours stop touching exactly where the eye is looking and the wall opens
+   * into a ring of V-notches with cake showing through. At crown 1 the full-width body arrives at the
+   * top edge and the taper stands above it. ⚠️ The BODY still ends at `height`: the cake is the size
+   * the design says, and the cream is what overshoots. */
+  it('runs the strokes past the top edge by their own tip, and leaves the cake its size', () => {
+    const level = strokeWallLayout(0.9, 1.45, SIZE, strokeWallParams({ crown: 0 }));
+    const crowned = strokeWallLayout(0.9, 1.45, SIZE, P);
+    expect(level.spanH).toBeCloseTo(1.45, 6);                            // crown 0: level with the rim
+    expect(crowned.crownRise).toBeCloseTo(0.15 * crowned.naturalH, 6);   // one whole tip, above it
+    expect(crowned.spanH).toBeCloseTo(1.45 + crowned.crownRise, 6);
+    expect(crowned.bodyRadius).toBeCloseTo(level.bodyRadius, 6);         // ...and the cake is unchanged
+    expect(crowned.count).toBe(level.count);
   });
 
   /* ⚠️ HEIGHT IS A SLICE, NOT A SCALE. The stroke's own height at this tip is 3.98" — almost exactly
@@ -294,17 +310,17 @@ describe("strokes wall — placing a modelled stroke", () => {
     expect(tall.rigidH).toBeCloseTo(short.rigidH, 6);        // the ends are the same size on both
     expect(tall.naturalH).toBeCloseTo(short.naturalH, 6);
     expect(tall.middleStretch).toBeGreaterThan(short.middleStretch);
-    expect(tall.middleStretch).toBeCloseTo(1.381, 3);        // the bottom tier, measured
-    expect(short.middleStretch).toBeCloseTo(1.023, 3);
+    expect(tall.middleStretch).toBeCloseTo(1.649, 3);        // the bottom tier, measured
+    expect(short.middleStretch).toBeCloseTo(1.290, 3);
   });
 
   /* ⚠️ A TIER SHORTER THAN THE TWO ENDS CANNOT KEEP THEM — squeezing a fixed foot and a fixed tip
    * into less than their combined height folds one through the other. It scales the whole stroke
    * down instead, and says so. */
   it('falls back to scaling the whole stroke when the tier is shorter than its two ends', () => {
-    const { uniform, middleStretch } = strokeWallLayout(0.9, 0.4, SIZE, P);
+    const { uniform, middleStretch, spanH } = strokeWallLayout(0.9, 0.3, SIZE, P);
     expect(middleStretch).toBeNull();
-    expect(uniform).toBeCloseTo(0.4 / strokeWallLayout(0.9, 1.2, SIZE, P).naturalH, 6);
+    expect(uniform).toBeCloseTo(spanH / strokeWallLayout(0.9, 1.2, SIZE, P).naturalH, 6);
   });
 
   /* ⚠️ THE TIP DOES NOT CHANGE BECAUSE THE CAKE GOT TALLER. Scaled uniformly to the tier's height —
@@ -316,7 +332,7 @@ describe("strokes wall — placing a modelled stroke", () => {
     const tall  = strokeWallLayout(0.9, 2.4, SIZE, P);
     expect(tall.wx).toBeCloseTo(short.wx, 6);
     expect(tall.count).toBe(short.count);
-    expect(tall.rigidH + tall.middleH * tall.middleStretch).toBeCloseTo(2.4, 6);  // it just gets longer
+    expect(tall.rigidH + tall.middleH * tall.middleStretch).toBeCloseTo(tall.spanH, 6);  // just longer
   });
 
   it('puts the strokes ON the surface: crests at the tier radius, body a stroke-depth behind', () => {
