@@ -265,18 +265,18 @@ export const NOZZLES = [
   /* Measured off a sliced mesh of one real vertical stroke — see the note on rosetteProfile. The
    * two extra rows are the same shape shallower and deeper, because 0.18 is what ONE stroke measured
    * and a baker's pressure is the other half of how deep a groove lands. */
-  { key: 'rose8',  label: 'Piped Rope',  hint: 'Measured: 8 rounded ribs',   profile: rosetteProfile(8, 0.18, 24, 1, 1), twist: 1,   ruffle: 1 },
-  { key: 'rose8d', label: 'Piped Deep',  hint: 'Same ribs, firmer pressure', profile: rosetteProfile(8, 0.26), twist: 1,   ruffle: 1 },
+  { key: 'rose8',  label: 'Piped Rope',  hint: 'Measured: 8 rounded ribs',   profile: rosetteProfile(8, 0.18, 24, 1, 1), twist: 1, lobes: 8,   ruffle: 1 },
+  { key: 'rose8d', label: 'Piped Deep',  hint: 'Same ribs, firmer pressure', profile: rosetteProfile(8, 0.26), twist: 1, lobes: 8,   ruffle: 1 },
   /* ⚠️ TEN, and the mesh said eight — they are measuring two different strokes and the PHOTOGRAPH
    * is the one being matched. Scanning it across the middle puts creases at 37%, 64%, 88% and 92%
    * of the width; a crease at a fraction f of a tube's projected width sits at asin(2f − 1) from
    * the centre, which gives ±15° and ±53°, so the ribs are about 35° apart. That is ten, not the
    * mesh's eight — a generated model is a smoothed average, a photograph is one real tip. */
-  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 1, 0.5), twist: 1,  ruffle: 1 },
+  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 1, 0.5), twist: 1, lobes: 10,  ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
-  { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, ruffle: 1, squash: 0.55 },
-  { key: 'rose12w', label: 'Wall Fine', hint: 'Twelve ribs, spread',        profile: rosetteProfile(12, 0.16, 20, 0.55), twist: 1, ruffle: 1, squash: 0.55 },
+  { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, lobes: 8, ruffle: 1, squash: 0.55 },
+  { key: 'rose12w', label: 'Wall Fine', hint: 'Twelve ribs, spread',        profile: rosetteProfile(12, 0.16, 20, 0.55), twist: 1, lobes: 12, ruffle: 1, squash: 0.55 },
   /* ⚠️ TWELVE IS WHAT PUTS FOUR RIBS ON THE FACE. A stroke is a tube, so a viewer sees a little over
    * half of it and only the middle ±60° reads as ribs — the rest is silhouette, and on a wall the
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
@@ -350,8 +350,17 @@ export const PEN_FEEL = Object.freeze({
    * other; because the warp is a whole number of cycles round the section it stays closed, and
    * because it is built from the point's own angle it costs one sine per vertex and no new ones.
    * Two harmonics so the crowding never lands in the same place twice. */
-  ribWanderDeg: 5,
-  ribWanderPerDia: 0.09,
+  /* ⚠️ SIZED TO THE STROKE, NOT TO TASTE — the first numbers here (5°, one excursion every eleven
+   * diameters) were invisible, because a wall stroke is only about eight diameters long: the warp
+   * never got round to doing anything over the length you can see. It needs to move far enough to
+   * shift a rib by a noticeable part of its own width (a tenth of a lobe on a ten-lobe tip is 3.6°,
+   * so 14° is about four tenths) and to do it two or three times on the way up. */
+  ribWanderDeg: 14,
+  ribWanderPerDia: 0.35,
+  /* And the ribs breathe as well as drift: one gets fatter while its neighbour thins, which is what
+   * makes an edge wander in DEPTH rather than only sideways. Sideways alone still reads as a ruled
+   * line that has been nudged. */
+  ribSwell: 0.10,
   /* One lazy swell every ~8 diameters instead of one ripple per diameter, and irregular: two
    * incommensurate waves, so the rhythm never repeats. Deterministic — no random, because a stroke
    * must rebuild identically on reload. */
@@ -529,7 +538,8 @@ function fixedUpFrames(samples, up) {
  */
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = null) {
   const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0, ao = 0,
-          wanderAmp = 0, wanderFreq = 0, ribAmp = 0, ribFreq = 0 } = opts;
+          wanderAmp = 0, wanderFreq = 0, ribAmp = 0, ribFreq = 0,
+          ribSwellAmp = 0, ribLobes = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -608,12 +618,15 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
     // The rib shear's two slowly-drifting phases, one per ring.
     const q1 = ribAmp ? 6.283 * noise1(ribFreq * s / 6.283 + rufflePhase + 3.1) : 0;
     const q2 = ribAmp ? 6.283 * noise1(ribFreq * 1.7 * s / 6.283 + rufflePhase + 8.4) : 0;
+    const q3 = ribAmp ? 6.283 * noise1(ribFreq * 0.8 * s / 6.283 + rufflePhase + 5.7) : 0;
     const cs = Math.cos(phi), sn = Math.sin(phi);
     for (let j = 0; j < P; j++) {
       let ax, ay;
       if (ribAmp) {
         const w = pa[j] + ribAmp * (0.62 * Math.sin(pa[j] + q1) + 0.38 * Math.sin(2 * pa[j] + q2));
-        ax = Math.cos(w) * pr[j] * r; ay = Math.sin(w) * pr[j] * r;
+        // Each rib fattens or thins on its own, and which one is doing which drifts up the stroke.
+        const rr = pr[j] * (1 + ribSwellAmp * Math.sin(ribLobes * pa[j] + q3));
+        ax = Math.cos(w) * rr * r; ay = Math.sin(w) * rr * r;
       } else { ax = profile[j][0] * r; ay = profile[j][1] * r; }
       const px = ax * cs - ay * sn, py = ax * sn + ay * cs;  // rotate in the N/B plane
       pos.push(C.x + N.x * px + B.x * py, C.y + N.y * px + B.y * py, C.z + N.z * px + B.z * py);
@@ -780,6 +793,8 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     // The ribs' own sideways drift, which bends their edges. Rope tips only.
     ribAmp:      (noz.twist ?? 0) * ((feel.ribWanderDeg ?? 0) * Math.PI) / 180,
     ribFreq:     (feel.ribWanderPerDia ?? 0) * 2 * Math.PI / dia,
+    ribSwellAmp: (noz.twist ?? 0) * (feel.ribSwell ?? 0),
+    ribLobes:    noz.lobes ?? 0,
     rufflePhase: feel.rufflePhase ?? 0,
     /* A slit tip needs a known attitude; a rope tip does not care and is better off with the
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
