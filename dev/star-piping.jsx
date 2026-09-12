@@ -7,6 +7,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { starStackWall } from '../src/designer/geometry/starStack.js';
 import { frostingDef } from '../src/designer/frostings.js';
+import { getCreamGrainNormalMap } from '../src/designer/shared/textures/creamWaveTexture.js';
 
 /* STAR PIPING, STACKED — a whole tier of it.
  *
@@ -31,13 +32,34 @@ const t = num('t', 0.14);
 const lap = num('lap', 0.8);
 const ropes = Math.max(1, Math.round(num('n', (Math.PI * 2 * (R - t)) / (2 * t / (1 + lap)))));
 
-function creamMaterial() {
+/* ⚠️ THE GRAIN IS PART OF THE MATERIAL, AND THIS PAGE WAS DROPPING IT. `frostings.js` gives
+ * buttercream `grain: 'cream'` at strength 0.5, and `CakeTier` turns that into a tiled normal map on
+ * every cream wall — so a harness that copies only roughness/sheen/clearcoat is judging the geometry
+ * against a material the cake does not have. Smooth plastic against real cream. `check:harness-scene`
+ * does not catch it: it checks the lights and the environment, not the surface.
+ *
+ * ?grain= scales it; 0 is the way this page has been rendering all along.
+ */
+function useCreamMaterial(aroundLen, upLen) {
   const m = frostingDef('buttercream').material;
+  const g = num('grain', m.grainStrength ?? 0.5);
+  const map = useMemo(() => {
+    if (!(g > 0)) return null;
+    const tex = getCreamGrainNormalMap().clone();
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    const d = num('graind', m.grainDensity ?? 1);
+    // ⚠️ 16 tiles per world unit — the SAME density CakeTier uses, or this is a different surface.
+    tex.repeat.set(Math.max(4, Math.round(aroundLen * 16 * d)), Math.max(3, Math.round(upLen * 16 * d)));
+    tex.needsUpdate = true;
+    return tex;
+  }, [g, aroundLen, upLen]);
   return { roughness: m.roughness, metalness: 0, sheen: m.sheen, sheenRoughness: m.sheenRoughness,
-           sheenColor: m.sheenColor, clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness };
+           sheenColor: m.sheenColor, clearcoat: m.clearcoat, clearcoatRoughness: m.clearcoatRoughness,
+           normalMap: map, normalScale: [g, g] };
 }
 
 function Tier() {
+  const cream = useCreamMaterial(2 * Math.PI * R, H);
   const geos = useMemo(() => starStackWall({
     radius: R, height: H - 2 * t, ropes, thickness: t,
     points: num('points', 8), depth: num('depth', 0.55), notch: num('notch', 1),
@@ -54,19 +76,19 @@ function Tier() {
       {/* The cake, tangent to the strokes — they stand ON it. */}
       <mesh position={[0, -0.02, 0]} receiveShadow castShadow>
         <cylinderGeometry args={[R - 2 * t, R - 2 * t, H + 0.04, 96]} />
-        <meshPhysicalMaterial color="#F0D9DC" {...creamMaterial()} />
+        <meshPhysicalMaterial color="#F0D9DC" {...cream} />
       </mesh>
       <group position={[0, -t, 0]}>
         {geos.map((g, i) => (
           <mesh key={i} geometry={g} castShadow receiveShadow>
-            <meshPhysicalMaterial color="#F6EBD8" flatShading vertexColors {...creamMaterial()} />
+            <meshPhysicalMaterial color="#F6EBD8" flatShading vertexColors {...cream} />
           </mesh>
         ))}
       </group>
       {/* The top: out to the crest, so it covers the strokes' ends rather than sitting inside them. */}
       <mesh position={[0, H / 2 - t * 0.6, 0]} castShadow>
         <cylinderGeometry args={[lid, lid, t * 0.5, 96]} />
-        <meshPhysicalMaterial color="#F6EBD8" {...creamMaterial()} />
+        <meshPhysicalMaterial color="#F6EBD8" {...cream} />
       </mesh>
     </group>
   );
