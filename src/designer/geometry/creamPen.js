@@ -384,12 +384,20 @@ export const PEN_FEEL = Object.freeze({
    * a rib on a ten-lobe tip. Part of what is left is a constant offset, which is a fixed roll and
    * not a wander at all.
    *
-   * Both numbers are set from that measurement rather than from taste: the rate carries three or
-   * four humps into the stroke's length so the noise actually gets round its range, and the
-   * amplitude is the swing a rib needs (about a whole rib width, 36°) divided by the ~0.7 the noise
-   * delivers. ⚠️ If either is ever retuned, measure the swing along the real arc — the number in
-   * this field is not the number the ribs move by. */
-  wanderDeg: 45,
+   * ⚠️ AND THE AMPLITUDE IS MEASURED OFF THE PHOTOGRAPH, not reasoned about. Reasoning gave "about
+   * a whole rib width" and produced something like a wrung cloth. Tracking the darkest column down
+   * a crease and reporting how far it moves sideways, as a fraction of the stroke's own width:
+   *
+   *     reference   8.2% total span      (rms 0.8% about its own trend, peak 2.2%)
+   *     ours at 45° 50.4%                — six times too much
+   *
+   * A piped line barely wanders. It is enough that the edges are not RULED; past that it stops
+   * looking like cream and starts looking wrung. `dev/refsrv` has the tracker.
+   *
+   * The rate still carries three or four humps into the length, so the wander varies along the
+   * stroke instead of being one lazy bend. ⚠️ If either is retuned, measure the swing along the
+   * real arc — the number in this field is not the number the ribs move by. */
+  wanderDeg: 7.5,
   wanderPerDia: 0.8,
   /* One lazy swell every ~8 diameters instead of one ripple per diameter, and irregular: two
    * incommensurate waves, so the rhythm never repeats. Deterministic — no random, because a stroke
