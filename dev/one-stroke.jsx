@@ -238,6 +238,25 @@ function GlbWall({ url }) {
   useEffect(() => {
     const t0 = performance.now();
     console.log('[glb] loading', url);
+    /* ⚠️ A `.bin` IS THE DECIMATED MESH, and it is what actually renders. The raw GLB is 3,021,560
+     * triangles for ONE stroke: it downloads and parses in 155ms and then the canvas stays blank
+     * with no error at all, which is the GPU declining the upload. `scripts` note in the feature
+     * doc; the format is [u32 verts][u32 indices][f32 positions][u32 indices], positions only —
+     * normals are computed here, which is also what gives it the smooth shading the source lacks. */
+    if (url.endsWith('.bin')) {
+      fetch(url).then(r => r.arrayBuffer()).then((ab) => {
+        const head = new Uint32Array(ab, 0, 2), nv = head[0], ni = head[1];
+        const pos = new Float32Array(ab, 8, nv * 3);
+        const idx = new Uint32Array(ab, 8 + nv * 12, ni);
+        const g = new THREE.BufferGeometry();
+        g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+        g.setIndex(new THREE.BufferAttribute(idx, 1));
+        g.computeVertexNormals();
+        console.log('[glb] mesh', nv, 'verts', ni / 3, 'tris in', Math.round(performance.now() - t0), 'ms');
+        const o = new THREE.Mesh(g); const sc = new THREE.Group(); sc.add(o); setScene(sc);
+      }).catch((e) => { console.error('[glb] FAILED', e); setErr(String(e)); });
+      return;
+    }
     new GLTFLoader().load(url,
       (g) => { console.log('[glb] parsed in', Math.round(performance.now() - t0), 'ms'); setScene(g.scene); },
       (e) => { if (e.total) console.log('[glb]', Math.round(100 * e.loaded / e.total) + '%'); },
@@ -263,6 +282,8 @@ function GlbWall({ url }) {
   if (err || !geo) return null;
   const n = Math.max(4, Math.round(Number(q.get('gn') || (2 * Math.PI * (Rt - width / 2)) / width)));
   console.log('[glb] placing', n, 'instances at R', +(Rt - width / 2).toFixed(3), ' tier H', H);
+  if (typeof window !== 'undefined') window.__glb = { n, R: Rt - width / 2, H, scale,
+    tris: geo.index ? geo.index.count / 3 : 0, bbox: geo.boundingBox && geo.boundingBox.toArray?.() };
   return <group position={[0, -H / 2, 0]}>
     <mesh position={[0, H / 2, 0]}>
       <cylinderGeometry args={[Rt - width / 2, Rt - width / 2, H, 96]} />
@@ -285,7 +306,10 @@ createRoot(document.getElementById('root')).render(
              style={{ maxHeight: '96%', maxWidth: '100%', objectFit: 'contain' }} />
       </div>
     )}
-    <div style={{ flex: 1, minWidth: 0 }}>
+    {/* ⚠️ `height: 100%` IS LOAD-BEARING. R3F sizes its canvas from the parent it is handed, and a
+        flex child with no height measures ZERO at mount — the canvas falls back to 300×150 in the
+        corner and every render comes back a blank white frame with no error anywhere. */}
+    <div style={{ flex: 1, minWidth: 0, height: '100%' }}>
     <Canvas camera={(styleKey || q.get('glb')) ? { position: [Number(q.get('dist') || 3.4), Number(q.get('eye') || 0.8), 0], fov: Number(q.get('fov') || 34) }
       : onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
