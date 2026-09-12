@@ -565,7 +565,12 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
   const base = pos.length / 3;
   // Each profile point in polar, so the rib shear (see ribWanderDeg) can turn it about the axis.
   const pa = new Float64Array(P), pr = new Float64Array(P);
-  for (let j = 0; j < P; j++) { pa[j] = Math.atan2(profile[j][1], profile[j][0]); pr[j] = Math.hypot(profile[j][0], profile[j][1]); }
+  let prMin = Infinity;
+  for (let j = 0; j < P; j++) {
+    pa[j] = Math.atan2(profile[j][1], profile[j][0]);
+    pr[j] = Math.hypot(profile[j][0], profile[j][1]);
+    if (pr[j] < prMin) prMin = pr[j];
+  }
 
   /* One shade per profile point, reused for every ring. ⚠️ The ramp is linear in the ANGLE round
    * the lobe, not in the radius: a rosette's radius is flat at its peak, so a radius-linear ramp
@@ -624,8 +629,13 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
       let ax, ay;
       if (ribAmp) {
         const w = pa[j] + ribAmp * (0.62 * Math.sin(pa[j] + q1) + 0.38 * Math.sin(2 * pa[j] + q2));
-        // Each rib fattens or thins on its own, and which one is doing which drifts up the stroke.
-        const rr = pr[j] * (1 + ribSwellAmp * Math.sin(ribLobes * pa[j] + q3));
+        /* Each rib fattens or thins on its own, and which one is doing which drifts up the stroke.
+         * ⚠️ IT SCALES THE HEIGHT ABOVE THE CREASE FLOOR, NOT THE WHOLE RADIUS. Scaling the radius
+         * lifts the creases along with the crests, and a lifted crease is a shallower one — the
+         * ribs stopped being sharp the moment this was added, which is the one thing `crease` had
+         * just been introduced to fix. Measured from the floor, the slot keeps its full depth and
+         * only the ribs move. */
+        const rr = prMin + (pr[j] - prMin) * (1 + ribSwellAmp * Math.sin(ribLobes * pa[j] + q3));
         ax = Math.cos(w) * rr * r; ay = Math.sin(w) * rr * r;
       } else { ax = profile[j][0] * r; ay = profile[j][1] * r; }
       const px = ax * cs - ay * sn, py = ax * sn + ay * cs;  // rotate in the N/B plane
