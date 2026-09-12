@@ -163,7 +163,7 @@ function Stroke({ x = 0, z = 0, roll: r }) {
     swellAmp: Number(q.get('swell') ?? PEN_FEEL.swellAmp),
     tailDias: Number(q.get('tail') ?? 0.45),      // measured: the taper is the top ~10%, not a third
     footDias: Number(q.get('foot') ?? 0.7),
-  }, null, r, Number(q.get('ao') ?? 0.95));
+  }, null, r, Number(q.get('ao') ?? 0.80));
   if (!geo) return null;
   return <mesh geometry={geo} castShadow receiveShadow>
     <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;
@@ -234,6 +234,15 @@ createRoot(document.getElementById('root')).render(
       : onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
       <SceneLights shadows />
+      {/* ⚠️ A DIRECTIONAL KEY WAS ADDED HERE AS A DIAGNOSTIC AND TAKEN STRAIGHT BACK OUT, because
+          `check:harness-scene` refused it — which is the gate doing exactly its job. The question it
+          answered is worth keeping though: after fifteen geometry changes that each measured closer
+          to the photograph and each looked the same, one directional light made the SAME geometry
+          read as solid, every rib gaining a lit side and a shaded side. This scene is a near-uniform
+          dome, so a rib's two flanks shade alike and a groove is only ever as dark as the shade
+          baked into it. The remaining gap is the light or a real AO map, not a tip parameter — and
+          neither is a change to make inside a harness. See features/hand-piping.md. */} />
+      )}
       {styleKey ? <StyledTier /> : stack && onCake ? <>
         {/* The stack, laid ON the cake's side: tangent to it, and rolled so a POINT faces outward —
             the same placement the wall gives a swept stroke. `?n=` repeats it round the tier. */}
