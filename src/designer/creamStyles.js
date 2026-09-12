@@ -273,11 +273,14 @@ export const CREAM_STYLES = {
    * a re-scanned stroke is an admin edit rather than a release.
    */
   piped_modelled: {
-    /* ⚠️ A CHIP LABEL, not a description. This one sits in the STYLE row beside 'Smooth', 'Cream
-     * Wave' and 'Ribbed' — a phone shows three or four of them across — so it says what a baker
-     * would call it. How it is MADE (a scan rather than a swept section) is an implementation note
-     * and belongs in this comment, not on the customer's chip. */
-    label: 'Piped', wall: 'strokes',
+    /* ⚠️ A CHIP LABEL, and it names what a customer SEES, like every other one in that row — 'Cream
+     * Wave', 'Swirl', 'Ribbed', 'Rustic'. ⚠️ NOT just 'Piped': all six piped rows are piped, so that
+     * names the family and not this look. And not 'Star Piping' either, though it is the right
+     * decorating term and the one used throughout the work — it names the TIP, which a customer who
+     * has never held one cannot picture. Lines running up the side is what they are choosing.
+     * How it is MADE (a scan rather than a swept section) is an implementation note and belongs in
+     * this comment, not on the chip. */
+    label: 'Vertical Piping', wall: 'strokes',
     strokeGlb: 'elements/3D-images/piping-stroke-vertical.glb',
     /* ⚠️ NO `top`. The piped rows above finish with a spiral lid because a swept section can be
      * spiralled onto one; there is no scan of a piped TOP, and faking it with the old spiral would
