@@ -341,10 +341,29 @@ export function strokeWallLayout(radius, height, size, p) {
    * swept wall's `width` note describes. So: stretched to the tier's height, scaled to the tip's
    * width, and the mesh is stretched rather than magnified. That is what a fixed tip dragged
    * further actually leaves. */
-  const scaleY = height / size.y;                        // one stroke spans the tier, top to bottom
-  const scale = (p.width * INCH) / size.x;               // ...and is as wide as the tip that left it
+  const scale = (p.width * INCH) / size.x;               // as wide as the tip that left it
   const wx = size.x * scale;                             // its width along the wall → the spacing
   const wz = size.z * scale;                             // its depth into/out of the wall
+  /* ⚠️ HEIGHT IS A SLICE, NOT A SCALE. A stroke has a NATURAL height — this one is 4.28 times its
+   * own width, so at a 0.93" tip it is 3.98" tall, almost exactly a standard tier. A cake is taller
+   * than that, and stretching the whole mesh to fit puts the extra length everywhere: on the bottom
+   * tier every ripple, tear and fold came out 21% longer than the real thing.
+   *
+   * The stroke says where the extra length may go. Sampled in 24 bands: the bottom 29% is the FOOT
+   * (pinched at the very base, then the splayed bulge, +19% at 13–17%, settling by 29%), the top 15%
+   * is the TIP where the bag lifted off (−8%, −35%, −75%), and everything between is within ±5% of
+   * the body radius the whole way — a genuine straight extrusion with no feature along its length.
+   *
+   * So the ends are carried RIGID at the tip's own scale and all of the stretch lands in the middle,
+   * where there is nothing to distort. On the designer's tiers the middle carries 1.03×–1.38×. */
+  const naturalH = size.y * scale;                       // what this stroke is, at this tip
+  const rigidH = (p.foot + (1 - p.tip)) * naturalH;      // the foot and the tip, never stretched
+  const middleH = (p.tip - p.foot) * naturalH;
+  /* ⚠️ A TIER SHORTER THAN THE TWO ENDS CANNOT KEEP THEM, so it stops pretending to: the whole
+   * stroke is scaled down instead. Squeezing a fixed foot and a fixed tip into less than their own
+   * combined height would fold one through the other. */
+  const uniform = height < rigidH * 1.02 ? height / naturalH : null;
+  const middleStretch = uniform ? null : (height - rigidH) / middleH;
   /* ⚠️ THE BODY SITS A STROKE-DEPTH INSIDE THE TIER'S RADIUS, so the cake keeps the size the design
    * says. Cream really is added ON TOP of a frosted cake, so the physical thing grows outward — but
    * a 6" cake that renders 6.4" wide the moment a style is picked is a sizing bug, not a finish.
@@ -353,7 +372,35 @@ export function strokeWallLayout(radius, height, size, p) {
   const R = radius - wz / 2 + p.press * wz / 2;          // the circle the strokes' own axes ride
   const spacing = wx * (1 - p.overlap);
   const count = Math.max(6, Math.round(TAU * R / spacing));
-  return { scale, scaleY, wx, wz, R, bodyRadius, count };
+  return { scale, wx, wz, R, bodyRadius, count, naturalH, rigidH, middleH, middleStretch, uniform };
+}
+
+/* Make a stroke as long as the tier by moving ONLY its middle — see strokeWallLayout for why the
+ * ends are the part that must not stretch. `geo` is already at the tip's true scale, seated on y=0.
+ *
+ * ⚠️ NO MESH SURGERY, and that is the point of doing it as a vertex remap rather than a cut: the
+ * triangles that straddle a cut plane simply have their corners moved by different amounts, so the
+ * surface bends very slightly there instead of being severed. Nothing can crack, and nothing has to
+ * be re-welded. The bend is invisible because the plane sits in the featureless middle — a cut is
+ * only needed to TILE the middle, which is the next mechanism and belongs in the asset step.
+ */
+function stretchMiddle(geo, { naturalH, middleStretch, uniform }, p) {
+  const pos = geo.getAttribute('position');
+  if (uniform) {                                         // too short to keep both ends — scale it all
+    for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) * uniform);
+    pos.needsUpdate = true;
+    return geo;
+  }
+  const y0 = p.foot * naturalH, y1 = p.tip * naturalH;
+  const lift = (y1 - y0) * (middleStretch - 1);          // how far the tip is carried up
+  for (let i = 0; i < pos.count; i++) {
+    const y = pos.getY(i);
+    if (y <= y0) continue;                               // the foot: exactly as it was piped
+    pos.setY(i, y >= y1 ? y + lift                       // the tip: carried, never stretched
+                        : y0 + (y - y0) * middleStretch);
+  }
+  pos.needsUpdate = true;
+  return geo;
 }
 
 function buildStrokeWall(radius, height, p) {
@@ -362,7 +409,8 @@ function buildStrokeWall(radius, height, p) {
   if (!src.boundingBox) src.computeBoundingBox();
   const size = new THREE.Vector3();
   src.boundingBox.getSize(size);
-  const { scale, scaleY, wz, R, bodyRadius, count } = strokeWallLayout(radius, height, size, p);
+  const L = strokeWallLayout(radius, height, size, p);
+  const { scale, wz, R, bodyRadius, count } = L;
 
   const parts = [new THREE.CylinderGeometry(bodyRadius, bodyRadius, height, 96, 1)];
   /* ⚠️ A FOOT, for the reason the swept wall has one: the notch between two strokes is open at the
@@ -388,6 +436,11 @@ function buildStrokeWall(radius, height, p) {
   src.boundingBox.getCenter(c);
   const base = src.clone();
   base.translate(-c.x, -src.boundingBox.min.y, -c.z);
+  /* Scaled to the TIP here, once, so `base` is a stroke at its true natural size — and then made as
+   * long as the tier needs by moving only the middle. Per-stroke work below is placement and `vary`,
+   * never size, so nothing downstream can re-stretch it by accident. */
+  base.scale(scale, scale, scale);
+  stretchMiddle(base, L, p);
 
   for (let i = 0; i < count; i++) {
     /* ⚠️ ROLLED TO FACE OUTWARD, AND THE SIGN IS NEGATIVE — the same correction the swept ropes
@@ -399,10 +452,11 @@ function buildStrokeWall(radius, height, p) {
      * repeated is the worst case of it — the swept wall at least varied its own section. `vary`
      * buys the cheapest honest difference: a little size, a little roll. It may only make a stroke
      * FATTER, because a thinner one no longer reaches its neighbour and opens a gap. */
-    const s = scale * (1 + p.vary * 0.10 * ropeHash(i));
+    // ⚠️ WIDTH ONLY. `vary` may fatten a stroke, never lengthen it: the length is the cake's.
+    const s = 1 + p.vary * 0.10 * ropeHash(i);
     const roll = -theta + p.vary * 0.10 * (ropeHash(i + 700) - 0.5);
     const g = base.clone();
-    g.scale(s, scaleY, s);
+    g.scale(s, 1, s);
     g.rotateY(roll);
     g.translate(R * Math.cos(theta), -height / 2, R * Math.sin(theta));
     parts.push(g);
@@ -578,6 +632,11 @@ export function strokeWallParams(params = {}) {
   return {
     // ⚠️ INCHES OF NOZZLE, not a count of strokes and not a fraction of the cake. See ropeSection.
     width:   Math.max(0.1, params.width ?? 0.93),
+    /* Where this mesh stops being a foot and starts being a tip, as fractions of its own length.
+     * ⚠️ FACTS ABOUT THE ASSET, not preferences — measured off the scan, and a different scan wants
+     * different ones, which is why they are overlaid with it rather than hardcoded beside it. */
+    foot:    Math.min(0.45, Math.max(0, params.foot ?? 0.29)),
+    tip:     Math.min(1, Math.max(0.55, params.tip ?? 0.85)),
     /* ⚠️ AN OVERLAP, NOT A COUNT — the count falls out of it and the tier's circumference, so a 6"
      * and a 10" cake get strokes of the same SIZE rather than the same number. Authored as a count,
      * every change of cake size silently re-piped the cake with a different tip. (Same reasoning as

@@ -276,9 +276,35 @@ describe("strokes wall — placing a modelled stroke", () => {
   const SIZE = { x: 0.442, y: 1.893, z: 0.432 };
   const P = strokeWallParams({});
 
-  it('stretches one stroke to span the tier, top to bottom', () => {
-    const { scaleY } = strokeWallLayout(0.9, 1.2, SIZE, P);
-    expect(SIZE.y * scaleY).toBeCloseTo(1.2, 6);
+  it('makes the stroke exactly as long as the tier', () => {
+    for (const h of [1.21, 1.29, 1.37, 1.45]) {
+      const { rigidH, middleH, middleStretch } = strokeWallLayout(0.9, h, SIZE, P);
+      expect(rigidH + middleH * middleStretch).toBeCloseTo(h, 6);
+    }
+  });
+
+  /* ⚠️ HEIGHT IS A SLICE, NOT A SCALE. The stroke's own height at this tip is 3.98" — almost exactly
+   * a standard tier — and a cake is taller, so something has to give. Stretched whole, every ripple,
+   * tear and fold on the bottom tier came out 21% longer than the real thing. The foot (the splayed
+   * bulge where cream piles against the surface) and the tip (where the bag lifted off) are the only
+   * parts with a feature along their length, so they are the parts that must not move. */
+  it('carries the foot and the tip rigid, and puts every bit of the stretch in the middle', () => {
+    const short = strokeWallLayout(0.9, 1.21, SIZE, P);
+    const tall  = strokeWallLayout(0.9, 1.45, SIZE, P);
+    expect(tall.rigidH).toBeCloseTo(short.rigidH, 6);        // the ends are the same size on both
+    expect(tall.naturalH).toBeCloseTo(short.naturalH, 6);
+    expect(tall.middleStretch).toBeGreaterThan(short.middleStretch);
+    expect(tall.middleStretch).toBeCloseTo(1.381, 3);        // the bottom tier, measured
+    expect(short.middleStretch).toBeCloseTo(1.023, 3);
+  });
+
+  /* ⚠️ A TIER SHORTER THAN THE TWO ENDS CANNOT KEEP THEM — squeezing a fixed foot and a fixed tip
+   * into less than their combined height folds one through the other. It scales the whole stroke
+   * down instead, and says so. */
+  it('falls back to scaling the whole stroke when the tier is shorter than its two ends', () => {
+    const { uniform, middleStretch } = strokeWallLayout(0.9, 0.4, SIZE, P);
+    expect(middleStretch).toBeNull();
+    expect(uniform).toBeCloseTo(0.4 / strokeWallLayout(0.9, 1.2, SIZE, P).naturalH, 6);
   });
 
   /* ⚠️ THE TIP DOES NOT CHANGE BECAUSE THE CAKE GOT TALLER. Scaled uniformly to the tier's height —
@@ -290,7 +316,7 @@ describe("strokes wall — placing a modelled stroke", () => {
     const tall  = strokeWallLayout(0.9, 2.4, SIZE, P);
     expect(tall.wx).toBeCloseTo(short.wx, 6);
     expect(tall.count).toBe(short.count);
-    expect(SIZE.y * tall.scaleY).toBeCloseTo(2.4, 6);   // ...it just gets longer
+    expect(tall.rigidH + tall.middleH * tall.middleStretch).toBeCloseTo(2.4, 6);  // it just gets longer
   });
 
   it('puts the strokes ON the surface: crests at the tier radius, body a stroke-depth behind', () => {

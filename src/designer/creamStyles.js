@@ -42,6 +42,16 @@ function strokeParams(over = {}) {
      * 1.2-tall tier is 0.28 world across, which is 0.93in. The swept `piped_rope` row arrived at
      * 0.91in from the same photograph, independently. */
     { key: 'width',   label: 'Nozzle (in)', min: 0.3, max: 1.6, step: 0.05, default: d('width', 0.93), user: true },
+    /* ⚠️ WHERE THIS MESH STOPS BEING A FOOT AND STARTS BEING A TIP, as fractions of its own length —
+     * and the reason the wall can be any height without the stroke distorting. The scan's own height
+     * at this tip is 3.98in, almost exactly a standard tier; every cake is taller, so the extra
+     * length has to go somewhere. Measured in 24 bands: the bottom 29% is the splayed foot, the top
+     * 15% is the lift-off tip, and the 56% between them holds within ±5% of the body radius — a
+     * straight extrusion with no feature along its length. The ends are carried rigid and the middle
+     * takes all of it. ⚠️ FACTS ABOUT THE ASSET, not preferences: a different scan wants different
+     * ones, which is why they are overlaid alongside `strokeGlb` rather than hardcoded. */
+    { key: 'foot',    label: 'Foot ends at',  min: 0,    max: 0.45, step: 0.01, default: d('foot', 0.29), user: false },
+    { key: 'tip',     label: 'Tip starts at', min: 0.55, max: 1,    step: 0.01, default: d('tip', 0.85),  user: false },
     /* ⚠️ AN OVERLAP, NOT A COUNT. The stroke's size is fixed by the tier's HEIGHT (one stroke spans
      * the side, which is what a piped stroke does), so the count falls out of the circumference —
      * and a 6" and a 10" cake get strokes of the same size rather than the same number. Authored as
