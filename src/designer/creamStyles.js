@@ -188,7 +188,7 @@ export const CREAM_STYLES = {
    */
   piped_rope: {
     label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'lobe12',
-    params: pipedParams({ width: 1.2, overlap: 0.6, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
+    params: pipedParams({ width: 1.2, overlap: 0.05, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
   },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
