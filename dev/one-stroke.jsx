@@ -2,9 +2,10 @@ import { createRoot } from 'react-dom/client';
 import './scene.js';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import { Canvas } from '@react-three/fiber';
-import { useMemo } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL } from '../src/designer/geometry/creamPen.js';
 import { ropeSection, pipedBodyRadius, pipedParams, buildStyledWall, buildStyledTop, bakeCreaseAO } from '../src/designer/geometry/creamWall.js';
 import { styleDef, CREAM_STYLES } from '../src/designer/creamStyles.js';
@@ -218,7 +219,62 @@ function StyledTier() {
  * by Sandeep, who had to paste the two windows side by side to show me differences I had the
  * images to see myself. `?ref=1` is on by default for a single stroke, which is the one view that
  * is directly comparable to the photo. `?ref=0` turns it off. */
-const showRef = q.get('ref') !== '0' && !onCake && !styleKey && !stack;
+const showRef = q.get('ref') !== '0' && !onCake && !styleKey && !stack && !q.get('glb');
+
+/* ⚠️ `?glb=<url>` PUTS A REAL MESH ROUND THE TIER, as a straight comparison against the procedural
+ * wall — not as a shipping path. One generated vertical stroke, instanced round the side: it is
+ * scaled so its height matches the tier's and its own width then sets how many go round, which is
+ * the same rule the procedural wall follows. `?gn=` overrides the count.
+ *
+ * ⚠️ It is 3M triangles for ONE stroke. Twenty of those is sixty million, which is why this can
+ * only ever be a look, never the thing we ship — but it answers "does the geometry work on a cake"
+ * without any of our own maths in the way. */
+function GlbWall({ url }) {
+  /* ⚠️ LOADED BY HAND, NOT THROUGH `useGLTF`. A suspending loader that never resolves renders
+   * nothing and logs nothing, which is twenty minutes of looking at a blank canvas. This reports
+   * what it is doing. */
+  const [scene, setScene] = useState(null);
+  const [err, setErr] = useState(null);
+  useEffect(() => {
+    const t0 = performance.now();
+    console.log('[glb] loading', url);
+    new GLTFLoader().load(url,
+      (g) => { console.log('[glb] parsed in', Math.round(performance.now() - t0), 'ms'); setScene(g.scene); },
+      (e) => { if (e.total) console.log('[glb]', Math.round(100 * e.loaded / e.total) + '%'); },
+      (e) => { console.error('[glb] FAILED', e); setErr(String(e)); });
+  }, [url]);
+  const H = Number(q.get('h') || 1.2), Rt = Number(q.get('r') || 0.9);
+  const { geo, scale, width } = useMemo(() => {
+    if (!scene) return { geo: null, scale: 1, width: 1 };
+    let g = null;
+    scene.traverse((o) => { if (!g && o.isMesh) g = o.geometry; });
+    g.computeBoundingBox();
+    const bb = g.boundingBox, size = new THREE.Vector3(); bb.getSize(size);
+    const sc = H / size.y;
+    // Centre it on its own axis so instancing round the tier is about the stroke, not the file.
+    const c = new THREE.Vector3(); bb.getCenter(c);
+    const gg = g.clone(); gg.translate(-c.x, -bb.min.y, -c.z);
+    console.log('[glb] raw bbox', size.toArray().map(v => +v.toFixed(3)),
+      ' scale', +sc.toFixed(3), ' scaled width', +(size.x * sc).toFixed(3),
+      ' tris', (g.index ? g.index.count : g.attributes.position.count) / 3);
+    return { geo: gg, scale: sc, width: size.x * sc };
+  }, [scene, H]);
+  const mat = useMemo(() => new THREE.MeshPhysicalMaterial({ color: '#F6EBD8', ...creamMaterial() }), []);
+  if (err || !geo) return null;
+  const n = Math.max(4, Math.round(Number(q.get('gn') || (2 * Math.PI * (Rt - width / 2)) / width)));
+  console.log('[glb] placing', n, 'instances at R', +(Rt - width / 2).toFixed(3), ' tier H', H);
+  return <group position={[0, -H / 2, 0]}>
+    <mesh position={[0, H / 2, 0]}>
+      <cylinderGeometry args={[Rt - width / 2, Rt - width / 2, H, 96]} />
+      <meshPhysicalMaterial color="#F0D9DC" {...creamMaterial()} />
+    </mesh>
+    {Array.from({ length: n }, (_, i) => {
+      const th = (i / n) * Math.PI * 2, R = Rt - width / 2;
+      return <mesh key={i} geometry={geo} material={mat} scale={scale}
+        position={[R * Math.cos(th), 0, R * Math.sin(th)]} rotation={[0, -th, 0]} />;
+    })}
+  </group>;
+}
 
 createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%', background: '#fff', display: 'flex' }}>
@@ -230,7 +286,7 @@ createRoot(document.getElementById('root')).render(
       </div>
     )}
     <div style={{ flex: 1, minWidth: 0 }}>
-    <Canvas camera={styleKey ? { position: [Number(q.get('dist') || 3.4), Number(q.get('eye') || 0.8), 0], fov: Number(q.get('fov') || 34) }
+    <Canvas camera={(styleKey || q.get('glb')) ? { position: [Number(q.get('dist') || 3.4), Number(q.get('eye') || 0.8), 0], fov: Number(q.get('fov') || 34) }
       : onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
       <SceneLights shadows />
@@ -243,7 +299,7 @@ createRoot(document.getElementById('root')).render(
           baked into it. The remaining gap is the light or a real AO map, not a tip parameter — and
           neither is a change to make inside a harness. See features/hand-piping.md. */} />
       )}
-      {styleKey ? <StyledTier /> : stack && onCake ? <>
+      {q.get('glb') ? <GlbWall url={q.get('glb')} /> : styleKey ? <StyledTier /> : stack && onCake ? <>
         {/* The stack, laid ON the cake's side: tangent to it, and rolled so a POINT faces outward —
             the same placement the wall gives a swept stroke. `?n=` repeats it round the tier. */}
         <Cake />

@@ -385,18 +385,32 @@ function buildPipedWall(radius, height, p) {
      * 0.0825 at every theta with the sign negative, and wanders to 0.15 between multiples of 45°
      * with it positive. */
     parts.push(buildPipingStroke(
-      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel(i), null, -theta, p.ao));
+      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel(i), null, -theta, 0));
   }
-  /* ⚠️ THE ROPES SHADE THEMSELVES NOW — see pushSweep. What is left is the BODY and the collar,
-   * which are not swept and are not creases either: they are the cake behind the piping, and giving
-   * them the ramp's last step is what once painted the sliver visible down each channel pure black.
-   * They get one flat shade, dark enough to sit behind cream and never a hole. */
-  for (const g of parts) {
-    if (g?.getAttribute?.('color')) continue;
-    const n = g.getAttribute('position').count, c = new Float32Array(n * 3).fill(AO_BODY);
-    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
+  /* ⚠️ THE WALL SHADES FROM THE RELIEF IT ACTUALLY HAS, NOT FROM THE TIP'S SECTION — and letting
+   * each rope carry its own shade is what made the tier read as thin blades with black gaps between
+   * them, for hours, while the geometry was fine all along.
+   *
+   * A rope alone is a tube, and painting it bright at its crest and dark round to its crease is
+   * right: all of it is on show. On a wall the ropes are pushed 60% into each other, so most of
+   * every flank is BURIED and only a narrow strip is visible. Painting the tip's whole crest-to-
+   * crease ramp across that strip drives it to full dark at both edges, and every seam becomes a
+   * black band — the eye reads a gap where the surface is in fact continuous. Sliced properly, this
+   * wall runs 0.825 to 0.909 with no bare cake anywhere: a 9% ripple, not a picket fence.
+   *
+   * So the ropes are swept unshaded and the merged surface is measured and shaded over ITS OWN
+   * range. Self-calibrating: overlap them more and the ripple shallows and the shading softens with
+   * it, which is what should happen. The caps are skipped — an end cap's apex sits on the axis and
+   * would drag the floor to nothing. */
+  const merged = mergeWithCylindricalUv(parts, radius, height);
+  const pos = merged.getAttribute('position');
+  let lo = Infinity, hi = 0;
+  for (let i = 0; i < pos.count; i++) {
+    if (Math.abs(pos.getY(i)) > height * 0.4) continue;
+    const r = Math.hypot(pos.getX(i), pos.getZ(i));
+    if (r < lo) lo = r; if (r > hi) hi = r;
   }
-  return mergeWithCylindricalUv(parts, radius, height);
+  return bakeCreaseAO(merged, hi, lo, p.ao);
 }
 
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
