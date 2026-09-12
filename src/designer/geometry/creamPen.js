@@ -162,13 +162,46 @@ function petalProfile(n = 36) {
  *
  * The profile is normalised to a MAX radius of 1 so `thickness` keeps meaning crest-to-crest.
  */
-function rosetteProfile(lobes, amp, n = 24) {
-  const out = [], k = 1 / (1 + amp);
+/* ⚠️ `squash` IS WHAT A ROPE PIPED ONTO A WALL DOES, and without it a wall of ropes cannot be right
+ * at any spacing. Round tubes standing on a cylinder pose an unsolvable choice, and both halves of
+ * it were rendered and rejected: butted loosely they leave a V-channel between every pair that the
+ * eye follows all the way to the body a third of the radius behind, and the channels read as slots
+ * cut in the tier; overlapped enough to close those, each rope only shows a strip around its own
+ * crest and its neighbours hide the crease flanks — which is "only one elevation is showing per
+ * vertical", the note this finish collected for two days.
+ *
+ * Cream is not a tube. Pressed against a surface it SPREADS: wide across the wall, shallow out of
+ * it. A squashed section has both properties at once — neighbours meet flank to flank at their full
+ * sideways width, so there is nothing to see between them, and the face they present to the viewer
+ * is wide and carries several ribs.
+ *
+ * It scales the profile's LOCAL X, because `pushSweep` rotates the profile by `roll` in the (N, B)
+ * plane and the wall rolls each rope by its own theta — which lands local +X, where this profile's
+ * first crest sits, on the outward radial. ⚠️ Squashing the other axis instead makes the ropes full
+ * depth and too thin to reach each other, and the wall renders as tall planks standing proud with
+ * daylight between them: a plausible-looking wrong picture that a screenshot cannot distinguish
+ * from a right one. Slicing the built wall says it in one line — the ropes stood 0.15 off the body
+ * where a spread one stands 0.08, and a third of the circumference had no surface at all.
+ * ⚠️ Not a press: the rope still sits entirely on the surface, it is
+ * simply the shape cream takes when it lands on one. The free-standing stroke this section was
+ * measured from is near-round (0.456 by 0.440) because it was piped onto nothing.
+ */
+function rosetteProfile(lobes, amp, n = 24, squash = 1) {
+  const out = [], shade = [], k = 1 / (1 + amp);
   for (let i = 0; i < lobes * n; i++) {
     const a = (i / (lobes * n)) * Math.PI * 2;
     const r = (1 + amp * Math.cos(lobes * a)) * k;
-    out.push([Math.cos(a) * r, Math.sin(a) * r]);
+    out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
+    /* ⚠️ THE CREASE PATTERN IS CARRIED, NOT INFERRED FROM THE POINT. Reading a point's depth back
+     * out of its radius works only while the section is a plain rosette: squash it and the radius
+     * stops saying which points are creases — the outward crest and a side crease can land at the
+     * same distance from the axis — so the ribs shade almost flat and the wall reads as smooth
+     * columns. `cos(lobes·a)` is the rib pattern itself, +1 on a crest and −1 in a crease, known
+     * here for free and true at any squash. Linear in the ANGLE round the lobe, which is what stops
+     * a cosine's flat peak painting the middle half of every rib the same value. */
+    shade.push(Math.abs(((a * lobes / Math.PI) % 2 + 2) % 2 - 1));   // 0 on a crest, 1 in a crease
   }
+  out.shade = shade;
   return out;
 }
 
@@ -191,6 +224,10 @@ export const NOZZLES = [
   { key: 'rose8',  label: 'Piped Rope',  hint: 'Measured: 8 rounded ribs',   profile: rosetteProfile(8, 0.18), twist: 1,   ruffle: 1 },
   { key: 'rose8d', label: 'Piped Deep',  hint: 'Same ribs, firmer pressure', profile: rosetteProfile(8, 0.26), twist: 1,   ruffle: 1 },
   { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.18), twist: 1,  ruffle: 1 },
+  /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
+   * stands off the cake is the same number that shapes its section, and they must not drift. */
+  { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, ruffle: 1, squash: 0.55 },
+  { key: 'rose12w', label: 'Wall Fine', hint: 'Twelve ribs, spread',        profile: rosetteProfile(12, 0.16, 20, 0.55), twist: 1, ruffle: 1, squash: 0.55 },
   /* ⚠️ TWELVE IS WHAT PUTS FOUR RIBS ON THE FACE. A stroke is a tube, so a viewer sees a little over
    * half of it and only the middle ±60° reads as ribs — the rest is silhouette, and on a wall the
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
@@ -400,8 +437,25 @@ function fixedUpFrames(samples, up) {
 //   opts.twistPerLen  — radians of rib rotation per unit arc length
 //   opts.ruffleAmp    — fractional radius swell (0 = off)
 //   opts.ruffleFreq   — radians of squeeze phase per unit arc length
-function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
-  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0 } = opts;
+/* ⚠️ THE CREASE SHADE IS BAKED HERE, FROM THE PROFILE, and every previous attempt measured it from
+ * the finished vertex's distance to the stroke's axis instead — which is a guess, and it was wrong
+ * in a new way each time the stroke stopped being a constant-radius tube:
+ *
+ *   the end caps          their apex sits ON the axis, so the "crease" range started at zero
+ *   the lift-off taper    the last diameter thins to a third, so its whole surface reads as deeper
+ *                         than a crease and comes out BLACK
+ *   `swell`               3% of breathing puts a rope's crease just behind the nominal one, which
+ *                         painted a dark smear down the middle of every other rope
+ *   `vary`                each rope on a wall is a different thickness, so one range cannot fit them
+ *   the foot flare        same again, at the other end
+ *
+ * None of that is a depth cue; it is the stroke changing size. What actually says how deep a point
+ * sits is WHERE IT IS ROUND THE SECTION, and the sweep knows that exactly — the profile is
+ * normalised to a maximum radius of 1, so a profile point's own radius IS the answer, at every
+ * radius the stroke is ever scaled to. No world positions, no ranges to get wrong.
+ */
+function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = null) {
+  const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0, ao = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -425,6 +479,25 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
   const frames = up ? fixedUpFrames(samples, up) : rmFrames(samples);
   const P = profile.length;
   const base = pos.length / 3;
+
+  /* One shade per profile point, reused for every ring. ⚠️ The ramp is linear in the ANGLE round
+   * the lobe, not in the radius: a rosette's radius is flat at its peak, so a radius-linear ramp
+   * paints the middle half of every rib the same value and the rib reads as a plateau with a cliff
+   * at each side. The normalised radius IS (cos φ + 1)/2, so acos recovers the angle. */
+  let shade = null;
+  if (col && ao > 0) {
+    if (profile.shade) {
+      shade = profile.shade.map(t => 1 - ao * t);          // the tip carried its own crease pattern
+    } else {
+      let rMin = Infinity, rMax = 0;
+      for (const [px, py] of profile) { const r = Math.hypot(px, py); if (r < rMin) rMin = r; if (r > rMax) rMax = r; }
+      const span = Math.max(1e-6, rMax - rMin);
+      shade = profile.map(([px, py]) => {
+        const u = Math.min(1, Math.max(0, (Math.hypot(px, py) - rMin) / span));
+        return 1 - ao * (Math.acos(2 * u - 1) / Math.PI);
+      });
+    }
+  }
 
   // Cumulative arc length per sample, so twist/ruffle advance in real space (CatmullRom
   // samples are even in parameter, not distance).
@@ -459,6 +532,7 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
       const ax = profile[j][0] * r, ay = profile[j][1] * r;
       const px = ax * cs - ay * sn, py = ax * sn + ay * cs;  // rotate in the N/B plane
       pos.push(C.x + N.x * px + B.x * py, C.y + N.y * px + B.y * py, C.z + N.z * px + B.z * py);
+      if (col) { const k = shade ? shade[j] : 1; col.push(k, k, k); }
     }
   }
   /* ⚠️ THE WINDING, AND IT WAS INSIDE OUT. For a right-handed (T, N, B) frame and a profile wound
@@ -477,18 +551,21 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}) {
   const r0 = radiusAt(0, segs, 0, arc[segs]), rn = radiusAt(segs, segs, arc[segs], arc[segs]);
   const sC = samples[0].clone().addScaledVector(frames.tangents[0], -r0 * 0.6);
   const eC = samples[segs].clone().addScaledVector(frames.tangents[segs], rn * 0.6);
-  const sI = pos.length / 3; pos.push(sC.x, sC.y, sC.z);
-  const eI = pos.length / 3; pos.push(eC.x, eC.y, eC.z);
+  /* The caps' two apex vertices sit on the axis and belong to no lobe; they take the crest value,
+   * which is what the tip of a blunt end actually catches. */
+  const sI = pos.length / 3; pos.push(sC.x, sC.y, sC.z); if (col) col.push(1, 1, 1);
+  const eI = pos.length / 3; pos.push(eC.x, eC.y, eC.z); if (col) col.push(1, 1, 1);
   for (let j = 0; j < P; j++) {   // end caps, wound to match the tube above
     idx.push(sI, base + j, base + (j + 1) % P);
     idx.push(eI, base + segs * P + (j + 1) % P, base + segs * P + j);
   }
 }
 
-function finishGeo(pos, idx) {
+function finishGeo(pos, idx, col = null) {
   if (!pos.length) return null;
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  if (col && col.length === pos.length) geo.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
@@ -521,12 +598,22 @@ export function mergePenGeometries(input) {
   }
   const pos = new Float32Array(posCount * 3);
   const nor = new Float32Array(posCount * 3);
+  /* ⚠️ COLOUR HAS TO COME THROUGH, and it silently did not. This merge copied position and normal
+   * and nothing else, which was invisible for as long as the crease shading was baked onto the
+   * FINISHED wall — the attribute was written after the merge, so there was nothing to lose. The
+   * moment each rope started carrying its own shade (see pushSweep, which is the only place that
+   * can know it once a stroke tapers or breathes), every piped wall went out with no shading at
+   * all, and three separate corrections to the ramp in a row changed the render by nothing. Carried
+   * only when EVERY part has one: a half-filled colour buffer would tint the rest black. */
+  const withCol = list.every(g => g.getAttribute('color'));
+  const col = withCol ? new Float32Array(posCount * 3) : null;
   const idx = posCount > 65535 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
   let at = 0, ai = 0;
   for (const g of list) {
     const p = g.getAttribute('position'), n = g.getAttribute('normal'), ix = g.getIndex();
     pos.set(p.array.subarray(0, p.count * 3), at * 3);
     if (n) nor.set(n.array.subarray(0, n.count * 3), at * 3);
+    if (col) { const c = g.getAttribute('color'); col.set(c.array.subarray(0, c.count * 3), at * 3); }
     if (ix) for (let k = 0; k < ix.count; k++) idx[ai++] = ix.getX(k) + at;
     else    for (let k = 0; k < p.count; k++)  idx[ai++] = k + at;
     at += p.count;
@@ -535,6 +622,7 @@ export function mergePenGeometries(input) {
   const out = new THREE.BufferGeometry();
   out.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   out.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+  if (col) out.setAttribute('color', new THREE.BufferAttribute(col, 3));
   out.setIndex(new THREE.BufferAttribute(idx, 1));
   return out;
 }
@@ -552,7 +640,7 @@ const toVec = p => (p instanceof THREE.Vector3 ? p : new THREE.Vector3(p[0], p[1
  * stroke from the same WORLD direction, so which lobe faces the viewer depends on where the rope sits
  * round the cake, and the wall comes out patchy — some ropes a wide flat panel, their neighbours a
  * thin line. Rolling each rope by its own angle makes every one present the same face. */
-export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null, roll = 0) {
+export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = null, upVec = null, roll = 0, ao = 0) {
   const noz = NOZZLE_BY_KEY[nozzleKey] || NOZZLE_BY_KEY[DEFAULT_NOZZLE];
   const feel = feelOverride ? { ...PEN_FEEL, ...feelOverride } : PEN_FEEL;
   let pts = points.map(toVec).filter((p, i, a) => i === 0 || p.distanceTo(a[i - 1]) > 1e-4);
@@ -573,6 +661,8 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     up: noz.flat ? (upVec ? toVec(upVec) : new THREE.Vector3(0, 1, 0)) : null,
     // A slit's own lean, plus whatever the caller asked for (see the note on `roll` above).
     roll: roll + (noz.flat ? (feel.leanDeg * Math.PI) / 180 : 0),
+    // How dark this tip's creases go. 0 leaves the stroke unshaded and writes no colour attribute.
+    ao,
   };
 
   /* The hand's own speed, mapped onto the swept samples. pushSweep resamples the control points
@@ -611,8 +701,9 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     return thickness * f;
   };
 
-  pushSweep(pos, idx, pts, noz.profile, radiusAt, opts);
-  return finishGeo(pos, idx);
+  const col = ao > 0 ? [] : null;
+  pushSweep(pos, idx, pts, noz.profile, radiusAt, opts, col);
+  return finishGeo(pos, idx, col);
 }
 
 // Build one star heap: sweep the nozzle profile UP the surface normal from `point`, tapering

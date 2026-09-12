@@ -5,7 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
-import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from '../src/designer/geometry/creamPen.js';
+import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL } from '../src/designer/geometry/creamPen.js';
 import { ropeSection, pipedBodyRadius, pipedParams, buildStyledWall, buildStyledTop, bakeCreaseAO } from '../src/designer/geometry/creamWall.js';
 import { styleDef, CREAM_STYLES } from '../src/designer/creamStyles.js';
 import { frostingDef } from '../src/designer/frostings.js';
@@ -143,9 +143,19 @@ function Stroke({ x = 0, z = 0, roll: r }) {
   /* ⚠️ BOTTOM TO TOP. `buildPipingStroke` puts the foot flare at a stroke's START and the lift-off
    * at its END, and on a cake side the fat foot belongs at the board. */
   const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, -1.0 + i * 0.5, z));
-  const geo = buildPipingStroke(pts, noz, t, { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 }, null, r);
+  /* ⚠️ THE PEN'S OWN LIFE STAYS ON, and switching it off is what made this page's stroke read as an
+   * extruded plastic column beside the photograph: dead-straight parallel ribs, a hard faceted cone
+   * at each end. Only `speedWidth` is off, and only because it reads the SPACING of hand-captured
+   * points — these are machine-even, so it would compute a flat 1. Twist, swell and the lift-off are
+   * the difference between a rope and a rod, and each has a knob here so it can be swept. */
+  const geo = buildPipingStroke(pts, noz, t, {
+    speedWidth: 0,
+    twistTurnsPerDia: Number(q.get('twist') ?? PEN_FEEL.twistTurnsPerDia),
+    swellAmp: Number(q.get('swell') ?? PEN_FEEL.swellAmp),
+    tailDias: Number(q.get('tail') ?? PEN_FEEL.tailDias),
+    footDias: Number(q.get('foot') ?? PEN_FEEL.footDias),
+  }, null, r, Number(q.get('ao') ?? 1.0));
   if (!geo) return null;
-  bakeAO(geo, t, Number(q.get('ao') ?? 0.8));
   return <mesh geometry={geo} castShadow receiveShadow>
     <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;
 }
@@ -194,8 +204,23 @@ function StyledTier() {
   </group>;
 }
 
+/* ⚠️ THE REFERENCE SITS IN THE PAGE, so a render cannot be looked at without it. Two days went by
+ * with the photograph in one window and the render in another, and the comparing done by hand —
+ * by Sandeep, who had to paste the two windows side by side to show me differences I had the
+ * images to see myself. `?ref=1` is on by default for a single stroke, which is the one view that
+ * is directly comparable to the photo. `?ref=0` turns it off. */
+const showRef = q.get('ref') !== '0' && !onCake && !styleKey && !stack;
+
 createRoot(document.getElementById('root')).render(
-  <div style={{ height: '100%', background: '#fff' }}>
+  <div style={{ height: '100%', background: '#fff', display: 'flex' }}>
+    {showRef && (
+      <div style={{ width: '38%', borderRight: '1px solid #eee', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', padding: 12 }}>
+        <img src="/ref-piped-stroke.png" alt="reference: one piped stroke"
+             style={{ maxHeight: '96%', maxWidth: '100%', objectFit: 'contain' }} />
+      </div>
+    )}
+    <div style={{ flex: 1, minWidth: 0 }}>
     <Canvas camera={styleKey ? { position: [Number(q.get('dist') || 3.4), Number(q.get('eye') || 0.8), 0], fov: Number(q.get('fov') || 34) }
       : onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
@@ -228,5 +253,6 @@ createRoot(document.getElementById('root')).render(
       </> : <Stroke roll={roll} />}
       {q.get('orbit') === '1' && <OrbitControls />}
     </Canvas>
+    </div>
   </div>
 );

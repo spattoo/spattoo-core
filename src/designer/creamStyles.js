@@ -173,17 +173,16 @@ export const CREAM_STYLES = {
    * overlap 0.85 a rope hides 46% of itself in its neighbour, which is the whole reason the wall
    * kept coming out as a lampshade of thin lines. 0.5in at 0.85 gives a stroke of 14.8:1.
    *
-   * ⚠️ THE OVERLAP IS 0.5, NOT THE 0.08 THE ASPECT ALONE ASKS FOR, and that is a trade made with
-   * eyes open. Round ropes standing tangent on a wall leave a V-shaped channel between every pair
-   * that you can see all the way to the bottom of; at the calibrated crease shade those channels
-   * read as slots cut in the tier. Closing them costs some of the 4.35 — a visible stroke is 5:1
-   * here rather than 4.35:1 — and a slot is the worse error. The honest fix is a section SQUASHED
-   * against the wall rather than a circular tube (a rope piped onto a surface spreads); the
-   * measured mesh is near-round because it was piped free-standing, not onto anything.
+   * ⚠️ THE TIP IS A SPREAD ONE (`rose8w`), and that is what lets the overlap go back to nearly
+   * nothing. Round tubes on a cylinder pose a choice with no good side: loose enough to show their
+   * ribs and they leave slots you can see to the body through; tight enough to close the slots and
+   * each rope shows only a strip around its crest, which is "only one elevation per vertical". A
+   * section squashed against the wall meets its neighbour at full sideways width AND presents a
+   * wide face, so both go away at once. See `squash` in creamPen.
    */
   piped_rope: {
-    label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'rose8',
-    params: pipedParams({ width: 1.2, overlap: 0.5, ao: 1.0, swell: 0.03, vary: 0.08, wobble: 0.25 }),
+    label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'rose8w',
+    params: pipedParams({ width: 1.0, overlap: 0.05, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
   },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',

@@ -130,11 +130,16 @@ const ropeHash = (i) => {
  * `overlap` lays them CLOSER than their own width, the way a hand does; it does not fatten them.
  * The spines ride the (radius − thickness) circle, which puts the crest on the tier's radius.
  */
-export function ropeSection(radius, { width, overlap }) {
+export function ropeSection(radius, { width, overlap, nozzle }) {
   const thickness = Math.max(1e-4, width * INCH) / 2;
+  /* ⚠️ `w` IS SIDEWAYS AND `d` IS OUT OF THE WALL, and they stopped being the same number when the
+   * section learned to spread (see `squash` in creamPen). The nozzle's width still sets how much
+   * cake one rope covers — that is what a baker buys a tip for — but a spread rope only stands `d`
+   * proud of the side, so that is what the body radius and the centreline must use. */
+  const squash = (NOZZLE_BY_KEY[nozzle] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).squash ?? 1;
   const spacing = 2 * thickness / (1 + overlap);
   const ropes = Math.max(6, Math.round(TAU * (radius - thickness) / spacing));
-  return { thickness, w: thickness, d: thickness, ropes };
+  return { thickness, w: thickness, d: thickness * squash, ropes };
 }
 
 // The stroke's DEPTH — how far it stands off the cake. Kept as its own name because it is what the
@@ -160,8 +165,8 @@ export function ropeRadius(radius, p) {
  *   press 1   half of it is in the frosting
  */
 export function pipedBodyRadius(radius, p) {
-  const { w } = ropeSection(radius, p);
-  return radius - 2 * w + p.press * w;
+  const { d } = ropeSection(radius, p);
+  return radius - 2 * d + p.press * d;
 }
 
 /* Where each rope's centreline runs. The centres ride a circle OUTSIDE the tier's nominal radius,
@@ -263,8 +268,14 @@ export function bakeCreaseAO(geo, crest, floor, ao, cx = 0, cz = 0) {
      * got — a 40% grey at ao 0.6, which nobody noticed, and pure black once ao was calibrated to
      * 1.0, so the sliver of cake visible down each channel between two ropes read as a hole cut in
      * the tier. It gets its own shade, and the ropes keep their full range. */
-    if (d < 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = AO_BODY; continue; }
-    const u = Math.min(1, d);
+    /* ⚠️ NOT `d < 0`, and the difference is a dark smear down the middle of every other rope. A rope
+     * BREATHES along its length (see `swell`), so where it runs thin its own crease falls a little
+     * behind the crease radius this range was computed from — 3% of swell puts it at about d = −0.1,
+     * and painting that with the cake's flat grey blotches the rope. The body is nowhere near: it
+     * sits a whole rope's diameter in, which is about five and a half crest-to-crease depths, so
+     * anything past one depth behind the crease line can only be cake. */
+    if (d < -1) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = AO_BODY; continue; }
+    const u = Math.min(1, Math.max(0, d));
     const phi = Math.acos(2 * u - 1) / Math.PI;                        // 0 on a crest, 1 in a crease
     const k = 1 - ao * phi;
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
@@ -352,21 +363,34 @@ function buildPipedWall(radius, height, p) {
   for (let i = 0; i < ropes; i++) {
     const theta = -Math.PI + TAU * (i + 0.5 + p.vary * 0.4 * (ropeHash(i + 700) - 0.5)) / ropes;
     const ti = thickness * (1 + p.vary * 0.5 * ropeHash(i));
-    /* ⚠️ ROLLED TO FACE OUTWARD. `rmFrames` starts every vertical stroke from the same world
-     * direction, so without this the lobe a rope shows the viewer depends on where it sits round the
-     * cake — the wall comes out patchy, some ropes a wide flat panel and their neighbours a thin
-     * line. It is invisible on a freehand squiggle and unmissable on thirty-six parallel ones. */
+    /* ⚠️ ROLLED TO FACE OUTWARD, AND THE SIGN IS NEGATIVE. `rmFrames` starts every vertical stroke
+     * from the same world direction, so without a roll the lobe a rope shows the viewer depends on
+     * where it sits round the cake — the wall comes out patchy, some ropes a wide flat panel and
+     * their neighbours a thin line, which is invisible on a freehand squiggle and unmissable on
+     * thirty-six parallel ones.
+     *
+     * ⚠️ `+theta` was wrong for four months and could not be seen. `pushSweep` rotates the profile
+     * the OPPOSITE way round the tier, so `+theta` only lines the section up where the error is a
+     * whole multiple of the section's own symmetry — every 45° for an 8-lobe tip, which is why a
+     * ROUND rope looked fine and only ever half-fixed the patchiness this comment was written for.
+     * Give the same tip a section that is not 8-fold symmetric — one spread against the wall, which
+     * is only symmetric about ONE axis — and it shows up as ropes standing on edge between the
+     * eight angles where it happens to come right. Measured: the outward extent of a spread rope is
+     * 0.0825 at every theta with the sign negative, and wanders to 0.15 between multiples of 45°
+     * with it positive. */
     parts.push(buildPipingStroke(
-      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel(i), null, theta));
+      ropeCentreline(theta, d, d, radius, height, sway0, i), p.nozzle, ti, feel(i), null, -theta, p.ao));
   }
-  /* The visible surface runs from a rope's own crease out to its crest, and those come straight from
-   * the tip: the profile's smallest radius is where a crease sits. */
-  let rMin = 1;
-  for (const [px, py] of (NOZZLE_BY_KEY[p.nozzle] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).profile) {
-    rMin = Math.min(rMin, Math.hypot(px, py));
+  /* ⚠️ THE ROPES SHADE THEMSELVES NOW — see pushSweep. What is left is the BODY and the collar,
+   * which are not swept and are not creases either: they are the cake behind the piping, and giving
+   * them the ramp's last step is what once painted the sliver visible down each channel pure black.
+   * They get one flat shade, dark enough to sit behind cream and never a hole. */
+  for (const g of parts) {
+    if (g?.getAttribute?.('color')) continue;
+    const n = g.getAttribute('position').count, c = new Float32Array(n * 3).fill(AO_BODY);
+    g.setAttribute('color', new THREE.BufferAttribute(c, 3));
   }
-  return bakeCreaseAO(mergeWithCylindricalUv(parts, radius, height),
-    radius, radius - thickness * (1 - rMin), p.ao);
+  return mergeWithCylindricalUv(parts, radius, height);
 }
 
 // Bilinear sample of a height field at (fu, fv) given in TILE units, wrapping to [0,1) on both axes.
