@@ -3,6 +3,12 @@ import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures
 import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
 import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from './creamPen.js';
 import { NOMINAL_MM_PER_UNIT } from '../constants.js';
+import { pipingPerimeters, rectEdgeRing } from './surface.js';
+import { buildRoundedPrism, buildOutlinePrism, insetPolygon } from './prism.js';
+/* ⚠️ PURE GEOMETRY DESPITE THE FOLDER — `ringPositions.js` says so in its own first line, and it is
+ * the ONE distribution the piping rings use on every shape (INVARIANTS #3). The alternative to
+ * importing it is a second walk round a cake, which is the thing that must not exist. */
+import { perimeterRing } from '../canvas/ringPositions.js';
 
 // One inch, in world units. ⚠️ Asked of the scale the rest of the app already uses (an 8" cake is
 // 2.4 units across) rather than declared again here — a second opinion about how big an inch is
@@ -504,6 +510,66 @@ function strokeInstances(src, anchors, height, p, L) {
     out.push(g);
   }
   return out;
+}
+
+/* The whole modelled wall for a tier that is NOT round: where the strokes go, the strokes, and the
+ * lid that closes them — everything `wall: 'strokes'` needs on a rectangle, a heart or a number.
+ *
+ * ⚠️ IT LIVES HERE, NOT IN THE RENDERER. It grew inside CakeTier because that is where the tier's
+ * body is built, and it stayed there long enough to hide a real bug: the rect/outline branch below
+ * had been taken only half-way, so every normal on a rectangle pointed into the cake and the cream
+ * stood a third proud of it. The round wall has always built its own body, foot, lid and strokes in
+ * this file; the non-round one building half of itself in a React component was the asymmetry that
+ * let them disagree. ⚠️ AND THE NEXT MESH-BACKED STYLE SHOULD BE A ROW PLUS A GLB — if adding one
+ * means editing the renderer, this seam has failed.
+ *
+ * Returns { wall, lid, inset } — the strokes, the icing on top, and how far the caller must pull the
+ * tier's own body in so the cream sits ON the cake instead of growing it. The body itself stays the
+ * caller's: a non-round tier builds its own (prismGeo, with its rolled rim and its grain), and this
+ * has no business rebuilding that.
+ */
+export function buildStrokeWallOnShape(shp, height, p) {
+  const src = p.strokeGeo;
+  if (!src) return null;                                 // mesh still loading — smooth wall, not a stub
+  if (!src.boundingBox) src.computeBoundingBox();
+  const size = new THREE.Vector3();
+  src.boundingBox.getSize(size);
+  const S = strokeSizing(height, size, p);
+
+  /* Anchors: the strokes' axes ride a path inset half a stroke-depth from the outline, so their
+   * crests land ON it — the same rule the round wall follows, stated once in strokeWallLayout.
+   *
+   * ⚠️ A RECT TAKES `rectEdgeRing`, AN OUTLINE TAKES `perimeterRing`, and taking only half of that
+   * branch is a real bug with a quiet symptom. `roundedRectPerimeter` walks CLOCKWISE while
+   * `perimeterRing` documents "CCW winding ⇒ the right-hand perpendicular points out" — so on a
+   * rectangle every normal comes back pointing INTO the cake: the inset became an OUTSET and each
+   * stroke faced backwards. Measured, the cream stood 23% proud of the cake in x and 31% in z (one
+   * whole stroke width on each side) while round and heart were within 1%. Nothing threw and every
+   * spacing test passed. `ringPositions` has always branched exactly here, for exactly this reason —
+   * this is that branch, not a new one.
+   *
+   * ⚠️ EVERY CONTOUR WALKED SEPARATELY (pipingPerimeters, not pipingPerimeter): a number cake is
+   * several closed loops and a stroke must never bridge the gap between two digits. */
+  const off = -S.wz / 2 + p.press * S.wz / 2;
+  const ring = shp.kind === 'rect'
+    ? rectEdgeRing(shp, off, S.spacing, 0)
+    : pipingPerimeters(shp).flatMap(perim => perimeterRing(perim, off, S.spacing, 0));
+  const anchors = ring.map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY }));
+  const wall = buildStrokeWallOn(anchors, height, p);
+  if (!wall) return null;
+
+  /* ⚠️ THE LID — without it a piped cake has a WELL in its top; see strokeLid for the whole of that
+   * reasoning, including why its edge tucks behind the piping rather than reaching the crest. Here
+   * it is a second slab rather than another part of one merged wall, because a non-round tier builds
+   * its own body and there is no cylinder to add it to. */
+  const lidH = STROKE_LID_FRAC * S.wz, lidIn = STROKE_LID_INSET * S.wz;
+  const lid = shp.kind === 'rect'
+    ? buildRoundedPrism(Math.max(0.01, shp.halfW - lidIn), Math.max(0.01, shp.halfD - lidIn), lidH,
+        Math.max(0, shp.cornerR - lidIn))
+    : shp.kind === 'outline' ? buildOutlinePrism(insetPolygon(shp.outline, lidIn), lidH, 0) : null;
+  lid?.translate(0, height - lidH, 0);
+
+  return { wall, lid, inset: S.wz * (1 - 0.5 * p.press) };
 }
 
 /* ⚠️ THE STROKES FOR A TIER THAT IS NOT ROUND — a rectangle, a heart, a number. Every cream style

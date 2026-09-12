@@ -17,7 +17,7 @@ import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTe
 import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
-import { buildStyledWall, buildStyledTop, buildStrokeWallOn, strokeSizing, strokeWallParams, STROKE_LID_FRAC, STROKE_LID_INSET } from '../geometry/creamWall.js';
+import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
@@ -30,6 +30,12 @@ import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLea
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
 import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
+/* The extruded-footprint builders. ⚠️ They MOVED to geometry/prism.js and are re-exported here:
+ * they are pure geometry, the modelled cream wall needs them to cut its lid to a shape, and a
+ * geometry file cannot import this one without a cycle. Re-exported so every existing importer
+ * (previewCake) keeps its path. */
+import { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism, insetPolygon } from '../geometry/prism.js';
+export { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism };
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 // ⚠️ EXPORTED because the hand-piping path needs the IDENTICAL preparation, not a similar one.
@@ -1137,169 +1143,6 @@ function surfaceNormalMap(key, ctx) {
 // Only the 4 vertical corners are rounded (radius r); the top and bottom stay flat and the
 // footprint keeps its full width×depth — unlike drei RoundedBox, which rounds every edge
 // (pillowing the top and shrinking the faces). Spans y ∈ [0, height]. cr=0 → sharp box.
-export function buildRoundedPrism(halfW, halfD, height, r) {
-  const cr = Math.max(0, Math.min(r, halfW, halfD));
-  const s = new THREE.Shape();
-  s.moveTo(-halfW + cr, -halfD);
-  s.lineTo(halfW - cr, -halfD);
-  s.quadraticCurveTo(halfW, -halfD, halfW, -halfD + cr);
-  s.lineTo(halfW, halfD - cr);
-  s.quadraticCurveTo(halfW, halfD, halfW - cr, halfD);
-  s.lineTo(-halfW + cr, halfD);
-  s.quadraticCurveTo(-halfW, halfD, -halfW, halfD - cr);
-  s.lineTo(-halfW, -halfD + cr);
-  s.quadraticCurveTo(-halfW, -halfD, -halfW + cr, -halfD);
-  const geo = new THREE.ExtrudeGeometry(s, { depth: height, bevelEnabled: false, curveSegments: 8 });
-  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
-  return geo;
-}
-
-// Cake body for a GLYPH cake (number OR letter): the glyph(s) — THREE.Shape[] with their counters
-// attached — extruded straight up, exactly like the sheet's rounded rect. ExtrudeGeometry honours each
-// shape's `.holes`, so the counter in 0/4/6/8/9 and A/B/D/O/P/Q/R comes through, and it merges a
-// multi-glyph array ("21", "MOM") into one body. Charset-agnostic — one builder for both families.
-export function buildGlyphPrism(shapes, height) {
-  const geo = new THREE.ExtrudeGeometry(shapes, { depth: height, bevelEnabled: false, curveSegments: 8 });
-  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
-  return geo;
-}
-
-// Cake body for ANY authored footprint (heart, butterfly, hexagon…): the shape's own outline swept up,
-// with the top edge rolled over by `fillet` — the same rounded rim the round path gets from the
-// frosting's `edge: {kind:'round'}` (that is where the fillet comes from; it is not a per-shape knob).
-//
-// Built by hand rather than with THREE.ExtrudeGeometry, for two reasons that both showed up on a cake:
-//   • UVs. ExtrudeGeometry derives side-wall UVs from WORLD coordinates, not an unwrap, so the
-//     buttercream grain landed in overlapping patches — one of which read as a shiny rectangular strip
-//     down the wall. Here `u` is ARC LENGTH around the outline and `v` is height: the honest unwrap, and
-//     the same coordinate side-decor placement uses.
-//   • Normals. Each wall segment is its own quad with its own outward normal, so a hexagon keeps crisp
-//     corners while a 160-segment heart still reads smooth. Averaging normals around the ring (what
-//     computeVertexNormals would do) would round a hexagon's corners off.
-export function buildOutlinePrism(outline, height, fillet = 0) {
-  const n = outline.length;
-  const f = Math.max(0, Math.min(fillet, height * 0.45));
-  const STEPS = f > 1e-4 ? 6 : 0;               // quarter-arc segments in the rolled rim
-
-  // Each ring is the outline inset by `inset`, sitting at `y`, with its wall normal tilted by `slope`
-  // (0 = vertical wall, π/2 = facing straight up at the top of the roll).
-  const rings = [{ inset: 0, y: 0, slope: 0 }, { inset: 0, y: height - f, slope: 0 }];
-  for (let i = 1; i <= STEPS; i++) {
-    const a = (i / STEPS) * (Math.PI / 2);
-    rings.push({ inset: f * (1 - Math.cos(a)), y: height - f + f * Math.sin(a), slope: a });
-  }
-  const ringPts = rings.map(r => (r.inset > 1e-6 ? insetPolygon(outline, r.inset) : outline));
-
-  // Arc length around the base outline → the wall's u.
-  const uAt = [0];
-  for (let i = 0; i < n; i++) {
-    const a = outline[i], b = outline[(i + 1) % n];
-    uAt.push(uAt[i] + Math.hypot(b.x - a.x, b.z - a.z));
-  }
-  const perim = uAt[n] || 1;
-
-  const pos = [], nor = [], uv = [];
-  const push = (p, y, nx, ny, nz, u, v) => {
-    pos.push(p.x, y, p.z); nor.push(nx, ny, nz); uv.push(u, v);
-  };
-
-  // ── Wall + rolled rim: one quad per (segment × ring gap) ─────────────────────
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    const a = outline[i], b = outline[j];
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz) || 1;
-    const nx = dz / len, nz = -dx / len;                 // outward normal of THIS segment (CCW winding)
-    const u0 = uAt[i] / perim, u1 = uAt[i + 1] / perim;
-
-    for (let r = 0; r < rings.length - 1; r++) {
-      const lo = rings[r], hi = rings[r + 1];
-      const lp = ringPts[r], hp = ringPts[r + 1];
-      const cl = Math.cos(lo.slope), sl = Math.sin(lo.slope);
-      const ch = Math.cos(hi.slope), sh = Math.sin(hi.slope);
-      const vl = lo.y / height, vh = hi.y / height;
-
-      // Two triangles: (lo_i, hi_j, lo_j) and (lo_i, hi_i, hi_j).
-      //
-      // The vertex ORDER is what the GPU culls on — the `normal` attribute above only lights the face,
-      // it cannot make a back-facing triangle visible. The outline is wound CCW in the (x, z) plane, and
-      // sweeping that order upward produces triangles whose winding normal points INWARD: the body was
-      // built inside-out, so FrontSide culling removed every near face and you saw through the cake to
-      // the inner surface of the far wall. Walking the quad the other way round puts the winding where
-      // the normals always claimed it was.
-      push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
-      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
-      push(lp[j], lo.y, nx * cl, sl, nz * cl, u1, vl);
-
-      push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
-      push(hp[i], hi.y, nx * ch, sh, nz * ch, u0, vh);
-      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
-    }
-  }
-
-  // ── Caps ─────────────────────────────────────────────────────────────────────
-  // Own vertices, own flat normals — sharing them with the wall would average the two and bevel the
-  // silhouette. The top cap is the innermost ring (the rim has already rolled inward by `f`).
-  const cap = (pts, y, up) => {
-    const contour = pts.map(p => new THREE.Vector2(p.x, p.z));
-    const faces = THREE.ShapeUtils.triangulateShape(contour, []);
-    const ny = up ? 1 : -1;
-    for (const t of faces) {
-      // triangulateShape winds CCW in the flat (x, z) contour it was handed; laid back into a y-up world
-      // that faces DOWN, so it is the TOP cap that needs reversing and the base that takes it as-is. The
-      // reverse of this was the same inside-out error the wall had: the lid faced into the cake.
-      const tri = up ? [t[0], t[2], t[1]] : t;
-      for (const k of tri) {
-        const p = pts[k];
-        push(p, y, 0, ny, 0, 0.5 + p.x * 0.5, 0.5 + p.z * 0.5);
-      }
-    }
-  };
-  cap(ringPts[ringPts.length - 1], height, true);
-  cap(outline, 0, false);
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geo.computeBoundingSphere();
-  return geo;
-}
-
-// The outline pulled INWARD by `d`, each vertex moving along the bisector of its two edge normals. Used
-// for the rolled rim. A true polygon offset would also dissolve edges that collapse — but `d` here is a
-// rim fillet (a few percent of the cake), so a bisector step is exact enough and cannot self-intersect
-// at that scale.
-function insetPolygon(pts, d) {
-  const n = pts.length;
-  const seg = [];
-  for (let i = 0; i < n; i++) {
-    const a = pts[i], b = pts[(i + 1) % n];
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz) || 1;
-    seg.push({ nx: dz / len, nz: -dx / len });           // outward
-  }
-  return pts.map((p, i) => {
-    const prev = seg[(i - 1 + n) % n], next = seg[i];
-    const sx = prev.nx + next.nx, sz = prev.nz + next.nz;
-    const len = Math.hypot(sx, sz);
-    // A near-cusp: the two edge normals oppose, so there IS no inward direction. Leave the vertex where
-    // it is rather than sending it somewhere arbitrary — an arbitrary answer is what crossed the rim
-    // over itself and left an X on the cake. (Outlines round their own cusps; this is the backstop.)
-    if (len < 0.2) return { ...p };
-    const nx = sx / len, nz = sz / len;
-    // Step along the bisector far enough that both EDGES move in by d (1/cos of the half-angle), capped
-    // so a sharp corner can't shoot the vertex across the shape.
-    const cos = Math.max(0.5, nx * next.nx + nz * next.nz);
-    return { x: p.x - nx * (d / cos), z: p.z - nz * (d / cos) };
-  });
-}
-
-// Fondant-draped ROUND tier: a solid of revolution whose top edge is a rounded fillet (the fondant
-// sheet folds over the rim instead of a sharp 90° tin edge). Profile is revolved around Y, spanning
-// y ∈ [0, height]: flat bottom disk → straight wall → quarter-arc top edge → flat top disk. `fillet`
-// is the edge radius in world units. Replaces the cylinder+lid for round fondant tiers; the single
-// mesh means the vertical gradient and grain flow over the rounded edge with no separate cap.
 function buildRoundedTopCylinder(radius, height, fillet, radial = 64) {
   const r = Math.max(0, Math.min(fillet, radius * 0.9, height * 0.5));
   const pts = [
@@ -1661,48 +1504,13 @@ export default function CakeTier({
    *
    * It is computed HERE, above the body, because the body depends on it: the cake's own side has to
    * be inset by a stroke's depth so the cream sits ON it rather than growing the cake. */
-  const strokeWall = useMemo(() => {
-    if (!strokeGeo || wallKey !== 'strokes' || !isPrism) return null;
-    const p = strokeWallParams(styleVals);
-    const size = new THREE.Vector3();
-    if (!strokeGeo.boundingBox) strokeGeo.computeBoundingBox();
-    strokeGeo.boundingBox.getSize(size);
-    const S = strokeSizing(height, size, p);
-    /* Anchors: the strokes' axes ride a path inset half a stroke-depth from the outline, so their
-     * crests land ON it — the same rule the round wall follows, stated once in strokeWallLayout.
-     *
-     * ⚠️ A RECT TAKES `rectEdgeRing`, AN OUTLINE TAKES `perimeterRing`, and taking only half of that
-     * branch is a real bug with a quiet symptom. `roundedRectPerimeter` walks CLOCKWISE while
-     * `perimeterRing` documents "CCW winding ⇒ the right-hand perpendicular points out" — so on a
-     * rectangle every normal comes back pointing INTO the cake: the inset became an OUTSET and each
-     * stroke faced backwards. Measured, the cream stood 23% proud of the cake in x and 31% in z
-     * (one whole stroke width on each side) while round and heart were within 1%. `ringPositions`
-     * has always branched exactly here, for exactly this reason — this is that branch, not a new one.
-     *
-     * ⚠️ EVERY CONTOUR WALKED SEPARATELY (pipingPerimeters, not pipingPerimeter): a number cake is
-     * several closed loops and a stroke must never bridge the gap between two digits. */
-    const off = -S.wz / 2 + p.press * S.wz / 2;
-    const ring = shp.kind === 'rect'
-      ? rectEdgeRing(shp, off, S.spacing, 0)
-      : pipingPerimeters(shp).flatMap(perim => perimeterRing(perim, off, S.spacing, 0));
-    const anchors = ring.map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY }));
-    const geo = buildStrokeWallOn(anchors, height, { ...p, strokeGeo });
-    if (!geo) return null;
-    /* ⚠️ THE LID, at the tier's FULL size — without it a piped cake has a WELL in its top. The body
-     * is inset by a stroke-depth so the cream does not grow the cake, which leaves its top face a
-     * third narrower than the piping around it: from above, a small plate of icing sunk inside a
-     * thick ring of cream, every stroke's inner flank on show. A real piped cake has no such step —
-     * the top is iced flat all the way out and the piping finishes under its edge. Same part the
-     * round wall carries (strokeLid); here it is a second slab because a non-round tier builds its
-     * own body and there is no cylinder to add it to. */
-    const lidH = STROKE_LID_FRAC * S.wz, lidIn = STROKE_LID_INSET * S.wz;
-    const lid = shp.kind === 'rect'
-      ? buildRoundedPrism(Math.max(0.01, shp.halfW - lidIn), Math.max(0.01, shp.halfD - lidIn), lidH, Math.max(0, shp.cornerR - lidIn))
-      : shp.kind === 'outline' ? buildOutlinePrism(insetPolygon(shp.outline, lidIn), lidH, 0) : null;
-    lid?.translate(0, height - lidH, 0);
-    return { geo, lid, inset: S.wz * (1 - 0.5 * p.press), count: anchors.length };
+  const strokeWall = useMemo(
+    () => ((strokeGeo && wallKey === 'strokes' && isPrism)
+      ? buildStrokeWallOnShape(shp, height, { ...strokeWallParams(styleVals), strokeGeo })
+      : null),
     // styleVals is recreated each render; styleSig captures its values. eslint-disable-next-line
-  }, [strokeGeo, wallKey, isPrism, shp, height, styleSig]);
+    [strokeGeo, wallKey, isPrism, shp, height, styleSig],
+  );
   const prismGeo = useMemo(
     () => {
       /* ⚠️ PIPED, THE CAKE'S OWN SIDE MOVES IN — it does not stay put and let the cream grow the cake.
@@ -1939,8 +1747,8 @@ export default function CakeTier({
               built centred on y=0 like the round wall, so they sit at the tier's MIDDLE. */}
           {strokeWall && (
             <TierBody position={[0, yBase + height / 2, 0]} color={color} surf={mat} grainExtent={null}
-              gradient={effGradient} stripes={effStripes} geoSig={strokeWall.geo.uuid} castShadow receiveShadow>
-              <primitive key={strokeWall.geo.uuid} object={strokeWall.geo} attach="geometry" />
+              gradient={effGradient} stripes={effStripes} geoSig={strokeWall.wall.uuid} castShadow receiveShadow>
+              <primitive key={strokeWall.wall.uuid} object={strokeWall.wall} attach="geometry" />
             </TierBody>
           )}
           {strokeWall?.lid && (

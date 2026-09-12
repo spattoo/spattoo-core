@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { tierShape, pipingPerimeters, perimeter, rectEdgeRing } from './surface.js';
 import { perimeterRing } from '../canvas/ringPositions.js';
-import { strokeSizing, strokeWallParams, buildStrokeWallOn } from './creamWall.js';
+import { strokeSizing, strokeWallParams, buildStrokeWallOn, buildStrokeWallOnShape } from './creamWall.js';
 import * as THREE from 'three';
 
 /* ── A modelled wall on a cake that is NOT round ───────────────────────────────
@@ -91,6 +91,26 @@ describe('modelled wall on a shaped tier', () => {
     }
     expect(geo.boundingBox.max.x / fx).toBeLessThan(1.08);
     expect(geo.boundingBox.max.z / fz).toBeLessThan(1.08);
+  });
+
+  /* ⚠️ ONE ENTRY POINT OWNS THE WHOLE SHAPED WALL — anchors, strokes, lid and the inset the caller
+   * must apply to the tier's own body. It grew inside CakeTier, and half a branch left there is what
+   * let a rectangle's strokes face backwards. The next mesh-backed style should be a row plus a GLB;
+   * if adding one means editing the renderer, this seam has failed. */
+  it.each(Object.keys(SHAPES))('hands the renderer a finished wall, a lid and an inset for %s', (key) => {
+    const shp = tierShape(SHAPES[key]);
+    const built = buildStrokeWallOnShape(shp, 1.45, { ...P, strokeGeo: new THREE.BoxGeometry(SIZE.x, SIZE.y, SIZE.z) });
+    if (shp.kind === 'round') { expect(built.lid).toBeNull(); return; }   // round builds its own, merged
+    expect(built.wall.getAttribute('position').count).toBeGreaterThan(0);
+    built.lid.computeBoundingBox();
+    // The lid's top face IS the tier's top, and its edge tucks inside the crest.
+    expect(built.lid.boundingBox.max.y).toBeCloseTo(1.45, 6);
+    expect(built.lid.boundingBox.max.x).toBeLessThan(shp.halfW);
+    expect(built.inset).toBeCloseTo(S.wz, 6);
+  });
+
+  it('builds nothing at all without a mesh', () => {
+    expect(buildStrokeWallOnShape(tierShape(SHAPES.rect), 1.45, { ...P, strokeGeo: null })).toBeNull();
   });
 
   it('builds one merged geometry for the whole wall, and nothing without a mesh', () => {
