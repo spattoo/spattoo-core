@@ -55,6 +55,10 @@ function pipedParams(over = {}) {
      * so burying it buried them. The notches have their own answer: a collar at the foot. */
     { key: 'press',   label: 'Pressed in', min: 0, max: 1, step: 0.05, default: d('press', 0), user: true },
     { key: 'vary',    label: 'Hand vary',   min: 0, max: 0.6, step: 0.02, default: d('vary', 0.34),  user: false },
+    /* How much each rope's own width breathes along its length, as a fraction of it. See the note
+     * in creamWall's `feel`: this is a fraction of the ROPE, so it has to come down as the rope
+     * goes up or the silhouette ripples. */
+    { key: 'swell',   label: 'Hand swell',  min: 0, max: 0.3, step: 0.01, default: d('swell', 0.16), user: false },
     { key: 'wobble',  label: 'Hand wander', min: 0, max: 1,   step: 0.05, default: d('wobble', 0.85), user: false },
     /* The top. ⚠️ NOT PIPED, and not with the wall's tip. The reference cake's top is nearly flat
      * with a few soft rings in it — a palette knife set in the middle of a smoothed top while the
@@ -142,6 +146,33 @@ export const CREAM_STYLES = {
     label: 'Piped — fine ropes', wall: 'piped', top: 'spiral', nozzle: 'star5',
     params: pipedParams({ width: 0.6, overlap: 0.85, press: 0, ao: 0.6, vary: 0.34, wobble: 0.85 }),
   },
+  /* ⚠️ THE MEASURED ONE. Every row above guesses at the cross-section a star tip leaves; this one
+   * does not. A generated mesh of a single real vertical stroke was sliced at nineteen heights and
+   * each r(θ) loop run through a DFT: eight lobes, amplitude 17% of the mean radius, and nothing
+   * above the rib frequency — a pure cosine, not a star polygon, and a cut of 29% where our star5
+   * and star8 cut 50%. The flat facets were also why the ribs read as one merged panel: under this
+   * scene's near-uniform dome a flat face has ONE brightness, so eight of them come out at eight
+   * near-equal whites. A rounded rib sweeps its normal across its own width and always carries a
+   * bright crest and a dark crease. See rosetteProfile in creamPen.js for the numbers.
+   *
+   * AO is lower than the star rows because the measurement says so too: the reference photograph's
+   * creases are soft grey lines, not black ones. The cue is the gradient over each rib.
+   */
+  /* ⚠️ ONE INCH AND BUTTED, i.e. SIXTEEN strokes round a 6" cake — and every piped row above draws
+   * more than sixty. That is not a taste call either. A piped vertical stroke is 4.2 times as tall
+   * as it is wide: measured on a photograph of one (1230px by 290px) and, independently, on a
+   * generated mesh of one (1.901 by 0.456). On a 4" tall tier that fixes the VISIBLE width of a
+   * stroke at 1.2/4.2 ≈ 0.29 world, and the visible width is the SPACING, not the nozzle — at
+   * overlap 0.85 a rope hides 46% of itself in its neighbour, which is the whole reason the wall
+   * kept coming out as a lampshade of thin lines. 0.5in at 0.85 gives a stroke of 14.8:1.
+   *
+   * A little overlap stays because a rosette's widest point faces the viewer, not its neighbour, so
+   * butted exactly they do not quite touch.
+   */
+  piped_rope: {
+    label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'rose8',
+    params: pipedParams({ width: 1.0, overlap: 0.08, ao: 0.55, swell: 0.03, vary: 0.08, wobble: 0.25 }),
+  },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
@@ -187,7 +218,7 @@ export const CREAM_STYLES = {
   },
 };
 
-export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_fine', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
+export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_rope', 'piped_fine', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
 export const DEFAULT_STYLE = 'smooth';
 
 export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_STYLE];

@@ -129,6 +129,49 @@ function petalProfile(n = 36) {
   return [...side, ...side.map(([x, y]) => [-x, y]).reverse()];
 }
 
+/* ── THE SECTION A REAL PIPED STROKE ACTUALLY HAS ───────────────────────────────────────────────
+ *
+ * ⚠️ IT IS A COSINE, AND EVERY SHARP STAR ABOVE IS TOO DEEP AND TOO FACETED. This is not another
+ * guess. A generated mesh of one vertical stroke was sliced at nineteen heights and the resulting
+ * r(θ) loop was run through a DFT. What came back, at every single height:
+ *
+ *     eight lobes, amplitude 17% of the mean radius, and NOTHING above the rib frequency
+ *     (the 16th harmonic 2.5%, the 24th indistinguishable from noise)
+ *
+ * A shape with corners cannot do that — a triangle wave puts 1/9 of its energy in the third
+ * harmonic, and a star polygon more. Zero harmonics means a pure cosine. So the section is
+ *
+ *     r(θ) = 1 + a·cos(lobes·θ),   a ≈ 0.18
+ *
+ * which is a CUT OF 29% between crest and valley, against the 50% our star8 was cutting. Ours was
+ * both twice as deep and made of flat panels.
+ *
+ * ⚠️ AND THE CREASE IS NOT GEOMETRY — IT IS THE VALLEY BEING DARK. The note above rejected a cosine
+ * because it has "no fold anywhere". That was the right observation about the shape and the wrong
+ * conclusion about the cause. The crisp dark line down a photographed stroke is light failing to
+ * reach the bottom of a groove; it is shading, not a crease. A cosine was tried and dismissed at a
+ * point when bakeCreaseAO was measuring over the wrong range and could only reach about a third of
+ * its darkness — so of course it swept as soft flutes. Fix the occlusion, not the silhouette.
+ *
+ * ⚠️ FLAT PANELS ALSO CANNOT SHOW A RIB UNDER THIS LIGHT. Our dome is near-uniform (measured earlier
+ * in the same sitting: roughness, sheen and clearcoat each changed the render by nothing). One flat
+ * facet has ONE brightness, so eight facets come out at eight nearly-equal brightnesses and merge
+ * into a panel — which is exactly what was reported, over and over, for a whole day. A rounded rib
+ * sweeps its normal through the full angle across its own width, so it carries a bright band on the
+ * crest and a dark line in the crease no matter how flat the lighting is.
+ *
+ * The profile is normalised to a MAX radius of 1 so `thickness` keeps meaning crest-to-crest.
+ */
+function rosetteProfile(lobes, amp, n = 24) {
+  const out = [], k = 1 / (1 + amp);
+  for (let i = 0; i < lobes * n; i++) {
+    const a = (i / (lobes * n)) * Math.PI * 2;
+    const r = (1 + amp * Math.cos(lobes * a)) * k;
+    out.push([Math.cos(a) * r, Math.sin(a) * r]);
+  }
+  return out;
+}
+
 // Per-nozzle character:
 //   twist/ruffle (0..1) scale the global spiral + squeeze rhythm below — a round writing tip
 //     wants neither (clean rope); star tips want both for a hand-piped look.
@@ -142,6 +185,12 @@ export const NOZZLES = [
   { key: 'star5',  label: 'Open Star',   hint: '1M — the classic',          profile: lobedProfile(5,  0.50), twist: 1,   ruffle: 1 },
   { key: 'star6',  label: '6-Star',      hint: 'Tighter ribs',              profile: lobedProfile(6,  0.52), twist: 1,   ruffle: 1 },
   { key: 'star8',  label: '8-Star',      hint: 'Eight points, open cut',    profile: lobedProfile(8,  0.50), twist: 1,   ruffle: 1 },
+  /* Measured off a sliced mesh of one real vertical stroke — see the note on rosetteProfile. The
+   * two extra rows are the same shape shallower and deeper, because 0.18 is what ONE stroke measured
+   * and a baker's pressure is the other half of how deep a groove lands. */
+  { key: 'rose8',  label: 'Piped Rope',  hint: 'Measured: 8 rounded ribs',   profile: rosetteProfile(8, 0.18), twist: 1,   ruffle: 1 },
+  { key: 'rose8d', label: 'Piped Deep',  hint: 'Same ribs, firmer pressure', profile: rosetteProfile(8, 0.26), twist: 1,   ruffle: 1 },
+  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.18), twist: 1,  ruffle: 1 },
   /* ⚠️ TWELVE IS WHAT PUTS FOUR RIBS ON THE FACE. A stroke is a tube, so a viewer sees a little over
    * half of it and only the middle ±60° reads as ribs — the rest is silhouette, and on a wall the
    * silhouette is where the neighbour meets it. That is `lobes/3` ribs on the face: five points give
@@ -202,6 +251,15 @@ export const PEN_FEEL = Object.freeze({
    * be the same rounded nub, which is a strong tell. */
   tailDias: 1.3,
   tailEnd:  0.32,
+  /* ⚠️ THE FOOT IS FATTER THAN THE ROPE, and it is not a rounded nub either. Sliced off a real
+   * stroke at nineteen heights, the mean radius runs: narrow at the very bottom (the tip's own
+   * round-off), then 1.25× the body radius about ONE DIAMETER up, back to the body radius by two,
+   * and dead constant from there to the lift-off. That is cream piling against the surface while
+   * the hand is still getting going — the tell that a rope was PIPED rather than extruded, and we
+   * had nothing of it. In diameters, so it reads the same on a cupcake and a tier. */
+  footDias:  1.4,     // how far up the flare reaches (0 disables it)
+  footPeak:  1.15,    // widest multiple of the body radius
+  footAt:    0.55,    // where in that zone the peak lands
   /* ⚠️ SLIT TIPS ONLY — the angle the bag is held at. A rope tip's roll is invisible, so this does
    * nothing to one. For a petal it is the technique: held upright the ribbon stands on its edge and
    * reads as a loop of tape, and leaning it away from the flower's centre is what lays the sheet
@@ -523,6 +581,7 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
    * and lerping between their widths is faithful enough for something this smooth. */
   const w = widthAlong(pts, feel);
   const tail = feel.tailDias * dia;
+  const foot = (feel.footDias ?? 0) * dia;
 
   const radiusAt = (i, segs2, arcS, arcTotal) => {
     let f = 1;
@@ -535,6 +594,13 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
      * surface with cream under it, so it begins at full width; it ENDS by releasing and drawing
      * away, which thins the bead to a point. Both ends used to be the same rounded nub, and the
      * ends are where the eye goes first. */
+    /* The foot flare (see footDias). One hump: up to footPeak at footAt through the zone, back to
+     * 1 at its end. Skipped on a stroke too short to hold both a foot and a tail. */
+    if (foot > 0 && arcS < foot && arcTotal > foot * 1.5) {
+      const t = arcS / foot;
+      const u = t < feel.footAt ? t / feel.footAt : (1 - t) / (1 - feel.footAt);
+      f *= 1 + (feel.footPeak - 1) * (u * u * (3 - 2 * u));                  // smoothstep both sides
+    }
     if (tail > 0 && arcTotal > tail * 1.5) {
       const left = arcTotal - arcS;
       if (left < tail) {

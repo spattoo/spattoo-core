@@ -6,7 +6,8 @@ import { useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from '../src/designer/geometry/creamPen.js';
-import { ropeSection, pipedBodyRadius, pipedParams } from '../src/designer/geometry/creamWall.js';
+import { ropeSection, pipedBodyRadius, pipedParams, buildStyledWall, buildStyledTop } from '../src/designer/geometry/creamWall.js';
+import { styleDef, CREAM_STYLES } from '../src/designer/creamStyles.js';
 import { frostingDef } from '../src/designer/frostings.js';
 
 /* ONE vertical stroke, on its own, lit the way the cake is.
@@ -24,7 +25,7 @@ const q = new URLSearchParams(location.search);
 const noz = q.get('noz') || 'star5';
 const onCake = q.get('cake') === '1';
 const R = 1.35;                                     // tier radius when the stroke is shown on a cake
-const P = pipedParams({ nozzle: noz, width: Number(q.get('width') || 0.5) });
+const P = pipedParams({ nozzle: noz, width: Number(q.get('width') || 0.5), overlap: Number(q.get('ov') ?? 0.85) });
 // On a cake the stroke is the size the wall would make it; on its own it is sized to fill the frame.
 const t = Number(q.get('t') || (onCake ? ropeSection(R, P).w : 0.16));
 /* ⚠️ The camera sits on +z and the sweep's frame puts the profile's local x on world x, so a POINT
@@ -148,10 +149,12 @@ function bakeCreaseAO(geo, thickness, ao, cx = 0, cz = 0) {
 }
 
 function Stroke({ x = 0, z = 0, roll: r }) {
-  const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, 1.0 - i * 0.5, z));
+  /* ⚠️ BOTTOM TO TOP. `buildPipingStroke` puts the foot flare at a stroke's START and the lift-off
+   * at its END, and on a cake side the fat foot belongs at the board. */
+  const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, -1.0 + i * 0.5, z));
   const geo = buildPipingStroke(pts, noz, t, { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 }, null, r);
   if (!geo) return null;
-  bakeCreaseAO(geo, t, Number(q.get('ao') ?? 0.8));
+  bakeCreaseAO(geo, t, Number(q.get('ao') ?? 0.55));
   return <mesh geometry={geo} castShadow receiveShadow>
     <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;
 }
@@ -171,12 +174,38 @@ function Cake() {
   );
 }
 
+/* ⚠️ `?style=` RENDERS THE SHIPPING FUNCTION, not a hand-built row of strokes. Everything above
+ * places strokes the way this page thinks the wall does; this asks buildStyledWall for the real one,
+ * with the row's real params, so a look that passes here is a look the designer will actually draw.
+ * A whole day went into a wall judged only through a stand-in. `?style=piped_rope`. */
+const styleKey = q.get('style');
+function StyledTier() {
+  const row = CREAM_STYLES[styleKey] ?? null;
+  const H = Number(q.get('h') || 1.2), Rt = Number(q.get('r') || 0.9);
+  const vals = useMemo(() => {
+    const out = {};
+    for (const p of styleDef(styleKey).params ?? []) out[p.key] = p.default;
+    out.nozzle = row?.nozzle;
+    return out;
+  }, []);
+  const wall = useMemo(() => buildStyledWall(row?.wall, Rt, H, vals), [vals]);
+  const top  = useMemo(() => buildStyledTop(row?.wall, row?.top, Rt, H, vals), [vals]);
+  const mat = { color: '#F6EBD8', ...creamMaterial() };
+  return <group position={[0, -0.2, 0]}>
+    <mesh geometry={wall} castShadow receiveShadow>
+      <meshPhysicalMaterial {...mat} vertexColors={!!wall?.getAttribute?.('color')} /></mesh>
+    {top && <mesh geometry={top} position={[0, H / 2, 0]} castShadow receiveShadow>
+      <meshPhysicalMaterial {...mat} /></mesh>}
+  </group>;
+}
+
 createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%', background: '#fff' }}>
-    <Canvas camera={onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
+    <Canvas camera={styleKey ? { position: [Number(q.get('dist') || 3.4), Number(q.get('eye') || 0.8), 0], fov: Number(q.get('fov') || 34) }
+      : onCake ? { position: [Number(q.get('dist') || 5.6), 0.9, 1.4], fov: Number(q.get('fov') || 34) } : { position: [0, 0, 4.2], fov: 32 }} shadows>
       <SceneEnv />
       <SceneLights shadows />
-      {stack && onCake ? <>
+      {styleKey ? <StyledTier /> : stack && onCake ? <>
         {/* The stack, laid ON the cake's side: tangent to it, and rolled so a POINT faces outward —
             the same placement the wall gives a swept stroke. `?n=` repeats it round the tier. */}
         <Cake />

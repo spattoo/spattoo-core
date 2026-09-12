@@ -187,13 +187,27 @@ function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
      * last point, and a squashed section's radius is nothing like its depth — written against the
      * depth, the end caps came out three times longer than the tuck allowed for and hung below the
      * cake as flat white flaps lying on the board. */
+    /* ⚠️ THE BOTTOM IS ANCHORED TO THE TIER, THE TOP TO THE ROPE, and writing both in rope radii is
+     * what produced a saw-tooth fringe hanging under the cake. `pushSweep` closes a stroke 0.6 radii
+     * past its last point, so an overrun measured in radii grows with the rope: at 0.04 wide it put
+     * the blunt ends 4% of the tier's height into the board, invisible; at 0.15 — which is what a
+     * 1in tip standing 16 to the tier actually is — it hung them 14% below it. The top still tucks
+     * by the rope, because what hides it there is the lid, which does not care how tall the cake is. */
     const f = k / N;
-    const y = height / 2 - 1.3 * cap - f * (height - 0.8 * cap);
+    const yTop = height / 2 - 1.3 * cap;
+    const yBot = -height / 2 + 0.6 * cap - 0.02 * height;   // cap tip lands just under the base
+    const y = yTop - f * (yTop - yBot);
     const sway = sway0 * Math.sin(TAU * (f * (0.7 + ropeHash(seed)) + ropeHash(seed + 500))) / Rc;
     const th = theta + sway;
     pts.push([Rc * Math.cos(th), y, Rc * Math.sin(th)]);
   }
-  return pts;
+  /* ⚠️ HANDED BACK BOTTOM-FIRST, and the loop above still runs top-down because the tuck at each
+   * end is written in terms of the rim. `buildPipingStroke` puts the FOOT FLARE at a stroke's start
+   * (see footDias — measured off a real stroke, a rope is a quarter fatter a diameter above the
+   * surface it stands on), and on a cake side that belongs at the board, not at the rim. The
+   * lift-off taper is off for the wall anyway: neither end of a wall rope is free, the top is cut
+   * by the lid and the bottom sits on the board. */
+  return pts.reverse();
 }
 
 /* ⚠️ A CREASE IS DARK BECAUSE IT IS OCCLUDED, and nothing in this render was doing occlusion.
@@ -283,10 +297,15 @@ function buildPipedWall(radius, height, p) {
    *                own 0.03/diameter is sized for a freehand squiggle a few diameters long, and a
    *                wall stroke is twenty — at that length it becomes a barber pole.
    */
+  /* ⚠️ THE SWELL IS SIZED TO THE ROPE, so it had to become authorable the moment the rope got
+   * bigger. 0.16 was picked when a stroke was a pencil line 0.08 wide, where a sixth of its width is
+   * a millimetre of life; on a stroke four times that it is a visible wave and the wall reads as
+   * melted. A photographed piped line is very nearly constant width — the life is in its ends and in
+   * its neighbours not quite matching, not in its own silhouette rippling. */
   const feel = (i) => ({
     speedWidth: 0, tailDias: 0,
     twistTurnsPerDia: 0.008,
-    swellAmp: 0.16,
+    swellAmp: p.swell,
     rufflePhase: ropeHash(i + 1300) * TAU,
   });
   /* ⚠️ HOW MUCH A ROPE MAY MOVE IS SET BY HOW FAR IT OVERLAPS ITS NEIGHBOUR, and getting that
