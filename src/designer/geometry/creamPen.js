@@ -197,11 +197,23 @@ function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0) {
   const out = [], shade = [];
   const a6 = amp * 0.28 * uneven, a10 = amp * 0.21 * uneven;   // the measured ratios, 4.8/17, 3.6/17
   const k = 1 / (1 + amp + a6 + a10);
-  for (let i = 0; i < lobes * n; i++) {
-    const a = (i / (lobes * n)) * Math.PI * 2;
-    const r = (1 + amp * Math.cos(lobes * a)
-                 + a6 * Math.cos((lobes - 2) * a + 1.7)
-                 + a10 * Math.cos((lobes + 2) * a + 0.6)) * k;
+  const N = lobes * n;
+  const radius = (a) => (1 + amp * Math.cos(lobes * a)
+                           + a6 * Math.cos((lobes - 2) * a + 1.7)
+                           + a10 * Math.cos((lobes + 2) * a + 0.6)) * k;
+  /* ⚠️ THE TALLEST RIB IS PUT AT LOCAL ANGLE ZERO, because every caller's roll assumes it is there.
+   * `roll` is how a tip is turned to face somebody — a quarter turn towards the camera in the
+   * harness, minus theta to face outward on a wall — and all of that is written as though a crest
+   * sits at the profile's start. A plain rosette does put one there. Add the sidebands and it does
+   * not: they shift where the true maximum lands, and on a ten-lobe tip it came out half a lobe
+   * over, so the front of every stroke was a GROOVE where the photograph has a raised rib. The
+   * fix cannot be a constant added to the roll — it differs per tip — so the section aligns itself
+   * and no caller has to know. */
+  let a0 = 0, best = -Infinity;
+  for (let i = 0; i < N; i++) { const a = (i / N) * Math.PI * 2, r = radius(a); if (r > best) { best = r; a0 = a; } }
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const r = radius(a + a0);
     out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
     /* ⚠️ THE CREASE PATTERN IS CARRIED, NOT INFERRED FROM THE POINT. Reading a point's depth back
      * out of its radius works only while the section is a plain rosette: squash it and the radius
@@ -210,7 +222,7 @@ function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0) {
      * columns. `cos(lobes·a)` is the rib pattern itself, +1 on a crest and −1 in a crease, known
      * here for free and true at any squash. Linear in the ANGLE round the lobe, which is what stops
      * a cosine's flat peak painting the middle half of every rib the same value. */
-    shade.push(Math.abs(((a * lobes / Math.PI) % 2 + 2) % 2 - 1));   // 0 on a crest, 1 in a crease
+    shade.push(Math.abs((((a + a0) * lobes / Math.PI) % 2 + 2) % 2 - 1));   // 0 crest, 1 crease
   }
   out.shade = shade;
   return out;
