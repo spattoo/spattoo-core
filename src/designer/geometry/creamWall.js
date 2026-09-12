@@ -332,7 +332,7 @@ function mergeWithCylindricalUv(parts, radius, height) {
 // Sizing + spacing, given the stroke mesh's own bounding box. Pure, so the count a tier will draw
 // can be asserted without building anything. `size` is the mesh's bbox size (x lateral, y up, z
 // radial), which is why this takes it rather than reading a geometry.
-export function strokeWallLayout(radius, height, size, p) {
+export function strokeSizing(height, size, p) {
   /* ⚠️ TWO SCALES, NOT ONE, and scaling the mesh uniformly is a bug that looks like a rounding
    * error. A stroke's LENGTH is the tier: it is dragged from the board to the rim, so a taller cake
    * gets a longer stroke. Its WIDTH is the TIP, which does not change because the cake got taller.
@@ -376,15 +376,24 @@ export function strokeWallLayout(radius, height, size, p) {
    * combined height would fold one through the other. */
   const uniform = spanH < rigidH * 1.02 ? spanH / naturalH : null;
   const middleStretch = uniform ? null : (spanH - rigidH) / middleH;
+  const spacing = wx * (1 - p.overlap);
+  return { scale, wx, wz, spacing, naturalH, rigidH, middleH, middleStretch, uniform, crownRise, spanH };
+}
+
+/* Where the strokes go on a ROUND tier: the circle their axes ride, the cake's own side behind them,
+ * and how many fit. ⚠️ Kept separate from the sizing above because a rectangle and a heart get their
+ * anchors from their own OUTLINE, not from a radius — see buildStrokeWallOn. A stroke only ever needs
+ * a point and an outward direction; the circle is one way of producing those, not the only one. */
+export function strokeWallLayout(radius, height, size, p) {
+  const S = strokeSizing(height, size, p);
   /* ⚠️ THE BODY SITS A STROKE-DEPTH INSIDE THE TIER'S RADIUS, so the cake keeps the size the design
    * says. Cream really is added ON TOP of a frosted cake, so the physical thing grows outward — but
    * a 6" cake that renders 6.4" wide the moment a style is picked is a sizing bug, not a finish.
    * Every other style here follows the same rule. `press` buries the stroke deeper. */
-  const bodyRadius = radius - wz * (1 - 0.5 * p.press);
-  const R = radius - wz / 2 + p.press * wz / 2;          // the circle the strokes' own axes ride
-  const spacing = wx * (1 - p.overlap);
-  const count = Math.max(6, Math.round(TAU * R / spacing));
-  return { scale, wx, wz, R, bodyRadius, count, naturalH, rigidH, middleH, middleStretch, uniform, crownRise, spanH };
+  const bodyRadius = radius - S.wz * (1 - 0.5 * p.press);
+  const R = radius - S.wz / 2 + p.press * S.wz / 2;      // the circle the strokes' own axes ride
+  const count = Math.max(6, Math.round(TAU * R / S.spacing));
+  return { ...S, R, bodyRadius, count };
 }
 
 /* Make a stroke as long as the tier by moving ONLY its middle — see strokeWallLayout for why the
@@ -415,6 +424,73 @@ function stretchMiddle(geo, { naturalH, middleStretch, uniform }, p) {
   return geo;
 }
 
+/* One prepared stroke, placed at every anchor. An anchor is a point on the tier's wall and the
+ * direction that wall faces — `{ x, z, out }` — and that is ALL a stroke needs. A circle produces
+ * those from an angle; a rectangle or a heart produces them by walking its own outline. Everything
+ * about the stroke itself is identical either way, which is why this is one function and the two
+ * callers only differ in where the anchors came from.
+ */
+function strokeInstances(src, anchors, height, p, L) {
+  /* ⚠️ THE MESH IS CENTRED AND SEATED ONCE, then instanced — not re-prepared per stroke. Its own
+   * origin is wherever the generator left it; what the placement needs is a stroke whose axis is at
+   * x=z=0 and whose foot is at y=0, so that standing it at -height/2 puts it on the board however
+   * tall the tier is. */
+  const c = new THREE.Vector3();
+  src.boundingBox.getCenter(c);
+  const base = src.clone();
+  base.translate(-c.x, -src.boundingBox.min.y, -c.z);
+  /* Scaled to the TIP here, once, so `base` is a stroke at its true natural size — and then made as
+   * long as the tier needs by moving only the middle. Per-stroke work below is placement and `vary`,
+   * never size, so nothing downstream can re-stretch it by accident. */
+  base.scale(L.scale, L.scale, L.scale);
+  stretchMiddle(base, L, p);
+
+  const out = [];
+  for (let i = 0; i < anchors.length; i++) {
+    const a = anchors[i];
+    /* ⚠️ EVERY STROKE THE TWIN OF ITS NEIGHBOUR IS WHAT MAKES A WALL READ AS MACHINED, and one mesh
+     * repeated is the worst case of it — the swept wall at least varied its own section. `vary`
+     * buys the cheapest honest difference: a little size, a little roll. It may only make a stroke
+     * FATTER, because a thinner one no longer reaches its neighbour and opens a gap.
+     * ⚠️ WIDTH ONLY. `vary` may fatten a stroke, never lengthen it: the length is the cake's. */
+    const s = 1 + p.vary * 0.10 * ropeHash(i);
+    /* ⚠️ ROLLED TO FACE OUTWARD, AND THE SIGN IS NEGATIVE — the same correction the swept ropes
+     * needed. The mesh has a front and a back (its ribs are deepest on the face that was scanned);
+     * without the roll, which side a stroke shows the viewer would depend on where it sits round
+     * the cake, and the wall comes out patchy. */
+    const roll = -a.out + p.vary * 0.10 * (ropeHash(i + 700) - 0.5);
+    const g = base.clone();
+    g.scale(s, 1, s);
+    g.rotateY(roll);
+    g.translate(a.x, -height / 2, a.z);
+    out.push(g);
+  }
+  return out;
+}
+
+/* ⚠️ THE STROKES FOR A TIER THAT IS NOT ROUND — a rectangle, a heart, a number. Every cream style
+ * before this one was a DISPLACEMENT of a cylinder, which is why they are all round-tier only: there
+ * is no cylinder to displace on a heart. An instanced stroke has no such limit. It needs a point and
+ * an outward direction, and `perimeterRing` has been producing exactly those for the piping rings on
+ * every shape for as long as they have existed — so this takes the anchors it is given and does not
+ * care what produced them.
+ *
+ * Returns the STROKES ONLY. Unlike the round wall this does not carry a body: a non-round tier
+ * already builds its own (prismGeo), and the caller insets that by a stroke's depth so the cream
+ * sits on the cake instead of growing it.
+ */
+export function buildStrokeWallOn(anchors, height, p) {
+  const src = p.strokeGeo;
+  if (!src || !anchors?.length) return null;
+  if (!src.boundingBox) src.computeBoundingBox();
+  const size = new THREE.Vector3();
+  src.boundingBox.getSize(size);
+  const L = strokeSizing(height, size, p);
+  const wall = mergePenGeometries(strokeInstances(src, anchors, height, p, L));
+  wall.computeVertexNormals();
+  return wall;
+}
+
 function buildStrokeWall(radius, height, p) {
   const src = p.strokeGeo;
   if (!src) return null;                                 // mesh still loading — smooth wall, not a stub
@@ -440,39 +516,14 @@ function buildStrokeWall(radius, height, p) {
   foot.translate(0, -height / 2 + 0.175 * wz, 0);
   parts.push(foot);
 
-  /* ⚠️ THE MESH IS CENTRED AND SEATED ONCE, then instanced — not re-prepared per stroke. Its own
-   * origin is wherever the generator left it; what the placement needs is a stroke whose axis is at
-   * x=z=0 and whose foot is at y=0, so that scaling it by `scale` and standing it at -height/2 puts
-   * it on the board however tall the tier is. */
-  const c = new THREE.Vector3();
-  src.boundingBox.getCenter(c);
-  const base = src.clone();
-  base.translate(-c.x, -src.boundingBox.min.y, -c.z);
-  /* Scaled to the TIP here, once, so `base` is a stroke at its true natural size — and then made as
-   * long as the tier needs by moving only the middle. Per-stroke work below is placement and `vary`,
-   * never size, so nothing downstream can re-stretch it by accident. */
-  base.scale(scale, scale, scale);
-  stretchMiddle(base, L, p);
-
+  const anchors = [];
   for (let i = 0; i < count; i++) {
-    /* ⚠️ ROLLED TO FACE OUTWARD, AND THE SIGN IS NEGATIVE — the same correction the swept ropes
-     * needed. The mesh has a front and a back (its ribs are deepest on the face that was scanned);
-     * without the roll, which side a stroke shows the viewer would depend on where it sits round
-     * the cake, and the wall comes out patchy. */
     const theta = TAU * i / count;
-    /* ⚠️ EVERY STROKE THE TWIN OF ITS NEIGHBOUR IS WHAT MAKES A WALL READ AS MACHINED, and one mesh
-     * repeated is the worst case of it — the swept wall at least varied its own section. `vary`
-     * buys the cheapest honest difference: a little size, a little roll. It may only make a stroke
-     * FATTER, because a thinner one no longer reaches its neighbour and opens a gap. */
-    // ⚠️ WIDTH ONLY. `vary` may fatten a stroke, never lengthen it: the length is the cake's.
-    const s = 1 + p.vary * 0.10 * ropeHash(i);
-    const roll = -theta + p.vary * 0.10 * (ropeHash(i + 700) - 0.5);
-    const g = base.clone();
-    g.scale(s, 1, s);
-    g.rotateY(roll);
-    g.translate(R * Math.cos(theta), -height / 2, R * Math.sin(theta));
-    parts.push(g);
+    // The outward direction at this point. On a circle it is the angle itself; on an outline the
+    // perimeter walk hands it over. Either way a stroke needs nothing else.
+    anchors.push({ x: R * Math.cos(theta), z: R * Math.sin(theta), out: theta });
   }
+  parts.push(...strokeInstances(src, anchors, height, p, L));
   const wall = mergePenGeometries(parts);
   wall.computeVertexNormals();
   return wall;

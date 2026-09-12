@@ -17,7 +17,7 @@ import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTe
 import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
-import { buildStyledWall, buildStyledTop } from '../geometry/creamWall.js';
+import { buildStyledWall, buildStyledTop, buildStrokeWallOn, strokeSizing, strokeWallParams } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
@@ -29,7 +29,7 @@ import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
-import { ringPositions, angleAtPoint } from './ringPositions.js';
+import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 // ⚠️ EXPORTED because the hand-piping path needs the IDENTICAL preparation, not a similar one.
@@ -1637,19 +1637,68 @@ export default function CakeTier({
   // the cream wall styles, drip, festoons, luster and foil are all cylinder-unwrap maths. An outline
   // shape belongs on the prism side of that line, so it inherits the gate rather than needing a branch.
   const isPrism = shp.kind !== 'round';
+  // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
+  // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
+  // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
+  const wallKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).wall : 'smooth';
+  /* ⚠️ `nozzle` IS A KEY ON THE STYLE, not one of its sliders, and it is folded in here so the
+   * geometry reads one bag. Two styles can share a `wall` algorithm and differ only in which tip the
+   * cream came out of — that is what `piped` and `piped_round` are. */
+  const styleVals = { ...resolveStyleParams(frostingStyle, styleParams), nozzle: styleDef(frostingStyle).nozzle };
+  const styleSig = JSON.stringify(styleVals);
+  /* ⚠️ `nozzle` IS A KEY ON THE STYLE and so is `strokeGlb` — a MODELLED style (wall:'strokes') is
+   * piped from a scan of one real stroke instead of from a swept section, and the mesh arrives over
+   * the network. The hook runs unconditionally and returns null for every other style, so there is
+   * no hook behind a branch and no Suspense boundary around the tier: until the mesh lands the wall
+   * builder returns null and the tier renders its ordinary smooth side. See canvas/strokeMesh.js. */
+  const strokeGeo = useStrokeMesh(frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).strokeGlb : null);
+  /* ⚠️ A MODELLED WALL IS THE FIRST ONE THAT DOES NOT NEED A CYLINDER, so it is the first that can go
+   * on a rectangle or a heart. Every style above it displaces a lathe — there is nothing to displace
+   * on a heart, which is why `isPrism` turns them all off. An instanced stroke only ever needs a
+   * point and the direction that point faces, and `perimeterRing` has been handing those out for the
+   * piping rings on every shape since they shipped (INVARIANTS #3 — ONE distribution), so this asks
+   * it rather than inventing a second walk round a cake.
+   *
+   * It is computed HERE, above the body, because the body depends on it: the cake's own side has to
+   * be inset by a stroke's depth so the cream sits ON it rather than growing the cake. */
+  const strokeWall = useMemo(() => {
+    if (!strokeGeo || wallKey !== 'strokes' || !isPrism) return null;
+    const p = strokeWallParams(styleVals);
+    const size = new THREE.Vector3();
+    if (!strokeGeo.boundingBox) strokeGeo.computeBoundingBox();
+    strokeGeo.boundingBox.getSize(size);
+    const S = strokeSizing(height, size, p);
+    /* Anchors: the strokes' axes ride a path inset half a stroke-depth from the outline, so their
+     * crests land ON it — the same rule the round wall follows, stated once in strokeWallLayout.
+     * ⚠️ EVERY CONTOUR WALKED SEPARATELY (pipingPerimeters, not pipingPerimeter): a number cake is
+     * several closed loops and a stroke must never bridge the gap between two digits. */
+    const anchors = pipingPerimeters(shp).flatMap(perim =>
+      perimeterRing(perim, -S.wz / 2 + p.press * S.wz / 2, S.spacing, 0)
+        .map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY })));
+    const geo = buildStrokeWallOn(anchors, height, { ...p, strokeGeo });
+    return geo && { geo, inset: S.wz * (1 - 0.5 * p.press), count: anchors.length };
+    // styleVals is recreated each render; styleSig captures its values. eslint-disable-next-line
+  }, [strokeGeo, wallKey, isPrism, shp, height, styleSig]);
   const prismGeo = useMemo(
     () => {
+      /* ⚠️ PIPED, THE CAKE'S OWN SIDE MOVES IN — it does not stay put and let the cream grow the cake.
+       * A 6" cake that renders 6.4" wide the moment a style is picked is a sizing bug, not a finish,
+       * and the round wall has followed this rule since it was written (pipedBodyRadius). `insetPolygon`
+       * is the same helper this function already uses to roll its own rim, so a heart insets the way
+       * its fillet does rather than by a second opinion about what "inward" means on a curve. */
+      const inset = strokeWall?.inset ?? 0;
       if (shp.kind === 'glyph') return buildGlyphPrism(shp.shapes, shp.thickness ?? height);  // number/letter — per-count extrusion depth
-      if (shp.kind === 'rect') return buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR);
+      if (shp.kind === 'rect') return buildRoundedPrism(Math.max(0.01, shp.halfW - inset), Math.max(0.01, shp.halfD - inset), height, Math.max(0, shp.cornerR - inset));
       if (shp.kind !== 'outline') return null;
+      const outline = inset > 1e-6 ? insetPolygon(shp.outline, inset) : shp.outline;
       // The rolled top rim comes from the FROSTING's own edge config — the very same `roundEdge` the
       // round tier uses for its fondant drape (frostings.js `edge: {kind:'round', frac}`). So a fondant
       // heart rolls over at the rim and a sharp-edged finish stays sharp, with no per-shape knob and no
       // second opinion about what a cake's edge looks like.
       const f = roundEdge ? roundEdge.frac * Math.min(Math.min(shp.halfW, shp.halfD), height) : 0;
-      return buildOutlinePrism(shp.outline, height, f);
+      return buildOutlinePrism(outline, height, f);
     },
-    [shp, height, roundEdge?.frac],
+    [shp, height, roundEdge?.frac, strokeWall?.inset],
   );
   // The wall's grain runs once around the tier, so its U extent is the PERIMETER. (Rect keeps its
   // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
@@ -1688,21 +1737,6 @@ export default function CakeTier({
     const center = new THREE.Vector3(); g.boundingBox.getCenter(center);
     return { min: g.boundingBox.min.clone(), size, center };
   }, [glazeBodyGeo]);
-  // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
-  // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
-  // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
-  const wallKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).wall : 'smooth';
-  /* ⚠️ `nozzle` IS A KEY ON THE STYLE, not one of its sliders, and it is folded in here so the
-   * geometry reads one bag. Two styles can share a `wall` algorithm and differ only in which tip the
-   * cream came out of — that is what `piped` and `piped_round` are. */
-  const styleVals = { ...resolveStyleParams(frostingStyle, styleParams), nozzle: styleDef(frostingStyle).nozzle };
-  const styleSig = JSON.stringify(styleVals);
-  /* ⚠️ `nozzle` IS A KEY ON THE STYLE and so is `strokeGlb` — a MODELLED style (wall:'strokes') is
-   * piped from a scan of one real stroke instead of from a swept section, and the mesh arrives over
-   * the network. The hook runs unconditionally and returns null for every other style, so there is
-   * no hook behind a branch and no Suspense boundary around the tier: until the mesh lands the wall
-   * builder returns null and the tier renders its ordinary smooth side. See canvas/strokeMesh.js. */
-  const strokeGeo = useStrokeMesh(frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).strokeGlb : null);
   const styledGeo = useMemo(
     () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, { ...styleVals, strokeGeo }) : null,
     // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
@@ -1868,11 +1902,24 @@ export default function CakeTier({
       {isPrism ? (
         // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
         // separate top cap (a cap reads as a stray "board" on a non-round cake).
-        <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
-          grainExtent={[prismGrainU, height]}
-          gradient={effGradient} stripes={effStripes} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
-          <primitive object={prismGeo} attach="geometry" />
-        </TierBody>
+        <>
+          <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
+            grainExtent={[prismGrainU, height]}
+            gradient={effGradient} stripes={effStripes} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+            <primitive object={prismGeo} attach="geometry" />
+          </TierBody>
+          {/* Piped strokes standing on that inset body. A SEPARATE mesh rather than one merged wall
+              because the body a non-round tier renders is its own (prismGeo, with its rolled rim and
+              its grain), and the round path's trick of merging body and strokes into a single
+              geometry would mean rebuilding all of that here. ⚠️ Its own frame: the strokes are
+              built centred on y=0 like the round wall, so they sit at the tier's MIDDLE. */}
+          {strokeWall && (
+            <TierBody position={[0, yBase + height / 2, 0]} color={color} surf={mat} grainExtent={null}
+              gradient={effGradient} stripes={effStripes} geoSig={strokeWall.geo.uuid} castShadow receiveShadow>
+              <primitive key={strokeWall.geo.uuid} object={strokeWall.geo} attach="geometry" />
+            </TierBody>
+          )}
+        </>
       ) : roundedGeo ? (
         // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.

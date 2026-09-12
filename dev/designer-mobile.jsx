@@ -261,9 +261,17 @@ const stripedDesign = STRIPE_KEY ? {
  * mesh is an R2 key) in the app rather than in a geometry harness — and "it renders in the harness"
  * has been wrong about the app often enough in this project to be worth the two query keys. */
 const STYLE_KEY = PARAMS.get('style');
+/* ⚠️ `?shape=` TAKES A FAMILY, not a catalog key. Every shape but round and rect is an admin-authored
+ * DB row, so a dev harness with no database cannot name one — but a design tier carries its own
+ * geometry (`shapeFamily` + `shapeConfig`, see cakeShapes.js), which is exactly what a row would hand
+ * it. `?shape=heart` is therefore the same cake the catalog would build, minus the row. */
+const SHAPE = PARAMS.get('shape') || 'round';
+const shapeTier = SHAPE === 'rect' ? { shape: 'rect', width: 2.4, depth: 1.8 }
+  : SHAPE !== 'round' ? { shapeFamily: SHAPE, shapeConfig: {}, width: 2.4, depth: 2.4 }
+  : { shape: 'round', radius: 1.2 };
 const styledDesign = STYLE_KEY ? {
   tiers: [{
-    color: '#F1EEDC', radius: 1.2, height: 1.45, shape: 'round',
+    color: '#F1EEDC', height: 1.45, ...shapeTier,
     frostingType: 'buttercream', frostingStyle: STYLE_KEY,
   }],
 } : null;
