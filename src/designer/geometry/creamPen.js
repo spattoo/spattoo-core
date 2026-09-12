@@ -228,7 +228,18 @@ function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0, crease = 1) 
   for (let i = 0; i < N; i++) {
     const a = (i / N) * Math.PI * 2;
     const r = radius(a + a0);
+    /* ⚠️ THE CREASE VERTEX IS EMITTED TWICE, and without it a shaped slot cannot read as sharp.
+     * `crease` puts a real cusp in the section — the two flanks meet at an angle — but
+     * `computeVertexNormals` averages every face that shares a vertex, so the fold gets the MEAN of
+     * the two flanks and rolls over into a shoulder. On screen the slot comes back as a soft grey
+     * band however deep the geometry actually is. Duplicating the sample gives each flank its own
+     * normal, which is the entire difference between a crease and a dent; the zero-area quad
+     * between the pair contributes no normal and draws no pixels. Only where the section HAS a
+     * cusp — a plain cosine (crease 1) is smooth there and must stay smooth, or the ribs come out
+     * as facets. `n` is even so a sample lands exactly on the floor. */
+    const onCrease = crease !== 1 && (i % n) === (n >> 1);
     out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
+    if (onCrease) out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
     /* ⚠️ THE CREASE PATTERN IS CARRIED, NOT INFERRED FROM THE POINT. Reading a point's depth back
      * out of its radius works only while the section is a plain rosette: squash it and the radius
      * stops saying which points are creases — the outward crest and a side crease can land at the
@@ -236,14 +247,33 @@ function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0, crease = 1) 
      * columns. `cos(lobes·a)` is the rib pattern itself, +1 on a crest and −1 in a crease, known
      * here for free and true at any squash. Linear in the ANGLE round the lobe, which is what stops
      * a cosine's flat peak painting the middle half of every rib the same value. */
-    /* ⚠️ LINEAR IN THE ANGLE ROUND THE LOBE, and ⚠️ NOT the section's own depth, which was tried
-     * and is much worse. It seems obvious that a point's shade should follow how deep it sits —
-     * `shaped` is exactly that number and it is right here for free. But `crease` deliberately
-     * makes the section broad and flat over most of a rib, so a depth-driven shade paints nearly
-     * the whole surface at the crest value and dives only in the slot: the stroke goes back to a
-     * flat white thing with one dark line down it. The angle keeps moving where the radius does
-     * not, which is the whole reason this ramp exists. */
-    shade.push(Math.abs((((a + a0) * lobes / Math.PI) % 2 + 2) % 2 - 1));   // 0 crest, 1 crease
+    /* ⚠️ BOTH TERMS, because each alone is wrong in its own direction and both were rendered.
+     *
+     *   linear in the ANGLE round the lobe   a clean roll of tone across the rib — but it spreads
+     *                                        the darkness over the whole flank, so there is no
+     *                                        local contrast anywhere and the slot reads as a broad
+     *                                        grey band however sharp the geometry under it is
+     *   the section's own DEPTH              concentrated exactly where the slot is — but `crease`
+     *                                        deliberately flattens most of a rib, so this paints
+     *                                        nearly the whole surface at the crest value and the
+     *                                        stroke goes back to a flat white thing with one line
+     *
+     * Blending the two was tried and is worse than either: the depth term is near zero across most
+     * of a rib, so the blend takes the mid-tones out and the whole stroke washes out.
+     *
+     * ⚠️ WHAT ACTUALLY MAKES AN EDGE IS A NARROW DARK BAND, not a deeper one. This scene is a
+     * near-uniform dome — measured — so a geometric fold produces almost no difference in
+     * brightness between its two flanks, however sharp it is; the baked shade is the only cue there
+     * is. A triangle ramp darkens steadily all the way in from the crest, and a gradual darkening
+     * is the definition of soft. Raised to a power it stays bright across the rib and dives in the
+     * last fifth of the travel, which puts a broad bright band hard against a thin dark line — and
+     * that pairing is what the eye reads as a sharp edge. ⚠️ Do not push the exponent much past
+     * this: at 3 and above the dark collapses to about one vertex and disappears entirely, which is
+     * recorded elsewhere in this file as a separate failed attempt. */
+    const ang = Math.abs((((a + a0) * lobes / Math.PI) % 2 + 2) % 2 - 1);    // 0 crest, 1 crease
+    const t = Math.pow(ang, 2.5);
+    shade.push(t);
+    if (onCrease) shade.push(t);
   }
   out.shade = shade;
   return out;
