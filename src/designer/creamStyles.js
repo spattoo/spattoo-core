@@ -56,8 +56,13 @@ function strokeParams(over = {}) {
      * that point level with the rim opens a ring of V-notches right where the eye is looking — the
      * piping reads as stopping below the edge it actually reaches. At 1 the full-width body arrives
      * exactly at the top edge and the taper stands above it, which is what piping up the side of a
-     * cake leaves. The cake's own body still ends at its height; the cream is what overshoots. */
-    { key: 'crown',   label: 'Tips above rim', min: 0, max: 1.5, step: 0.05, default: d('crown', 1), user: true },
+     * cake leaves. The cake's own body still ends at its height; the cream is what overshoots.
+     *
+     * ⚠️ DEFAULTS TO 0 NOW THAT THERE IS A LID. Tips standing proud of the top put a rim of cream
+     * around a sunken plate of icing — the cake reads as a tray, which is the fault the lid was
+     * added to fix and which a crown only deepens. What closes the notches at the rim is the LID
+     * (see strokeLid), not the strokes being longer. Raise it for a deliberately spiky crown. */
+    { key: 'crown',   label: 'Tips above rim', min: 0, max: 1.5, step: 0.05, default: d('crown', 0.35), user: true },
     /* ⚠️ AN OVERLAP, NOT A COUNT. The stroke's size is fixed by the tier's HEIGHT (one stroke spans
      * the side, which is what a piped stroke does), so the count falls out of the circumference —
      * and a 6" and a 10" cake get strokes of the same size rather than the same number. Authored as

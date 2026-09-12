@@ -17,7 +17,7 @@ import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTe
 import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
-import { buildStyledWall, buildStyledTop, buildStrokeWallOn, strokeSizing, strokeWallParams } from '../geometry/creamWall.js';
+import { buildStyledWall, buildStyledTop, buildStrokeWallOn, strokeSizing, strokeWallParams, STROKE_LID_FRAC, STROKE_LID_INSET } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
@@ -1687,7 +1687,20 @@ export default function CakeTier({
       : pipingPerimeters(shp).flatMap(perim => perimeterRing(perim, off, S.spacing, 0));
     const anchors = ring.map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY }));
     const geo = buildStrokeWallOn(anchors, height, { ...p, strokeGeo });
-    return geo && { geo, inset: S.wz * (1 - 0.5 * p.press), count: anchors.length };
+    if (!geo) return null;
+    /* ⚠️ THE LID, at the tier's FULL size — without it a piped cake has a WELL in its top. The body
+     * is inset by a stroke-depth so the cream does not grow the cake, which leaves its top face a
+     * third narrower than the piping around it: from above, a small plate of icing sunk inside a
+     * thick ring of cream, every stroke's inner flank on show. A real piped cake has no such step —
+     * the top is iced flat all the way out and the piping finishes under its edge. Same part the
+     * round wall carries (strokeLid); here it is a second slab because a non-round tier builds its
+     * own body and there is no cylinder to add it to. */
+    const lidH = STROKE_LID_FRAC * S.wz, lidIn = STROKE_LID_INSET * S.wz;
+    const lid = shp.kind === 'rect'
+      ? buildRoundedPrism(Math.max(0.01, shp.halfW - lidIn), Math.max(0.01, shp.halfD - lidIn), lidH, Math.max(0, shp.cornerR - lidIn))
+      : shp.kind === 'outline' ? buildOutlinePrism(insetPolygon(shp.outline, lidIn), lidH, 0) : null;
+    lid?.translate(0, height - lidH, 0);
+    return { geo, lid, inset: S.wz * (1 - 0.5 * p.press), count: anchors.length };
     // styleVals is recreated each render; styleSig captures its values. eslint-disable-next-line
   }, [strokeGeo, wallKey, isPrism, shp, height, styleSig]);
   const prismGeo = useMemo(
@@ -1928,6 +1941,12 @@ export default function CakeTier({
             <TierBody position={[0, yBase + height / 2, 0]} color={color} surf={mat} grainExtent={null}
               gradient={effGradient} stripes={effStripes} geoSig={strokeWall.geo.uuid} castShadow receiveShadow>
               <primitive key={strokeWall.geo.uuid} object={strokeWall.geo} attach="geometry" />
+            </TierBody>
+          )}
+          {strokeWall?.lid && (
+            <TierBody position={[0, yBase, 0]} color={capColor} surf={mat} grainExtent={null}
+              gradient={null} geoSig={strokeWall.lid.uuid} castShadow receiveShadow>
+              <primitive key={strokeWall.lid.uuid} object={strokeWall.lid} attach="geometry" />
             </TierBody>
           )}
         </>

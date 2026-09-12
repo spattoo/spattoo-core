@@ -357,7 +357,7 @@ export function strokeSizing(height, size, p) {
    * So the ends are carried RIGID at the tip's own scale and all of the stretch lands in the middle,
    * where there is nothing to distort. On the designer's tiers the middle carries 1.03×–1.38×. */
   const naturalH = size.y * scale;                       // what this stroke is, at this tip
-  const rigidH = (p.foot + (1 - p.tip)) * naturalH;      // the foot and the tip, never stretched
+  const footH = p.foot * naturalH;                       // the splayed foot, never stretched
   const middleH = (p.tip - p.foot) * naturalH;
   /* ⚠️ THE STROKE RUNS PAST THE TOP EDGE, or the piping stops short of it. A stroke ends in a POINT —
    * the last 15% of this mesh narrows away to nothing, which on a standard tier is the top 12% of
@@ -369,15 +369,24 @@ export function strokeSizing(height, size, p) {
    * the full-width body arrives exactly at the top edge and the whole taper stands above it, which
    * is what piping up the side of a cake leaves. The BODY still ends at `height`: the cake is the
    * size the design says, and the cream is what overshoots it. */
-  const crownRise = p.crown * (1 - p.tip) * naturalH;
+  const tipH = (1 - p.tip) * naturalH;                    // the taper, at its natural length
+  const crownRise = p.crown * tipH;
   const spanH = height + crownRise;                      // how long the stroke itself has to be
+  /* ⚠️ THE TAPER IS SQUASHED WHEN IT IS NOT WANTED ABOVE THE LID, rather than simply hidden below
+   * it. A stroke that keeps its full taper under the icing is a stroke that has stopped being full
+   * width for the last eighth of the wall — so the lid's edge overhangs it and reads as a PLATE
+   * sitting on the cream rather than as the cake's own top. Squashed, the stroke arrives at the top
+   * still full width and ends bluntly, which is what a real one does: the baker pipes up to the
+   * edge and the icing on top covers where they stopped. A floor keeps a short round end rather
+   * than a degenerate flat one. At crown 1 it is the natural taper again, standing above the lid. */
+  const tipBand = (0.15 + 0.85 * p.crown) * tipH;
   /* ⚠️ A TIER SHORTER THAN THE TWO ENDS CANNOT KEEP THEM, so it stops pretending to: the whole
    * stroke is scaled down instead. Squeezing a fixed foot and a fixed tip into less than their own
    * combined height would fold one through the other. */
-  const uniform = spanH < rigidH * 1.02 ? spanH / naturalH : null;
-  const middleStretch = uniform ? null : (spanH - rigidH) / middleH;
+  const uniform = spanH < (p.foot * naturalH + tipBand) * 1.02 ? spanH / naturalH : null;
+  const middleStretch = uniform ? null : (spanH - p.foot * naturalH - tipBand) / middleH;
   const spacing = wx * (1 - p.overlap);
-  return { scale, wx, wz, spacing, naturalH, rigidH, middleH, middleStretch, uniform, crownRise, spanH };
+  return { scale, wx, wz, spacing, naturalH, footH, middleH, middleStretch, uniform, crownRise, spanH, tipH, tipBand };
 }
 
 /* Where the strokes go on a ROUND tier: the circle their axes ride, the cake's own side behind them,
@@ -405,7 +414,7 @@ export function strokeWallLayout(radius, height, size, p) {
  * be re-welded. The bend is invisible because the plane sits in the featureless middle — a cut is
  * only needed to TILE the middle, which is the next mechanism and belongs in the asset step.
  */
-function stretchMiddle(geo, { naturalH, middleStretch, uniform }, p) {
+function stretchMiddle(geo, { naturalH, middleStretch, uniform, tipH, tipBand }, p) {
   const pos = geo.getAttribute('position');
   if (uniform) {                                         // too short to keep both ends — scale it all
     for (let i = 0; i < pos.count; i++) pos.setY(i, pos.getY(i) * uniform);
@@ -413,14 +422,43 @@ function stretchMiddle(geo, { naturalH, middleStretch, uniform }, p) {
     return geo;
   }
   const y0 = p.foot * naturalH, y1 = p.tip * naturalH;
-  const lift = (y1 - y0) * (middleStretch - 1);          // how far the tip is carried up
+  const midTop = y0 + (y1 - y0) * middleStretch;         // where the middle now ends
+  const tipScale = tipH > 1e-6 ? tipBand / tipH : 1;     // ...and how much taper is left above it
   for (let i = 0; i < pos.count; i++) {
     const y = pos.getY(i);
     if (y <= y0) continue;                               // the foot: exactly as it was piped
-    pos.setY(i, y >= y1 ? y + lift                       // the tip: carried, never stretched
+    pos.setY(i, y >= y1 ? midTop + (y - y1) * tipScale   // the tip: carried, and squashed to `crown`
                         : y0 + (y - y0) * middleStretch);
   }
   pos.needsUpdate = true;
+  return geo;
+}
+
+/* ── THE LID, and why a piped cake needs one ──────────────────────────────────
+ *
+ * ⚠️ WITHOUT IT THE CAKE HAS A WELL IN ITS TOP. The cake's own side sits a stroke-depth inside the
+ * crest (so the cream does not grow the cake — see strokeWallLayout), which means the body's own top
+ * face is a THIRD narrower than the piping around it. From above that reads as a tray: a small plate
+ * of icing sunk inside a thick ring of cream, with the inner flanks of every stroke on show.
+ *
+ * A real piped cake has no such step. The top is iced flat all the way out, and the piping's outer
+ * face finishes flush under its edge — the top plate is what CLOSES the strokes, which is also how
+ * the swept `piped` row's spiral lid works (it is "sized to overhang the displaced wall, which is
+ * what closes the gap the flat cap leaves"). This is the flat version of that, for a style whose
+ * top is not piped.
+ *
+ * ⚠️ ITS EDGE TUCKS BEHIND THE PIPING — it stops on the strokes' own axis line, half a stroke-depth
+ * inside the crest, not out at the tier's full radius. Taken all the way out it is flush with the
+ * crests, and a flush edge is a VISIBLE one: a smooth band appears between the piping and the top,
+ * the tips rise from behind it, and the cake reads as a tray with a decorated rim. Stopped at the
+ * axis line the strokes' outer halves cover it completely, so the piping runs unbroken from the
+ * board to its tips and the icing simply fills what is left.
+ */
+export const STROKE_LID_FRAC = 0.22;                                   // lid thickness, in stroke depths
+export const STROKE_LID_INSET = 0.5;                                   // how far it tucks in, in stroke depths
+
+function strokeLid(geo, height, wz) {
+  geo.translate(0, height / 2 - (STROKE_LID_FRAC * wz) / 2, 0); // its top face IS the tier's top
   return geo;
 }
 
@@ -515,6 +553,8 @@ function buildStrokeWall(radius, height, p) {
   const foot = new THREE.CylinderGeometry(R, R, 0.35 * wz, 96, 1);
   foot.translate(0, -height / 2 + 0.175 * wz, 0);
   parts.push(foot);
+  const rLid = radius - STROKE_LID_INSET * wz;
+  parts.push(strokeLid(new THREE.CylinderGeometry(rLid, rLid, STROKE_LID_FRAC * wz, 96, 1), height, wz));
 
   const anchors = [];
   for (let i = 0; i < count; i++) {
@@ -700,8 +740,13 @@ export function strokeWallParams(params = {}) {
      * different ones, which is why they are overlaid with it rather than hardcoded beside it. */
     foot:    Math.min(0.45, Math.max(0, params.foot ?? 0.29)),
     tip:     Math.min(1, Math.max(0.55, params.tip ?? 0.85)),
-    // How much of the pointed tip stands above the tier's top edge. See strokeWallLayout.
-    crown:   Math.min(1.5, Math.max(0, params.crown ?? 1)),
+    /* How much of the pointed tip stands above the icing. See strokeWallLayout.
+     * ⚠️ THE NUMBER HERE MUST MATCH THE SCHEMA'S, and the schema is the authority — `crownParams`
+     * in creamStyles.js is what admin authors and what the app resolves; this fallback only serves
+     * a direct caller (a test, a harness, a measuring script). They disagreed once: the schema said
+     * 0.35 and this said 1, so the app and the geometry's own tests were describing different cakes
+     * and the tests went on passing through a change that altered every render. */
+    crown:   Math.min(1.5, Math.max(0, params.crown ?? 0.35)),
     /* ⚠️ AN OVERLAP, NOT A COUNT — the count falls out of it and the tier's circumference, so a 6"
      * and a 10" cake get strokes of the same SIZE rather than the same number. Authored as a count,
      * every change of cake size silently re-piped the cake with a different tip. (Same reasoning as
