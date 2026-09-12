@@ -261,17 +261,13 @@ function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0, crease = 1) 
      * Blending the two was tried and is worse than either: the depth term is near zero across most
      * of a rib, so the blend takes the mid-tones out and the whole stroke washes out.
      *
-     * ⚠️ WHAT ACTUALLY MAKES AN EDGE IS A NARROW DARK BAND, not a deeper one. This scene is a
-     * near-uniform dome — measured — so a geometric fold produces almost no difference in
-     * brightness between its two flanks, however sharp it is; the baked shade is the only cue there
-     * is. A triangle ramp darkens steadily all the way in from the crest, and a gradual darkening
-     * is the definition of soft. Raised to a power it stays bright across the rib and dives in the
-     * last fifth of the travel, which puts a broad bright band hard against a thin dark line — and
-     * that pairing is what the eye reads as a sharp edge. ⚠️ Do not push the exponent much past
-     * this: at 3 and above the dark collapses to about one vertex and disappears entirely, which is
-     * recorded elsewhere in this file as a separate failed attempt. */
-    const ang = Math.abs((((a + a0) * lobes / Math.PI) % 2 + 2) % 2 - 1);    // 0 crest, 1 crease
-    const t = Math.pow(ang, 2.5);
+     * ⚠️ AND RAISING IT TO A POWER IS ALSO WRONG, which is worth keeping because it LOOKS right in
+     * isolation: it holds the rib bright and dives in the last fifth, which does put a thin dark
+     * line beside a broad bright band. But a thin painted line is not a groove. The section already
+     * has a real slot cut into it, and squeezing the shade into a hairline throws away the tone
+     * that was describing that slot's walls — the grooves stop reading as something cut and become
+     * pen strokes on a smooth surface. Linear is what lets a groove look like a groove. */
+    const t = Math.abs((((a + a0) * lobes / Math.PI) % 2 + 2) % 2 - 1);      // 0 crest, 1 crease
     shade.push(t);
     if (onCrease) shade.push(t);
   }
@@ -367,30 +363,34 @@ export const PEN_FEEL = Object.freeze({
    * rate is a spiral; noise is a hand. Twist stays as a hint (0.008 over eight diameters is 23°,
    * which is character rather than a barber pole) and `wanderDeg` carries what was measured. */
   twistTurnsPerDia: 0.008,
-  wanderDeg: 6,
-  wanderPerDia: 0.11,          // one lazy excursion every ~9 diameters
-  /* ⚠️ RIB EDGES ARE NOT STRAIGHT LINES, and neither twist nor wander can bend them — both turn the
-   * whole section as ONE rigid piece, so every rib leans or wanders together and the edges stay
-   * parallel rulings. What a photograph shows is each rib drifting sideways by a DIFFERENT amount
-   * at a different height: the ribs crowd a little on one flank and open on the other, and which
-   * flank it is changes slowly up the stroke.
+  /* ⚠️ THE SNAKE IS A ROLL, NOT A SHEAR — and the shear is worth recording because it works and is
+   * still wrong. Rib edges are not straight lines, and the obvious way to bend them is to let each
+   * rib drift sideways by its own amount: turn every point about the axis by `sin(its own angle +
+   * a phase that drifts with height)`, which crowds the ribs on one flank and opens them on the
+   * other. It bends the edges, and it DEFORMS THE SECTION doing it — some ribs come out squeezed
+   * narrow and their neighbours stretched wide, the slots between them lose their shape, and the
+   * sharpness that `crease` exists to give goes with it. "Snake them without changing them."
    *
-   * That is a shear of the section, not a rotation. Each point is turned about the axis by
-   * `sin(its own angle + a phase that drifts with height)`, which squeezes one side and spreads the
-   * other; because the warp is a whole number of cycles round the section it stays closed, and
-   * because it is built from the point's own angle it costs one sine per vertex and no new ones.
-   * Two harmonics so the crowding never lands in the same place twice. */
-  /* ⚠️ SIZED TO THE STROKE, NOT TO TASTE — the first numbers here (5°, one excursion every eleven
-   * diameters) were invisible, because a wall stroke is only about eight diameters long: the warp
-   * never got round to doing anything over the length you can see. It needs to move far enough to
-   * shift a rib by a noticeable part of its own width (a tenth of a lobe on a ten-lobe tip is 3.6°,
-   * so 14° is about four tenths) and to do it two or three times on the way up. */
-  ribWanderDeg: 14,
-  ribWanderPerDia: 0.35,
-  /* And the ribs breathe as well as drift: one gets fatter while its neighbour thins, which is what
-   * makes an edge wander in DEPTH rather than only sideways. Sideways alone still reads as a ruled
-   * line that has been nudged. */
-  ribSwell: 0.10,
+   * A roll cannot do that. It turns the section rigidly, so every rib keeps the exact profile it
+   * was cut with and only its ORIENTATION drifts up the stroke — which is also what a real hand
+   * does, since the bag turns a little and the tip does not deform. The edges snake together
+   * rather than independently, and against a photograph that is the smaller error by far.
+   *
+   * ⚠️ THE NOMINAL DEGREES NEVER ARRIVE, and that is why two goes at this were invisible. `noise1`
+   * smooth-steps between random values two octaves deep, so in practice it reaches about ±0.35 of
+   * its notional ±1 — and over a stroke only a couple of noise units long you sample a fraction of
+   * even that. Measured on the real path: at 0.32 per diameter the noise traverses 1.4 units and
+   * swings 0.44 of its range, so a nominal 15° moved the ribs by SIX AND A HALF degrees, a fifth of
+   * a rib on a ten-lobe tip. Part of what is left is a constant offset, which is a fixed roll and
+   * not a wander at all.
+   *
+   * Both numbers are set from that measurement rather than from taste: the rate carries three or
+   * four humps into the stroke's length so the noise actually gets round its range, and the
+   * amplitude is the swing a rib needs (about a whole rib width, 36°) divided by the ~0.7 the noise
+   * delivers. ⚠️ If either is ever retuned, measure the swing along the real arc — the number in
+   * this field is not the number the ribs move by. */
+  wanderDeg: 45,
+  wanderPerDia: 0.8,
   /* One lazy swell every ~8 diameters instead of one ripple per diameter, and irregular: two
    * incommensurate waves, so the rhythm never repeats. Deterministic — no random, because a stroke
    * must rebuild identically on reload. */
@@ -568,8 +568,7 @@ function fixedUpFrames(samples, up) {
  */
 function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = null) {
   const { twistPerLen = 0, ruffleAmp = 0, ruffleFreq = 0, rufflePhase = 0, up = null, roll = 0, ao = 0,
-          wanderAmp = 0, wanderFreq = 0, ribAmp = 0, ribFreq = 0,
-          ribSwellAmp = 0, ribLobes = 0 } = opts;
+          wanderAmp = 0, wanderFreq = 0 } = opts;
   const curve = new THREE.CatmullRomCurve3(controlPts, false, 'centripetal');
   const segs = Math.min(900, Math.max(24, controlPts.length * 5));
   const samples = curve.getPoints(segs);                 // segs + 1
@@ -593,14 +592,6 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
   const frames = up ? fixedUpFrames(samples, up) : rmFrames(samples);
   const P = profile.length;
   const base = pos.length / 3;
-  // Each profile point in polar, so the rib shear (see ribWanderDeg) can turn it about the axis.
-  const pa = new Float64Array(P), pr = new Float64Array(P);
-  let prMin = Infinity;
-  for (let j = 0; j < P; j++) {
-    pa[j] = Math.atan2(profile[j][1], profile[j][0]);
-    pr[j] = Math.hypot(profile[j][0], profile[j][1]);
-    if (pr[j] < prMin) prMin = pr[j];
-  }
 
   /* One shade per profile point, reused for every ring. ⚠️ The ramp is linear in the ANGLE round
    * the lobe, not in the radius: a rosette's radius is flat at its peak, so a radius-linear ramp
@@ -650,24 +641,9 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
      * on its edge. Constant along the stroke, added to the rib spiral, which is zero for a slit. */
     const phi = roll + twistPerLen * s
       + (wanderAmp ? wanderAmp * noise1(wanderFreq * s / 6.283 + rufflePhase + 11.3) : 0);
-    // The rib shear's two slowly-drifting phases, one per ring.
-    const q1 = ribAmp ? 6.283 * noise1(ribFreq * s / 6.283 + rufflePhase + 3.1) : 0;
-    const q2 = ribAmp ? 6.283 * noise1(ribFreq * 1.7 * s / 6.283 + rufflePhase + 8.4) : 0;
-    const q3 = ribAmp ? 6.283 * noise1(ribFreq * 0.8 * s / 6.283 + rufflePhase + 5.7) : 0;
     const cs = Math.cos(phi), sn = Math.sin(phi);
     for (let j = 0; j < P; j++) {
-      let ax, ay;
-      if (ribAmp) {
-        const w = pa[j] + ribAmp * (0.62 * Math.sin(pa[j] + q1) + 0.38 * Math.sin(2 * pa[j] + q2));
-        /* Each rib fattens or thins on its own, and which one is doing which drifts up the stroke.
-         * ⚠️ IT SCALES THE HEIGHT ABOVE THE CREASE FLOOR, NOT THE WHOLE RADIUS. Scaling the radius
-         * lifts the creases along with the crests, and a lifted crease is a shallower one — the
-         * ribs stopped being sharp the moment this was added, which is the one thing `crease` had
-         * just been introduced to fix. Measured from the floor, the slot keeps its full depth and
-         * only the ribs move. */
-        const rr = prMin + (pr[j] - prMin) * (1 + ribSwellAmp * Math.sin(ribLobes * pa[j] + q3));
-        ax = Math.cos(w) * rr * r; ay = Math.sin(w) * rr * r;
-      } else { ax = profile[j][0] * r; ay = profile[j][1] * r; }
+      const ax = profile[j][0] * r, ay = profile[j][1] * r;
       const px = ax * cs - ay * sn, py = ax * sn + ay * cs;  // rotate in the N/B plane
       pos.push(C.x + N.x * px + B.x * py, C.y + N.y * px + B.y * py, C.z + N.z * px + B.z * py);
       if (col) { const k = shade ? shade[j] : 1; col.push(k, k, k); }
@@ -830,11 +806,6 @@ export function buildPipingStroke(points, nozzleKey, thickness, feelOverride = n
     // The roll's own slow wander (see wanderDeg). Rope tips only — a slit tip's attitude is the technique itself.
     wanderAmp:   (noz.twist ?? 0) * ((feel.wanderDeg ?? 0) * Math.PI) / 180,
     wanderFreq:  (feel.wanderPerDia ?? 0) * 2 * Math.PI / dia,
-    // The ribs' own sideways drift, which bends their edges. Rope tips only.
-    ribAmp:      (noz.twist ?? 0) * ((feel.ribWanderDeg ?? 0) * Math.PI) / 180,
-    ribFreq:     (feel.ribWanderPerDia ?? 0) * 2 * Math.PI / dia,
-    ribSwellAmp: (noz.twist ?? 0) * (feel.ribSwell ?? 0),
-    ribLobes:    noz.lobes ?? 0,
     rufflePhase: feel.rufflePhase ?? 0,
     /* A slit tip needs a known attitude; a rope tip does not care and is better off with the
      * least-twisting frame. Defaults to world up, which is the flat surface a flower is piped on —
