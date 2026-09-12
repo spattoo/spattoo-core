@@ -162,6 +162,59 @@ function petalProfile(n = 36) {
  *
  * The profile is normalised to a MAX radius of 1 so `thickness` keeps meaning crest-to-crest.
  */
+/* ⚠️ A PIPED STROKE IS A BUNDLE OF LOBES, NOT A CYLINDER WITH GROOVES IN IT — and that is a
+ * difference in construction, not in any parameter. Everything above builds the section as a
+ * surface of revolution whose radius waves: `1 + amp·cos(Lθ)`, shaped and sharpened and beaten
+ * against sidebands. However far that is pushed, every crest is still a bump ON a cylinder, the
+ * silhouette stays a nearly straight line with small notches in it, and the thing reads as a fluted
+ * column. A photograph of one piped line is the other way round: each rib is very nearly its own
+ * round TUBE, the tubes bulge out and overlap their neighbours, and the silhouette is scalloped by
+ * whole lobes rather than nicked by grooves.
+ *
+ * So the section is the UNION of `lobes` circles whose centres sit on a ring. For a circle of
+ * radius `rl` centred one unit out, the union's radius at φ from that centre is
+ * `cos φ + √(rl² − sin²φ)`, and the section takes the largest over all the lobes. Where two circles
+ * cross, the surface folds — a real cusp, not a smoothed minimum — and how deep that fold goes is
+ * set by one number: at `rl` just above `sin(π/lobes)` the circles barely reach each other and the
+ * cut is deep, and it shallows as they are fattened. Measured on a ten-lobe tip: 0.45 cuts 12%,
+ * 0.34 cuts 18%, 0.31 cuts 26%.
+ *
+ * ⚠️ This was tried once before and written off as "two round things meeting make a WIDE V, which
+ * is the one thing this needed not to be". That was judged against a star tip's narrow slot. The
+ * photograph's V is wide and soft, so the objection was to the wrong target.
+ */
+function lobeProfile(lobes, rl, n = 20, squash = 1) {
+  const out = [], shade = [], N = lobes * n, span = (Math.PI * 2) / lobes;
+  const one = (phi) => {
+    const t = rl * rl - Math.sin(phi) * Math.sin(phi);
+    return t > 0 ? Math.cos(phi) + Math.sqrt(t) : -Infinity;
+  };
+  const radius = (a) => {
+    let best = -Infinity;
+    for (let k = 0; k < lobes; k++) {
+      let d = a - k * span;
+      d = Math.atan2(Math.sin(d), Math.cos(d));            // wrap to ±π
+      const v = one(d);
+      if (v > best) best = v;
+    }
+    return best;
+  };
+  const k = 1 / (1 + rl);
+  for (let i = 0; i < N; i++) {
+    const a = (i / N) * Math.PI * 2;
+    const r = radius(a) * k;
+    /* The lobes cross at the half-way angle, and that crossing is a genuine corner — emit it twice
+     * so each lobe's flank keeps its own normal instead of the mean of the two. */
+    const onSeam = (i % n) === (n >> 1);
+    out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
+    if (onSeam) out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
+    const t = Math.abs((((a) * lobes / Math.PI) % 2 + 2) % 2 - 1);
+    shade.push(t); if (onSeam) shade.push(t);
+  }
+  out.shade = shade;
+  return out;
+}
+
 /* ⚠️ `squash` IS WHAT A ROPE PIPED ONTO A WALL DOES, and without it a wall of ropes cannot be right
  * at any spacing. Round tubes standing on a cylinder pose an unsolvable choice, and both halves of
  * it were rendered and rejected: butted loosely they leave a V-channel between every pair that the
@@ -306,6 +359,9 @@ export const NOZZLES = [
    * the centre, which gives ±15° and ±53°, so the ribs are about 35° apart. That is ten, not the
    * mesh's eight — a generated model is a smoothed average, a photograph is one real tip. */
   { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 0.4, 0.5), twist: 1, lobes: 10,  ruffle: 1 },
+  /* The bundle-of-lobes section (see lobeProfile). `rl` 0.34 puts the cut at 18%, which is where a
+   * rib still reads as its own tube rather than as a bump. */
+  { key: 'lobe10', label: 'Piped Lobes', hint: 'Ten lobes, each its own tube', profile: lobeProfile(10, 0.34), twist: 1, lobes: 10, ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, lobes: 8, ruffle: 1, squash: 0.55 },
