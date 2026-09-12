@@ -311,6 +311,107 @@ function mergeWithCylindricalUv(parts, radius, height) {
  * The body is at the tier's nominal radius and is never seen — the ropes sit outside it and, with
  * any overlap at all, close over it. It is there so that a gap cannot show the inside of the cake.
  */
+/* ── A MODELLED stroke, repeated round the tier ───────────────────────────────
+ *
+ * `wall: 'strokes'` is the piped side built from a MESH of one real vertical stroke instead of a
+ * swept nozzle section. Everything above this line extrudes a profile along a centreline, which is
+ * the honest way to model a tip that is being dragged — and it spent a long time not looking like
+ * the photograph, because a stroke's surface is not what its tip cuts. Cream tears, folds and
+ * slumps on the way out. A scan carries all of that for free.
+ *
+ * ⚠️ IT IS THE SAME STROKE THAT WAS APPROVED IN THE ONE-STROKE VIEW, PLACED — not a second tuning
+ * of it. Nothing here touches the stroke's shape: the only decisions are how big it is (one tier
+ * tall), how many go round, and how far each is pressed into the cake. If the single stroke is
+ * right and the wall is wrong, the thing to change is in this function, never in the mesh.
+ *
+ * ⚠️ NO MESH, NO WALL — `null`, so the tier renders its ordinary smooth side. The GLB arrives over
+ * the network a moment after the first frame, and a wall built without it would be a naked
+ * UNDERSIZED body: the cake would visibly shrink and then grow again as the strokes landed.
+ */
+
+// Sizing + spacing, given the stroke mesh's own bounding box. Pure, so the count a tier will draw
+// can be asserted without building anything. `size` is the mesh's bbox size (x lateral, y up, z
+// radial), which is why this takes it rather than reading a geometry.
+export function strokeWallLayout(radius, height, size, p) {
+  /* ⚠️ TWO SCALES, NOT ONE, and scaling the mesh uniformly is a bug that looks like a rounding
+   * error. A stroke's LENGTH is the tier: it is dragged from the board to the rim, so a taller cake
+   * gets a longer stroke. Its WIDTH is the TIP, which does not change because the cake got taller.
+   * Scaled uniformly, a 6"-tall cake came out with strokes twice as wide as a 3" one — the baker
+   * appearing to have swapped to a bigger nozzle halfway through, which is exactly the failure the
+   * swept wall's `width` note describes. So: stretched to the tier's height, scaled to the tip's
+   * width, and the mesh is stretched rather than magnified. That is what a fixed tip dragged
+   * further actually leaves. */
+  const scaleY = height / size.y;                        // one stroke spans the tier, top to bottom
+  const scale = (p.width * INCH) / size.x;               // ...and is as wide as the tip that left it
+  const wx = size.x * scale;                             // its width along the wall → the spacing
+  const wz = size.z * scale;                             // its depth into/out of the wall
+  /* ⚠️ THE BODY SITS A STROKE-DEPTH INSIDE THE TIER'S RADIUS, so the cake keeps the size the design
+   * says. Cream really is added ON TOP of a frosted cake, so the physical thing grows outward — but
+   * a 6" cake that renders 6.4" wide the moment a style is picked is a sizing bug, not a finish.
+   * Every other style here follows the same rule. `press` buries the stroke deeper. */
+  const bodyRadius = radius - wz * (1 - 0.5 * p.press);
+  const R = radius - wz / 2 + p.press * wz / 2;          // the circle the strokes' own axes ride
+  const spacing = wx * (1 - p.overlap);
+  const count = Math.max(6, Math.round(TAU * R / spacing));
+  return { scale, scaleY, wx, wz, R, bodyRadius, count };
+}
+
+function buildStrokeWall(radius, height, p) {
+  const src = p.strokeGeo;
+  if (!src) return null;                                 // mesh still loading — smooth wall, not a stub
+  if (!src.boundingBox) src.computeBoundingBox();
+  const size = new THREE.Vector3();
+  src.boundingBox.getSize(size);
+  const { scale, scaleY, wz, R, bodyRadius, count } = strokeWallLayout(radius, height, size, p);
+
+  const parts = [new THREE.CylinderGeometry(bodyRadius, bodyRadius, height, 96, 1)];
+  /* ⚠️ A FOOT, for the reason the swept wall has one: the notch between two strokes is open at the
+   * bottom and looks straight down at the board, so a viewer above the cake sees a ring of gold
+   * sawteeth round its base. A short collar closes them, and cream squeezed out at the foot of a
+   * vertical stroke is what a real one has there anyway.
+   *
+   * ⚠️ SIZED OFF THE STROKE'S RADIUS, NOT ITS DEPTH, and copying the swept wall's `1.2 * d` without
+   * noticing which one `d` was is worth the note: there `d` is a rope's radius, here `wz` is a whole
+   * stroke's depth — twice as big — so the collar came out 27% of the tier tall and read as a smooth
+   * band that had eaten the bottom quarter of every stroke. It also stays BEHIND the crest line
+   * (out at `R`, the strokes' own axis circle): a collar that reaches the crest is visible between
+   * the strokes as a ring, which is the fault it was added to fix. */
+  const foot = new THREE.CylinderGeometry(R, R, 0.35 * wz, 96, 1);
+  foot.translate(0, -height / 2 + 0.175 * wz, 0);
+  parts.push(foot);
+
+  /* ⚠️ THE MESH IS CENTRED AND SEATED ONCE, then instanced — not re-prepared per stroke. Its own
+   * origin is wherever the generator left it; what the placement needs is a stroke whose axis is at
+   * x=z=0 and whose foot is at y=0, so that scaling it by `scale` and standing it at -height/2 puts
+   * it on the board however tall the tier is. */
+  const c = new THREE.Vector3();
+  src.boundingBox.getCenter(c);
+  const base = src.clone();
+  base.translate(-c.x, -src.boundingBox.min.y, -c.z);
+
+  for (let i = 0; i < count; i++) {
+    /* ⚠️ ROLLED TO FACE OUTWARD, AND THE SIGN IS NEGATIVE — the same correction the swept ropes
+     * needed. The mesh has a front and a back (its ribs are deepest on the face that was scanned);
+     * without the roll, which side a stroke shows the viewer would depend on where it sits round
+     * the cake, and the wall comes out patchy. */
+    const theta = TAU * i / count;
+    /* ⚠️ EVERY STROKE THE TWIN OF ITS NEIGHBOUR IS WHAT MAKES A WALL READ AS MACHINED, and one mesh
+     * repeated is the worst case of it — the swept wall at least varied its own section. `vary`
+     * buys the cheapest honest difference: a little size, a little roll. It may only make a stroke
+     * FATTER, because a thinner one no longer reaches its neighbour and opens a gap. */
+    const s = scale * (1 + p.vary * 0.10 * ropeHash(i));
+    const roll = -theta + p.vary * 0.10 * (ropeHash(i + 700) - 0.5);
+    const g = base.clone();
+    g.scale(s, scaleY, s);
+    g.rotateY(roll);
+    g.translate(R * Math.cos(theta), -height / 2, R * Math.sin(theta));
+    parts.push(g);
+  }
+  const wall = mergePenGeometries(parts);
+  wall.computeVertexNormals();
+  return wall;
+}
+
 function buildPipedWall(radius, height, p) {
   const { thickness, w, d, ropes } = ropeSection(radius, p);
   const t = d;
@@ -469,6 +570,26 @@ export function displaceByHeightField(geo, field, { repeatX = 1, repeatY = 1, re
  * here the same way the numbers do: `CakeTier` folds the style entry's `nozzle` into the resolved
  * params. It is looked up in `NOZZLE_BY_KEY`, never branched on.
  */
+/* Resolved params for `wall: 'strokes'`. Deliberately SHORT: the mesh already carries everything a
+ * nozzle section used to have to be told (lobe count, depth, crease shape, the ripple down its
+ * face), so all that is left is where the strokes go. `strokeGeo` is not authored — it is the
+ * loaded mesh, handed in by the renderer. */
+export function strokeWallParams(params = {}) {
+  return {
+    // ⚠️ INCHES OF NOZZLE, not a count of strokes and not a fraction of the cake. See ropeSection.
+    width:   Math.max(0.1, params.width ?? 0.93),
+    /* ⚠️ AN OVERLAP, NOT A COUNT — the count falls out of it and the tier's circumference, so a 6"
+     * and a 10" cake get strokes of the same SIZE rather than the same number. Authored as a count,
+     * every change of cake size silently re-piped the cake with a different tip. (Same reasoning as
+     * the swept wall's `width`; here the stroke's size is fixed by the tier height, so the only
+     * thing left to say is how hard neighbours are pressed together.) */
+    overlap: Math.min(0.8, Math.max(-0.2, params.overlap ?? 0.39)),
+    press:   Math.min(1, Math.max(0, params.press ?? 0)),
+    vary:    Math.min(1, Math.max(0, params.vary ?? 0.35)),
+    strokeGeo: params.strokeGeo ?? null,
+  };
+}
+
 export function pipedParams(params = {}) {
   const nozzle = NOZZLE_BY_KEY[params.nozzle] ? params.nozzle : DEFAULT_NOZZLE;
   return {
@@ -520,6 +641,7 @@ export function buildStyledWall(wall, radius, height, params = {}) {
         { amp: params.relief ?? 0.04, bands, round: params.round ?? 1.0 });
     }
     case 'piped': return buildPipedWall(radius, height, pipedParams(params));
+    case 'strokes': return buildStrokeWall(radius, height, strokeWallParams(params));
     case 'weave': {
       // Woven stencil — a shallow REAL displacement of the pinwheel field (the crisp lines ride on top
       // as a normal map, baked from the same field in CakeTier). Tessellation scales with the line

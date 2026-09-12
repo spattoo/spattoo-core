@@ -18,6 +18,7 @@ import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall, buildStyledTop } from '../geometry/creamWall.js';
+import { useStrokeMesh } from './strokeMesh.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
@@ -1696,10 +1697,16 @@ export default function CakeTier({
    * cream came out of — that is what `piped` and `piped_round` are. */
   const styleVals = { ...resolveStyleParams(frostingStyle, styleParams), nozzle: styleDef(frostingStyle).nozzle };
   const styleSig = JSON.stringify(styleVals);
+  /* ⚠️ `nozzle` IS A KEY ON THE STYLE and so is `strokeGlb` — a MODELLED style (wall:'strokes') is
+   * piped from a scan of one real stroke instead of from a swept section, and the mesh arrives over
+   * the network. The hook runs unconditionally and returns null for every other style, so there is
+   * no hook behind a branch and no Suspense boundary around the tier: until the mesh lands the wall
+   * builder returns null and the tier renders its ordinary smooth side. See canvas/strokeMesh.js. */
+  const strokeGeo = useStrokeMesh(frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).strokeGlb : null);
   const styledGeo = useMemo(
-    () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
+    () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, { ...styleVals, strokeGeo }) : null,
     // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
-    [isPrism, roundEdge, wallKey, radius, height, styleSig],
+    [isPrism, roundEdge, wallKey, radius, height, styleSig, strokeGeo],
   );
   /* The styled TOP (piped's cream spiral). Its own strategy key on the style, so a style can texture
    * the wall and leave the lid flat — which is what every style but `piped` still does (null here →

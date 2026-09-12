@@ -256,7 +256,19 @@ const stripedDesign = STRIPE_KEY ? {
   }],
 } : null;
 
+/* ⚠️ `?style=` OPENS THE REAL DESIGNER ON A CREAM STYLE, and `?assets=` points it at a local copy of
+ * the assets bucket. Together they are the only way to see a MODELLED style (wall:'strokes', whose
+ * mesh is an R2 key) in the app rather than in a geometry harness — and "it renders in the harness"
+ * has been wrong about the app often enough in this project to be worth the two query keys. */
+const STYLE_KEY = PARAMS.get('style');
+const styledDesign = STYLE_KEY ? {
+  tiers: [{
+    color: '#F1EEDC', radius: 1.2, height: 1.45, shape: 'round',
+    frostingType: 'buttercream', frostingStyle: STYLE_KEY,
+  }],
+} : null;
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} cfAssetsBase="" onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripedDesign} />,
+  <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
+                initialDesign={reloadDesign ?? styledDesign ?? stripedDesign} />,
 );

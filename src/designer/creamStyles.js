@@ -25,6 +25,43 @@
  * and a slider here that could contradict them would only ever be a way to get a 1M that is not a
  * 1M. What a wall gets to say is how many strokes go round it and how they were laid.
  */
+/* The sliders for a MODELLED wall (`wall: 'strokes'`). Short by design: the mesh already carries
+ * everything a nozzle section had to be told — lobe count, rib depth, crease shape, the ripple down
+ * the face — so the only things left to author are where the strokes go. Compare pipedParams, which
+ * needs nine numbers to describe a tip this one simply has a photograph of. */
+function strokeParams(over = {}) {
+  const d = (key, fallback) => (over[key] ?? fallback);
+  return [
+    /* ⚠️ THE TIP'S OWN SIZE, IN INCHES, and the cause rather than the effect — the same axis the
+     * swept rows author, for the same reason. The stroke mesh is STRETCHED to the tier's height (a
+     * stroke is dragged from the board to the rim, so a taller cake gets a longer one) and SCALED to
+     * this width. Scaling it uniformly instead made a taller cake's strokes wider, which reads as
+     * the baker having swapped nozzles because the cake grew.
+     *
+     * 0.93 is the tip the approved stroke was measured at: 4.4 times as tall as it is wide on a
+     * 1.2-tall tier is 0.28 world across, which is 0.93in. The swept `piped_rope` row arrived at
+     * 0.91in from the same photograph, independently. */
+    { key: 'width',   label: 'Nozzle (in)', min: 0.3, max: 1.6, step: 0.05, default: d('width', 0.93), user: true },
+    /* ⚠️ AN OVERLAP, NOT A COUNT. The stroke's size is fixed by the tier's HEIGHT (one stroke spans
+     * the side, which is what a piped stroke does), so the count falls out of the circumference —
+     * and a 6" and a 10" cake get strokes of the same size rather than the same number. Authored as
+     * a count, every change of cake size silently re-piped the cake with a different tip.
+     *
+     * 0.39 is the value the placement was judged at: 28 strokes round a 0.9-radius tier. Below
+     * about 0.3 the cake shows between them; above about 0.45 the strokes merge and the side reads
+     * as a ribbed drum instead of as separate pipes, which is the groove that makes it look piped. */
+    { key: 'overlap', label: 'Overlap', min: 0.1, max: 0.6, step: 0.02, default: d('overlap', 0.39), user: true },
+    /* How hard the tip was held against the cake. 0 = laid on the surface, all of it showing, which
+     * is what piping is; see pipedParams' note — this axis exists for the same reason and defaults
+     * the same way. */
+    { key: 'press', label: 'Press in', min: 0, max: 1, step: 0.05, default: d('press', 0), user: false },
+    /* ⚠️ ONE MESH REPEATED IS THE WORST CASE OF THE "MACHINED" LOOK — the swept wall at least varied
+     * its own section between strokes. This buys the cheapest honest difference: a little size, a
+     * little roll. It may only make a stroke FATTER; a thinner one stops reaching its neighbour. */
+    { key: 'vary', label: 'Hand variation', min: 0, max: 1, step: 0.05, default: d('vary', 0.35), user: true },
+  ];
+}
+
 function pipedParams(over = {}) {
   const d = (key, fallback) => (over[key] ?? fallback);
   return [
@@ -198,6 +235,31 @@ export const CREAM_STYLES = {
     label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'lobe12',
     params: pipedParams({ width: 0.91, overlap: 0.02, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
   },
+  /* ⚠️ THE MODELLED ONE — the only wall here that is not extruded. Every row above sweeps a nozzle
+   * section along a centreline, which is the honest way to model a tip being dragged and is why
+   * they were all still being tuned after two days: a stroke's SURFACE is not what its tip cuts.
+   * Cream tears as it leaves the tip, folds where the ribs meet and slumps under its own weight, and
+   * none of that is in the section. This row pipes a SCAN of one real vertical stroke instead, and
+   * the ribs, the ripple down each one and the torn edges come with it.
+   *
+   * ⚠️ THE MESH IS THE SIGNED-OFF STROKE. It was approved in the one-stroke view beside the
+   * reference photograph (aspect 4.4:1 against the photo's 4.35, four creases across the face
+   * against four) and it is REPEATED here, not re-tuned. The only numbers in this row are placement
+   * numbers. If the wall looks wrong, change them; do not touch the mesh.
+   *
+   * `strokeGlb` is an R2 key, resolved against the host's assets base by canvas/strokeMesh.js — the
+   * same path every other 3D asset in this app takes. The DB may override it (config.strokeGlb), so
+   * a re-scanned stroke is an admin edit rather than a release.
+   */
+  piped_modelled: {
+    label: 'Piped — star tip (modelled)', wall: 'strokes',
+    strokeGlb: 'elements/3D-images/piping-stroke-vertical.glb',
+    /* ⚠️ NO `top`. The piped rows above finish with a spiral lid because a swept section can be
+     * spiralled onto one; there is no scan of a piped TOP, and faking it with the old spiral would
+     * put a different cream on the lid from the sides. The reference photograph is a smooth-topped
+     * cake with piped sides, which is what this renders. */
+    params: strokeParams({}),
+  },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
     // Sixteen fine flutes instead of five deep points: the ribs are the texture, not the silhouette.
@@ -243,7 +305,7 @@ export const CREAM_STYLES = {
   },
 };
 
-export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_rope', 'piped_fine', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
+export const STYLE_ORDER = ['smooth', 'wave', 'swirl', 'ribbed', 'piped', 'piped_modelled', 'piped_rope', 'piped_fine', 'piped_french', 'piped_closed', 'piped_round', 'rustic', 'chevron_weave'];
 export const DEFAULT_STYLE = 'smooth';
 
 export const styleDef = (style) => CREAM_STYLES[style] ?? CREAM_STYLES[DEFAULT_STYLE];
@@ -266,6 +328,7 @@ export function applyTextureConfig(rows) {
       wall: row.algorithm ?? seed?.wall ?? row.key,
       top: row.config?.top ?? seed?.top,                       // 'spiral' | undefined — the LID strategy
       nozzle: row.config?.nozzle ?? seed?.nozzle,              // 'star' | 'round' — which tip (NOZZLES)
+      strokeGlb: row.config?.strokeGlb ?? seed?.strokeGlb,     // R2 key of the stroke MESH (wall:'strokes')
       surfaceMap: row.config?.surfaceMap ?? seed?.surfaceMap,   // normal-map finishes carry this in config
       params: Array.isArray(row.config?.params) ? row.config.params : (seed?.params ?? []),
     };

@@ -9,6 +9,7 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL } from '../src/designer/geometry/creamPen.js';
 import { ropeSection, pipedBodyRadius, pipedParams, buildStyledWall, buildStyledTop, bakeCreaseAO } from '../src/designer/geometry/creamWall.js';
 import { styleDef, CREAM_STYLES } from '../src/designer/creamStyles.js';
+import { configureStrokeMeshes, useStrokeMesh } from '../src/designer/canvas/strokeMesh.js';
 import { frostingDef } from '../src/designer/frostings.js';
 
 /* ONE vertical stroke, on its own, lit the way the cake is.
@@ -190,6 +191,13 @@ function Cake() {
  * with the row's real params, so a look that passes here is a look the designer will actually draw.
  * A whole day went into a wall judged only through a stand-in. `?style=piped_rope`. */
 const styleKey = q.get('style');
+/* ⚠️ A MODELLED style's mesh comes from the ASSETS BASE, the same as in the app — `?assets=` points
+ * this page at a local copy of the bucket rather than at R2, so the whole chain the designer uses
+ * (style row → R2 key → URL → GLTFLoader → buildStyledWall) is what gets judged here, not a
+ * shortcut past it. Without the flag there is no base, the mesh is unresolvable and the style
+ * renders as a smooth wall — which is exactly what it does in the app in that situation. */
+configureStrokeMeshes(q.get('assets') || '');
+
 function StyledTier() {
   const row = CREAM_STYLES[styleKey] ?? null;
   const H = Number(q.get('h') || 1.2), Rt = Number(q.get('r') || 0.9);
@@ -203,8 +211,10 @@ function StyledTier() {
     out.nozzle = q.get('noz') || row?.nozzle;
     return out;
   }, []);
+  const strokeGeo = useStrokeMesh(row?.strokeGlb);
   const wall = useMemo(() => {
-    const g = buildStyledWall(row?.wall, Rt, H, vals);
+    const g = buildStyledWall(row?.wall, Rt, H, { ...vals, strokeGeo });
+    if (!g) { console.log('[wall] null — no geometry (modelled style still loading its mesh?)'); return null; }
     /* ⚠️ THE PAGE SAYS WHAT IT DREW. Vite's watcher died three times in one afternoon and served
      * stale modules each time, so "the render disagrees with the measurement" was usually neither —
      * it was a picture of code that no longer existed. This prints the numbers actually used. */
@@ -217,13 +227,15 @@ function StyledTier() {
     }
     const info = { nozzle: vals.nozzle, width: vals.width, overlap: vals.overlap, ao: vals.ao,
       surfaceMin: +lo.toFixed(3), surfaceMax: +hi.toFixed(3), tierR: Rt,
+      tris: (g.index ? g.index.count : pos.count) / 3,
       hasColour: !!g.getAttribute('color') };
     console.log('[wall]', JSON.stringify(info));
     if (typeof window !== 'undefined') window.__wall = info;
     return g;
-  }, [vals]);
+  }, [vals, strokeGeo]);
   const top  = useMemo(() => buildStyledTop(row?.wall, row?.top, Rt, H, vals), [vals]);
   const mat = { color: '#F6EBD8', ...creamMaterial() };
+  if (!wall) return null;
   return <group position={[0, -0.2, 0]}>
     <mesh geometry={wall} castShadow receiveShadow>
       <meshPhysicalMaterial {...mat} vertexColors={!!wall?.getAttribute?.('color')} /></mesh>

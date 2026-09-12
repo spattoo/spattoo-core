@@ -44,14 +44,14 @@ export const FROSTINGS = {
     material: { roughness: 0.95, metalness: 0, sheen: 0.00, sheenRoughness: 0.55, sheenColor: '#fff3e0', clearcoat: 0.00, clearcoatRoughness: 0.45, envMapIntensity: 0.65, grain: 'cream', grainStrength: 0.50, grainDensity: 1.0 },
     edge: 'sharp',
     capabilities: { gradient: true },
-    styles: ['wave', 'swirl', 'rustic'],
+    styles: ['wave', 'swirl', 'rustic', 'piped_modelled'],
   },
   whipped: {
     label: 'Whipped',
     material: { roughness: 1.00, metalness: 0, sheen: 0.20, sheenRoughness: 0.95, sheenColor: '#ffffff', clearcoat: 0.00, clearcoatRoughness: 1.00, envMapIntensity: 0.30, grain: 'foam', grainStrength: 1.10, grainDensity: 0.4 },
     edge: 'sharp',
     capabilities: { gradient: true },
-    styles: ['wave', 'swirl', 'rustic'],
+    styles: ['wave', 'swirl', 'rustic', 'piped_modelled'],
   },
   fondant: {
     label: 'Fondant',

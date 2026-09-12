@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   ropeRadius, ropeSection, pipedBodyRadius, pipedParams, makeSwirlField,
   buildStyledWall, buildStyledTop, makeWallReliefSampler,
+  strokeWallLayout, strokeWallParams,
 } from './creamWall.js';
 import { NOZZLE_BY_KEY, mergePenGeometries } from './creamPen.js';
 import { CREAM_STYLES, resolveStyleParams, styleDef } from '../creamStyles.js';
@@ -263,5 +264,60 @@ describe('the pen sweeps outward-facing geometry', () => {
      * test exists to catch is a WHOLESALE inversion, and that scored zero out of 720. */
     expect(facingOut / seen).toBeGreaterThan(0.85);
     expect(worst).toBeGreaterThan(-0.5);
+  });
+});
+
+/* ── wall: 'strokes' — a MODELLED stroke, repeated ────────────────────────────
+ * The placement is the whole of this wall: the mesh is fixed, so these assert the three decisions
+ * the builder is allowed to make (how big, how many, how far out) and the one it must not — that a
+ * missing mesh is a smooth wall rather than a naked undersized body. */
+describe("strokes wall — placing a modelled stroke", () => {
+  // The real scan's bounding box, so the numbers below are the ones a cake actually gets.
+  const SIZE = { x: 0.442, y: 1.893, z: 0.432 };
+  const P = strokeWallParams({});
+
+  it('stretches one stroke to span the tier, top to bottom', () => {
+    const { scaleY } = strokeWallLayout(0.9, 1.2, SIZE, P);
+    expect(SIZE.y * scaleY).toBeCloseTo(1.2, 6);
+  });
+
+  /* ⚠️ THE TIP DOES NOT CHANGE BECAUSE THE CAKE GOT TALLER. Scaled uniformly to the tier's height —
+   * which is what this did first — a 6" cake's strokes came out twice as wide as a 3" cake's, and
+   * the wall read as a different nozzle on every cake size. Length follows the tier; width follows
+   * the nozzle, and nothing else. */
+  it('keeps the stroke as wide as the tip however tall the tier is', () => {
+    const short = strokeWallLayout(0.9, 1.2, SIZE, P);
+    const tall  = strokeWallLayout(0.9, 2.4, SIZE, P);
+    expect(tall.wx).toBeCloseTo(short.wx, 6);
+    expect(tall.count).toBe(short.count);
+    expect(SIZE.y * tall.scaleY).toBeCloseTo(2.4, 6);   // ...it just gets longer
+  });
+
+  it('puts the strokes ON the surface: crests at the tier radius, body a stroke-depth behind', () => {
+    const { R, wz, bodyRadius } = strokeWallLayout(0.9, 1.2, SIZE, P);
+    expect(R + wz / 2).toBeCloseTo(0.9, 6);            // crest == the size the design asked for
+    expect(bodyRadius).toBeCloseTo(R - wz / 2, 6);     // ...and the cake's own side is behind them
+  });
+
+  /* ⚠️ THE REGRESSION THIS FILE EXISTS FOR. Authored as a COUNT, every change of cake size silently
+   * re-pipes the cake with a different tip. The count must follow the circumference so that the
+   * stroke stays the same SIZE on a 6" cake and a 10" one. */
+  it('keeps the stroke size across tier sizes, and lets the count follow the circumference', () => {
+    const small = strokeWallLayout(0.9, 1.2, SIZE, P);
+    const big   = strokeWallLayout(1.5, 1.2, SIZE, P);
+    expect(big.wx).toBeCloseTo(small.wx, 6);           // same tip
+    expect(big.count).toBeGreaterThan(small.count);    // more of them
+    expect(big.count / small.count).toBeCloseTo(big.R / small.R, 1);
+  });
+
+  it('draws the placement that was signed off: 28 strokes round a 0.9 tier', () => {
+    expect(strokeWallLayout(0.9, 1.2, SIZE, P).count).toBe(28);
+  });
+
+  /* ⚠️ NO MESH, NO WALL. The GLB arrives a moment after the first frame; a wall built without it
+   * would be the UNDERSIZED body on its own, so the cake would visibly shrink and then grow again
+   * as the strokes landed. null means the tier renders its ordinary smooth side instead. */
+  it('is null until the mesh has loaded', () => {
+    expect(buildStyledWall('strokes', 1, 1.4, { overlap: 0.39 })).toBeNull();
   });
 });
