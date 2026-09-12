@@ -183,7 +183,15 @@ function petalProfile(n = 36) {
  * is the one thing this needed not to be". That was judged against a star tip's narrow slot. The
  * photograph's V is wide and soft, so the objection was to the wrong target.
  */
-function lobeProfile(lobes, rl, n = 20, squash = 1) {
+/* ⚠️ `boost` STANDS THE LOBES UP, and without it a union of circles can only ever bulge. The crest's
+ * curvature is locked to `rl` — a circle is as round at the top as it is at the side — so the ribs
+ * come out as broad arcs and read as swells rather than as projections. Stretching every point's
+ * deviation from the ring it sits on makes each lobe taller against its own width without moving
+ * where the lobes or the seams are: measured on twelve lobes at rl 0.27, a rib stands 0.42 of its
+ * own width at boost 1 and 0.73 at 1.8, and the cut deepens 18% → 28% with it. That ratio is what
+ * "the projections are not sharp" is about — not the crest's radius and not the groove's depth on
+ * its own. */
+function lobeProfile(lobes, rl, n = 20, squash = 1, boost = 1) {
   const out = [], shade = [], N = lobes * n, span = (Math.PI * 2) / lobes;
   const one = (phi) => {
     const t = rl * rl - Math.sin(phi) * Math.sin(phi);
@@ -199,10 +207,10 @@ function lobeProfile(lobes, rl, n = 20, squash = 1) {
     }
     return best;
   };
-  const k = 1 / (1 + rl);
+  const k = 1 / (1 + (rl) * boost);
   for (let i = 0; i < N; i++) {
     const a = (i / N) * Math.PI * 2;
-    const r = radius(a) * k;
+    const r = (1 + (radius(a) - 1) * boost) * k;
     /* The lobes cross at the half-way angle, and that crossing is a genuine corner — emit it twice
      * so each lobe's flank keeps its own normal instead of the mean of the two. */
     const onSeam = (i % n) === (n >> 1);
@@ -364,7 +372,7 @@ export const NOZZLES = [
    * of a tube's projected width is at asin(2f − 1) from the centre — so −15.1°, 16.3°, 49.5°, which
    * is ribs about 32° apart. That is 11.3 lobes, and ten made them visibly too thick. `rl` 0.27
    * holds the cut at 18% at this count, which is where a rib still reads as its own tube. */
-  { key: 'lobe12', label: 'Piped Lobes', hint: 'Twelve lobes, each its own tube', profile: lobeProfile(12, 0.27), twist: 1, lobes: 12, ruffle: 1 },
+  { key: 'lobe12', label: 'Piped Lobes', hint: 'Twelve lobes, each its own tube', profile: lobeProfile(12, 0.27, 20, 1, 1.8), twist: 1, lobes: 12, ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, lobes: 8, ruffle: 1, squash: 0.55 },
