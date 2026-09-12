@@ -22,12 +22,21 @@ import { frostingDef } from '../src/designer/frostings.js';
  * leaves and where the wall puts it can be looked at together or apart.
  */
 const q = new URLSearchParams(location.search);
-const noz = q.get('noz') || 'star5';
+/* ⚠️ THE DEFAULTS ARE THE CALIBRATED ONES, not the first tip in the registry. Loading this page
+ * with no query at all now renders the stroke that was matched to the photograph beside it:
+ *
+ *   aspect          4.35 reference → 4.4 ours      (height / mean width, both measured off pixels)
+ *   creases on face 4 reference → 4 ours           (a crease at fraction f of a tube's projected
+ *                                                   width sits at asin(2f − 1) from the centre)
+ *   luminance range 55% of max reference → ~55%    (scanned across the middle)
+ *   ripple          1.55% rms reference → ~2%      (width against its own smooth trend)
+ */
+const noz = q.get('noz') || 'rose10';
 const onCake = q.get('cake') === '1';
 const R = 1.35;                                     // tier radius when the stroke is shown on a cake
 const P = pipedParams({ nozzle: noz, width: Number(q.get('width') || 0.5), overlap: Number(q.get('ov') ?? 0.85) });
 // On a cake the stroke is the size the wall would make it; on its own it is sized to fill the frame.
-const t = Number(q.get('t') || (onCake ? ropeSection(R, P).w : 0.16));
+const t = Number(q.get('t') || (onCake ? ropeSection(R, P).w : 0.275));
 /* ⚠️ The camera sits on +z and the sweep's frame puts the profile's local x on world x, so a POINT
  * only faces the viewer at a quarter turn. On a cake this is the SAME roll the wall applies to every
  * stroke (its own angle), which is what keeps the tip presenting the same face all the way round. */
@@ -152,9 +161,9 @@ function Stroke({ x = 0, z = 0, roll: r }) {
     speedWidth: 0,
     twistTurnsPerDia: Number(q.get('twist') ?? PEN_FEEL.twistTurnsPerDia),
     swellAmp: Number(q.get('swell') ?? PEN_FEEL.swellAmp),
-    tailDias: Number(q.get('tail') ?? PEN_FEEL.tailDias),
-    footDias: Number(q.get('foot') ?? PEN_FEEL.footDias),
-  }, null, r, Number(q.get('ao') ?? 1.0));
+    tailDias: Number(q.get('tail') ?? 0.45),      // measured: the taper is the top ~10%, not a third
+    footDias: Number(q.get('foot') ?? 0.7),
+  }, null, r, Number(q.get('ao') ?? 0.95));
   if (!geo) return null;
   return <mesh geometry={geo} castShadow receiveShadow>
     <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;

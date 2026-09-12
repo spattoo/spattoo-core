@@ -186,11 +186,22 @@ function petalProfile(n = 36) {
  * simply the shape cream takes when it lands on one. The free-standing stroke this section was
  * measured from is near-round (0.456 by 0.440) because it was piped onto nothing.
  */
-function rosetteProfile(lobes, amp, n = 24, squash = 1) {
-  const out = [], shade = [], k = 1 / (1 + amp);
+/* ⚠️ THE SIDEBANDS ARE NOT NOISE, and leaving them out is why our ribs are all the same width and
+ * the photograph's are not. The mesh's DFT gave 8 lobes at 17% — and next to it, 6 at 4.8% and 10
+ * at 3.6%, which were written off as irregularity. They are the whole difference between a cosine
+ * and cream: a neighbouring harmonic BEATS against the main one, so going round the section each
+ * rib is a little wider or narrower than the last and the pattern never repeats. Same total depth,
+ * no extra vertices, and it is closed (every term is a whole number of cycles), so the section
+ * still joins itself. `uneven` scales both, 0 for the plain rosette. */
+function rosetteProfile(lobes, amp, n = 24, squash = 1, uneven = 0) {
+  const out = [], shade = [];
+  const a6 = amp * 0.28 * uneven, a10 = amp * 0.21 * uneven;   // the measured ratios, 4.8/17, 3.6/17
+  const k = 1 / (1 + amp + a6 + a10);
   for (let i = 0; i < lobes * n; i++) {
     const a = (i / (lobes * n)) * Math.PI * 2;
-    const r = (1 + amp * Math.cos(lobes * a)) * k;
+    const r = (1 + amp * Math.cos(lobes * a)
+                 + a6 * Math.cos((lobes - 2) * a + 1.7)
+                 + a10 * Math.cos((lobes + 2) * a + 0.6)) * k;
     out.push([Math.cos(a) * r * squash, Math.sin(a) * r]);
     /* ⚠️ THE CREASE PATTERN IS CARRIED, NOT INFERRED FROM THE POINT. Reading a point's depth back
      * out of its radius works only while the section is a plain rosette: squash it and the radius
@@ -221,9 +232,14 @@ export const NOZZLES = [
   /* Measured off a sliced mesh of one real vertical stroke — see the note on rosetteProfile. The
    * two extra rows are the same shape shallower and deeper, because 0.18 is what ONE stroke measured
    * and a baker's pressure is the other half of how deep a groove lands. */
-  { key: 'rose8',  label: 'Piped Rope',  hint: 'Measured: 8 rounded ribs',   profile: rosetteProfile(8, 0.18), twist: 1,   ruffle: 1 },
+  { key: 'rose8',  label: 'Piped Rope',  hint: 'Measured: 8 rounded ribs',   profile: rosetteProfile(8, 0.18, 24, 1, 1), twist: 1,   ruffle: 1 },
   { key: 'rose8d', label: 'Piped Deep',  hint: 'Same ribs, firmer pressure', profile: rosetteProfile(8, 0.26), twist: 1,   ruffle: 1 },
-  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.18), twist: 1,  ruffle: 1 },
+  /* ⚠️ TEN, and the mesh said eight — they are measuring two different strokes and the PHOTOGRAPH
+   * is the one being matched. Scanning it across the middle puts creases at 37%, 64%, 88% and 92%
+   * of the width; a crease at a fraction f of a tube's projected width sits at asin(2f − 1) from
+   * the centre, which gives ±15° and ±53°, so the ribs are about 35° apart. That is ten, not the
+   * mesh's eight — a generated model is a smoothed average, a photograph is one real tip. */
+  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.18, 20, 1, 1), twist: 1,  ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, ruffle: 1, squash: 0.55 },
@@ -548,16 +564,51 @@ function pushSweep(pos, idx, controlPts, profile, radiusAt, opts = {}, col = nul
       idx.push(a, b, c, b, d, c);
     }
   }
+  /* ⚠️ THE ENDS WERE CONES, and a cone is the one thing cream never does. A single apex vertex
+   * fanned to the last ring gives flat triangular facets meeting at a point — put it beside a
+   * photograph of a piped line and it is the first thing that looks manufactured, at BOTH ends: a
+   * stroke starts as a rounded splay where the tip was pressed to the surface, and finishes as a
+   * soft dome where the bag lifted. Same apex, but the profile is carried to it around a quarter
+   * circle, so the surface rolls over instead of creasing. Four rings is enough to read round and
+   * costs four rings. */
+  const CAP = 4;
+  const capAt = (ringBase, ringR, C, T, sign) => {
+    let prev = ringBase;
+    for (let k = 1; k <= CAP; k++) {
+      const t = (k / CAP) * (Math.PI / 2);
+      const scale = Math.cos(t), lift = Math.sin(t) * ringR * 0.75;
+      const ringStart = pos.length / 3;
+      const N = frames.normals[sign > 0 ? segs : 0], B = frames.binormals[sign > 0 ? segs : 0];
+      const phiC = roll + twistPerLen * (sign > 0 ? arc[segs] : 0);
+      const cs = Math.cos(phiC), sn = Math.sin(phiC);
+      for (let j = 0; j < P; j++) {
+        const ax = profile[j][0] * ringR * scale, ay = profile[j][1] * ringR * scale;
+        const px = ax * cs - ay * sn, py = ax * sn + ay * cs;
+        const cx = C.x + T.x * lift * sign, cy = C.y + T.y * lift * sign, cz = C.z + T.z * lift * sign;
+        pos.push(cx + N.x * px + B.x * py, cy + N.y * px + B.y * py, cz + N.z * px + B.z * py);
+        if (col) { const kk = shade ? shade[j] : 1; col.push(kk, kk, kk); }
+      }
+      for (let j = 0; j < P; j++) {
+        const a = prev + j, b = prev + (j + 1) % P;
+        const c = ringStart + j, d = ringStart + (j + 1) % P;
+        if (sign > 0) idx.push(a, b, c, b, d, c); else idx.push(a, c, b, b, c, d);
+      }
+      prev = ringStart;
+    }
+    return prev;
+  };
   const r0 = radiusAt(0, segs, 0, arc[segs]), rn = radiusAt(segs, segs, arc[segs], arc[segs]);
-  const sC = samples[0].clone().addScaledVector(frames.tangents[0], -r0 * 0.6);
-  const eC = samples[segs].clone().addScaledVector(frames.tangents[segs], rn * 0.6);
-  /* The caps' two apex vertices sit on the axis and belong to no lobe; they take the crest value,
-   * which is what the tip of a blunt end actually catches. */
+  const sLast = capAt(base, r0, samples[0], frames.tangents[0], -1);
+  const eLast = capAt(base + segs * P, rn, samples[segs], frames.tangents[segs], 1);
+  const sC = samples[0].clone().addScaledVector(frames.tangents[0], -r0 * 0.75);
+  const eC = samples[segs].clone().addScaledVector(frames.tangents[segs], rn * 0.75);
+  /* The two apex vertices sit on the axis and belong to no lobe; they take the crest value, which
+   * is what the very tip of a rounded end actually catches. */
   const sI = pos.length / 3; pos.push(sC.x, sC.y, sC.z); if (col) col.push(1, 1, 1);
   const eI = pos.length / 3; pos.push(eC.x, eC.y, eC.z); if (col) col.push(1, 1, 1);
-  for (let j = 0; j < P; j++) {   // end caps, wound to match the tube above
-    idx.push(sI, base + j, base + (j + 1) % P);
-    idx.push(eI, base + segs * P + (j + 1) % P, base + segs * P + j);
+  for (let j = 0; j < P; j++) {
+    idx.push(sI, sLast + j, sLast + (j + 1) % P);
+    idx.push(eI, eLast + (j + 1) % P, eLast + j);
   }
 }
 
