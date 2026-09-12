@@ -203,7 +203,25 @@ function StyledTier() {
     out.nozzle = q.get('noz') || row?.nozzle;
     return out;
   }, []);
-  const wall = useMemo(() => buildStyledWall(row?.wall, Rt, H, vals), [vals]);
+  const wall = useMemo(() => {
+    const g = buildStyledWall(row?.wall, Rt, H, vals);
+    /* ⚠️ THE PAGE SAYS WHAT IT DREW. Vite's watcher died three times in one afternoon and served
+     * stale modules each time, so "the render disagrees with the measurement" was usually neither —
+     * it was a picture of code that no longer existed. This prints the numbers actually used. */
+    const pos = g.getAttribute('position');
+    let lo = Infinity, hi = 0;
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getY(i)) > H * 0.4) continue;
+      const r = Math.hypot(pos.getX(i), pos.getZ(i));
+      if (r < lo) lo = r; if (r > hi) hi = r;
+    }
+    const info = { nozzle: vals.nozzle, width: vals.width, overlap: vals.overlap, ao: vals.ao,
+      surfaceMin: +lo.toFixed(3), surfaceMax: +hi.toFixed(3), tierR: Rt,
+      hasColour: !!g.getAttribute('color') };
+    console.log('[wall]', JSON.stringify(info));
+    if (typeof window !== 'undefined') window.__wall = info;
+    return g;
+  }, [vals]);
   const top  = useMemo(() => buildStyledTop(row?.wall, row?.top, Rt, H, vals), [vals]);
   const mat = { color: '#F6EBD8', ...creamMaterial() };
   return <group position={[0, -0.2, 0]}>
@@ -321,8 +339,7 @@ createRoot(document.getElementById('root')).render(
           read as solid, every rib gaining a lit side and a shaded side. This scene is a near-uniform
           dome, so a rib's two flanks shade alike and a groove is only ever as dark as the shade
           baked into it. The remaining gap is the light or a real AO map, not a tip parameter — and
-          neither is a change to make inside a harness. See features/hand-piping.md. */} />
-      )}
+          neither is a change to make inside a harness. See features/hand-piping.md. */}
       {q.get('glb') ? <GlbWall url={q.get('glb')} /> : styleKey ? <StyledTier /> : stack && onCake ? <>
         {/* The stack, laid ON the cake's side: tangent to it, and rolled so a POINT faces outward —
             the same placement the wall gives a swept stroke. `?n=` repeats it round the tier. */}

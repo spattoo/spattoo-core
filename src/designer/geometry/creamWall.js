@@ -404,12 +404,21 @@ function buildPipedWall(radius, height, p) {
    * would drag the floor to nothing. */
   const merged = mergeWithCylindricalUv(parts, radius, height);
   const pos = merged.getAttribute('position');
+  /* ⚠️ MEASURED OVER THE PIPING ONLY, and ⚠️ NOT over every vertex — a wall carries points ON THE
+   * AXIS (cylinder cap centres, an end cap's apex) and one of those drags the floor to ZERO. The
+   * range then spans 0 to the crest instead of the crease to the crest, the real relief lands in
+   * the top tenth of the ramp, and the whole wall shades nearly flat: measured here as
+   * `surfaceMin 0, surfaceMax 0.937` when the surface actually runs 0.82 to 0.91. Anything inside
+   * the body is not piping and cannot be a crease. */
+  const floor = pipedBodyRadius(radius, p) * 0.9;
   let lo = Infinity, hi = 0;
   for (let i = 0; i < pos.count; i++) {
     if (Math.abs(pos.getY(i)) > height * 0.4) continue;
     const r = Math.hypot(pos.getX(i), pos.getZ(i));
+    if (r < floor) continue;
     if (r < lo) lo = r; if (r > hi) hi = r;
   }
+  if (!(lo < hi)) { lo = pipedBodyRadius(radius, p); hi = radius; }
   return bakeCreaseAO(merged, hi, lo, p.ao);
 }
 
