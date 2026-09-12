@@ -1670,11 +1670,22 @@ export default function CakeTier({
     const S = strokeSizing(height, size, p);
     /* Anchors: the strokes' axes ride a path inset half a stroke-depth from the outline, so their
      * crests land ON it — the same rule the round wall follows, stated once in strokeWallLayout.
+     *
+     * ⚠️ A RECT TAKES `rectEdgeRing`, AN OUTLINE TAKES `perimeterRing`, and taking only half of that
+     * branch is a real bug with a quiet symptom. `roundedRectPerimeter` walks CLOCKWISE while
+     * `perimeterRing` documents "CCW winding ⇒ the right-hand perpendicular points out" — so on a
+     * rectangle every normal comes back pointing INTO the cake: the inset became an OUTSET and each
+     * stroke faced backwards. Measured, the cream stood 23% proud of the cake in x and 31% in z
+     * (one whole stroke width on each side) while round and heart were within 1%. `ringPositions`
+     * has always branched exactly here, for exactly this reason — this is that branch, not a new one.
+     *
      * ⚠️ EVERY CONTOUR WALKED SEPARATELY (pipingPerimeters, not pipingPerimeter): a number cake is
      * several closed loops and a stroke must never bridge the gap between two digits. */
-    const anchors = pipingPerimeters(shp).flatMap(perim =>
-      perimeterRing(perim, -S.wz / 2 + p.press * S.wz / 2, S.spacing, 0)
-        .map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY })));
+    const off = -S.wz / 2 + p.press * S.wz / 2;
+    const ring = shp.kind === 'rect'
+      ? rectEdgeRing(shp, off, S.spacing, 0)
+      : pipingPerimeters(shp).flatMap(perim => perimeterRing(perim, off, S.spacing, 0));
+    const anchors = ring.map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY }));
     const geo = buildStrokeWallOn(anchors, height, { ...p, strokeGeo });
     return geo && { geo, inset: S.wz * (1 - 0.5 * p.press), count: anchors.length };
     // styleVals is recreated each render; styleSig captures its values. eslint-disable-next-line

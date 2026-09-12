@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { tierShape, pipingPerimeters } from './surface.js';
+import { tierShape, pipingPerimeters, perimeter, rectEdgeRing } from './surface.js';
 import { perimeterRing } from '../canvas/ringPositions.js';
 import { strokeSizing, strokeWallParams, buildStrokeWallOn } from './creamWall.js';
 import * as THREE from 'three';
@@ -16,11 +16,14 @@ const SIZE = { x: 0.442, y: 1.893, z: 0.432 };
 const P = strokeWallParams({});
 const S = strokeSizing(1.45, SIZE, P);
 
-const anchorsFor = (tier) => {
-  const shp = tierShape(tier);
-  return pipingPerimeters(shp).flatMap(perim =>
-    perimeterRing(perim, -S.wz / 2, S.spacing, 0).map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY })));
-};
+/* ⚠️ A RECT TAKES `rectEdgeRing`, AN OUTLINE TAKES `perimeterRing` — the branch `ringPositions` has
+ * always had. Taking only half of it is what the overshoot test below exists to catch. */
+const ringFor = (shp, off) => (shp.kind === 'rect'
+  ? rectEdgeRing(shp, off, S.spacing, 0)
+  : pipingPerimeters(shp).flatMap(perim => perimeterRing(perim, off, S.spacing, 0)));
+
+const anchorsFor = (tier) =>
+  ringFor(tierShape(tier), -S.wz / 2).map(q => ({ x: q.pos[0], z: q.pos[2], out: q.rotY }));
 
 const nearestGaps = (a) => a.map((p, i) => {
   let best = Infinity;
@@ -64,6 +67,30 @@ describe('modelled wall on a shaped tier', () => {
       expect(r1).toBeGreaterThan(r0 - 0.02);          // outward, allowing for the heart's concave cleft
     }
     expect(shp.kind).toBe('outline');
+  });
+
+  /* ⚠️ THE CREAM MUST NOT MAKE THE CAKE BIGGER, and this is the test that would have caught the one
+   * real bug in this feature. `roundedRectPerimeter` walks CLOCKWISE; `perimeterRing` documents "CCW
+   * winding ⇒ the right-hand perpendicular points out". Walking a rect with the outline's walker
+   * therefore returned every normal pointing INTO the cake — the inset silently became an OUTSET and
+   * each stroke faced backwards. Measured: the cream stood 23% proud of the cake in x and 31% in z,
+   * a whole stroke width on each side, while round and heart were within 1%. Nothing threw, the
+   * spacing tests above all passed, and the only visible symptom was a sheet cake that had quietly
+   * grown by a third and overhung its own board. */
+  it.each(Object.keys(SHAPES))('does not let the cream grow the cake on %s', (key) => {
+    const shp = tierShape(SHAPES[key]);
+    const geo = buildStrokeWallOn(anchorsFor(SHAPES[key]), 1.45,
+      { ...P, strokeGeo: new THREE.BoxGeometry(SIZE.x, SIZE.y, SIZE.z) });
+    geo.computeBoundingBox();
+    // How far the cake's own footprint reaches on each axis.
+    const pts = perimeter(shp);
+    let fx = 0, fz = 0;
+    for (let i = 0; i <= 400; i++) {
+      const q = pts.at((i / 400) * pts.length);
+      fx = Math.max(fx, Math.abs(q.x)); fz = Math.max(fz, Math.abs(q.z));
+    }
+    expect(geo.boundingBox.max.x / fx).toBeLessThan(1.08);
+    expect(geo.boundingBox.max.z / fz).toBeLessThan(1.08);
   });
 
   it('builds one merged geometry for the whole wall, and nothing without a mesh', () => {
