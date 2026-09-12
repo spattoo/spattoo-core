@@ -359,9 +359,12 @@ export const NOZZLES = [
    * the centre, which gives ±15° and ±53°, so the ribs are about 35° apart. That is ten, not the
    * mesh's eight — a generated model is a smoothed average, a photograph is one real tip. */
   { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 0.4, 0.5), twist: 1, lobes: 10,  ruffle: 1 },
-  /* The bundle-of-lobes section (see lobeProfile). `rl` 0.34 puts the cut at 18%, which is where a
-   * rib still reads as its own tube rather than as a bump. */
-  { key: 'lobe10', label: 'Piped Lobes', hint: 'Ten lobes, each its own tube', profile: lobeProfile(10, 0.34), twist: 1, lobes: 10, ruffle: 1 },
+  /* The bundle-of-lobes section (see lobeProfile). ⚠️ TWELVE, from the photograph rather than from
+   * the mesh: its creases sit at 37%, 64% and 88% of the stroke's width, and a crease at fraction f
+   * of a tube's projected width is at asin(2f − 1) from the centre — so −15.1°, 16.3°, 49.5°, which
+   * is ribs about 32° apart. That is 11.3 lobes, and ten made them visibly too thick. `rl` 0.27
+   * holds the cut at 18% at this count, which is where a rib still reads as its own tube. */
+  { key: 'lobe12', label: 'Piped Lobes', hint: 'Twelve lobes, each its own tube', profile: lobeProfile(12, 0.27), twist: 1, lobes: 12, ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, lobes: 8, ruffle: 1, squash: 0.55 },
@@ -425,11 +428,12 @@ export const PEN_FEEL = Object.freeze({
    * monotonic drift at all — the tip is not rotating, the hand is not perfectly steady. A constant
    * rate is a spiral; noise is a hand, and `wanderDeg` carries what was measured.
    *
-   * ⚠️ EVEN 0.008 LEANS A LONG STROKE. Eight diameters of it is 23°, two thirds of a rib on a
-   * ten-lobe tip, and every rib leans the SAME way — so the stroke reads as tilted rather than as
-   * varying, which is what "it also leaned towards right" was. The mesh measured no monotonic drift
-   * at all; this is kept only as a trace. */
-  twistTurnsPerDia: 0.003,
+   * ⚠️ ZERO, and a trace was not small enough. 0.008 per diameter leans a long stroke by 23° and
+   * 0.003 by nine, and because EVERY rib leans the same way the eye reads a tilt at either setting —
+   * "the immediate right rib to the centre is still leaning towards right", twice. There is nothing
+   * to trade off: the mesh measured no monotonic drift at all, only a wander. A corkscrew is not a
+   * thing piped cream does, and the wander is what carries the life. */
+  twistTurnsPerDia: 0,
   /* ⚠️ THE SNAKE IS A ROLL, NOT A SHEAR — and the shear is worth recording because it works and is
    * still wrong. Rib edges are not straight lines, and the obvious way to bend them is to let each
    * rib drift sideways by its own amount: turn every point about the axis by `sin(its own angle +

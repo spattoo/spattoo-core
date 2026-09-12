@@ -31,7 +31,7 @@ const q = new URLSearchParams(location.search);
  *   luminance range 55% of max reference → ~55%    (scanned across the middle)
  *   ripple          1.55% rms reference → ~2%      (width against its own smooth trend)
  */
-const noz = q.get('noz') || 'rose10';
+const noz = q.get('noz') || 'lobe12';
 const onCake = q.get('cake') === '1';
 const R = 1.35;                                     // tier radius when the stroke is shown on a cake
 const P = pipedParams({ nozzle: noz, width: Number(q.get('width') || 0.5), overlap: Number(q.get('ov') ?? 0.85) });
