@@ -6,7 +6,7 @@ import { useMemo } from 'react';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { buildPipingStroke, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from '../src/designer/geometry/creamPen.js';
-import { ropeSection, pipedBodyRadius, pipedParams, buildStyledWall, buildStyledTop } from '../src/designer/geometry/creamWall.js';
+import { ropeSection, pipedBodyRadius, pipedParams, buildStyledWall, buildStyledTop, bakeCreaseAO } from '../src/designer/geometry/creamWall.js';
 import { styleDef, CREAM_STYLES } from '../src/designer/creamStyles.js';
 import { frostingDef } from '../src/designer/frostings.js';
 
@@ -85,7 +85,7 @@ function StarStack({ points, depth, notch, n, height, thickness, wobble, turn, r
        * a smooth shoulder; and the scene's light is nearly a uniform dome, so faces a few degrees
        * apart shade identically unless something darkens the creases. Flat shading gives each face
        * its own normal; the AO is measured from the crease to the crest, the same as the wall's. */
-      bakeCreaseAO(g, thickness, ao, x, z);
+      bakeAO(g, thickness, ao, x, z);
       return g;
     });
   }, [points, depth, notch, n, height, thickness, wobble, turn, roll, ao, x, z]);
@@ -130,22 +130,13 @@ function strokeAngles() {
  *
  * `?ao=` scales it; 0 is the render as it was.
  */
-function bakeCreaseAO(geo, thickness, ao, cx = 0, cz = 0) {
-  const pos = geo.getAttribute('position');
-  const col = new Float32Array(pos.count * 3);
-  /* ⚠️ The range is the CREASE to the CREST, from the tip's own profile — not the geometry's own
-   * min and max radius, whose minimum is the end cap's apex sitting on the axis. See creamWall. */
-  // For the stack the section is the flat star itself, so its crease sits at 1 − depth.
+/* ⚠️ The SHARED bake, not a copy of it (INVARIANTS #15). All this adds is where the crease sits:
+ * for a swept tip that comes from the tip's own profile, and for the flat-star stack it is the
+ * star's own `1 − depth`. */
+function bakeAO(geo, thickness, ao, cx = 0, cz = 0) {
   const rMin = stack ? 1 - Number(q.get('depth') || 0.55)
     : (() => { let m = 1; for (const [px, py] of (NOZZLE_BY_KEY[noz] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).profile) m = Math.min(m, Math.hypot(px, py)); return m; })();
-  const crest = thickness, floor = thickness * rMin, span = Math.max(1e-6, crest - floor);
-  for (let i = 0; i < pos.count; i++) {
-    const d = (Math.hypot(pos.getX(i) - cx, pos.getZ(i) - cz) - floor) / span;
-    const k = 1 - ao * (1 - Math.min(1, Math.max(0, d)));
-    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
-  }
-  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
-  return geo;
+  return bakeCreaseAO(geo, thickness, thickness * rMin, ao, cx, cz);
 }
 
 function Stroke({ x = 0, z = 0, roll: r }) {
@@ -154,7 +145,7 @@ function Stroke({ x = 0, z = 0, roll: r }) {
   const pts = Array.from({ length: 5 }, (_, i) => new THREE.Vector3(x, -1.0 + i * 0.5, z));
   const geo = buildPipingStroke(pts, noz, t, { speedWidth: 0, tailDias: 0, twistTurnsPerDia: 0 }, null, r);
   if (!geo) return null;
-  bakeCreaseAO(geo, t, Number(q.get('ao') ?? 0.55));
+  bakeAO(geo, t, Number(q.get('ao') ?? 0.8));
   return <mesh geometry={geo} castShadow receiveShadow>
     <meshPhysicalMaterial color="#F6EBD8" vertexColors {...creamMaterial()} /></mesh>;
 }
@@ -184,8 +175,12 @@ function StyledTier() {
   const H = Number(q.get('h') || 1.2), Rt = Number(q.get('r') || 0.9);
   const vals = useMemo(() => {
     const out = {};
-    for (const p of styleDef(styleKey).params ?? []) out[p.key] = p.default;
-    out.nozzle = row?.nozzle;
+    /* Every param the row declares, overridable by a query key of the same name — so a value can be
+     * swept against the reference without editing the row and reloading the module graph. */
+    for (const p of styleDef(styleKey).params ?? []) {
+      out[p.key] = q.has(p.key) ? Number(q.get(p.key)) : p.default;
+    }
+    out.nozzle = q.get('noz') || row?.nozzle;
     return out;
   }, []);
   const wall = useMemo(() => buildStyledWall(row?.wall, Rt, H, vals), [vals]);

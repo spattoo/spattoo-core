@@ -230,13 +230,43 @@ function ropeCentreline(theta, d, cap, radius, height, sway0, seed) {
  * point sits INSIDE the crest is how occluded it is. No texture, no uv unwrap, no post pass — and it
  * darkens the body between the strokes for the same reason and by the same rule.
  */
-function bakeCreaseAO(geo, crest, floor, ao) {
+/* ⚠️ THE RAMP IS LINEAR IN THE ANGLE ROUND THE LOBE, NOT IN THE RADIUS — and linear-in-radius is
+ * why every rib came out as a flat white plateau with a sudden dive into the crease.
+ *
+ * Measured, on the same scan line, against a photograph of one real stroke:
+ *
+ *   reference   `##****++==+#%%@@@@@#*++=-`   a continuous roll of tone across each rib
+ *   ours        `@@@@@@@@%%#*= :*#%@@@@@@@`   plateau, cliff, plateau
+ *
+ * The cause is the section. A rosette's radius is `1 + a·cos(Lθ)`, and a cosine is FLAT at its
+ * peak: over the middle half of every rib the radius barely changes, so a ramp keyed to radius
+ * paints all of it the same value. The angle round the lobe is what varies evenly, and it is
+ * recoverable — the normalised radius IS `(cos φ + 1)/2`, so `φ = acos(2d − 1)` gives the position
+ * within the lobe from the position alone, with no need to know where the lobe started.
+ *
+ * `crest`/`floor` are the tip's own max and min radius (see the callers): ⚠️ NOT the geometry's own
+ * min and max, whose minimum is an end cap's apex sitting on the axis.
+ */
+const AO_BODY = 0.30;   // what the CAKE behind the ropes gets — not an extrapolation of their ramp
+
+export function bakeCreaseAO(geo, crest, floor, ao, cx = 0, cz = 0) {
   const pos = geo.getAttribute('position');
   const col = new Float32Array(pos.count * 3);
   const span = Math.max(1e-6, crest - floor);
   for (let i = 0; i < pos.count; i++) {
-    const d = (Math.hypot(pos.getX(i), pos.getZ(i)) - floor) / span;   // 1 on a crest, 0 in a crease
-    const k = 1 - ao * (1 - Math.min(1, Math.max(0, d)));
+    const d = (Math.hypot(pos.getX(i) - cx, pos.getZ(i) - cz) - floor) / span;  // 1 crest, 0 crease
+    /* ⚠️ BEHIND THE CREASE LINE IS THE CAKE, NOT A DEEPER CREASE — and running the ropes' ramp on
+     * into it is what turned the wall into a row of white pickets over a void. Two different things
+     * sit at the bottom of this range: a rope's own crease, which is lit and measures 44% of the
+     * crest in the reference photograph, and the BODY CYLINDER, which is below the tip's crease
+     * radius altogether. Clamping the body into the ramp's last step gave it whatever the crease
+     * got — a 40% grey at ao 0.6, which nobody noticed, and pure black once ao was calibrated to
+     * 1.0, so the sliver of cake visible down each channel between two ropes read as a hole cut in
+     * the tier. It gets its own shade, and the ropes keep their full range. */
+    if (d < 0) { col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = AO_BODY; continue; }
+    const u = Math.min(1, d);
+    const phi = Math.acos(2 * u - 1) / Math.PI;                        // 0 on a crest, 1 in a crease
+    const k = 1 - ao * phi;
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = k;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));

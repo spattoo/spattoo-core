@@ -46,6 +46,13 @@ function pipedParams(over = {}) {
      * fifteen degrees apart shade identically and the whole stroke reads as one flat panel. Measured:
      * sheen, roughness and clearcoat all change it by nothing. What separates the faces in a
      * photograph is that a crease's own walls block the sky from it. See bakeCreaseAO. */
+    /* ⚠️ CALIBRATED AGAINST A PHOTOGRAPH, and 1.0 is the answer rather than a maximum being abused.
+     * Scanning one stroke across its middle and reading the luminance: the reference photo runs
+     * 110..244, a range of 55% of its own maximum. Ours ran 191..241 — 21%, less than half the
+     * contrast, which is every "too flat / too robotic / not like cream" note in this file. The
+     * render's output is strongly compressive in albedo (a vertex colour of 0.2 still comes back at
+     * 70% luminance), so the dial has to go to the top to reach it: at 1.0 we measure 106..241, a
+     * range of 56%. Below 1 is a softer, milkier cream, which is a real look, not a broken one. */
     { key: 'ao',      label: 'Crease shade', min: 0, max: 1, step: 0.05, default: d('ao', 0.6), user: true },
     /* ⚠️ HOW HARD THE TIP WAS HELD AGAINST THE CAKE: 0 = the stroke is tangent to the side, all of
      * it showing — which is the DEFAULT, because that is what piping is. ⚠️ THE PIPING IS ON THE
@@ -166,12 +173,17 @@ export const CREAM_STYLES = {
    * overlap 0.85 a rope hides 46% of itself in its neighbour, which is the whole reason the wall
    * kept coming out as a lampshade of thin lines. 0.5in at 0.85 gives a stroke of 14.8:1.
    *
-   * A little overlap stays because a rosette's widest point faces the viewer, not its neighbour, so
-   * butted exactly they do not quite touch.
+   * ⚠️ THE OVERLAP IS 0.5, NOT THE 0.08 THE ASPECT ALONE ASKS FOR, and that is a trade made with
+   * eyes open. Round ropes standing tangent on a wall leave a V-shaped channel between every pair
+   * that you can see all the way to the bottom of; at the calibrated crease shade those channels
+   * read as slots cut in the tier. Closing them costs some of the 4.35 — a visible stroke is 5:1
+   * here rather than 4.35:1 — and a slot is the worse error. The honest fix is a section SQUASHED
+   * against the wall rather than a circular tube (a rope piped onto a surface spreads); the
+   * measured mesh is near-round because it was piped free-standing, not onto anything.
    */
   piped_rope: {
     label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'rose8',
-    params: pipedParams({ width: 1.0, overlap: 0.08, ao: 0.55, swell: 0.03, vary: 0.08, wobble: 0.25 }),
+    params: pipedParams({ width: 1.2, overlap: 0.5, ao: 1.0, swell: 0.03, vary: 0.08, wobble: 0.25 }),
   },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
