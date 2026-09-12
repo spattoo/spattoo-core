@@ -268,9 +268,21 @@ export const CREAM_STYLES = {
    * against four) and it is REPEATED here, not re-tuned. The only numbers in this row are placement
    * numbers. If the wall looks wrong, change them; do not touch the mesh.
    *
-   * `strokeGlb` is an R2 key, resolved against the host's assets base by canvas/strokeMesh.js — the
-   * same path every other 3D asset in this app takes. The DB may override it (config.strokeGlb), so
-   * a re-scanned stroke is an admin edit rather than a release.
+   * `strokeGlb` is an R2 key, resolved against the host's assets base by canvas/strokeMesh.js.
+   *
+   * ⚠️ `code/`, NOT `elements/` — THIS MESH IS NOT AN ELEMENT. Nearly every GLB in this app is one: a
+   * catalogue row a baker PLACES, with a name, a thumbnail, categories and a price, chosen through
+   * Decorations. This is the shape a nozzle leaves. Nobody picks it — they pick a STYLE, and the
+   * style knows its mesh — so as an element row it would sit in the decorations catalogue inviting
+   * someone to stand a single 4" stroke on a cake, which is not a thing. It belongs with the env map
+   * (`code/env/lebombo_256.hdr`): an asset the app itself needs, part of a finish's recipe rather
+   * than a decoration. Same seam as the `wall` / `grain` / `render` keys — the recipe is code, the
+   * value is authorable.
+   *
+   * ⚠️ AND IT TAKES AN ABSOLUTE URL TOO (assetUrl passes one through untouched), so the upload route
+   * is not forced: a mesh uploaded through the element studio can be pointed at by pasting its URL
+   * into the textures row, with no code change. The DB may override it either way, so a re-scanned
+   * stroke stays an admin edit rather than a release.
    */
   piped_modelled: {
     /* ⚠️ A CHIP LABEL, and it names what a customer SEES, like every other one in that row — 'Cream
@@ -281,7 +293,7 @@ export const CREAM_STYLES = {
      * How it is MADE (a scan rather than a swept section) is an implementation note and belongs in
      * this comment, not on the chip. */
     label: 'Vertical Piping', wall: 'strokes',
-    strokeGlb: 'elements/3D-images/piping-stroke-vertical.glb',
+    strokeGlb: 'code/cream/piping-stroke-vertical.glb',
     /* ⚠️ NO `top`. The piped rows above finish with a spiral lid because a swept section can be
      * spiralled onto one; there is no scan of a piped TOP, and faking it with the old spiral would
      * put a different cream on the lid from the sides. The reference photograph is a smooth-topped
