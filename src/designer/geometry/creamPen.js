@@ -372,14 +372,14 @@ export const NOZZLES = [
    * of a tube's projected width is at asin(2f − 1) from the centre — so −15.1°, 16.3°, 49.5°, which
    * is ribs about 32° apart. That is 11.3 lobes, and ten made them visibly too thick. `rl` 0.27
    * holds the cut at 18% at this count, which is where a rib still reads as its own tube. */
-  /* ⚠️ THE RIBS MUST BE SHALLOWER THAN THE VALLEY BETWEEN TWO STROKES, or a wall of them stops
-   * reading as strokes at all. At `boost` 1.8 this section cut 28% while two neighbouring ropes
-   * meet only 20% below the crest — every rib was then DEEPER than the boundary between ropes, so
-   * the eye grouped the lobes and not the strokes: thirteen ropes rendered as about twenty separate
-   * strands with no rope structure anywhere. Measured on the tier, not guessed. `boost` 1.0 at
-   * rl 0.30 cuts 14%, comfortably inside the 20% join, and the strokes come back. A free-standing
-   * stroke has no such constraint, which is why this row is tuned for the WALL. */
-  { key: 'lobe12', label: 'Piped Lobes', hint: 'Twelve lobes, each its own tube', profile: lobeProfile(12, 0.30, 20, 1, 1.0), twist: 1, lobes: 12, ruffle: 1 },
+  /* ⚠️ THE RIBS ARE THE POINT — DO NOT SHALLOW THEM TO SEPARATE THE STROKES. This cut was taken
+   * down to 14% once, to stop a wall of them reading as one field of strands rather than as
+   * distinct strokes. It worked and it was the wrong trade: shallow ribs are a ROPE, and the thing
+   * being built is STAR piping, where the ribs are the whole character and the stroke boundary is
+   * secondary. ⚠️ The two knobs are independent and were changed together, which hid it — the
+   * overlap coming down (0.6 → 0.05) is what lets a stroke show ~5 of its ribs instead of 2.6, and
+   * that alone is the fix for "no rope structure". The depth stays at 28%. */
+  { key: 'lobe12', label: 'Piped Lobes', hint: 'Twelve lobes, each its own tube', profile: lobeProfile(12, 0.27, 20, 1, 1.8), twist: 1, lobes: 12, ruffle: 1 },
   /* The same section spread against a wall. ⚠️ `squash` is not a press — the rope still sits
    * entirely on the cake's side; it is the shape cream takes when it lands on something. Round
    * tubes on a cylinder cannot win: spaced to show their ribs they leave channels you can see the
