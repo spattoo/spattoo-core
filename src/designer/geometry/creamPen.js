@@ -192,7 +192,14 @@ function petalProfile(n = 36) {
  * and cream: a neighbouring harmonic BEATS against the main one, so going round the section each
  * rib is a little wider or narrower than the last and the pattern never repeats. Same total depth,
  * no extra vertices, and it is closed (every term is a whole number of cycles), so the section
- * still joins itself. `uneven` scales both, 0 for the plain rosette. */
+ * still joins itself. `uneven` scales both, 0 for the plain rosette.
+ *
+ * ⚠️ NOT AT FULL STRENGTH, and what it costs is not what it looks like it costs. The beat barely
+ * touches rib WIDTH — measured, every rib stays within 2% of 36° on a ten-lobe tip at any setting.
+ * What it changes is how far each rib PROJECTS, and at full strength the shallowest rib keeps only
+ * 0.65 of the deepest one's relief: that rib flattens out and the groove beside it goes missing,
+ * which reads as a blank patch down the stroke with no slot in it. At 0.4 the ratio is 0.83 —
+ * plainly irregular still, with no rib collapsing. ⚠️ Measure the RELIEF, not the spacing. */
 /* ⚠️ `crease` — BROAD ROUND RIBS WITH A NARROW SLOT BETWEEN THEM, which a cosine cannot do. A
  * cosine spends most of its travel in the middle, so every rib is a gentle swell and the face reads
  * FLAT: the photograph's ribs are standing fins that project, separated by a thin dark slot you
@@ -298,7 +305,7 @@ export const NOZZLES = [
    * of the width; a crease at a fraction f of a tube's projected width sits at asin(2f − 1) from
    * the centre, which gives ±15° and ±53°, so the ribs are about 35° apart. That is ten, not the
    * mesh's eight — a generated model is a smoothed average, a photograph is one real tip. */
-  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 1, 0.5), twist: 1, lobes: 10,  ruffle: 1 },
+  { key: 'rose10', label: 'Piped Fine',  hint: 'Ten rounded ribs',           profile: rosetteProfile(10, 0.30, 20, 1, 0.4, 0.5), twist: 1, lobes: 10,  ruffle: 1 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, lobes: 8, ruffle: 1, squash: 0.55 },
@@ -360,9 +367,13 @@ export const PEN_FEEL = Object.freeze({
    * The mesh says so too, and it was measured and then not acted on: sliced at nineteen heights,
    * the rib phase sits between −40° and −53° the whole way up. That is a ±6° WANDER with no
    * monotonic drift at all — the tip is not rotating, the hand is not perfectly steady. A constant
-   * rate is a spiral; noise is a hand. Twist stays as a hint (0.008 over eight diameters is 23°,
-   * which is character rather than a barber pole) and `wanderDeg` carries what was measured. */
-  twistTurnsPerDia: 0.008,
+   * rate is a spiral; noise is a hand, and `wanderDeg` carries what was measured.
+   *
+   * ⚠️ EVEN 0.008 LEANS A LONG STROKE. Eight diameters of it is 23°, two thirds of a rib on a
+   * ten-lobe tip, and every rib leans the SAME way — so the stroke reads as tilted rather than as
+   * varying, which is what "it also leaned towards right" was. The mesh measured no monotonic drift
+   * at all; this is kept only as a trace. */
+  twistTurnsPerDia: 0.003,
   /* ⚠️ THE SNAKE IS A ROLL, NOT A SHEAR — and the shear is worth recording because it works and is
    * still wrong. Rib edges are not straight lines, and the obvious way to bend them is to let each
    * rib drift sideways by its own amount: turn every point about the axis by `sin(its own angle +
