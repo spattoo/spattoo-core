@@ -173,7 +173,15 @@ export const CREAM_STYLES = {
    * overlap 0.85 a rope hides 46% of itself in its neighbour, which is the whole reason the wall
    * kept coming out as a lampshade of thin lines. 0.5in at 0.85 gives a stroke of 14.8:1.
    *
-   * ⚠️ ROUND AND HEAVILY OVERLAPPED, and ⚠️ NOT the spread section, which is wrong here for a
+   * ⚠️ THIS IS THE APPROVED STROKE, REPEATED — NOT A SECOND TUNING OF IT. The width is derived
+   * straight from the stroke that was signed off in the one-stroke view: it measures 4.4 times as
+   * tall as it is wide, so on a 1.2-tall tier it is 0.273 across, which is a 0.91in tip, and
+   * eighteen of them go round a 0.9 radius touching. ⚠️ Every earlier attempt at this wall changed
+   * the tip as well as the placement — a spread section, a different lobe count, a different depth,
+   * a heavy overlap — so the thing that reached the cake was never the thing that had been
+   * approved. If the single-stroke view is right and the wall is wrong, change the PLACEMENT.
+   *
+   * ⚠️ NOT the spread section, which is wrong here for a
    * reason worth writing down because it took two goes to see. A squashed rope is widest at its
    * WAIST, not at its crest — so from outside you only ever see the narrow top of each one and its
    * wide part is buried behind its neighbours. The wall came out as thin fins standing off a flat
@@ -188,7 +196,7 @@ export const CREAM_STYLES = {
    */
   piped_rope: {
     label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'lobe12',
-    params: pipedParams({ width: 1.2, overlap: 0.05, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
+    params: pipedParams({ width: 0.91, overlap: 0.02, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
   },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',
