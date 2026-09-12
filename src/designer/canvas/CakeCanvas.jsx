@@ -1428,16 +1428,36 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
         obj.geometry.computeBoundingSphere();
       });
     }
+    /* ⚠️ THIS INSTANCE OWNS ITS MATERIALS, AND IT HAS TO TAKE THEM HERE. `scene.clone(true)` copies
+     * the object graph and SHARES the materials by reference — every instance of an element points
+     * at the one set of materials hanging off the cached GLB. The recolour effect below then writes
+     * `mat.color`, so with several instances on the cake they all end up whatever colour ran LAST.
+     *
+     * Reported on a scattered heart: three colours picked, sixty-five hearts, every one of them the
+     * last colour in the palette. The data was right the whole time — the palette row is derived
+     * from the instances and correctly showed three — which is what made it look like a colour bug
+     * rather than a sharing one.
+     *
+     * ⚠️ AND IT ONLY BIT SOME ELEMENTS, which is why it survived. The two branches below — the
+     * shared fondant grain and a config material finish — already clone per instance, and both say
+     * "never mutate the cached GLB" while doing it. An element with NEITHER never took ownership at
+     * all, so a plain recolourable GLB was the one shape of element that could not hold two colours.
+     * Ownership belongs here, before anything reads or writes a material, not as a side effect of
+     * two optional features.
+     *
+     * Cheap: a material clone is a property copy, and the textures inside it are still shared. */
     clone.traverse(obj => {
       if (!obj.isMesh) return;
       obj.raycast = () => {};
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
+      const own = (m) => { const nm = m.clone(); nm.depthWrite = true; nm.needsUpdate = true; return nm; };
+      obj.material = Array.isArray(obj.material) ? obj.material.map(own) : own(obj.material);
     });
     // Shared fondant surface (config: useSharedFondantTexture): overlay the one shared grain normal
-    // map so any flat recolourable part reads as matte fondant under ANY colour. Clone geometry +
-    // material per instance (never mutate the cached GLB); box-UV the UV-less parts; keep metalness
-    // so metallic accents survive. Colour itself is still set later by the recolour effect.
+    // map so any flat recolourable part reads as matte fondant under ANY colour. Clone the geometry
+    // per instance and box-UV the UV-less parts; keep metalness so metallic accents survive. Colour
+    // itself is still set later by the recolour effect.
+    // ⚠️ The MATERIALS are already this instance's own — see the ownership note above — so this
+    // mutates them in place rather than cloning a second time.
     if (fondant) {
       const normal = getFondantNormalMap();
       clone.traverse(obj => {
@@ -1445,21 +1465,20 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
         obj.geometry = obj.geometry.clone();
         applyBoxUVs(obj.geometry, 0.18);   // grain size: world units per texture repeat (larger = coarser)
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        const next = mats.map(m => {
-          const nm = m.clone();
+        mats.forEach(nm => {
           nm.normalMap = normal;
           nm.normalScale = new THREE.Vector2(1.5, 1.5);   // grain strength (tune; was 0.5, too faint to see)
           nm.roughness = Math.max(nm.roughness ?? 0.5, 0.88);  // matte; metalness untouched
           nm.needsUpdate = true;
-          return nm;
         });
-        obj.material = Array.isArray(obj.material) ? next : next[0];
       });
     }
     // Config-driven material finish. A decoration carries either a full `surface` finish (resolved from
     // placement_config.material via the materials registry — roughness/sheen/clearcoat/anisotropy/…), OR the
     // legacy simple placement_config.roughness/metalness overrides. Either overrides the GLB's baked material.
-    // Clone per instance (never mutate the cached GLB); colour is still set by the recolour effect. A finish
+    // ⚠️ Still REPLACES rather than mutating, unlike the fondant branch above: a finish with a sheen
+    // needs a different material CLASS, and you cannot change the class of an object in place.
+    // Colour is still set by the recolour effect. A finish
     // with a sheen/clearcoat/anisotropy needs MeshPhysicalMaterial — a GLB usually loads as
     // MeshStandardMaterial (no such lobes), so we upgrade it (copying the standard visual fields, NOT .copy()
     // which mishandles the undefined physical fields on a Standard source). Anisotropy (the silk streak) needs

@@ -56,6 +56,8 @@ const CAT_TYPES = [
   { id: 'et-foil',    slug: 'food_foil',    name: 'Food Foil',    sort_order: 1 },
   { id: 'et-fly',     slug: 'butterfly',    name: 'Butterfly',    sort_order: 2 },
   { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3 },
+  // The type the scatterable GLB below needs — see its note.
+  { id: 'et-scatter', slug: 'scattered_decor', name: 'Scattered',  sort_order: 4 },
 ].map(t => ({ ...t,
   placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 4, top_tier_only: false, requires_frosting: false },
   default_allowed_actions: { move: true, color: false, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
@@ -82,6 +84,25 @@ const CAT_ELEMENTS = [
  * procedural` and no image, and it cannot come out of the `.map` above with the rest. Without it
  * the whole topper chain (compose → place → tap it → open it again) was only ever testable against
  * a real database. */
+/* ⚠️ A SCATTERABLE, RECOLOURABLE GLB — the one shape of element this harness could not make, and
+ * the gap that let a real bug ship. Every other stub here is an SVG data URI, so they all take the
+ * TEXTURE path; the GLB path (`StickerModel`) was untestable without a database. That is the path
+ * where each instance clones the cached scene, and where sharing a material across instances made a
+ * scattered element render every copy in the last colour picked.
+ *
+ * `sample-rosette.glb` already sat in dev/ for the piping harnesses, and the dev server serves it.
+ * Scatter it, give it two or three colours, and the instances must differ. */
+CAT_ELEMENTS.push({
+  id: 'e9', name: 'Rosette scatter', description: 'a recolourable GLB, scattered',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#d8b7c8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  // `scatter: true` is what routes a drop through placeScatter; `r` is the per-instance size.
+  placement_config: { scatter: true, r: 0.45, top_surface: 'lay', side: 'hug' },
+  allowed_actions: { move: true, color: true, delete: true, resize: true },
+  default_color: '#C86B8A', sort_order: 10,
+});
+
 CAT_ELEMENTS.push({
   id: 'e8', name: 'Card topper studio', description: 'numbers and names cut from card',
   element_type_id: 'et-topper', category_id: 'cat-1',
