@@ -137,9 +137,15 @@ export function ropeSection(radius, { width, overlap, nozzle }) {
    * cake one rope covers — that is what a baker buys a tip for — but a spread rope only stands `d`
    * proud of the side, so that is what the body radius and the centreline must use. */
   const squash = (NOZZLE_BY_KEY[nozzle] ?? NOZZLE_BY_KEY[DEFAULT_NOZZLE]).squash ?? 1;
+  const d = thickness * squash;
   const spacing = 2 * thickness / (1 + overlap);
-  const ropes = Math.max(6, Math.round(TAU * (radius - thickness) / spacing));
-  return { thickness, w: thickness, d: thickness * squash, ropes };
+  /* ⚠️ COUNTED ROUND THE CIRCLE THE CENTRELINES ACTUALLY SIT ON, which is `radius − d`. It used to
+   * be `radius − thickness`, and that was the same number until the section learned to spread. On a
+   * squashed tip it is not: the ropes stand on a wider circle than the count assumed, so the count
+   * came out too low and every pair finished a couple of millimetres apart — the wall rendered as
+   * thin blades with daylight between them, which looks like a section problem and is arithmetic. */
+  const ropes = Math.max(6, Math.round(TAU * (radius - d) / spacing));
+  return { thickness, w: thickness, d, ropes };
 }
 
 // The stroke's DEPTH — how far it stands off the cake. Kept as its own name because it is what the

@@ -173,16 +173,22 @@ export const CREAM_STYLES = {
    * overlap 0.85 a rope hides 46% of itself in its neighbour, which is the whole reason the wall
    * kept coming out as a lampshade of thin lines. 0.5in at 0.85 gives a stroke of 14.8:1.
    *
-   * ⚠️ THE TIP IS A SPREAD ONE (`rose8w`), and that is what lets the overlap go back to nearly
-   * nothing. Round tubes on a cylinder pose a choice with no good side: loose enough to show their
-   * ribs and they leave slots you can see to the body through; tight enough to close the slots and
-   * each rope shows only a strip around its crest, which is "only one elevation per vertical". A
-   * section squashed against the wall meets its neighbour at full sideways width AND presents a
-   * wide face, so both go away at once. See `squash` in creamPen.
+   * ⚠️ ROUND AND HEAVILY OVERLAPPED, and ⚠️ NOT the spread section, which is wrong here for a
+   * reason worth writing down because it took two goes to see. A squashed rope is widest at its
+   * WAIST, not at its crest — so from outside you only ever see the narrow top of each one and its
+   * wide part is buried behind its neighbours. The wall came out as thin fins standing off a flat
+   * body with daylight between them, and every measurement looked right: the ropes really were
+   * 0.30 wide and really did overlap, just not at the height you can see.
+   *
+   * What covers a wall is round tubes pushed well into each other. Two circles of radius t whose
+   * centres are s apart meet at a depth `t − √(t² − (s/2)²)` below the crest, so the valley is
+   * shallow only when s is well under the diameter — at 0.95 of it the valley is 68% of a radius,
+   * at 0.6 it is a fifth. That is the high-overlap regime that used to hide the ribs, and it
+   * stopped mattering at twelve lobes: a rope showing 60% of itself still shows six of them.
    */
   piped_rope: {
-    label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'rose8w',
-    params: pipedParams({ width: 1.0, overlap: 0.05, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
+    label: 'Piped — rope', wall: 'piped', top: 'spiral', nozzle: 'lobe12',
+    params: pipedParams({ width: 1.2, overlap: 0.6, ao: 0.55, swell: 0.05, vary: 0.10, wobble: 0.3 }),
   },
   piped_french: {
     label: 'Piped — French tip', wall: 'piped', top: 'spiral', nozzle: 'french',

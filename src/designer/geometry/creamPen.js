@@ -373,6 +373,12 @@ export const NOZZLES = [
    * is ribs about 32° apart. That is 11.3 lobes, and ten made them visibly too thick. `rl` 0.27
    * holds the cut at 18% at this count, which is where a rib still reads as its own tube. */
   { key: 'lobe12', label: 'Piped Lobes', hint: 'Twelve lobes, each its own tube', profile: lobeProfile(12, 0.27, 20, 1, 1.8), twist: 1, lobes: 12, ruffle: 1 },
+  /* The same section spread against a wall. ⚠️ `squash` is not a press — the rope still sits
+   * entirely on the cake's side; it is the shape cream takes when it lands on something. Round
+   * tubes on a cylinder cannot win: spaced to show their ribs they leave channels you can see the
+   * body through, and overlapped enough to close those they hide each other's ribs. */
+  { key: 'lobe12w', label: 'Wall Lobes', hint: 'Twelve lobes, spread on the side',
+    profile: lobeProfile(12, 0.27, 20, 0.55, 1.8), twist: 1, lobes: 12, ruffle: 1, squash: 0.55 },
   /* The wall tips. `squash` is carried on the row so `ropeSection` can read it — the depth a rope
    * stands off the cake is the same number that shapes its section, and they must not drift. */
   { key: 'rose8w', label: 'Wall Rope',  hint: 'Spread against the side',    profile: rosetteProfile(8, 0.18, 24, 0.55), twist: 1, lobes: 8, ruffle: 1, squash: 0.55 },
