@@ -103,15 +103,17 @@ export default function PlanCards({
                 )}
                 <span style={{ fontSize: 15, fontWeight: 800, color: active ? t.accent : t.text }}>
                   {formatPlanPrice(price)}
-                  {suffix && <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 2, fontWeight: 600 }}>{suffix}</span>}
-                  {/* ⚠️ EVERY price on this screen is the BASE. Razorpay charges base + 18% GST, and
-                      a baker who reads ₹2,697 here and is billed ₹3,182.81 has been surprised by us
-                      — the checkout breakup below explains it, but only after they have committed
-                      to reaching checkout. Said on the number itself, it is a fact rather than a
-                      correction. Not shown on a free plan: there is no tax on nothing. */}
+                  {/* ⚠️ BEFORE the period, not after: "(+GST)" qualifies the AMOUNT, and "₹999 /mo
+                      (+GST)" reads as though the month were the thing being taxed. "₹999 (+GST)
+                      /mo" is the sentence — nine hundred and ninety-nine plus GST, per month.
+                      EVERY price here is the base. Razorpay charges base + 18%, so a baker who
+                      reads ₹2,697 and is billed ₹3,182.81 has been surprised by us — the checkout
+                      breakup explains it, but only once they have committed to reaching checkout.
+                      Not on a free plan: there is no tax on nothing. */}
                   {price > 0 && (
                     <span style={{ fontSize: 9, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>(+GST)</span>
                   )}
+                  {suffix && <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 3, fontWeight: 600 }}>{suffix}</span>}
                 </span>
                 {off && (
                   <span style={{
