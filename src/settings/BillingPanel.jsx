@@ -893,7 +893,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                   </div>
                 )}
 
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12, flexWrap: 'wrap' }}>
                   {realCancel ? (
                     // Grace notice — a REAL cancellation (cancel_at_period_end with NO scheduled downgrade).
                     // An upgrade supersedes the old plan instead of setting this flag; a downgrade sets the
@@ -918,7 +918,9 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                           onClick={() => setShowMethodConfirm(true)}
                           disabled={subscribing || cancelling}
                           style={{
-                            flexShrink: 0,
+                            // On a phone the two buttons do not fit one line: they wrap and each
+                            // fills its own, instead of overflowing off the card's left edge.
+                            flex: isMobile ? '1 1 auto' : '0 0 auto', minHeight: isMobile ? 40 : undefined,
                             background: '#fff', border: '1.5px solid #E5E7EB', borderRadius: 8,
                             padding: '7px 16px', cursor: (subscribing || cancelling) ? 'not-allowed' : 'pointer',
                             fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
@@ -932,7 +934,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                         onClick={handleCancel}
                         disabled={cancelling}
                         style={{
-                          flexShrink: 0,
+                          flex: isMobile ? '1 1 auto' : '0 0 auto', minHeight: isMobile ? 40 : undefined,
                           background: '#fff', border: '1.5px solid #FCA5A5', borderRadius: 8,
                           padding: '7px 16px', cursor: cancelling ? 'not-allowed' : 'pointer',
                           fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
