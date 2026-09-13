@@ -45,10 +45,19 @@ export function clearCtx(ctx, bg, Wc, Hc) {
 }
 
 // No mipmaps + LinearFilter so fine particles survive minification; sRGB only on colour maps.
+//
+// ⚠️ THE NON-COLOUR CASE IS SET EXPLICITLY, NOT LEFT ALONE. `THREE.Texture.DEFAULT_COLOR_SPACE` is
+// not necessarily NoColorSpace — read back off a live canvas texture in this app it was `srgb` — so
+// "don't set sRGB" and "linear" are not the same instruction, and a map carrying DIRECTIONS or
+// SCALARS rather than colour was being tagged as colour.
+// ⚠️ AND IT CHANGED NOTHING MEASURABLE, which is why it says so here rather than claiming a win:
+// three reads the normal/metalness/roughness slots without the decode whatever the tag says, so the
+// shard's contrast moved 0.000. Kept because the tag was wrong and the next reader should not have
+// to re-derive that it is harmless; do NOT cite it as a fix for anything.
 export function ctxTexture(ctx, srgb = false) {
   const t = new THREE.CanvasTexture(ctx.canvas);
   t.wrapS = t.wrapT = THREE.RepeatWrapping; t.generateMipmaps = false; t.minFilter = THREE.LinearFilter;
-  if (srgb) t.colorSpace = THREE.SRGBColorSpace;
+  t.colorSpace = srgb ? THREE.SRGBColorSpace : THREE.NoColorSpace;
   t.needsUpdate = true; return t;
 }
 
@@ -56,3 +65,4 @@ export function ctxTexture(ctx, srgb = false) {
 // real per-pixel value and the material scalar can stay 1 — letting dust and foil coexist on
 // one material at different metalness/roughness).
 export const gray = v => { const g = Math.round(Math.max(0, Math.min(1, v)) * 255); return `rgb(${g},${g},${g})`; };
+

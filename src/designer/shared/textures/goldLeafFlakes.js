@@ -11,14 +11,56 @@ import { gray } from './finishCanvas.js';
 // one material). A shard's interior crinkle reuses the approved gold-foil texture (makeGoldLeafMaps),
 // not a re-derived one. Developed in the admin Gold Leaf Studio. Ships in two finishes — gold/silver.
 
+/* ⚠️ TWO OF THESE WERE MEASURED WRONG AND ONE OF THEM NEVER DID ANYTHING. Reported dull from the app
+ * on 2026-09-09 — flat pale patches beside a gold BOARD that reads plainly metallic in the same
+ * frame. Measured with `scripts/measure-foil-shine.mjs`, which reads the swing between a shard's
+ * brightest and darkest pixel, because that swing IS the reflection and a flat mean cannot tell
+ * matte paint from mirror gold:
+ *
+ *     metalness 0.6, glow 0.35  (shipped)   contrast 0.114   colour 91    mean 209
+ *     metalness 0.9, glow 0                 contrast 0.226   colour 108   mean 168
+ *     the gold board, same frame                     0.463
+ *
+ * `glow` was the larger error and it was working directly against its own purpose. Emissive is
+ * ADDITIVE and view-INDEPENDENT: it lifts every pixel of a shard by the same amount, so it raises the
+ * mean and flattens the variation. It was there to make the foil "luminous" and what it actually did
+ * was erase the reflection — the one thing that reads as metal. Zero, and the gold albedo carries the
+ * brightness instead.
+ *
+ * `metalness` was 0.6 to keep "the gold albedo bright". Measured, that reasoning is backwards: at 0.9
+ * the shards hold MORE colour (chroma 108 against 91), not less, and stop looking like a wash of sky.
+ *
+ * ⚠️ CONFIRMED ON A REAL CAKE, 2026-09-10, and that step nearly went the other way. Judged on the
+ * harness — flat pink, three oversized shards — the OLD look was preferred: the richer gold read as
+ * heavy there. On an actual baker's cake, a pink→lilac gradient with small scattered flakes, it
+ * reads as gold leaf and the old one reads as pale paper. Same numbers, opposite verdicts, because
+ * a fixture with big shards on a flat ground is not the thing being decided. A harness proves a
+ * MECHANISM; it does not settle a LOOK. Take the look to a real cake before changing a default back.
+ *
+ * ⚠️ `env` IS INERT AND ALWAYS HAS BEEN — see the note below. It is kept only so a shard's finish row
+ * still round-trips through admin unchanged; nothing reads it. Do not tune it. */
 export const GOLD_LEAF_DEFAULTS = {
-  metalness: 0.6,         // metallic SHEEN, but low enough that the gold albedo still reads bright
+  metalness: 0.9,         // measured: MORE colour than 0.6, not less, and far less washed out
   roughness: 0.16,        // low → glossy shine (sells "foil", not matte paint)
-  env: 4.5,               // envMapIntensity — high so it reflects the (dim apartment) scene env
-  crinkle: 0.7,           // reserved for a future bound crinkle normal (M4)
+  /* ⚠️ DEAD. three.js overwrites `material.envMapIntensity` with `scene.environmentIntensity` for any
+   * material whose own `envMap` is null (WebGLRenderer, the `isMeshStandardMaterial && envMap ===
+   * null && scene.environment !== null` branch), and the tier wall's is. Swept 0 → 30 on the real
+   * cake: byte-identical renders. The shards are lit at the scene's 1.25 like everything else.
+   * ⚠️ Giving the material its own envMap to revive it is NOT the fix and was tried: the shards share
+   * the tier's material with the whole cake wall, so it re-lights the cake, and 4.5 — never
+   * calibrated, because it never applied — blows the shards to near-white (contrast 0.051). */
+  env: 4.5,
+  /* ⚠️ NOT WIRED, AND MEASURED NOT TO BE WORTH WIRING. Building the crinkle normal `makeGoldLeafMaps`
+   * already returns, compositing it into the wall's normal map under the shards and binding it, moved
+   * the contrast from 0.224 to 0.232 — about 3%, for a per-rebuild pattern fill on every drag frame.
+   * The reason is the environment, not the amplitude: `lebombo` is an outdoor map and most of its
+   * sphere is open sky, so perturbing a normal samples a slightly different part of the same
+   * featureless white. A micro-crinkle cannot band what has no bands. The board reads well because
+   * its normals swing 90°, not because it is crinkled. Don't rebuild this against this HDRI. */
+  crinkle: 0.7,
   sizeScale: 1.0,         // global flake-size multiplier
   raggedness: 0.55,       // 0 = round blob, 1 = very torn/spiky shard
-  glow: 0.35,             // emissive glow on the shards (gold, gated to flakes) → luminous foil
+  glow: 0,                // ⚠️ ADDITIVE — it flattens the shard it was meant to light. See above.
 };
 export const GOLD_LEAF_COLORS = { gold: '#e6be4a', silver: '#cdd2d8' };
 export const GOLD_LEAF_NEW_FLAKE = { rot: 0, size: 1, seed: 1 };   // a fresh shard from a tap

@@ -427,17 +427,34 @@ function drawTins(sheet, tins) {
    * the ordered weight would be hiding it at exactly the moment it matters. */
   const bakeUp = tins.bakedKg > tins.totalKg ? `  ·  bake ${tins.bakedKg} kg and trim` : '';
   sheet.y += sheet.text(
-    `${tins.totalKg} kg  ·  ${tins.tiers.length} tier${tins.tiers.length > 1 ? 's' : ''}` +
-    `  ·  ${tins.build.layers} layers, ${tins.build.layers - 1} filling${bakeUp}`,
+    `${tins.totalKg} kg  ·  ${tins.tiers.length} tier${tins.tiers.length > 1 ? 's' : ''}${bakeUp}`,
     sheet.margin, sheet.y, { size: mm(3.2), color: MUTED, weight: 700 },
   );
   sheet.y += mm(3);
+
+  /* ⚠️ The layering is PER TIER and moved off this line to get it. It was `build.layers` — a
+   * constant 2 for every cake at every height — printed once at the top of the sheet. A tall tier
+   * is torted every inch and a half and stacked in barrels, and a baker reading "2 layers, 1
+   * filling" above a nine-inch cake is being told to build something that cannot stand. */
+  for (const t of tins.tiers) {
+    if (!t.layers) continue;
+    const who = tins.tiers.length > 1 ? `${t.label}: ` : '';
+    const barrels = t.barrels > 1 ? `  ·  ${t.barrels} barrels, board + dowels between` : '';
+    sheet.y += sheet.text(
+      `${who}${t.layers} layers of ${t.layerIn}"  ·  ${t.fillings} filling${t.fillings === 1 ? '' : 's'}` +
+      `  ·  ${t.bakes} bake${t.bakes === 1 ? '' : 's'}${barrels}`,
+      sheet.margin, sheet.y, { size: mm(3.2), color: MUTED, weight: 700 },
+    );
+    sheet.y += mm(2.6);
+  }
+  sheet.y += mm(1);
 
   for (const t of tins.tiers) {
     const rowH = mm(9);
     const y = sheet.space(rowH);
     sheet.text(t.label, sheet.margin, y + mm(1.5), { size: mm(3.4), weight: 700 });
-    const size = `${t.tinInch}″ ${t.shape}`;
+    // A sheet is the one tin a single number cannot name — see rectIn in tinHelper.
+    const size = `${t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`} ${t.shape}`;
     sheet.font(mm(3.4), 700);
     sheet.ctx.fillStyle = ACCENT.tins;
     sheet.ctx.fillText(size, sheet.margin + mm(45), y + mm(1.5));

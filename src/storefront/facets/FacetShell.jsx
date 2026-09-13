@@ -8,6 +8,17 @@ import {
   FACETS, emptyDraft, loadDraft, saveDraft, clearDraft, isFilled, canSubmit, withTierCount,
   draftSummary,
 } from './cakeDraft.js';
+import { alpha, darken, lum } from '../storefrontKit.js';
+
+// ── A door outline that survives ANY baker colour ───────────────────────────────────────────────
+// The border below is the baker's own primary, and a baker can pick a PALE one — storefrontKit
+// states it outright, adapting text to "white on dark band, dark on light". A hairline in pale
+// yellow on a pale yellow wash is invisible, which would have reintroduced the exact bug this fix
+// exists to remove, for every baker whose brand happens to be light.
+//
+// 0.6 is `onColor`'s threshold, reused rather than re-picked: one definition of "is this colour
+// light" for the whole storefront.
+const doorInk = (primary) => (lum(primary) > 0.6 ? darken(primary, 0.45) : primary);
 
 // ── The shell ───────────────────────────────────────────────────────────────────────────────────
 // Everything except the doors: the shared draft, the visual, which facet is open, and the submit
@@ -458,13 +469,28 @@ const s = {
                    padding: m ? '14px 18px calc(18px + env(safe-area-inset-bottom, 0px))' : '4px 22px 18px',
                    display: 'flex', flexDirection: 'column', gap: 10 }),
 
+  // ── The two doors have to LOOK like the two doors ─────────────────────────────────────────────
+  // ⚠️ They did not. The border was `${primary}22` — the baker's colour at 13% — on white, against
+  // chips bordered a solid #E7DFD5. The secondary options were literally higher contrast than the
+  // primary ones, so the eye landed on "How many people?" and read the two doors as text. Reported
+  // as exactly that: "those look like action buttons and above two look like text."
+  //
+  // Fixed by weight, not by an icon: this storefront has no chevron or arrow affordance anywhere,
+  // and inventing one here would put a symbol on this screen that means nothing on any other
+  // (INVARIANTS #14). A full-strength border in the baker's own colour plus a wash of the same
+  // colour is enough, and it stays the BAKER's storefront rather than borrowing app chrome.
+  //
+  // Both doors keep IDENTICAL weight. Neither is preferred — the panel asks a question with two
+  // right answers, and making one heavier would answer it for the customer.
   entry: (primary) => ({
     display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
     width: '100%', textAlign: 'left', cursor: 'pointer',
-    padding: '16px 18px', borderRadius: 14, border: `1.5px solid ${primary}22`,
-    background: '#fff', font: 'inherit',
+    // alpha()/doorInk() rather than `${primary}0F` string concatenation: that only works if the
+    // baker's colour is a 6-digit hex, and parse() in the kit already handles the rest.
+    padding: '17px 18px', borderRadius: 14, border: `1.5px solid ${doorInk(primary)}`,
+    background: alpha(primary, 0.06), font: 'inherit',
   }),
-  entryLabel: { fontSize: 15, fontWeight: 700, color: '#2A241F', lineHeight: 1.35 },
+  entryLabel: { fontSize: 16, fontWeight: 800, color: '#2A241F', lineHeight: 1.35 },
   tick: (primary) => ({ color: primary, fontWeight: 800, fontSize: 14 }),
 
   rest:    { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 },
@@ -487,8 +513,12 @@ const s = {
                font: 'inherit', fontSize: 12, fontWeight: 800, color: '#C0392B', cursor: 'pointer' },
   resetNo:   { border: 'none', background: 'none', font: 'inherit', fontSize: 12, fontWeight: 700,
                color: '#7A6C60', cursor: 'pointer', padding: '6px 4px' },
-  restBtn: { padding: '8px 13px', borderRadius: 20, border: '1.5px solid #E7DFD5', background: '#fff',
-             font: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#7A6C60', cursor: 'pointer' },
+  // Quieter than the doors above, deliberately. These are an invitation, not a checklist — nothing
+  // here is required — so they sit BELOW the doors in weight as well as position: no fill, a hairline
+  // border, and a softer ink. Half of this fix is making these recede; raising the doors alone would
+  // have left two loud rows competing.
+  restBtn: { padding: '8px 13px', borderRadius: 20, border: '1px solid #EFE7DC', background: 'transparent',
+             font: 'inherit', fontSize: 12.5, fontWeight: 600, color: '#8B7D6F', cursor: 'pointer' },
 
   foot: { flexShrink: 0, padding: '12px 20px calc(18px + env(safe-area-inset-bottom, 0px))',
           borderTop: '1px solid #F0E9E0', background: '#FFFDF9' },

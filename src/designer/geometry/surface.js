@@ -9,7 +9,7 @@
 // The shell/decal facing is atan2(nz, nx); for a circle that reduces to the polar
 // angle, so the round path stays byte-identical to the old cos/sin math.
 
-import { SHEET_CORNER_RADIUS, SHEET_PIPING_CORNER_RADIUS } from '../constants.js';
+import { SHEET_CORNER_RADIUS, SHEET_PIPING_CORNER_RADIUS, writingFit } from '../constants.js';
 import { tierGeometry } from '../cakeShapes.js';
 import {
   scaledOutline, polygonPerimeter, multiPolygonPerimeter, asRings,
@@ -598,7 +598,7 @@ export function writingSurface({
   writing, tiers, topY, topRadius, shape = 'round', width = 0, depth = 0, boardRadius = 0,
 }) {
   const surface = writing?.surface ?? 'top';
-  const fit     = writing?.fit ?? 0.8;
+  const fit     = writing?.fit ?? writingFit(writing?.style);
   const isRect  = shape === 'rect';
 
   const bottom    = tiers?.[0];

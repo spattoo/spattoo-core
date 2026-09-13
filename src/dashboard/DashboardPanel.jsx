@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
-import { dockedLeft } from '../shared/rail.js';
+import { RefreshIcon } from '../shared/icons.jsx';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 const STATUS_META = {
   pending:     { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
@@ -26,7 +28,7 @@ const Icon = {
   Alert:    () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>,
   Chart:    () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>,
   Star:     () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>,
-  Refresh:  () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>,
+  Refresh:  () => <RefreshIcon size={20} />,
   Trophy:   () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polyline points="8 21 12 21 16 21"/><line x1="12" y1="21" x2="12" y2="17"/><path d="M7 4H17l-1 8a5 5 0 0 1-8 0Z"/><path d="M5 4a2 2 0 0 0 0 4h2"/><path d="M19 4a2 2 0 0 1 0 4h-2"/></svg>,
   Truck:    () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="1" y="3" width="15" height="13" rx="1"/><path d="M16 8h4l3 5v3h-7V8z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>,
   Store:    () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>,
@@ -266,33 +268,25 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
         .dash-fadein { animation: fadeUp 0.35s ease both; }
       `}</style>
 
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 300, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#f3f0fb',
-        boxShadow: '-4px 0 40px rgba(0,0,0,0.15)',
-        animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)',
       }}>
 
-        {/* Header */}
+        {/* Header — the band reaches back under the rail (dockedBleed). */}
         <div style={{
           padding: isMobile ? '16px 20px' : '20px 28px',
+          ...dockedBleed(isMobile, 28),
           background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
           position: 'relative', overflow: 'hidden',
         }}>
-          <button onClick={onClose} style={{
-            width: 32, height: 32, flexShrink: 0, zIndex: 1,
-            background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 8, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'rgba(255,255,255,0.85)',
-          }}>
-            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5M12 5l-7 7 7 7" />
-            </svg>
-          </button>
+          {/* How this page is left — shared/panelTopBar.jsx: the arrow on a phone, a ✕ at the far
+              right on desktop (after the chart, raised above it). */}
+          {isMobile && <span style={{ position: 'relative', zIndex: 1 }}><PanelBackArrow onClick={onClose} /></span>}
 
           <div style={{ flex: 1, zIndex: 1 }}>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>
@@ -341,6 +335,7 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
             <circle cx="479" cy="16" r="5"   fill="white" fillOpacity="0.85" />
             <circle cx="479" cy="16" r="9"   fill="white" fillOpacity="0.12" />
           </svg>
+          {!isMobile && <span style={{ position: 'relative', zIndex: 1 }}><PanelDismiss onClick={onClose} /></span>}
         </div>
 
         {/* Body */}

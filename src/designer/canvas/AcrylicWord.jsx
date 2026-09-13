@@ -68,6 +68,22 @@ export default function AcrylicWord({
     const geos = parts.map(p => {
       const shape = new THREE.Shape(p.outer.map(q => new THREE.Vector2(q.x, q.y)));
       shape.holes = (p.holes ?? []).map(h => new THREE.Path(h.map(q => new THREE.Vector2(q.x, q.y))));
+      /* ⚠️ FLAT ON PURPOSE — a chamfer was tried here and REVERTED, so do not add one back without
+       * reading this. The reasoning for it was good and the measurement refused it: a flat face has
+       * one normal, so it takes one sample of the matcap and the whole word moves together as the
+       * cake turns, which is exactly what was reported. A bevel gives it a spread of normals and
+       * should have held a highlight through the turn.
+       *
+       * It does not. Measured across seven angles, chamfered against flat:
+       *     brightness spread across angles   28.3  vs  28.3   (the "changes as a block" symptom)
+       *     contrast within the piece        0.595  vs  0.605
+       * Identical, and fractionally worse. A matcap is sampled by the normal in VIEW space, and the
+       * chamfer's own normals turn with the piece, so they slide across the same picture together
+       * with the face — the geometry moved but nothing gained a light the face did not have.
+       *
+       * ⚠️ AND THE SYMPTOM IS STILL THERE. It is inherent to a flat face reading a baked picture:
+       * mean 111 at one edge of the turn, 196 head-on. Fixing THAT needs a surface that responds to
+       * the scene, which is what the matcap deliberately gave up. It is a trade, not a bug. */
       const g = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
       g.translate(0, 0, -thickness / 2);
       return g;

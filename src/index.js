@@ -18,6 +18,16 @@ export { captureThumbnailBlob } from './designer/utils/thumbnail.js';
 // photographing the cake in the designer and uploading the PNG, and an upload stored raw would sit
 // in the grid framed differently from every captured one. Goes through captureThumbnailBlob.
 export { thumbnailFromImage } from './designer/utils/thumbnail.js';
+
+/* The cream pen's own geometry, so the ADMIN STUDIO renders what the cake renders.
+ *
+ * ⚠️ FreehandPenStudio carried its own copy of all of this — its own nozzles, its own sweep, its own
+ * material — because it was the prototype this was ported FROM. The two then drifted, which makes it
+ * a studio that tunes a renderer no customer ever sees: exactly the mock-up the root CLAUDE.md warns
+ * about, and the drift INVARIANTS #15 exists to stop. `PEN_FEEL` is the tunable set it drives.
+ */
+export { buildPipingStroke, buildPipingHeap, mergePenGeometries, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
+  from './designer/geometry/creamPen.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to
@@ -70,6 +80,11 @@ export { DECOR_MATERIALS, materialSurface, materialsFor, applyDecorMaterialConfi
 // operation derives from. The admin Cake Shape Studio authors rows against exactly these.
 export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from './designer/cakeShapes.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
+/* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
+ * the light it receives, with a reference light MEASURED per surface. Exported so admin studios —
+ * which decide colour and must therefore show it truthfully — can apply the same correction the
+ * cake does. */
+export { albedoForLight } from './designer/shared/albedoForLight.js';
 // Glyph-cake sizing — the per-character-count model shared by the `number` (digits) and `letter` (A–Z)
 // families (a "1"/"A" and a "21"/"AB" size independently; every string of a given count renders
 // identically). Exported so the Cake Shape Studio authors byCount against the SAME defaults + resolver the
@@ -82,7 +97,7 @@ export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './d
 // Acrylic toppers: the word, its bar, its prongs — and the connectivity check that says whether the
 // thing can be cut as one piece. Exported because the admin studio previews from the same numbers
 // the designer renders, the same bargain TextTopperStudio already makes with the text-slot compositor.
-export { topperShapes, pieceCount, components, bridgeLoose } from './designer/geometry/topperShape.js';
+export { topperShapes, pieceCount, components, bridgeLoose, offsetParts, backingPlate, followsBox } from './designer/geometry/topperShape.js';
 // THE size control — the admin studios size a topper with the same dial the customer will.
 export { SizeDial } from './designer/shared/SizeDial.jsx';
 // One face list and one finish list, shared by the studio and the cake. creamFonts.json is already
@@ -94,7 +109,7 @@ export { default as AcrylicWord } from './designer/canvas/AcrylicWord.jsx';
 // Every acrylic number in one place — the seam a catalogue row reaches the cake through.
 export { ACRYLIC_DEFAULTS, acrylicCfg, acrylicFitAspect, writingFromAcrylicRow, acrylicFinishes,
          NOMINAL_MM_PER_UNIT } from './designer/geometry/acrylicConfig.js';
-export { buildStyledWall, displaceByHeightField, makeWallReliefSampler } from './designer/geometry/creamWall.js';
+export { buildStyledWall, buildStyledTop, displaceByHeightField, makeWallReliefSampler, ropeRadius, pipedBodyRadius, pipedParams } from './designer/geometry/creamWall.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
@@ -105,7 +120,24 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 // The shipping light rig. Exported so an admin studio tunes a look under the SAME lights the designer
 // renders it under — a colour picked beneath a brighter key is simply the wrong colour, and the
 // designer's own rig carries a note about exactly that overexposure washing the cake top toward white.
-export { SceneLights, SceneEnv } from './designer/canvas/CakeCanvas.jsx';
+/* The designer's rig, so a studio previewing cake output can mount exactly what the cake mounts
+ * (INVARIANTS #17). `SceneBackground` and `DESIGNER_GROUND` are part of it: the ground is a SCENE
+ * background, so it is in the render — a studio that paints a different colour behind a transparent
+ * canvas is judging its subject against a surround no cake has. */
+export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
+export { DESIGNER_GROUND, SELECTION_COLOR } from './designer/constants.js';
+/* THE selection cue for a placed object (INVARIANTS #14). A border rather than a tint, because an
+ * emissive highlight is additive and corrupts the very albedo it is advertising — which matters most
+ * on a screen whose job is choosing colours. Exported so a studio shows selection the way the
+ * designer does instead of inventing a second blue. */
+export { default as SelectionBox } from './designer/canvas/SelectionBox.jsx';
+/* The card-topper composer. A BAKER studio, so it ends the way GarnishStudio does — use it on the
+ * cake, or keep it and use it — and it stores the OBJECT LIST rather than the geometry it builds. */
+export { default as TopperComposer } from './designer/topper/TopperComposer.jsx';
+/* ⚠️ ONE answer to "what shape is this topper", asked by the composer AND by the cake. A private copy
+ * in either is two answers to one question, and the cake's is the one the customer sees. */
+export { topperContours, topperSheets, topperBox } from './designer/geometry/topperPiece.js';
+export { TOPPER_PRESETS, presetPaths } from './designer/topper/topperPresets.js';
 // A fondant rainbow. Generated rather than modelled because its legs have to REACH the board, which
 // is a different distance on every cake — the same argument the chocolate drip made for its radius.
 // Everything it is given is a ratio of the cake, so one authored rainbow suits a 6" and a 10".

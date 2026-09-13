@@ -17,7 +17,8 @@ import { getWeaveNormalMap, weaveTiles } from '../shared/textures/weaveStencilTe
 import { makeParticleFinishMaps } from '../shared/textures/particleFinish.js';
 import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FROSTING, FROSTINGS } from '../frostings.js';
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
-import { buildStyledWall } from '../geometry/creamWall.js';
+import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
+import { useStrokeMesh } from './strokeMesh.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
@@ -28,7 +29,13 @@ import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
 import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
-import { ringPositions, angleAtPoint } from './ringPositions.js';
+import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
+/* The extruded-footprint builders. ⚠️ They MOVED to geometry/prism.js and are re-exported here:
+ * they are pure geometry, the modelled cream wall needs them to cut its lid to a shape, and a
+ * geometry file cannot import this one without a cycle. Re-exported so every existing importer
+ * (previewCake) keeps its path. */
+import { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism, insetPolygon } from '../geometry/prism.js';
+export { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism };
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
 // ⚠️ EXPORTED because the hand-piping path needs the IDENTICAL preparation, not a similar one.
@@ -1136,169 +1143,6 @@ function surfaceNormalMap(key, ctx) {
 // Only the 4 vertical corners are rounded (radius r); the top and bottom stay flat and the
 // footprint keeps its full width×depth — unlike drei RoundedBox, which rounds every edge
 // (pillowing the top and shrinking the faces). Spans y ∈ [0, height]. cr=0 → sharp box.
-export function buildRoundedPrism(halfW, halfD, height, r) {
-  const cr = Math.max(0, Math.min(r, halfW, halfD));
-  const s = new THREE.Shape();
-  s.moveTo(-halfW + cr, -halfD);
-  s.lineTo(halfW - cr, -halfD);
-  s.quadraticCurveTo(halfW, -halfD, halfW, -halfD + cr);
-  s.lineTo(halfW, halfD - cr);
-  s.quadraticCurveTo(halfW, halfD, halfW - cr, halfD);
-  s.lineTo(-halfW + cr, halfD);
-  s.quadraticCurveTo(-halfW, halfD, -halfW, halfD - cr);
-  s.lineTo(-halfW, -halfD + cr);
-  s.quadraticCurveTo(-halfW, -halfD, -halfW + cr, -halfD);
-  const geo = new THREE.ExtrudeGeometry(s, { depth: height, bevelEnabled: false, curveSegments: 8 });
-  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
-  return geo;
-}
-
-// Cake body for a GLYPH cake (number OR letter): the glyph(s) — THREE.Shape[] with their counters
-// attached — extruded straight up, exactly like the sheet's rounded rect. ExtrudeGeometry honours each
-// shape's `.holes`, so the counter in 0/4/6/8/9 and A/B/D/O/P/Q/R comes through, and it merges a
-// multi-glyph array ("21", "MOM") into one body. Charset-agnostic — one builder for both families.
-export function buildGlyphPrism(shapes, height) {
-  const geo = new THREE.ExtrudeGeometry(shapes, { depth: height, bevelEnabled: false, curveSegments: 8 });
-  geo.rotateX(-Math.PI / 2);   // extrusion axis (Z) → world Y (up)
-  return geo;
-}
-
-// Cake body for ANY authored footprint (heart, butterfly, hexagon…): the shape's own outline swept up,
-// with the top edge rolled over by `fillet` — the same rounded rim the round path gets from the
-// frosting's `edge: {kind:'round'}` (that is where the fillet comes from; it is not a per-shape knob).
-//
-// Built by hand rather than with THREE.ExtrudeGeometry, for two reasons that both showed up on a cake:
-//   • UVs. ExtrudeGeometry derives side-wall UVs from WORLD coordinates, not an unwrap, so the
-//     buttercream grain landed in overlapping patches — one of which read as a shiny rectangular strip
-//     down the wall. Here `u` is ARC LENGTH around the outline and `v` is height: the honest unwrap, and
-//     the same coordinate side-decor placement uses.
-//   • Normals. Each wall segment is its own quad with its own outward normal, so a hexagon keeps crisp
-//     corners while a 160-segment heart still reads smooth. Averaging normals around the ring (what
-//     computeVertexNormals would do) would round a hexagon's corners off.
-export function buildOutlinePrism(outline, height, fillet = 0) {
-  const n = outline.length;
-  const f = Math.max(0, Math.min(fillet, height * 0.45));
-  const STEPS = f > 1e-4 ? 6 : 0;               // quarter-arc segments in the rolled rim
-
-  // Each ring is the outline inset by `inset`, sitting at `y`, with its wall normal tilted by `slope`
-  // (0 = vertical wall, π/2 = facing straight up at the top of the roll).
-  const rings = [{ inset: 0, y: 0, slope: 0 }, { inset: 0, y: height - f, slope: 0 }];
-  for (let i = 1; i <= STEPS; i++) {
-    const a = (i / STEPS) * (Math.PI / 2);
-    rings.push({ inset: f * (1 - Math.cos(a)), y: height - f + f * Math.sin(a), slope: a });
-  }
-  const ringPts = rings.map(r => (r.inset > 1e-6 ? insetPolygon(outline, r.inset) : outline));
-
-  // Arc length around the base outline → the wall's u.
-  const uAt = [0];
-  for (let i = 0; i < n; i++) {
-    const a = outline[i], b = outline[(i + 1) % n];
-    uAt.push(uAt[i] + Math.hypot(b.x - a.x, b.z - a.z));
-  }
-  const perim = uAt[n] || 1;
-
-  const pos = [], nor = [], uv = [];
-  const push = (p, y, nx, ny, nz, u, v) => {
-    pos.push(p.x, y, p.z); nor.push(nx, ny, nz); uv.push(u, v);
-  };
-
-  // ── Wall + rolled rim: one quad per (segment × ring gap) ─────────────────────
-  for (let i = 0; i < n; i++) {
-    const j = (i + 1) % n;
-    const a = outline[i], b = outline[j];
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz) || 1;
-    const nx = dz / len, nz = -dx / len;                 // outward normal of THIS segment (CCW winding)
-    const u0 = uAt[i] / perim, u1 = uAt[i + 1] / perim;
-
-    for (let r = 0; r < rings.length - 1; r++) {
-      const lo = rings[r], hi = rings[r + 1];
-      const lp = ringPts[r], hp = ringPts[r + 1];
-      const cl = Math.cos(lo.slope), sl = Math.sin(lo.slope);
-      const ch = Math.cos(hi.slope), sh = Math.sin(hi.slope);
-      const vl = lo.y / height, vh = hi.y / height;
-
-      // Two triangles: (lo_i, hi_j, lo_j) and (lo_i, hi_i, hi_j).
-      //
-      // The vertex ORDER is what the GPU culls on — the `normal` attribute above only lights the face,
-      // it cannot make a back-facing triangle visible. The outline is wound CCW in the (x, z) plane, and
-      // sweeping that order upward produces triangles whose winding normal points INWARD: the body was
-      // built inside-out, so FrontSide culling removed every near face and you saw through the cake to
-      // the inner surface of the far wall. Walking the quad the other way round puts the winding where
-      // the normals always claimed it was.
-      push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
-      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
-      push(lp[j], lo.y, nx * cl, sl, nz * cl, u1, vl);
-
-      push(lp[i], lo.y, nx * cl, sl, nz * cl, u0, vl);
-      push(hp[i], hi.y, nx * ch, sh, nz * ch, u0, vh);
-      push(hp[j], hi.y, nx * ch, sh, nz * ch, u1, vh);
-    }
-  }
-
-  // ── Caps ─────────────────────────────────────────────────────────────────────
-  // Own vertices, own flat normals — sharing them with the wall would average the two and bevel the
-  // silhouette. The top cap is the innermost ring (the rim has already rolled inward by `f`).
-  const cap = (pts, y, up) => {
-    const contour = pts.map(p => new THREE.Vector2(p.x, p.z));
-    const faces = THREE.ShapeUtils.triangulateShape(contour, []);
-    const ny = up ? 1 : -1;
-    for (const t of faces) {
-      // triangulateShape winds CCW in the flat (x, z) contour it was handed; laid back into a y-up world
-      // that faces DOWN, so it is the TOP cap that needs reversing and the base that takes it as-is. The
-      // reverse of this was the same inside-out error the wall had: the lid faced into the cake.
-      const tri = up ? [t[0], t[2], t[1]] : t;
-      for (const k of tri) {
-        const p = pts[k];
-        push(p, y, 0, ny, 0, 0.5 + p.x * 0.5, 0.5 + p.z * 0.5);
-      }
-    }
-  };
-  cap(ringPts[ringPts.length - 1], height, true);
-  cap(outline, 0, false);
-
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
-  geo.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
-  geo.computeBoundingSphere();
-  return geo;
-}
-
-// The outline pulled INWARD by `d`, each vertex moving along the bisector of its two edge normals. Used
-// for the rolled rim. A true polygon offset would also dissolve edges that collapse — but `d` here is a
-// rim fillet (a few percent of the cake), so a bisector step is exact enough and cannot self-intersect
-// at that scale.
-function insetPolygon(pts, d) {
-  const n = pts.length;
-  const seg = [];
-  for (let i = 0; i < n; i++) {
-    const a = pts[i], b = pts[(i + 1) % n];
-    const dx = b.x - a.x, dz = b.z - a.z;
-    const len = Math.hypot(dx, dz) || 1;
-    seg.push({ nx: dz / len, nz: -dx / len });           // outward
-  }
-  return pts.map((p, i) => {
-    const prev = seg[(i - 1 + n) % n], next = seg[i];
-    const sx = prev.nx + next.nx, sz = prev.nz + next.nz;
-    const len = Math.hypot(sx, sz);
-    // A near-cusp: the two edge normals oppose, so there IS no inward direction. Leave the vertex where
-    // it is rather than sending it somewhere arbitrary — an arbitrary answer is what crossed the rim
-    // over itself and left an X on the cake. (Outlines round their own cusps; this is the backstop.)
-    if (len < 0.2) return { ...p };
-    const nx = sx / len, nz = sz / len;
-    // Step along the bisector far enough that both EDGES move in by d (1/cos of the half-angle), capped
-    // so a sharp corner can't shoot the vertex across the shape.
-    const cos = Math.max(0.5, nx * next.nx + nz * next.nz);
-    return { x: p.x - nx * (d / cos), z: p.z - nz * (d / cos) };
-  });
-}
-
-// Fondant-draped ROUND tier: a solid of revolution whose top edge is a rounded fillet (the fondant
-// sheet folds over the rim instead of a sharp 90° tin edge). Profile is revolved around Y, spanning
-// y ∈ [0, height]: flat bottom disk → straight wall → quarter-arc top edge → flat top disk. `fillet`
-// is the edge radius in world units. Replaces the cylinder+lid for round fondant tiers; the single
-// mesh means the vertical gradient and grain flow over the rounded edge with no separate cap.
 function buildRoundedTopCylinder(radius, height, fillet, radial = 64) {
   const r = Math.max(0, Math.min(fillet, radius * 0.9, height * 0.5));
   const pts = [
@@ -1345,7 +1189,12 @@ function SelectionOutline({ shp, yBase, height }) {
 // `overrideNormalMap` (with `overrideNormalScale`) lets a normal-map STYLE (rustic) replace the type's
 // cream grain on this tier — the surface texture then comes from the style, not the type's material.
 function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null, overrideNormalScale = 1,
-                    gradient, stripes = null, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null, children, castShadow = true, receiveShadow = false }) {
+                    gradient, stripes = null, glaze = null, geoSig, dusting = null, foil = null, finishMaps = null,
+                    /* ⚠️ Baked crease occlusion, for geometry that carries a `color` attribute (the piped
+                     * wall). The scene's light is nearly a uniform dome, so a sharp crease has no shading
+                     * of its own — it reads as a flat panel unless something darkens it. See bakeCreaseAO. */
+                    vertexColors = false,
+                    children, castShadow = true, receiveShadow = false }) {
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
@@ -1365,7 +1214,10 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
       const center = new THREE.Vector3(); geo.boundingBox.getCenter(center);
       bb = { min: geo.boundingBox.min.clone(), size, center };
     }
-    applyGradient(matRef.current, gradient, bb, tierAlbedo);
+    /* ⚠️ The finish's particle map goes in as a MASK, or the gradient paints over the gold leaf and
+     * the luster dust it is stamped alongside. `emissiveMap` is the compositor's clean particle
+     * mask — white on a shard or fleck, black on bare wall. */
+    applyGradient(matRef.current, gradient, bb, tierAlbedo, finishMaps?.emissiveMap ?? null);
     /* Stripes ride the SAME bbox and the same seam as the gradient — see shared/color/stripeMaterial.js.
      *
      * ⚠️ Order matters, and it is the reason these are not merged yet: both patch `onBeforeCompile` and
@@ -1373,9 +1225,9 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
      * tier carrying both renders as stripes. The UI does not let a baker set both — the mode picker is
      * one choice — but a design saved by an older client can, and silently picking one beats a wall
      * that flickers between them depending on which effect re-ran. */
-    applyStripes(matRef.current, stripes, bb, tierAlbedo);
+    applyStripes(matRef.current, stripes, bb, tierAlbedo, finishMaps?.emissiveMap ?? null);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
-  }, [gradient, stripes, glaze, geoSig]);
+  }, [gradient, stripes, glaze, geoSig, finishMaps]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
@@ -1399,7 +1251,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   return (
     <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
-      <meshPhysicalMaterial ref={matRef} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
+      <meshPhysicalMaterial ref={matRef} vertexColors={vertexColors} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
         map={finishMaps?.map ?? null}
         roughness={finishMaps ? 1 : (surf?.roughness ?? 0.68)}
         metalness={finishMaps ? 1 : (surf?.metalness ?? 0)}
@@ -1407,12 +1259,25 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
         roughnessMap={finishMaps?.roughnessMap ?? null}
         emissive={finishMaps ? (foil ? (foil.color ?? '#000000') : (dusting?.dustColor ?? '#000000')) : '#000000'}
         emissiveMap={finishMaps?.emissiveMap ?? null}
-        emissiveIntensity={finishMaps ? (foil ? (foil.finish?.glow ?? 0.35) : (dusting?.glow ?? 0)) : 0}
+        /* ⚠️ `GOLD_LEAF_DEFAULTS.glow`, NOT A SECOND COPY OF THE NUMBER. This read `?? 0.35`, which
+         * is the same default written twice in two files — so editing the table that calls itself
+         * the defaults changed the shards' colour maps and left their emissive exactly where it
+         * was, and the measurement came back saying the edit had done nothing. A default belongs to
+         * one file; every other reader asks that file. */
+        emissiveIntensity={finishMaps ? (foil ? (foil.finish?.glow ?? GOLD_LEAF_DEFAULTS.glow) : (dusting?.glow ?? 0)) : 0}
         sheen={surf?.sheen ?? 0} sheenRoughness={surf?.sheenRoughness ?? 0.6} sheenColor={surf?.sheenColor ?? '#ffffff'}
         clearcoat={finishMaps ? 1 : (surf?.clearcoat ?? 0)}
         clearcoatMap={finishMaps?.metalnessMap ?? null}
         clearcoatRoughness={finishMaps ? 0.12 : (surf?.clearcoatRoughness ?? 0.5)}
-        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? 4.5) : (surf?.envMapIntensity ?? 0.5)}
+        /* ⚠️ EVERY VALUE ON THIS LINE IS DISCARDED BY three.js, and that is not a comment about this
+         * feature — it is true of `envMapIntensity` everywhere in this app. The renderer overwrites
+         * the uniform with `scene.environmentIntensity` for any material whose own `envMap` is null
+         * (WebGLRenderer: `isMeshStandardMaterial && material.envMap === null && scene.environment
+         * !== null`), and nothing here sets one. Swept 0 → 30 on the real cake at runtime: the
+         * frames are byte-identical. Left in place because the fix is not to delete the line but to
+         * stop believing it — several past investigations swept `envIntensity` and drew conclusions
+         * from a knob that has never been connected. */
+        envMapIntensity={finishMaps && foil ? (foil.finish?.env ?? GOLD_LEAF_DEFAULTS.env) : (surf?.envMapIntensity ?? 0.5)}
         normalMap={normalMap ?? null}
         normalScale={[normalScale, normalScale]} />
     </mesh>
@@ -1444,7 +1309,8 @@ function GlazeDrip({ geo, surf, glaze, bodyBbox, yBase }) {
 // transparent — it's a decal, not the surface. A PlaneGeometry(2R) laid flat: its default UV matches
 // the polar `place()` in topDiskProject, so a flake's drag handle (FinishHandles top branch) lands on
 // its shard. Works for cylinder / rounded / styled tiers alike (all share the flat top at topY).
-function TopFoilDecal({ maps, radius, y, foilColor = '#e6be4a', glow = 0.35, env = 4.5 }) {
+function TopFoilDecal({ maps, radius, y, foilColor = GOLD_LEAF_COLORS.gold,
+                       glow = GOLD_LEAF_DEFAULTS.glow, env = GOLD_LEAF_DEFAULTS.env }) {
   const matRef = useRef();
   const onRef = useRef(false);
   // Binding the maps onto an existing material needs a one-time shader recompile (same reason as the
@@ -1614,19 +1480,57 @@ export default function CakeTier({
   // the cream wall styles, drip, festoons, luster and foil are all cylinder-unwrap maths. An outline
   // shape belongs on the prism side of that line, so it inherits the gate rather than needing a branch.
   const isPrism = shp.kind !== 'round';
+  // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
+  // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
+  // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
+  const wallKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).wall : 'smooth';
+  /* ⚠️ `nozzle` IS A KEY ON THE STYLE, not one of its sliders, and it is folded in here so the
+   * geometry reads one bag. Two styles can share a `wall` algorithm and differ only in which tip the
+   * cream came out of — that is what `piped` and `piped_round` are. */
+  const styleVals = { ...resolveStyleParams(frostingStyle, styleParams), nozzle: styleDef(frostingStyle).nozzle };
+  const styleSig = JSON.stringify(styleVals);
+  /* ⚠️ `nozzle` IS A KEY ON THE STYLE and so is `strokeGlb` — a MODELLED style (wall:'strokes') is
+   * piped from a scan of one real stroke instead of from a swept section, and the mesh arrives over
+   * the network. The hook runs unconditionally and returns null for every other style, so there is
+   * no hook behind a branch and no Suspense boundary around the tier: until the mesh lands the wall
+   * builder returns null and the tier renders its ordinary smooth side. See canvas/strokeMesh.js. */
+  const strokeGeo = useStrokeMesh(frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).strokeGlb : null);
+  /* ⚠️ A MODELLED WALL IS THE FIRST ONE THAT DOES NOT NEED A CYLINDER, so it is the first that can go
+   * on a rectangle or a heart. Every style above it displaces a lathe — there is nothing to displace
+   * on a heart, which is why `isPrism` turns them all off. An instanced stroke only ever needs a
+   * point and the direction that point faces, and `perimeterRing` has been handing those out for the
+   * piping rings on every shape since they shipped (INVARIANTS #3 — ONE distribution), so this asks
+   * it rather than inventing a second walk round a cake.
+   *
+   * It is computed HERE, above the body, because the body depends on it: the cake's own side has to
+   * be inset by a stroke's depth so the cream sits ON it rather than growing the cake. */
+  const strokeWall = useMemo(
+    () => ((strokeGeo && wallKey === 'strokes' && isPrism)
+      ? buildStrokeWallOnShape(shp, height, { ...strokeWallParams(styleVals), strokeGeo })
+      : null),
+    // styleVals is recreated each render; styleSig captures its values. eslint-disable-next-line
+    [strokeGeo, wallKey, isPrism, shp, height, styleSig],
+  );
   const prismGeo = useMemo(
     () => {
+      /* ⚠️ PIPED, THE CAKE'S OWN SIDE MOVES IN — it does not stay put and let the cream grow the cake.
+       * A 6" cake that renders 6.4" wide the moment a style is picked is a sizing bug, not a finish,
+       * and the round wall has followed this rule since it was written (pipedBodyRadius). `insetPolygon`
+       * is the same helper this function already uses to roll its own rim, so a heart insets the way
+       * its fillet does rather than by a second opinion about what "inward" means on a curve. */
+      const inset = strokeWall?.inset ?? 0;
       if (shp.kind === 'glyph') return buildGlyphPrism(shp.shapes, shp.thickness ?? height);  // number/letter — per-count extrusion depth
-      if (shp.kind === 'rect') return buildRoundedPrism(shp.halfW, shp.halfD, height, shp.cornerR);
+      if (shp.kind === 'rect') return buildRoundedPrism(Math.max(0.01, shp.halfW - inset), Math.max(0.01, shp.halfD - inset), height, Math.max(0, shp.cornerR - inset));
       if (shp.kind !== 'outline') return null;
+      const outline = inset > 1e-6 ? insetPolygon(shp.outline, inset) : shp.outline;
       // The rolled top rim comes from the FROSTING's own edge config — the very same `roundEdge` the
       // round tier uses for its fondant drape (frostings.js `edge: {kind:'round', frac}`). So a fondant
       // heart rolls over at the rim and a sharp-edged finish stays sharp, with no per-shape knob and no
       // second opinion about what a cake's edge looks like.
       const f = roundEdge ? roundEdge.frac * Math.min(Math.min(shp.halfW, shp.halfD), height) : 0;
-      return buildOutlinePrism(shp.outline, height, f);
+      return buildOutlinePrism(outline, height, f);
     },
-    [shp, height, roundEdge?.frac],
+    [shp, height, roundEdge?.frac, strokeWall?.inset],
   );
   // The wall's grain runs once around the tier, so its U extent is the PERIMETER. (Rect keeps its
   // existing 2·(w+d) approximation so no sheet cake's texture shifts.)
@@ -1665,16 +1569,19 @@ export default function CakeTier({
     const center = new THREE.Vector3(); g.boundingBox.getCenter(center);
     return { min: g.boundingBox.min.clone(), size, center };
   }, [glazeBodyGeo]);
-  // Cream STYLE → a displaced wall (wave/swirl/rustic). Only for finishes that texture (cream, not
-  // fondant) and round tiers; an unsupported/unknown style falls back to smooth (null → plain wall).
-  // Resolved params (schema defaults ← tier overrides) feed the geometry; memo keyed on their values.
-  const wallKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).wall : 'smooth';
-  const styleVals = resolveStyleParams(frostingStyle, styleParams);
-  const styleSig = JSON.stringify(styleVals);
   const styledGeo = useMemo(
-    () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, styleVals) : null,
+    () => (!isPrism && !roundEdge) ? buildStyledWall(wallKey, radius, height, { ...styleVals, strokeGeo }) : null,
     // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
-    [isPrism, roundEdge, wallKey, radius, height, styleSig],
+    [isPrism, roundEdge, wallKey, radius, height, styleSig, strokeGeo],
+  );
+  /* The styled TOP (piped's cream spiral). Its own strategy key on the style, so a style can texture
+   * the wall and leave the lid flat — which is what every style but `piped` still does (null here →
+   * the branches below render exactly what they rendered before). */
+  const topKey = frostingAllowsStyles(frostingType) ? styleDef(frostingStyle).top : null;
+  const styledTop = useMemo(
+    () => (!isPrism && !roundEdge && styledGeo) ? buildStyledTop(wallKey, topKey, radius, height, styleVals) : null,
+    // styleVals is recreated each render; styleSig captures its values for the memo. eslint-disable-next-line
+    [isPrism, roundEdge, !!styledGeo, wallKey, topKey, radius, height, styleSig],
   );
   // Normal-map STYLE (rustic): a surface texture on the plain wall instead of geometry. Built when the
   // style declares a surfaceMap; `depth` → normalScale, `scale` → tiling density.
@@ -1706,7 +1613,8 @@ export default function CakeTier({
   const finishMaps = useMemo(() => {
     if (isPrism || !(dusting?.splashes?.length || sideFoil?.flakes?.length)) { finishRef.current = null; return null; }
     finishRef.current = makeParticleFinishMaps({
-      surface: 'side', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      surface: 'side', radius, height, baseColor: tierAlbedo(color), surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+
       dusting, foil: sideFoil, reuse: finishRef.current,
     });
     return finishRef.current;
@@ -1718,7 +1626,8 @@ export default function CakeTier({
   const topFinishMaps = useMemo(() => {
     if (isPrism || !topFoil?.flakes?.length) { topFinishRef.current = null; return null; }
     topFinishRef.current = makeParticleFinishMaps({
-      surface: 'top_surface', radius, height, baseColor: color, surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+      surface: 'top_surface', radius, height, baseColor: tierAlbedo(color), surfRoughness: mat.roughness ?? 0.68, surfMetalness: mat.metalness ?? 0,
+
       foil: topFoil, reuse: topFinishRef.current,
     });
     return topFinishRef.current;
@@ -1825,11 +1734,30 @@ export default function CakeTier({
       {isPrism ? (
         // An extruded footprint (sheet rect, or an authored outline): flat top, full footprint, no
         // separate top cap (a cap reads as a stray "board" on a non-round cake).
-        <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
-          grainExtent={[prismGrainU, height]}
-          gradient={effGradient} stripes={effStripes} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
-          <primitive object={prismGeo} attach="geometry" />
-        </TierBody>
+        <>
+          <TierBody position={[0, yBase, 0]} color={bodyColor} surf={mat}
+            grainExtent={[prismGrainU, height]}
+            gradient={effGradient} stripes={effStripes} glaze={effGlaze} geoSig={prismGeo?.uuid} castShadow receiveShadow>
+            <primitive object={prismGeo} attach="geometry" />
+          </TierBody>
+          {/* Piped strokes standing on that inset body. A SEPARATE mesh rather than one merged wall
+              because the body a non-round tier renders is its own (prismGeo, with its rolled rim and
+              its grain), and the round path's trick of merging body and strokes into a single
+              geometry would mean rebuilding all of that here. ⚠️ Its own frame: the strokes are
+              built centred on y=0 like the round wall, so they sit at the tier's MIDDLE. */}
+          {strokeWall && (
+            <TierBody position={[0, yBase + height / 2, 0]} color={color} surf={mat} grainExtent={null}
+              gradient={effGradient} stripes={effStripes} geoSig={strokeWall.wall.uuid} castShadow receiveShadow>
+              <primitive key={strokeWall.wall.uuid} object={strokeWall.wall} attach="geometry" />
+            </TierBody>
+          )}
+          {strokeWall?.lid && (
+            <TierBody position={[0, yBase, 0]} color={capColor} surf={mat} grainExtent={null}
+              gradient={null} geoSig={strokeWall.lid.uuid} castShadow receiveShadow>
+              <primitive key={strokeWall.lid.uuid} object={strokeWall.lid} attach="geometry" />
+            </TierBody>
+          )}
+        </>
       ) : roundedGeo ? (
         // Fondant-draped round tier: one rounded-edge solid (spans y ∈ [0,height]), positioned at
         // the base. No separate lid — the gradient/grain flow over the rounded rim continuously.
@@ -1839,15 +1767,29 @@ export default function CakeTier({
           <primitive object={roundedGeo} attach="geometry" />
         </TierBody>
       ) : styledGeo ? (
-        // Cream STYLE wall (wave/swirl/rustic): a displaced cylinder, one centred mesh (caps flat),
-        // no separate lid — the texture and gradient flow over the whole wall.
-        <TierBody position={[0, centerY, 0]} color={color} surf={mat}
-          grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
-          gradient={effGradient} stripes={effStripes} geoSig={styledGeo.uuid} castShadow receiveShadow>
-          {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
-              changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
-          <primitive key={styledGeo.uuid} object={styledGeo} attach="geometry" />
-        </TierBody>
+        <>
+          {/* Cream STYLE wall (wave/swirl/piped): a displaced cylinder, one centred mesh (caps flat).
+              The texture and gradient flow over the whole wall. */}
+          <TierBody position={[0, centerY, 0]} color={color} surf={mat}
+            grainExtent={[2 * Math.PI * radius, height]} dusting={dusting} foil={foil} finishMaps={finishMaps}
+            vertexColors={!!styledGeo.getAttribute?.('color')}
+            gradient={effGradient} stripes={effStripes} geoSig={styledGeo.uuid} castShadow receiveShadow>
+            {/* key on the geometry uuid: <primitive> won't re-attach a swapped `object` without it, so
+                changing the STYLE params (Depth/Waviness…) rebuilds styledGeo but the mesh kept the old one. */}
+            <primitive key={styledGeo.uuid} object={styledGeo} attach="geometry" />
+          </TierBody>
+          {/* Styled TOP (piped's cream spiral). It is the LID as well as the decoration: it is sized
+              to overhang the displaced wall, which is what closes the gap the flat cap leaves. Takes
+              `capColor` — the top-most stop — for the same reason the smooth lid does: its own frame
+              is far too shallow to show a vertical gradient, so a blend across it would read as a
+              flat band of the wrong colour. */}
+          {styledTop && (
+            <TierBody position={[0, topY, 0]} color={capColor} surf={mat} grainExtent={null}
+              gradient={null} geoSig={styledTop.uuid} castShadow receiveShadow>
+              <primitive key={styledTop.uuid} object={styledTop} attach="geometry" />
+            </TierBody>
+          )}
+        </>
       ) : (
         <>
           <TierBody position={[0, centerY, 0]} color={color} surf={mat}
@@ -1870,7 +1812,8 @@ export default function CakeTier({
       )}
       {!isPrism && topFinishMaps && (
         <TopFoilDecal maps={topFinishMaps} radius={radius - 0.02} y={topY + 0.02}
-          foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? 0.35} env={topFoil?.finish?.env ?? 4.5} />
+          foilColor={topFoil?.color} glow={topFoil?.finish?.glow ?? GOLD_LEAF_DEFAULTS.glow}
+          env={topFoil?.finish?.env ?? GOLD_LEAF_DEFAULTS.env} />
       )}
       {renderTops()}
       {renderBottoms()}

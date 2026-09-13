@@ -19,6 +19,60 @@ import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
  * If this works, metals can be lit by the studio map while fondant and faux balls keep lebombo, and
  * the glare is fixable without re-lighting the cake. If it does not, the idea is dead and the next
  * candidate is a layers split or a second render pass. */
+/* ⚠️ `?lever=1` — CONNECT `envMapIntensity`, WITHOUT CHANGING THE LIGHT.
+ *
+ * three.js discards a material's own `envMapIntensity` and substitutes `scene.environmentIntensity`
+ * whenever that material's `envMap` is null:
+ *
+ *     if ((material.isMeshStandardMaterial || …) && material.envMap === null && scene.environment !== null)
+ *       m_uniforms.envMapIntensity.value = scene.environmentIntensity;
+ *
+ * So handing every material the SCENE'S OWN environment texture changes nothing about the light —
+ * same map, same orientation, same everything — and only stops that substitution, letting each
+ * surface's authored value apply. That makes this the clean half of the experiment: whatever moves
+ * when `?lever=1` is on is a value somebody already wrote and has never once seen take effect.
+ *
+ * ⚠️ It assigns the texture the SCENE owns and never disposes it. The earlier attempt at per-material
+ * environments built its OWN PMREM, and disposing that produced black toppers after an
+ * add/remove/re-add. Nothing here creates or frees a texture.
+ *
+ * Every frame rather than once: R3F rebuilds materials on prop changes, and a one-shot effect misses
+ * the rebuild — which is how a previous spike concluded a per-material env "did not work". */
+function EnvLever({ on }) {
+  const { scene } = useThree();
+  useFrame(() => {
+    if (!on || !scene.environment) return;
+    scene.traverse((o) => {
+      const m = o.material;
+      if (!m || !m.isMeshStandardMaterial) return;      // physical extends standard
+      if (m.envMap !== scene.environment) { m.envMap = scene.environment; m.needsUpdate = true; }
+    });
+  });
+  return null;
+}
+
+/* ⚠️ `?ball=1` — A POLISHED GOLD SPHERE, the case that must NOT break.
+ *
+ * The faux balls are the reason the studio HDRI was reverted: they went matte under it and were
+ * reported from dev the same afternoon. They are catalogue elements and cannot be placed in this
+ * harness, so this is a bare sphere carrying their material question — polished metal, strongly
+ * CURVED — sitting where it is easy to sample. It stands in for the geometry class, not for the
+ * element: it says whether curved polished metal survives a change, which is the thing that was
+ * lost last time. Do not read it as a faux ball's exact look.
+ *
+ * Numbers match the gold BOARD (metalness 0.75, roughness 0.15), the one metal in this scene nobody
+ * has ever called dull, so the sphere and the board differ by GEOMETRY alone. */
+function GoldBall({ on }) {
+  if (!on) return null;
+  return (
+    <mesh position={[0.95, 1.62, 0.55]} castShadow>
+      <sphereGeometry args={[0.26, 48, 32]} />
+      <meshStandardMaterial color="#D4AF37" metalness={0.75} roughness={0.15}
+        envMapIntensity={Number(_q.get('ballenv') ?? 1)} />
+    </mesh>
+  );
+}
+
 /* Rotating the scene's environment, from the harness rather than from the product. This used to be
  * a `?envrot=` parameter inside `CakeCanvas` — dev tooling that shipped and stayed. `scene.environ-
  * mentRotation` is settable from here, so the sweep keeps working and production keeps its API. */
@@ -104,7 +158,26 @@ const design = {
    * the TIER (`tier.clouds`, `tier.rainbows`), not off the design root, which is why they are here
    * rather than beside `nameBlocks`. Single-colour rainbow bands on purpose: a measurement wants one
    * colour it asked for, not six it has to disentangle. */
-  tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth',
+  /* ⚠️ `?style=swirl&sp=twist:0,lobes:28` — the cream STYLE and its params, so a wall texture can be
+     seen on the real scene instead of only in a studio preview. `sp` is key:value pairs; the keys are
+     whatever that style declares in CREAM_STYLES, so a new texture needs no change here. */
+  tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream',
+            frostingStyle: _q.get('style') || 'smooth',
+            styleParams: _q.get('sp')
+              ? Object.fromEntries(_q.get('sp').split(',').map(kv => {
+                  const [k, v] = kv.split(':'); return [k, Number(v)];
+                }))
+              : null,
+            /* ⚠️ `?grad=1` — A GRADIENT WALL, and it is not a cosmetic option. The gradient patches
+               the shader and writes `diffuseColor.rgb` outright, which REPLACES whatever the albedo
+               map put there — including a gold-leaf shard. A finish judged on a solid-colour tier
+               therefore says nothing about the same finish on a gradient one, and that is exactly how
+               a foil fix measured good here and shipped looking wrong: reported 2026-09-10 with the
+               shards taking the cake's pink→lilac instead of being gold. */
+            gradient: _q.has('grad')
+              ? { mode: 'vertical', balance: 0.5,
+                  colors: [_q.get('grad1') || '#E8598F', _q.get('grad2') || '#9B6FD4'] }
+              : null,
             clouds: _q.has('cloud')
               ? [{ id: 'cl1', surface: 'top', u: 0.5, v: 0.3, scale: 1.6,
                    color: _q.get('cloudcolor') || '#FFFFFF' }]
@@ -121,6 +194,41 @@ const design = {
                    color: _q.get('dripcolor') || '#3a2117' }]
               : [],
             bottomPipings: [],
+            /* ⚠️ `?foil=1` PUTS GOLD LEAF ON THE WALL, because a finish does not only add shards — it
+               changes the WALL'S OWN MATERIAL. With finish maps bound, `TierBody` sends `color` to
+               white and drives the albedo from a baked map, and it raises `envMapIntensity` from 0.5
+               to the foil's 4.5 for the WHOLE surface, base included. So the question this answers is
+               not "do the shards shine": it is whether the cream a baker chose still renders as the
+               colour they chose once a single flake is on it. Reported dull from the app 2026-09-09,
+               with the flakes dull in the same frame.
+
+               `?foilonly=1` puts ONE flake on the BACK of the cake, which separates the two causes:
+               the material switch is fully bound, but nothing is stamped where a measurement samples.
+               If the front wall shifts here, the shards are innocent and the finish path is the bug.
+               ⚠️ NOT "the foil object with no flakes" — that was the first attempt and it measured
+               nothing at all: `CakeTier` nulls `sideFoil` when the flake list is empty, so no maps
+               were ever bound and the two passes were the same render. It read as a clean zero. */
+            foil: (_q.has('foil') || _q.has('foilonly') || _q.has('foilring'))
+              ? { color: _q.get('foilcolor') || '#e6be4a',
+                  /* ⚠️ EACH KNOB IS OMITTED UNLESS THE URL SETS IT, so with no knobs this renders the
+                     SHIPPED defaults. Repeating the defaults here instead silently pinned the
+                     harness to the old values: a measurement taken right after changing
+                     GOLD_LEAF_DEFAULTS reported the old numbers back, because the harness was
+                     overriding the very thing under test. */
+                  finish: { raggedness: 0.55, sizeScale: 1,
+                            ...(_q.has('foilmetal')   && { metalness: Number(_q.get('foilmetal')) }),
+                            ...(_q.has('foilrough')   && { roughness: Number(_q.get('foilrough')) }),
+                            ...(_q.has('foilenv')     && { env:       Number(_q.get('foilenv')) }),
+                            ...(_q.has('foilglow')    && { glow:      Number(_q.get('foilglow')) }),
+                            ...(_q.has('foilcrinkle') && { crinkle:   Number(_q.get('foilcrinkle')) }) },
+                  flakes: _q.has('foilring')
+                    ? Array.from({ length: 8 }, (_, i) => ({ u: i / 8, v: 0.5, surface: 'side', rot: i * 40, size: 1.2, seed: i + 1 }))
+                    : _q.has('foilonly') ? [{ u: Number(_q.get('foilu') ?? 0.5), v: 0.85, surface: 'side', rot: 0, size: 0.8, seed: 5 }] : [
+                    { u: 0.46, v: 0.42, surface: 'side', rot: 12,  size: 1.1, seed: 3 },
+                    { u: 0.50, v: 0.55, surface: 'side', rot: 200, size: 0.9, seed: 7 },
+                    { u: 0.55, v: 0.36, surface: 'side', rot: 95,  size: 1.0, seed: 11 },
+                  ] }
+              : null,
             /* ⚠️ `?cream=1` PUTS UNCORRECTED CREAM NEXT TO A CORRECTED WALL, which is the only way to
                see whether fixing tiers alone makes a MISMATCH more visible than the original error.
                Same chosen colour on both: if they now read as two different colours, correcting one
@@ -172,9 +280,34 @@ const design = {
    * their own RoomEnvironment until 2026-09-05, which is why the glare being complained about was
    * invisible on both of them. `CakePreview` mounts SafeEnvironment and the real rig, so a topper
    * put here is the one a customer sees. `?topper=1`. */
-  writings: new URLSearchParams(location.search).has('topper')
+  /* ⚠️ `?bareword=1` — A WRITING WITH ONLY WHAT A PHOTO CAN TELL YOU: style, text, surface, colour.
+     No font, no angle, no height. That is exactly what `inspirationToDesign` emits when it reads
+     lettering off a customer's reference photo, and the question it answers is whether such an
+     object renders at all — the design model seeds defaults when a message is CREATED in the
+     designer, and a message arriving from a mapper never went through that. (It does: cream falls
+     back via `creamFonts[key] || creamFonts[DEFAULT]`, acrylic via `resolveFace`.) */
+  writings: _q.has('bareword')
+    ? [{ id: 'bw1', style: 'acrylic', text: 'Happy Birthday Aarav', surface: 'side', acrylicFinish: 'gold' },
+       { id: 'bw2', style: 'cream', text: 'Five', surface: 'top', color: '#ffffff' }]
+    : new URLSearchParams(location.search).has('topper')
+    /* ⚠️ `?topperside=1` PUTS IT ON THE WALL, which is where it is actually judged. On the TOP the
+       piece lies almost edge-on to this camera and reads a few pixels tall — a picture that cannot
+       show whether the finish is flat or not. On the wall it faces the viewer at the size a customer
+       sees, which is how the dullness was reported in the first place. */
     ? [{ id: 'w', style: 'acrylic', text: 'Happy Birthday', font: 'ems_allure',
-         surface: 'top', color: '#D4AF37', finish: 'gold' }]
+         ...(_q.has('topperside')
+           /* ⚠️ `?topperangle=` TURNS THE PIECE AROUND THE WALL, which is the only way to test the
+              symptom that was actually reported: "in a few angles when I turn the cake it looks a
+              little brighter". A single frame cannot see that. A flat face has one normal, so its
+              whole brightness moves together as the piece turns; a chamfer is supposed to hold a
+              highlight through the turn. The test is the SPREAD across angles, not any one of them. */
+           ? { surface: 'side', sideAngle: Number(_q.get('topperangle') ?? 0), sideY: 0.5 }
+           : { surface: 'top' }),
+         /* ⚠️ `?topperfinish=silver` — the finishes are five entries in one table drawn by one
+            gradient, so a change to the gradient reaches all of them. Judging it on gold alone and
+            spreading the same numbers to the rest by analogy is the guess this harness exists to
+            replace. */
+         color: '#D4AF37', finish: _q.get('topperfinish') || 'gold' }]
     : [],
   /* ⚠️ `?bare=1` DROPS THE GARNISHES so a measurement can have the cake to itself. The standing panel
    * sits over the middle of the top surface, which is exactly where a print or a topper lands — a
@@ -194,6 +327,20 @@ const design = {
 /* ⚠️ `?cycle=1` MOUNTS, UNMOUNTS AND REMOUNTS THE TOPPER — the sequence that broke it in dev (add,
  * remove, add again → black lettering, fixed only by a refresh). A harness that can only show the
  * FIRST mount cannot catch a shared resource being disposed under the second one. */
+/* ⚠️ THE SCENE ON `window`, so a measurement can ask the RENDERER what it did rather than infer it
+ * from pixels. This is what found the `envMapIntensity` problem: a sweep of the foil's own env value
+ * produced byte-identical frames, and only reading the live material back — and then setting the
+ * value on it directly and re-rendering — showed that three.js overwrites the uniform with
+ * `scene.environmentIntensity` whenever the material's own `envMap` is null. From the outside that
+ * is indistinguishable from "this knob is already optimal", which is the conclusion an earlier round
+ * of this investigation drew and shipped a scene-wide change on.
+ * Dev harness only; nothing in `src/` reads these. */
+function SceneProbe() {
+  const { scene, gl } = useThree();
+  useEffect(() => { window.__scene = scene; window.__gl = gl; }, [scene, gl]);
+  return null;
+}
+
 function App() {
   /* Present, then absent, then present again — the topper UNMOUNTS in between, which is what lets
      whatever disposes the shared PMREM do it before the second mount asks for the texture. */
@@ -218,8 +365,24 @@ function App() {
         so every colour number here was measured on an unshadowed cake while a baker sees a shadowed
         one. A cast shadow lands on the tier wall, which is the exact patch the colour scripts
         sample. Matching it is not a detail. */}
-    <CakePreview design={shown} shadows autoRotate={!_q.has('still')}>
-      <PerMaterialEnv file={_q.get('permat') ? `/_local/env/${_q.get('permat')}.hdr` : null} />
+    {/* ⚠️ `?cam=` SWEEPS THE CAMERA'S HEIGHT, and the topper cannot be judged without it. A matcap is
+        read by the surface normal IN VIEW SPACE, so raising or lowering the eye moves WHERE on the
+        baked picture a flat letter samples — the piece genuinely looks different from a low view than
+        from a high one, with nothing about it changed. Reported from the app 2026-09-10: "its front
+        view is dull, other angle view is better", with two screenshots that differ only in height.
+        Every earlier topper number here was taken at the default 4.85 and is therefore a reading of
+        ONE row of that sweep. `?cam=2.2` is about level with the lettering; 7.5 looks down on it. */}
+    <CakePreview design={shown} shadows autoRotate={!_q.has('still')}
+      cameraPosition={_q.has('cam') ? [0, Number(_q.get('cam')), 6.95] : undefined}>
+      <SceneProbe />
+      <EnvLever on={_q.has('lever')} />
+      <GoldBall on={_q.has('ball')} />
+      {/* ⚠️ A PATH WITH A SLASH GOES TO THE PROXIED CDN, same convention as `?env=`, so a per-material
+          map can be compared against the bytes production actually serves rather than a local copy
+          that can go stale: `?permat=code/env/studio_256.hdr`. A bare name still reads /_local. */}
+      <PerMaterialEnv file={_q.get('permat')
+        ? (_q.get('permat').includes('/') ? `/cdn/${_q.get('permat')}` : `/_local/env/${_q.get('permat')}.hdr`)
+        : null} />
       {_q.has('envrot') && <EnvRotation deg={_q.get('envrot')} />}
       {/* ⚠️ THE DESIGNER'S OWN GROUND. The live scene mounts `<SceneBackground colour={DESIGNER_GROUND} />`
           and the preview canvas does not, so this page used to show a cake floating on white. It

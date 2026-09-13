@@ -58,6 +58,11 @@ import creamFonts from './creamFonts.json';
  * The UMD build cannot code-split and inlines all four (1.59MB -> 1.98MB). Both web and admin
  * resolve the ESM entry via `exports.import`, so nothing that ships pays it; the CJS file carries
  * the weight for any consumer that requires it. Worth knowing before adding a fifth face.
+ *
+ * Three more were added for card cutouts (Lilita One, Poppins Bold, Pacifico), taking the outline
+ * faces to seven and ~490KB. They are cheaper than the scripts — 25-64KB against 73-104KB — because
+ * a block face has far fewer curve segments per glyph. The split still holds: an ESM consumer
+ * fetches only the face it picks.
  */
 
 // Parsing a typeface JSON allocates every glyph's outline, so it is done once per face and kept —
@@ -69,6 +74,16 @@ export const TOPPER_FACES = {
   parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
   pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
   dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.10, licence: 'OFL 1.1' },
+  /* ⚠️ BLOCK faces, and their `fit` is near zero where every script above is deeply negative.
+   * A script's letters already almost touch, so a small negative closes them into one cuttable
+   * piece. A block face's do not come close at any tracking a reader would accept — measured, the
+   * value that joins "Sandeep" in Poppins overlaps each letter into the next by a third and sets it
+   * as a smear. So these are left set as drawn: on a CARD topper the backing sheet is what joins the
+   * letters (grow the offset until the outlines meet), and on acrylic the bar or a bridge does it.
+   * Do not "fix" these by driving them negative until the piece count says 1. */
+  lilita_one:       { label: 'Lilita One',    kind: 'outline',    fit: -0.012, licence: 'OFL 1.1' },
+  poppins_bold:     { label: 'Poppins Bold',  kind: 'outline',    fit: -0.010, licence: 'OFL 1.1' },
+  pacifico:         { label: 'Pacifico',      kind: 'outline',    fit: -0.06,  licence: 'OFL 1.1' },
   // ⚠️ The centreline faces need FAR less than the outline ones, and nothing about the outline
   // numbers predicts theirs — see the note below.
   ems_allure:       { label: 'Allure',         kind: 'centreline', fit: -0.04, licence: 'public domain' },
@@ -88,7 +103,12 @@ const resolveFace = (key) => (TOPPER_FACES[key] ? key : DEFAULT_TOPPER_FACE);
 // The fit a face wants — the default face's, for a key that is no longer on the list.
 export const faceFit = (key) => TOPPER_FACES[resolveFace(key)].fit ?? 0;
 
-export const DEFAULT_TOPPER_FACE = 'great_vibes';
+/* ⚠️ PARISIENNE, not the first row. Great Vibes is the heaviest script on the list — at a topper's
+ * size its strokes read as a slab and the flourishes close up — and being first it was also what an
+ * unknown key fell back to, so it was the face most cakes wore without anybody choosing it.
+ * Parisienne is the finer hand, which is what a cut topper actually looks like. It is a DEFAULT, not
+ * an order: every face above stays on the picker. */
+export const DEFAULT_TOPPER_FACE = 'parisienne';
 
 // The outline JSONs, keyed to match. Static so the library build resolves them; see the bundle note.
 const OUTLINE_JSON = {
@@ -96,6 +116,9 @@ const OUTLINE_JSON = {
   parisienne:     () => import('./typefaces/parisienne.json'),
   pinyon_script:  () => import('./typefaces/pinyon-script.json'),
   dancing_script: () => import('./typefaces/dancing-script.json'),
+  lilita_one:     () => import('./typefaces/lilita-one.json'),
+  poppins_bold:   () => import('./typefaces/poppins-bold.json'),
+  pacifico:       () => import('./typefaces/pacifico.json'),
 };
 
 /* The font object `topperShapes` wants, for either kind.
@@ -104,7 +127,35 @@ const OUTLINE_JSON = {
  * that only ever uses a monoline to carry four of them. Centreline faces resolve immediately — they
  * are already in the cream pen's bundle.
  */
+/* ⚠️ THE STUDIO'S PLAIN BLOCK FACE, WHICH IS NOT IN `TOPPER_FACES`. It is not offered in the face
+ * picker — it is what a topper falls back to and what presets are drawn in — but it still has to be
+ * LOADABLE, because `resolveFace` sends an unknown key to the default and the default is a SCRIPT.
+ * Before this lived here, a caller that forgot got Great Vibes silently: the card topper's print
+ * source hit it, and every future caller would have. One key, resolved in the one place that knows
+ * how to load a face. */
+export const BLOCK_FACE = '__block';
+
+/** Every face a topper payload needs, loaded, keyed by face — with the block one always present so
+ *  a caller can fall back without knowing what "block" means. */
+export async function loadFacesFor(payload) {
+  const wanted = new Set([BLOCK_FACE]);
+  for (const o of payload?.objects ?? []) if (o.kind === 'text' && o.face) wanted.add(o.face);
+  const out = {};
+  await Promise.all([...wanted].map(async (key) => {
+    try { out[key] = await loadTopperFace(key); } catch { /* the caller falls back to block */ }
+  }));
+  return out;
+}
+
 export async function loadTopperFace(key) {
+  if (key === BLOCK_FACE) {
+    if (parsed.has(BLOCK_FACE)) return parsed.get(BLOCK_FACE);
+    // Dynamic, like every other face here, so nothing pays for it until a topper is drawn.
+    const mod = await import('three/examples/fonts/helvetiker_bold.typeface.json');
+    const f = new FontLoader().parse(mod.default ?? mod);
+    parsed.set(BLOCK_FACE, f);
+    return f;
+  }
   const k = resolveFace(key);
   if (parsed.has(k)) return parsed.get(k);
 

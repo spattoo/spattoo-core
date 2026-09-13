@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { topperSources, TOPPER_PREFIX } from './a4/topperSource.js';
 import UploadsPanel from '../designer/decorations/UploadsPanel.jsx';
 import { Z } from '../shared/Panel.jsx';
 import A4Sheet from './a4/A4Sheet.jsx';
@@ -29,7 +30,7 @@ import FrameControls from './FrameControls.jsx';
 // The studio opens on the LIBRARY and moves to the sheet. `sheet === null` is the library;
 // `{ id, name, items, guide }` is the editor, with `id: null` for one not saved yet.
 
-export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClose }) {
+export default function EdiblePrintStudio({ apiClient, elementTypes = [], toppers = [], onClose }) {
   const [sheet, setSheet] = useState(null);     // null = the library is showing
   const [sources, setSources] = useState([]);
   const [picking, setPicking] = useState(false);
@@ -95,6 +96,27 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
     }
   }, [sources]);
 
+  /* ── The card toppers on the cake this sheet was opened from ──────────────────────────────────
+   *
+   * ⚠️ ADDED, NOT OFFERED IN A PICKER. Every other source here is something the baker goes and finds;
+   * a topper is already on the cake in front of them, and it is the one decoration on this sheet
+   * that is genuinely MADE by printing. Making them hunt for it would be asking them to re-choose
+   * something they chose when they put it on the cake.
+   *
+   * ⚠️ ONLY ON A NEW SHEET. A SAVED one rebuilds its own toppers from what it stored, because a
+   * sheet is a record of a print job — reopening it must show what was printed, not what the cake
+   * happens to carry now. */
+  useEffect(() => {
+    if (!sheet || sheet.id || !toppers.length) return;
+    let alive = true;
+    (async () => {
+      const built = (await Promise.all(toppers.map(t => topperSources(t).catch(() => [])))).flat();
+      if (!alive || !built.length) return;
+      setSources(list => [...list, ...built.filter(b => !list.some(s2 => s2.id === b.id))]);
+    })();
+    return () => { alive = false; };
+  }, [sheet, toppers]);
+
   // ── The library ────────────────────────────────────────────────────────────────────────────────
   if (!sheet) {
     return (
@@ -114,7 +136,9 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
             // is noticed instead of rendering as a broken box.
             const uploads = (await apiClient.fetchUploads?.()) ?? [];
             const byId = new Map(uploads.map(u => [String(u.id), u]));
-            const wanted = [...new Set(saved.map(it => String(it.uploadId)))];
+            // Toppers carry themselves; only the image items go looking for an upload.
+            const savedToppers = saved.filter(it => it.topper);
+            const wanted = [...new Set(saved.filter(it => !it.topper).map(it => String(it.uploadId)))];
 
             // The FRAMING travels with the layout: each saved item carries the mask it was cut with
             // and the transform it was composed at, so reopening restores the picture the baker
@@ -140,14 +164,25 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
                 transform: was.transform,
               }]),
             ));
+            /* Rebuilt from the STORED payload, never from the cake — see the note on the effect
+               above. One source per distinct topper, so two placements of one topper share it. */
+            const builtToppers = (await Promise.all(
+              [...new Map(savedToppers.map(it => [String(it.topperId), it])).values()]
+                .map(it => topperSources({ id: it.topperId, name: it.name, payload: it.topper }).catch(() => [])),
+            )).flat();
+
             setSelected(null);
-            setSources(resolved.filter(Boolean));
+            setSources([...resolved.filter(Boolean), ...builtToppers]);
             setSheet({
               id: full.id,
               name: full.name,
               // uploadId (what the row stores) → sourceId (what the sheet lays out). The sheet has no
               // idea what an upload is, and translating here is what keeps it that way.
-              items: saved.map(it => ({ ...it, uid: it.uid ?? `it${it.uploadId}-${it.x}-${it.y}`, sourceId: String(it.uploadId) })),
+              items: saved.map(it => ({
+                ...it,
+                uid: it.uid ?? `it${it.topper ? `t${it.topperId}` : it.uploadId}-${it.x}-${it.y}`,
+                sourceId: it.topper ? `${TOPPER_PREFIX}${it.topperId}` : String(it.uploadId),
+              })),
               guide: full.guide ?? null,
             });
             // Said once, plainly. An item whose image is gone also shows "Image deleted" in its own
@@ -175,6 +210,14 @@ export default function EdiblePrintStudio({ apiClient, elementTypes = [], onClos
     // placements — nothing else about it would know where to put a transform.
     const items = sheetItems.map(({ sourceId, ...rest }) => {
       const src = sources.find(s => s.id === sourceId);
+      /* ⚠️ A TOPPER HAS NO UPLOAD TO POINT AT, so it stores its PAYLOAD. The note above says storing
+         `sourceId` would leak the sheet's vocabulary into the database "where the next kind of source
+         would make it a lie" — this is that next kind, and it names what it actually is. The payload
+         is a few hundred bytes, `printSheets.js` stores items exactly as sent, and carrying it means
+         a saved sheet keeps printing what it printed even after the cake is changed. */
+      if (src?.topper) {
+        return { ...rest, uploadId: null, topperId: sourceId.slice(TOPPER_PREFIX.length), topper: src.topper };
+      }
       return { ...rest, uploadId: sourceId, maskUrl: src?.maskUrl ?? null, transform: src?.transform ?? null };
     });
     try {

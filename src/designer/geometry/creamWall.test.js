@@ -1,0 +1,382 @@
+import { describe, it, expect } from 'vitest';
+import {
+  ropeRadius, ropeSection, pipedBodyRadius, pipedParams, makeSwirlField,
+  buildStyledWall, buildStyledTop, makeWallReliefSampler,
+  strokeWallLayout, strokeWallParams,
+} from './creamWall.js';
+import { NOZZLE_BY_KEY, mergePenGeometries } from './creamPen.js';
+import { CREAM_STYLES, resolveStyleParams, styleDef } from '../creamStyles.js';
+
+const TAU = Math.PI * 2;
+const STAR  = pipedParams({ ...resolveStyleParams('piped'),       nozzle: styleDef('piped').nozzle });
+const ROUND = pipedParams({ ...resolveStyleParams('piped_round'), nozzle: styleDef('piped_round').nozzle });
+
+describe('the tip comes from the cream pen, not from here', () => {
+  it('every piped row names a REAL pen tip — a typo would silently pipe a 1M instead', () => {
+    const rows = Object.values(CREAM_STYLES).filter(s => s.nozzle);
+    expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) expect(NOZZLE_BY_KEY[row.nozzle], `${row.label}: ${row.nozzle}`).toBeTruthy();
+  });
+
+  it('falls back rather than rendering a tier with no cream on it', () => {
+    expect(NOZZLE_BY_KEY[pipedParams({ nozzle: 'no-such-tip' }).nozzle]).toBeTruthy();
+  });
+
+  it('the two rows differ in the TIP, not in the algorithm or the knobs', () => {
+    expect(styleDef('piped').nozzle).not.toBe(styleDef('piped_round').nozzle);
+    expect(styleDef('piped_round').wall).toBe(styleDef('piped').wall);
+    expect(styleDef('piped_round').top).toBe(styleDef('piped').top);
+    const keys = (k) => (styleDef(k).params ?? []).map(p => p.key);
+    expect(keys('piped_round')).toEqual(keys('piped'));
+  });
+});
+
+describe('rope size is DERIVED, so nothing can disagree with it', () => {
+  it('lays them shoulder to shoulder with no overlap', () => {
+    // The pen's PRESSED section spans −1…1 across and 0…PRESSED_STAND out, so a stroke's half-width
+    // and its depth are two different numbers — and the spines ride the (radius − depth) circle.
+    const { w, d, ropes } = ropeSection(1, { width: 0.3, overlap: 0 });
+    expect(2 * w * ropes).toBeCloseTo(TAU * (1 - d), 1);
+  });
+
+  it('⚠️ takes its WIDTH FROM THE NOZZLE — a bigger cake gets more strokes, never fatter ones', () => {
+    const p = { width: 0.3, overlap: 0.15 };
+    const small = ropeSection(1, p), big = ropeSection(2, p);
+    expect(big.w).toBeCloseTo(small.w, 12);              // the tip did not change
+    expect(big.ropes / small.ropes).toBeGreaterThan(1.9); // the cake did
+  });
+
+  it('a wider nozzle lays fewer, fatter strokes', () => {
+    const fine = ropeSection(1, { width: 0.3, overlap: 0.15 });
+    const fat  = ropeSection(1, { width: 0.6, overlap: 0.15 });
+    expect(fat.w).toBeCloseTo(2 * fine.w, 12);
+    expect(fat.ropes).toBeLessThan(fine.ropes);
+  });
+
+  it('⚠️ puts the CREST on the tier radius — the cake is the size it says it is', () => {
+    for (const params of [STAR, ROUND]) {
+      const t = ropeRadius(1, params);
+      expect((1 - t) + t).toBeCloseTo(1, 12);
+      const pos = buildStyledWall('piped', 1, 1.4, params).getAttribute('position');
+      let max = 0;
+      for (let i = 0; i < pos.count; i++) max = Math.max(max, Math.hypot(pos.getX(i), pos.getZ(i)));
+      expect(max).toBeLessThan(1.06);          // `vary` makes some strokes a little fatter, no more
+      expect(max).toBeGreaterThan(0.97);       // …and it really does reach it
+    }
+  });
+
+  it('overlap lays them CLOSER, it does not fatten them — a hand presses neighbours together', () => {
+    const butted  = ropeSection(1, { width: 0.3, overlap: 0 });
+    const pressed = ropeSection(1, { width: 0.3, overlap: 0.3 });
+    expect(pressed.w).toBeCloseTo(butted.w, 12);
+    expect(pressed.ropes).toBeGreaterThan(butted.ropes);
+  });
+});
+
+describe('pipedBodyRadius — the cake under the piping', () => {
+  it('⚠️ puts the CAKE a stroke inside the crest: the piping is done ON the side, not sunk into it', () => {
+    /* The body used to be raised until it swallowed the strokes — to stop the board showing through
+     * the notches between them — and a star tip's creases run most of the way down a stroke's side,
+     * so burying it buried them and the wall came out as a smooth cylinder with slits. */
+    const w = ropeSection(1, STAR).w;
+    const proud = 1 - pipedBodyRadius(1, { ...STAR, press: 0 });
+    expect(proud).toBeCloseTo(2 * w, 9);            // press 0: tangent to the cake, all of it showing
+  });
+
+  it('press 1 buries half of one, and no more', () => {
+    const w = ropeSection(1, STAR).w;
+    expect(1 - pipedBodyRadius(1, { ...STAR, press: 1 })).toBeCloseTo(w, 9);
+  });
+
+  it('never reaches the crest, or there would be no piping to see', () => {
+    for (const press of [0, 0.3, 1]) expect(pipedBodyRadius(1, { ...STAR, press })).toBeLessThan(1);
+  });
+});
+
+describe('makeWallReliefSampler describes the same wall the geometry builds', () => {
+  const sample = (params) => {
+    const f = makeWallReliefSampler('piped', 1, params, 1.4);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < 4000; i++) {
+      const r = f(-Math.PI + TAU * i / 4000, 0.5);
+      lo = Math.min(lo, r); hi = Math.max(hi, r);
+    }
+    return { lo, hi };
+  };
+
+  // Where two neighbouring ropes actually cross, measured the way the geometry lays them out.
+  const crossing = (p) => {
+    const { w, d, ropes } = ropeSection(1, p);
+    const Rc = 1 - d;
+    const a = Rc * Math.sin(Math.PI / ropes);
+    return Rc * Math.cos(Math.PI / ropes) + (a < w ? d * Math.sqrt(1 - (a / w) ** 2) : 0) - 1;
+  };
+
+  it('⚠️ reads NEGATIVE — piped ropes are laid inside the nominal radius, not grown outside it', () => {
+    const { lo, hi } = sample(STAR);
+    expect(hi).toBeCloseTo(0, 3);              // 0 on a rope's spine: that is the crest, and the radius
+    /* ⚠️ Only just. At the overlap this ships with, two strokes cross near their own crests, so the
+     * dip BETWEEN them is shallow — the relief a decoration feels is the gap between strokes, not
+     * the star's own creases, which this sampler deliberately does not model (a decoration seats on
+     * the rope, not in a flute). */
+    expect(lo).toBeLessThan(-0.005);           // and it dips between them
+  });
+
+  it('dips to where two strokes CROSS, not to the body — that is the point of the overlap', () => {
+    for (const p of [STAR, ROUND]) {
+      const { lo } = sample(p);
+      expect(lo).toBeCloseTo(crossing(p), 1);
+      expect(lo).toBeGreaterThanOrEqual(pipedBodyRadius(1, p) - 1);   // the body stays behind them
+    }
+  });
+});
+
+describe('the top — a spatula swirl, not a coil', () => {
+  it('is null for every style that leaves the top flat', () => {
+    expect(buildStyledTop('piped', undefined, 1, 1.4, STAR)).toBeNull();
+    expect(buildStyledTop('wave', null, 1, 1.4, {})).toBeNull();
+  });
+
+  it('joins itself at the ±π seam — a ring that did not would show as a crack to the middle', () => {
+    const f = makeSwirlField({ turns: 7, rOut: 1 });
+    for (const r of [0.15, 0.5, 0.95]) {
+      expect(f(r, Math.PI - 1e-7)).toBeCloseTo(f(r, -Math.PI + 1e-7), 5);
+    }
+  });
+
+  it('is a spiral, not rings: one turn moves it exactly one ring inward', () => {
+    const turns = 7, f = makeSwirlField({ turns, rOut: 1 });
+    expect(f(0.5, 0)).toBeCloseTo(f(0.5 - 1 / turns, TAU), 9);
+  });
+
+  it('⚠️ stays SHALLOW — an order of magnitude under a rope, or the lid fights the wall', () => {
+    const geo = buildStyledTop('piped', 'spiral', 1, 1.4, STAR);
+    const pos = geo.getAttribute('position');
+    let top = -Infinity;
+    for (let i = 0; i < pos.count; i++) top = Math.max(top, pos.getY(i));
+    expect(top).toBeLessThan(0.4 * ropeRadius(1, STAR));
+  });
+
+  it('⚠️ reaches the CREST, or from directly above the tier is ringed by cut-off stroke ends', () => {
+    /* Left at the body radius the lid stops a whole stroke short, and from straight above the tier
+     * becomes a disc ringed by every stroke's severed section — a torn-looking crown that no cake
+     * has. The reference photograph's top is a clean disc with the ribs only on the side. */
+    const geo = buildStyledTop('piped', 'spiral', 1, 1.4, STAR);
+    expect(geo.getAttribute('uv')).toBeTruthy();
+    const pos = geo.getAttribute('position');
+    let max = 0;
+    for (let i = 0; i < pos.count; i++) max = Math.max(max, Math.hypot(pos.getX(i), pos.getZ(i)));
+    expect(max).toBeGreaterThan(1 - 0.3 * ropeSection(1, STAR).w);   // essentially the crest
+    expect(max).toBeLessThanOrEqual(1);                              // and never past it
+  });
+
+  it('and at press 0 the strokes are TANGENT to that side — laid on it, not sunk into it', () => {
+    const w = ropeSection(1, STAR).w;
+    const body = pipedBodyRadius(1, { ...STAR, press: 0 });
+    expect(1 - 2 * w).toBeCloseTo(body, 9);   // the stroke's inner edge IS the cake's side
+  });
+});
+
+describe('mergePenGeometries', () => {
+  it('⚠️ CARRIES the index rather than expanding it — expanding costs six times the vertices', () => {
+    const a = buildStyledWall('piped', 1, 1.4, STAR);
+    expect(a.getIndex()).toBeTruthy();
+    // A tube shares each vertex between six triangles, so an expanded merge would be ~6x this.
+    expect(a.getIndex().count).toBeGreaterThan(a.getAttribute('position').count * 2);
+  });
+
+  it('is null for nothing, and passes a single part straight through', () => {
+    expect(mergePenGeometries([])).toBeNull();
+    expect(mergePenGeometries([null, undefined])).toBeNull();
+  });
+});
+
+describe('the wall geometry', () => {
+  it('carries cylindrical uvs, so a gradient or a stripe reads around it', () => {
+    const geo = buildStyledWall('piped', 1, 1.4, STAR);
+    const uv = geo.getAttribute('uv');
+    expect(uv).toBeTruthy();
+    let uMin = 9, uMax = -9, vMin = 9, vMax = -9;
+    for (let i = 0; i < uv.count; i++) {
+      uMin = Math.min(uMin, uv.getX(i)); uMax = Math.max(uMax, uv.getX(i));
+      vMin = Math.min(vMin, uv.getY(i)); vMax = Math.max(vMax, uv.getY(i));
+    }
+    expect(uMin).toBeGreaterThanOrEqual(0);
+    expect(uMax).toBeLessThanOrEqual(1);
+    expect(vMax - vMin).toBeGreaterThan(0.9);
+  });
+
+  it('⚠️ rolls every rope to face outward — without it the wall comes out patchy', () => {
+    // Each rope must reach the crest. `rmFrames` starts every vertical stroke from the same world
+    // direction, so an unrolled 1M shows a lobe to some ropes and a valley to others: those fall
+    // short of the radius and the wall reads as wide panels beside thin lines.
+    const pos = buildStyledWall('piped', 1, 1.4, STAR).getAttribute('position');
+    const n = ropeSection(1, STAR).ropes;
+    const reach = new Array(n).fill(0);
+    for (let i = 0; i < pos.count; i++) {
+      const th = Math.atan2(pos.getZ(i), pos.getX(i));
+      const k = Math.floor(((th + Math.PI) / TAU) * n) % n;
+      reach[k] = Math.max(reach[k], Math.hypot(pos.getX(i), pos.getZ(i)));
+    }
+    for (const r of reach) expect(r).toBeGreaterThan(0.985);
+  });
+
+  it('is deterministic — the same design must render the same twice', () => {
+    const a = buildStyledWall('piped', 1, 1.4, STAR).getAttribute('position');
+    const b = buildStyledWall('piped', 1, 1.4, STAR).getAttribute('position');
+    expect(a.count).toBe(b.count);
+    for (let i = 0; i < a.count; i += 97) expect(a.getX(i)).toBe(b.getX(i));
+  });
+});
+
+describe('the pen sweeps outward-facing geometry', () => {
+  it('⚠️ every stroke faces OUT — it faced in, and back-face culling hid it', () => {
+    /* For a right-handed (T, N, B) frame and an anticlockwise profile, `T × dProfile` points INWARD,
+     * so the old winding gave every swept stroke normals facing into its own tube. Nothing looked
+     * obviously broken — you were seeing the inside of the far wall, shaded by an inverted normal,
+     * which on a matte cream reads as plausible-but-flat. It only became unmissable with a section
+     * that is not symmetric: a wall of strokes with a ribbed front and a flat back rendered as a
+     * smooth cylinder with a few slits in it. */
+    const geo = buildStyledWall('piped', 1, 1.4, STAR);
+    const pos = geo.getAttribute('position'), nor = geo.getAttribute('normal');
+    // Take the outermost vertex in each of 360 angular bins — the surface a viewer actually sees.
+    const best = new Array(360).fill(null);
+    for (let i = 0; i < pos.count; i++) {
+      if (Math.abs(pos.getY(i)) > 0.1) continue;
+      const r = Math.hypot(pos.getX(i), pos.getZ(i));
+      const k = Math.floor(((Math.atan2(pos.getZ(i), pos.getX(i)) + Math.PI) / TAU) * 360) % 360;
+      if (!best[k] || r > best[k].r) best[k] = { r, i };
+    }
+    let facingOut = 0, seen = 0, worst = 1;
+    for (const b of best) {
+      if (!b) continue;
+      seen++;
+      const { r, i } = b;
+      const dot = (nor.getX(i) * pos.getX(i) + nor.getZ(i) * pos.getZ(i)) / r;
+      if (dot > 0) facingOut++;
+      worst = Math.min(worst, dot);
+    }
+    expect(seen).toBeGreaterThan(300);
+    /* ⚠️ Not every single one, and the slack is real rather than a fudge. A star's faces are steep:
+     * a flank running from the crest down into a crease has a normal most of the way to TANGENTIAL,
+     * and once neighbouring strokes overlap, the outermost vertex at a given angle is often a
+     * neighbour's flank rather than the nearest crest — pointing sideways, correctly. What this
+     * test exists to catch is a WHOLESALE inversion, and that scored zero out of 720. */
+    expect(facingOut / seen).toBeGreaterThan(0.85);
+    expect(worst).toBeGreaterThan(-0.5);
+  });
+});
+
+/* ── wall: 'strokes' — a MODELLED stroke, repeated ────────────────────────────
+ * The placement is the whole of this wall: the mesh is fixed, so these assert the three decisions
+ * the builder is allowed to make (how big, how many, how far out) and the one it must not — that a
+ * missing mesh is a smooth wall rather than a naked undersized body. */
+describe("strokes wall — placing a modelled stroke", () => {
+  // The real scan's bounding box, so the numbers below are the ones a cake actually gets.
+  const SIZE = { x: 0.442, y: 1.893, z: 0.432 };
+  const P = strokeWallParams({});
+
+  it('makes the stroke exactly as long as it needs to be', () => {
+    for (const h of [1.21, 1.29, 1.37, 1.45]) {
+      const { footH, middleH, middleStretch, tipBand, spanH } = strokeWallLayout(0.9, h, SIZE, P);
+      expect(footH + middleH * middleStretch + tipBand).toBeCloseTo(spanH, 6);
+    }
+  });
+
+  /* ⚠️ THE STROKE RUNS PAST THE TOP EDGE, or the piping stops short of it. A stroke ends in a POINT —
+   * the top 15% of this mesh narrows away to nothing, which is the top 12% of a standard wall. Ended
+   * level with the rim, neighbours stop touching exactly where the eye is looking and the wall opens
+   * into a ring of V-notches with cake showing through. At crown 1 the full-width body arrives at the
+   * top edge and the taper stands above it. ⚠️ The BODY still ends at `height`: the cake is the size
+   * the design says, and the cream is what overshoots. */
+  it('stands the tips a little above the icing, and leaves the cake its size', () => {
+    const level = strokeWallLayout(0.9, 1.45, SIZE, strokeWallParams({ crown: 0 }));
+    const crowned = strokeWallLayout(0.9, 1.45, SIZE, P);
+    const full = strokeWallLayout(0.9, 1.45, SIZE, strokeWallParams({ crown: 1 }));
+    expect(level.spanH).toBeCloseTo(1.45, 6);                            // crown 0: level with the icing
+    expect(full.crownRise).toBeCloseTo(0.15 * full.naturalH, 6);         // crown 1: one whole tip above it
+    /* ⚠️ A LITTLE, NOT A LOT — 4% of the wall. Level with the icing reads flat and dead; a whole tip
+     * proud of it puts a rim of cream round a sunken plate and the cake reads as a tray. */
+    expect(crowned.crownRise / 1.45).toBeGreaterThan(0.02);
+    expect(crowned.crownRise / 1.45).toBeLessThan(0.07);
+    expect(crowned.spanH).toBeCloseTo(1.45 + crowned.crownRise, 6);
+    expect(crowned.bodyRadius).toBeCloseTo(level.bodyRadius, 6);         // ...and the cake is unchanged
+    expect(crowned.count).toBe(level.count);
+  });
+
+  /* ⚠️ THE TAPER IS SQUASHED, NOT HIDDEN. A stroke keeping its full taper under the icing stops
+   * being full width for the last eighth of the wall, so the icing's edge overhangs it and reads as
+   * a plate sitting on the cream. Squashed, the stroke arrives at the top still full width. */
+  it('squashes the taper it is not standing above the icing', () => {
+    const level = strokeWallLayout(0.9, 1.45, SIZE, strokeWallParams({ crown: 0 }));
+    const full = strokeWallLayout(0.9, 1.45, SIZE, strokeWallParams({ crown: 1 }));
+    expect(full.tipBand).toBeCloseTo(full.tipH, 6);          // crown 1: the taper at its natural length
+    expect(level.tipBand).toBeLessThan(0.2 * level.tipH);    // crown 0: a blunt end, not a long point
+    expect(level.tipBand).toBeGreaterThan(0);                // ...but never a degenerate flat one
+  });
+
+  /* ⚠️ HEIGHT IS A SLICE, NOT A SCALE. The stroke's own height at this tip is 3.98" — almost exactly
+   * a standard tier — and a cake is taller, so something has to give. Stretched whole, every ripple,
+   * tear and fold on the bottom tier came out 21% longer than the real thing. The foot (the splayed
+   * bulge where cream piles against the surface) and the tip (where the bag lifted off) are the only
+   * parts with a feature along their length, so they are the parts that must not move. */
+  it('carries the foot and the tip rigid, and puts every bit of the stretch in the middle', () => {
+    const short = strokeWallLayout(0.9, 1.21, SIZE, P);
+    const tall  = strokeWallLayout(0.9, 1.45, SIZE, P);
+    expect(tall.footH).toBeCloseTo(short.footH, 6);          // the foot is the same size on both
+    expect(tall.tipBand).toBeCloseTo(short.tipBand, 6);      // ...and so is the tip
+    expect(tall.naturalH).toBeCloseTo(short.naturalH, 6);
+    expect(tall.middleStretch).toBeGreaterThan(short.middleStretch);
+    expect(tall.middleStretch).toBeCloseTo(1.623, 3);        // the bottom tier, measured
+    expect(short.middleStretch).toBeCloseTo(1.264, 3);
+  });
+
+  /* ⚠️ A TIER SHORTER THAN THE TWO ENDS CANNOT KEEP THEM — squeezing a fixed foot and a fixed tip
+   * into less than their combined height folds one through the other. It scales the whole stroke
+   * down instead, and says so. */
+  it('falls back to scaling the whole stroke when the tier is shorter than its two ends', () => {
+    const { uniform, middleStretch, spanH } = strokeWallLayout(0.9, 0.3, SIZE, P);
+    expect(middleStretch).toBeNull();
+    expect(uniform).toBeCloseTo(spanH / strokeWallLayout(0.9, 1.2, SIZE, P).naturalH, 6);
+  });
+
+  /* ⚠️ THE TIP DOES NOT CHANGE BECAUSE THE CAKE GOT TALLER. Scaled uniformly to the tier's height —
+   * which is what this did first — a 6" cake's strokes came out twice as wide as a 3" cake's, and
+   * the wall read as a different nozzle on every cake size. Length follows the tier; width follows
+   * the nozzle, and nothing else. */
+  it('keeps the stroke as wide as the tip however tall the tier is', () => {
+    const short = strokeWallLayout(0.9, 1.2, SIZE, P);
+    const tall  = strokeWallLayout(0.9, 2.4, SIZE, P);
+    expect(tall.wx).toBeCloseTo(short.wx, 6);
+    expect(tall.count).toBe(short.count);
+    expect(tall.footH + tall.middleH * tall.middleStretch + tall.tipBand).toBeCloseTo(tall.spanH, 6);
+  });
+
+  it('puts the strokes ON the surface: crests at the tier radius, body a stroke-depth behind', () => {
+    const { R, wz, bodyRadius } = strokeWallLayout(0.9, 1.2, SIZE, P);
+    expect(R + wz / 2).toBeCloseTo(0.9, 6);            // crest == the size the design asked for
+    expect(bodyRadius).toBeCloseTo(R - wz / 2, 6);     // ...and the cake's own side is behind them
+  });
+
+  /* ⚠️ THE REGRESSION THIS FILE EXISTS FOR. Authored as a COUNT, every change of cake size silently
+   * re-pipes the cake with a different tip. The count must follow the circumference so that the
+   * stroke stays the same SIZE on a 6" cake and a 10" one. */
+  it('keeps the stroke size across tier sizes, and lets the count follow the circumference', () => {
+    const small = strokeWallLayout(0.9, 1.2, SIZE, P);
+    const big   = strokeWallLayout(1.5, 1.2, SIZE, P);
+    expect(big.wx).toBeCloseTo(small.wx, 6);           // same tip
+    expect(big.count).toBeGreaterThan(small.count);    // more of them
+    expect(big.count / small.count).toBeCloseTo(big.R / small.R, 1);
+  });
+
+  it('draws the placement that was signed off: 28 strokes round a 0.9 tier', () => {
+    expect(strokeWallLayout(0.9, 1.2, SIZE, P).count).toBe(28);
+  });
+
+  /* ⚠️ NO MESH, NO WALL. The GLB arrives a moment after the first frame; a wall built without it
+   * would be the UNDERSIZED body on its own, so the cake would visibly shrink and then grow again
+   * as the strokes landed. null means the tier renders its ordinary smooth side instead. */
+  it('is null until the mesh has loaded', () => {
+    expect(buildStyledWall('strokes', 1, 1.4, { overlap: 0.39 })).toBeNull();
+  });
+});

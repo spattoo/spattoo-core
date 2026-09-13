@@ -237,3 +237,65 @@ describe('a garnish knows its tier', () => {
     expect(surfaceOf(0).radius).toBeGreaterThan(surfaceOf(2).radius);
   });
 });
+
+/* ── The card topper signs the same contract, because it uses the same placement ─────────────────
+ *
+ * ⚠️ REGISTERED SEPARATELY EVEN THOUGH THE FUNCTION IS SHARED, and that is the point rather than a
+ * duplication. `check:movable` reads the tool keys out of `PROCEDURAL_TOOLS` and asks whether each
+ * DRAGGED tool has signed — so a tool that reuses another's placement still has to say so, or the
+ * gate cannot tell "reuses a contract" from "has no contract".
+ *
+ * It also asks the laws of the topper's own defaults, which differ: a topper LIES by default, where
+ * a garnish stands. A card stands on a stick pushed into the icing and that is not built yet, so a
+ * standing card would float — the default is the honest one until the stick exists.
+ */
+const TOPPER_DEFAULTS = { ...GARNISH_DEFAULTS, mode: 'lie', radius: 0.35 };
+// A topper is wider than it is tall far more often than a garnish is — a name is a long, low card.
+const TOPPER_PIECE = { w: 1.1, h: 0.42 };
+
+movableContract('card_topper', {
+  positionKeys: ['theta', 'radius', 'yaw'],
+  pointsOf: (p, cake) => garnishPlacement(p, cake, TOPPER_PIECE).anchors,
+  cases: [
+    {
+      label: 'lying on the cake top',
+      cake: CAKE,
+      params: TOPPER_DEFAULTS,
+      freedoms: [
+        { label: 'round the cake', drag: (p, c, u) => garnishDragTo(p, c, u, 0.35),
+          targets: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] },
+        { label: 'out from the middle', drag: (p, c, v) => garnishDragTo(p, c, 0.25, v),
+          targets: [0.1, 0.3, 0.5, 0.7, 0.85] },
+      ],
+    },
+    {
+      label: 'standing on the cake top',
+      cake: CAKE,
+      params: { ...TOPPER_DEFAULTS, mode: 'stand' },
+      freedoms: [
+        { label: 'round the cake', drag: (p, c, u) => garnishDragTo(p, c, u, 0.5),
+          targets: [0, 0.2, 0.4, 0.6, 0.8] },
+      ],
+    },
+  ],
+});
+
+describe('an explicit sink — a piece that carries its own bury', () => {
+  const cake = { radius: 1.2, topY: 1.0, boardY: 0.1 };
+  const stood = (piece) => garnishPlacement({ theta: 0, radius: 0.3, yaw: 0, mode: 'stand', scale: 1 }, cake, piece);
+
+  it('buries a standing piece by exactly what it asked for', () => {
+    const p = stood({ w: 1, h: 1, sink: 0.25 });
+    expect(p.position[1]).toBeCloseTo(cake.topY - 0.25, 6);
+  });
+
+  /* ⚠️ Every garnish leaves `sink` out, and none of them may move because a topper needed one. */
+  it('leaves a piece without one exactly where it was', () => {
+    expect(stood({ w: 1, h: 1 }).position[1]).toBeCloseTo(stood({ w: 1, h: 1, sink: undefined }).position[1], 9);
+    expect(stood({ w: 1, h: 1 }).position[1]).toBeLessThan(cake.topY);
+  });
+
+  it('takes zero literally — a piece asked to sit ON the surface is not pushed in', () => {
+    expect(stood({ w: 1, h: 1, sink: 0 }).position[1]).toBeCloseTo(cake.topY, 6);
+  });
+})

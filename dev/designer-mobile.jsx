@@ -56,6 +56,8 @@ const CAT_TYPES = [
   { id: 'et-foil',    slug: 'food_foil',    name: 'Food Foil',    sort_order: 1 },
   { id: 'et-fly',     slug: 'butterfly',    name: 'Butterfly',    sort_order: 2 },
   { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3 },
+  // The type the scatterable GLB below needs — see its note.
+  { id: 'et-scatter', slug: 'scattered_decor', name: 'Scattered',  sort_order: 4 },
 ].map(t => ({ ...t,
   placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 4, top_tier_only: false, requires_frosting: false },
   default_allowed_actions: { move: true, color: false, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
@@ -76,6 +78,58 @@ const CAT_ELEMENTS = [
   placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand' },
   default_color: '#F0DEB8', sort_order: i,
 }));
+
+/* ⚠️ THE CARD TOPPER STUDIO, which nothing here could reach. It is a PROCEDURAL row — tapping it
+ * opens a studio instead of dropping a picture on the cake — so it carries `placement_config.
+ * procedural` and no image, and it cannot come out of the `.map` above with the rest. Without it
+ * the whole topper chain (compose → place → tap it → open it again) was only ever testable against
+ * a real database. */
+/* ⚠️ A SCATTERABLE, RECOLOURABLE GLB — the one shape of element this harness could not make, and
+ * the gap that let a real bug ship. Every other stub here is an SVG data URI, so they all take the
+ * TEXTURE path; the GLB path (`StickerModel`) was untestable without a database. That is the path
+ * where each instance clones the cached scene, and where sharing a material across instances made a
+ * scattered element render every copy in the last colour picked.
+ *
+ * `sample-rosette.glb` already sat in dev/ for the piping harnesses, and the dev server serves it.
+ * Scatter it, give it two or three colours, and the instances must differ. */
+CAT_ELEMENTS.push({
+  id: 'e9', name: 'Rosette scatter', description: 'a recolourable GLB, scattered',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#d8b7c8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  // `scatter: true` is what routes a drop through placeScatter; `r` is the per-instance size.
+  placement_config: { scatter: true, r: 0.45, top_surface: 'lay', side: 'hug' },
+  allowed_actions: { move: true, color: true, delete: true, resize: true },
+  default_color: '#C86B8A', sort_order: 10,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e8', name: 'Card topper studio', description: 'numbers and names cut from card',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f0d9dd'), thumbnail_url: CAT_THUMB('#f0d9dd'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, delete: true, resize: true },
+  placement_config: { procedural: 'card_topper' },
+  default_color: '#D94F6E', sort_order: 9,
+});
+
+/* An ACRYLIC TOPPER row — `procedural: 'writing'` plus the `placement_config.acrylic` the Acrylic
+ * Topper Studio writes. Without one, the only way to reach the acrylic writing card here was to add a
+ * cream message and switch Look, which is a DIFFERENT path: a row-seeded message carries `lockLook`,
+ * so the Look switch is hidden and the card is the one a customer actually meets.
+ *
+ * Deliberately authors nothing but the words. Face, size, sheet, bar and legs are left unsaid so
+ * this row shows what ACRYLIC_DEFAULTS seed — which is the thing worth looking at.
+ */
+CAT_ELEMENTS.push({
+  id: 'e10', name: 'Acrylic topper', description: 'words cut from mirror acrylic',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#d9c58a'), thumbnail_url: CAT_THUMB('#d9c58a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, delete: true, resize: true },
+  placement_config: { procedural: 'writing', acrylic: { text: { default: 'Happy Birthday' } } },
+  sort_order: 8,
+});
 
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
@@ -157,6 +211,15 @@ const STUBS = {
   fetchTextures:       async () => ([]),
   fetchTextStyles:     async () => ([]),
   fetchBakerFlavours:  async () => ({ curated: true, flavours: [], visibility: {} }),
+  // Kept chocolate pieces, for the "My decorations" shelf. Same trap as fetchTags below and the
+  // second time it has been paid for: the Proxy answers with an OBJECT, `rows ?? []` keeps it
+  // because `{}` is not nullish, and opening Decorations threw
+  // "(savedGarnishes ?? []).filter is not a function" — the whole panel, not just the shelf.
+  fetchGarnishes:      async () => ([]),
+  /* ⚠️ AN ARRAY, not the Proxy's empty object. The shelf `.map`s what comes back, so a `{}` from the
+     catch-all stub took the whole designer down the moment a card topper row existed — the same
+     shape `fetchGarnishes` is stubbed for, and for the same reason. */
+  fetchCardToppers:    async () => ([]),
   // Real occasion tags. The catch-all Proxy below answers unknown methods with an OBJECT, and the
   // save-as-template modal maps over this — so without a stub the modal threw
   // "filterTags.filter is not a function" and had never once opened in this harness.
@@ -211,7 +274,27 @@ const stripedDesign = STRIPE_KEY ? {
   }],
 } : null;
 
+/* ⚠️ `?style=` OPENS THE REAL DESIGNER ON A CREAM STYLE, and `?assets=` points it at a local copy of
+ * the assets bucket. Together they are the only way to see a MODELLED style (wall:'strokes', whose
+ * mesh is an R2 key) in the app rather than in a geometry harness — and "it renders in the harness"
+ * has been wrong about the app often enough in this project to be worth the two query keys. */
+const STYLE_KEY = PARAMS.get('style');
+/* ⚠️ `?shape=` TAKES A FAMILY, not a catalog key. Every shape but round and rect is an admin-authored
+ * DB row, so a dev harness with no database cannot name one — but a design tier carries its own
+ * geometry (`shapeFamily` + `shapeConfig`, see cakeShapes.js), which is exactly what a row would hand
+ * it. `?shape=heart` is therefore the same cake the catalog would build, minus the row. */
+const SHAPE = PARAMS.get('shape') || 'round';
+const shapeTier = SHAPE === 'rect' ? { shape: 'rect', width: 2.4, depth: 1.8 }
+  : SHAPE !== 'round' ? { shapeFamily: SHAPE, shapeConfig: {}, width: 2.4, depth: 2.4 }
+  : { shape: 'round', radius: 1.2 };
+const styledDesign = STYLE_KEY ? {
+  tiers: [{
+    color: '#F1EEDC', height: 1.45, ...shapeTier,
+    frostingType: 'buttercream', frostingStyle: STYLE_KEY,
+  }],
+} : null;
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} cfAssetsBase="" onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripedDesign} />,
+  <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
+                initialDesign={reloadDesign ?? styledDesign ?? stripedDesign} />,
 );

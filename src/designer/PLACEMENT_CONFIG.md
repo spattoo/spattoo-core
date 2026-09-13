@@ -154,6 +154,25 @@ section below (§1–§4) is the authoritative detail for its keys.
 }
 ```
 
+> ### A scatter's colours are DERIVED, not configured
+>
+> `cluster` carries a `palette` in config; **`scatter` deliberately does not, and must not gain one.**
+> Every scatter instance is its own sticker record with its own `color`, so the palette is read back
+> off the instances (`scatterPaletteOf`) and written across them (`setScatterPalette`) — the same pair
+> the cluster card uses, because "which colours is this group made of" is one question and should not
+> acquire two answers.
+>
+> ⚠️ **Deriving is the point, not an implementation detail.** A stored palette would have to survive
+> the design jsonb, the template snapshot AND the order snapshot, and every design saved before it
+> would need a default. Derived, an old single-colour scatter reads back as a one-swatch palette on
+> its own and nothing migrates. Config's job here is the SEED (`default_color`); the customer's mix
+> lives on the instances that carry it.
+>
+> The two remain mutually exclusive as the sample says: `cluster` packs a tangent heap,
+> `scatter` spreads across a surface. Setting both breaks — the drop path checks `scatter` first and
+> returns, while the menu-tap path checks `cluster` first, so an element with both taps into one
+> feature and drops into the other.
+
 > Keys present in the sample but not yet in dedicated tables below (`scatter`, `scatter_count`, `side_proud`,
 > `useSharedFondantTexture`, `perch`, `verge`, `_model`) are read by
 > `addSticker` / the GLB material path (`verge` is summarised in the §2 modes table; the per-zone

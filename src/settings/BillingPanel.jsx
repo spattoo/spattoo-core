@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
+import { RefreshIcon } from '../shared/icons.jsx';
 import PlanCards from '../billing/PlanCards.jsx';
 import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
-import { dockedLeft } from '../shared/rail.js';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 // GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
 // here we only gate the obviously-malformed so the button can enable/disable as the baker types.
@@ -457,6 +459,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   const [history,        setHistory]        = useState([]);
   const [periods,        setPeriods]        = useState([]);
   const [loading,        setLoading]        = useState(true);
+  const [refreshing,     setRefreshing]     = useState(false);
   const [selectedTier,   setSelectedTier]   = useState('spark');
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [subscribing,    setSubscribing]    = useState(false);
@@ -493,9 +496,13 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   }
 
   // After a Checkout success the subscription.activated webhook processes ASYNCHRONOUSLY, so the
-  // first refetch can still read 'pending'. Poll a few times until it settles (then give up quietly —
-  // a later open reconciles). Runs in the background; it never blocks the UI.
-  async function reloadUntilSettled(tries = 5, delayMs = 1500) {
+  // first refetch can still read 'pending'. Poll until it settles (then give up quietly — the Refresh
+  // button beside the badge, or a later open, reconciles). Runs in the background; never blocks the UI.
+  //
+  // About a minute, not a few seconds: a UPI Autopay mandate routinely takes longer than 7.5s for
+  // Razorpay to send subscription.activated, and the old window gave up first — so a baker who had
+  // just paid came back to a "Pending" that never moved on its own.
+  async function reloadUntilSettled(tries = 20, delayMs = 3000) {
     for (let i = 0; i < tries; i++) {
       const b = await reload().catch(() => null);
       if (b && b.status !== 'pending') { onSubscriptionChange?.(b); return; }
@@ -504,6 +511,20 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
     // Gave up waiting for the webhook. Tell the host anyway: the payment DID go through, so the
     // host's stale copy is more wrong than a late one, and refetching can only improve it.
     onSubscriptionChange?.(null);
+  }
+
+  // The Refresh button beside a Pending badge: one read of the status, on demand. It re-reads OUR
+  // row, so it helps once the webhook has landed — it cannot conjure a webhook that never arrived.
+  async function refreshStatus() {
+    setRefreshing(true); setError(null);
+    try {
+      const b = await reload();
+      if (b && b.status !== 'pending') onSubscriptionChange?.(b);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => {
@@ -537,14 +558,17 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   // alongside it. A second, parallel value that the buttons use and the charge does not is exactly
   // how a screen comes to bill for something other than what it highlighted.
   //
-  // First OFFERED plan, not a hardcoded 'flame': the list arrives ordered by sort_order, so this
-  // stays right if the cheapest paid tier is ever renamed, repriced or reordered.
+  // The plan flagged is_popular in the catalogue, not a hardcoded 'blaze': it is the plan we want a
+  // baker without a paid plan to land on, and the badge and the default must never disagree (they
+  // did — "Most Popular" sat on Blaze while the CTA read "Upgrade to Flame"). An admin moving the
+  // flag moves the default. With no flag set, the first OFFERED plan by sort_order.
   useEffect(() => {
     if (!plans.length) return;
+    const offered = plans.filter(pl => pl.name !== 'spark');
     setSelectedTier(cur => (
-      plans.some(pl => pl.name === cur && pl.name !== 'spark')
+      offered.some(pl => pl.name === cur)
         ? cur
-        : plans.find(pl => pl.name !== 'spark')?.name ?? cur
+        : (offered.find(pl => pl.is_popular) ?? offered[0])?.name ?? cur
     ));
   }, [plans]);
 
@@ -760,31 +784,29 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
         @keyframes spin { to { transform: rotate(360deg) } }
       `}</style>
 
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 310, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile, { stacked: true }),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',
-        boxShadow: '-4px 0 40px rgba(0,0,0,0.15)',
-        animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)',
       }}>
 
-        {/* Header */}
+        {/* Header — the band reaches back under the rail (dockedBleed). */}
         <div style={{
           padding: isMobile ? '16px 20px' : '20px 28px',
+          ...dockedBleed(isMobile, 28),
           background: `linear-gradient(135deg, ${primaryColor}, ${accentColor})`,
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <button onClick={onClose} style={{
-            display: 'flex', alignItems: 'center', gap: 5,
-            background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 10, padding: '7px 14px', cursor: 'pointer',
-            fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)',
-          }}>← Back</button>
+          {/* How this page is left — shared/panelTopBar.jsx: a ✕ at the far right on desktop, where
+              nothing is "back" beside an always-visible rail; the arrow on a phone. */}
+          {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Billing</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Manage your subscription</div>
           </div>
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
         {/* Body */}
@@ -840,10 +862,37 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                       </div>
                     )}
                   </div>
-                  <StatusBadge status={billing.status} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <StatusBadge status={billing.status} />
+                    {billing.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={refreshStatus}
+                        disabled={refreshing}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          minHeight: isMobile ? 40 : 30, padding: '0 12px',
+                          background: '#fff', border: '1.5px solid #E5E7EB', borderRadius: 20,
+                          cursor: refreshing ? 'default' : 'pointer', opacity: refreshing ? 0.6 : 1,
+                          fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#374151',
+                        }}
+                      >
+                        <RefreshIcon size={14} />
+                        {refreshing ? 'Checking…' : 'Refresh'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
-                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
+                {/* Its own row, not the title column: beside the badge and Refresh on a phone it was
+                    squeezed to a six-line sliver. */}
+                {billing.status === 'pending' && (
+                  <div style={{ fontSize: 12, color: '#92400E', fontWeight: 600, marginTop: 6 }}>
+                    If you just completed a payment, it can take a few minutes to confirm. Check back shortly, or tap Refresh.
+                  </div>
+                )}
+
+                <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12, flexWrap: 'wrap' }}>
                   {realCancel ? (
                     // Grace notice — a REAL cancellation (cancel_at_period_end with NO scheduled downgrade).
                     // An upgrade supersedes the old plan instead of setting this flag; a downgrade sets the
@@ -868,7 +917,9 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                           onClick={() => setShowMethodConfirm(true)}
                           disabled={subscribing || cancelling}
                           style={{
-                            flexShrink: 0,
+                            // On a phone the two buttons do not fit one line: they wrap and each
+                            // fills its own, instead of overflowing off the card's left edge.
+                            flex: isMobile ? '1 1 auto' : '0 0 auto', minHeight: isMobile ? 40 : undefined,
                             background: '#fff', border: '1.5px solid #E5E7EB', borderRadius: 8,
                             padding: '7px 16px', cursor: (subscribing || cancelling) ? 'not-allowed' : 'pointer',
                             fontFamily: 'inherit', fontSize: 12, fontWeight: 700,
@@ -882,7 +933,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                         onClick={handleCancel}
                         disabled={cancelling}
                         style={{
-                          flexShrink: 0,
+                          flex: isMobile ? '1 1 auto' : '0 0 auto', minHeight: isMobile ? 40 : undefined,
                           background: '#fff', border: '1.5px solid #FCA5A5', borderRadius: 8,
                           padding: '7px 16px', cursor: cancelling ? 'not-allowed' : 'pointer',
                           fontFamily: 'inherit', fontSize: 12, fontWeight: 700,

@@ -91,6 +91,15 @@ export function buildDesignSnapshot(design) {
        structural test below now derives its key list from what hydrate produces rather than from a
        list someone has to remember to extend. */
     garnishes: design.garnishes ?? [],      // chocolate pieces piped in the studio and placed
+    /* ⚠️ AND THIS WENT MISSING THE SAME WAY, one decoration type later. `normalizeDesign` hydrates
+       `toppers`, nothing put them back, so a cake with a card topper on it lost the topper the
+       moment it was SAVED — as a template, as an order, or as a share, since all three call this one
+       serializer. Nothing failed: the cake simply came back without it.
+       The structural test below was written after `garnishes` precisely so the next one could not
+       happen, and it could not see this: it compares what hydrate produces against what save gives
+       back, and with no topper in the fixture both sides were an empty array. A fixture that does
+       not carry a thing cannot notice it being dropped. There is a topper in it now. */
+    toppers:   design.toppers   ?? [],      // card toppers composed in the studio and stood on the cake
     // Design-level, not per-tier, because the BOARD is: a ring of grass round the cake's foot and a
     // name spelled in fondant cubes both stand on it, not on any one tier.
     boardGrass: design.boardGrass ?? null,

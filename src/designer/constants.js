@@ -42,6 +42,41 @@ export const BOTTOM_H    = 1.45;
 // tier size (no hard-coded height). The Height control nudges from here.
 export const BEND_ANCHOR_FRAC = 0.55;
 
+
+/* ── How big a world unit is, and why this is an ASSUMPTION rather than a lookup ──────────────────
+ *
+ * "The thinnest acrylic must clear what the cutter holds" needs a real millimetre, and the designer
+ * has no true scale to give one. The only inches-to-units constant in the codebase is
+ * SHEET_INCH_TO_WORLD (0.12), and it does not mean what it looks like: at that rate one unit is
+ * ~212mm, which makes the default bottom tier — diameter 2.4 — a TWENTY INCH cake. Its own comment
+ * says why: it was chosen so a half sheet reads beside a round tier, not as a conversion.
+ *
+ * So this is declared, not derived: the default bottom tier is taken to be an 8-inch cake, which
+ * puts a unit at 8 x 25.4 / 2.4 mm. Stated in one place with the arithmetic shown, so the day an
+ * order pins a REAL size the caller passes it and this stops being used — the same bargain
+ * rainbow.js makes with its own optional `mmPerUnit`.
+ */
+export const NOMINAL_MM_PER_UNIT = (8 * 25.4) / 2.4;   // ≈ 84.7
+
+/* ── How much of the surface a typed message fills when nobody has sized it ───────────────────────
+ *
+ * PER MATERIAL, because a message in the two materials is not the same object. Piped cream is
+ * WRITING — it spans the cake top the way a greeting is written across it. Acrylic is a cut PIECE
+ * that stands on the cake, and a piece spanning 80% of the top is not a topper, it is a fence: the
+ * one in the report was as wide as the tier it stood on.
+ *
+ * ⚠️ HERE rather than in acrylicConfig.js, for the same reason NOMINAL_MM_PER_UNIT is here — that
+ * file imports the cream fonts, so anything that only wants to know how big a message starts would
+ * have to pull a font table in with it, and `surface.js` (imported by cakeShapes and every canvas)
+ * is exactly such a caller. ACRYLIC_DEFAULTS reads its number from here, so an admin still overlays
+ * it in the one place acrylic numbers are overlaid.
+ */
+export const WRITING_FIT = Object.freeze({ cream: 0.8, acrylic: 0.4 });
+
+// The starting size for a message of this material — the cream one for a message that does not say,
+// because an absent `style` has always meant cream (see DEFAULT_WRITING).
+export const writingFit = (style) => WRITING_FIT[style] ?? WRITING_FIT.cream;
+
 // ── Sheet (rectangular) cakes ─────────────────────────────────────────────────
 // Standard US bakery sheet/square sizes, full width × depth in inches, scaled to
 // world units so a half sheet's long side (~2.16) reads at roughly the round bottom

@@ -44,7 +44,24 @@ const FRAG_COMMON = [
   'uniform float uGBalance;',
 ].join('\n');
 
-const FRAG_COLOR = `#include <color_fragment>
+/* ⚠️ A GRADIENT PAINTS THE WALL, NOT THE THINGS STAMPED ON IT.
+ *
+ * `#include <color_fragment>` runs AFTER `<map_fragment>`, so by the time this snippet sees
+ * `diffuseColor` the material's map has already been multiplied in — and on a tier carrying gold
+ * leaf or luster dust that map is where the PARTICLES live. Writing `diffuseColor.rgb = gcol`
+ * outright therefore repainted every shard in the cake's own colour: reported 2026-09-10 as gold
+ * flakes rendering as muddy pink on a pink→lilac cake, with the metalness still applied so they
+ * read as dark smears rather than as foil.
+ *
+ * ⚠️ IT LOOKED FINE ON A SOLID TIER, which is why it shipped. With no gradient the shader is not
+ * patched at all, so every measurement and screenshot taken on a solid-colour cake says nothing
+ * about this. `dev/garnish-on-cake.html?grad=1` exists so that can never again be an accident.
+ *
+ * The mask is the finish's own particle map (white where a shard or fleck is, black on bare wall),
+ * so the wall takes the gradient and the particles keep the colour the compositor gave them. */
+const FRAG_COMMON_MASKED = FRAG_COMMON + '\nuniform sampler2D uGMask;';
+
+const gradBody = (masked) => `#include <color_fragment>
 {
   float gt;
   if (uGMode == 1) {            // vertical ombre: base → top
@@ -71,8 +88,14 @@ const FRAG_COLOR = `#include <color_fragment>
     gcol = gt < 0.5 ? mix(uGColors[0], uGColors[1], gt / 0.5)
                     : mix(uGColors[1], uGColors[2], (gt - 0.5) / 0.5);
   }
-  diffuseColor.rgb = gcol;
+  ${masked
+    ? `float gMask = texture2D(uGMask, vMapUv).r;
+  diffuseColor.rgb = mix(gcol, diffuseColor.rgb, gMask);`
+    : 'diffuseColor.rgb = gcol;'}
 }`;
+
+const FRAG_COLOR        = gradBody(false);
+const FRAG_COLOR_MASKED = gradBody(true);
 
 // Make (or reuse) the uniform bag we share with the compiled shader. Updating `.value` on these
 // objects mutates the live uniforms in place, so colour/mode/stop changes never need a recompile —
@@ -87,6 +110,7 @@ function ensureUniforms(mat) {
       uGSize:   { value: new THREE.Vector3(1, 1, 1) },
       uGCenter: { value: new THREE.Vector3() },
       uGBalance:{ value: 0.5 },
+      uGMask:   { value: null },
     };
   }
   return mat.userData.__gradUniforms;
@@ -105,7 +129,12 @@ function ensureUniforms(mat) {
  * (a reference light belongs to the SURFACE), so it passes the transform in rather than this shared
  * module guessing which surface it is decorating. Absent = identity, which is right for anything
  * uncorrected. */
-export function applyGradient(mat, gradient, bbox, albedo = (c) => c) {
+/* `mask` — the finish's particle map, when the surface carries one. Optional: absent means "this
+ * material has nothing stamped on it", which is every gradient outside a tier wall. ⚠️ It is also
+ * what decides which PROGRAM compiles, because the masked snippet reads `vMapUv` and that varying
+ * only exists when the material has a map. Passing a mask to a material without one would not
+ * compile, so the flag rides the cache key. */
+export function applyGradient(mat, gradient, bbox, albedo = (c) => c, mask = null) {
   const active = isGradientActive(gradient);
 
   if (!active) {
@@ -121,6 +150,8 @@ export function applyGradient(mat, gradient, bbox, albedo = (c) => c) {
   const colors = gradient.colors.filter(Boolean);
   const count = Math.min(3, colors.length);
   const u = ensureUniforms(mat);
+  const masked = !!mask;
+  u.uGMask.value = mask ?? null;
 
   // Three's colour management treats the hex as sRGB and converts to the linear working space —
   // the same conversion `new THREE.Color(color)` on `mat.color` already gets, so stops match.
@@ -134,15 +165,18 @@ export function applyGradient(mat, gradient, bbox, albedo = (c) => c) {
     u.uGCenter.value.copy(bbox.center);
   }
 
-  if (!mat.userData.__gradOn) {
+  // Gaining or losing the mask swaps the snippet, so it needs a recompile just as switching the
+  // gradient on does — otherwise a tier that has just had its first flake added keeps the unmasked
+  // program and paints straight over it.
+  if (!mat.userData.__gradOn || mat.userData.__gradMasked !== masked) {
     mat.onBeforeCompile = (shader) => {
       Object.assign(shader.uniforms, mat.userData.__gradUniforms);
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', VERT_COMMON)
         .replace('#include <begin_vertex>', VERT_BEGIN);
       shader.fragmentShader = shader.fragmentShader
-        .replace('#include <common>', FRAG_COMMON)
-        .replace('#include <color_fragment>', FRAG_COLOR);
+        .replace('#include <common>', masked ? FRAG_COMMON_MASKED : FRAG_COMMON)
+        .replace('#include <color_fragment>', masked ? FRAG_COLOR_MASKED : FRAG_COLOR);
     };
     // Unique per-material key so each gradient material compiles its OWN program. A constant key
     // ('grad:on') made every gradient material share one WebGLProgram; since onBeforeCompile binds
@@ -150,8 +184,9 @@ export function applyGradient(mat, gradient, bbox, albedo = (c) => c) {
     // their own values and render that first material's colours (GPU/draw-order dependent). Two cake
     // tiers with different gradients hit exactly this. mat.uuid is stable per instance, so each tier
     // gets its own program + its own uniforms — no cross-material contamination.
-    mat.customProgramCacheKey = () => 'grad:' + mat.uuid;
+    mat.customProgramCacheKey = () => `grad:${mat.uuid}:${masked ? 'm' : 'p'}`;
     mat.userData.__gradOn = true;
+    mat.userData.__gradMasked = masked;
     mat.needsUpdate = true;
   }
 }

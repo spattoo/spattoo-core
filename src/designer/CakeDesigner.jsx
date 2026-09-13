@@ -7,6 +7,8 @@ import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius } from './canvas/CakeCanvas';
+import { configureStrokeMeshes } from './canvas/strokeMesh.js';
+import { shellBand, wallYoBounds, stackedYoBounds, clampYo } from './geometry/boardBands.js';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
 import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
@@ -17,16 +19,16 @@ import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRa
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
-import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
+import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND } from './constants.js';
+import { DESIGNER_GROUND, WRITING_FIT, writingFit } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
@@ -35,6 +37,7 @@ import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
+import TopperComposer from './topper/TopperComposer.jsx';
 import { garnishDragTo } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
@@ -477,8 +480,30 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
  * new material cannot render, which comes out as a silent fallback rather than an error — so the
  * font moves to that material's default whenever it is not valid in both.
  */
+/* Which surfaces each writing MATERIAL is offered on.
+ *
+ * A config table, not a condition: the editor renders this list and the material switch repairs
+ * against it, so withdrawing a surface is one edit here rather than a branch in each place that asks.
+ *
+ * ⚠️ ACRYLIC IS NOT OFFERED ON THE BOARD, and the renderer still draws it. A cut sheet lying flat on
+ * the board is a real thing — AcrylicWriting's 'lay' pose stays, because saved designs and ORDERS
+ * carrying one have to keep rendering exactly as agreed. It is simply not something anyone orders,
+ * and it was spending a third of the surface chooser on a choice nobody makes. Piped cream on the
+ * board is common and keeps all three.
+ */
+const WRITING_SURFACES = {
+  cream:   ['top', 'side', 'board'],
+  acrylic: ['top', 'side'],
+};
+const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
+const writingSurfaces = (style) => WRITING_SURFACES[style] ?? WRITING_SURFACES.cream;
+
 function writingStyleSwitch(w, style) {
   if (style === (w.style ?? 'cream')) return {};
+  /* The surface moves for the same reason the font does. A material is not offered on every
+   * surface, and a message left on one the new material does not do would sit there with nothing
+   * in the chooser showing as chosen. Only when it is actually invalid — 'top' and 'side' carry. */
+  const surface = writingSurfaces(style).includes(w.surface ?? 'top') ? null : { surface: 'top' };
   if (style === 'acrylic') {
     /* ⚠️ Only an OUTLINE face is carried across, and a centreline one is not — even though it is
      * valid in both lists. Allure as PIPED CREAM is a delicate script; Allure cut from acrylic is a
@@ -487,9 +512,14 @@ function writingStyleSwitch(w, style) {
      * stay on the menu because a monoline topper is a real product — just not what "keep my font"
      * should mean when the two are barely the same letterform. */
     const font = TOPPER_FACES[w.font]?.kind === 'outline' ? w.font : DEFAULT_TOPPER_FACE;
-    return { style, font, tracking: faceFit(font) };
+    /* ⚠️ AND THE SIZE MOVES WITH IT, for the same reason the font does. A cream message carries 80%
+     * because that is what a message is seeded with, not because anyone chose it — and 80% of a cake
+     * top cut out of acrylic is a fence, not a topper. Carrying the other material's untouched
+     * default across the switch is exactly what made every message land on Allure. */
+    return { style, font, tracking: faceFit(font), fit: WRITING_FIT.acrylic, ...surface };
   }
-  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT };
+  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT,
+           fit: WRITING_FIT.cream, ...surface };
 }
 
 // Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
@@ -977,15 +1007,6 @@ function TourIcon({ size = 20 }) {
   );
 }
 
-function UploadsIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
-      <circle cx="8.5" cy="9.5" r="1.6" />
-      <path d="M21 15.5l-4.5-4.5L7 20.5" />
-    </svg>
-  );
-}
 
 // "My decorations" — the one card in the category grid that can never have a photo on it.
 //
@@ -1128,16 +1149,6 @@ function MoreIcon({ size = 20 }) {
 
 /* The two takes. Same 24-grid, same 1.8 stroke, currentColor — so each takes the colour of whatever
  * it sits in, whether that is a dark button or a white menu row. */
-function CameraIcon({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {/* The raised hump over the lens is what reads as "camera" at 15px; a plain rectangle with a
-          circle in it reads as nothing at all. */}
-      <path d="M3 8.5a2 2 0 012-2h1.9a1.5 1.5 0 001.28-.72l.64-1.06A1.5 1.5 0 0110.1 4h3.8a1.5 1.5 0 011.28.72l.64 1.06a1.5 1.5 0 001.28.72H19a2 2 0 012 2v8.5a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-      <circle cx="12" cy="12.75" r="3.25" />
-    </svg>
-  );
-}
 
 function ReelIcon({ size = 18 }) {
   return (
@@ -1201,7 +1212,8 @@ function spatulaFramePath({
 // Absolutely-positioned SVG that fills the sidebar (measured) and draws the
 // spatula behind the nav. The blade is wider than the handle, so it bulges out
 // (overflow visible, pointer-events none so it never blocks the canvas).
-function SpatulaFrame() {
+// `lifted`: the rail is floating over a docked page, so the spatula casts a shadow onto it.
+function SpatulaFrame({ lifted = false }) {
   const ref = useRef(null);
   const [h, setH] = useState(720);
   useLayoutEffect(() => {
@@ -1245,7 +1257,8 @@ function SpatulaFrame() {
   return (
     <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
       <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`}
-        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible' }}>
+        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible',
+                 filter: lifted ? RAIL_LIFTED_SHADOW : 'none', transition: 'filter 0.2s' }}>
         <defs>
           {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
               and "match the spatula" only holds if both read from one definition. */}
@@ -1758,7 +1771,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
+     stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
+  configureStrokeMeshes(cfAssetsBase);
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1838,6 +1854,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // `medium` is what is in the bag — cream or chocolate. It is a KEY into MEDIA (see pipingMedia.js),
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
+  const [topperStudio, setTopperStudio] = useState(false);
+  const [pendingTopper, setPendingTopper] = useState(null);
   const [pendingGarnish, setPendingGarnish] = useState(null);
   /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
      saved appears without a refresh — the shelf is the place a baker goes to check it worked. */
@@ -1849,6 +1867,33 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       .catch(() => {});
     return () => { alive = false; };
   }, [apiClient, garnishStudio]);
+
+  /* Kept card toppers, same shelf and same reload rule as the garnishes above.
+   *
+   * ⚠️ A SECOND STATE FROM `pendingTopper`, AND THAT IS THE POINT. Both put a composition into the
+   * studio and they are different doors: this one is a topper the baker ALREADY KEPT, so the studio
+   * must not offer to keep it again — the row is inserted rather than updated, so a reused piece
+   * would quietly become two. `pendingTopper` is a catalogue ready-made, kept by nobody, where the
+   * offer belongs. See the note on the three doors in TopperComposer. */
+  const [savedToppers, setSavedToppers] = useState([]);
+  const [openTopper, setOpenTopper] = useState(null);
+  /* ⚠️ A THIRD STATE, for the same reason there is a second: a topper ALREADY ON THE CAKE, reopened
+   * from its own card to be changed. It is neither of the others — it is not a shelf row and it is
+   * not a catalogue ready-made — and what happens when the studio closes is different again: this
+   * one is UPDATED IN PLACE, so it keeps its id and therefore where it stands, how big it is and
+   * which way it faces. Placing a new one would leave the old one behind and give the baker two.
+   *
+   * This is the door a LOADED TEMPLATE needs. A template whose topper reads "10" is worth loading
+   * for a child turning 7, but only if the 10 can be changed; without this the only move is to
+   * delete the topper and compose another from nothing, which throws the placement away too. */
+  const [editTopper, setEditTopper] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    apiClient?.fetchCardToppers?.()
+      .then(rows => { if (alive) setSavedToppers(rows ?? []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient, topperStudio]);
   // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
   // a baker just chose — the same reason penStyle lives out here.
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
@@ -2018,6 +2063,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // type 'text':   { id }
   // type 'sticker': { id }  ← primary sticker (toolbar anchor); toppers are stickers too
   const [selectedEl, setSelectedEl] = useState(null);
+
+  /* ⚠️ DERIVED, not a second piece of state — and it MUST sit below `selectedEl`, which is the trap
+   * the note further down this file records. `selectedGarnishId` is only cleared when the piece is
+   * deleted, so a garnish stays highlighted after the customer selects something else: two things
+   * lit at once, and the highlight stops meaning "this one". Reading the selection that already
+   * exists cannot drift — select anything else and the topper unlights itself. */
+  const selectedTopperId = selectedEl?.type === 'topper' ? selectedEl.id : null;
   const [colorOpen, setColorOpen] = useState(false);
   // GLB Recompose: which editable part-group the colour wheel is currently editing (group key), or
   // null when editing the element's single colour. Set when a per-group swatch / on-canvas dot is
@@ -2224,6 +2276,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // by height — so that margin is spent out of the height budget and the mark reads small. Trimmed
   // once per URL at render, which fixes existing logos without a re-upload or a backfill.
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
+
+  // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
+  // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
+  // one of the two places that read it.
+  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
+    || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
+
 
   // Enlarged template thumbnail. The card is 180x120 and the stored capture is the camera's whole
   // 800x800 frame, so even a badly-framed thumbnail has real pixels behind it — showing it bigger
@@ -2520,7 +2579,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // this only hides controls a principal can't use.
   const hasCap = (cap) => !capabilities || !cap || capabilities.includes('*') || capabilities.includes(cap);
   // Which Orders entries this person may see — decided once, read by both rails.
-  const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires));
+  // `active` on the items that open the Orders page, so the rail lights Orders while it is open —
+  // the same flag the Settings menu items carry.
+  const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires))
+    .map(item => (item.view ? { ...item, active: ordersPanelOpen } : item));
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
   // ── Opening what a notification points at ──────────────────────────────────────────────────────
@@ -2725,21 +2787,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       id: 'settings', label: 'Settings', icon: <GearIcon size={20} />,
       items: [
         ...(hasCap('store:manage') ? [
-          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true) },
+          // `active`: this destination is open, so the rail lights its menu — the rail says where you are.
+          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true), active: settingsPanelOpen },
           // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
-          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true),
+          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
             badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
           // NOT "Templates". The rail already has a Templates destination — browsing templates to
           // start a design — and in the More sheet the two now sit a few rows apart, where one word
           // for two different things is a coin toss. This one chooses which global templates the
           // bakery OFFERS, which is what features/template-visibility.md calls it.
-          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true) },
+          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
         ] : []),
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
         // permission can answer. See spattoo-docs/features/reel-capture.md.
 
-        ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
+        ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true), active: billingPanelOpen }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
       ],
     },
@@ -2749,7 +2812,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesPanelOpen, billingPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -2787,12 +2850,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   // Whether it reads as the current destination. Also shared: the two copies of this had drifted
   // too, and a lit-up item is a smaller bug than a missing one only because it is visible.
-  const railItemActive = (id, menu) => (menu ? navMenuId === id
+  const railItemActive = (id, menu) => (menu ? (navMenuId === id || menu.some(i => i.active))
     : id === 'elements'  ? elementsOpen
     : id === 'uploads'   ? uploadsOpen
     : id === 'templates' ? templatesOpen
     : id === 'tools'     ? toolsOpen
     : id === 'codesign'  ? codesignPanelOpen
+    : id === 'dashboard' ? dashboardOpen
+    : id === 'customers' ? customersPanelOpen
+    : id === 'invite'    ? invitePanelOpen
     : false);
 
   // More lights up when the destination you are looking at lives inside it — otherwise the strip
@@ -3370,7 +3436,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const flip   = p.userFlipBottom != null ? p.userFlipBottom : (p.flipBottom ?? true);
     const { topFrac, botFrac } = getShellExtents(p.glbUrl, flip, p.size ?? 1);
     const yo = (p.yOffset ?? 0) + (p.userYOffset ?? 0);
-    return [yo + radius * botFrac, yo + radius * topFrac];
+    return shellBand(yo, radius, topFrac, botFrac);
   }
   // Default userYOffset for a NEW side/board layer: stack it just above the highest board
   // layer already on the tier (kept within the wall) so layers don't overlap.
@@ -3610,7 +3676,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
     const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
     const desiredYo = baseYOffset + v;
-    const clampedYo = Math.min(Math.max(yoMin, desiredYo), Math.max(yoMin, yoMax));
+    const clampedYo = clampYo(desiredYo, { yoMin, yoMax });
     updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: Math.max(0, +(clampedYo - baseYOffset).toFixed(4)) }));
   }
 
@@ -3621,22 +3687,35 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Extracted so the Height slider and the on-cake DRAG share one definition of "how far can this
   // go" (INVARIANTS #3). A second copy would drift, and the drag would let a baker push a piece
   // somewhere the slider refuses to — the two would disagree about the same cake.
+  /* How far the layer's HEIGHT SLIDER may travel: the wall, plus the ring-stacking rule. A ring is a
+   * band all the way round, so it genuinely can rest on the ring below or stop under the one above.
+   * ⚠️ NOT for a dragged PIECE — see `pieceYoBounds`. The two were one function, and a piece
+   * inherited a rule that only makes sense for something that goes all the way round. */
   function boardYoBounds(cur, tierIndex) {
-    const tierHeight = canvasConfig.tiers[tierIndex]?.height ?? 0;
-    const [curLo, curHi] = sideBand(cur, tierIndex);
-    const curYo  = (cur.yOffset ?? 0) + (cur.userYOffset ?? 0);
-    const topExt = curHi - curYo;   // how far the shell reaches ABOVE its anchor (measured)
-    const botExt = curLo - curYo;   // and BELOW (≤ 0 when it dips under the anchor)
-    const EPS = 1e-4;
-    let yoMin = -botExt;                 // bottom edge ≥ tier base (0)
-    let yoMax = tierHeight - topExt;     // top edge ≤ tier top edge (the rim) — exact contact
-    (design.tiers[tierIndex]?.bottomPipings ?? []).forEach(p => {
-      if (p.layerId === cur.layerId) return;
-      const [nlo, nhi] = sideBand(p, tierIndex);
-      if      (nhi <= curLo + EPS) yoMin = Math.max(yoMin, nhi - botExt);   // neighbour below → our bottom rests on it
-      else if (nlo >= curHi - EPS) yoMax = Math.min(yoMax, nlo - topExt);   // neighbour above → our top stops under it
+    const neighbourBands = (design.tiers[tierIndex]?.bottomPipings ?? [])
+      .filter(p => p.layerId !== cur.layerId)
+      .map(p => sideBand(p, tierIndex));
+    return stackedYoBounds({
+      tierHeight: canvasConfig.tiers[tierIndex]?.height ?? 0,
+      yo: (cur.yOffset ?? 0) + (cur.userYOffset ?? 0),
+      band: sideBand(cur, tierIndex),
+      neighbourBands,
     });
-    return { yoMin, yoMax };
+  }
+
+  /* How far ONE hand-placed piece may travel: the wall, and nothing else.
+   *
+   * ⚠️ NO NEIGHBOUR STACKING, and that is the fix rather than an oversight. Dragging is offered only
+   * in `single` arrangement, so the piece has an ANGLE — a rosette at 331° cannot touch one at 90°
+   * whatever their heights, and the baker is placing it by hand. Sharing the ring bounds meant a
+   * white rosette dragged DOWN stopped dead at the top of a purple layer on the other side of the
+   * cake, while dragging UP worked; reported 2026-09-10. Covered in geometry/boardBands.test.js. */
+  function pieceYoBounds(cur, tierIndex) {
+    return wallYoBounds({
+      tierHeight: canvasConfig.tiers[tierIndex]?.height ?? 0,
+      yo: (cur.yOffset ?? 0) + (cur.userYOffset ?? 0),
+      band: sideBand(cur, tierIndex),
+    });
   }
 
   function handlePipingBoardFlipChange(tierIndex) {
@@ -3696,12 +3775,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // so the rim drag stays angle-only and the canvas sends no wallY for it.
     let dy = null;
     if (wallY != null && zone === 'board') {
-      const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
+      const bounds = pieceYoBounds(cur, tierIndex);
       const layerYo = (cur.yOffset ?? 0) + (cur.userYOffset ?? 0);
-      // wallY is where the pointer met the wall, in tier-local units. Clamp the piece's own anchor
-      // into the SAME band the slider clamps to, then store it as a delta from the layer's anchor —
-      // so nudging the layer's Height afterwards still carries every piece with it.
-      const clamped = Math.min(Math.max(yoMin, wallY), Math.max(yoMin, yoMax));
+      // wallY is where the pointer met the wall, in tier-local units. Keep the shell ON the wall,
+      // then store the result as a delta from the layer's anchor — so nudging the layer's Height
+      // afterwards still carries every piece with it.
+      const clamped = clampYo(wallY, bounds);
       dy = +(clamped - layerYo).toFixed(4);
     }
     updatePipingLayer(tierIndex, zone, layerId, (p) => ({
@@ -4372,6 +4451,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     /* Opens the studio rather than placing something. A garnish has to be MADE before it can be
        put anywhere, which is the one procedural tool so far whose first act is a screen. */
     chocolate_garnish: () => setGarnishStudio(true),
+    /* A card topper: composed off the cake and stood on it. `card_topper` because that is what it
+       is made of — the key is DATA, read by an admin on a row, so it names the thing rather than
+       the studio that happens to make it today.
+
+       ⚠️ ONE ENTRY SERVES BOTH DOORS, because the difference is in the ROW and not in the code. A
+       row with nothing on it opens an empty canvas — that is the plain "make a card topper" item,
+       the same shape `chocolate_garnish` has. A row carrying objects is a READY-MADE, and opens the
+       studio with them already on the canvas.
+
+       ⚠️ A PRESET OPENS THE STUDIO; IT DOES NOT DROP ONTO THE CAKE. The thumbnail in the menu is
+       what shows a baker what these look like — that is the job it is there for — but a ready-made
+       that placed itself would make the words on it the ONE thing about the cake nobody could
+       change, and the words are the whole point of a name topper. It arrives as a starting point
+       that can be left. */
+    card_topper: (el) => {
+      // Arriving from a catalogue row, so nothing here is a kept piece — clear the shelf door.
+      setOpenTopper(null);
+      const made = el?.placement_config?.card_topper;
+      setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
+      setTopperStudio(true);
+    },
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -4875,7 +4975,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Place `count` instances of `el` scattered on (zone × tier), spaced from `taken` seats, all at
   // `scale` (and `color` if given). The ONE generator used by initial drop, density +, and zone
   // change. Mode comes from the element's config for the zone (renders its art).
-  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], color) {
+  // `palette` — one colour, several, or none. Several cycles across the new instances the way a
+  // cluster's does; one behaves exactly as the single `color` argument always did.
+  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], palette) {
+    const pal = Array.isArray(palette) ? palette.filter(Boolean) : (palette ? [palette] : []);
     const mode = zoneMode(el.placement_config, zone, 'hug');
     const minDist = STICKER_SIZE * scale;
     const baseId = Date.now();
@@ -4884,7 +4987,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const seat = randomScatterSeat(zone, tierIndex, taken, minDist);
       taken.push(seat);
       const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale });
-      if (color != null) updateSticker(id, { color });
+      // ⚠️ Offset by how many are ALREADY seated, so growing a mixed scatter continues the cycle
+      // instead of restarting it. Without this, dragging Count up gives you a correctly mixed first
+      // batch followed by a run of whatever colour the palette happens to start on.
+      if (pal.length) updateSticker(id, { color: pal[(taken.length - 1) % pal.length] });
       ids.push(id);
     }
     return ids;
@@ -5066,6 +5172,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     design.stickers.filter(s => s.clusterId === clusterId).sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
   }
+  // ⚠️ "+" MUST ADD A COLOUR THAT DIFFERS. Both palettes are DERIVED as the DISTINCT colours on the
+  // instances, so appending a copy of the last swatch collapses on the very next read and the button
+  // appears to do nothing at all. Found by pressing it: a scatter starting from one colour stayed on
+  // one colour forever. The cluster card carries the same bug and is merely masked — the faux ball
+  // ships three distinct golds, so nobody has started one from a single colour.
+  //
+  // A lighter shade of the last colour, so the default mix is a tonal set (which is what the faux
+  // ball's three golds already are) rather than an arbitrary second hue. Near-white flips to darker,
+  // because lightening white returns white and the button would silently do nothing again.
+  function nextPaletteColour(hex) {
+    const h = /^#([0-9a-f]{6})$/i.exec(String(hex ?? '')) ? hex : '#cccccc';
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    const up = (r + g + b) / 3 < 210;                        // room to lighten?
+    const f = (v) => Math.max(0, Math.min(255, Math.round(up ? v + (255 - v) * 0.35 : v * 0.72)));
+    return '#' + [r, g, b].map(v => f(v).toString(16).padStart(2, '0')).join('');
+  }
+
+  // ── A scatter's palette, exactly as a cluster's ─────────────────────────────────────────────────
+  // Scatter and cluster are DIFFERENT arrangements — a cluster packs into a tangent heap, a scatter
+  // spreads across a surface — but the colour question is identical, so the answer is too rather than
+  // a second one that drifts.
+  //
+  // ⚠️ DERIVED, NOT STORED. The distinct colours already on the instances ARE the palette. Each
+  // scatter instance is its own sticker record carrying its own `color`, so nothing new is persisted
+  // and every design saved before this reads back as a one-colour palette on its own. A stored field
+  // would have had to survive the design jsonb, the template snapshot and the order snapshot, and
+  // every existing design would have needed a default.
+  function scatterPaletteOf(elementId) {
+    const out = [];
+    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+      .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
+    return out;
+  }
+  // Cycle the customer's palette across the instances, in placement order. `i % length` is what makes
+  // a 3-colour palette read as a repeating mix rather than three blocks.
+  function setScatterPalette(elementId, palette) {
+    if (!palette.length) return;
+    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+      .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
+  }
+
   // The cluster's CURRENT finish = the material override its balls share (every member carries the
   // same roughness/metalness). Returned so a re-pack can reapply it; null = config-default finish.
   function clusterFinishOf(clusterId) {
@@ -5144,7 +5291,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const el = elementById.get(elementId);
       const ref = instances[0];
       if (!el) return;
-      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), ref.color ?? undefined);
+      // ⚠️ The PALETTE, not `ref.color`. This passed the first instance's colour, so growing a
+      // mixed scatter gave a correctly mixed original batch followed by a block of one colour.
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), scatterPaletteOf(elementId));
     } else {
       // Drop the newest (highest id) instances first.
       const remove = [...instances].sort((a, b) => b.id - a.id).slice(0, cur - target).map(s => s.id);
@@ -5165,7 +5314,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const ref = all[0];                                     // share size/colour with the existing set
       const tierIndex = scatterTierForZone(zone);
       const scale = ref?.scale ?? scatterScaleFor(el);
-      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], ref?.color ?? undefined);
+      // Same reason: a scatter ticked onto a second surface should carry the whole mix, not the
+      // first instance's colour.
+      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId));
     } else {
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }
@@ -5916,6 +6067,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.nameBlocks?.blocks?.length) {
     decorationCards.unshift({ key: 'blocks', type: 'blocks', name: 'Letter Blocks', thumb: null, glyph: 'A' });
   }
+  /* One card per placed card topper. ⚠️ It was missing entirely: a topper could be dropped on the
+     cake and then dragged, and nothing else — no way to stand it up, move it to another tier, resize
+     it or take it off again, because the only control was the drag. Every other placed decoration
+     has a card and this is the same shape. */
+  (design.toppers ?? []).forEach(t => {
+    decorationCards.unshift({ key: `topper-${t.id}`, type: 'topper', id: t.id, topper: t, thumb: null,
+                              name: t.name || 'Card topper' });
+  });
+
   /* One card per placed garnish, newest first — the same shape every other placed decoration has, so
      a customer meets one accordion rather than a special case for chocolate. */
   (design.garnishes ?? []).forEach(g => {
@@ -6022,6 +6182,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
       : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
+      : card.type === 'topper'        ? { type: 'topper', id: card.id }
       : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
       : card.type === 'blocks'        ? { type: 'blocks' }
@@ -6346,7 +6507,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const el = elementById.get(members[0].elementId);
     const { min, max } = clusterConfigOf(el ?? {});
     const palette = clusterPaletteOf(card.clusterId);
-    const swatch = { width: 26, height: 26, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer' };
+    const swatch = s.paletteSwatch;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {clusterAddHandle(el)}
@@ -6378,7 +6539,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 )}
               </span>
             ))}
-            <button title="Add colour" onClick={() => setClusterPalette(card.clusterId, [...palette, palette[palette.length - 1] ?? '#D4AF37'])}
+            <button title="Add colour" onClick={() => setClusterPalette(card.clusterId, [...palette, nextPaletteColour(palette[palette.length - 1] ?? '#D4AF37')])}
               style={{ ...swatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
           </div>
         </div>
@@ -6459,22 +6620,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onChange={v => scaleStickers(all.map(s => s.id), v)} />
           </div>
         </div>
-        {canColor && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={s.editPanelLabel}>Colour</span>
-            <button
-              style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-              onClick={() => {
-                const opening = !colorOpen;
-                closeAllPopups();
-                setSelectedEl({ type: 'scatter', elementId: card.elementId });
-                setSelectedStickerIds(new Set());
-                if (opening) setColorOpen(true);
-              }}>
-              <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: all[0]?.color ?? '#ffffff' }} />
-            </button>
-          </div>
-        )}
+        {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
+            One wheel here set every instance to the same colour, because the write fanned it across
+            the whole group. But each scatter instance is its own sticker record with its own `color`,
+            so a mix was always storable — the card was the only thing insisting on uniformity.
+
+            The same row the cluster card uses, and deliberately so: a cluster packs into a heap and a
+            scatter spreads across a surface, but "which colours is this group made of" is one
+            question and should not have two answers that drift apart.
+
+            The palette is DERIVED from the instances (scatterPaletteOf), so nothing new is persisted
+            and an old single-colour design reads back as a one-swatch palette by itself. */}
+        {canColor && (() => {
+          const palette = scatterPaletteOf(card.elementId);
+          const pal = palette.length ? palette : ['#ffffff'];
+          return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+              <span style={s.editPanelLabel}>Colours</span>
+              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                {pal.map((c, i) => (
+                  <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
+                    <input type="color" value={c} style={s.paletteSwatch}
+                      onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, next); }} />
+                    {pal.length > 1 && (
+                      <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, pal.filter((_, j) => j !== i))}
+                        style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: '#e53935', cursor: 'pointer', padding: 0 }}>×</button>
+                    )}
+                  </span>
+                ))}
+                <button title="Add colour" onClick={() => setScatterPalette(card.elementId, [...pal, nextPaletteColour(pal[pal.length - 1])])}
+                  style={{ ...s.paletteSwatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+              </div>
+            </div>
+          );
+        })()}
         {/* Always offered. See the note on `delete` in the toolbar's actions below: a decoration a
             customer cannot take off their own cake is not a capability, it is a trap. */}
         {true && (
@@ -7148,7 +7327,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const w = activeWriting ?? {};
     const isMultiline = (w.text ?? '').includes('\n');
     const surface = w.surface ?? 'top';
-    const SURFACES = [{ k: 'top', label: 'Top' }, { k: 'side', label: 'Side' }, { k: 'board', label: 'Board' }];
+    /* A surface this material no longer offers is still shown while a message is ON it, so an
+     * existing design (or an order being looked at) stays legible and editable instead of showing a
+     * chooser with nothing selected. New messages simply never reach it. */
+    const offered = writingSurfaces(w.style ?? 'cream');
+    const SURFACES = (offered.includes(surface) ? offered : [...offered, surface])
+      .map(k => ({ k, label: SURFACE_LABELS[k] }));
     return (
       <>
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
@@ -7283,6 +7467,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Sliding moves the WHOLE stroke and keeps its shape: it is the unit you drew, and the unit
             a ring already is. Until this, a border a few millimetres too low cost you the whole line.
         */}
+        {/* ⚠️ CREAM ONLY. "Draw" is a gesture you make against the cake with a pen; an acrylic
+            topper is a cut sheet that is placed, never drawn, so on a topper these two buttons named
+            a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
+            sure what are intended for". */}
+        {w.style !== 'acrylic' && <>
         <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
           {[['Draw', false], ['Move', true]].map(([label, val]) => (
             <button key={label} onClick={() => setPenMove(val)}
@@ -7300,18 +7489,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Drag a piped line to slide it. It keeps its shape and stays on the cake.
           </div>
         )}
+        </>}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
-        <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
-        <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
-        <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
-        {surface !== 'side' && (
+        {/* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
+            is the SHEET: 3mm standing so the piece holds itself up and pushes into the icing, thinner
+            lying flat so the cut edge does not read as bent rod. Two authored defaults, per pose, set
+            in ACRYLIC_DEFAULTS and overlaid by an admin — not something a customer should be able to
+            drag. It also wrote `thickness` while the acrylic builder reads `sheet`, so it moved a
+            number nothing consumed. */}
+        {w.style !== 'acrylic' && (
+          <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
+        )}
+        <PenSlider label="Size"      value={w.fit ?? writingFit(w.style)} min={0.3} max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
+        {/* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at `tracking`.
+            On acrylic the equivalent number is negative by design: the letters have to overlap so the
+            word cuts as one piece. It is calibrated PER FACE, by eye, and topperFaces.js records what
+            happens when it is not — chasing zero bridges gave a Parisienne topper reading "Bithday",
+            correct by every measure and unreadable, and the same ratio applied unseen to the
+            centreline faces gave a tangle. That is a legibility-and-cuttability value, not a taste.
+            If it is ever wanted in front of a customer, the safe shape is a narrow nudge either side
+            of the face's own default, checked on each face — not this raw slider. */}
+        {w.style !== 'acrylic' && (
+          <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
+        )}
+        {/* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
+            from a sheet; bending the baseline is a piped-writing idea. */}
+        {surface !== 'side' && w.style !== 'acrylic' && (
           <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
         )}
         {surface !== 'side' && (
           <PenSlider label="Rotate"  value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
         )}
-        {isMultiline && (
+        {/* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the rows
+            nest until they meet rather than sitting on a baseline — so it is bounded by the shapes,
+            not by taste. Cream only until someone decides what a customer should be able to do to it. */}
+        {isMultiline && w.style !== 'acrylic' && (
           <PenSlider label="Line gap" value={w.lineSpacing ?? 1.4} min={1}   max={2.2}  step={0.05}  onChange={v => setWriting({ lineSpacing: v })} fmt={v => `${v.toFixed(2)}×`} />
         )}
 
@@ -7344,6 +7557,110 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      its shape, its fill — was decided in the studio and is not editable here, because changing it
      would change every cake that used the same saved garnish if it were ever a reference. It is not
      (each design carries its own paths), but the card should not invite the idea either. */
+  /* ⚠️ A CARD TOPPER'S CARD. Deliberately shorter than the garnish's: no gloss (printed card is
+   * matte and has no shine to set), no fan (a fanned arc of NAMES is not a thing anyone makes), and
+   * no duplicate for the same reason. What is left is where it sits and how big it is. */
+  function renderTopperBody(t) {
+    if (!t) return null;
+    const tiers = design.tiers ?? [];
+    /* What the topper SAYS, so the card can name the thing it is about to open. A topper is words
+       cut out of card; "Card topper" is the only other name it has, and on a cake with two of them
+       that names neither. */
+    const words = (t.payload?.objects ?? [])
+      .filter(o => o.kind === 'text' && String(o.text ?? '').trim())
+      .map(o => String(o.text).trim()).join(' ');
+    const said = words.length > 42 ? `${words.slice(0, 41)}…` : words;
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* ⚠️ FIRST ON THE CARD, ABOVE EVERY PLACEMENT CONTROL (INVARIANTS #12). On a LOADED TEMPLATE
+            this is the whole reason the topper was tapped: the template is liked and the number on it
+            belongs to somebody else's birthday. Tier, size and turn are settings a baker touches once;
+            changing what it says is the thing they came for, and it must not be below them.
+
+            ⚠️ AND IT OPENS THE STUDIO RATHER THAN PUTTING A TEXT BOX HERE. A topper is a COMPOSITION —
+            words, shapes, colours, offset bands, how they overlap — and a card in a side panel can
+            only ever offer the first of those. Half the composition editable here and the other half
+            unreachable is worse than one door to all of it, and it would be a second answer to
+            "what is a topper made of" (INVARIANTS #15). The studio already knows.
+
+            ⚠️ IT IS NOT "EDIT", IT IS A PLACE. The word says what happens next — the same screen
+            they composed it in comes back, with everything on it. */}
+        <div>
+          <button onClick={() => {
+            setPendingTopper(null);
+            setOpenTopper(null);
+            setEditTopper(t);
+            setTopperStudio(true);
+          }}
+            style={{ width: '100%', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
+                     border: '1.5px solid #C5D4C8', background: '#fff', color: '#3D5A44',
+                     fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800 }}>
+            Open in studio
+          </button>
+          <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+            {said
+              ? `It says “${said}”. Change the words, the colours or the shapes — it stays where it is on the cake.`
+              : 'Change the words, the colours or the shapes — it stays where it is on the cake.'}
+          </div>
+        </div>
+
+        {/* ⚠️ ONLY WHERE THERE IS A CHOICE — a tier chooser on a one-tier cake is a control with a
+            single answer, and it pushes down what the baker actually came for. */}
+        {tiers.length > 1 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              Which tier
+            </div>
+            <Segmented
+              label="Which tier the topper sits on"
+              items={tiers.map((_, i) => ({
+                id: String(i),
+                label: i === 0 ? 'Base' : i === tiers.length - 1 ? 'Top' : `Tier ${i + 1}`,
+              }))}
+              value={String(Number.isInteger(t.tierIndex) ? t.tierIndex : tiers.length - 1)}
+              onChange={v => updateTopper(t.id, { tierIndex: Number(v) })}
+            />
+          </div>
+        )}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                        textTransform: 'uppercase', marginBottom: 6 }}>
+            How it sits
+          </div>
+          <Segmented
+            label="How the topper sits"
+            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+            value={t.mode ?? 'stand'}
+            onChange={mode => updateTopper(t.id, { mode })}
+            tone={primaryColor}
+          />
+          <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
+            {t.payload?.stick?.on
+              ? 'It stands on its stick. How deep that goes was set in the studio.'
+              : 'Standing pushes its bottom edge into the icing. Add a stick in the studio to raise it.'}
+          </div>
+        </div>
+
+        <PenSlider label="Size" value={t.scale ?? 1} min={0.4} max={2} step={0.05}
+          onChange={v => updateTopper(t.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
+        <PenSlider label="Turn" value={t.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
+          onChange={v => updateTopper(t.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
+
+        <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        <button onClick={() => { removeTopper(t.id); setSelectedEl(null); }}
+          style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                   border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
+                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+          Remove
+        </button>
+      </div>
+    );
+  }
+
   function renderGarnishBody(g) {
     if (!g) return null;
     const tiers = design.tiers ?? [];
@@ -8521,11 +8838,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
 
         {/* ── Left column: sidebar (the logo moved to the desktop header) ── */}
-        {!isMobile && <div style={s.leftCol}>
+        {/* Lifted over a docked page while one is open, so the rail sits ON that page — see dockedPage. */}
+        {!isMobile && <div style={dockedPageOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
         <div style={s.sidebar}>
-          <SpatulaFrame />
+          <SpatulaFrame lifted={dockedPageOpen} />
           <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
             {railItems.map(({ id, label, icon, menu }) => {
@@ -8588,6 +8906,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {canManageStore && toolMenus.map(menu => {
               const isChefs = menu.id === 'chefsdesk';
               const open = isChefs ? chefsDeskOpen : settingsOpen;
+              const lit  = open || menu.items.some(i => i.active);
               return (
                 <div key={menu.id} style={{ position: 'relative' }} ref={isChefs ? chefsDeskRef : settingsRef}>
                   <button style={s.navItem}
@@ -8596,8 +8915,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       else { setSettingsOpen(o => !o); setChefsDeskOpen(false); }
                       setProfileOpen(false);
                     }}>
-                    <span style={{ ...s.sidebarBtn, ...(open ? s.sidebarBtnActive : {}) }}>{menu.icon}</span>
-                    <span style={{ ...s.navLabel, ...(open ? { color: '#fff' } : {}) }}>{menu.label}</span>
+                    <span style={{ ...s.sidebarBtn, ...(lit ? s.sidebarBtnActive : {}) }}>{menu.icon}</span>
+                    <span style={{ ...s.navLabel, ...(lit ? { color: '#fff' } : {}) }}>{menu.label}</span>
                   </button>
                   {open && (
                     <RailMenu style={{ top: 'auto', bottom: 0 }}>
@@ -8817,15 +9136,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                      "nothing here yet" to a baker who had just drawn two. Shown above the pictures
                      and only when there are any, and tapping one opens the STUDIO with it loaded:
                      a piece needs a where and a how, and those live there. */
-                  const myPieces = (savedGarnishes ?? []).filter(g =>
-                    !elemSearch.trim() || (g.name ?? '').toLowerCase().includes(elemSearch.trim().toLowerCase()));
+                  /* ⚠️ ONE GRID, NOT ONE PER STUDIO. A baker looking for something they made is not
+                     thinking "was that chocolate or card" — they are looking for the thing. A row
+                     per studio would also grow a row every time a studio is added, which is how a
+                     shelf becomes a filing cabinet. What differs is only which studio a tap opens,
+                     and each piece carries that with it. */
+                  const q = elemSearch.trim().toLowerCase();
+                  const myPieces = [
+                    ...(savedGarnishes ?? []).map(g => ({
+                      key: `g${g.id}`, name: g.name, thumbUrl: g.thumbUrl,
+                      open: () => { setPendingGarnish(g); setGarnishStudio(true); },
+                    })),
+                    ...(savedToppers ?? []).map(t => ({
+                      key: `t${t.id}`, name: t.name, thumbUrl: t.thumbUrl,
+                      // `openTopper`, never `pendingTopper`: this one is already kept.
+                      open: () => { setOpenTopper(t); setTopperStudio(true); },
+                    })),
+                  ].filter(x => !q || (x.name ?? '').toLowerCase().includes(q));
                   return (mine.length || myPieces.length) ? (
                     <>
                     {myPieces.length > 0 && (
                       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(74px, 1fr))', gap: 8, marginBottom: 10 }}>
                         {myPieces.map(g => (
-                          <button key={`g${g.id}`} title={g.name}
-                            onClick={() => { setPendingGarnish(g); setGarnishStudio(true); }}
+                          <button key={g.key} title={g.name}
+                            onClick={g.open}
                             style={{ ...s.elementCard, padding: 6, cursor: 'pointer' }}>
                             {g.thumbUrl
                               ? <img src={g.thumbUrl} alt={g.name} style={{ width: '100%', height: 54, objectFit: 'contain' }} />
@@ -9171,6 +9505,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               filmTight={photoFraming}
               config={canvasConfig}
               selectedGarnishId={selectedGarnishId}
+              selectedTopperId={selectedTopperId}
+              onTopperSelect={id => selectExclusive({ type: 'topper', id })}
+              onTopperMove={updateTopper}
               onGarnishSelect={id => { setSelectedGarnishId(id); selectExclusive({ type: 'garnish', id }); }}
               /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
                  customer set (size, standing or lying) survives being moved. */
@@ -9687,6 +10024,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
+                           : card.type === 'topper'  ? renderTopperBody(card.topper)
                            : card.type === 'garnish' ? renderGarnishBody(card.garnish)
                            : card.type === 'tool' ? (card.tool === 'pen' ? renderPenBody() : renderDustBody())
                            : buildToolbar(selectedEl, 'panel')}
@@ -10517,6 +10855,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <EdiblePrintStudio
           apiClient={apiClient}
           elementTypes={elementTypes}
+          /* ⚠️ The cake's OWN card toppers. A topper is the one decoration on that sheet that is
+             genuinely made by printing, so the studio should already have it rather than making the
+             baker go and find what is sitting on the cake behind them. */
+          toppers={design.toppers ?? []}
           onClose={() => setPrintStudioOpen(false)}
         />
       )}
@@ -10574,6 +10916,50 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             setSelectedGarnishId(id);
             setGarnishStudio(false);
             setPendingGarnish(null);
+          }}
+        />
+      )}
+
+      {topperStudio && (
+        <TopperComposer
+          apiClient={apiClient}
+          /* `preset`, not `openWith`: a catalogue ready-made is kept by nobody, so the baker is
+             still offered "keep it". See the note on the two doors in TopperComposer. */
+          preset={pendingTopper}
+          openWith={openTopper}
+          /* ⚠️ A SNAPSHOT, NOT AN ID LOOKED UP EACH RENDER. The studio pre-fills its canvas from this
+             prop in a `useEffect`, so a fresh object every render would re-seed the canvas on every
+             keystroke and no edit would ever survive being typed. */
+          editWith={editTopper}
+          onCancel={() => {
+            setTopperStudio(false); setPendingTopper(null); setOpenTopper(null); setEditTopper(null);
+          }}
+          /* Selected the moment it lands, like a garnish: the thing you just made is the thing you
+             want to move, and having to hunt for it is a step nobody wants. */
+          onSave={topper => {
+            /* ⚠️ EDITING UPDATES; EVERY OTHER DOOR PLACES. `updateTopper` MERGES, so the piece keeps
+               its id and with it every placement key — where it stands, how big it is, which way it
+               faces, which tier it is on. Adding a new one instead would leave the old one on the
+               cake and quietly give the baker two. */
+            // `scaleBy` is a message to this handler, not part of the piece — see below.
+            const { scaleBy, ...piece } = topper;
+            const id = editTopper ? editTopper.id : crypto.randomUUID();
+            if (editTopper) {
+              /* ⚠️ AND THE SIZE IS CORRECTED, or changing the words resizes the topper. The cake
+                 fits a topper by its WIDTH, so a "10" turned into a "7" keeps the width of two
+                 digits and comes out twice as tall. The studio measures what `scale` must become to
+                 leave the HEIGHT where it was; clamped to the range the card's own Size slider
+                 offers, so the number it shows is always one the baker could have set. */
+              const scale = Number.isFinite(scaleBy) && scaleBy > 0
+                ? Math.max(0.4, Math.min(2, (editTopper.scale ?? 1) * scaleBy))
+                : null;
+              updateTopper(id, { ...piece, ...(scale ? { scale } : {}) });
+            } else addTopper({ ...piece, id });
+            selectExclusive({ type: 'topper', id });
+            setTopperStudio(false);
+            setPendingTopper(null);
+            setOpenTopper(null);
+            setEditTopper(null);
           }}
         />
       )}
@@ -11493,6 +11879,9 @@ const s = {
     border:'1px solid rgba(240,220,227,0.9)',
     pointerEvents:'auto',
   },
+  // The square swatch in a Colours row. Shared by the cluster card and the scatter card so the two
+  // palettes cannot drift apart visually — they answer the same question about different arrangements.
+  paletteSwatch: { width: 26, height: 26, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer' },
   swatchBtn: {
     width:26, height:26, borderRadius:'50%', border:'2.5px solid #999999',
     cursor:'pointer', flexShrink:0, padding:0,

@@ -4,7 +4,8 @@ import { buildXrayReport } from './report.js';
 import { buildXrayPdf, shortRef } from './xrayPdf.js';
 import { downloadPdf } from '../pdf.js';
 import XrayCakeDiagram from './XrayCakeDiagram.jsx';
-import XrayTinDiagram from './XrayTinDiagram.jsx';
+import XrayTinSection, { sectionHeight } from './XrayTinSection.jsx';
+import { tinOptions } from './tinHelper.js';
 import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
@@ -88,7 +89,48 @@ export default function XrayReport({ order, apiClient, onClose }) {
     }),
     [design, order?.weight_kg, guides, order?.flavours, order?.special_instructions],
   );
-  const { tins: tinPlan, colors, elements: withNozzle, freehand, diagram: diagramItems } = report;
+  const { colors, elements: withNozzle, freehand, diagram: diagramItems } = report;
+
+  /* ── Which tin, chosen by the baker rather than guessed here ─────────────────────────────────
+   *
+   * The sheet used to print one tin and call it the answer. Which tin to use is a question about
+   * how the finished cake should LOOK, and the customer's picture is the only thing that settles
+   * it: the same 12kg is a flat 18in or a towering 12in, and only one of them matches the photo.
+   * So every buildable option is laid out and the baker picks.
+   *
+   * The default is what the solver made of the DRAWN proportions — the conservative answer, and
+   * the same one the sheet showed before there was a choice. */
+  const [pickedTins, setPickedTins] = useState(null);
+  const options = useMemo(
+    () => (order?.weight_kg > 0 ? tinOptions(design?.tiers ?? [], order.weight_kg) : []),
+    [design, order?.weight_kg],
+  );
+
+  /* ⚠️ ONE plan, and the PDF is handed the same object. The comments on `download()` are emphatic
+   * that the sheet must not re-derive anything the screen decided, and a baker who picks a 14in on
+   * screen and prints a 12in would be the worst version of that — paper is the copy that reaches
+   * the bench. So the choice is folded into `report` here, once, and everything downstream reads it.
+   *
+   * Flavours are merged back by index: they come off the ORDER (report.js), not from the tin solve,
+   * so an option carries tins and heights but knows nothing about what goes in them. */
+  // ONE ruler for every option, so a wide cake is drawn wide. Per-option scaling would make them
+  // all the same size on screen, which is the one thing this row must not do.
+  const optionRuler = options.length ? Math.max(...options.map(o => o.tiers[0].tinInch)) : 0;
+  // One box height for the row — the tallest option's — so every tile shares a baseline AND the
+  // labels line up, without reserving space for a cake none of them is.
+  const OPTION_W = 112;
+  const optionBoxH = options.length
+    ? sectionHeight(Math.max(...options.map(o => o.totalIn)), optionRuler, OPTION_W) : 0;
+  const chosen = options.find(o => o.key === pickedTins) ?? null;
+  const tinPlan = useMemo(() => {
+    if (!chosen) return report.tins;
+    return {
+      ...report.tins,
+      bakedKg: chosen.bakedKg ?? report.tins.bakedKg,
+      tiers: chosen.tiers.map((t, i) => ({ ...t, flavour: report.tins.tiers[i]?.flavour ?? null })),
+    };
+  }, [chosen, report]);
+  const effReport = chosen ? { ...report, tins: tinPlan } : report;
 
   // Per-decoration bbox + real width, keyed the way the stored steps are. Shared by the screen
   // card and the PDF so a decoration cannot be 5cm in one and 7cm in the other.
@@ -165,19 +207,46 @@ export default function XrayReport({ order, apiClient, onClose }) {
   // A failure means no band, never a wrong one: silence is recoverable, a false all-clear
   // on a bench sheet is not.
   const [declarations, setDeclarations] = useState({});
+  /* The same fetch also carries the flavour COLOURS, which the tin drawings need — see
+   * `tierColours`. Kept as one call rather than two: it is the same list, and asking twice would
+   * be two chances for the sheet to describe two different flavour tables. */
+  const [flavourRows, setFlavourRows] = useState([]);
   useEffect(() => {
     let alive = true;
     if (!apiClient?.fetchBakerFlavours) return;
     apiClient.fetchBakerFlavours()
-      .then(list => {
+      .then(res => {
         if (!alive) return;
+        // ⚠️ Two shapes in the wild — this screen has always read a bare array, ThemePreview reads
+        // `{ flavours }`. Accept either rather than pick a side and break one of them.
+        const list = Array.isArray(res) ? res : (res?.flavours ?? []);
+        setFlavourRows(list);
         setDeclarations(Object.fromEntries(
-          (list ?? []).filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
+          list.filter(f => f.conflicts_with?.length).map(f => [f.id, f.conflicts_with]),
         ));
       })
       .catch(() => {});
     return () => { alive = false; };
   }, [apiClient]);
+
+  /* Sponge and filling colour per TIER, for the tin drawings — the same colours the storefront
+   * shows a customer, so a Belgian Dark reads dark on the bench sheet too.
+   *
+   * Matched by NAME because that is all an order stores: `order.flavours` is [{tier, name}], and
+   * the id it was chosen by is not kept. Trimmed and case-folded, since a display name a baker
+   * edited is the thing on both sides.
+   *
+   * ⚠️ A flavour nobody has coloured yet stays null, and the drawing falls back to a neutral
+   * sponge. Guessing a colour from the name is exactly what flavourList.js refuses to do — "Red
+   * Velvet is crimson in every kitchen" is authored, not inferred — and a bench sheet inventing
+   * one would be worse than a plain drawing. */
+  const tierColours = useMemo(() => {
+    const byName = new Map(flavourRows.map(f => [String(f.name ?? '').trim().toLowerCase(), f]));
+    return (report.tins.tiers ?? []).map(t => {
+      const f = t.flavour ? byName.get(String(t.flavour).trim().toLowerCase()) : null;
+      return { sponge: f?.spongeColor ?? null, filling: f?.fillingColor ?? null };
+    });
+  }, [flavourRows, report.tins.tiers]);
 
   const conflicts = useMemo(() => findFlavourConflicts({
     flavours:     order?.flavours,
@@ -192,7 +261,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
     setPdfBusy(true); setPdfErr(null);
     try {
       const blob = await buildXrayPdf({
-        order, report, baker,
+        // ⚠️ effReport, not report — it carries the tin the baker actually chose. See the note
+        // where it is built: the screen and the sheet must name the same cake.
+        order, report: effReport, baker,
         // Derived here, not again inside the PDF: one derivation, so the sheet cannot
         // disagree with the screen it was printed from.
         conflicts: conflicts.map(c => conflictBenchLine(c, { tierCount: order?.flavours?.length ?? 1 })),
@@ -459,9 +530,50 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {tinPlan.tiers.length > 0 && (
           <div>
             <div style={s.sub}><span style={s.dot('#1B5FA8')} /> Tins &amp; weight {tinPlan.totalKg && <span style={s.tag}>{tinPlan.totalKg} kg · {tinPlan.tiers.length} tier{tinPlan.tiers.length > 1 ? 's' : ''}</span>}</div>
+            {/* ⚠️ BEFORE the numbers, never after — INVARIANTS #11. A caveat printed under a table
+                is read once the reader has already believed it.
+
+                The wording is deliberate and it is NOT "beta" or "still evolving". Both of those
+                promise a version that WILL be authoritative, and there is no such version: this
+                figure is geometry, and geometry cannot know a baker's tins, batter or oven. The
+                limit is permanent, so the words have to be true permanently.
+
+                It also must not read as Spattoo RECOMMENDING a tin. `tinHelper` says why — "a
+                recommendation hides its own errors" — and an earlier model was 55% out on density
+                and claimed a tin held 38% more than it can. The row lays options out; the baker
+                chooses. This sentence says that in the one place a baker will actually see it,
+                rather than only in the Terms. Mirrors ToS 7.2. */}
+            <div style={{ ...s.muted, marginTop: -6, marginBottom: 10, lineHeight: 1.5 }}>
+              A reference, not a measurement. Worked out from geometry — not from your tins, your
+              recipe or your oven. Compare the options, then use your own judgement before you bake.
+            </div>
             <div style={s.card}>
+              {/* ⚠️ THE BIG WIREFRAME IS GONE. It drew the chosen cake as a 3/4 cylinder above the
+                  comparison row, which showed the same cake again and better — to scale, with its
+                  layers, beside the alternatives. Two pictures of one thing, the larger one saying
+                  less. What the wireframe uniquely carried was the NUMBERS, so those stay, as
+                  words: the row is the picture now. */}
               {tinPlan.totalKg
-                ? <XrayTinDiagram tiers={tinPlan.tiers} />
+                ? (
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 22, rowGap: 10 }}>
+                    {tinPlan.tiers.map(t => (
+                      <div key={t.index}>
+                        {tinPlan.tiers.length > 1 && (
+                          <div style={{ fontSize: 10.5, fontWeight: 700, color: '#9a958d', letterSpacing: 0.4, textTransform: 'uppercase' }}>
+                            {t.label}
+                          </div>
+                        )}
+                        {/* A sheet is the one tin a single number cannot name, so it gets both. */}
+                        <div style={{ fontSize: 17, fontWeight: 800, color: '#3a352e' }}>
+                          {t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`} {t.shape}
+                        </div>
+                        <div style={{ fontSize: 12.5, color: '#6b6459' }}>
+                          {t.weightKg} kg · {t.heightIn}″ tall
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )
                 : <div style={s.muted}>Add a weight to the order to size the tins.</div>}
 
               {/* ⚠️ HOW the tins were arrived at, said out loud.
@@ -476,10 +588,64 @@ export default function XrayReport({ order, apiClient, onClose }) {
                * ordered weight would be hiding it. */}
               {tinPlan.totalKg && (
                 <div style={{ ...s.muted, marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  <span>{tinPlan.build.layers} layers, {tinPlan.build.layers - 1} filling</span>
+                  {/* ⚠️ PER TIER, and it used to be one number for the whole cake — a constant 2,
+                      so a nine-inch tier and a three-inch one both read "2 layers, 1 filling".
+                      Nobody builds a nine-inch cake as two slabs. The count now follows the height
+                      (a filling every ~1.5in of sponge), so it differs per tier and has to be
+                      printed per tier. One tier still reads as one line, which is the common case. */}
+                  {tinPlan.tiers.filter(t => t.layers).map(t => (
+                    <span key={t.index}>
+                      {tinPlan.tiers.length > 1 ? `${t.label}: ` : ''}
+                      {t.layers} layers of {t.layerIn}″, {t.fillings} filling{t.fillings === 1 ? '' : 's'}
+                      {' · '}{t.bakes} bake{t.bakes === 1 ? '' : 's'}
+                      {t.barrels > 1 && ` · ${t.barrels} barrels, board + dowels between`}
+                    </span>
+                  ))}
                   {tinPlan.bakedKg > tinPlan.totalKg && (
                     <span>· bake {tinPlan.bakedKg} kg for a {tinPlan.totalKg} kg cake, and trim</span>
                   )}
+                </div>
+              )}
+
+              {/* ── The other tins this weight could be baked in ──────────────────────────────
+                  Laid out as whole cakes, drawn to scale, because what the baker is matching is a
+                  photograph of a whole cake — how tall the stack is against its base, how far the
+                  top steps in. A per-tier chooser cannot show either, and the pairs are not free
+                  anyway: the drawn footprint ratio and the step rule mean picking one picks them
+                  all. One ruler across the row, or they cannot be compared by looking.
+                  ⚠️ Not saved on the order yet — the choice lasts as long as the sheet is open. */}
+              {options.length > 1 && (
+                <div style={{ marginTop: 14, borderTop: '1px solid #F4F1EC', paddingTop: 12 }}>
+                  <div style={{ ...s.muted, marginBottom: 10 }}>
+                    Same {tinPlan.totalKg} kg in a different tin — pick the one that matches the picture.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-end', overflowX: 'auto', paddingBottom: 4 }}>
+                    {options.map(o => {
+                      const on = chosen ? o.key === chosen.key
+                                        : o.key === tinPlan.tiers.map(t => t.tinInch).join('+');
+                      return (
+                        <button key={o.key} type="button"
+                          onClick={() => setPickedTins(on ? null : o.key)}
+                          style={{
+                            flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center',
+                            gap: 6, padding: '10px 10px 8px', borderRadius: 12, cursor: 'pointer',
+                            background: on ? '#F7F4EE' : '#fff', fontFamily: 'inherit',
+                            border: on ? '2px solid #1a1a1a' : '1.5px solid #EFEAE3',
+                          }}>
+                          {/* Bottom-aligned and sharing one ruler, so the row reads as one cake
+                              photographed in different tins rather than several cakes. */}
+                          <div style={{ display: 'flex', alignItems: 'flex-end', height: optionBoxH }}>
+                            <XrayTinSection ruler={optionRuler} width={OPTION_W} id={o.key}
+                              tiers={o.tiers.map((t, i) => ({ ...t, ...(tierColours[i] ?? {}) }))} />
+                          </div>
+                          <div style={{ fontSize: 12, fontWeight: 800, color: '#3a352e' }}>
+                            {o.tiers.map(t => (t.rectIn ? `${t.rectIn.w}×${t.rectIn.d}″` : `${t.tinInch}″`)).join(' + ')}
+                          </div>
+                          <div style={{ fontSize: 10.5, color: '#9a958d' }}>{o.totalIn}″ tall</div>
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               )}
 

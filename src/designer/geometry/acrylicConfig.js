@@ -1,5 +1,11 @@
 import { faceFit, TOPPER_FACES, DEFAULT_TOPPER_FACE } from './topperFaces.js';
-import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH } from './topperFinishes.js';
+/* ⚠️ HOW BIG A WORLD UNIT IS lives in constants.js now, not here. It was defined in this file, which
+ * imports the cream fonts — so anything that only wanted to know what an inch measures had to pull a
+ * font table in with it, and the piped cream wall (which sizes a nozzle in inches) could not. It is
+ * re-exported so every existing caller is untouched. */
+import { NOMINAL_MM_PER_UNIT, WRITING_FIT } from '../constants.js';
+export { NOMINAL_MM_PER_UNIT };
+import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, finishesOf } from './topperFinishes.js';
 
 /* ── Every number an acrylic word is made of, in ONE place ───────────────────────────────────────
  *
@@ -19,6 +25,10 @@ import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH } from './topperFinishes.js';
 
 export const ACRYLIC_DEFAULTS = Object.freeze({
   face: DEFAULT_TOPPER_FACE,
+  /* How much of the surface the piece spans before anybody drags the Size slider. The number lives
+     in constants.js so `surface.js` can read it without importing a font table — see WRITING_FIT
+     there — but it is authored HERE, because this is where an admin's acrylic row is applied. */
+  fit: WRITING_FIT.acrylic,
   stroke: 0.12,           // centreline faces only — about a tenth of the letter, as the market sets it
   weight: 0,              // outline faces — the one lever on a hairline
   minDetail: 1.0,         // mm the cutter will hold
@@ -38,7 +48,7 @@ export const ACRYLIC_DEFAULTS = Object.freeze({
    * otherwise. One authored number applied to both would quietly fatten every side name. */
   sheetStand: 0.063,
   sheetFlat: 0.030,
-  finishes: Object.keys(TOPPER_FINISHES),
+  finishes: finishesOf('acrylic'),
   defaultFinish: DEFAULT_TOPPER_FINISH,
 });
 
@@ -67,21 +77,6 @@ export function acrylicCfg(writing = {}, { standing = true } = {}) {
     bury:     writing.bury   ?? d.bury,
   };
 }
-
-/* ── How big a world unit is, and why this is an ASSUMPTION rather than a lookup ──────────────────
- *
- * "The thinnest acrylic must clear what the cutter holds" needs a real millimetre, and the designer
- * has no true scale to give one. The only inches-to-units constant in the codebase is
- * SHEET_INCH_TO_WORLD (0.12), and it does not mean what it looks like: at that rate one unit is
- * ~212mm, which makes the default bottom tier — diameter 2.4 — a TWENTY INCH cake. Its own comment
- * says why: it was chosen so a half sheet reads beside a round tier, not as a conversion.
- *
- * So this is declared, not derived: the default bottom tier is taken to be an 8-inch cake, which
- * puts a unit at 8 x 25.4 / 2.4 mm. Stated in one place with the arithmetic shown, so the day an
- * order pins a REAL size the caller passes it and this stops being used — the same bargain
- * rainbow.js makes with its own optional `mmPerUnit`.
- */
-export const NOMINAL_MM_PER_UNIT = (8 * 25.4) / 2.4;   // ≈ 84.7
 
 /* How far the letters may be pushed before the cutter cannot hold them, as the pure ratio
  * `topperShapes` wants: the span it will be cut at, over the smallest detail worth cutting.
@@ -126,6 +121,11 @@ export function writingFromAcrylicRow(acrylic) {
     acrylicFinish: offered?.includes(acrylic.defaultFinish)
       ? acrylic.defaultFinish
       : (offered?.[0] ?? ACRYLIC_DEFAULTS.defaultFinish),
+    /* ⚠️ `size`, NOT `fit` — on a row `fit` already means TRACKING (how tightly the letters close
+       up, `faceFit` above), and one key meaning two things is how a studio ends up moving a number
+       nothing consumes. This is how big the piece is on the cake; it seeds the Size slider, which
+       the customer is then free to drag. */
+    fit: typeof acrylic.size === 'number' ? acrylic.size : ACRYLIC_DEFAULTS.fit,
   };
   if (offered) seed.acrylicFinishes = offered;
   for (const [from, to] of [['stroke', 'stroke'], ['weight', 'weight'], ['lineGap', 'lineGap'],
@@ -154,5 +154,9 @@ export function writingFromAcrylicRow(acrylic) {
 // never seeded from a row. An unknown key is dropped rather than rendered in a colour nobody chose.
 export function acrylicFinishes(writing = {}) {
   const offered = writing.acrylicFinishes?.filter(k => TOPPER_FINISHES[k]);
-  return offered?.length ? offered : Object.keys(TOPPER_FINISHES);
+  /* ⚠️ THE ACRYLIC ONES, not every row in the table. The table also holds metallic CARD now, and
+     "all of them" was a fine default only while acrylic was the only thing in it — the day card
+     stock arrived, a message that had never been seeded from a row would have started offering
+     "Gold card" as a finish for a piece of acrylic. Asked by medium, so neither list can drift. */
+  return offered?.length ? offered : finishesOf('acrylic');
 }

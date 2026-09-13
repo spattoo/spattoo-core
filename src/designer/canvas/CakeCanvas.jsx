@@ -18,6 +18,7 @@ import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
 import CreamPen from './CreamPen.jsx';
 import Garnishes from './Garnishes.jsx';
+import Toppers from './Toppers.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import { printExposure } from '../shared/printExposure.js';
 import SelectionBox from './SelectionBox.jsx';
@@ -1427,16 +1428,36 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
         obj.geometry.computeBoundingSphere();
       });
     }
+    /* ⚠️ THIS INSTANCE OWNS ITS MATERIALS, AND IT HAS TO TAKE THEM HERE. `scene.clone(true)` copies
+     * the object graph and SHARES the materials by reference — every instance of an element points
+     * at the one set of materials hanging off the cached GLB. The recolour effect below then writes
+     * `mat.color`, so with several instances on the cake they all end up whatever colour ran LAST.
+     *
+     * Reported on a scattered heart: three colours picked, sixty-five hearts, every one of them the
+     * last colour in the palette. The data was right the whole time — the palette row is derived
+     * from the instances and correctly showed three — which is what made it look like a colour bug
+     * rather than a sharing one.
+     *
+     * ⚠️ AND IT ONLY BIT SOME ELEMENTS, which is why it survived. The two branches below — the
+     * shared fondant grain and a config material finish — already clone per instance, and both say
+     * "never mutate the cached GLB" while doing it. An element with NEITHER never took ownership at
+     * all, so a plain recolourable GLB was the one shape of element that could not hold two colours.
+     * Ownership belongs here, before anything reads or writes a material, not as a side effect of
+     * two optional features.
+     *
+     * Cheap: a material clone is a property copy, and the textures inside it are still shared. */
     clone.traverse(obj => {
       if (!obj.isMesh) return;
       obj.raycast = () => {};
-      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-      mats.forEach(mat => { mat.depthWrite = true; mat.needsUpdate = true; });
+      const own = (m) => { const nm = m.clone(); nm.depthWrite = true; nm.needsUpdate = true; return nm; };
+      obj.material = Array.isArray(obj.material) ? obj.material.map(own) : own(obj.material);
     });
     // Shared fondant surface (config: useSharedFondantTexture): overlay the one shared grain normal
-    // map so any flat recolourable part reads as matte fondant under ANY colour. Clone geometry +
-    // material per instance (never mutate the cached GLB); box-UV the UV-less parts; keep metalness
-    // so metallic accents survive. Colour itself is still set later by the recolour effect.
+    // map so any flat recolourable part reads as matte fondant under ANY colour. Clone the geometry
+    // per instance and box-UV the UV-less parts; keep metalness so metallic accents survive. Colour
+    // itself is still set later by the recolour effect.
+    // ⚠️ The MATERIALS are already this instance's own — see the ownership note above — so this
+    // mutates them in place rather than cloning a second time.
     if (fondant) {
       const normal = getFondantNormalMap();
       clone.traverse(obj => {
@@ -1444,21 +1465,20 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
         obj.geometry = obj.geometry.clone();
         applyBoxUVs(obj.geometry, 0.18);   // grain size: world units per texture repeat (larger = coarser)
         const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
-        const next = mats.map(m => {
-          const nm = m.clone();
+        mats.forEach(nm => {
           nm.normalMap = normal;
           nm.normalScale = new THREE.Vector2(1.5, 1.5);   // grain strength (tune; was 0.5, too faint to see)
           nm.roughness = Math.max(nm.roughness ?? 0.5, 0.88);  // matte; metalness untouched
           nm.needsUpdate = true;
-          return nm;
         });
-        obj.material = Array.isArray(obj.material) ? next : next[0];
       });
     }
     // Config-driven material finish. A decoration carries either a full `surface` finish (resolved from
     // placement_config.material via the materials registry — roughness/sheen/clearcoat/anisotropy/…), OR the
     // legacy simple placement_config.roughness/metalness overrides. Either overrides the GLB's baked material.
-    // Clone per instance (never mutate the cached GLB); colour is still set by the recolour effect. A finish
+    // ⚠️ Still REPLACES rather than mutating, unlike the fondant branch above: a finish with a sheen
+    // needs a different material CLASS, and you cannot change the class of an object in place.
+    // Colour is still set by the recolour effect. A finish
     // with a sheen/clearcoat/anisotropy needs MeshPhysicalMaterial — a GLB usually loads as
     // MeshStandardMaterial (no such lobes), so we upgrade it (copying the standard visual fields, NOT .copy()
     // which mishandles the undefined physical fields on a Standard source). Anisotropy (the silk streak) needs
@@ -2356,6 +2376,7 @@ function CakeScene({
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
+  selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   orbitRef,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
@@ -2533,6 +2554,7 @@ function CakeScene({
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
           selectedGarnishId, onGarnishSelect, onGarnishMove,
+          selectedTopperId, onTopperSelect, onTopperMove,
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
@@ -2624,11 +2646,12 @@ const NOOP = () => {};
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
     selectedGarnishId = null, onGarnishSelect = NOOP, onGarnishMove = null,
+    selectedTopperId = null, onTopperSelect = NOOP, onTopperMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
@@ -2940,6 +2963,17 @@ function CakeContent({ config, scene, edit = null }) {
         onSelect={onGarnishSelect}
         onMove={onGarnishMove}
         onOrbitEnable={orbitEnableFor('__garnish__')}
+      />
+
+      {/* Card toppers: compositions from the topper composer, stood on the cake. Placed by the same
+          `garnishPlacement` a garnish uses — see Toppers.jsx. */}
+      <Toppers
+        toppers={toppers}
+        tierData={tierData}
+        selectedId={selectedTopperId}
+        onSelect={onTopperSelect}
+        onMove={onTopperMove}
+        onOrbitEnable={orbitEnableFor('__topper__')}
       />
 
       {bottomTier && texts.map(t => {
@@ -3368,6 +3402,7 @@ export default function CakeCanvas({
   selectedAgeId, onAgeSelect, onAgeMove,
   // Chocolate garnishes — placed pieces from the garnish studio.
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
+  selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   autoRotate = false,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
@@ -3526,6 +3561,26 @@ export default function CakeCanvas({
         onGarnishSelect={id => {
           // Guarded like the age topper: a drag that happens to end on the piece must not select it.
           if (!pointerRef.current.dragged) onGarnishSelect?.(id);
+        }}
+        /* ⚠️ THE CARD TOPPER'S THREE, WHICH WERE MISSING — so a topper on the cake could not be
+           dragged and could not be tapped. Everything else was wired: the designer passed them to
+           `CakeCanvas`, `CakeScene` put them into `edit`, `CakeContent` read them out and `Toppers`
+           spread its grab props. Only this one hop was never written, so `onTopperMove` arrived as
+           the `null` default and `onTopperSelect` as the NOOP.
+        
+           ⚠️ AND IT PRESENTED AS "NOTHING HAPPENS AT ALL", which is what made it hard to place: the
+           press DOES hit the topper, so the capture-phase gate stands orbit down and the cake does
+           not rotate either. A decoration that swallows the gesture and then does nothing with it
+           looks like a dead mesh, not like a missing prop. `hasMove: false` in the drag hook was
+           what named it.
+        
+           ⚠️ A GARNISH AND A TOPPER ARE THE SAME PROBLEM (they share `garnishPlacement`, the drag
+           hook and the resolve), so these lines sit against the garnish's and read the same, down to
+           the guard that stops a drag ending on the piece from selecting it. */
+        selectedTopperId={selectedTopperId}
+        onTopperMove={onTopperMove}
+        onTopperSelect={id => {
+          if (!pointerRef.current.dragged) onTopperSelect?.(id);
         }}
         onTextContentChange={onTextContentChange}
         textToolbar={textToolbar}

@@ -70,12 +70,43 @@ export const TOPPER_FINISHES = {
    * 23 of them, which includes the faux balls — the very things the scene-wide swap dulled. Scoping
    * it to the acrylic topper's own material is the remaining work; picking metals by a threshold
    * would repeat the same mistake one level down. */
-  gold:   { label: 'Mirror gold',   color: '#d9b642', metalness: 0.70, roughness: 0.28, envIntensity: 2.0 },
-  silver: { label: 'Mirror silver', color: '#d5dade', metalness: 0.75, roughness: 0.22, envIntensity: 2.0 },
-  rose:   { label: 'Rose gold',     color: '#e3ab9c', metalness: 0.70, roughness: 0.30, envIntensity: 2.0 },
-  black:  { label: 'Gloss black',   color: '#141414', metalness: 0.35, roughness: 0.06, envIntensity: 1.4 },
-  white:  { label: 'Gloss white',   color: '#f2f0ec', metalness: 0.10, roughness: 0.08, envIntensity: 1.0 },
+  gold:   { label: 'Mirror gold',   medium: 'acrylic', color: '#d9b642', metalness: 0.70, roughness: 0.28, envIntensity: 2.0 },
+  silver: { label: 'Mirror silver', medium: 'acrylic', color: '#d5dade', metalness: 0.75, roughness: 0.22, envIntensity: 2.0 },
+  rose:   { label: 'Rose gold',     medium: 'acrylic', color: '#e3ab9c', metalness: 0.70, roughness: 0.30, envIntensity: 2.0 },
+  black:  { label: 'Gloss black',   medium: 'acrylic', color: '#141414', metalness: 0.35, roughness: 0.06, envIntensity: 1.4 },
+  white:  { label: 'Gloss white',   medium: 'acrylic', color: '#f2f0ec', metalness: 0.10, roughness: 0.08, envIntensity: 1.0 },
+
+  /* ── Metallic CARD ────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ A DIFFERENT MATERIAL, NOT A SECOND OPINION ABOUT GOLD — which is why these are rows here and
+   * not a fudge of the numbers above. A card topper is cut from metallised CARD: a foil laminated
+   * onto board. It is satin, not a mirror. It has a sheen and no hard specular, and it never shows
+   * you the room. Mirror acrylic gold on a paper cut-out is the giveaway that a render was reusing
+   * whatever gold was to hand.
+   *
+   * ⚠️ AND THEY CARRY NO `metalness`/`roughness`/`envIntensity`, deliberately. Those describe a LIT
+   * material, and nothing renders a flat topper with one any more — see `topperMatcap.js`, which is
+   * where a card finish's look actually lives. Writing plausible numbers here would be writing down
+   * a model this element does not use, which is how the acrylic rows above came to carry three
+   * values that are inert.
+   *
+   * ⚠️ `medium` IS WHAT KEEPS THE TWO SETS APART, and it is the project's own third axis (migration
+   * 032: type is how it BEHAVES, category is what it IS, medium is what it is MADE OF). One table,
+   * asked by medium — so the acrylic picker cannot start offering card stock and the card studio
+   * cannot start offering mirror acrylic, without either of them branching on a name. */
+  card_gold:   { label: 'Gold card',      medium: 'card', color: '#C9A227' },
+  card_silver: { label: 'Silver card',    medium: 'card', color: '#BFC4C9' },
+  card_rose:   { label: 'Rose gold card', medium: 'card', color: '#C98E7E' },
 };
+
+/* The finishes made of one thing. ⚠️ ASKED BY MEDIUM RATHER THAN LISTED PER STUDIO: a studio that
+ * kept its own list would go stale the day an admin authored a finish, which is the whole point of
+ * the overlay below. Sorted by nothing — the table's own order is the order they are offered in. */
+export const isMetallicCard = (finish) => TOPPER_FINISHES[finish]?.medium === 'card';
+
+export function finishesOf(medium) {
+  return Object.keys(TOPPER_FINISHES).filter(k => TOPPER_FINISHES[k].medium === medium);
+}
 
 export const DEFAULT_TOPPER_FINISH = 'gold';
 

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperShapes, pieceCount, components, bridgeLoose } from './topperShape.js';
+import { topperShapes, pieceCount, components, bridgeLoose, offsetParts } from './topperShape.js';
 import greatVibes from './typefaces/great-vibes.json';
 
 // ── An acrylic topper has to be ONE piece ────────────────────────────────────────────────────────
@@ -605,5 +605,77 @@ describe('fit — letters that meet, instead of a bar bolted across the gap', ()
     const words = topperShapes(SCRIPT, 'HappyBirthday', { height: 1, tracking: -0.2, lines: 1 });
     expect(tight.width).toBeLessThan(loose.width);
     expect(tight.width).toBeGreaterThan(words.width);
+  });
+});
+
+/* ── The offset band, redrawn at a distance ────────────────────────────────────────────────────
+ *
+ * ⚠️ THE HISTORY IS THE POINT. `offsetParts` moved each VERTEX along its averaged normal, which is
+ * right on a straight run and wrong at every corner. Three patches — a correct mitre, a mitre limit,
+ * arcs on convex corners — each improved it and none fixed it, because a REFLEX corner cannot be
+ * fixed locally: the offset edges cross and the crossing has to be REMOVED, which is a union. On the
+ * digit "1" that left a wedge hanging off the bottom-left with no feature under it, reported three
+ * times.
+ *
+ * It is now drawn as the contour at a distance (offsetField.js), so these assert what that gives:
+ * ONE uniform width everywhere, corners included — which is what a compass draws and a blade cuts.
+ */
+describe('offsetParts — a band of one width', () => {
+  const distToSegment = (p, a, b) => {
+    const vx = b.x - a.x, vy = b.y - a.y;
+    const len2 = vx * vx + vy * vy;
+    const t = len2 ? Math.max(0, Math.min(1, ((p.x - a.x) * vx + (p.y - a.y) * vy) / len2)) : 0;
+    return Math.hypot(p.x - (a.x + vx * t), p.y - (a.y + vy * t));
+  };
+  const edges = (parts) => parts.flatMap(p => [p.outer, ...(p.holes ?? [])]
+    .flatMap(r => r.map((a, i) => [a, r[(i + 1) % r.length]])));
+  const widths = (out, src) => out.flatMap(p => p.outer)
+    .map(q => Math.min(...edges(src).map(([a, b]) => distToSegment(q, a, b))));
+
+  const square = [{ outer: [{ x: -1, y: -1 }, { x: 1, y: -1 }, { x: 1, y: 1 }, { x: -1, y: 1 }], holes: [] }];
+  // The L's inner corner is REFLEX — the case every vertex-wise attempt got wrong.
+  const ell = [{ outer: [{ x: 0, y: 0 }, { x: 2, y: 0 }, { x: 2, y: 1 }, { x: 1, y: 1 }, { x: 1, y: 2 }, { x: 0, y: 2 }], holes: [] }];
+
+  it.each([['square', square], ['L with a reflex corner', ell]])('grows a %s by one width all round', (_n, src) => {
+    const d = 0.2;
+    const out = offsetParts(src, d);
+    const w = widths(out, src);
+    expect(Math.min(...w)).toBeGreaterThan(d * 0.93);
+    expect(Math.max(...w)).toBeLessThan(d * 1.07);
+  });
+
+  it('rounds a corner rather than mitring or cutting it', () => {
+    const d = 0.2;
+    const [out] = offsetParts(square, d);
+    // Beyond the corner the band is an ARC about it: several points, each d from the corner itself.
+    const near = out.outer.filter(p => p.x > 1 && p.y > 1);
+    expect(near.length).toBeGreaterThan(2);
+    for (const p of near) expect(Math.hypot(p.x - 1, p.y - 1)).toBeCloseTo(d, 1);
+  });
+
+  it('keeps a hole, shrunk by the same width', () => {
+    const ring = [{ outer: square[0].outer,
+      holes: [[{ x: -0.5, y: -0.5 }, { x: -0.5, y: 0.5 }, { x: 0.5, y: 0.5 }, { x: 0.5, y: -0.5 }]] }];
+    const out = offsetParts(ring, 0.12);
+    expect(out[0].holes.length).toBe(1);
+  });
+
+  /* ⚠️ TWO SHAPES WHOSE BANDS MEET COME OUT AS ONE. That is what happens in card, and it is the
+   * whole reason a thick offset can join separate letters into a single cuttable piece — the old
+   * method left them overlapping instead, which is two pieces that cannot be cut. */
+  it('merges two shapes whose bands meet', () => {
+    const two = [
+      { outer: [{ x: -1.2, y: -0.5 }, { x: -0.3, y: -0.5 }, { x: -0.3, y: 0.5 }, { x: -1.2, y: 0.5 }], holes: [] },
+      { outer: [{ x: 0.3, y: -0.5 }, { x: 1.2, y: -0.5 }, { x: 1.2, y: 0.5 }, { x: 0.3, y: 0.5 }], holes: [] },
+    ];
+    expect(offsetParts(two, 0.4)).toHaveLength(1);
+    expect(offsetParts(two, 0.05)).toHaveLength(2);   // far apart, still two
+  });
+
+  it('grows outward, never inward, and leaves a zero offset alone', () => {
+    const [out] = offsetParts(square, 0.2);
+    expect(Math.max(...out.outer.map(p => p.x))).toBeGreaterThan(1);
+    expect(Math.min(...out.outer.map(p => p.x))).toBeLessThan(-1);
+    expect(offsetParts(square, 0)).toBe(square);
   });
 });

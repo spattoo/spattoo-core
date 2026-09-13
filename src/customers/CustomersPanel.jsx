@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
-import { dockedLeft } from '../shared/rail.js';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 function fmt(iso) {
@@ -451,18 +451,17 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
 
   return (
     <>
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 300, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif", background: '#F7F5F0',
-        boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',
-        animation: 'slideInRight 0.28s cubic-bezier(0.32,0.72,0,1)',
       }}>
         <style>{`@keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }`}</style>
 
-        {/* Top bar */}
+        {/* Top bar — reaches back under the rail (dockedBleed). */}
         <div style={{
-          height: 56, padding: '0 20px', background: '#fff',
+          height: 56, padding: '0 20px', ...dockedBleed(isMobile, 20), background: '#fff',
           borderBottom: '1.5px solid #E8E4DC', flexShrink: 0,
           display: 'flex', alignItems: 'center', gap: 14,
         }}>

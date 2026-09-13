@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { CakeDesigner } from '../src/index.js';
+import { STUBS as SETTINGS_STUBS } from './settingsStubs.js';
 
 // ── The spatula rail, on both surfaces ──────────────────────────────────────────────────────────
 // The rail is drawn twice — a vertical column on desktop, a bottom bar on a phone — and for a while
@@ -36,7 +37,11 @@ const overrides = status ? {
     },
   }),
 } : {};
-const apiClient = new Proxy(overrides, {
+// `?settings` seeds the store data SettingsPanel reads, so Store Settings opened from the real rail
+// shows real sections rather than an error — the frame beside the rail is what is being judged.
+const withSettings = new URLSearchParams(location.search).has('settings');
+const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides } : overrides, {
+  // Unstubbed methods still answer null: the designer reads some as arrays, so an empty OBJECT crashes it.
   get: (target, k) => target[k] ?? (async () => null),
 });
 

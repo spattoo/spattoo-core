@@ -473,6 +473,124 @@ stops at grey 152 on purpose: driving it to 128 needs a divisor of `[7.9, 4.2, 3
 measured and crushes rose by −50 and renders a dark drip indistinguishable from black. Stop where the
 measurement says stop, and write down why.
 
+## 17. A studio is lit like the cake it authors for — RULE IS ON, gated by `check:studio-scene`
+**Any screen previewing something that goes ON A CAKE mounts `<SceneLights />` and `<SceneEnv />`
+from `@spattoo/designer` — the designer's own rig — and builds no lighting of its own.** A studio is
+where colour, gloss and finish are decided. Decide them under a different light and you have tuned
+for a scene no customer will ever load.
+
+A hand-rolled `<ambientLight>` plus a `<directionalLight>` or two is NOT the same light, however
+close the numbers look. The card cutout studio ran ambient `0.72` with **no environment map at all**
+against production's `0.45` and an HDRI — sixty percent more fill and no image-based lighting — and
+nothing about the screen said so.
+
+⚠️ **THIS IS A GATE BECAUSE THE FAILURE IS SILENT.** Nothing throws, nothing logs, nothing looks
+broken; the preview simply renders a slightly different object from the cake. Core learned this at
+the harness level first (`check:harness-scene`, INVARIANT note there), where the same gap produced
+three parameter sweeps, a set of documented conclusions and a shipped scene-wide change that all
+described a scene nobody had ever seen. Of the harnesses mounting the real scene, exactly one was
+right before the gate existed; of admin's 28 canvas screens, six were.
+
+**Not every canvas is a cake.** A GLB inspector or a geometry calibrator is looking at a MODEL, and
+flat even light is the right choice there. It opts out by saying why, in the file:
+
+    // scene-rig: not cake output — <the reason>
+
+A sentence rather than a flag, because the next reader needs the reason and not the permission.
+
+⚠️ **MOUNTING THE RIG IS NOT YET THE CUSTOMER'S SCENE, and do not mistake one for the other.** Admin
+never calls `configureEnvMap`, so `SceneEnv` falls back to drei's INDOOR `apartment` preset while
+every deployed cake renders the self-hosted OUTDOOR map. `envProps` warns in the console and means
+it: **anything measured in admin today does not describe what a customer sees.** Matching the LAMPS
+is worth having on its own — it removes one of the two differences — but a reference light
+(INVARIANT #16) measured against the fallback is a guess wearing a measurement's clothes. Measure
+where the thing actually renders.
+
+**How it is enforced.** `npm run check:studio-scene` in spattoo-admin, also run by its pre-commit
+hook. 22 studios predate the gate and sit in an explicit, dated baseline inside the script — visible
+debt that only shrinks, never a silent waiver. The script reports any baselined file that has since
+been fixed so the entry can be deleted. Fixing one is usually three lines, but it CHANGES WHAT THE
+STUDIO LOOKS LIKE, so each wants doing deliberately with a look at the result rather than in a sweep.
+
+## 18. `envMapIntensity` DOES NOTHING, and a finish must not repaint the wall
+
+Two things found together on 2026-09-09, chasing three surfaces reported as "dull" — a foil flake, a
+whole cake wall, and an acrylic topper. They are separate faults with one thing in common: each was a
+number that looked set and was not being used.
+
+### 18a. `material.envMapIntensity` is discarded by three.js, everywhere in this app
+
+three.js overwrites the uniform whenever the material has no `envMap` of its own:
+
+```js
+// WebGLRenderer, per material, per frame
+if ((material.isMeshStandardMaterial || …) && material.envMap === null && scene.environment !== null)
+  m_uniforms.envMapIntensity.value = scene.environmentIntensity;
+```
+
+Nothing in the designer sets `material.envMap` — the light comes from `scene.environment` — so
+**every surface renders at `scene.environmentIntensity` (1.25) no matter what its material asks for.**
+Swept 0 → 30 on the real cake, on the tier wall and on the board: byte-identical frames. Setting
+`material.envMap = scene.environment` at runtime makes the value take effect immediately, and 1.25
+then reproduces the shipped pixels exactly — which is the proof, not the fix.
+
+⚠️ **The damage is not the dim gold; it is the CONCLUSIONS.** Gold leaf asks for `env: 4.5` precisely
+so shards reflect the room and has never got it. More costly, `ENVI=` sweeps were run over this knob
+during the topper-glare investigation and reported "already at its best value" — a knob that returns
+the same number at every setting reads exactly like one that is already optimal. That reading is part
+of what sent the search to the scene-wide HDRI swap, which was shipped and then reverted for turning
+the faux balls matte. **Do not sweep a parameter without first proving it reaches the render.** A
+harness that can read the live material back (`SceneProbe` in `dev/garnish-on-cake.jsx`) is how.
+
+⚠️ **And reviving it is not a fix.** Handing a material its own `envMap` re-lights everything sharing
+that material — the shards share the tier's material with the entire cake wall — and switches on a
+value nobody has ever calibrated, because it never applied. Tried: the shards went to near-white.
+
+### 18b. A finish adds particles; it must not change the colour of the cake
+
+Gold leaf and luster dust bake the wall into map form, and the base fill was the baker's RAW chosen
+colour while the un-finished wall goes through `tierAlbedo()` (INVARIANT #16). So **one flake
+anywhere on a tier repainted the whole tier**: measured up to **+48 per channel**, with a saturated
+lilac losing a third of its chroma (46 → 31). That is what "the cake looks dull" meant, and it had
+nothing to do with the flakes the report was about. `scripts/measure-finish-wall.mjs` renders the same
+cake with and without a finish and fails if the two disagree — worst channel now 2.
+
+The lesson is not "remember `tierAlbedo` here". It is that **`tierAlbedo` has to be applied wherever
+albedo is decided, and there are more of those than there look to be**: the solid colour, the
+gradient, the stripes, and now a baked finish map. A per-pixel replacement of the wall colour is a
+place the correction belongs, and each one was found separately, after shipping.
+
+### 18c. A flat face has one normal, so it renders one colour — and geometry does not rescue it
+
+An acrylic word is extruded `bevelEnabled: false`. A flat face has exactly one normal, so under a
+matcap it samples one texel and the entire word is a single flat colour — and turning the cake moves
+that one sample, which is why it changes brightness *all at once* instead of a highlight travelling
+along the strokes.
+
+The obvious cure is a chamfer, and **it was shipped and then reverted, because it does nothing.**
+Measured across seven turning angles, chamfered against flat: brightness spread 28.3 either way,
+contrast within the piece 0.595 against 0.605. A matcap is sampled by the normal in VIEW space, and a
+chamfer's normals turn with the piece — they slide across the same picture together with the face, so
+the geometry moved and nothing gained a light the face did not already have.
+
+What worked was the material alone: darkening the matcap's BODY, so the highlight has something to
+stand against. Gold 0.148 → 0.191, and `black` — never complained about — already read 0.368 for
+exactly that reason.
+
+⚠️ **AND THE ORIGINAL SYMPTOM SURVIVES.** The word still changes brightness as a block through a
+turn, 111 to 196. Only a surface that responds to the scene can fix that, which is what baking a
+matcap deliberately gave up. It is a trade, not a bug — do not "fix" it with more geometry.
+
+⚠️ **THE PROCESS FAILURE IS THE POINT OF THIS ENTRY.** The commit that shipped the chamfer claimed
+"neither half works alone" from TWO measurements — bevel with the old body, and bevel with the new
+one. The third cell, new body with no bevel, was never taken, and it is the best of the three. Two
+points do not establish an interaction; fill the grid before claiming one.
+
+⚠️ **Contrast, not brightness, is the measurement.** A mean cannot tell matte paint from mirror gold;
+the swing between a surface's brightest and darkest pixel is the reflection. Every number here is
+p95−p5 over the mean, against the gold board — a metal in the same frame nobody has ever called dull
+— which reads **0.463**.
+
 ## 8. Cake radius/size is NEVER fixed — geometry scales, never hardcode a world dimension
 The cake is not one size. Multiple tier sizes exist today and more sizes will be authored in future,
 so **the wall radius, height, and every derived world dimension are VARIABLES read at render time —
@@ -559,6 +677,8 @@ shared answer for everything except the renderer, which leaves exactly one copy 
 - [ ] No new `=== '<slug>'` / type branch in render or popup code (config instead).
 - [ ] No hardcoded world dimension that assumes a fixed cake radius/size — value is a fraction of the
       live `surfaceR`/`radius`/`height` (#8).
+- [ ] A studio previewing cake output mounts `<SceneLights />` + `<SceneEnv />` and lights nothing
+      itself (#17) — and any colour it was used to judge was judged under that rig.
 - [ ] No emojis in any UI text; controls use real styles (a button looks like a button) (#7).
 - [ ] No branch on zone (`rim`/`board`/…) to decide picker interaction, clickability, or which popup
       opens — the panel treats every element identically (#6).
