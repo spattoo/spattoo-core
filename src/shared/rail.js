@@ -40,6 +40,33 @@ export const RAIL_RIGHT = RAIL_CENTRE + RAIL.bladeHalf;
  */
 export const dockedLeft = (isMobile) => (isMobile ? 0 : RAIL_RIGHT);
 
+/** Where a docked page stacks, and the rail above it while one is open. */
+export const DOCKED_PAGE_Z = 300;
+export const RAIL_OVER_PAGE_Z = DOCKED_PAGE_Z + 1;
+
+/**
+ * The frame of a screen that REPLACES the workspace beside the rail — a page, not a layer over it.
+ *
+ * `dockedLeft` alone started the panel at the rail's painted edge, so everything the spatula does
+ * not cover — the gap beside its narrow handle, the strip under its cap, the header's bakery name —
+ * was the designer showing through. With a slide-in and a shadow on top, the result read as a popup
+ * floating over the app, yet it had a Back button and no close: neither a popup nor a page.
+ *
+ * So on desktop the page's ground runs to the viewport's left edge and its CONTENT is padded clear
+ * of the rail; the host lifts the rail to RAIL_OVER_PAGE_Z so it sits on that ground and stays
+ * usable. No slide-in and no shadow — nothing is on top of anything. On a phone the page is the
+ * whole screen already, so it keeps its slide-in as a normal page transition.
+ *
+ * Needs a `slideInRight` keyframe in scope on a phone. Style the ground (background) yourself.
+ */
+export const dockedPage = (isMobile) => ({
+  position: 'fixed', top: 0, right: 0, bottom: 0, left: 0,
+  zIndex: DOCKED_PAGE_Z,
+  ...(isMobile
+    ? { animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)' }
+    : { paddingLeft: RAIL_RIGHT }),
+});
+
 /**
  * Left edge for a flyout that should read as emerging from BEHIND the rail — the submenu that
  * slides out of it, not a panel parked next to it. Deliberately the centre line, so the rail

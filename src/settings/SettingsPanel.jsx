@@ -6,7 +6,7 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
-import { dockedLeft } from '../shared/rail.js';
+import { dockedPage } from '../shared/rail.js';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -282,13 +282,12 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         @keyframes spin { to { transform: rotate(360deg) } }
       `}</style>
 
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 300, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',
-        boxShadow: '-4px 0 40px rgba(0,0,0,0.15)',
-        animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)',
       }}>
 
         {/* Header */}

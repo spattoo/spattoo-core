@@ -19,7 +19,7 @@ import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRa
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
-import { RAIL, RAIL_FLYOUT_LEFT } from '../shared/rail.js';
+import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
@@ -2794,7 +2794,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       id: 'settings', label: 'Settings', icon: <GearIcon size={20} />,
       items: [
         ...(hasCap('store:manage') ? [
-          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true) },
+          // `active`: this destination is open, so the rail lights its menu — the rail says where you are.
+          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true), active: settingsPanelOpen },
           // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
           { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true),
             badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
@@ -2818,7 +2819,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -2856,7 +2857,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   // Whether it reads as the current destination. Also shared: the two copies of this had drifted
   // too, and a lit-up item is a smaller bug than a missing one only because it is visible.
-  const railItemActive = (id, menu) => (menu ? navMenuId === id
+  const railItemActive = (id, menu) => (menu ? (navMenuId === id || menu.some(i => i.active))
     : id === 'elements'  ? elementsOpen
     : id === 'uploads'   ? uploadsOpen
     : id === 'templates' ? templatesOpen
@@ -8841,7 +8842,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
 
         {/* ── Left column: sidebar (the logo moved to the desktop header) ── */}
-        {!isMobile && <div style={s.leftCol}>
+        {/* Lifted over a docked page while one is open, so the rail sits ON that page — see dockedPage. */}
+        {!isMobile && <div style={settingsPanelOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
         <div style={s.sidebar}>
@@ -8908,6 +8910,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {canManageStore && toolMenus.map(menu => {
               const isChefs = menu.id === 'chefsdesk';
               const open = isChefs ? chefsDeskOpen : settingsOpen;
+              const lit  = open || menu.items.some(i => i.active);
               return (
                 <div key={menu.id} style={{ position: 'relative' }} ref={isChefs ? chefsDeskRef : settingsRef}>
                   <button style={s.navItem}
@@ -8916,8 +8919,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       else { setSettingsOpen(o => !o); setChefsDeskOpen(false); }
                       setProfileOpen(false);
                     }}>
-                    <span style={{ ...s.sidebarBtn, ...(open ? s.sidebarBtnActive : {}) }}>{menu.icon}</span>
-                    <span style={{ ...s.navLabel, ...(open ? { color: '#fff' } : {}) }}>{menu.label}</span>
+                    <span style={{ ...s.sidebarBtn, ...(lit ? s.sidebarBtnActive : {}) }}>{menu.icon}</span>
+                    <span style={{ ...s.navLabel, ...(lit ? { color: '#fff' } : {}) }}>{menu.label}</span>
                   </button>
                   {open && (
                     <RailMenu style={{ top: 'auto', bottom: 0 }}>
