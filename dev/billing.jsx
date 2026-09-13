@@ -14,7 +14,7 @@ const status = q.get('status') || 'active';
 const PLANS = [
   { id: 1, name: 'spark', display_name: 'Spark', tagline: 'Everything, free for 30 days', sort_order: 0, price_monthly: 0,      price_yearly: 0,       feature_bullets: ['Design canvas'] },
   { id: 2, name: 'flame', display_name: 'Flame', tagline: 'Less than the price of one cake', sort_order: 1, price_monthly: 99900,  price_yearly: 999900,  feature_bullets: ['Public storefront'] },
-  { id: 3, name: 'blaze', display_name: 'Blaze', tagline: 'For a bakery with a queue', sort_order: 2, price_monthly: 249900, price_yearly: 2499900, feature_bullets: ['Edible Print Studio'] },
+  { id: 3, name: 'blaze', display_name: 'Blaze', tagline: 'For a bakery with a queue', sort_order: 2, is_popular: true, price_monthly: 249900, price_yearly: 2499900, feature_bullets: ['Edible Print Studio'] },
 ];
 
 const apiClient = new Proxy({

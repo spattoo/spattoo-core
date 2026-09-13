@@ -537,14 +537,17 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   // alongside it. A second, parallel value that the buttons use and the charge does not is exactly
   // how a screen comes to bill for something other than what it highlighted.
   //
-  // First OFFERED plan, not a hardcoded 'flame': the list arrives ordered by sort_order, so this
-  // stays right if the cheapest paid tier is ever renamed, repriced or reordered.
+  // The plan flagged is_popular in the catalogue, not a hardcoded 'blaze': it is the plan we want a
+  // baker without a paid plan to land on, and the badge and the default must never disagree (they
+  // did — "Most Popular" sat on Blaze while the CTA read "Upgrade to Flame"). An admin moving the
+  // flag moves the default. With no flag set, the first OFFERED plan by sort_order.
   useEffect(() => {
     if (!plans.length) return;
+    const offered = plans.filter(pl => pl.name !== 'spark');
     setSelectedTier(cur => (
-      plans.some(pl => pl.name === cur && pl.name !== 'spark')
+      offered.some(pl => pl.name === cur)
         ? cur
-        : plans.find(pl => pl.name !== 'spark')?.name ?? cur
+        : (offered.find(pl => pl.is_popular) ?? offered[0])?.name ?? cur
     ));
   }, [plans]);
 
