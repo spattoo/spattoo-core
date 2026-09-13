@@ -52,20 +52,32 @@ export const RAIL_OVER_PAGE_Z = DOCKED_PAGE_Z + 1;
  * was the designer showing through. With a slide-in and a shadow on top, the result read as a popup
  * floating over the app, yet it had a Back button and no close: neither a popup nor a page.
  *
- * So on desktop the page's ground runs to the viewport's left edge and its CONTENT is padded clear
- * of the rail; the host lifts the rail to RAIL_OVER_PAGE_Z so it sits on that ground and stays
- * usable. No slide-in and no shadow — nothing is on top of anything. On a phone the page is the
- * whole screen already, so it keeps its slide-in as a normal page transition.
+ * So on desktop the page spans the whole window — its ground AND its header band run to the
+ * viewport's left edge, behind the rail — and each band pads its own CONTENT by `dockedInset`. The
+ * host lifts the rail to RAIL_OVER_PAGE_Z and gives the spatula RAIL_LIFTED_SHADOW, so the menu
+ * visibly floats ABOVE the window rather than sitting beside a card. No slide-in and no page shadow.
+ * On a phone the page is the whole screen already, so it keeps its slide-in as a page transition.
+ *
+ * Padding the page itself would stop the header band at the rail's edge, which is exactly what made
+ * it read as a separate layer — hence the inset per band.
  *
  * Needs a `slideInRight` keyframe in scope on a phone. Style the ground (background) yourself.
  */
 export const dockedPage = (isMobile) => ({
   position: 'fixed', top: 0, right: 0, bottom: 0, left: 0,
   zIndex: DOCKED_PAGE_Z,
-  ...(isMobile
-    ? { animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)' }
-    : { paddingLeft: RAIL_RIGHT }),
+  ...(isMobile ? { animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)' } : {}),
 });
+
+/** How far a docked page's bands indent their content, to clear the rail floating over them. */
+export const dockedInset = (isMobile) => (isMobile ? 0 : RAIL_RIGHT);
+
+/**
+ * The spatula's shadow while it floats over a docked page. A `filter` on the SVG alone, never on the
+ * rail's column: a filter makes its element the containing block for `position: fixed` descendants,
+ * and the rail's submenus are fixed (RailSubmenu's escapeClip) — they would land in the wrong place.
+ */
+export const RAIL_LIFTED_SHADOW = 'drop-shadow(6px 0 16px rgba(0,0,0,0.28))';
 
 /**
  * Left edge for a flyout that should read as emerging from BEHIND the rail — the submenu that

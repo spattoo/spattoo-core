@@ -6,7 +6,8 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
-import { dockedPage } from '../shared/rail.js';
+import { dockedPage, dockedInset } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -290,26 +291,25 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         background: '#F4F8F5',
       }}>
 
-        {/* Header */}
+        {/* Header — the band runs behind the rail; only its content is inset (dockedInset). */}
         <div style={{
-          padding: isMobile ? '16px 20px' : '20px 28px',
+          padding: isMobile ? '16px 20px' : `20px 28px 20px ${28 + dockedInset(isMobile)}px`,
           background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <button onClick={onClose} style={{
-            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-            background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 10, padding: '7px 14px', cursor: 'pointer', fontFamily: 'inherit',
-            fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)',
-          }}>← Back</button>
+          {/* How this page is left — the rule in shared/panelTopBar.jsx, shared with Orders and
+              Customers. Desktop: a ✕ at the far right; there is nothing "back" beside a rail that
+              is always on screen. Phone: the arrow, the normal way out of a full-screen page. */}
+          {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Settings</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Manage your store preferences</div>
           </div>
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : `24px 24px 24px ${24 + dockedInset(isMobile)}px`, display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 60, color: '#9BB5A2', fontSize: 14 }}>

@@ -19,7 +19,7 @@ import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRa
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { CHROME_STOPS } from '../shared/chrome.js';
-import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z } from '../shared/rail.js';
+import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
@@ -1231,7 +1231,8 @@ function spatulaFramePath({
 // Absolutely-positioned SVG that fills the sidebar (measured) and draws the
 // spatula behind the nav. The blade is wider than the handle, so it bulges out
 // (overflow visible, pointer-events none so it never blocks the canvas).
-function SpatulaFrame() {
+// `lifted`: the rail is floating over a docked page, so the spatula casts a shadow onto it.
+function SpatulaFrame({ lifted = false }) {
   const ref = useRef(null);
   const [h, setH] = useState(720);
   useLayoutEffect(() => {
@@ -1275,7 +1276,8 @@ function SpatulaFrame() {
   return (
     <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
       <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`}
-        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible' }}>
+        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible',
+                 filter: lifted ? RAIL_LIFTED_SHADOW : 'none', transition: 'filter 0.2s' }}>
         <defs>
           {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
               and "match the spatula" only holds if both read from one definition. */}
@@ -8847,7 +8849,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Sidebar ── */}
         <div style={s.sidebar}>
-          <SpatulaFrame />
+          <SpatulaFrame lifted={settingsPanelOpen} />
           <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
             {railItems.map(({ id, label, icon, menu }) => {
