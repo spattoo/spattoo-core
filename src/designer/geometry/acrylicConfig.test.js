@@ -4,6 +4,7 @@ import {
   NOMINAL_MM_PER_UNIT,
 } from './acrylicConfig.js';
 import { faceFit } from './topperFaces.js';
+import { WRITING_FIT } from '../constants.js';
 
 /* ── The studio has to actually reach the cake ───────────────────────────────────────────────────
  *
@@ -72,9 +73,24 @@ describe('an authored row reaches the renderer', () => {
     const { tracking } = writingFromAcrylicRow({ face: 'pinyon_script' });
     expect(tracking).toBe(faceFit('pinyon_script'));
   });
+
+  /* ⚠️ `size`, and the row's own `fit` must not be mistaken for it — on a row `fit` already means
+     TRACKING, so a seed that read `acrylic.fit` would silently set the piece's SIZE from how
+     tightly its letters close up. */
+  it('seeds how big the piece is from the row, and not from its tracking', () => {
+    expect(writingFromAcrylicRow({ ...ROW, size: 0.55 }).fit).toBe(0.55);
+    expect(writingFromAcrylicRow({ ...ROW }).fit).toBe(ACRYLIC_DEFAULTS.fit);
+  });
 });
 
 describe('what happens when nobody authored anything', () => {
+  /* A cut piece is SMALL. A message spans the cake top because that is what writing does; a topper
+     that spans it is a fence, which is what shipped until this number existed. */
+  it('starts an acrylic piece at well under half the surface', () => {
+    expect(ACRYLIC_DEFAULTS.fit).toBe(WRITING_FIT.acrylic);
+    expect(ACRYLIC_DEFAULTS.fit).toBeLessThan(WRITING_FIT.cream);
+  });
+
   it('uses the seed, and the seed is the only place a number lives', () => {
     const cfg = acrylicCfg({ font: 'great_vibes' }, { standing: true });
     expect(cfg.barRatio).toBe(ACRYLIC_DEFAULTS.barRatio);

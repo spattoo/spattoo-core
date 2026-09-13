@@ -28,7 +28,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND } from './constants.js';
+import { DESIGNER_GROUND, WRITING_FIT, writingFit } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
@@ -512,9 +512,14 @@ function writingStyleSwitch(w, style) {
      * stay on the menu because a monoline topper is a real product — just not what "keep my font"
      * should mean when the two are barely the same letterform. */
     const font = TOPPER_FACES[w.font]?.kind === 'outline' ? w.font : DEFAULT_TOPPER_FACE;
-    return { style, font, tracking: faceFit(font), ...surface };
+    /* ⚠️ AND THE SIZE MOVES WITH IT, for the same reason the font does. A cream message carries 80%
+     * because that is what a message is seeded with, not because anyone chose it — and 80% of a cake
+     * top cut out of acrylic is a fence, not a topper. Carrying the other material's untouched
+     * default across the switch is exactly what made every message land on Allure. */
+    return { style, font, tracking: faceFit(font), fit: WRITING_FIT.acrylic, ...surface };
   }
-  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT, ...surface };
+  return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT,
+           fit: WRITING_FIT.cream, ...surface };
 }
 
 // Texts colour picker — the wheel plus a "Metallic" toggle that turns the chosen
@@ -7499,7 +7504,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {w.style !== 'acrylic' && (
           <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
         )}
-        <PenSlider label="Size"      value={w.fit ?? 0.8}        min={0.3}   max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
+        <PenSlider label="Size"      value={w.fit ?? writingFit(w.style)} min={0.3} max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
         {/* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at `tracking`.
             On acrylic the equivalent number is negative by design: the letters have to overlap so the
             word cuts as one piece. It is calibrated PER FACE, by eye, and topperFaces.js records what

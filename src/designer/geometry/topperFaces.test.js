@@ -14,6 +14,15 @@ import { topperShapes } from './topperShape.js';
  * really does load a distinct face.
  */
 describe('the face registry', () => {
+  /* The default is a DEFAULT, not the head of the list — it is what an unauthored row and an
+     unknown key both land on, so it is the face most cakes wear without anyone choosing it. Great
+     Vibes, which is first, is the heaviest script here and reads as a slab at a topper's size. */
+  it('defaults to a face that is on the list but is not simply the first one', () => {
+    const keys = Object.keys(TOPPER_FACES);
+    expect(keys).toContain(DEFAULT_TOPPER_FACE);
+    expect(DEFAULT_TOPPER_FACE).not.toBe(keys[0]);
+  });
+
   const sample = async (key) => {
     const font = await loadTopperFace(key);
     return topperShapes(font, 'Abc', { height: 1, lines: 1, stroke: 0.12, tracking: faceFit(key) });

@@ -3,7 +3,7 @@ import { faceFit, TOPPER_FACES, DEFAULT_TOPPER_FACE } from './topperFaces.js';
  * imports the cream fonts — so anything that only wanted to know what an inch measures had to pull a
  * font table in with it, and the piped cream wall (which sizes a nozzle in inches) could not. It is
  * re-exported so every existing caller is untouched. */
-import { NOMINAL_MM_PER_UNIT } from '../constants.js';
+import { NOMINAL_MM_PER_UNIT, WRITING_FIT } from '../constants.js';
 export { NOMINAL_MM_PER_UNIT };
 import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, finishesOf } from './topperFinishes.js';
 
@@ -25,6 +25,10 @@ import { TOPPER_FINISHES, DEFAULT_TOPPER_FINISH, finishesOf } from './topperFini
 
 export const ACRYLIC_DEFAULTS = Object.freeze({
   face: DEFAULT_TOPPER_FACE,
+  /* How much of the surface the piece spans before anybody drags the Size slider. The number lives
+     in constants.js so `surface.js` can read it without importing a font table — see WRITING_FIT
+     there — but it is authored HERE, because this is where an admin's acrylic row is applied. */
+  fit: WRITING_FIT.acrylic,
   stroke: 0.12,           // centreline faces only — about a tenth of the letter, as the market sets it
   weight: 0,              // outline faces — the one lever on a hairline
   minDetail: 1.0,         // mm the cutter will hold
@@ -117,6 +121,11 @@ export function writingFromAcrylicRow(acrylic) {
     acrylicFinish: offered?.includes(acrylic.defaultFinish)
       ? acrylic.defaultFinish
       : (offered?.[0] ?? ACRYLIC_DEFAULTS.defaultFinish),
+    /* ⚠️ `size`, NOT `fit` — on a row `fit` already means TRACKING (how tightly the letters close
+       up, `faceFit` above), and one key meaning two things is how a studio ends up moving a number
+       nothing consumes. This is how big the piece is on the cake; it seeds the Size slider, which
+       the customer is then free to drag. */
+    fit: typeof acrylic.size === 'number' ? acrylic.size : ACRYLIC_DEFAULTS.fit,
   };
   if (offered) seed.acrylicFinishes = offered;
   for (const [from, to] of [['stroke', 'stroke'], ['weight', 'weight'], ['lineGap', 'lineGap'],

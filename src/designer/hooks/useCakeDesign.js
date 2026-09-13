@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react';
-import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES } from '../constants.js';
+import { TIER_RADII, BOTTOM_BASE, BOTTOM_H, TIER_HEIGHT_STEP, ZONES, PLACEMENT_MODES, WRITING_FIT } from '../constants.js';
 import { GARNISH_DEFAULTS, fanPlacements } from '../geometry/garnishPlacement.js';
 /* ⚠️ A TOPPER IS PLACED THE WAY A GARNISH IS, so it takes the same defaults rather than a copy of
  * them. Both are a piece made off the cake and stood on it: an angle round the cake, a fraction out
@@ -221,7 +221,7 @@ const DEFAULT_WRITING = {
   style: 'cream',            // 'cream' | 'acrylic'
   acrylicFinish: 'gold',     // acrylic only: a key into TOPPER_FINISHES, not a colour
   text: '', font: 'ems_allure', color: '#ffffff',
-  thickness: 0.03, fit: 0.8, softness: 0.7,
+  thickness: 0.03, fit: WRITING_FIT.cream, softness: 0.7,
   curve: 0, lineSpacing: 1.4,
   surface: 'top',            // 'top' | 'side' | 'board'
   yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,

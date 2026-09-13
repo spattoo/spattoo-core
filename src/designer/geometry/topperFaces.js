@@ -103,7 +103,12 @@ const resolveFace = (key) => (TOPPER_FACES[key] ? key : DEFAULT_TOPPER_FACE);
 // The fit a face wants — the default face's, for a key that is no longer on the list.
 export const faceFit = (key) => TOPPER_FACES[resolveFace(key)].fit ?? 0;
 
-export const DEFAULT_TOPPER_FACE = 'great_vibes';
+/* ⚠️ PARISIENNE, not the first row. Great Vibes is the heaviest script on the list — at a topper's
+ * size its strokes read as a slab and the flourishes close up — and being first it was also what an
+ * unknown key fell back to, so it was the face most cakes wore without anybody choosing it.
+ * Parisienne is the finer hand, which is what a cut topper actually looks like. It is a DEFAULT, not
+ * an order: every face above stays on the picker. */
+export const DEFAULT_TOPPER_FACE = 'parisienne';
 
 // The outline JSONs, keyed to match. Static so the library build resolves them; see the bundle note.
 const OUTLINE_JSON = {

@@ -113,6 +113,24 @@ CAT_ELEMENTS.push({
   default_color: '#D94F6E', sort_order: 9,
 });
 
+/* An ACRYLIC TOPPER row — `procedural: 'writing'` plus the `placement_config.acrylic` the Acrylic
+ * Topper Studio writes. Without one, the only way to reach the acrylic writing card here was to add a
+ * cream message and switch Look, which is a DIFFERENT path: a row-seeded message carries `lockLook`,
+ * so the Look switch is hidden and the card is the one a customer actually meets.
+ *
+ * Deliberately authors nothing but the words. Face, size, sheet, bar and legs are left unsaid so
+ * this row shows what ACRYLIC_DEFAULTS seed — which is the thing worth looking at.
+ */
+CAT_ELEMENTS.push({
+  id: 'e10', name: 'Acrylic topper', description: 'words cut from mirror acrylic',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#d9c58a'), thumbnail_url: CAT_THUMB('#d9c58a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, delete: true, resize: true },
+  placement_config: { procedural: 'writing', acrylic: { text: { default: 'Happy Birthday' } } },
+  sort_order: 8,
+});
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.
