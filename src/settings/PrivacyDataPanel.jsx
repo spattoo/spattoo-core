@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Section, Field, Toggle } from './controls.jsx';
 
 // Privacy & Data — the DPDP rights surface (Layer 3). Three blocks, all config-driven:
@@ -167,10 +167,15 @@ export function PrivacyDataSection({ apiClient }) {
         {history.length === 0 ? (
           <span style={{ fontSize: 13, color: '#888' }}>No agreements recorded yet.</span>
         ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          // ONE grid, every cell a direct child, so each column lines up down the list. As a flex row per
+          // event with space-between, "Accepted" sat wherever the gap after that row's doc name put it —
+          // "PRIVACY v1.1" pushed it right of "TOS v1.1". Document · status · date (right-aligned). The document
+          // column may shrink and wrap (a long version drops under its name) so a phone never pushes the
+          // date out of the card.
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, max-content) max-content 1fr', columnGap: 12, rowGap: 10, alignItems: 'center', fontSize: 13 }}>
             {history.map((e, i) => (
-              <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, fontSize: 13 }}>
-                <span style={{ fontWeight: 700, color: '#1a1a1a', textTransform: 'uppercase' }}>
+              <Fragment key={i}>
+                <span style={{ fontWeight: 700, color: '#1a1a1a', textTransform: 'uppercase', minWidth: 0 }}>
                   {e.docKey}{' '}
                   {/* The version IS the download. A baker looking at "v1.0" and wanting to read
                       v1.0 should not have to find a separate control, and this keeps the row the
@@ -180,7 +185,7 @@ export function PrivacyDataSection({ apiClient }) {
                     disabled={busyDoc === `${e.docKey}@${e.version}`}
                     title={`Download the ${e.docKey} v${e.version} text you agreed to`}
                     style={{ border: 'none', background: 'none', padding: 0, font: 'inherit',
-                             color: GREEN, fontWeight: 600, textTransform: 'none',
+                             color: GREEN, fontWeight: 600, textTransform: 'none', whiteSpace: 'nowrap',
                              textDecoration: 'underline', cursor: 'pointer' }}>
                     v{e.version}{busyDoc === `${e.docKey}@${e.version}` ? '…' : ' ↓'}
                   </button>
@@ -188,8 +193,8 @@ export function PrivacyDataSection({ apiClient }) {
                 <span style={{ color: e.action === 'withdrawn' ? DANGER : GREEN, fontWeight: 700 }}>
                   {e.action === 'withdrawn' ? 'Withdrawn' : 'Accepted'}
                 </span>
-                <span style={{ color: '#9CA3AF', fontWeight: 600 }}>{fmtDate(e.at)}</span>
-              </div>
+                <span style={{ color: '#9CA3AF', fontWeight: 600, justifySelf: 'end', whiteSpace: 'nowrap' }}>{fmtDate(e.at)}</span>
+              </Fragment>
             ))}
           </div>
         )}

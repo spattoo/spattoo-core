@@ -19,9 +19,13 @@ export const STUBS = {
   // Two accepted agreements, so the "Your agreements" list and its download button are both live.
   // With none the button is disabled and the section reads "No agreements recorded yet" — which is
   // one of the two things "I clicked it and nothing happened" can mean.
+  // Four events, newest first, with doc names of different lengths — "PRIVACY" beside "TOS" is what
+  // exposed the unaligned status column, so the sample has to contain both.
   fetchConsentHistory: async () => ({ events: [
-    { docKey: 'tos',     version: '2026-08-01', action: 'accepted', at: '2026-08-01T09:12:00Z' },
-    { docKey: 'privacy', version: '2026-08-01', action: 'accepted', at: '2026-08-01T09:12:00Z' },
+    { docKey: 'privacy', version: '1.1', action: 'accepted', at: '2026-09-10T09:12:00Z' },
+    { docKey: 'tos',     version: '1.1', action: 'accepted', at: '2026-09-10T09:12:00Z' },
+    { docKey: 'tos',     version: '1.0', action: 'accepted', at: '2026-08-17T09:12:00Z' },
+    { docKey: 'privacy', version: '1.0', action: 'accepted', at: '2026-08-17T09:12:00Z' },
   ] }),
   fetchLegalCurrent:   async () => ({ documents: [] }),
   fetchDeletionStatus: async () => null,
