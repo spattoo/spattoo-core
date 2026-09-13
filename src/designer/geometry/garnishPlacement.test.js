@@ -1,6 +1,8 @@
 import { describe, it, expect } from 'vitest';
 import { movableContract } from './movableContract.js';
-import { GARNISH_DEFAULTS, garnishPlacement, garnishDragTo, clampRadius, fanPlacements } from './garnishPlacement.js';
+import { GARNISH_DEFAULTS, garnishPlacement, garnishDragTo, clampRadius, fanPlacements,
+  garnishPlacementOptions, garnishSeat, garnishWhere } from './garnishPlacement.js';
+import { sideSeatOffset } from '../placement.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
 const PIECE = { w: 0.6, h: 0.5 };
@@ -76,7 +78,8 @@ describe('where a garnish sits', () => {
  * take hold of — a garnish IS a placed object, so it is dragged and must answer for the six ways the
  * rainbow and the cloud broke in one week. */
 movableContract('chocolate_garnish', {
-  positionKeys: ['theta', 'radius', 'yaw'],
+  // `height` is where a piece sits UP A WALL — a position, like `radius` is on the top.
+  positionKeys: ['theta', 'radius', 'height', 'yaw'],
   pointsOf: (p, cake) => garnishPlacement(p, cake, PIECE).anchors,
   cases: [
     {
@@ -97,6 +100,17 @@ movableContract('chocolate_garnish', {
       freedoms: [
         { label: 'round the cake', drag: (p, c, u) => garnishDragTo(p, c, u, 0.5),
           targets: [0, 0.2, 0.4, 0.6, 0.8] },
+      ],
+    },
+    {
+      label: 'pressed flat on the side wall',
+      cake: { radius: 1.2, topY: 1.55, boardY: 0.1, baseY: 0.55, height: 1.0 },
+      params: { ...GARNISH_DEFAULTS, zone: 'side', mode: 'lie' },
+      freedoms: [
+        { label: 'round the tier', drag: (p, c, u) => garnishDragTo(p, c, u, 0.5),
+          targets: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875] },
+        { label: 'up the wall', drag: (p, c, v) => garnishDragTo(p, c, 0.25, v),
+          targets: [0.3, 0.4, 0.5, 0.6, 0.7] },
       ],
     },
   ],
@@ -299,3 +313,131 @@ describe('an explicit sink — a piece that carries its own bury', () => {
     expect(stood({ w: 1, h: 1, sink: 0 }).position[1]).toBeCloseTo(cake.topY, 6);
   });
 })
+
+// ── On the side wall ─────────────────────────────────────────────────────────────────────────────
+const WALL = { radius: 1.2, topY: 1.55, boardY: 0.1, baseY: 0.55, height: 1.0 };
+const SIDE = { ...GARNISH_DEFAULTS, zone: 'side', mode: 'lie' };
+
+describe('a garnish pressed flat on the side of a tier', () => {
+  /* ⚠️ IT FACES OUT OF THE CAKE, whatever angle it sits at. On the top, facing the front was a choice;
+   * on a wall anything but outward sticks the piece INTO the cake. Checked as a direction, not as a
+   * difference between two placements — a relative check cannot see an absolute error. */
+  it('faces straight out of the wall at every angle', () => {
+    for (const theta of [0, 0.8, Math.PI / 2, 2.7, -1.2]) {
+      const { rotation, position } = garnishPlacement({ ...SIDE, theta }, WALL, PIECE);
+      const face = [Math.sin(rotation[1]), Math.cos(rotation[1])];       // +Z after the Y-turn
+      const out = [position[0], position[2]].map(v => v / Math.hypot(position[0], position[2]));
+      expect(face[0]).toBeCloseTo(out[0], 6);
+      expect(face[1]).toBeCloseTo(out[1], 6);
+    }
+  });
+
+  // Its height is a fraction of the wall, so halfway up stays halfway up on a taller tier.
+  it('sits at its height as a fraction of the wall', () => {
+    const p = garnishPlacement({ ...SIDE, height: 0.5 }, WALL, PIECE);
+    expect(p.position[1]).toBeCloseTo(WALL.baseY + 0.5 * WALL.height, 6);
+    const tall = garnishPlacement({ ...SIDE, height: 0.5 }, { ...WALL, height: 2 }, PIECE);
+    expect(tall.position[1]).toBeCloseTo(WALL.baseY + 1, 6);
+  });
+
+  // The whole piece stays on the wall: not into the board, not over the rim.
+  it('keeps the whole piece between the base and the rim', () => {
+    const low = garnishPlacement({ ...SIDE, height: 0 }, WALL, PIECE);
+    const high = garnishPlacement({ ...SIDE, height: 1 }, WALL, PIECE);
+    expect(low.position[1] - PIECE.h / 2).toBeCloseTo(WALL.baseY, 6);
+    expect(high.position[1] + PIECE.h / 2).toBeCloseTo(WALL.baseY + WALL.height, 6);
+  });
+
+  /* ⚠️ SEATED BY ITS BACK, and over any piping in its way. Its middle sits the wall gap plus half its
+   * thickness out, and whatever the tier's piping needs on top — the same question every side
+   * decoration asks (INVARIANTS #3b). */
+  it('rests its back on the wall and rides over piping', () => {
+    const piece = { ...PIECE, d: 0.02 };
+    const bare = garnishPlacement(SIDE, WALL, piece);
+    const out = p => Math.hypot(p.position[0], p.position[2]);
+    expect(out(bare)).toBeCloseTo(WALL.radius + sideSeatOffset(WALL.radius) + 0.01, 6);
+    const piped = garnishPlacement(SIDE, { ...WALL, clearance: () => 0.08 }, piece);
+    expect(out(piped) - out(bare)).toBeCloseTo(0.08, 6);
+  });
+
+  // A round wall bends the piece at the radius its middle sits at; a flat face does not bend it.
+  it('bends to a round wall and lies flat on a square one', () => {
+    const round = garnishPlacement(SIDE, WALL, PIECE);
+    expect(round.wall.radius).toBeCloseTo(Math.hypot(round.position[0], round.position[2]), 6);
+    const square = { ...WALL, shape: { kind: 'rect', halfW: 1.1, halfD: 0.8, cornerR: 0.05 } };
+    const flat = garnishPlacement({ ...SIDE, theta: 0 }, square, PIECE);
+    expect(flat.wall.radius).toBe(0);
+    expect(flat.position[0]).toBeGreaterThan(1.1);                // on the +X face, just proud of it
+    expect(flat.position[2]).toBeCloseTo(0, 3);
+    expect(Math.sin(flat.rotation[1])).toBeCloseTo(1, 3);         // facing +X, out of that face
+  });
+
+  // Turn spins it within the wall; it does not change where it sits.
+  it('spins within the wall without moving', () => {
+    const a = garnishPlacement({ ...SIDE, yaw: 0 }, WALL, PIECE);
+    const b = garnishPlacement({ ...SIDE, yaw: 0.6 }, WALL, PIECE);
+    expect(b.position[0]).toBeCloseTo(a.position[0], 6);
+    expect(b.position[2]).toBeCloseTo(a.position[2], 6);
+    expect(b.wall.spin).toBeCloseTo(0.6, 6);
+  });
+
+  it('drags round and up the wall, and changes nothing else', () => {
+    const before = { ...SIDE, scale: 1.4, yaw: 0.3 };
+    const after = garnishDragTo(before, WALL, 0.25, 0.7);
+    expect(Object.keys(after).sort()).toEqual(['height', 'theta']);
+    expect(after.theta).toBeCloseTo(Math.PI / 2, 6);
+    expect(after.height).toBeCloseTo(0.7, 6);
+  });
+
+  /* ⚠️ A FAN ON A WALL IS A BAND, NOT A PINWHEEL. Turn spins a piece in the wall's plane, so splaying
+   * the copies would spin each one further. */
+  it('fans round the wall without spinning the copies', () => {
+    const seats = fanPlacements({ ...SIDE, theta: 1, yaw: 0.2 }, 5, 1);
+    expect(seats.every(seat => !('yaw' in seat))).toBe(true);
+    expect(seats[0].theta).toBeCloseTo(0.5, 6);
+    expect(seats[4].theta).toBeCloseTo(1.5, 6);
+  });
+});
+
+// ── Where a garnish may go, from config ──────────────────────────────────────────────────────────
+describe('placement options from the garnish tool\'s config', () => {
+  const ids = o => o.zones.map(z => `${z.id}:${z.modes.map(m => m.id).join('/')}`);
+
+  it('offers the top, the side and the board when the row carries no block', () => {
+    const o = garnishPlacementOptions(null);
+    expect(ids(o)).toEqual(['top:stand/lie', 'side:lie', 'board:stand/lie']);
+    expect(o.authored).toBe(false);
+    expect(o.zones.find(z => z.id === 'side').modes[0].label).toBe('Flat against the side');
+  });
+
+  /* ⚠️ AN AUTHORED BLOCK IS THE WHOLE LIST — a place it leaves out is not offered. Merging over the seed
+   * would make removing the side impossible without a deploy. */
+  it('treats an authored block as the whole list, in the shared zone vocabulary', () => {
+    const o = garnishPlacementOptions({ top_surface: { modes: ['hug', 'stand'] }, side: 'hug' });
+    expect(ids(o)).toEqual(['top:lie/stand', 'side:lie']);
+    expect(o.authored).toBe(true);
+  });
+
+  it('ignores poses a garnish cannot take, and falls back when nothing usable is left', () => {
+    expect(ids(garnishPlacementOptions({ top_surface: { modes: ['perch', 'stand'] } }))).toEqual(['top:stand']);
+    expect(ids(garnishPlacementOptions({ rim: 'verge' }))).toEqual(ids(garnishPlacementOptions(null)));
+    expect(ids(garnishPlacementOptions({ top_surface: 'perch' }))).toEqual(ids(garnishPlacementOptions(null)));
+  });
+
+  // A pick, a zone switch and a stale saved value are all held to what is offered.
+  it('only ever seats a piece somewhere the options allow', () => {
+    const o = garnishPlacementOptions(null);
+    expect(garnishSeat(o, 'side', 'stand')).toEqual({ zone: 'side', mode: 'lie' });
+    expect(garnishSeat(o, 'top', 'lie')).toEqual({ zone: 'top', mode: 'lie' });
+    expect(garnishSeat(o, 'rim', 'stand')).toEqual({ zone: 'top', mode: 'stand' });
+    const topOnly = garnishPlacementOptions({ top_surface: 'stand' });
+    expect(garnishSeat(topOnly, 'side', 'lie')).toEqual({ zone: 'top', mode: 'stand' });
+  });
+
+  // The words a baker reads on the build sheet — unchanged for the top and board, new for the side.
+  it('describes where a piece goes', () => {
+    expect(garnishWhere({ zone: 'top', mode: 'stand' })).toBe('On the top tier, standing up');
+    expect(garnishWhere({ zone: 'board', mode: 'lie' })).toBe('On the board, lying flat');
+    expect(garnishWhere({ zone: 'side', mode: 'lie' })).toBe('On the side of the tier, pressed flat against it');
+  });
+});

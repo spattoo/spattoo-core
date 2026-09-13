@@ -38,7 +38,7 @@ import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
-import { garnishDragTo } from './geometry/garnishPlacement.js';
+import { garnishDragTo, garnishPlacementOptions, garnishSeat } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
@@ -1904,6 +1904,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
   const [elementById, setElementById] = useState(() => new Map()); // id → element row, for placed-sticker config lookups
+  /* Where a chocolate garnish may go and how it may sit, from the garnish tool's own row
+     (`placement_config.chocolate_garnish` — see garnishPlacementOptions). Read once for BOTH the studio
+     and the card on a placed piece: a saved cake reopened later has pieces on it but no studio open,
+     and its card must offer exactly what the studio would. No row loaded → the code's seed. */
+  const garnishOptions = useMemo(() => {
+    const row = [...elementById.values()].find(r => r?.placement_config?.procedural === 'chocolate_garnish');
+    return garnishPlacementOptions(row?.placement_config?.chocolate_garnish ?? null);
+  }, [elementById]);
   // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
   // (Declared after elementById so it doesn't read it before initialization.)
   const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
@@ -7666,6 +7674,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tiers = design.tiers ?? [];
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        {/* WHERE, from config: the top, the side, the board — whichever the garnish tool offers. A switch
+            re-validates the pose, so a piece moved onto the wall comes off "standing". */}
+        {garnishOptions.zones.length > 1 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              Where it sits
+            </div>
+            <Segmented
+              label="Where the garnish sits"
+              isMobile={isMobile}
+              items={garnishOptions.zones.map(z => ({ id: z.id, label: z.label }))}
+              value={garnishSeat(garnishOptions, g.zone ?? 'top', g.mode ?? 'stand').zone}
+              onChange={zone => updateGarnish(g.id, garnishSeat(garnishOptions, zone, g.mode ?? 'stand'))}
+              tone={primaryColor}
+            />
+          </div>
+        )}
         {/* ⚠️ ONLY WHEN THERE IS A CHOICE. On a one-tier cake a tier chooser is a control with a
             single answer, and it pushes everything a baker actually came for further down. */}
         {tiers.length > 1 && g.zone !== 'board' && (
@@ -7676,6 +7702,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </div>
             <Segmented
               label="Which tier the garnish sits on"
+              isMobile={isMobile}
               items={tiers.map((_, i) => ({
                 id: String(i),
                 // Bottom-up, the way a baker stacks and talks about them.
@@ -7686,18 +7713,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             />
           </div>
         )}
-        <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
-            How it sits
-          </div>
-          <Segmented
-            label="How the garnish sits"
-            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
-            value={g.mode ?? 'stand'}
-            onChange={mode => updateGarnish(g.id, { mode })}
-            tone={primaryColor}
-          />
-        </div>
+        {(() => {
+          /* HOW, from the same config — and only when the place it sits offers more than one pose. On
+             the side there is one: a piece lies against the wall. */
+          const seat = garnishSeat(garnishOptions, g.zone ?? 'top', g.mode ?? 'stand');
+          const poses = garnishOptions.zones.find(z => z.id === seat.zone)?.modes ?? [];
+          return poses.length > 1 && (
+            <div>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>
+                How it sits
+              </div>
+              <Segmented
+                label="How the garnish sits"
+                isMobile={isMobile}
+                items={poses.map(m => ({ id: m.id, label: m.label }))}
+                value={seat.mode}
+                onChange={mode => updateGarnish(g.id, { mode })}
+                tone={primaryColor}
+              />
+            </div>
+          );
+        })()}
 
         <PenSlider label="Size" value={g.scale ?? 1} min={0.4} max={2} step={0.05}
           onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
@@ -7707,7 +7743,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onChange={v => updateGarnish(g.id, { gloss: v })} fmt={v => v.toFixed(2)} />
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
-          Drag it on the cake to move it round.
+          {g.zone === 'side' ? 'Drag it round and up the side of the tier.' : 'Drag it on the cake to move it round.'}
         </div>
 
         {/* ⚠️ A FAN IS GENERATED, NOT NUDGED. The eye catches a two-degree error immediately on a
@@ -10902,6 +10938,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onCancel={() => { setGarnishStudio(false); setPendingGarnish(null); }}
           apiClient={apiClient}
           openWith={pendingGarnish}
+          placementOptions={garnishOptions}
           color={garnishColor}
           rope={garnishRope}
           onRopeChange={setGarnishRope}

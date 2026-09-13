@@ -161,7 +161,8 @@ const design = {
   /* ⚠️ `?style=swirl&sp=twist:0,lobes:28` — the cream STYLE and its params, so a wall texture can be
      seen on the real scene instead of only in a studio preview. `sp` is key:value pairs; the keys are
      whatever that style declares in CREAM_STYLES, so a new texture needs no change here. */
-  tiers: [{ shape: 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream',
+  /* `?shape=rect` stands the cake on a sheet tier, so a side garnish can be judged on a flat face too. */
+  tiers: [{ shape: _q.get('shape') || 'round', color: _q.get('tier') || '#F6DCE2', frostingType: 'buttercream',
             frostingStyle: _q.get('style') || 'smooth',
             styleParams: _q.get('sp')
               ? Object.fromEntries(_q.get('sp').split(',').map(kv => {
@@ -312,7 +313,22 @@ const design = {
   /* ⚠️ `?bare=1` DROPS THE GARNISHES so a measurement can have the cake to itself. The standing panel
    * sits over the middle of the top surface, which is exactly where a print or a topper lands — a
    * sample taken with it present is a sample of whatever peeks out from behind it. */
+  /* ⚠️ `?side=1` PRESSES A PIECE FLAT ON THE WALL — the pose a render is the only proof of. `?sidetheta=`
+   * moves it round (0 puts it on the right-hand silhouette, where a piece that does not bend to the wall
+   * is seen lifting off it — INVARIANTS #8a says judge a curved piece AT THE TANGENT), `?sidespin=` turns
+   * it within the wall, `?sidescale=` enlarges it (a big piece is where a bad bend shows), `?sideh=`
+   * sets its height up the wall. `?onlyside=1` drops the top pieces so the wall is the only subject. */
   garnishes: _q.has('bare') ? [] : [
+    ...(_q.has('side') ? [{ id: 's', name: 'Side panel', kind: 'cut', color: asked, plate: 420,
+      zone: 'side', mode: 'lie', theta: Number(_q.get('sidetheta') ?? Math.PI / 2),
+      height: Number(_q.get('sideh') ?? 0.5), yaw: Number(_q.get('sidespin') ?? 0),
+      scale: Number(_q.get('sidescale') ?? 1),
+      rings: [
+        [[110, 60], [310, 60], [270, 360], [150, 360], [110, 60]],
+        Array.from({ length: 25 }, (_, i) => { const t = (i / 24) * Math.PI * 2;
+          return [210 + Math.cos(t) * 45, 170 + Math.sin(t) * 45]; }),
+      ] }] : []),
+    ...(_q.has('onlyside') ? [] : [
     // A CUT panel with a hole punched in it, beside a piped piece — the two ways of being made.
     { id: 'a', name: 'Panel', kind: 'cut', color: asked, plate: 420, radius: 0.5, mode: 'stand', scale: 1.3,
       rings: [
@@ -321,6 +337,7 @@ const design = {
           return [210 + Math.cos(t) * 45, 170 + Math.sin(t) * 45]; }),
       ] },
     { id: 'b', name: 'Leaf', color: asked, paths, rope: 6, plate: 420, theta: 3.4, radius: 0.55, mode: 'lie' },
+    ]),
   ],
 };
 

@@ -53,8 +53,22 @@ if (new URLSearchParams(location.search).has('retour')) {
   try { localStorage.removeItem('spattoo.tour.customer.v1'); } catch { /* ignore */ }
 }
 
+/* `?garnish=1` opens the designer with a chocolate garnish already standing on the cake, so its CARD —
+   Where it sits, How it sits, the drag hint — can be reached by clicking the piece, without a studio
+   drawing and without an account. `?garnishzone=side` starts it on the wall. */
+const garnishDesign = new URLSearchParams(location.search).has('garnish') ? {
+  tiers: [{ shape: 'round', radius: 1.2, height: 1.0, color: '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  garnishes: [{
+    id: 'g-seed', name: 'Panel', kind: 'cut', color: '#4A2C1B', plate: 420, scale: 1.2,
+    zone: new URLSearchParams(location.search).get('garnishzone') || 'top', mode: 'stand',
+    theta: Math.PI / 2, radius: 0.2, height: 0.5, yaw: 0,
+    rings: [[[110, 60], [310, 60], [270, 360], [150, 360], [110, 60]]],
+  }],
+} : null;
+
 createRoot(document.getElementById('root')).render(
   <CakeDesigner
+    initialDesign={garnishDesign}
     apiClient={apiClient}
     orderMode={customer ? 'customer' : 'baker'}
     onOrder={() => {}}
