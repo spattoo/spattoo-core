@@ -8,7 +8,7 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
-import { CameraIcon, UploadsIcon } from '../shared/icons.jsx';
+import { CameraIcon, UploadsIcon, CopyIcon } from '../shared/icons.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -54,21 +54,30 @@ function isValidHex(hex) {
 
 function ColorField({ label, hint, value, onChange }) {
   const safe = isValidHex(value) ? value : '#000000';
+  const hex = (value ?? '').toUpperCase();
+  const [copied, setCopied] = useState(false);
+
+  async function copyHex() {
+    try { await navigator.clipboard.writeText(hex); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  }
 
   return (
     <Field label={label} hint={hint}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 6 }}>
-        {/* Swatch — native color picker overlaid invisibly on top */}
+      {/* marginTop auto: the two colours sit side by side, and their hints wrap to different heights —
+          pushing the control to the bottom keeps both swatches on one line. */}
+      <div style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 6, marginTop: 'auto', paddingTop: 6 }}>
+        {/* Swatch — the one way to change the colour: native color picker overlaid invisibly on top. */}
         <label style={{ position: 'relative', flexShrink: 0, cursor: 'pointer' }}>
           <div style={{
-            width: 44, height: 44, borderRadius: 10, background: safe,
-            border: '2.5px solid #C5D4C8',
+            width: 40, height: 40, borderRadius: 10, background: safe,
+            border: '2.5px solid #C5D4C8', boxSizing: 'border-box',
             boxShadow: '0 2px 6px rgba(0,0,0,0.14)',
           }} />
           <input
             type="color"
             value={safe}
             onChange={e => onChange(e.target.value)}
+            aria-label={`Choose ${label}`}
             style={{
               position: 'absolute', inset: 0, opacity: 0,
               width: '100%', height: '100%', cursor: 'pointer',
@@ -76,18 +85,28 @@ function ColorField({ label, hint, value, onChange }) {
           />
         </label>
 
-        {/* Hex input */}
-        <input
-          type="text"
-          value={value ?? ''}
-          onChange={e => onChange(e.target.value)}
-          placeholder="#000000"
+        {/* The hex, read-only — a baker copies it, never types it (typing left half-finished values
+            like "#9FA2" saved). The whole box is the copy button, so it is a real target on a phone. */}
+        <button
+          type="button"
+          onClick={copyHex}
+          disabled={!hex}
+          title={`Copy ${hex}`}
+          aria-label={copied ? `${label} copied` : `Copy ${label} ${hex}`}
           style={{
-            width: 110, padding: '9px 12px', borderRadius: 10,
-            border: '1.5px solid #C5D4C8', fontSize: 13, fontWeight: 700,
-            fontFamily: 'monospace', color: '#2C4433', outline: 'none', background: '#fff',
+            // Fills its column when it wraps under the swatch on a narrow phone; capped so on desktop the
+            // icon stays beside the hex instead of drifting to the far edge of a half-card.
+            flex: '1 0 auto', maxWidth: 160, height: 40, padding: '0 8px', borderRadius: 10,
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6,
+            border: '1.5px solid #C5D4C8', background: '#F7FAF8', boxSizing: 'border-box',
+            cursor: hex ? 'pointer' : 'default', color: '#2C4433',
           }}
-        />
+        >
+          <span style={{ fontSize: 12, fontWeight: 700, fontFamily: copied ? 'inherit' : 'monospace' }}>
+            {copied ? 'Copied' : (hex || '—')}
+          </span>
+          {!copied && <span style={{ display: 'flex', color: '#9BB5A2' }}><CopyIcon size={14} /></span>}
+        </button>
       </div>
     </Field>
   );
@@ -372,19 +391,21 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   )}
                 </Field>
 
-                <ColorField
-                  label="Primary Color"
-                  hint="Main brand color — used for buttons and highlights."
-                  value={profile.primary_color ?? ''}
-                  onChange={v => setProfileField('primary_color', v)}
-                />
-
-                <ColorField
-                  label="Accent Color"
-                  hint="Secondary color — used for gradients."
-                  value={profile.accent_color ?? ''}
-                  onChange={v => setProfileField('accent_color', v)}
-                />
+                {/* The two brand colours on one row — they are chosen together and read as a pair. */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 12 }}>
+                  <ColorField
+                    label="Primary Color"
+                    hint="Main brand color — used for buttons and highlights."
+                    value={profile.primary_color ?? ''}
+                    onChange={v => setProfileField('primary_color', v)}
+                  />
+                  <ColorField
+                    label="Accent Color"
+                    hint="Secondary color — used for gradients."
+                    value={profile.accent_color ?? ''}
+                    onChange={v => setProfileField('accent_color', v)}
+                  />
+                </div>
               </Section>
 
               {/* ── Storefront Theme ── */}

@@ -2,13 +2,15 @@
 // (`rail.html?settings`), so Store Settings can be judged in place beside the rail with real content.
 
 export const STUBS = {
-  fetchBakerProfile:  async () => ({
+  // Wrapped in `baker`, the shape GET /baker/profile returns and SettingsPanel destructures. Returned
+  // bare, every profile field — colours, name, Instagram — silently loaded as empty.
+  fetchBakerProfile:  async () => ({ baker: {
     name: 'Sample Bakery', slug: 'sample', tagline: 'Baked fresh, every day',
     story: '', primary_color: '#2C4433', accent_color: '#6B8C74',
     logo_url: null, portrait_url: null, instagram_handle: 'samplebakery',
     website_url: '', storefront_published: true, storefront_theme_id: 1,
     storefront_customizations: {},
-  }),
+  } }),
   fetchBakerSettings: async () => ({
     delivery: { home_delivery: true, radius_km: 10 },
     store_hours: null,

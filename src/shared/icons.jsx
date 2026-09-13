@@ -62,3 +62,14 @@ export function UploadsIcon({ size = 20 }) {
     </svg>
   );
 }
+
+// Two overlapping sheets: copy this to the clipboard. First used by the brand-colour hex in Settings.
+export function CopyIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <rect x="9" y="9" width="11" height="11" rx="2.5" />
+      <path d="M15 5.5V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h.5" />
+    </svg>
+  );
+}
