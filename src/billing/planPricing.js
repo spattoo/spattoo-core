@@ -42,26 +42,21 @@ export function formatPlanPrice(amount, { currency = 'INR' } = {}) {
   }
 }
 
-/* ── What the discount is WORTH, in the unit that reads biggest and is still TRUE ────────────────
+/* ── What the discount is WORTH, said in TIME ────────────────────────────────────────────────────
  *
- * A baker does not price a decision in percentages — "2 months free" is a sentence somebody
- * repeats, "-17%" is arithmetic they have to do first. So time wins wherever there is enough of it.
+ * This is the PERIOD badge, so it must be true for every tier — which is exactly why it says time
+ * and not a percentage. Quarterly is 10% on all tiers by construction, but yearly is 16.59% on
+ * Flame and 16.64% on Blaze (price_yearly is a round ₹9,999 / ₹24,999, not derived from the
+ * ladder), so one number here would be wrong for somebody. "2 months free" is right for both.
  *
- * ⚠️ BUT ONLY WHERE THERE IS ENOUGH OF IT. Quarterly's 10% is 0.30 months. Said in months it is a
- * fraction nobody says out loud; said in days it is "9 days free", which is accurate, unexciting,
- * and undersells an offer that is really "a tenth off". Nine is just a small number, and a small
- * number is what the reader remembers.
+ * The per-tier percentage is shown on the CARD instead, beside the two prices it comes from —
+ * see `discountLabel`. Between them the baker gets both readings, each exact where it sits.
  *
- * So: a month or more is said in MONTHS, and anything less is said as a PERCENTAGE. One rule, no
- * per-period special case, and each interval gets its own strongest honest claim — "2 months free"
- * against "10% off", which are not the same kind of thing and so invite no unflattering comparison
- * (10 beside 17 is exactly the weak-middle-rung reading that SUBSCRIPTION_TIERS warns about).
+ * A baker does not price a decision in percentages anyway: "2 months free" is a sentence somebody
+ * repeats, "-17%" is arithmetic they have to do first.
  *
- * The concrete money is carried by the struck price beside it (`fullPeriodPrice`), so this badge is
- * a headline rather than the whole claim.
- *
- * Both branches round DOWN: a discount claim may under-promise, never over-promise. 30.44 = 365.25/12
- * — kept because the months branch still needs an honest month.
+ * Rounded DOWN, always: a claim may under-promise, never over-promise. 30.44 = 365.25/12, the
+ * average month — a quarter is 91 days, and using 30 would under-count the free time advertised.
  */
 const DAYS_PER_MONTH = 365.25 / 12;
 
@@ -74,8 +69,28 @@ export function freeTimeLabel(period) {
     const m = Math.floor(free + 1e-9);                   // 2.04 → 2, and 2.0 is not dragged to 1
     return `${m} month${m === 1 ? '' : 's'} free`;
   }
-  const pct = Math.floor(discount * 100 + 1e-9);
-  return pct >= 1 ? `${pct}% off` : null;                // below 1% there is nothing worth saying
+  const d = Math.floor(free * DAYS_PER_MONTH);
+  return d >= 1 ? `${d} day${d === 1 ? '' : 's'} free` : null;
+}
+
+/* ── The discount as a percentage, PER TIER, from the two prices on the card ─────────────────────
+ *
+ * ⚠️ NOT `period.discount_pct`, and the difference is the whole point. That column says yearly is
+ * 17%; the yearly prices beside it are 16.59% (Flame) and 16.64% (Blaze) off twelve months at the
+ * monthly rate, because price_yearly was set as a round number rather than derived from the ladder.
+ * Printing 17 next to a struck ₹11,988 and a ₹9,999 invites the reader to do the subtraction and
+ * catch us over-claiming.
+ *
+ * So it is computed from what is actually shown, and FLOORED to one decimal — under-stating by at
+ * most a tenth of a point rather than over-stating by any. A whole number loses its ".0", because
+ * "10.0% off" reads like a number that was calculated AT you.
+ */
+export function discountLabel(plan, period) {
+  const full = fullPeriodPrice(plan, period);
+  if (!full) return null;
+  const pct = Math.floor(((full - periodPrice(plan, period)) / full) * 1000) / 10;
+  if (pct < 0.1) return null;
+  return `${Number.isInteger(pct) ? pct : pct.toFixed(1)}% off`;
 }
 
 export const PERIOD_SUFFIX = { monthly: '/mo', quarterly: '/qtr', yearly: '/yr' };

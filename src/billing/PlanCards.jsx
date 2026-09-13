@@ -1,4 +1,4 @@
-import { formatPlanPrice, periodPrice, fullPeriodPrice, PERIOD_SUFFIX } from './planPricing.js';
+import { formatPlanPrice, periodPrice, fullPeriodPrice, discountLabel, PERIOD_SUFFIX } from './planPricing.js';
 
 // ── PlanCards ─────────────────────────────────────────────────────────────────────────────────
 // The ONE plan picker, shared by the billing screen (Settings → Billing) and the signup
@@ -46,6 +46,10 @@ export default function PlanCards({
         const price     = periodPrice(plan, period);
         // What the same months cost at the monthly rate. 0 on monthly and on a free plan.
         const full      = fullPeriodPrice(plan, period);
+        /* The percentage lives HERE, not in the period picker, because it is per TIER: yearly is
+           16.5% on Flame and 16.6% on Blaze. One figure in the picker would be wrong for one of
+           them; beside the two prices it is derived from, it cannot be. */
+        const off       = discountLabel(plan, period);
         const suffix    = price ? (PERIOD_SUFFIX[period.name] ?? '') : '';
         const bullets   = plan.feature_bullets ?? [];
 
@@ -100,7 +104,23 @@ export default function PlanCards({
                 <span style={{ fontSize: 15, fontWeight: 800, color: active ? t.accent : t.text }}>
                   {formatPlanPrice(price)}
                   {suffix && <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 2, fontWeight: 600 }}>{suffix}</span>}
+                  {/* ⚠️ EVERY price on this screen is the BASE. Razorpay charges base + 18% GST, and
+                      a baker who reads ₹2,697 here and is billed ₹3,182.81 has been surprised by us
+                      — the checkout breakup below explains it, but only after they have committed
+                      to reaching checkout. Said on the number itself, it is a fact rather than a
+                      correction. Not shown on a free plan: there is no tax on nothing. */}
+                  {price > 0 && (
+                    <span style={{ fontSize: 9, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>(+GST)</span>
+                  )}
                 </span>
+                {off && (
+                  <span style={{
+                    fontSize: 9.5, fontWeight: 800, padding: '2px 7px', borderRadius: 20,
+                    background: t.popularBg, color: t.popularText, whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    {off}
+                  </span>
+                )}
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke={t.chevron} strokeWidth="2"
                   style={{ transform: active ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>
                   <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { freeTimeLabel, periodPrice, fullPeriodPrice } from './planPricing.js';
+import { freeTimeLabel, periodPrice, fullPeriodPrice, discountLabel } from './planPricing.js';
 
 /* ── What a discount is worth, said in time ──────────────────────────────────────────────────────
  *
@@ -22,8 +22,8 @@ describe('freeTimeLabel', () => {
      nobody says out loud; said in days it is "9 days free" — accurate, and it undersells a tenth
      off, because nine is just a small number. Below a month the percentage is the bigger TRUE
      claim, and "10% off" beside "2 months free" invites no comparison, where 10 beside 17 would. */
-  it('says the PERCENTAGE when the saving is under a month', () => {
-    expect(freeTimeLabel(QUARTERLY)).toBe('10% off');
+  it('says DAYS when the saving is under a month', () => {
+    expect(freeTimeLabel(QUARTERLY)).toBe('9 days free');
   });
 
   it('makes no claim at all when there is no discount', () => {
@@ -36,7 +36,7 @@ describe('freeTimeLabel', () => {
   it('rounds down, so the baker always gets at least what was claimed', () => {
     expect(freeTimeLabel({ months: 12, discount_pct: 25 })).toBe('3 months free'); // 3.0  → 3
     expect(freeTimeLabel({ months: 12, discount_pct: 20 })).toBe('2 months free'); // 2.4  → 2
-    expect(freeTimeLabel({ months: 3, discount_pct: 12.9 })).toBe('12% off');      // 0.39 mo → 12
+    expect(freeTimeLabel({ months: 3, discount_pct: 10 })).toBe('9 days free');    // 9.13 → 9
   });
 
   // A whole number must not be dragged down by binary float noise: 12 × 0.17 is 2.0399999…, and
@@ -51,14 +51,14 @@ describe('freeTimeLabel', () => {
   });
 
   /* The switch is at a whole month, in both directions — a fraction of a month is never printed. */
-  it('crosses from percent to months at exactly one month', () => {
-    expect(freeTimeLabel({ months: 4, discount_pct: 24 })).toBe('24% off');      // 0.96 mo
+  it('crosses from days to months at exactly one month', () => {
+    expect(freeTimeLabel({ months: 4, discount_pct: 24 })).toBe('29 days free'); // 0.96 mo
     expect(freeTimeLabel({ months: 4, discount_pct: 25 })).toBe('1 month free'); // 1.00 mo
   });
 
-  // Below 1% there is nothing worth saying — a badge reading "0% off" is worse than none.
-  it('says nothing rather than "0% off"', () => {
-    expect(freeTimeLabel({ months: 1, discount_pct: 0.4 })).toBeNull();
+  // Below a day there is nothing worth saying — a badge reading "0 days free" is worse than none.
+  it('says nothing rather than "0 days free"', () => {
+    expect(freeTimeLabel({ months: 1, discount_pct: 1 })).toBeNull();
   });
 
   it('survives a missing or malformed period', () => {
@@ -133,6 +133,47 @@ describe('fullPeriodPrice', () => {
     for (const plan of [flame, blaze]) {
       for (const period of [QUARTERLY, YEARLY]) {
         expect(fullPeriodPrice(plan, period)).toBeGreaterThan(periodPrice(plan, period));
+      }
+    }
+  });
+});
+
+/* The PER-TIER percentage, shown on the card beside the prices it comes from. */
+describe('discountLabel', () => {
+  const flame = { price_monthly: 99900, price_yearly: 999900 };
+  const blaze = { price_monthly: 249900, price_yearly: 2499900 };
+
+  it('is exactly 10% for quarterly on every tier — it is derived that way', () => {
+    expect(discountLabel(flame, QUARTERLY)).toBe('10% off');
+    expect(discountLabel(blaze, QUARTERLY)).toBe('10% off');
+  });
+
+  /* ⚠️ THE REASON IT IS PER TIER AND NOT PER PERIOD. billing_periods says yearly is 17%; the
+     yearly prices are a round ₹9,999 / ₹24,999, which is 16.59% and 16.64% off the monthly run
+     rate. A single badge could not state either without being wrong for the other tier. */
+  it('differs by tier on yearly, and never claims the ladder\'s 17%', () => {
+    expect(discountLabel(flame, YEARLY)).toBe('16.5% off');
+    expect(discountLabel(blaze, YEARLY)).toBe('16.6% off');
+  });
+
+  it('drops a trailing .0 rather than printing "10.0% off"', () => {
+    expect(discountLabel(flame, QUARTERLY)).not.toContain('.0');
+  });
+
+  it('makes no claim where there is no saving', () => {
+    expect(discountLabel(flame, MONTHLY)).toBeNull();
+    expect(discountLabel({ price_monthly: 0, price_yearly: 0 }, YEARLY)).toBeNull();
+    expect(discountLabel(null, YEARLY)).toBeNull();
+  });
+
+  /* Floored to a tenth: under-state by at most 0.1 of a point, never over-state. */
+  it('never claims more than the prices actually give', () => {
+    for (const plan of [flame, blaze]) {
+      for (const period of [QUARTERLY, YEARLY]) {
+        const claimed = parseFloat(discountLabel(plan, period));
+        const actual  = (fullPeriodPrice(plan, period) - periodPrice(plan, period)) / fullPeriodPrice(plan, period) * 100;
+        expect(claimed).toBeLessThanOrEqual(actual + 1e-9);
+        expect(claimed).toBeGreaterThan(actual - 0.1);
       }
     }
   });
