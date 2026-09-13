@@ -1,4 +1,4 @@
-import { formatPlanPrice, periodPrice, PERIOD_SUFFIX } from './planPricing.js';
+import { formatPlanPrice, periodPrice, fullPeriodPrice, PERIOD_SUFFIX } from './planPricing.js';
 
 // ── PlanCards ─────────────────────────────────────────────────────────────────────────────────
 // The ONE plan picker, shared by the billing screen (Settings → Billing) and the signup
@@ -44,6 +44,8 @@ export default function PlanCards({
         const active    = selected === plan.name;
         const isCurrent = !!currentTier && currentTier === plan.name;
         const price     = periodPrice(plan, period);
+        // What the same months cost at the monthly rate. 0 on monthly and on a free plan.
+        const full      = fullPeriodPrice(plan, period);
         const suffix    = price ? (PERIOD_SUFFIX[period.name] ?? '') : '';
         const bullets   = plan.feature_bullets ?? [];
 
@@ -81,6 +83,20 @@ export default function PlanCards({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                {/* ⚠️ The struck figure carries the offer; the badge in the period picker only
+                    names it. "₹2,997 → ₹2,697" is a saving you SEE, where a lone discounted price
+                    asks the reader to remember the monthly rate and multiply by three.
+                    The strike is a 2px rule in the theme's accent rather than faint grey text — at
+                    low contrast a struck number just reads as a faint number, which is the one
+                    thing it must not do. */}
+                {full > 0 && (
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, color: t.textMuted, textDecorationLine: 'line-through',
+                    textDecorationColor: t.accent, textDecorationThickness: '2px', flexShrink: 0,
+                  }}>
+                    {formatPlanPrice(full)}
+                  </span>
+                )}
                 <span style={{ fontSize: 15, fontWeight: 800, color: active ? t.accent : t.text }}>
                   {formatPlanPrice(price)}
                   {suffix && <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 2, fontWeight: 600 }}>{suffix}</span>}

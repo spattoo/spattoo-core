@@ -15,6 +15,23 @@ export function periodPrice(plan, period) {
   return Math.round(monthly * months * (1 - discount));
 }
 
+/* What the SAME SPAN costs at the monthly rate — the struck-through figure beside the price.
+ *
+ * DERIVED, never a stored column: monthly × months. The saving is then the gap between two numbers
+ * the customer can see, which is a thing you notice without doing arithmetic — "₹2,997 → ₹2,697" in
+ * a way that "10% off" never is, because a percentage asks what it is a percentage OF.
+ *
+ * 0 when there is nothing to strike: the monthly period itself, a free plan, or a period whose
+ * price is not actually lower (which would otherwise print a struck number BELOW the real one and
+ * read as a price rise).
+ */
+export function fullPeriodPrice(plan, period) {
+  if (!plan || !period || period.name === 'monthly') return 0;
+  const monthly = (Number(plan.price_monthly) || 0) / 100;
+  const full = monthly * (period.months ?? 1);
+  return full > periodPrice(plan, period) ? full : 0;
+}
+
 // A numeric amount → display label. 0 (free) → 'Free'.
 export function formatPlanPrice(amount, { currency = 'INR' } = {}) {
   if (!amount) return 'Free';
@@ -25,24 +42,26 @@ export function formatPlanPrice(amount, { currency = 'INR' } = {}) {
   }
 }
 
-/* ── What the discount is WORTH, said in time rather than percent ────────────────────────────────
+/* ── What the discount is WORTH, in the unit that reads biggest and is still TRUE ────────────────
  *
- * A baker does not price a decision in percentages. "Pay yearly, get two months free" is a sentence
- * somebody repeats; "-17%" is a number they have to do arithmetic on to believe.
+ * A baker does not price a decision in percentages — "2 months free" is a sentence somebody
+ * repeats, "-17%" is arithmetic they have to do first. So time wins wherever there is enough of it.
  *
- * ⚠️ THE UNIT CHANGES WITH THE PERIOD, and that is the whole reason this is a function rather than a
- * format string. Yearly at 17% is 2.04 months — "2 months free", which is the line the pricing page
- * is built around. Quarterly at 10% is 0.30 months, and "0.3 months free" is not something anybody
- * says: a third of a month is a number you have to convert before it means anything. In days it is
- * plain — "9 days free" — and nine free days on a three-month commitment reads as a real, if small,
- * thing, which is exactly what it is.
+ * ⚠️ BUT ONLY WHERE THERE IS ENOUGH OF IT. Quarterly's 10% is 0.30 months. Said in months it is a
+ * fraction nobody says out loud; said in days it is "9 days free", which is accurate, unexciting,
+ * and undersells an offer that is really "a tenth off". Nine is just a small number, and a small
+ * number is what the reader remembers.
  *
- * So: a month or more is said in months, less than a month is said in days. The switch is at the
- * point where the fraction starts needing a decimal place, not at a tuned threshold.
+ * So: a month or more is said in MONTHS, and anything less is said as a PERCENTAGE. One rule, no
+ * per-period special case, and each interval gets its own strongest honest claim — "2 months free"
+ * against "10% off", which are not the same kind of thing and so invite no unflattering comparison
+ * (10 beside 17 is exactly the weak-middle-rung reading that SUBSCRIPTION_TIERS warns about).
  *
- * 30.44 = 365.25/12, the average month. A quarter is 91 days, not 90, and using 30 would under-count
- * the free time we are advertising — which is the one direction a discount claim must never be wrong
- * in. Rounded DOWN for the same reason: promise nine days and give nine and a bit.
+ * The concrete money is carried by the struck price beside it (`fullPeriodPrice`), so this badge is
+ * a headline rather than the whole claim.
+ *
+ * Both branches round DOWN: a discount claim may under-promise, never over-promise. 30.44 = 365.25/12
+ * — kept because the months branch still needs an honest month.
  */
 const DAYS_PER_MONTH = 365.25 / 12;
 
@@ -50,13 +69,13 @@ export function freeTimeLabel(period) {
   const months   = Number(period?.months) || 0;
   const discount = (Number(period?.discount_pct) || 0) / 100;
   const free     = months * discount;                    // free time, in months
-  if (free <= 0) return null;                            // monthly, or any period at 0% — no claim to make
+  if (free <= 0) return null;                            // monthly, or any period at 0% — no claim
   if (free >= 1) {
-    const m = Math.floor(free + 1e-9);                   // 2.04 → 2, and 2.0 is not dragged to 1 by float noise
+    const m = Math.floor(free + 1e-9);                   // 2.04 → 2, and 2.0 is not dragged to 1
     return `${m} month${m === 1 ? '' : 's'} free`;
   }
-  const d = Math.floor(free * DAYS_PER_MONTH);
-  return d >= 1 ? `${d} day${d === 1 ? '' : 's'} free` : null;
+  const pct = Math.floor(discount * 100 + 1e-9);
+  return pct >= 1 ? `${pct}% off` : null;                // below 1% there is nothing worth saying
 }
 
 export const PERIOD_SUFFIX = { monthly: '/mo', quarterly: '/qtr', yearly: '/yr' };
