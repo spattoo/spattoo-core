@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { garnishPlacementOptions, garnishSeat } from '../geometry/garnishPlacement.js';
 import { Panel } from '../../shared/Panel.jsx';
 import Segmented from '../../shared/Segmented.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
@@ -126,7 +127,12 @@ export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
 export default function GarnishStudio({
   initialName = '', color = INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
   apiClient = null, openWith = null, onSave, onCancel,
+  /* Where a piece may go and how it may sit there, from the garnish element's `placement_config`
+     (see garnishPlacementOptions). Absent — an older host, or a row without the block — keeps the
+     code's seed, so the studio never loses a choice because a prop was not passed. */
+  placementOptions = null,
 }) {
+  const placement = placementOptions ?? garnishPlacementOptions(null);
   const ROPE = ropeProp;
   const ref = useRef(null);
   const [trail, setTrail] = useState([]);          // the live stroke, as state — see the note below
@@ -153,8 +159,14 @@ export default function GarnishStudio({
   const [textFont, setTextFont] = useState(DEFAULT_CREAM_FONT);
   const dragRef = useRef(null);
   const downRef = useRef(null);
-  const [zone, setZone] = useState('top');
-  const [mode, setMode] = useState('stand');
+  /* The first seat the config offers, validated rather than assumed: an admin can remove the top or
+     standing, and a studio that opened on a choice the element no longer allows would place it anyway. */
+  const [zone, setZone] = useState(() => garnishSeat(placement, 'top', 'stand').zone);
+  const [mode, setMode] = useState(() => garnishSeat(placement, 'top', 'stand').mode);
+  const zoneOpt = placement.zones.find(z => z.id === zone) ?? placement.zones[0];
+  const modeOpt = zoneOpt?.modes.find(m => m.id === mode) ?? zoneOpt?.modes[0];
+  // Changing where it goes keeps the pose only if the new place allows it.
+  const pickZone = id => { const seat = garnishSeat(placement, id, mode); setZone(seat.zone); setMode(seat.mode); };
   /* ⚠️ THE LIBRARY IS OPTIONAL, and its absence must not break the studio. `apiClient` may not carry
      the garnish methods at all — an older host app, or an API that has not been deployed yet — and
      the answer to that is a studio that draws and places perfectly well but cannot keep anything,
@@ -672,7 +684,7 @@ export default function GarnishStudio({
       // The closed rings travel too: a cut piece is built from regions, not from the swept paths.
       rings: strokes.filter(s2 => s2.ring).map(s2 => s2.ring),
       parts: partsOf(strokes),
-      kind, rope: ROPE, plate: PLATE, color, zone, mode,
+      kind, rope: ROPE, plate: PLATE, color, zone: zoneOpt?.id ?? zone, mode: modeOpt?.id ?? mode,
     });
   }
 
@@ -1294,10 +1306,11 @@ export default function GarnishStudio({
           {!!strokeCount && (
             <details style={{ border: '1px solid #EDE9E2', borderRadius: 10, padding: '8px 10px' }}>
               <summary style={{ fontSize: 11.5, fontWeight: 700, color: '#666', cursor: 'pointer' }}>
-                When you place it: {zone === 'board' ? 'on the board' : 'on the cake'},{' '}
-                {mode === 'stand' ? 'standing' : 'lying flat'}
+                When you place it: {(zoneOpt?.label ?? '').toLowerCase()},{' '}
+                {(modeOpt?.label ?? '').toLowerCase()}
               </summary>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                {placement.zones.length > 1 && (
                 <div>
                   <span style={labelStyle}>Where it goes</span>
                   <div style={{ marginTop: 5 }}>
@@ -1305,18 +1318,22 @@ export default function GarnishStudio({
                         teal along with the chocolate — chrome wearing the work's colour, which is the
                         same mistake the shape icons made. A control is not a preview. INVARIANTS #14. */}
                     <Segmented label="Where the piece goes" isMobile={isMobile}
-                      items={[{ id: 'top', label: 'On the cake' }, { id: 'board', label: 'On the board' }]}
-                      value={zone} onChange={setZone} />
+                      items={placement.zones.map(z => ({ id: z.id, label: z.label }))}
+                      value={zoneOpt?.id} onChange={pickZone} />
                   </div>
                 </div>
+                )}
+                {/* One pose is not a choice — a piece on the side only ever lies against the wall. */}
+                {(zoneOpt?.modes.length ?? 0) > 1 && (
                 <div>
                   <span style={labelStyle}>How it sits</span>
                   <div style={{ marginTop: 5 }}>
                     <Segmented label="How the piece sits" isMobile={isMobile}
-                      items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
-                      value={mode} onChange={setMode} />
+                      items={zoneOpt.modes.map(m => ({ id: m.id, label: m.label }))}
+                      value={modeOpt?.id} onChange={setMode} />
                   </div>
                 </div>
+                )}
               </div>
             </details>
           )}

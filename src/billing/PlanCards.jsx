@@ -1,4 +1,4 @@
-import { formatPlanPrice, periodPrice, PERIOD_SUFFIX } from './planPricing.js';
+import { formatPlanPrice, periodPrice, fullPeriodPrice, discountLabel, PERIOD_SUFFIX } from './planPricing.js';
 
 // ── PlanCards ─────────────────────────────────────────────────────────────────────────────────
 // The ONE plan picker, shared by the billing screen (Settings → Billing) and the signup
@@ -44,6 +44,12 @@ export default function PlanCards({
         const active    = selected === plan.name;
         const isCurrent = !!currentTier && currentTier === plan.name;
         const price     = periodPrice(plan, period);
+        // What the same months cost at the monthly rate. 0 on monthly and on a free plan.
+        const full      = fullPeriodPrice(plan, period);
+        /* The percentage lives HERE, not in the period picker, because it is per TIER: yearly is
+           16.5% on Flame and 16.6% on Blaze. One figure in the picker would be wrong for one of
+           them; beside the two prices it is derived from, it cannot be. */
+        const off       = discountLabel(plan, period);
         const suffix    = price ? (PERIOD_SUFFIX[period.name] ?? '') : '';
         const bullets   = plan.feature_bullets ?? [];
 
@@ -81,10 +87,42 @@ export default function PlanCards({
               </div>
 
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                {/* ⚠️ The struck figure carries the offer; the badge in the period picker only
+                    names it. "₹2,997 → ₹2,697" is a saving you SEE, where a lone discounted price
+                    asks the reader to remember the monthly rate and multiply by three.
+                    The strike is a 2px rule in the theme's accent rather than faint grey text — at
+                    low contrast a struck number just reads as a faint number, which is the one
+                    thing it must not do. */}
+                {full > 0 && (
+                  <span style={{
+                    fontSize: 12, fontWeight: 700, color: t.textMuted, textDecorationLine: 'line-through',
+                    textDecorationColor: t.accent, textDecorationThickness: '2px', flexShrink: 0,
+                  }}>
+                    {formatPlanPrice(full)}
+                  </span>
+                )}
                 <span style={{ fontSize: 15, fontWeight: 800, color: active ? t.accent : t.text }}>
                   {formatPlanPrice(price)}
-                  {suffix && <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 2, fontWeight: 600 }}>{suffix}</span>}
+                  {/* ⚠️ BEFORE the period, not after: "(+GST)" qualifies the AMOUNT, and "₹999 /mo
+                      (+GST)" reads as though the month were the thing being taxed. "₹999 (+GST)
+                      /mo" is the sentence — nine hundred and ninety-nine plus GST, per month.
+                      EVERY price here is the base. Razorpay charges base + 18%, so a baker who
+                      reads ₹2,697 and is billed ₹3,182.81 has been surprised by us — the checkout
+                      breakup explains it, but only once they have committed to reaching checkout.
+                      Not on a free plan: there is no tax on nothing. */}
+                  {price > 0 && (
+                    <span style={{ fontSize: 9, color: t.textMuted, marginLeft: 4, fontWeight: 600 }}>(+GST)</span>
+                  )}
+                  {suffix && <span style={{ fontSize: 10, color: t.textMuted, marginLeft: 3, fontWeight: 600 }}>{suffix}</span>}
                 </span>
+                {off && (
+                  <span style={{
+                    fontSize: 9.5, fontWeight: 800, padding: '2px 7px', borderRadius: 20,
+                    background: t.popularBg, color: t.popularText, whiteSpace: 'nowrap', flexShrink: 0,
+                  }}>
+                    {off}
+                  </span>
+                )}
                 <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke={t.chevron} strokeWidth="2"
                   style={{ transform: active ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}>
                   <path d="M6 9l6 6 6-6" strokeLinecap="round" strokeLinejoin="round" />

@@ -1,4 +1,5 @@
 import { newA4Canvas, canvasesToPdfBlob } from '../pdf.js';
+import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
 import { loadImage } from '../framePhoto.js';
@@ -849,7 +850,7 @@ function drawGarnishGuides(sheet, garnishes) {
     sheet.space(diagramBox(sheet, guide).h + mm(26));
     sheet.y += sheet.text(g.name || 'Chocolate garnish', sheet.margin, sheet.y, { size: mm(4.4), weight: 800 });
     sheet.y += sheet.text(
-      `${g.zone === 'board' ? 'On the board' : 'On the top tier'}, ${g.mode === 'stand' ? 'standing up' : 'lying flat'}`
+      garnishWhere(g)
       + (guide.widthMm ? ` · ${guide.widthMm} × ${guide.heightMm} mm` : ''),
       sheet.margin, sheet.y, { size: mm(3.2), weight: 600, color: MUTED }) + mm(2);
 

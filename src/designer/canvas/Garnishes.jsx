@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import { useMemo, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildGarnishGeometry } from '../geometry/garnishPiece.js';
 import { buildPanelGeometry, panelsFrom } from '../geometry/garnishPanel.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
+import { wrapToWall } from '../geometry/garnishWall.js';
+import { tierShape, isRoundWall, boxHit } from '../geometry/surface.js';
+import { resolveSidePipingBands, sidePipingClearance } from './pipingMetrics.js';
 import { garnishMaterialProps } from '../geometry/garnishMaterial.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
-import { planeHit } from '../utils/raycasting.js';
+import { planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 
 // ── Chocolate garnishes on the cake ──────────────────────────────────────────────────────────────
 //
@@ -42,7 +45,19 @@ export default function Garnishes({
     }
     const i = Number.isInteger(g.tierIndex) ? g.tierIndex : tierData.length - 1;
     const t = tierData[Math.max(0, Math.min(tierData.length - 1, i))] ?? top;
-    return { radius: t.radius, topY: t.baseY + t.height, boardY: 0.1 };
+    const surface = { radius: t.radius, topY: t.baseY + t.height, boardY: 0.1 };
+    if (g.zone !== 'side') return surface;
+    /* ⚠️ A WALL PIECE NEEDS THE WALL: where it starts, how tall it is, what shape it runs round, and
+       what piping it has to clear. The clearance is asked through the ONE helper every side decoration
+       uses (INVARIANTS #3b) — handed over as a function so the placement maths stays pure. */
+    const bands = resolveSidePipingBands({
+      topPipings: t.topPipings ?? [], bottomPipings: t.bottomPipings ?? [],
+      topY: t.baseY + t.height, yBase: t.baseY, height: t.height, radius: t.radius,
+    });
+    return {
+      ...surface, baseY: t.baseY, height: t.height, shape: tierShape(t),
+      clearance: (yBottom, yTop) => sidePipingClearance({ bands, yBottom, yTop }),
+    };
   };
 
   return (
@@ -110,6 +125,17 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
     onClick: () => onSelect?.(g.id),
     onMove: onMove ? patch => onMove(g.id, patch) : null,
     resolve: ray => {
+      if (g.zone === 'side') {
+        /* On a wall the pointer lands on the WALL — a cylinder on a round tier, the faces on any other
+           (the same box the side stickers pick against) — and becomes an angle and a height. */
+        const hit = cake.shape && !isRoundWall(cake.shape)
+          ? boxHit(ray, cake.shape.halfW, cake.shape.halfD)
+          : cylinderHitPoint(ray, cake.radius);
+        if (!hit) return null;
+        const u = Math.atan2(hit.z, hit.x) / (Math.PI * 2);
+        const v = (hit.y - cake.baseY) / (cake.height || 1);
+        return garnishDragTo(g, cake, u, v);
+      }
       const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -cake.topY));
       if (!hit) return null;
       // Screen point → angle round the cake and fraction out from the middle. Clamping lives in
@@ -120,13 +146,24 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
     },
   });
 
-  if (!built) return null;
-
-  const place = garnishPlacement(g, cake, built.size);
+  const place = built ? garnishPlacement(g, cake, built.size) : null;
+  const wall = place?.wall ?? null;
 
   /* Every part shares the piece's placement and its grab handlers — they are one garnish that happens
-     to be made of two chocolates, so a press anywhere on it drags the whole thing. */
-  const pieces = built.pieces ?? [{ geometry: built.geometry, color: g.color }];
+     to be made of two chocolates, so a press anywhere on it drags the whole thing.
+     ⚠️ ON A WALL EACH PART IS WRAPPED to the wall (garnishWall.js) — re-centred, spun, bent round a
+     round tier. Rebuilt only when that shape changes, not when the piece slides round or up the wall,
+     and the wrapped copies are disposed: they are ours, unlike the built geometry they came from. */
+  const pieces = useMemo(() => {
+    if (!built) return [];
+    const raw = built.pieces ?? [{ geometry: built.geometry, color: g.color }];
+    if (!wall) return raw;
+    return raw.map(pc => ({ ...pc, geometry: wrapToWall(pc.geometry, wall), wrapped: true }));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [built, g.color, wall?.height, wall?.spin, wall?.radius]);
+  useEffect(() => () => { pieces.forEach(pc => pc.wrapped && pc.geometry.dispose()); }, [pieces]);
+
+  if (!built) return null;
 
   return (
     <group position={place.position} rotation={place.rotation}>

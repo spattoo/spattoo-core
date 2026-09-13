@@ -247,6 +247,37 @@ property of the element.
 
 `ZONES`: `top_surface`, `side`, `middle_tier`, `board`, `rim` (`top` is an internal alias).
 
+### A tool's own placement block — `chocolate_garnish`
+
+A studio tool reads WHERE its pieces may go from a block named after it, not from the row's top-level
+zone keys. The chocolate garnish tool's row carries:
+
+```jsonc
+"procedural": "chocolate_garnish",
+"chocolate_garnish": {
+  "top_surface": { "modes": ["stand", "hug"] },   // on the cake: standing by default, may lie flat
+  "side":        { "modes": ["hug"] },            // on the side: pressed flat against the wall
+  "board":       { "modes": ["stand", "hug"] }    // on the board
+}
+```
+
+* **Why a block of its own.** The row was made in Add Element, which writes every top-level zone as
+  `hug` by default. Reading those would silently take Standing away from every garnish. A tool keyed
+  by its own name is the pattern `card_topper` and `number_topper` already use.
+* **Same vocabulary as every other zone** — string or `{ modes }`, first mode the default, read with
+  `zoneModes`. `stand` is standing; `hug` is lying flat (on the top or board) or pressed against the
+  wall (on the side). Other modes are ignored: a garnish has no `perch` or `verge`.
+* **Seeded in code, overlaid from the row.** No block keeps the seed above
+  (`GARNISH_PLACEMENT_SEED`, `geometry/garnishPlacement.js`). A block that names any zone **is the whole
+  list** — leave the side out and it is not offered. A block naming nothing usable falls back to the
+  seed rather than offering nowhere.
+* **Read by** the garnish studio ("Where it goes" / "How it sits") and the placed piece's card
+  ("Where it sits" / "How it sits"), through `garnishPlacementOptions` and `garnishSeat`, which also
+  hold a saved piece to what is offered now. A control with one option is not shown.
+* **On the side** a piece is stored as `theta` (angle round the tier) and `height` (0 = base, 1 = rim),
+  faces out of the wall, is bent to a round wall and lies flat on a sheet or outline wall, and seats
+  over any piping on that tier.
+
 ## 2b. Edible sheets (`sheet`)
 
 Printed artwork a baker lays on the cake — the football disc on a top surface. **Not a new kind of

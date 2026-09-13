@@ -1,4 +1,6 @@
 import { insertionDepth } from './garnishPiece.js';
+import { sideSeatOffset, wallClampY, zoneModes } from '../placement.js';
+import { isRoundWall, perimeterAtAngle } from './surface.js';
 
 // ── Where a garnish sits on the cake ─────────────────────────────────────────────────────────────
 //
@@ -25,6 +27,10 @@ export const GARNISH_DEFAULTS = {
   radius: 0.55,      // fraction of the tier radius, 0 = centre
   yaw: 0,            // the piece's own turn about vertical, on top of facing outward
   mode: 'stand',     // 'stand' | 'lie'
+  /* On a WALL (zone 'side'): the piece's centre height as a fraction of the wall, 0 = base, 1 = rim.
+     A fraction for the same reason `radius` is one — a tier gets taller and shorter, and a piece
+     placed halfway up should stay halfway up. */
+  height: 0.5,
   /* Which tier it sits on. Absent means the TOP — see Garnishes.jsx: every piece placed before tiers
      were understood was on the top, and defaulting to zero would move all of them down the cake. */
   tierIndex: null,
@@ -37,6 +43,72 @@ export const GARNISH_DEFAULTS = {
 const RIM_INSET = 0.88;
 
 export const clampRadius = r => Math.max(0, Math.min(RIM_INSET, r));
+const clamp01 = v => Math.max(0, Math.min(1, Number.isFinite(v) ? v : 0.5));
+
+// ── Where a garnish MAY go, from config ──────────────────────────────────────────────────────────
+//
+// ⚠️ THE CHOICES ARE DATA, not two lists typed into the studio and the card. They come from the
+// garnish tool's row: `placement_config.chocolate_garnish`, in the shape every other element uses for
+// a zone — `{ "top_surface": { "modes": ["stand", "hug"] } }`, first mode the default (PLACEMENT_CONFIG.md
+// §2). An admin adds or removes a place, or a pose, in Manage Elements; no deploy.
+//
+// ⚠️ A BLOCK OF ITS OWN, not the row's top-level zone keys. The row was made in Add Element, which
+// writes EVERY zone as `hug` by default — read those and every garnish would silently lose Standing.
+// A tool reading its config from a key named after it is the pattern `card_topper` and
+// `number_topper` already follow.
+//
+// ⚠️ SEEDED HERE, overlaid from the row. No block (every row today) keeps the seed; a block that names
+// any zone IS the list, so a place left out of it is not offered.
+//
+// Stored values stay what saved cakes already hold: `zone` top | side | board, `mode` stand | lie.
+// Config speaks the shared vocabulary — `hug` is lying flat against a surface — and is mapped here, once.
+export const GARNISH_ZONES = [
+  { id: 'top',   key: 'top_surface', label: 'On the cake' },
+  { id: 'side',  key: 'side',        label: 'On the side' },
+  { id: 'board', key: 'board',       label: 'On the board' },
+];
+const POSE_OF_MODE = { stand: 'stand', hug: 'lie' };
+
+/* A piece on the wall can only lie against it: standing has no meaning on a vertical surface. */
+export const GARNISH_PLACEMENT_SEED = {
+  top_surface: { modes: ['stand', 'hug'] },
+  side:        { modes: ['hug'] },
+  board:       { modes: ['stand', 'hug'] },
+};
+
+const poseLabel = (zone, pose) => (pose === 'stand' ? 'Standing'
+  : zone === 'side' ? 'Flat against the side' : 'Lying flat');
+
+/** block — `placement_config.chocolate_garnish`, or null. → { zones: [{ id, key, label, modes: [{ id, label }] }], authored } */
+export function garnishPlacementOptions(block) {
+  const authored = !!block && typeof block === 'object' && GARNISH_ZONES.some(z => block[z.key] != null);
+  const source = authored ? block : GARNISH_PLACEMENT_SEED;
+  const zones = GARNISH_ZONES.map(z => {
+    const poses = zoneModes(source, z.key).map(m => POSE_OF_MODE[m]).filter(Boolean);
+    const modes = [...new Set(poses)].map(id => ({ id, label: poseLabel(z.id, id) }));
+    return modes.length ? { ...z, modes } : null;
+  }).filter(Boolean);
+  // An authored block that names nothing a garnish can do is a mistake, not "place it nowhere".
+  if (!zones.length) return authored ? { ...garnishPlacementOptions(null), authored: false } : { zones: [], authored };
+  return { zones, authored };
+}
+
+/* A zone and pose the options actually allow — the ONE place a pick, a zone switch and a stale saved
+   value are all validated, so none of them can place a piece somewhere the element no longer offers. */
+export function garnishSeat(options, zone, mode) {
+  const zones = options?.zones ?? [];
+  const z = zones.find(x => x.id === zone) ?? zones[0];
+  if (!z) return { zone, mode };
+  const m = z.modes.find(x => x.id === mode) ?? z.modes[0];
+  return { zone: z.id, mode: m.id };
+}
+
+/* How a placed piece is described to the baker who has to make it — the printed X-ray sheet and the
+   screen read this one sentence, so they cannot describe the same piece two ways. */
+export function garnishWhere(g) {
+  if (g?.zone === 'side') return 'On the side of the tier, pressed flat against it';
+  return `${g?.zone === 'board' ? 'On the board' : 'On the top tier'}, ${g?.mode === 'stand' ? 'standing up' : 'lying flat'}`;
+}
 
 /**
  * params  { theta, radius, yaw, mode, scale }
@@ -53,6 +125,7 @@ export const clampRadius = r => Math.max(0, Math.min(RIM_INSET, r));
  */
 export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
   const p = { ...GARNISH_DEFAULTS, ...params };
+  if (p.zone === 'side') return wallPlacement(p, cake, piece);
   const r = clampRadius(p.radius) * cake.radius;
   const x = Math.cos(p.theta) * r;
   const z = Math.sin(p.theta) * r;
@@ -109,6 +182,63 @@ export function garnishPlacement(params, cake, piece = { w: 0.6, h: 0.5 }) {
   };
 }
 
+// ── Pressed flat against a tier wall ─────────────────────────────────────────────────────────────
+//
+// cake  { radius, baseY, height, shape?, clearance? } — `shape` from tierShape (absent = round), and
+//       `clearance(yBottom, yTop)` the renderer's answer to "how far out must something spanning this
+//       clear the piping on this tier" (INVARIANTS #3b). A function rather than the bands themselves so
+//       this file stays free of the renderer's GLB-measuring modules; absent means a bare wall.
+// piece { w, h, d } — the RENDERED size (the build already applied the piece's scale).
+//
+// Returns position/rotation for the group, `wall` for the vertex wrap (garnishWall.js), and anchors.
+function wallPlacement(p, cake, piece) {
+  const w = piece.w ?? 0.6, h = piece.h ?? 0.5, d = piece.d ?? 0;
+  const spin = p.yaw ?? 0;
+  // A turned piece reaches further up/down (and less along the wall) than an upright one.
+  const c = Math.abs(Math.cos(spin)), sn = Math.abs(Math.sin(spin));
+  const halfV = (sn * w + c * h) / 2;
+  const baseY = cake.baseY ?? 0, wallH = cake.height ?? 1;
+  /* The wall keeps the whole piece: its centre is clamped so neither edge leaves the band between the
+     base and the rim — the same helper, and the same rule, a side sticker is held by. */
+  const y = wallClampY(baseY + clamp01(p.height) * wallH, baseY, wallH, halfV, halfV);
+  const clear = typeof cake.clearance === 'function' ? cake.clearance(y - halfV, y + halfV) : 0;
+  /* Seated by its BACK: the wall gap every side decoration uses, half the piece's thickness so its
+     back face rather than its middle meets the wall, and whatever piping it has to ride over. */
+  const off = sideSeatOffset(cake.radius) + d / 2 + clear;
+
+  let x, z, faceYaw, bend;
+  if (!cake.shape || isRoundWall(cake.shape)) {
+    const r = cake.radius + off;
+    x = Math.cos(p.theta) * r;
+    z = Math.sin(p.theta) * r;
+    /* Facing OUTWARD. The piece looks along +Z; a Y-turn of φ sends that to (sin φ, cos φ), which is
+       the outward direction (cos θ, sin θ) when φ = π/2 − θ. On a wall this is not a style choice as it
+       was on the top — a piece facing anywhere else would stick out of the cake. */
+    faceYaw = Math.PI / 2 - p.theta;
+    bend = r;
+  } else {
+    // A sheet or outline wall: flat against the face the angle points at, no bend.
+    const pl = perimeterAtAngle(cake.shape, p.theta, off);
+    x = pl.x; z = pl.z; faceYaw = pl.yaw; bend = 0;
+  }
+  return {
+    position: [x, y, z],
+    rotation: [0, faceYaw, 0],
+    wall: { height: h, spin, radius: bend },
+    anchors: wallCorners(x, y, z, faceYaw, w, h, spin),
+  };
+}
+
+/* The piece's four corners in the wall's tangent plane — what the contract measures. */
+function wallCorners(x, y, z, faceYaw, w, h, spin) {
+  const tx = Math.cos(faceYaw), tz = -Math.sin(faceYaw);   // the piece's local +X after facing out
+  const c = Math.cos(spin), s = Math.sin(spin);
+  return [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]].map(([a, b]) => {
+    const along = a * c - b * s, up = a * s + b * c;
+    return { x: x + tx * along, y: y + up, z: z + tz * along };
+  });
+}
+
 /* The four corners the contract measures. For a standing piece that is a vertical rectangle; for a
  * lying one a horizontal one. Returned as {x,y,z} because that is what the contract's spread and
  * centroid helpers read. */
@@ -138,6 +268,8 @@ export function garnishDragTo(params, cake, u, v) {
      new coat — it SHRANK as it was dragged toward the rim. The movable contract failed this on the
      first run, which is the whole reason it exists. `cloudDragTo` returns a partial for the same
      reason; follow it rather than inventing a second convention. */
+  /* On a wall the second freedom is UP the wall, not out from the middle — so `v` is a height. */
+  if (params?.zone === 'side') return { theta: u * Math.PI * 2, height: clamp01(v) };
   return { theta: u * Math.PI * 2, radius: clampRadius(v) };
 }
 
@@ -171,6 +303,9 @@ export function fanPlacements(base, count, spread) {
   // Evenly across the arc, centred on where the piece already sits: -spread/2 … +spread/2.
   return Array.from({ length: n }, (_, i) => {
     const t = n === 1 ? 0 : (i / (n - 1)) - 0.5;     // -0.5 … +0.5
+    /* ⚠️ ON A WALL THE ARC DOES NOT SPLAY. There Turn spins a piece within the wall, so splaying would
+       make a pinwheel of copies rather than a band of them round the side. */
+    if (base?.zone === 'side') return { theta: theta0 + spread * t };
     return { theta: theta0 + spread * t, yaw: yaw0 + spread * t };
   });
 }

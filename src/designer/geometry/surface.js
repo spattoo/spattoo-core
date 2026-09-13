@@ -462,6 +462,40 @@ export function rectSidePlacement(shape, u, off = 0) {
   return { x: p.x + off * p.nx, z: p.z + off * p.nz, yaw: Math.atan2(p.nx, p.nz), nx: p.nx, nz: p.nz };
 }
 
+// The wall point in a DIRECTION from the tier's centre — where a ray at angle `theta` (x = cos θ,
+// z = sin θ) leaves the shape — with its outward normal, pushed `off` proud of the surface.
+//
+// ⚠️ A RAY FROM THE CENTRE, NOT THE NEAREST PERIMETER POINT. Nearest-point is what `nearestU` answers
+// for a pointer, and it is the wrong question for an angle: every direction inside the wedge off a
+// corner has the SAME nearest point, the corner, so a stored angle swept through that wedge would sit
+// still — a dead patch in the drag (movable contract law 2). A ray moves continuously with the angle
+// on any shape its centre can see all of, which every cake shape is. Where a ray crosses more than one
+// ring (a glyph with counters) the OUTERMOST crossing is the wall a decoration sits on.
+export function perimeterAtAngle(shape, theta, off = 0, samples = 720) {
+  const perim = perimeter(shape);
+  const dx = Math.cos(theta), dz = Math.sin(theta);
+  const cross = (ax, az, bx, bz) => ax * bz - az * bx;
+  let best = null;
+  let prev = perim.at(0);
+  for (let i = 1; i <= samples; i++) {
+    const cur = perim.at((i / samples) * perim.length);
+    const ex = cur.x - prev.x, ez = cur.z - prev.z;
+    const den = cross(dx, dz, ex, ez);
+    if (Math.abs(den) > 1e-12) {
+      const t = cross(prev.x, prev.z, ex, ez) / den;       // distance along the ray
+      const s = cross(prev.x, prev.z, dx, dz) / den;       // fraction along the segment
+      if (t >= 0 && s >= -1e-9 && s <= 1 + 1e-9 && (!best || t > best.t)) {
+        const nx = prev.nx + (cur.nx - prev.nx) * s, nz = prev.nz + (cur.nz - prev.nz) * s;
+        const nl = Math.hypot(nx, nz) || 1;
+        best = { t, x: prev.x + ex * s, z: prev.z + ez * s, nx: nx / nl, nz: nz / nl };
+      }
+    }
+    prev = cur;
+  }
+  if (!best) return { x: dx * off, z: dz * off, nx: dx, nz: dz, yaw: Math.atan2(dx, dz) };
+  return { x: best.x + off * best.nx, z: best.z + off * best.nz, nx: best.nx, nz: best.nz, yaw: Math.atan2(best.nx, best.nz) };
+}
+
 // ── Self-test ─────────────────────────────────────────────────────────────────
 // Pure invariants for the geometry above. Returns a list of failure messages ([] = ok).
 // Run from a node script or under a dev guard; lets the math be validated without a render.

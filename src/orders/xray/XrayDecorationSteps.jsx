@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
@@ -85,8 +86,8 @@ function GarnishGuides({ garnishes, s }) {
             <div style={{ fontSize: 14, fontWeight: 800, marginBottom: 10 }}>
               {g.name || 'Chocolate garnish'}
               <span style={{ fontWeight: 600, color: '#999', marginLeft: 8, fontSize: 12 }}>
-                {g.zone === 'board' ? 'on the board' : 'on the top tier'}
-                {g.mode === 'stand' ? ', standing up' : ', lying flat'}
+                {/* The same words the printed sheet uses — one helper, so the two cannot drift. */}
+                {garnishWhere(g).toLowerCase()}
               </span>
             </div>
             <GarnishBuildGuide garnish={g} cakeDiameterMm={g.cakeDiameterMm ?? null} />

@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { RefreshIcon } from '../shared/icons.jsx';
 import PlanCards from '../billing/PlanCards.jsx';
-import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
+import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT, freeTimeLabel } from '../billing/planPricing.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
@@ -959,14 +959,27 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                   {isOnSpark ? 'Upgrade your plan' : isActive ? 'Switch plan' : 'Choose a plan'}
                 </div>
 
-                {/* Period toggle */}
+                {/* Period toggle.
+                    ⚠️ `flexWrap`, and it is not decoration. With two intervals this row fitted a
+                    phone; with quarterly back it is three buttons carrying "9 days free" and
+                    "2 months free" — 392px of content in a 375px screen, and it CLIPPED rather than
+                    scrolled, so on a real phone Yearly's badge read "2 months fre". Wrapping is the
+                    honest behaviour for a control whose contents are data: a fourth interval, or a
+                    longer label in another language, costs a second line instead of a lost word. */}
                 <div style={{
-                  display: 'flex', background: '#fff', borderRadius: 12, padding: 4,
+                  display: 'flex', flexWrap: 'wrap', background: '#fff', borderRadius: 12, padding: 4,
                   boxShadow: '0 2px 8px rgba(0,0,0,0.06)', alignSelf: 'flex-start', gap: 2,
+                  maxWidth: '100%',
                 }}>
                   {periods.map(p => {
                     const active = selectedPeriod === p.name;
-                    const disc   = p.discount_pct ?? 0;
+                    /* ⚠️ WHAT THE DISCOUNT IS WORTH, IN TIME — not "-17%". A baker does not price a
+                       decision in percentages: "2 months free" is a sentence they repeat, "-17%" is
+                       arithmetic they have to do before they believe it. And the unit has to move
+                       with the period, which is why this is a shared function and not a template
+                       string — quarterly's 10% is 0.30 months, and "0.3 months free" is not
+                       something anybody says. See freeTimeLabel. */
+                    const free   = freeTimeLabel(p);
                     return (
                       <button
                         key={p.name}
@@ -980,13 +993,14 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                         }}
                       >
                         {p.display_name}
-                        {disc > 0 && (
+                        {free && (
                           <span style={{
                             fontSize: 9, fontWeight: 800, padding: '2px 6px', borderRadius: 20,
                             background: active ? 'rgba(255,255,255,0.25)' : '#D1FAE5',
                             color: active ? '#fff' : '#065F46',
+                            whiteSpace: 'nowrap',
                           }}>
-                            -{disc}%
+                            {free}
                           </span>
                         )}
                       </button>
