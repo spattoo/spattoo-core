@@ -1013,14 +1013,14 @@ export default function TopperComposer({
     return () => { alive = false; };
   }, [defaultFace, fonts]);
 
+  /* Offset starts at nothing, for text as for shapes: a piece gains an outline because the baker asked
+     for one, never because it was added. Text used to arrive with a band (0.06) on the reasoning that
+     a card topper usually has one — but that made the outline a thing to REMOVE rather than a choice
+     to make. The Offset slider is right there on the selected text; the presets still show bands. */
   const addText = () => add({
     kind: 'text', text: 'TEST', size: 1.2, face: defaultFace,
-    // A band by default, because a card topper almost always has one and a baker who does not want
-    // it can drag it to none — easier than discovering a control that starts at zero.
-    offset: 0.06, offsetColour: '#FFFFFF',
+    offset: 0, offsetColour: '#FFFFFF',
   });
-  /* Offset starts at nothing: a shape gains an outline because somebody asked for one, never
-     because it was added. */
   /* ⚠️ IDS ARE MINTED HERE, not stored on the preset — picking the same one twice would otherwise
      produce two objects sharing an id, and selecting either would move both. Cloned per object too,
      so editing what was just dropped cannot reach back into the frozen preset list. */
