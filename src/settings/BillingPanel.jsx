@@ -862,11 +862,6 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                         Subscription expired — choose a plan below
                       </div>
                     )}
-                    {billing.status === 'pending' && (
-                      <div style={{ fontSize: 12, color: '#92400E', fontWeight: 600, marginTop: 4 }}>
-                        Waiting for Razorpay to confirm your payment. This can take a minute.
-                      </div>
-                    )}
                   </div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <StatusBadge status={billing.status} />
@@ -889,6 +884,14 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                     )}
                   </div>
                 </div>
+
+                {/* Its own row, not the title column: beside the badge and Refresh on a phone it was
+                    squeezed to a six-line sliver. */}
+                {billing.status === 'pending' && (
+                  <div style={{ fontSize: 12, color: '#92400E', fontWeight: 600, marginTop: 6 }}>
+                    If you just completed a payment, it can take a few minutes to confirm. Check back shortly, or tap Refresh.
+                  </div>
+                )}
 
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
                   {realCancel ? (
