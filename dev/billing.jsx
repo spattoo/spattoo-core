@@ -9,6 +9,10 @@ import BillingPanel from '../src/settings/BillingPanel.jsx';
 const q = new URLSearchParams(location.search);
 const tier   = q.get('tier')   || 'blaze';
 const status = q.get('status') || 'active';
+// `?status=pending&settleAfter=2`: the webhook "lands" on the 2nd status read, so the Refresh button
+// beside a Pending badge can be driven to a real transition.
+const settleAfter = Number(q.get('settleAfter')) || 0;
+let statusReads = 0;
 
 // Prices in paise, ordered by sort_order exactly as GET /plans returns them.
 const PLANS = [
@@ -20,7 +24,7 @@ const PLANS = [
 const apiClient = new Proxy({
   fetchPlans:   async () => PLANS,
   fetchBillingPeriods: async () => ([{ id: 1, name: 'monthly', months: 1, discount_pct: 0 }, { id: 2, name: 'yearly', months: 12, discount_pct: 17 }]),
-  fetchBillingStatus: async () => ({ tier, status, next_billing_at: null, cancel_at_period_end: false }),
+  fetchBillingStatus: async () => ({ tier, status: settleAfter && ++statusReads >= settleAfter ? 'active' : status, next_billing_at: null, cancel_at_period_end: false }),
   fetchSubscriptionHistory: async () => [],
   fetchEntitlements: async () => ({ ent: {} }),
 }, { get: (t, k) => t[k] ?? (async () => null) });

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
+import { RefreshIcon } from '../shared/icons.jsx';
 import PlanCards from '../billing/PlanCards.jsx';
 import { periodPrice, formatPlanPrice, gstBreakup, GST_RATE_PCT } from '../billing/planPricing.js';
 import { creditsChanged } from '../billing/creditsBus.js';
@@ -457,6 +458,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   const [history,        setHistory]        = useState([]);
   const [periods,        setPeriods]        = useState([]);
   const [loading,        setLoading]        = useState(true);
+  const [refreshing,     setRefreshing]     = useState(false);
   const [selectedTier,   setSelectedTier]   = useState('spark');
   const [selectedPeriod, setSelectedPeriod] = useState('monthly');
   const [subscribing,    setSubscribing]    = useState(false);
@@ -493,9 +495,13 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
   }
 
   // After a Checkout success the subscription.activated webhook processes ASYNCHRONOUSLY, so the
-  // first refetch can still read 'pending'. Poll a few times until it settles (then give up quietly —
-  // a later open reconciles). Runs in the background; it never blocks the UI.
-  async function reloadUntilSettled(tries = 5, delayMs = 1500) {
+  // first refetch can still read 'pending'. Poll until it settles (then give up quietly — the Refresh
+  // button beside the badge, or a later open, reconciles). Runs in the background; never blocks the UI.
+  //
+  // About a minute, not a few seconds: a UPI Autopay mandate routinely takes longer than 7.5s for
+  // Razorpay to send subscription.activated, and the old window gave up first — so a baker who had
+  // just paid came back to a "Pending" that never moved on its own.
+  async function reloadUntilSettled(tries = 20, delayMs = 3000) {
     for (let i = 0; i < tries; i++) {
       const b = await reload().catch(() => null);
       if (b && b.status !== 'pending') { onSubscriptionChange?.(b); return; }
@@ -504,6 +510,20 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
     // Gave up waiting for the webhook. Tell the host anyway: the payment DID go through, so the
     // host's stale copy is more wrong than a late one, and refetching can only improve it.
     onSubscriptionChange?.(null);
+  }
+
+  // The Refresh button beside a Pending badge: one read of the status, on demand. It re-reads OUR
+  // row, so it helps once the webhook has landed — it cannot conjure a webhook that never arrived.
+  async function refreshStatus() {
+    setRefreshing(true); setError(null);
+    try {
+      const b = await reload();
+      if (b && b.status !== 'pending') onSubscriptionChange?.(b);
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setRefreshing(false);
+    }
   }
 
   useEffect(() => {
@@ -842,8 +862,32 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                         Subscription expired — choose a plan below
                       </div>
                     )}
+                    {billing.status === 'pending' && (
+                      <div style={{ fontSize: 12, color: '#92400E', fontWeight: 600, marginTop: 4 }}>
+                        Waiting for Razorpay to confirm your payment. This can take a minute.
+                      </div>
+                    )}
                   </div>
-                  <StatusBadge status={billing.status} />
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <StatusBadge status={billing.status} />
+                    {billing.status === 'pending' && (
+                      <button
+                        type="button"
+                        onClick={refreshStatus}
+                        disabled={refreshing}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6,
+                          minHeight: isMobile ? 40 : 30, padding: '0 12px',
+                          background: '#fff', border: '1.5px solid #E5E7EB', borderRadius: 20,
+                          cursor: refreshing ? 'default' : 'pointer', opacity: refreshing ? 0.6 : 1,
+                          fontFamily: 'inherit', fontSize: 12, fontWeight: 700, color: '#374151',
+                        }}
+                      >
+                        <RefreshIcon size={14} />
+                        {refreshing ? 'Checking…' : 'Refresh'}
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div style={{ marginTop: 16, paddingTop: 16, borderTop: '1px solid #F0F4F1', display: 'flex', alignItems: 'center', justifyContent: (realCancel || isDowngradeScheduled || isIntervalScheduled) ? 'flex-start' : 'flex-end', gap: 12 }}>
