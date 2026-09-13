@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import CustomerSearch from './CustomerSearch.jsx';
 import { isValidEmail } from '../shared/validators.js';
-import { dockedLeft } from '../shared/rail.js';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 // InvitePanel — baker tool to invite a customer to a design session. Right-side
 // slide-in panel matching CustomersPanel/OrdersPanel. Calls apiClient.inviteCustomer
@@ -103,19 +104,21 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
 
   return (
     <>
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 300, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif", background: '#F7F5F0',
-        boxShadow: '-4px 0 24px rgba(0,0,0,0.1)',
-        animation: 'slideInRight 0.28s cubic-bezier(0.32,0.72,0,1)',
       }}>
         <style>{`@keyframes slideInRight { from { transform: translateX(100%) } to { transform: translateX(0) } }`}</style>
 
         {/* Top bar */}
-        <div style={{ height: 56, padding: '0 20px', background: '#fff', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
-          <button onClick={onClose} style={st.close}>✕</button>
+        {/* Top bar — reaches back under the rail (dockedBleed). Left the way Orders and Customers
+            are, from shared/panelTopBar.jsx: the arrow on a phone, a ✕ at the far right on desktop. */}
+        <div style={{ height: 56, padding: '0 20px', ...dockedBleed(isMobile, 20), background: '#fff', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
+          {isMobile && <PanelBackArrow onClick={onClose} />}
           <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{liveSessionId ? 'Invite to design together' : 'Invite for design'}</span>
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
         <div style={{ flex: 1, overflowY: 'auto', padding: 20 }}>
@@ -217,7 +220,6 @@ function Field({ label, children }) {
 }
 
 const st = {
-  close:    { width: 34, height: 34, borderRadius: 9, border: '1.5px solid #E8E4DC', background: '#fff', color: '#666', fontSize: 14, cursor: 'pointer', flexShrink: 0 },
   lead:     { fontSize: 13, fontWeight: 600, color: '#6B8C74', margin: '0 0 4px', lineHeight: 1.5 },
   inp:      { padding: '9px 12px', borderRadius: 10, border: '1.5px solid #E0DDD8', fontSize: 13, fontFamily: 'inherit', color: '#222', outline: 'none', width: '100%', boxSizing: 'border-box', background: '#fff' },
   hint:     { fontSize: 11, fontWeight: 600, color: '#aaa', margin: 0 },

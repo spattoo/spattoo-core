@@ -40,37 +40,49 @@ export const RAIL_RIGHT = RAIL_CENTRE + RAIL.bladeHalf;
  */
 export const dockedLeft = (isMobile) => (isMobile ? 0 : RAIL_RIGHT);
 
-/** Where a docked page stacks, and the rail above it while one is open. */
-export const DOCKED_PAGE_Z = 300;
-export const RAIL_OVER_PAGE_Z = DOCKED_PAGE_Z + 1;
+/**
+ * Where docked pages stack. A page that opens OVER another docked page (Billing, from a premium
+ * theme inside Store Settings) sits one step up; the rail sits above both while any is open, and
+ * below the app-wide overlays at 320.
+ */
+export const DOCKED_PAGE_Z         = 300;
+export const DOCKED_PAGE_STACKED_Z = 310;
+export const RAIL_OVER_PAGE_Z      = 315;
 
 /**
  * The frame of a screen that REPLACES the workspace beside the rail — a page, not a layer over it.
  *
  * `dockedLeft` alone started the panel at the rail's painted edge, so everything the spatula does
  * not cover — the gap beside its narrow handle, the strip under its cap, the header's bakery name —
- * was the designer showing through. With a slide-in and a shadow on top, the result read as a popup
- * floating over the app, yet it had a Back button and no close: neither a popup nor a page.
+ * was the designer showing through. With a slide-in and a shadow on top, it read as a popup floating
+ * over the app, yet it had a Back button and no close: neither a popup nor a page.
  *
- * So on desktop the page spans the whole window — its ground AND its header band run to the
- * viewport's left edge, behind the rail — and each band pads its own CONTENT by `dockedInset`. The
- * host lifts the rail to RAIL_OVER_PAGE_Z and gives the spatula RAIL_LIFTED_SHADOW, so the menu
- * visibly floats ABOVE the window rather than sitting beside a card. No slide-in and no page shadow.
- * On a phone the page is the whole screen already, so it keeps its slide-in as a page transition.
- *
- * Padding the page itself would stop the header band at the rail's edge, which is exactly what made
- * it read as a separate layer — hence the inset per band.
+ * So on desktop the page spans the whole window. Its ground runs to the viewport's left edge and
+ * its content is padded clear of the rail; its top bar reaches back under the rail with
+ * `dockedBleed`. The host lifts the rail to RAIL_OVER_PAGE_Z and gives the spatula
+ * RAIL_LIFTED_SHADOW, so the menu visibly floats ABOVE the window rather than sitting beside a card.
+ * No slide-in and no page shadow. On a phone the page is the whole screen already, so it keeps its
+ * slide-in as a page transition.
  *
  * Needs a `slideInRight` keyframe in scope on a phone. Style the ground (background) yourself.
  */
-export const dockedPage = (isMobile) => ({
+export const dockedPage = (isMobile, { stacked = false } = {}) => ({
   position: 'fixed', top: 0, right: 0, bottom: 0, left: 0,
-  zIndex: DOCKED_PAGE_Z,
-  ...(isMobile ? { animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)' } : {}),
+  zIndex: stacked ? DOCKED_PAGE_STACKED_Z : DOCKED_PAGE_Z,
+  ...(isMobile
+    ? { animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)' }
+    : { paddingLeft: RAIL_RIGHT }),
 });
 
-/** How far a docked page's bands indent their content, to clear the rail floating over them. */
-export const dockedInset = (isMobile) => (isMobile ? 0 : RAIL_RIGHT);
+/**
+ * For a docked page's TOP BAR only: reach back under the rail, so the band spans the whole window,
+ * while keeping its content where it was. `pad` is the bar's own left padding. Spread it AFTER any
+ * `padding` shorthand. Only the top bar needs it: the page's ground already fills the padding
+ * behind every other band, and a header that stopped at the rail's edge is what made the rail read
+ * as sitting beside a separate card.
+ */
+export const dockedBleed = (isMobile, pad) =>
+  (isMobile ? {} : { marginLeft: -RAIL_RIGHT, paddingLeft: pad + RAIL_RIGHT });
 
 /**
  * The spatula's shadow while it floats over a docked page. A `filter` on the SVG alone, never on the

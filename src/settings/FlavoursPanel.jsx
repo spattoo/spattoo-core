@@ -3,7 +3,8 @@ import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import Chip from '../shared/Chip.jsx';
 import { dietTone, restrictions } from '../orders/dietary.js';
 import DietaryOptionsSection from './DietaryOptionsSection.jsx';
-import { dockedLeft } from '../shared/rail.js';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 // Flavours — a top-level settings destination (peer of Store Settings), not a section
 // inside it, so the catalogue can grow without bloating the store-config screen.
@@ -180,31 +181,29 @@ export default function FlavoursPanel({ open, onClose, apiClient, primaryColor =
         @keyframes spin { to { transform: rotate(360deg) } }
       `}</style>
 
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 300, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#F4F8F5',
-        boxShadow: '-4px 0 40px rgba(0,0,0,0.15)',
-        animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)',
       }}>
 
-        {/* Header */}
+        {/* Header — the band reaches back under the rail (dockedBleed). */}
         <div style={{
           padding: isMobile ? '16px 20px' : '20px 28px',
+          ...dockedBleed(isMobile, 28),
           background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
         }}>
-          <button onClick={onClose} style={{
-            display: 'flex', alignItems: 'center', gap: 5, flexShrink: 0,
-            background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 10, padding: '7px 14px', cursor: 'pointer', fontFamily: 'inherit',
-            fontSize: 13, fontWeight: 700, color: 'rgba(255,255,255,0.85)',
-          }}>← Back</button>
+          {/* How this page is left — shared/panelTopBar.jsx: a ✕ at the far right on desktop, where
+              nothing is "back" beside an always-visible rail; the arrow on a phone. */}
+          {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Flavours</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>What you can make — flavours and dietary options</div>
           </div>
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
         {/* Body */}

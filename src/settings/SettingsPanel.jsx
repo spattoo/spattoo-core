@@ -6,7 +6,7 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
-import { dockedPage, dockedInset } from '../shared/rail.js';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
@@ -291,9 +291,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         background: '#F4F8F5',
       }}>
 
-        {/* Header — the band runs behind the rail; only its content is inset (dockedInset). */}
+        {/* Header — the band reaches back under the rail (dockedBleed). */}
         <div style={{
-          padding: isMobile ? '16px 20px' : `20px 28px 20px ${28 + dockedInset(isMobile)}px`,
+          padding: isMobile ? '16px 20px' : '20px 28px',
+          ...dockedBleed(isMobile, 28),
           background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
         }}>
@@ -309,7 +310,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : `24px 24px 24px ${24 + dockedInset(isMobile)}px`, display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
 
           {loading && (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 60, color: '#9BB5A2', fontSize: 14 }}>

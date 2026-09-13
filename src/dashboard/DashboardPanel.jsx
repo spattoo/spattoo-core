@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { RefreshIcon } from '../shared/icons.jsx';
-import { dockedLeft } from '../shared/rail.js';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 
 const STATUS_META = {
   pending:     { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
@@ -267,33 +268,25 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
         .dash-fadein { animation: fadeUp 0.35s ease both; }
       `}</style>
 
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
       <div style={{
-        position: 'fixed', top: 0, right: 0, bottom: 0, left: dockedLeft(isMobile),
-        zIndex: 300, display: 'flex', flexDirection: 'column',
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
         fontFamily: "'Quicksand', sans-serif",
         background: '#f3f0fb',
-        boxShadow: '-4px 0 40px rgba(0,0,0,0.15)',
-        animation: 'slideInRight 0.3s cubic-bezier(0.32,0.72,0,1)',
       }}>
 
-        {/* Header */}
+        {/* Header — the band reaches back under the rail (dockedBleed). */}
         <div style={{
           padding: isMobile ? '16px 20px' : '20px 28px',
+          ...dockedBleed(isMobile, 28),
           background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
           flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
           position: 'relative', overflow: 'hidden',
         }}>
-          <button onClick={onClose} style={{
-            width: 32, height: 32, flexShrink: 0, zIndex: 1,
-            background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.2)',
-            borderRadius: 8, cursor: 'pointer',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: 'rgba(255,255,255,0.85)',
-          }}>
-            <svg width={16} height={16} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M19 12H5M12 5l-7 7 7 7" />
-            </svg>
-          </button>
+          {/* How this page is left — shared/panelTopBar.jsx: the arrow on a phone, a ✕ at the far
+              right on desktop (after the chart, raised above it). */}
+          {isMobile && <span style={{ position: 'relative', zIndex: 1 }}><PanelBackArrow onClick={onClose} /></span>}
 
           <div style={{ flex: 1, zIndex: 1 }}>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', fontWeight: 500 }}>
@@ -342,6 +335,7 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
             <circle cx="479" cy="16" r="5"   fill="white" fillOpacity="0.85" />
             <circle cx="479" cy="16" r="9"   fill="white" fillOpacity="0.12" />
           </svg>
+          {!isMobile && <span style={{ position: 'relative', zIndex: 1 }}><PanelDismiss onClick={onClose} /></span>}
         </div>
 
         {/* Body */}

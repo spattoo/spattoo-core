@@ -2296,6 +2296,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // once per URL at render, which fixes existing logos without a re-upload or a backfill.
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
 
+  // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
+  // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
+  // one of the two places that read it.
+  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
+    || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
+
+
   // Enlarged template thumbnail. The card is 180x120 and the stored capture is the camera's whole
   // 800x800 frame, so even a badly-framed thumbnail has real pixels behind it — showing it bigger
   // is what rescues the templates saved before the capture was cropped, which is most of them.
@@ -2591,7 +2598,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // this only hides controls a principal can't use.
   const hasCap = (cap) => !capabilities || !cap || capabilities.includes('*') || capabilities.includes(cap);
   // Which Orders entries this person may see — decided once, read by both rails.
-  const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires));
+  // `active` on the items that open the Orders page, so the rail lights Orders while it is open —
+  // the same flag the Settings menu items carry.
+  const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires))
+    .map(item => (item.view ? { ...item, active: ordersPanelOpen } : item));
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
   // ── Opening what a notification points at ──────────────────────────────────────────────────────
@@ -2799,19 +2809,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           // `active`: this destination is open, so the rail lights its menu — the rail says where you are.
           { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true), active: settingsPanelOpen },
           // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
-          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true),
+          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
             badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
           // NOT "Templates". The rail already has a Templates destination — browsing templates to
           // start a design — and in the More sheet the two now sit a few rows apart, where one word
           // for two different things is a coin toss. This one chooses which global templates the
           // bakery OFFERS, which is what features/template-visibility.md calls it.
-          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true) },
+          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
         ] : []),
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
         // permission can answer. See spattoo-docs/features/reel-capture.md.
 
-        ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true) }] : []),
+        ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true), active: billingPanelOpen }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
       ],
     },
@@ -2821,7 +2831,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesPanelOpen, billingPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -2865,6 +2875,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     : id === 'templates' ? templatesOpen
     : id === 'tools'     ? toolsOpen
     : id === 'codesign'  ? codesignPanelOpen
+    : id === 'dashboard' ? dashboardOpen
+    : id === 'customers' ? customersPanelOpen
+    : id === 'invite'    ? invitePanelOpen
     : false);
 
   // More lights up when the destination you are looking at lives inside it — otherwise the strip
@@ -8845,11 +8858,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Left column: sidebar (the logo moved to the desktop header) ── */}
         {/* Lifted over a docked page while one is open, so the rail sits ON that page — see dockedPage. */}
-        {!isMobile && <div style={settingsPanelOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
+        {!isMobile && <div style={dockedPageOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
         <div style={s.sidebar}>
-          <SpatulaFrame lifted={settingsPanelOpen} />
+          <SpatulaFrame lifted={dockedPageOpen} />
           <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
             {railItems.map(({ id, label, icon, menu }) => {
