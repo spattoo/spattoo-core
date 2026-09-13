@@ -36,3 +36,29 @@ export function RefreshIcon({ size = 20 }) {
     </svg>
   );
 }
+
+// A camera: take or change a photo. The rail's capture actions, and the store logo's "change" overlay
+// in Settings. Moved here from CakeDesigner.jsx when Settings needed it — Settings cannot import from
+// the designer without closing the import cycle described at the top of this file.
+export function CameraIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* The raised hump over the lens is what reads as "camera" at 15px; a plain rectangle with a
+          circle in it reads as nothing at all. */}
+      <path d="M3 8.5a2 2 0 012-2h1.9a1.5 1.5 0 001.28-.72l.64-1.06A1.5 1.5 0 0110.1 4h3.8a1.5 1.5 0 011.28.72l.64 1.06a1.5 1.5 0 001.28.72H19a2 2 0 012 2v8.5a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
+      <circle cx="12" cy="12.75" r="3.25" />
+    </svg>
+  );
+}
+
+// A picture — a frame with a hill and a sun. The rail's Uploads destination, and the empty store-logo
+// box in Settings, where it says "an image goes here". Same move, same reason, as CameraIcon.
+export function UploadsIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <circle cx="8.5" cy="9.5" r="1.6" />
+      <path d="M21 15.5l-4.5-4.5L7 20.5" />
+    </svg>
+  );
+}

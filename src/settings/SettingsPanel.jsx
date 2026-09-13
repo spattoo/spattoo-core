@@ -8,6 +8,7 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { CameraIcon, UploadsIcon } from '../shared/icons.jsx';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -348,7 +349,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                       {logoSrc
                         ? <img src={logoSrc} alt="Logo"
                             style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
-                        : <span style={{ fontSize: 26 }}>🏪</span>
+                        // No logo yet: the picture mark, in the muted label colour — "an image goes here".
+                        : <span style={{ display: 'flex', color: '#9BB5A2' }}><UploadsIcon size={24} /></span>
                       }
                       {/* Hover overlay */}
                       <div style={{
@@ -360,7 +362,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                         onMouseEnter={e => e.currentTarget.style.opacity = 1}
                         onMouseLeave={e => e.currentTarget.style.opacity = 0}
                       >
-                        <span style={{ fontSize: 20 }}>📷</span>
+                        <span style={{ display: 'flex', color: '#fff' }}><CameraIcon size={20} /></span>
                       </div>
                     </div>
                     <input type="file" accept="image/*" onChange={handleLogoChange} style={{ display: 'none' }} />

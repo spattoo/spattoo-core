@@ -23,7 +23,7 @@ import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '..
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -1007,15 +1007,6 @@ function TourIcon({ size = 20 }) {
   );
 }
 
-function UploadsIcon({ size = 20 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="3" y="4" width="18" height="16" rx="2.5" />
-      <circle cx="8.5" cy="9.5" r="1.6" />
-      <path d="M21 15.5l-4.5-4.5L7 20.5" />
-    </svg>
-  );
-}
 
 // "My decorations" — the one card in the category grid that can never have a photo on it.
 //
@@ -1158,16 +1149,6 @@ function MoreIcon({ size = 20 }) {
 
 /* The two takes. Same 24-grid, same 1.8 stroke, currentColor — so each takes the colour of whatever
  * it sits in, whether that is a dark button or a white menu row. */
-function CameraIcon({ size = 18 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      {/* The raised hump over the lens is what reads as "camera" at 15px; a plain rectangle with a
-          circle in it reads as nothing at all. */}
-      <path d="M3 8.5a2 2 0 012-2h1.9a1.5 1.5 0 001.28-.72l.64-1.06A1.5 1.5 0 0110.1 4h3.8a1.5 1.5 0 011.28.72l.64 1.06a1.5 1.5 0 001.28.72H19a2 2 0 012 2v8.5a2 2 0 01-2 2H5a2 2 0 01-2-2z" />
-      <circle cx="12" cy="12.75" r="3.25" />
-    </svg>
-  );
-}
 
 function ReelIcon({ size = 18 }) {
   return (
