@@ -25,6 +25,40 @@ export function formatPlanPrice(amount, { currency = 'INR' } = {}) {
   }
 }
 
+/* ── What the discount is WORTH, said in time rather than percent ────────────────────────────────
+ *
+ * A baker does not price a decision in percentages. "Pay yearly, get two months free" is a sentence
+ * somebody repeats; "-17%" is a number they have to do arithmetic on to believe.
+ *
+ * ⚠️ THE UNIT CHANGES WITH THE PERIOD, and that is the whole reason this is a function rather than a
+ * format string. Yearly at 17% is 2.04 months — "2 months free", which is the line the pricing page
+ * is built around. Quarterly at 10% is 0.30 months, and "0.3 months free" is not something anybody
+ * says: a third of a month is a number you have to convert before it means anything. In days it is
+ * plain — "9 days free" — and nine free days on a three-month commitment reads as a real, if small,
+ * thing, which is exactly what it is.
+ *
+ * So: a month or more is said in months, less than a month is said in days. The switch is at the
+ * point where the fraction starts needing a decimal place, not at a tuned threshold.
+ *
+ * 30.44 = 365.25/12, the average month. A quarter is 91 days, not 90, and using 30 would under-count
+ * the free time we are advertising — which is the one direction a discount claim must never be wrong
+ * in. Rounded DOWN for the same reason: promise nine days and give nine and a bit.
+ */
+const DAYS_PER_MONTH = 365.25 / 12;
+
+export function freeTimeLabel(period) {
+  const months   = Number(period?.months) || 0;
+  const discount = (Number(period?.discount_pct) || 0) / 100;
+  const free     = months * discount;                    // free time, in months
+  if (free <= 0) return null;                            // monthly, or any period at 0% — no claim to make
+  if (free >= 1) {
+    const m = Math.floor(free + 1e-9);                   // 2.04 → 2, and 2.0 is not dragged to 1 by float noise
+    return `${m} month${m === 1 ? '' : 's'} free`;
+  }
+  const d = Math.floor(free * DAYS_PER_MONTH);
+  return d >= 1 ? `${d} day${d === 1 ? '' : 's'} free` : null;
+}
+
 export const PERIOD_SUFFIX = { monthly: '/mo', quarterly: '/qtr', yearly: '/yr' };
 
 // SaaS GST rate (India). This is a PRESENTATION figure for the checkout breakup only — the authoritative

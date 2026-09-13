@@ -264,7 +264,36 @@ India](https://avada.io/blog/shopify-price-in-india/) ·
 India](https://trufflenationonline.com/blog/bakery-profit-margin/) · [vertical SaaS
 premium](https://www.getmonetizely.com/articles/vertical-specific-saas-pricing-why-industry-context-matters-for-revenue-growth)
 
-## Billing intervals — monthly + yearly only (decided 2026-07-28)
+## Billing intervals — three: monthly, quarterly, yearly (quarterly restored 2026-09-13)
+
+> **2026-09-13 — QUARTERLY IS BACK ON SALE, at the same 10%.** The section below is kept exactly as
+> written because its reasoning is still the best account of what quarterly costs us, and a decision
+> record that is edited to agree with the latest decision stops being a record. What changed is not
+> the analysis but the question it was answering.
+>
+> It asked *"does a third rung pay for itself?"* and answered no, on margin and on renewal risk. The
+> question now is *"what does a baker do who will not write a ₹24,999 cheque yet?"* — and until now
+> the only answer was monthly, which is the interval this doc's own § "Monthly-only was considered
+> and REJECTED" says leaves a baker one slow month away from cancelling. Quarterly is a step between
+> those two, not a cheaper yearly.
+>
+> **Yearly stays.** Dropping it was raised again and rejected again, on the same seasonality
+> argument below — three months does not ride out Jan–Feb either, so quarterly REPLACES nothing.
+>
+> Two points from below survive intact and should be read as live cautions, not as history:
+> **quarterly cannibalises yearly**, so watch the mix rather than the count; and it **quadruples
+> renewal events**, so it multiplies exposure to involuntary failures on Indian mandates.
+>
+> One thing that was true then is no longer: "it was never marketed". That is still true of the
+> pricing page, deliberately — quarterly is in-app only. If it is ever put on the marketing page,
+> the two stop agreeing again, which is the specific mess retiring it was meant to clear up.
+>
+> Mechanics: `supabase/billing_periods_restore_quarterly.sql` (one UPDATE, the exact reverse of the
+> retire file). The in-app picker now labels a discount by what it is WORTH IN TIME rather than as a
+> percentage — "2 months free", "9 days free" — because 10% of a quarter is 0.3 months, and a
+> fraction of a month is not a sentence anybody says. See `billing/planPricing.js freeTimeLabel`.
+
+### The 2026-07-28 decision, as written then
 
 **Quarterly is retired. We sell two intervals: monthly and yearly.** Previously this doc specified
 prices per plan but never examined the *intervals* those prices are charged over — which is how a

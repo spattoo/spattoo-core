@@ -23,7 +23,16 @@ const PLANS = [
 
 const apiClient = new Proxy({
   fetchPlans:   async () => PLANS,
-  fetchBillingPeriods: async () => ([{ id: 1, name: 'monthly', months: 1, discount_pct: 0 }, { id: 2, name: 'yearly', months: 12, discount_pct: 17 }]),
+  /* MIRRORS THE billing_periods ROWS, `display_name` included — the picker renders that column and
+     the stub did not carry it, so every period button in this harness was blank. And quarterly is
+     here because the harness is how you see what a baker sees: it is sellable again (2026-09-13,
+     supabase/billing_periods_restore_quarterly.sql), which makes this a THREE-button picker for the
+     first time — the width case that only shows up at a phone size. */
+  fetchBillingPeriods: async () => ([
+    { id: 1, name: 'monthly',   display_name: 'Monthly',   months: 1,  discount_pct: 0,  sort_order: 0 },
+    { id: 2, name: 'quarterly', display_name: 'Quarterly', months: 3,  discount_pct: 10, sort_order: 1 },
+    { id: 3, name: 'yearly',    display_name: 'Yearly',    months: 12, discount_pct: 17, sort_order: 2 },
+  ]),
   fetchBillingStatus: async () => ({ tier, status: settleAfter && ++statusReads >= settleAfter ? 'active' : status, next_billing_at: null, cancel_at_period_end: false }),
   fetchSubscriptionHistory: async () => [],
   fetchEntitlements: async () => ({ ent: {} }),
