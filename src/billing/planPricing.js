@@ -55,8 +55,20 @@ export function formatPlanPrice(amount, { currency = 'INR' } = {}) {
  * A baker does not price a decision in percentages anyway: "2 months free" is a sentence somebody
  * repeats, "-17%" is arithmetic they have to do first.
  *
- * Rounded DOWN, always: a claim may under-promise, never over-promise. 30.44 = 365.25/12, the
- * average month — a quarter is 91 days, and using 30 would under-count the free time advertised.
+ * Rounded DOWN. 30.44 = 365.25/12, the average month — a quarter is 91 days, and using 30 would
+ * under-count the free time advertised.
+ *
+ * ⚠️ IT ROUNDS THE INTENT, NOT THE ARITHMETIC, and on yearly those differ. `discount_pct` is 17, so
+ * this says "2 months free"; the real saving from the prices is 1.99 months, because `price_yearly`
+ * is a round ₹9,999 rather than 83% of twelve monthlies. Rounding 1.99 up to 2 is ordinary
+ * commercial rounding and the EXACT figure is on the card beside it (`discountLabel`, 16.5% / 16.6%)
+ * — decided 2026-09-14: keep the real percentage rather than move the price to make 17% true.
+ *
+ * ⚠️ SO DO NOT "RECONCILE" `discount_pct` TO 16.5 TO MATCH THE PRICES. It is not a stray number, it
+ * is what this badge reads: 12 × 16.5% = 1.98 months, which floors to **"1 month free"** — the
+ * headline the whole yearly offer is built on, silently halved by a data edit that looks like a
+ * correction. The two figures are meant to differ: the ladder is the INTENT, the card is the
+ * ARITHMETIC, and each is shown where it is the useful one.
  */
 const DAYS_PER_MONTH = 365.25 / 12;
 
