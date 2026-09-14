@@ -2838,12 +2838,51 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   // What tapping one DOES. One function, both surfaces — the phone's copy of this had also lost
   // 'uploads', so even re-adding the item to the mobile array would have drawn a dead button.
+  /* ── Going somewhere means LEAVING where you were ────────────────────────────────────────────
+   *
+   * The rail deliberately stays visible and clickable beside a docked panel — that is the whole
+   * point of RAIL_RIGHT and the panels that dock past it (shared/rail.js). But clicking it only
+   * OPENED the new destination: the panel already covering the screen stayed put, on top.
+   *
+   * Reported on Billing. A baker with Billing open clicked New Cake, the cake was created behind
+   * it, and nothing appeared to happen — the one thing they asked for was the one thing they could
+   * not see. Nothing was broken and nothing was lost, which is what makes it hard to diagnose from
+   * the outside: it looks like a dead button.
+   *
+   * So a destination closes the others. That is what a nav rail means, and it is the only reading
+   * that makes "visible and clickable while a panel is open" useful rather than a trap.
+   *
+   * ⚠️ NONE OF THESE PANELS HOLDS UNSAVED WORK TODAY — checked: not one passes `guardUnsaved`.
+   * A rail click is the same kind of incidental dismissal as Esc or a backdrop click, so the day a
+   * docked panel starts holding something a baker typed, it has to guard THIS path too (Panel's
+   * `guardUnsaved`, INVARIANTS #13) rather than be closed from under them here.
+   */
+  const leaveOpenPanels = () => {
+    setDashboardOpen(false);
+    setSettingsPanelOpen(false);
+    setFlavoursPanelOpen(false);
+    setTemplatesPanelOpen(false);
+    setBillingPanelOpen(false);
+    setOrdersPanelOpen(false);
+    setCustomersPanelOpen(false);
+    setInvitePanelOpen(false);
+    setUploadsOpen(false);
+    setChefsDeskOpen(false);
+    // The menus that hang off the rail, so one does not linger over the destination it opened.
+    setNavMenuId(null);
+    setSettingsOpen(false);
+    setProfileOpen(false);
+  };
+
   const openRailItem = (id, menu) => {
     if (menu) {
+      // A submenu is not a destination yet — opening it leaves the screen alone. Choosing an item
+      // from it goes through the same close-then-open as everything else.
       setNavMenuId(o => (o === id ? null : id));
       setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false);
       return;
     }
+    leaveOpenPanels();
     if (id === 'new')       handleNewCake();
     if (id === 'elements')  openElements();
     if (id === 'uploads')   setUploadsOpen(true);
@@ -8959,7 +8998,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <div style={s.railDropdownSection}>{menu.label}</div>
                       {menu.items.map(item => (
                         <button key={item.id} style={s.railDropdownItem}
-                                onClick={() => { item.open(); setChefsDeskOpen(false); setSettingsOpen(false); }}>
+                                onClick={() => { leaveOpenPanels(); item.open(); }}>
                           {item.label}
                           {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
                         </button>
@@ -10699,7 +10738,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={s.mobileSheetSectionTitle}>{menu.label}</div>
                   {menu.items.map(item => (
                     <button key={item.id} role="menuitem" style={s.mobileSheetRow}
-                            onClick={() => { setMobileMoreOpen(false); item.open(); }}>
+                            onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); item.open(); }}>
                       {item.label}
                       {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
                     </button>

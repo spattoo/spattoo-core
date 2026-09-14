@@ -536,7 +536,14 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
       reload(),
     ])
       .then(([p, pl]) => {
-        setPeriods(p);
+        /* ⚠️ GUARDED, like `plans` on the next line was and this was not. `.catch(() => [])` above
+           only covers a REJECTED promise; a RESOLVED non-array — null from an older server, a 204,
+           a stubbed client that answers null for anything it does not implement — sailed straight
+           through, and `periods.map` then threw inside render. That does not degrade the billing
+           panel: it hits the error boundary and white-screens THE WHOLE DESIGNER, from a screen the
+           baker only opened to look at their plan. An empty list is a billing panel with no
+           interval picker, which is survivable and obvious. */
+        setPeriods(Array.isArray(p) ? p : []);
         setPlans(Array.isArray(pl) ? pl : []);
       })
       .catch(e => setError(e.message))
