@@ -28,7 +28,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, WRITING_FIT, writingFit } from './constants.js';
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
@@ -8646,7 +8646,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   if (!bakerReady) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: DESIGNER_GROUND, fontFamily: "'Quicksand', sans-serif" }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: DESIGNER_WALL, fontFamily: "'Quicksand', sans-serif" }}>
         <CakeSpinner label="Loading…" />
       </div>
     );
@@ -11465,8 +11465,10 @@ const s = {
 
   page: {
     display:'flex', flexDirection:'column', height:'100vh',
-    // The page shows round the canvas (the header strip, beside the rail), so it is the designer's ground too.
-    background:DESIGNER_GROUND, fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
+    // The page shows round the canvas: the header strip joins the TOP of the frame, where the wall is,
+    // and the button strip joins the BOTTOM, where the floor is. One flat colour matches only one of them
+    // and leaves a band at the other, so it runs wall → floor, top to bottom.
+    background:`linear-gradient(to bottom, ${DESIGNER_WALL}, ${DESIGNER_GROUND})`, fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
     position:'relative',   // anchors desktopLogo, which is out of flow
   },
 
@@ -11885,8 +11887,9 @@ const s = {
     flex:1, position:'relative', minHeight:0,
     // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
     // the canvas (right:184) blends in seamlessly instead of showing a hard "cut" edge.
-    // The constant, not a copy of it — a literal here is how the two would drift apart.
-    background:DESIGNER_GROUND,
+    // The constants, not copies of them — a literal here is how the two would drift apart. Wall at the
+    // top, floor at the bottom, like the frame the strip sits beside.
+    background:`linear-gradient(to bottom, ${DESIGNER_WALL}, ${DESIGNER_GROUND})`,
   },
   hint: {
     position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',

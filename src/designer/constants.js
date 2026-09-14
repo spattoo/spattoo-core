@@ -6,14 +6,28 @@
  * is that what you see is what records. When these two were separate literals they disagreed
  * (#f4f4f5 here, #E8EDE9 there), so merely OPENING the reel panel changed the ground the baker had
  * not asked to change — a silent edit in the one feature that must not have any. */
-/* ⚠️ A WARM STONE GREY, NOT NEAR-WHITE (was #f4f4f5, changed 2026-09-14). A white cake renders at about
- * 234 and its brightest wall at 242 under this scene's light — darker than a #f4f4f5 ground at 244 — so a
- * white or ivory cake could never be the lightest thing on screen: it read as a grey smudge that merged
- * into the page. Measured on the real scene across white, ivory, blush and chocolate: on #dcd9d4 a white
- * top sits ~17 lighter than the ground and ivory ~14, blush keeps its hue, and chocolate and the gold
- * board separate by 40+. The ground does not LIGHT the cake (three.js has no bounce light), so no colour
- * calibration depends on it. Trial — revert this one value if it does not fit. */
-export const DESIGNER_GROUND = '#dcd9d4';
+/* ⚠️ THE FLOOR: A LIGHT WARM GREY, NOT NEAR-WHITE (was #f4f4f5 until 2026-09-14). The floor is what a cake
+ * is seen against — the camera looks down, so it fills most of the frame. A white cake renders its top at
+ * about 242 under this scene's light; on the old near-white ground it was DARKER than the page and read as
+ * a grey smudge. Chosen by eye from #dcd9d4 / #e1ded9 / #e5e2de in the real designer with production
+ * lighting: on #e5e2de a white Vertical Piping top sits ~15 lighter than the floor, the wall (DESIGNER_WALL)
+ * ~18 lighter again at a crisp horizon, and chocolate and the gold board separate easily. The floor is
+ * unlit (see studioFloorMaterial), so this is exactly the colour on screen. Nothing is calibrated against it:
+ * three.js has no bounce light, so the ground does not light the cake. */
+export const DESIGNER_GROUND = '#e5e2de';
+
+/* The WALL behind the floor — lighter than the floor, so the scene reads as a floor meeting a wall
+ * rather than one flat colour the cake floats in (trial, 2026-09-14). The cake sits mostly against the
+ * FLOOR (the camera looks down), so white-cake contrast is still decided by DESIGNER_GROUND; the wall
+ * only has to be distinctly lighter than it. Also the colour of the page strip above the canvas, which
+ * joins the top of the frame. */
+export const DESIGNER_WALL = '#f6f4f1';
+
+/* Where the floor stops and the wall starts: a STRAIGHT, CRISP line this many world units behind the
+ * cake's centre, always square-on to the camera — so it reads as a floor meeting a wall however the cake
+ * is turned or zoomed. Not a radial blend: that drew a curved rug-shaped edge round the cake, and a soft
+ * one read as blur. */
+export const DESIGNER_HORIZON = 7.5;
 
 /* ── The grounds a take can be shot against ──────────────────────────────────────────────────────
  * A CURATED LIST, not a colour picker — the same call the storefront themes made for exactly this

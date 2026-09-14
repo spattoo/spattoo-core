@@ -32,8 +32,7 @@ import {
   DESIGNER_GROUND,
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
-  BOTTOM_BASE,
-} from '../constants.js';
+  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
@@ -2475,6 +2474,8 @@ function CakeScene({
   const { tierData, bottomShp, board } = cakeScene;
   tierDataRef.current = tierData;
 
+  const onFloorClick = e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); };
+
   return (
     <>
       <SceneLights shadows />
@@ -2484,43 +2485,51 @@ function CakeScene({
           with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
           only way to see it was to read scene.background out of a running page.
           Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
-      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_GROUND)} />
+      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_WALL)} />
       <SceneEnv />
 
       {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
           a grey slab on a transparent background, which is not a cutout — it is a worse photo than
           the one with a proper ground. The contact shadow goes too, and that is the honest cost:
           nothing for it to fall on. */}
-      {!filmCutout && <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
-        onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
-        {/* ⚠️ MUCH bigger while filming, and not for the reason it looks like.
-            Matching the floor's colour to the sky's is not enough to hide the join: the floor is a
-            lit standard material and the background is a flat clear colour, so the two render
-            differently however equal their hex. The 30×30 plane's far edge landed inside a portrait
-            frame and drew a hard diagonal across the top of every reel.
-            Pushing the edge far past the frame turns the floor into a cyclorama — it fills the shot
-            edge to edge and the only thing left telling you there is a floor at all is the cake's
-            own shadow, which is exactly what a photographer would want. Two triangles either way. */}
-        <planeGeometry args={filmGround ? [400, 400] : [30, 30]} />
-        {/* ⚠️ A SHADOW CATCHER WHILE EDITING TOO, not a painted floor (changed 2026-09-14).
-            It was a lit meshStandardMaterial, #faf7f4 (and #fce8d5 before that). Lit, it could never
-            show the colour it was given: under this scene's lamps it rendered 235,232,230 — the SAME
-            lightness as a white cake's top (≈234) — and it filled 85–95% of the canvas, so it WAS the
-            background a baker saw. A white or ivory cake had nothing to stand against and read as a
-            flat grey smudge. Changing DESIGNER_GROUND did nothing, because the ground only showed in a
-            thin strip above the floor's horizon.
-            shadowMaterial draws NOTHING except where a shadow falls, so the floor is the ground's own
-            pixels: DESIGNER_GROUND is exactly what the baker sees, the cake keeps its contact shadow,
-            and editing and filming show the same room. It is still a real surface — a click on it
-            still deselects.
-            ⚠️ The earlier move went LIGHTER, reasoning from thumbnails on pure white. A LIT floor
-            cannot get there (it tops out near 235); a flat ground can be any colour. Check a DARK cake
-            as well as a white one before retuning DESIGNER_GROUND. */}
-        {/* 0.30. At 0.16 the shadow was invisible and I nearly concluded nothing was casting one
-            — the probe had been sampling BELOW the board, and the key light sits at [6,14,8] so the
-            shadow falls to its LEFT. Measure where the light puts it, not where you expect it. */}
-        <shadowMaterial opacity={0.30} />
-      </mesh>}
+      {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
+          a grey slab on a transparent background — so no floor at all for a cutout. */}
+      {!filmCutout && (filmGround ? (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onFloorClick}>
+          {/* WHILE FILMING: a shadow catcher over a flat ground, so floor and sky are the same pixels and
+              no take carries a horizon. MUCH bigger than the editing floor, so its edge is never in a
+              portrait frame. 0.30 opacity — at 0.16 the shadow was invisible; the key light at [6,14,8]
+              throws it to the LEFT of the board, so measure there. */}
+          <planeGeometry args={[400, 400]} />
+          <shadowMaterial opacity={0.30} />
+        </mesh>
+      ) : (
+        <>
+          {/* ⚠️ WHILE EDITING: A FLOOR MEETING A WALL (trial, 2026-09-14).
+              A lit floor never shows the colour it is given — #faf7f4 rendered 235,232,230, the same
+              lightness as a white cake's top, and filled most of the canvas. A shadow catcher alone
+              fixed that but left one flat colour with no floor/wall separation.
+              So: an UNLIT floor (toneMapped off, exactly the colours asked for) — DESIGNER_GROUND up to a
+              straight, crisp horizon DESIGNER_HORIZON behind the cake, DESIGNER_WALL beyond it — over a
+              DESIGNER_WALL background, so past the plane's edge the wall simply continues. See
+              studioFloorMaterial. */}
+          {/* ⚠️ DRAWN FIRST AND WRITES NO DEPTH. It lies at y = 0, and so do things that must show on it —
+              the FRONT marker is a hair above the floor and was hidden by this plane on the first cut. A
+              floor that never occludes anything cannot swallow a marker, a shadow or a board edge. */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={-1}
+            material={studioFloorMaterial(DESIGNER_GROUND, DESIGNER_WALL, DESIGNER_HORIZON)}>
+            <planeGeometry args={[30, 30]} />
+          </mesh>
+          {/* The contact shadow, on its own catcher just above the painted floor — and the surface a click
+              on the floor lands on, to deselect. */}
+          {/* At y = 0, NOT lifted: shadowMaterial writes depth, and a catcher raised even 2 mm covered the FRONT
+              marker that lies just above the floor. The painted floor below writes no depth, so they cannot fight. */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onFloorClick}>
+            <planeGeometry args={[30, 30]} />
+            <shadowMaterial opacity={0.30} />
+          </mesh>
+        </>
+      ))}
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
           own half-depth, round → its radius. */}
@@ -3142,6 +3151,45 @@ function CakeThumbnailScene({ config, shadows = false }) {
 /* Exported so a dev harness can stand the cake on the same ground the designer does. It sets
  * `scene.background` only — never `scene.environment` — so it cannot light anything; it decides what
  * a PERSON sees behind the cake, which is the half of a colour judgement the numbers do not cover. */
+/* The editing floor's paint: DESIGNER_GROUND on the near side of a straight line, DESIGNER_WALL beyond
+ * it — the line being every point `horizon` world units past the cake's centre along the camera's
+ * horizontal view direction. A line of constant depth on a flat floor projects as a STRAIGHT horizontal
+ * line on screen, and measuring from the centre keeps it in the same place relative to the cake when the
+ * view is turned or zoomed.
+ *
+ * ⚠️ CRISP, NOT BLENDED. The edge is anti-aliased over one screen pixel (fwidth) and no more — a wider
+ * blend read as blur. And UNLIT (MeshBasicMaterial, toneMapped off), so both colours are exactly the
+ * ones asked for, whatever the lamps do; the change is spliced into three's own shader so its colour
+ * management still applies. Cached per colour set: one material for every render of the scene. */
+const _studioFloorMaterials = new Map();
+function studioFloorMaterial(floor, wall, horizon) {
+  const key = `${floor}|${wall}|${horizon}`;
+  if (_studioFloorMaterials.has(key)) return _studioFloorMaterials.get(key);
+  const mat = new THREE.MeshBasicMaterial({ color: floor, toneMapped: false, depthWrite: false });
+  const uWall = { value: new THREE.Color(wall) };
+  const uHorizon = { value: horizon };
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWall = uWall;
+    shader.uniforms.uHorizon = uHorizon;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFloorWorld;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFloorWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uWall;\nuniform float uHorizon;\nvarying vec3 vFloorWorld;')
+      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', [
+        'vec2 toCentre = -cameraPosition.xz;',
+        'vec2 viewDir = length(toCentre) > 1e-4 ? normalize(toCentre) : vec2(0.0, -1.0);',
+        'float past = dot(vFloorWorld.xz, viewDir);',
+        'float px = max(fwidth(past), 1e-5);',
+        'float wallness = smoothstep(uHorizon - px, uHorizon + px, past);',
+        'vec4 diffuseColor = vec4( mix(diffuse, uWall, wallness), opacity );',
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = () => 'studio-floor-horizon';
+  _studioFloorMaterials.set(key, mat);
+  return mat;
+}
+
 export function SceneBackground({ colour }) {
   const { gl, scene } = useThree();
   useEffect(() => {
