@@ -3,6 +3,7 @@ import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { envProps } from './envMap.js';
+import { DESIGNER_GROUND } from '../constants.js';
 import * as THREE from 'three';
 import CakeTier from './CakeTier.jsx';
 import {
@@ -582,7 +583,7 @@ function BuilderScene({
 
   return (
     <>
-      <color attach="background" args={['#f4f4f5']} />
+      <color attach="background" args={[DESIGNER_GROUND]} />
       <ambientLight intensity={0.8} />
       <directionalLight position={[6, 14, 8]} intensity={1.5} castShadow />
       <directionalLight position={[-4, 4, -4]} intensity={0.4} />

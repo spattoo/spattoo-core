@@ -8646,7 +8646,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   if (!bakerReady) {
     return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: '#f4f4f5', fontFamily: "'Quicksand', sans-serif" }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', background: DESIGNER_GROUND, fontFamily: "'Quicksand', sans-serif" }}>
         <CakeSpinner label="Loading…" />
       </div>
     );
@@ -11465,7 +11465,8 @@ const s = {
 
   page: {
     display:'flex', flexDirection:'column', height:'100vh',
-    background:'#f4f4f5', fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
+    // The page shows round the canvas (the header strip, beside the rail), so it is the designer's ground too.
+    background:DESIGNER_GROUND, fontFamily:"'Quicksand',sans-serif", overflow:'hidden',
     position:'relative',   // anchors desktopLogo, which is out of flow
   },
 
@@ -11884,7 +11885,8 @@ const s = {
     flex:1, position:'relative', minHeight:0,
     // Match the 3D canvas's clear colour so the strip exposed when the piping popup shrinks
     // the canvas (right:184) blends in seamlessly instead of showing a hard "cut" edge.
-    background:'#f4f4f5',
+    // The constant, not a copy of it — a literal here is how the two would drift apart.
+    background:DESIGNER_GROUND,
   },
   hint: {
     position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',

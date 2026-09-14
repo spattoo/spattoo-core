@@ -6,7 +6,14 @@
  * is that what you see is what records. When these two were separate literals they disagreed
  * (#f4f4f5 here, #E8EDE9 there), so merely OPENING the reel panel changed the ground the baker had
  * not asked to change — a silent edit in the one feature that must not have any. */
-export const DESIGNER_GROUND = '#f4f4f5';
+/* ⚠️ A WARM STONE GREY, NOT NEAR-WHITE (was #f4f4f5, changed 2026-09-14). A white cake renders at about
+ * 234 and its brightest wall at 242 under this scene's light — darker than a #f4f4f5 ground at 244 — so a
+ * white or ivory cake could never be the lightest thing on screen: it read as a grey smudge that merged
+ * into the page. Measured on the real scene across white, ivory, blush and chocolate: on #dcd9d4 a white
+ * top sits ~17 lighter than the ground and ivory ~14, blush keeps its hue, and chocolate and the gold
+ * board separate by 40+. The ground does not LIGHT the cake (three.js has no bounce light), so no colour
+ * calibration depends on it. Trial — revert this one value if it does not fit. */
+export const DESIGNER_GROUND = '#dcd9d4';
 
 /* ── The grounds a take can be shot against ──────────────────────────────────────────────────────
  * A CURATED LIST, not a colour picker — the same call the storefront themes made for exactly this

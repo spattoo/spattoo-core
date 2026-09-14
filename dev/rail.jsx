@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import { CakeDesigner } from '../src/index.js';
+import { HARNESS_ASSETS_BASE } from './scene.js';
 import { STUBS as SETTINGS_STUBS } from './settingsStubs.js';
 
 // ── The spatula rail, on both surfaces ──────────────────────────────────────────────────────────
@@ -56,19 +57,27 @@ if (new URLSearchParams(location.search).has('retour')) {
 /* `?garnish=1` opens the designer with a chocolate garnish already standing on the cake, so its CARD —
    Where it sits, How it sits, the drag hint — can be reached by clicking the piece, without a studio
    drawing and without an account. `?garnishzone=side` starts it on the wall. */
-const garnishDesign = new URLSearchParams(location.search).has('garnish') ? {
-  tiers: [{ shape: 'round', radius: 1.2, height: 1.0, color: '#F6DCE2', frostingType: 'buttercream', frostingStyle: 'smooth' }],
-  garnishes: [{
+/* `?tier=%23FFFFFF` (and `&style=piped_modelled`) opens on a cake of that colour and cream style, so a
+   ground or lighting change can be judged in the REAL designer — floor, shadow and all — not only on a
+   harness that has no floor. */
+const _seed = new URLSearchParams(location.search);
+const garnishDesign = (_seed.has('garnish') || _seed.has('tier')) ? {
+  tiers: [{ shape: 'round', radius: 1.2, height: 1.0, color: _seed.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: _seed.get('style') || 'smooth' }],
+  garnishes: _seed.has('garnish') ? [{
     id: 'g-seed', name: 'Panel', kind: 'cut', color: '#4A2C1B', plate: 420, scale: 1.2,
     zone: new URLSearchParams(location.search).get('garnishzone') || 'top', mode: 'stand',
     theta: Math.PI / 2, radius: 0.2, height: 0.5, yaw: 0,
     rings: [[[110, 60], [310, 60], [270, 360], [150, 360], [110, 60]]],
-  }],
+  }] : [],
 } : null;
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner
     initialDesign={garnishDesign}
+    /* The same assets base every harness on the real scene uses: production lighting, and the stroke
+       meshes the modelled cream styles need. Without it the designer falls back to a preset light and
+       renders Vertical Piping as a smooth wall — a different cake from the one being judged. */
+    cfAssetsBase={HARNESS_ASSETS_BASE}
     apiClient={apiClient}
     orderMode={customer ? 'customer' : 'baker'}
     onOrder={() => {}}

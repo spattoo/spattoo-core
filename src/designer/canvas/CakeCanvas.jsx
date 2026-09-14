@@ -2502,29 +2502,24 @@ function CakeScene({
             edge to edge and the only thing left telling you there is a floor at all is the cake's
             own shadow, which is exactly what a photographer would want. Two triangles either way. */}
         <planeGeometry args={filmGround ? [400, 400] : [30, 30]} />
-        {/* Was #fce8d5 — warm, saturated, and almost exactly the same LIGHTNESS as an ivory cake, so
-            a white cake had nothing to separate from and read as flat. The fix is a wider value gap,
-            and the direction came from the TEMPLATE THUMBNAILS: they flatten onto white and the same
-            cake reads perfectly there, because an ivory cake against near-white becomes the darker,
-            more saturated object.
-            So lighter and much less saturated, rather than darker. It also closes a gap that existed
-            anyway — the studio and the thumbnail looked like two different products.
-            ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
-            the first failure to show up, and a fix at one end can break the other. */}
-        {/* ⚠️ A SHADOW CATCHER WHILE FILMING, not a painted floor.
-            A lit plane and a flat sky never match, however carefully their hex values agree — the
-            plane is shaded and the background is not — so every take had a faint horizon across it.
-            The reel's 9:16 crop usually kept it out of shot; a 4:3 photo cannot. shadowMaterial
-            renders NOTHING except where a shadow falls, so floor and sky are literally the same
-            pixels and there is no join to see, while the cake keeps the contact shadow that stops it
-            floating. Off-camera the floor is still a real surface — it is what a click lands on to
-            deselect, and it is not trying to disappear. */}
-        {filmGround
-          /* 0.30. At 0.16 the shadow was invisible and I nearly concluded nothing was casting one
-             — the probe had been sampling BELOW the board, and the key light sits at [6,14,8] so the
-             shadow falls to its LEFT. Measure where the light puts it, not where you expect it. */
-          ? <shadowMaterial opacity={0.30} />
-          : <meshStandardMaterial color="#faf7f4" roughness={0.85} />}
+        {/* ⚠️ A SHADOW CATCHER WHILE EDITING TOO, not a painted floor (changed 2026-09-14).
+            It was a lit meshStandardMaterial, #faf7f4 (and #fce8d5 before that). Lit, it could never
+            show the colour it was given: under this scene's lamps it rendered 235,232,230 — the SAME
+            lightness as a white cake's top (≈234) — and it filled 85–95% of the canvas, so it WAS the
+            background a baker saw. A white or ivory cake had nothing to stand against and read as a
+            flat grey smudge. Changing DESIGNER_GROUND did nothing, because the ground only showed in a
+            thin strip above the floor's horizon.
+            shadowMaterial draws NOTHING except where a shadow falls, so the floor is the ground's own
+            pixels: DESIGNER_GROUND is exactly what the baker sees, the cake keeps its contact shadow,
+            and editing and filming show the same room. It is still a real surface — a click on it
+            still deselects.
+            ⚠️ The earlier move went LIGHTER, reasoning from thumbnails on pure white. A LIT floor
+            cannot get there (it tops out near 235); a flat ground can be any colour. Check a DARK cake
+            as well as a white one before retuning DESIGNER_GROUND. */}
+        {/* 0.30. At 0.16 the shadow was invisible and I nearly concluded nothing was casting one
+            — the probe had been sampling BELOW the board, and the key light sits at [6,14,8] so the
+            shadow falls to its LEFT. Measure where the light puts it, not where you expect it. */}
+        <shadowMaterial opacity={0.30} />
       </mesh>}
 
       {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
