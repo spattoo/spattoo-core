@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Z, Takeover } from '../../shared/Panel.jsx';
 import { dietTone, hasAllergen, dietaryLine, restrictions, findFlavourConflicts, conflictBenchLine } from '../dietary.js';
 import { buildXrayReport } from './report.js';
 import { buildXrayPdf, shortRef } from './xrayPdf.js';
@@ -24,7 +25,7 @@ import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 // report says, on screen and on paper, that it was read off a photo rather than measured.
 
 const s = {
-  overlay: { position: 'fixed', inset: 0, zIndex: 4000, background: '#FAFAF8', overflowY: 'auto', fontFamily: 'inherit' },
+  overlay: { position: 'fixed', inset: 0, zIndex: Z.studio, background: '#FAFAF8', overflowY: 'auto', fontFamily: 'inherit' },
   header: { position: 'sticky', top: 0, zIndex: 2, background: '#fff', borderBottom: '1.5px solid #EFEAE3', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 15, fontWeight: 800, color: '#2C2A26' },
   close: { padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0DDD8', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: 'inherit' },
@@ -296,6 +297,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
   }
 
   return (
+    /* ⚠️ PORTALLED. This is opened from inside OrdersPanel, whose root is `dockedPage` —
+       position:fixed with z-index 300, which makes a stacking context. Nested there, this
+       overlay's Z.studio was resolved INSIDE 300 and lost to the rail's 315, so the rail painted
+       over the report. See Takeover. */
+    <Takeover>
     <div style={s.overlay}>
       <div style={s.header}>
         <div style={s.title}>X-Ray — how to make this cake</div>
@@ -759,5 +765,6 @@ export default function XrayReport({ order, apiClient, onClose }) {
         )}
       </div>
     </div>
+    </Takeover>
   );
 }

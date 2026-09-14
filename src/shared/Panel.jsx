@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { WAVES, WAVE_VIEWBOX } from './waves.js';
 import { chromeGradient } from './chrome.js';
 
@@ -28,6 +29,32 @@ import { chromeGradient } from './chrome.js';
 // breaks: the studio sat at a bare 4000 and the uploads picker at Z.panel, so "Add image" opened
 // the picker faithfully, 3000 layers beneath an opaque surface. Nothing errored. Nothing appeared.
 export const Z = { panel: 1000, popover: 1100, toast: 1200, studio: 4000, overStudio: 4100 };
+
+/* ── A full-screen destination, at the DOCUMENT level ────────────────────────────────────────────
+ *
+ * ⚠️ A z-index only competes inside its own stacking context, and that is what broke two screens.
+ *
+ * `dockedPage` (shared/rail.js) is `position: fixed` with `z-index: 300`, which MAKES a stacking
+ * context. X-Ray is rendered from inside OrdersPanel, and the Edible Print Studio from a menu on
+ * another such page — so their `Z.studio` was resolved INSIDE that 300, not against the document.
+ * Meanwhile the rail lifts to RAIL_OVER_PAGE_Z (315) whenever a docked page is open. 315 beats 300,
+ * so the rail painted over a "4000" surface, covering the studio's title and the column beside it.
+ *
+ * Reduced, it is four lines of CSS: a fixed z-4000 div inside a fixed z-300 div loses to a z-315
+ * sibling of that div, and wins the moment it is moved to <body>. Verified in a browser, not
+ * reasoned about — the numbers alone say the opposite, which is exactly why it went unnoticed.
+ *
+ * So a takeover portals to <body>. That is not a workaround for the rail: it is what `Z.studio`
+ * has always CLAIMED — "a destination, not a dialog, so it covers the whole designer" — and the
+ * claim can only be true from a context nothing else nests inside.
+ *
+ * ⚠️ Do NOT fix this class by raising the number. Whatever it is raised to, it is still compared
+ * against its parent's 300, so the next screen opened from inside a page starts the same argument.
+ */
+export function Takeover({ children }) {
+  if (typeof document === 'undefined') return children;   // SSR / renderToStaticMarkup
+  return createPortal(children, document.body);
+}
 
 export const PANEL = {
   font:    "'Quicksand', sans-serif",

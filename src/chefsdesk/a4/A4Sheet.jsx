@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
 import { sized, resized, moved } from './geometry.js';
 import { chrome, StudioHeader, useStudioNarrow } from '../studioChrome.jsx';
+import { Takeover } from '../../shared/Panel.jsx';
 
 // ── The A4 print sheet ────────────────────────────────────────────────────────────────────────────
 // A to-scale A4 page the baker lays images out on, then downloads as a print-ready PDF for an edible
@@ -265,6 +266,10 @@ export default function A4Sheet({
   }
 
   return (
+    /* ⚠️ PORTALLED — the studio can be opened from inside a `dockedPage` (fixed, z-index 300),
+       and a stacking context there swallows Z.studio whole: the rail, lifted to 315 while such a
+       page is open, painted over this sheet. See Takeover in shared/Panel.jsx. */
+    <Takeover>
     <div style={s.overlay} onPointerDown={() => select(null)}>
       <style>{`.ps-strip::-webkit-scrollbar{display:none}`}</style>
       {showTip && (
@@ -407,6 +412,7 @@ export default function A4Sheet({
         </div>
       </div>
     </div>
+    </Takeover>
   );
 }
 

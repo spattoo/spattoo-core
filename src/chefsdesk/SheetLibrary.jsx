@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Takeover } from '../shared/Panel.jsx';
 import { chrome, StudioHeader } from './studioChrome.jsx';
 
 // ── The Edible Print Studio's front door ──────────────────────────────────────────────────────────
@@ -58,6 +59,8 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
   const emptyState = sheets?.length === 0 && !err;
 
   return (
+    /* ⚠️ PORTALLED for the same reason as A4Sheet — see Takeover. */
+    <Takeover>
     <div style={s.overlay}>
       {/* ── One "New sheet" at a time ────────────────────────────────────────────────────────────
           The empty state offers it too, and it is the better offer: it sits under a sentence
@@ -108,6 +111,7 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
         )}
       </div>
     </div>
+    </Takeover>
   );
 }
 
