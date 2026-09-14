@@ -10,7 +10,7 @@
 //
 // Tool-specific styling stays with its tool. Only what BOTH screens are is here.
 
-import { Z } from '../shared/Panel.jsx';
+import { Z, Takeover } from '../shared/Panel.jsx';
 import { useNarrow } from '../shared/useNarrow.js';
 
 // ── Is this a phone? ────────────────────────────────────────────────────────────────────────────
@@ -82,11 +82,36 @@ export function StudioHeader({ title, actions, onClose }) {
   );
 }
 
+/* ── The surface itself ──────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ USE THIS, NOT `chrome.overlay` DIRECTLY. The style and the portal are one thing and had been
+ * kept in two: every screen spread `chrome.overlay` and then had to remember, separately, to wrap
+ * itself in `<Takeover>`. Two of them did not, and the rail painted over both — reported as "some
+ * screens got disturbed", then again as the Print & cut-outs sheet, which is the same studio
+ * reached from an order instead of from Chef's Desk.
+ *
+ * Why the portal is not optional here: `Z.studio` is 4000 and the rail is 315, and 315 wins. A
+ * studio is opened from inside a `dockedPage` — position:fixed, z-index 300, a stacking context —
+ * so its 4000 is resolved against that 300 and never meets the rail at all. See the Takeover header
+ * in shared/Panel.jsx; `check:takeover` is what now stops a third screen learning it the same way.
+ *
+ * Extra props pass through, so a screen can still own its own behaviour: A4Sheet deselects on a
+ * pointerdown anywhere on the surface, X-Ray scrolls.
+ */
+export function StudioOverlay({ style, children, ...rest }) {
+  return (
+    <Takeover>
+      <div style={style ? { ...chrome.overlay, ...style } : chrome.overlay} {...rest}>{children}</div>
+    </Takeover>
+  );
+}
+
 export const chrome = {
   // Full-bleed and fixed: these are destinations, not dialogs. Z.studio sits above the designer's
   // own panels, which is what lets the studio be opened from inside it — and it comes from the
   // shared scale so that anything needing to sit ABOVE the studio can name that instead of guessing
   // (Z.overStudio). A bare 4000 here is what left the uploads picker opening underneath it.
+  // ⚠️ Reached through <StudioOverlay>, which is what carries it out to the document.
   overlay: {
     position: 'fixed', inset: 0, zIndex: Z.studio, background: '#FAFAF8',
     display: 'flex', flexDirection: 'column', fontFamily: 'inherit',

@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Takeover } from '../shared/Panel.jsx';
-import { chrome, StudioHeader } from './studioChrome.jsx';
+import { chrome, StudioHeader, StudioOverlay } from './studioChrome.jsx';
 
 // ── The Edible Print Studio's front door ──────────────────────────────────────────────────────────
 // A baker's saved sheets, plus "New sheet". Opening the studio lands HERE rather than on a blank
@@ -59,9 +58,7 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
   const emptyState = sheets?.length === 0 && !err;
 
   return (
-    /* ⚠️ PORTALLED for the same reason as A4Sheet — see Takeover. */
-    <Takeover>
-    <div style={s.overlay}>
+    <StudioOverlay>
       {/* ── One "New sheet" at a time ────────────────────────────────────────────────────────────
           The empty state offers it too, and it is the better offer: it sits under a sentence
           explaining what a sheet IS, which is what a baker with none of them needs. The header's
@@ -110,8 +107,7 @@ export default function SheetLibrary({ apiClient, onOpen, onNew, onClose }) {
           </div>
         )}
       </div>
-    </div>
-    </Takeover>
+    </StudioOverlay>
   );
 }
 

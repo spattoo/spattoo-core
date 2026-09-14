@@ -230,7 +230,21 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
 
   if (!open) return null;
 
+  /* ⚠️ PORTALLED, because `zIndex` here is a claim this component cannot keep on its own.
+   *
+   * Every docked page (`dockedPage`, shared/rail.js) is position:fixed with z-index 300, so it MAKES
+   * a stacking context, and a panel opened from inside one had its Z.panel resolved against that 300
+   * rather than against the document. The rail lifts to RAIL_OVER_PAGE_Z (315) while a page is open
+   * and is a SIBLING of that 300 — so it stayed lit and clickable over a panel that had dimmed and
+   * blurred everything else, which is the one thing a scrim exists to prevent. Settings, Orders,
+   * Customers, Billing, Flavours, Templates and the dashboard all open panels this way.
+   *
+   * Portalling is not a workaround for the rail; it is what `inset: 0` already says. A scrim that
+   * covers the viewport and a sheet centred in it are statements about the SCREEN, and they can only
+   * be true from a context nothing else nests inside. Raising `zIndex` cannot fix it — whatever it
+   * is raised to, it is still compared against its parent's 300. */
   return (
+    <Takeover>
     <div
       style={overlayStyle(isMobile, zIndex, scrim)}
       onPointerDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
@@ -276,6 +290,7 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
         {footer && <div style={footStyle(isMobile)}>{footer}</div>}
       </div>
     </div>
+    </Takeover>
   );
 }
 
