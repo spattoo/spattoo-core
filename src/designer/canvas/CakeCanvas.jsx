@@ -2302,7 +2302,9 @@ function FrontMarker({ frontZ }) {
       position={[0, 0.002, frontZ + 0.82]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}
-      color="#c8b8a2"
+      // Deeper than the #c8b8a2 it was: on the #e5e2de studio floor that sat only just below the floor and
+      // read as faint. Still the same warm beige family, so it guides without competing with the cake.
+      color="#a3927c"
       anchorX="center"
       anchorY="middle"
       letterSpacing={0.06}
