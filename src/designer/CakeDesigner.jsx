@@ -1,4 +1,5 @@
 import { Fragment, Suspense, useState, useEffect, useLayoutEffect, useRef, useMemo, useCallback } from 'react';
+import { parseNotificationLink } from '../notifications/notificationLink.js';
 import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
@@ -1767,7 +1768,7 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
 }
 
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, legalBase = DEFAULT_LEGAL_BASE }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, initialLink = null, legalBase = DEFAULT_LEGAL_BASE }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
@@ -2602,22 +2603,36 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Parsed rather than assigned to window.location: navigating would reload the designer, throwing
   // away an unsaved cake to show an order. Nobody would forgive that twice.
   const openNotificationLink = useCallback((link) => {
-    if (!link) return;
-    const params = new URLSearchParams(String(link).split('?')[1] ?? '');
-    const orderId = params.get('order');
-    const panel   = params.get('panel');
-
-    if (orderId || panel === 'orders') {
+    // What the link means is decided in one place (notifications/notificationLink.js), shared with the
+    // page-load path below, so a tap in the bell and a WhatsApp button cannot open different things.
+    const target = parseNotificationLink(link);
+    if (target?.open === 'orders') {
       setOrdersFilter(null);
       setOrdersInitialView('list');
-      setNewOrderId(orderId || null);   // OrdersPanel's initialOrderId — selects it on open
+      setNewOrderId(target.orderId);   // OrdersPanel's initialOrderId — selects it on open
       setOrdersPanelOpen(true);
       return;
     }
-    if (panel === 'billing') { setBuyCreditsOpen(true); return; }
+    if (target?.open === 'billing') { setBuyCreditsOpen(true); return; }
     // An unknown panel means a newer API than this bundle. Doing nothing is better than guessing at
     // a screen — the notification is already marked read and the bell still lists it.
   }, []);
+
+  // ── ...and opening it when the PAGE was loaded from one ────────────────────────────────────────
+  // The bell calls openNotificationLink on a tap. A link from OUTSIDE the app — a WhatsApp template's
+  // "View Orders" button, a push opened while the app was closed — loads the page with
+  // `?panel=orders` in the address, and until this nothing read it: the baker landed on an empty cake
+  // instead of their orders. The host reads the address and hands it over as `initialLink`, the way it
+  // already hands over `liveSessionId` (spattoo-web BakerApp), and clears it from the address itself.
+  //
+  // Once, and only for someone who can manage the store — the same gate the bell sits behind. It waits
+  // for that rather than giving up, so a link still opens after capabilities load.
+  const initialLinkOpened = useRef(false);
+  useEffect(() => {
+    if (!initialLink || initialLinkOpened.current || !canManageStore) return;
+    initialLinkOpened.current = true;
+    openNotificationLink(initialLink);
+  }, [initialLink, canManageStore, openNotificationLink]);
 
   // Which Chef's Desk tools this plan includes. Asked once, and only for someone who could see the
   // menu at all — a customer designing a cake on a storefront has no plan to ask about, and the call

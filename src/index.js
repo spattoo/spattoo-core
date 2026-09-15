@@ -38,6 +38,10 @@ export { default as CutoutSheet } from './chefsdesk/CutoutSheet.jsx';
 // in VerifyStep.jsx for why that route asks at the door when nothing else does.
 export { default as VerifyStep } from './storefront/facets/VerifyStep.jsx';
 export { default as OrdersPanel } from './orders/OrdersPanel.jsx';
+// What a notification link asks the baker app to open (?order= / ?panel=). Exported because the HOST
+// reads the page address — as it already does ?session= — and must read it the way the bell does, not
+// with a second parser that drifts from it.
+export { parseNotificationLink, withoutLinkParams } from './notifications/notificationLink.js';
 // Shared subscription-plan picker (select-to-expand) + pricing helpers — used by the billing
 // screen AND the signup onboarding wizard so the plan catalog lives in ONE place (the DB), not
 // duplicated per consumer.
