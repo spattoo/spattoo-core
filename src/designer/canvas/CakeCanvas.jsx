@@ -82,6 +82,14 @@ export function boardOf(bottomTier) {
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
 }
 
+/* How far the board reaches toward the viewer (+Z). The FRONT marker is laid beside this, and
+ * board-level things are measured against it, so it is worked out once here rather than at each
+ * site — `board.radius` on a round drum is NOT the same number as `halfD` on a rect one, and a
+ * caller that reaches for the wrong field is wrong only for half the shapes. */
+export function boardFrontZ(board) {
+  return board.kind === 'rect' ? board.halfD : board.radius;
+}
+
 // ── Dragging a generated decoration by the THING, not by a dot ──────────────────────────────────
 // Rainbows and clouds borrowed the handle-dot mechanism from grass, dust and foil. Two problems with
 // that here, and the second is the real one:
@@ -2292,14 +2300,30 @@ function CameraSnapper({ snapCameraRef, turnCameraRef, orbitRef }) {
 }
 
 
-// `frontZ` is the cake's front-edge distance along +Z (the front is +Z for every shape):
-// round → radius; every other shape (rect, number, outline) → halfD (outlines fill [-1,1]², so
-// the front-most point — a heart's tip — sits at halfD). The label sits a fixed gap beyond that edge.
+/* ── Which way the cake faces, written on the floor in front of it ──────────────────────────────
+ *
+ * ⚠️ MEASURED FROM THE BOARD, NOT FROM THE CAKE. It used to sit `cake front edge + 0.82`, and that
+ * was right only where the two happen to agree. A round drum is `boundingRadius + 0.6` and a round
+ * cake's front edge is its radius, so the marker cleared the gold by 0.22; a rect board is the
+ * tier's depth + 0.9, clearing by 0.37. An OUTLINE shape has no such luck: `boundingRadius` measures
+ * the farthest point on the CONTOUR — a heart's side lobes — while the cake's front edge is `halfD`,
+ * which is a different axis entirely. The board grew past the marker and the word was half buried in
+ * the gold. Reported on a heart; measured afterwards, every outline family did it, and every one of
+ * them did it worse when the cake is wider than it is deep:
+ *
+ *     heart 0.015 · butterfly −0.066 · heart wide −0.354 · butterfly wide −0.399 · oval wide −0.280
+ *
+ * So the marker asks the thing it actually lies beside. The gap is the one a round cake has always
+ * had — the shape this was evidently tuned on — and it is now the same on every shape rather than
+ * 0.22 on some, 0.37 on others and negative on the rest.
+ */
+const FRONT_MARKER_GAP = 0.22;
+
 function FrontMarker({ frontZ }) {
   return (
     <Text
       font={textFont}          // SEC-WEB-7 — bundled; omitting it re-introduces the jsdelivr fetch
-      position={[0, 0.002, frontZ + 0.82]}
+      position={[0, 0.002, frontZ + FRONT_MARKER_GAP]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}
       // Deeper than the #c8b8a2 it was: on the #e5e2de studio floor that sat only just below the floor and
@@ -2534,13 +2558,12 @@ function CakeScene({
         </>
       ))}
 
-      {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
-          own half-depth, round → its radius. */}
+      {/* The front marker lies beyond the BOARD's front edge — see FrontMarker for why the cake's own
+          edge is the wrong thing to measure from on any shape whose outline is wider than it is deep. */}
       {/* ⚠️ Not while filming. It is an editing aid — it tells the baker which way the cake faces
           while they work — and it was being burned into finished reels, where it reads as a stray
           watermark nobody can explain. */}
-      {bottomShp && !filmGround
-        && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
+      {board && !filmGround && <FrontMarker frontZ={boardFrontZ(board)} />}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
           off-screen capture and the read-only previews render, so what a customer sees and what the

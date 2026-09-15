@@ -2,6 +2,7 @@ import { createRoot } from 'react-dom/client';
 import { CakeDesigner } from '../src/index.js';
 import { HARNESS_ASSETS_BASE } from './scene.js';
 import { STUBS as SETTINGS_STUBS } from './settingsStubs.js';
+import { applyCakeShapeConfig } from '../src/index.js';
 
 // ── The spatula rail, on both surfaces ──────────────────────────────────────────────────────────
 // The rail is drawn twice — a vertical column on desktop, a bottom bar on a phone — and for a while
@@ -60,9 +61,26 @@ if (new URLSearchParams(location.search).has('retour')) {
 /* `?tier=%23FFFFFF` (and `&style=piped_modelled`) opens on a cake of that colour and cream style, so a
    ground or lighting change can be judged in the REAL designer — floor, shadow and all — not only on a
    harness that has no floor. */
+/* ⚠️ `?shape=heart` (also butterfly / hexagon / oval / square), with `&w=3&d=2` for its proportions.
+   The code SHIPS the curves and the catalogue ships only round + rect — a heart is a row an admin
+   authors — so until now the only non-round cake reachable in the real designer needed a database.
+   That is why the FRONT marker could sit buried in the gold of every outline shape without anyone
+   seeing it: the two shapes anyone opens by habit are the two it was right on. These are authored
+   locally, exactly as dev/shapes.jsx does, and only to be looked at. */
 const _seed = new URLSearchParams(location.search);
-const garnishDesign = (_seed.has('garnish') || _seed.has('tier')) ? {
-  tiers: [{ shape: 'round', radius: 1.2, height: 1.0, color: _seed.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: _seed.get('style') || 'smooth' }],
+applyCakeShapeConfig([
+  { key: 'square',    label: 'Square',    family: 'rounded_rect', config: { square: true } },
+  { key: 'heart',     label: 'Heart',     family: 'heart',        config: { plump: 1, cleft: 1 } },
+  { key: 'butterfly', label: 'Butterfly', family: 'butterfly',    config: { wing: 1 } },
+  { key: 'hexagon',   label: 'Hexagon',   family: 'polygon',      config: { sides: 6, rotation: 0 } },
+  { key: 'oval',      label: 'Oval',      family: 'oval',         config: {} },
+]);
+const _shape = _seed.get('shape');
+const _w = Number(_seed.get('w')) || 2.4;
+const _d = Number(_seed.get('d')) || 2.4;
+const garnishDesign = (_seed.has('garnish') || _seed.has('tier') || _shape) ? {
+  tiers: [{ shape: _shape || 'round', width: _w, depth: _d, radius: _w / 2,
+            height: 1.0, color: _seed.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: _seed.get('style') || 'smooth' }],
   garnishes: _seed.has('garnish') ? [{
     id: 'g-seed', name: 'Panel', kind: 'cut', color: '#4A2C1B', plate: 420, scale: 1.2,
     zone: new URLSearchParams(location.search).get('garnishzone') || 'top', mode: 'stand',
