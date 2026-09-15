@@ -2602,6 +2602,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   //
   // Parsed rather than assigned to window.location: navigating would reload the designer, throwing
   // away an unsaved cake to show an order. Nobody would forgive that twice.
+  // openTemplates is declared further down and changes every render. The callback below is made ONCE,
+  // so it reaches the current openTemplates through this ref rather than keeping the first render's.
+  const openTemplatesRef = useRef(null);
   const openNotificationLink = useCallback((link) => {
     // What the link means is decided in one place (notifications/notificationLink.js), shared with the
     // page-load path below, so a tap in the bell and a WhatsApp button cannot open different things.
@@ -2614,6 +2617,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       return;
     }
     if (target?.open === 'billing') { setBuyCreditsOpen(true); return; }
+    // The rail's own Templates action — the cake templates to start a design from, not the Template
+    // visibility settings panel.
+    if (target?.open === 'templates') { openTemplatesRef.current?.(); return; }
     // An unknown panel means a newer API than this bundle. Doing nothing is better than guessing at
     // a screen — the notification is already marked read and the bell still lists it.
   }, []);
@@ -3919,6 +3925,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
     setTemplatesLoading(false);
   }
+  openTemplatesRef.current = openTemplates;   // for openNotificationLink — see the ref's note
 
 const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 

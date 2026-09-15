@@ -21,6 +21,15 @@ describe('parseNotificationLink', () => {
     expect(parseNotificationLink('/?panel=billing')).toEqual({ open: 'billing', orderId: null });
   });
 
+  it('opens the cake templates for ?panel=templates — the welcome WhatsApp button', () => {
+    expect(parseNotificationLink('https://app.spattoo.com/?panel=templates')).toEqual({ open: 'templates', orderId: null });
+  });
+
+  // ?order= names one order, so it wins over any panel named beside it.
+  it('an order id wins over a panel', () => {
+    expect(parseNotificationLink('/?panel=templates&order=o1')).toEqual({ open: 'orders', orderId: 'o1' });
+  });
+
   // An unknown panel is a newer API than this bundle; a plain address is not a notification link at all.
   it('asks for nothing when the link names nothing this app knows', () => {
     expect(parseNotificationLink('/?panel=somethingNew')).toBeNull();

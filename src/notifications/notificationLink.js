@@ -28,6 +28,8 @@ export function parseNotificationLink(link) {
   const panel = params.get('panel') || null;
   if (orderId || panel === 'orders') return { open: 'orders', orderId };
   if (panel === 'billing') return { open: 'billing', orderId: null };
+  // The welcome WhatsApp's button: land a new baker on the cake templates, one tap from a 3D cake.
+  if (panel === 'templates') return { open: 'templates', orderId: null };
   return null;
 }
 
