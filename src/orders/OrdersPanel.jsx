@@ -107,6 +107,14 @@ const PencilGlyph = () => (
 // `variant='row'` (default) = icon + label inline (desktop, below the cake).
 // `variant='stack'` = compact column, icon over a small caption (`short`) for the
 // mobile side-strip. Full `label` stays as title + aria-label for accessibility.
+//
+// ⚠️ `short` MAY SHORTEN A NAME; IT MAY NOT CHANGE ONE. "Edit in 3D" → "3D Edit" and "X-Ray report"
+// → "X-Ray" drop words the phone does not have room for and the baker does not need. "Print &
+// cut-outs" → "Cut-outs" did something else: it dropped one of the two things the button gives you,
+// and a baker reading the strip was told the sheet was only about cutting. Reported as exactly that.
+// So `short` also takes JSX — a caption that wraps where the words allow, rather than one that says
+// less. Two lines cost the strip NOTHING horizontally (it is as wide as its widest caption either
+// way, and "cut-outs" is already that), which is why there was never a trade to make here.
 function IconAction({ glyph, label, short, hint, onClick, disabled, variant = 'row' }) {
   const stack = variant === 'stack';
   return (
@@ -128,6 +136,9 @@ function IconAction({ glyph, label, short, hint, onClick, disabled, variant = 'r
         background: stack ? 'transparent' : '#fff',
         fontSize: stack ? 10.5 : 13, fontWeight: 700, color: '#444', fontFamily: 'inherit',
         lineHeight: 1.2, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
+        // Centred because a caption may be two lines; nowrap stays, so the ONLY break is one the
+        // caption asks for. Natural wrapping would break "cut-outs" at its hyphen into three.
+        textAlign: 'center',
       }}
     >
       {glyph}<span>{stack ? (short ?? label) : label}</span>
@@ -209,7 +220,11 @@ function CutoutLauncher({ order, apiClient, variant }) {
   if (!ids.length && !prints.length) return null;
   return (
     <>
-      <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs" short="Cut-outs"
+      <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs"
+                  /* Two lines on the phone, not a different word — see IconAction. The break is
+                     after the "&" because "Print &" and "cut-outs" are the two halves of what this
+                     hands over, and neither half alone describes the sheet. */
+                  short={<>Print &amp;<br />cut-outs</>}
                   onClick={() => setOpen(true)} variant={variant} />
       {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
