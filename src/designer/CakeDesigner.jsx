@@ -3486,7 +3486,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // A festoon swag spans from its belly (anchor − scaled depth) up to its ends (anchor + a
     // little proud) — report that real band so new layers stack around the swag, not over it.
     if (zone === 'board' && p.bend) {
-      const anchor = tierHeight * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0);
+      const anchor = boardAnchorBase(p, tierIndex) + (p.userYOffset ?? 0);
       const { belly, top } = festoonReach(p, tierIndex);   // measured: real cream reach below/above anchor
       return [anchor - belly, anchor + top];
     }
@@ -3536,7 +3536,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const boards = (design.tiers[tierIndex]?.bottomPipings ?? []).filter(p => !p.bend);
     if (!boards.length) return 0;
     const tierHeight  = canvasConfig.tiers[tierIndex]?.height ?? 0;
-    const anchorBase  = tierHeight * BEND_ANCHOR_FRAC;
+    const anchorBase  = boardAnchorBase({ bend: true }, tierIndex);
     const { belly, top } = festoonReach(piping, tierIndex);
     let borderTop = 0;
     boards.forEach(p => { const [, hi] = sideBand(p, tierIndex); if (hi > borderTop) borderTop = hi; });
@@ -3719,33 +3719,60 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: +(clampedE - base).toFixed(4) }));
   }
 
+  /* Where a board/side layer's anchor SITS when it is asked to sit at `yo`, and what `userYOffset`
+   * has to become to put it there. Both halves are here rather than inside the stepper because the
+   * ON-CAKE DRAG asks the same two questions — it just arrives with an absolute height instead of a
+   * nudge. A second copy is how the drag and the control come to disagree about the same cake
+   * (INVARIANTS #3), which is the exact note already written above `boardYoBounds`.
+   *
+   * A sideways element rides its tier's wall inside the gap between whatever sits ABOVE it (a higher
+   * side element, else the tier's top edge / rim) and whatever sits BELOW (a lower side element /
+   * the board, else the tier base). It stops the instant an edge touches a neighbour, measured from
+   * each shell's EXACT rendered top/bottom reach (sideBand) — precise for tilted shells and any cake
+   * size, no guessed heights.
+   *
+   * ⚠️ A BEND (festoon) IS NOT A DISCRETE SHELL, so the shell-band clamp cannot describe it: its real
+   * reach is anchor↑ to (anchor − scaled depth)↓. It is kept within the wall instead, and its anchor
+   * may go BELOW the config height (a negative userYOffset) so it can be lowered as well as raised.
+   * The renderer already fits it between the borders above and below. */
+  /* ⚠️ THE ONLY PLACE THAT ANSWERS "WHERE IS A LAYER'S ANCHOR MEASURED FROM". It was three copies of
+   * `tierHeight * BEND_ANCHOR_FRAC` — in pipingBand, in nextFestoonYOffset and in the drag preview —
+   * plus the Height control's own, and every one of them is the same sentence about the same swag. A
+   * fourth was about to be written for the on-cake drag, which is what made it worth collapsing. */
+  function boardAnchorBase(cur, tierIndex) {
+    return cur.bend
+      ? (canvasConfig.tiers[tierIndex]?.height ?? 0) * BEND_ANCHOR_FRAC
+      : (cur.yOffset ?? 0);
+  }
+
+  function setBoardAnchor(tierIndex, cur, desiredYo) {
+    const tierHeight = canvasConfig.tiers[tierIndex]?.height ?? 0;
+    const yo = cur.bend
+      ? Math.min(Math.max(0, desiredYo), tierHeight)
+      : clampYo(desiredYo, boardYoBounds(cur, tierIndex));
+    const d = +(yo - boardAnchorBase(cur, tierIndex)).toFixed(4);
+    updatePipingLayer(tierIndex, 'board', cur.layerId,
+      p => ({ ...p, userYOffset: cur.bend ? d : Math.max(0, d) }));
+  }
+
   function handlePipingBoardYOffsetChange(tierIndex, v) {
     const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.cardId === pipingPopupEl?.cardId);
     if (!cur) return;
-    // A sideways element rides its tier's wall inside the gap between whatever sits ABOVE it (a
-    // higher side element, else the tier's top edge / rim) and whatever sits BELOW (a lower side
-    // element / the board, else the tier base). It stops the instant an edge touches a neighbour.
-    // We clamp the shell's ANCHOR (yo), using each shell's EXACT measured top/bottom reach
-    // (sideBand) so the test is precise for tilted shells and any cake size — no guessed heights.
-    const baseYOffset = cur.yOffset ?? 0;
-    const tierHeight  = canvasConfig.tiers[tierIndex]?.height ?? 0;
-    // Bend (festoon) elements aren't discrete shells, so the shell-band clamp below doesn't
-    // apply — their real vertical reach is anchor↑ to (anchor − scaled depth)↓. Clamp the
-    // anchor so the belly stays on the cake and the top stays under the rim, and allow the
-    // anchor to go BELOW the config height (negative userYOffset) so it can be lowered too.
-    if (cur.bend) {
-      // The renderer fits the festoon between the borders above/below (measured) so it never
-      // overlaps; here we just keep the manual nudge within the tier wall. Anchor base matches
-      // the renderer (a fraction of the wall); userYOffset is the delta from it.
-      const anchorBase = tierHeight * BEND_ANCHOR_FRAC;
-      const clampedYo  = Math.min(Math.max(0, anchorBase + v), tierHeight);
-      updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: +(clampedYo - anchorBase).toFixed(4) }));
-      return;
-    }
-    const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
-    const desiredYo = baseYOffset + v;
-    const clampedYo = clampYo(desiredYo, { yoMin, yoMax });
-    updatePipingLayer(tierIndex, 'board', cur.layerId, p => ({ ...p, userYOffset: Math.max(0, +(clampedYo - baseYOffset).toFixed(4)) }));
+    setBoardAnchor(tierIndex, cur, boardAnchorBase(cur, tierIndex) + v);
+  }
+
+  /* ── The same move, made with the cake instead of the card ──────────────────────────────────────
+   * Press the piping and slide it up or down the wall. `wallY` is where the pointer met the tier, in
+   * tier-local units, so this is the layer's new ANCHOR outright — no delta arithmetic, and nothing
+   * for the two paths to round differently.
+   *
+   * ⚠️ It goes through `setBoardAnchor`, which is the whole point. A drag that clamped itself would
+   * let a baker push a border somewhere the ✓/− buttons refuse to, and the same cake would then have
+   * two answers to "how far can this go". Reported as the Height stepper being the only way to move
+   * a ring: the card already showed the number, and a number is a poor way to say "a bit lower". */
+  function handlePipingLayerHeight(tierIndex, layerId, wallY) {
+    const cur = design.tiers[tierIndex]?.bottomPipings?.find(p => p.layerId === layerId);
+    if (cur) setBoardAnchor(tierIndex, cur, wallY);
   }
 
   // The vertical band a board/side layer's ANCHOR may occupy: its bottom edge resting on the tier
@@ -9625,6 +9652,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               pipingStyles={[]}
               pipingToolbar={selectedPiping !== null ? buildToolbar(selectedEl) : null}
               onPipingInstanceMove={handlePipingInstanceMove}
+              onPipingLayerHeight={handlePipingLayerHeight}
               isPipingMovable={isPipingMovable}
               selectedGenerated={
                 selectedEl?.type === 'cloud' || selectedEl?.type === 'rainbow'
@@ -10266,7 +10294,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 // bottom_y_offset — mirror the cake renderer so the preview matches the placement.
                 if (!isTopZone && previewPlacement.bend) {
                   const th = canvasConfig.tiers[tierIndex]?.height ?? BOTTOM_H;
-                  previewPlacement.yOffset = th * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0);
+                  previewPlacement.yOffset = boardAnchorBase(p, tierIndex) + (p.userYOffset ?? 0);
                 }
                 // A "piping pattern" element carries no image_url of its own — its A/B GLBs
                 // live in the cream_piping blocks it references. Resolve them the same way
@@ -10525,6 +10553,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                   style={{ fontSize: 9, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: "'Quicksand',sans-serif" }}
                                   onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, 0); }}>Reset</button>
                               )}
+                            </div>
+                          )}
+                          {/* ⚠️ THE CONTROL IS NOW THE SECOND WAY, NOT THE ONLY ONE. The ± beside a
+                              number is a poor way to say "a bit lower" — the baker is looking at the
+                              cake, and the answer they want is where their finger is. The border now
+                              drags up and down the wall itself (see `useLayerHeightDrag`), and this
+                              says so, because an affordance nobody is told about is one nobody finds.
+                              The stepper stays: it is also the READOUT, and it is how you place a
+                              border at the same height as one on another tier. */}
+                          {yAdj && (
+                            <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, width: '100%' }}>
+                              Or drag it up and down the cake.
                             </div>
                           )}
                         </div>

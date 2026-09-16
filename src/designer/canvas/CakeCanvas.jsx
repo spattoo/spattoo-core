@@ -2411,6 +2411,7 @@ function CakeScene({
   // Same capability contract as isStickerMovable below, read off the piping LAYER (layer.id is the
   // element id) rather than the sticker.
   onPipingInstanceMove = null,
+  onPipingLayerHeight = null,
   isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   // Is THIS decoration allowed to be dragged? A function rather than a flag on the sticker, because
@@ -2580,7 +2581,7 @@ function CakeScene({
           orbitRef, gestureOnStickerRef,
           selectedTier, onTierClick, onDeselect,
           selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, pipingToolbar,
-          onPipingInstanceMove, isPipingMovable,
+          onPipingInstanceMove, onPipingLayerHeight, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
           selectedGarnishId, onGarnishSelect, onGarnishMove,
@@ -2685,7 +2686,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
-    onPipingInstanceMove = null, isPipingMovable = () => true,
+    onPipingInstanceMove = null, onPipingLayerHeight = null, isPipingMovable = () => true,
     selectedTextId = null, onTextSelect = NOOP, onTextMove = NOOP, onTextContentChange = NOOP, textToolbar = null,
     selectedAgeId = null, onAgeSelect, onAgeMove,
     selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
@@ -2773,6 +2774,7 @@ function CakeContent({ config, scene, edit = null }) {
             creamLayers={tier.creamLayers ?? []}
             highlightPipingId={highlightPipingId}
             pipingMovable={isPipingMovable}
+            onPipingLayerHeight={onPipingLayerHeight ? (layerId, wallY) => onPipingLayerHeight(i, layerId, wallY) : null}
             onPipingInstanceMove={onPipingInstanceMove
               ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
               : null}
@@ -3477,6 +3479,7 @@ export default function CakeCanvas({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onPipingInstanceMove = null,
+  onPipingLayerHeight = null,
   isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
@@ -3618,6 +3621,7 @@ export default function CakeCanvas({
         pipingStyles={pipingStyles}
         pipingToolbar={pipingToolbar}
         onPipingInstanceMove={onPipingInstanceMove}
+        onPipingLayerHeight={onPipingLayerHeight}
         isPipingMovable={isPipingMovable}
         selectedTextId={selectedTextId}
         onTextSelect={onTextSelect}

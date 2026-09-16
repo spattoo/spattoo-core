@@ -78,9 +78,27 @@ applyCakeShapeConfig([
 const _shape = _seed.get('shape');
 const _w = Number(_seed.get('w')) || 2.4;
 const _d = Number(_seed.get('d')) || 2.4;
-const garnishDesign = (_seed.has('garnish') || _seed.has('tier') || _shape) ? {
+/* ⚠️ `?piping=1` puts a border on the tier's wall, because until now nothing could.
+   A piping element is a DB row carrying a GLB url, so the stub client's `null` meant the designer
+   could be opened but no border could ever be put on it — and the Height control, the on-cake drag
+   and every festoon path live only on a cake that has one. `dev/sample-rosette.glb` is the repeatable
+   shell already in the repo.
+
+   ⚠️ NOT the swag path. `buildFestoons` bends a long STRIP, and a rosette's longest axis is its own
+   width — bent, it comes out as a ring of blobs bigger than the cake. Swags are looked at on
+   dev/festoons.html instead, which builds the strip it needs rather than borrowing one that is the
+   wrong shape. A fixture that renders something nobody would pipe teaches the wrong thing. */
+const _piping = _seed.has('piping') ? [{
+  layerId: 'seed-pipe', cardId: 'seed-card', name: 'Seed border',
+  glbUrl: '/sample-rosette.glb', color: '#c96a5a',
+  size: 1, arrangement: 'ring', yOffset: 0, userYOffset: 0,
+}] : [];
+
+const garnishDesign = (_seed.has('garnish') || _seed.has('tier') || _shape || _piping.length) ? {
   tiers: [{ shape: _shape || 'round', width: _w, depth: _d, radius: _w / 2,
-            height: 1.0, color: _seed.get('tier') || '#F6DCE2', frostingType: 'buttercream', frostingStyle: _seed.get('style') || 'smooth' }],
+            height: 1.0, color: _seed.get('tier') || '#F6DCE2', frostingType: 'buttercream',
+            frostingStyle: _seed.get('style') || 'smooth',
+            topPipings: [], bottomPipings: _piping, creamLayers: [] }],
   garnishes: _seed.has('garnish') ? [{
     id: 'g-seed', name: 'Panel', kind: 'cut', color: '#4A2C1B', plate: 420, scale: 1.2,
     zone: new URLSearchParams(location.search).get('garnishzone') || 'top', mode: 'stand',
