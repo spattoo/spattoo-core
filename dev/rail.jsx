@@ -91,7 +91,12 @@ const _d = Number(_seed.get('d')) || 2.4;
 const _piping = _seed.has('piping') ? [{
   layerId: 'seed-pipe', cardId: 'seed-card', name: 'Seed border',
   glbUrl: '/sample-rosette.glb', color: '#c96a5a',
-  size: 1, arrangement: 'ring', yOffset: 0, userYOffset: 0,
+  size: 1, arrangement: 'ring', yOffset: 0,
+  /* `&py=0.4` starts the border PART WAY UP the wall. At the base — where a border naturally sits —
+     the anchor and the cream you grab are nearly the same height, so a drag that snapped the anchor
+     to the pointer looked identical to one that kept the grab offset. The bug INVARIANTS #10 law 5
+     describes only appears once those two are apart. */
+  userYOffset: Number(_seed.get('py')) || 0,
 }] : [];
 
 const garnishDesign = (_seed.has('garnish') || _seed.has('tier') || _shape || _piping.length) ? {

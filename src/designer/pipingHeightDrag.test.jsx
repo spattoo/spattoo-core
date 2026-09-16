@@ -59,7 +59,22 @@ describe('the gesture', () => {
     const hook = /function useLayerHeightDrag[\s\S]*?\n\}/.exec(tier)[0];
     expect(hook).toMatch(/wallHit\(/);
     expect(hook).not.toMatch(/planeHit\(/);
-    expect(hook).toMatch(/onMoveHeight\(hit\.y - wall\.baseY\)/);   // tier-local, the anchor's own frame
+    expect(hook).toMatch(/onMoveHeight\(hit\.y - wall\.baseY \+ grabOff\)/);   // tier-local, the anchor's own frame
+  });
+
+  /* ⚠️ INVARIANTS #10 LAW 5 — `handleAt` and `dragTo` are exact inverses, which in a gesture means
+     what you grabbed stays under the pointer. The first cut wrote the pointer's own height as the
+     anchor, and a garland is grabbed by a BEAD while its anchor is somewhere else entirely: the
+     layer leapt by however far those two happened to be apart, then followed correctly. Nothing
+     errors, the suite passed, and it is only visible if you press one and watch the first frame.
+     Measured ONCE, on the first move that counts as a drag, because the anchor moves as the drag
+     proceeds and re-reading it every frame would cancel the correction out. */
+  it('keeps what you grabbed under the pointer, instead of jumping the anchor to it', () => {
+    const hook = /function useLayerHeightDrag[\s\S]*?\n\}/.exec(tier)[0];
+    expect(hook).toMatch(/let grabOff = null;/);
+    expect(hook).toMatch(/if \(grabOff == null\) grabOff = anchorY - \(hit\.y - wall\.baseY\);/);
+    // Inside the pointerdown, so a fresh press re-measures: the anchor has moved since the last one.
+    expect(/function \(e\)|return \(e\) => \{[\s\S]*?let grabOff = null;/.test(hook)).toBe(true);
   });
 
   /* ⚠️ THE TWO HALVES THAT MUST TRAVEL TOGETHER. r3f bubbles the press up the group, so one handler

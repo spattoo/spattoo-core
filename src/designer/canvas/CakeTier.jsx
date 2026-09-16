@@ -636,7 +636,7 @@ function renderWrap({ wrapGeo, color, softness, gradient, selected, userData = n
 //
 // Board/side only. A rim ring sits ON the top edge and lifting it would leave it in mid-air, which
 // is the same reason the single-piece drag sends no height for the rim.
-function useLayerHeightDrag({ active, canMove, onMoveHeight, wall }) {
+function useLayerHeightDrag({ active, canMove, onMoveHeight, wall, anchorY }) {
   const { camera, gl } = useThree();
   return useMemo(() => {
     if (!active || !onMoveHeight || !wall) return null;
@@ -646,13 +646,22 @@ function useLayerHeightDrag({ active, canMove, onMoveHeight, wall }) {
       const canvas = gl.domElement;
       const start = { x: e.clientX, y: e.clientY };
       let dragged = false;
+      let grabOff = null;
       function onMove(ev) {
         const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
         if (dx * dx + dy * dy > DRAG_SLOP_SQ) dragged = true;
         if (!dragged || !canMove) return;
         const hit = wallHit(pointerRay(ev, canvas, camera), wall);
         if (!hit) return;              // pointer left the cake — leave it where it is
-        onMoveHeight(hit.y - wall.baseY);
+        /* ⚠️ THE GRAB OFFSET, and without it the border JUMPS on the first move. Writing the
+           pointer's own height as the anchor puts the anchor under the finger — but a garland is
+           grabbed by a bead, and its anchor is somewhere else entirely, so the layer leapt by
+           however far those two happened to be apart before it started following. INVARIANTS #10
+           law 5: `handleAt` and `dragTo` are exact inverses, which means what you grabbed stays
+           under the pointer. Measured once, on the first move that counts as a drag, because the
+           anchor MOVES as the drag proceeds and re-reading it would cancel the correction out. */
+        if (grabOff == null) grabOff = anchorY - (hit.y - wall.baseY);
+        onMoveHeight(hit.y - wall.baseY + grabOff);
       }
       function onUp() {
         canvas.removeEventListener('pointermove', onMove);
@@ -661,7 +670,7 @@ function useLayerHeightDrag({ active, canMove, onMoveHeight, wall }) {
       canvas.addEventListener('pointermove', onMove);
       canvas.addEventListener('pointerup', onUp);
     };
-  }, [active, canMove, onMoveHeight, wall, camera, gl]);
+  }, [active, canMove, onMoveHeight, wall, anchorY, camera, gl]);
 }
 
 // ── Top piping ring — GLB shells hugging the top edge ─────────────────────────
@@ -951,7 +960,7 @@ function BottomPipingRingImpl({
   // all the way round, so there is no piece to place and no angle to write — only a height, which
   // used to be reachable solely through the card's ± stepper.
   const heightDrag = useLayerHeightDrag({
-    active: !dragHandler, canMove, onMoveHeight, wall,
+    active: !dragHandler, canMove, onMoveHeight, wall, anchorY: yOffset,
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
