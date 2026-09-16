@@ -904,8 +904,25 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
  * the texture path asks for the QUALIFIED url, so a tile fetching the raw one warms an entry nobody
  * reads (see assetUrl.js).
  */
-function ElementGrid({ items = [], onElementTap, onDragStartSticker }) {
-  if (!items.length) return null;
+/* ── The shelf: one card, one or two labelled groups ────────────────────────────────────────────
+ *
+ * `groups` rather than one flat list, and ONE card rather than one card per group — measured, not a
+ * preference. Two cards cost two lots of `elementCard` padding and the gap between them, and at
+ * 375×812 that put the "Decorations" heading 47px BELOW the fold: opening a category with a studio
+ * in it showed the studio and nothing else, so the common case — the forty stickers — looked absent
+ * until you scrolled. Same card, two headings, and both groups are on screen (INVARIANTS #12: what
+ * is touched constantly goes where it can be reached).
+ *
+ * A studio and a sticker are otherwise the same tile doing the same two gestures. What differs is
+ * what the group is CALLED, what tapping does, and a mark on the tile so that difference survives
+ * being scrolled past the heading — which a heading on its own does not.
+ */
+function ElementGrid({ groups = [], onElementTap, onDragStartSticker }) {
+  const live = groups.filter(g => g.items?.length);
+  if (!live.length) return null;
+  // A heading earns its line only when there is something to tell it apart FROM. One group — the
+  // usual case, a category with no studios — reads exactly as it did before this existed.
+  const titled = live.length > 1;
 
   // Grid-item pointer handler, disambiguating tap vs drag. Per INVARIANTS #6 EVERY element is
   // click-to-place: a tap calls tapPlaceElement (drops it on its default surface and opens its edit
@@ -934,21 +951,45 @@ function ElementGrid({ items = [], onElementTap, onDragStartSticker }) {
 
   return (
     <div style={{ ...s.elementCard, cursor: 'default' }}>
-      {/* One hint for one grid. The per-type wording it replaces ("Drag onto TOP of cake to place")
-          described a rule the element enforces for itself — an image topper lands on its own zone
-          however it is placed — and it cannot be said per group when there are no groups. */}
-      <div style={{ fontSize: 9, color: '#888', marginBottom: 8 }}>Tap or drag onto the cake to place</div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+      {live.map(({ title, hint, studio, items }, gi) => (
+        <div key={title ?? gi} style={{ width: '100%', marginTop: gi ? 8 : 0 }}>
+          {titled && title && (
+            <div style={{ fontSize: 10, fontWeight: 800, color: '#666', letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 2, textAlign: 'center' }}>
+              {title}
+            </div>
+          )}
+          {/* One hint per GROUP. The per-type wording it replaces ("Drag onto TOP of cake to place")
+              described a rule the element enforces for itself — an image topper lands on its own
+              zone however it is placed.
+              ⚠️ A studio takes the other wording, and that is half of what was wrong: "tap or drag
+              onto the cake to place" is precisely what a studio does not do, and it was being said
+              over them. */}
+          <div style={{ fontSize: 9, color: '#888', marginBottom: 6, textAlign: 'center', lineHeight: 1.3 }}>{hint}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
         {items.map(({ el, objectFit }) => (
           <div key={el.id} onPointerDown={e => gridPointerDown(el, e)}
             style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none', touchAction: 'none' }}>
-            <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
+            <div style={{ position: 'relative', width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff', border: '1.5px solid #999999' }}>
               {thumbSrc(el) && <img src={corsUrl(thumbSrc(el))} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} crossOrigin="anonymous" style={{ width: '100%', height: '100%', objectFit, pointerEvents: 'none' }} />}
+              {/* ⚠️ THE ARROW IS THE APP'S EXISTING WORD FOR "THIS OPENS A SCREEN" — "Preview &
+                  customise →", "Open in studio", "← Back" (INVARIANTS #14: find what this codebase
+                  already uses before drawing a new one). A corner mark on a tile is likewise the
+                  pattern PreviewTile set. It rides the THUMBNAIL rather than the label because the
+                  label is 9px and already wraps at two words. */}
+              {studio && (
+                <span aria-hidden="true" style={{
+                  position: 'absolute', right: 0, bottom: 0, minWidth: 16, height: 16,
+                  padding: '0 3px', borderTopLeftRadius: 8, background: '#1a1a1a', color: '#fff',
+                  fontSize: 10, fontWeight: 800, lineHeight: '16px', textAlign: 'center',
+                }}>→</span>
+              )}
             </div>
             <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
           </div>
         ))}
-      </div>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -4507,6 +4548,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'age', pending: true });
   }
 
+  /* ── Which of these OPEN A SCREEN ────────────────────────────────────────────────────────────
+   * Three of them do, and the picker has to say so: a studio tile sitting among stickers looks
+   * identical and does something categorically different, so a customer tapping one expects a
+   * decoration to land on the cake and gets the screen replaced instead.
+   *
+   * ⚠️ THE MARK GOES ON THE ENTRY, NOT IN A LIST BESIDE IT, and NOT in a DB column. It is not a
+   * tunable — an admin authors `procedural` (the one field Add Element writes) and whether that key
+   * opens a screen is a CONSEQUENCE of the choice, not a second opinion about it. A column could
+   * disagree with the code: tick "studio" on the grass row and grass still places instantly, the
+   * heading lies, and nothing anywhere fails. Same shape as billing's `discount_pct` beside the
+   * arithmetic it is supposed to describe.
+   *
+   * ⚠️ AND "PROCEDURAL" IS NOT THE LINE. Eight of these eleven place something the moment they are
+   * tapped, exactly like an image sticker — grass, a rainbow, a cloud, letter blocks, writing, a
+   * number topper, luster dust, the cream pen. Grouping the picker by "is it procedural" would file
+   * a rainbow under Studios and be wrong in the opposite direction.
+   *
+   * `check:procedural-studios` reads this block and fails if an entry that opens a studio is not
+   * wrapped, or a wrapped one does not — so a twelfth tool cannot be added and quietly left out. */
+  const opensStudio = (fn) => Object.assign(fn, { opensStudio: true });
+
+  /* Does tapping this row replace the screen? Asked of the TABLE, so there is no second list to keep
+   * in step with it — and no answer for a row whose `procedural` key this build does not know, which
+   * is right: an unknown key already falls through to the ordinary placement path below. */
+  const isStudioElement = (el) => !!PROCEDURAL_TOOLS[el?.placement_config?.procedural]?.opensStudio;
+
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
     letter_blocks: addNameBlocks,
@@ -4543,10 +4610,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        Chocolate strokes already on saved cakes keep rendering; the renderer is untouched. Only the
        way NEW ones are made has changed. Cream still writes directly on the cake — the same move is
        planned for it, deliberately after this one. */
-    chocolate_pen: () => setGarnishStudio(true),
+    chocolate_pen: opensStudio(() => setGarnishStudio(true)),
     /* Opens the studio rather than placing something. A garnish has to be MADE before it can be
        put anywhere, which is the one procedural tool so far whose first act is a screen. */
-    chocolate_garnish: () => setGarnishStudio(true),
+    chocolate_garnish: opensStudio(() => setGarnishStudio(true)),
     /* A card topper: composed off the cake and stood on it. `card_topper` because that is what it
        is made of — the key is DATA, read by an admin on a row, so it names the thing rather than
        the studio that happens to make it today.
@@ -4561,13 +4628,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        that placed itself would make the words on it the ONE thing about the cake nobody could
        change, and the words are the whole point of a name topper. It arrives as a starting point
        that can be left. */
-    card_topper: (el) => {
+    card_topper: opensStudio((el) => {
       // Arriving from a catalogue row, so nothing here is a kept piece — clear the shelf door.
       setOpenTopper(null);
       const made = el?.placement_config?.card_topper;
       setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
       setTopperStudio(true);
-    },
+    }),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -9237,9 +9304,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   const objectFit = et.slug === ELEMENT_SLUGS.IMAGE_TOPPER ? 'contain' : 'cover';
                   return els.map(el => ({ el, objectFit }));
                 });
+              /* ── Studios first, and said so ────────────────────────────────────────────────────
+                 A studio was just another tile: same square, same label, and the same "tap or drag
+                 onto the cake to place" written over it — which is the one thing it does NOT do.
+                 Tapping replaced the screen instead, and nothing had warned anybody.
+
+                 ⚠️ SPLIT ON WHAT TAPPING DOES, read off PROCEDURAL_TOOLS itself. Not on
+                 `placement_config.procedural`, which is a much wider set: eight of its eleven keys
+                 drop something on the cake the instant they are tapped, so that split would file a
+                 rainbow under Studios. See the `opensStudio` note on the table.
+
+                 On top because they are the bigger act — you leave the cake to use one — and because
+                 a customer scanning for "can I make my own?" is otherwise reading forty stickers
+                 first. Headings appear only when BOTH halves exist; one studio and no decorations,
+                 or the usual case of no studios at all, reads exactly as it did before. */
               return (
                 <ElementGrid
-                  items={items}
+                  groups={[
+                    { title: 'Studios', studio: true,
+                      hint: 'Tap to open — you make it on its own screen, then place it',
+                      items: items.filter(({ el }) => isStudioElement(el)) },
+                    { title: 'Decorations',
+                      hint: 'Tap or drag onto the cake to place',
+                      items: items.filter(({ el }) => !isStudioElement(el)) },
+                  ]}
                   onDragStartSticker={(el, x, y) => startStickerDrag(el, x, y)}
                   onElementTap={(el) => tapPlaceElement(el)}
                 />
