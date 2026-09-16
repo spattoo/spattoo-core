@@ -107,7 +107,7 @@ const garnishDesign = (_seed.has('garnish') || _seed.has('tier') || _shape || _p
   garnishes: _seed.has('garnish') ? [{
     id: 'g-seed', name: 'Panel', kind: 'cut', color: '#4A2C1B', plate: 420, scale: 1.2,
     zone: new URLSearchParams(location.search).get('garnishzone') || 'top', mode: 'stand',
-    theta: Math.PI / 2, radius: 0.2, height: 0.5, yaw: 0,
+    theta: Math.PI / 2, radius: 0.55, height: 0.5, yaw: 0,   // 0.55 = GARNISH_DEFAULTS, where the fan was tuned
     rings: [[[110, 60], [310, 60], [270, 360], [150, 360], [110, 60]]],
   }] : [],
 } : null;

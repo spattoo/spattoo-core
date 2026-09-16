@@ -39,7 +39,7 @@ import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
-import { garnishDragTo, garnishPlacementOptions, garnishSeat } from './geometry/garnishPlacement.js';
+import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
@@ -1941,6 +1941,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
   const [garnishRope, setGarnishRope] = useState(6);
   const [selectedGarnishId, setSelectedGarnishId] = useState(null);
+  /* How many pieces the next fan lays down. Lives up here because `renderGarnishBody` is a plain
+     function called during render, not a component — a hook inside it would be a hook below a
+     branch (check:hooks). Shared across pieces on purpose: it is a tool setting, "how many do you
+     want", not a property of any one garnish. */
+  const [fanCount, setFanCount] = useState(5);
   const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
@@ -7967,20 +7972,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ⚠️ A FAN IS GENERATED, NOT NUDGED. The eye catches a two-degree error immediately on a
             repeated shape, so an arc of five placed by hand never looks deliberate however long you
             spend on it — which is the whole reason the reference cakes look made rather than
-            arranged. Offered as counts rather than a slider because a fan is 3 or 5 pieces; a
-            continuous control would invite fiddling with a number nobody has an opinion about. */}
+            arranged. That is untouched: the arc and the splay are still computed, and the only thing
+            a baker sets is HOW MANY.
+            ⚠️ WHAT CHANGED IS THE CEILING. It offered 3, 5 and 7 and nothing else, which this note
+            used to defend as "a fan is 3 or 5 pieces". It is when it is a spray on the top; a band
+            of pieces round a whole tier is the same tool asked for a bigger number, and there was no
+            way to say it.
+            ⚠️ AND A SLIDER CANNOT APPLY AS IT MOVES. `fanGarnish` MULTIPLIES — it adds count−1 real
+            garnishes and moves the original — so a live slider would strew hundreds of pieces across
+            a drag and leave undo with no single step to take back. The slider chooses; the button
+            does it, which is also what keeps "one undo takes it back" true. */}
         <div>
           <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.4,
                         textTransform: 'uppercase', marginBottom: 5 }}>Fan it out</div>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {[3, 5, 7].map(n => (
-              <button key={n} onClick={() => fanGarnish(g.id, { count: n, spread: 0.55 + n * 0.09 })}
-                title={`${n} pieces, evenly spread and splayed from where this one sits`}
-                style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
-                         border: '1.5px solid #DDD7CD', background: '#fff',
-                         fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>{n}</button>
-            ))}
-          </div>
+          <PenSlider label="Pieces" value={fanCount} min={2} max={24} step={1}
+            onChange={setFanCount} fmt={v => String(v)} />
+          <button onClick={() => fanGarnish(g.id, { count: fanCount, spread: fanSpread(fanCount) })}
+            title={`${fanCount} pieces, evenly spread and splayed from where this one sits`}
+            style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
+                     border: '1.5px solid #DDD7CD', background: '#fff',
+                     fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
+            Fan out {fanCount}
+          </button>
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 4, lineHeight: 1.45 }}>
             Repeats this piece round an arc, centred where it sits now. One undo takes it back.
           </div>

@@ -296,6 +296,35 @@ export function garnishDragTo(params, cake, u, v) {
  *
  * Returns `count` placement patches, in order round the arc.
  */
+/* ── How wide an arc a fan of `count` pieces covers ──────────────────────────────────────────────
+ *
+ * The card offered 3, 5 and 7 and the arc was written at the button: `0.55 + n * 0.09`. That is a
+ * tuned look, not a formula — read as the GAP BETWEEN PIECES it says 23.5°, 14.3°, 11.3°, i.e. a
+ * fan of more pieces is also a tighter one, which is what makes five read as a spray rather than as
+ * five things in a row.
+ *
+ * ⚠️ IT DOES NOT EXTEND, and that is why raising the count needed this. Carried past seven the same
+ * line keeps closing the gap — 24 pieces land 6.8° apart, stacked on each other — so a slider wired
+ * straight to the old arithmetic would have shipped a control whose upper half produces a smear.
+ *
+ * So the tuned line holds where it was tuned, and past seven the SPACING holds instead and the arc
+ * grows to fit. The two meet exactly at seven (1.18 rad either way), so 3, 5 and 7 are unchanged to
+ * the decimal — whatever a baker fanned before comes out identical.
+ *
+ * ⚠️ AND IT CANNOT PASS A FULL CIRCLE. Beyond that the last piece laps the first and the fan reads
+ * as a mistake; `(n-1)/n` of a turn is the widest honest arc, leaving exactly one gap where the ends
+ * meet. Reached at about 33 pieces, which is past anything the slider offers — it is the ceiling
+ * that keeps the rule true rather than a case anyone will hit.
+ */
+const FAN_TUNED_MAX = 7;
+const FAN_GAP = (0.55 + FAN_TUNED_MAX * 0.09) / (FAN_TUNED_MAX - 1);   // 0.1967 rad — the 7-piece spacing
+
+export function fanSpread(count) {
+  const n = Math.max(2, Math.round(count));
+  const arc = n <= FAN_TUNED_MAX ? 0.55 + n * 0.09 : FAN_GAP * (n - 1);
+  return Math.min(arc, (Math.PI * 2 * (n - 1)) / n);
+}
+
 export function fanPlacements(base, count, spread) {
   const n = Math.max(2, Math.round(count));
   const theta0 = base?.theta ?? 0;
