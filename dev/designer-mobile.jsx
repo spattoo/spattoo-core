@@ -131,6 +131,33 @@ CAT_ELEMENTS.push({
   sort_order: 8,
 });
 
+/* ⚠️ AN EDGE-SEATED FIGURE, which nothing here could make. Every row above seats on the top surface
+ * or hugs a wall, so the `perch`/`verge` modes — and with them `edgeSeatSeed`, the shared front-edge
+ * seed both the add path and the chooser's move path call — were unreachable without a database.
+ *
+ * That gap let a crash ship. `edgeSeatSeed` took the front edge as `kind === 'rect' ? halfD : radius`,
+ * and an OUTLINE tier (heart, butterfly, oval, hexagon, glyph) carries no `radius` at all, so the seat
+ * was NaN; `nearestOnPolygon` cannot beat its Infinity seed with a NaN distance, returned null, and the
+ * designer died on `p.x` with the WebGL context. Reported by a baker perching a fondant doll on a heart.
+ *
+ * Open the case it broke on:  ?shape=heart&style=smooth&catalog=1  (and ?shape=round for the control). */
+CAT_ELEMENTS.push({
+  id: 'e11', name: 'Fondant doll', description: 'a figure that sits on the cake edge',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e8b6c2'), thumbnail_url: CAT_THUMB('#e8b6c2'), thumb_key: null,
+  allowed_zones: ['rim', 'top_surface'],
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true },
+  placement_config: {
+    // A hero figure: one per surface, so it is placed by CHOOSING a slot ("Edge" for the rim) rather
+    // than dropped anywhere — which is the path that runs edgeSeatSeed, and the path that crashed.
+    single_per_slot: true,
+    r: 1, scale: { max: 6, min: 0.5, step: 0.5 },
+    rim: 'perch', perch: { tilt_deg: 12 },   // straddles the edge, leaning back a little
+    top_surface: 'stand',
+  },
+  default_color: '#E8B6C2', sort_order: 11,
+});
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.

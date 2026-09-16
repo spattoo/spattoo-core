@@ -1,7 +1,7 @@
 // Pure, config-driven placement logic — no React, no element-type branching. The designer and
 // the contract test both use these so behaviour can't silently diverge per element type.
 import { ZONES, PLACEMENT_MODES, STICKER_SIZE, SIDE_STICKER_SEAT_FRAC } from './constants.js';
-import { topClamp, snapToRim, tierShape, topContains } from './geometry/surface.js';
+import { topClamp, snapToRim, tierShape, topContains, shapeReach } from './geometry/surface.js';
 
 // Default fraction of a tier's wall height a side-hug HERO decoration fills. Tunable per
 // element via placement_config.hug_fill.
@@ -84,7 +84,17 @@ export function edgeSeatSeed(placementConfig, shp, mode) {
   const isVerge = mode === PLACEMENT_MODES.VERGE;
   if (!isPerch && !isVerge) return null;
   const cfg = (isVerge ? placementConfig?.verge : placementConfig?.perch) ?? {};
-  const edge = shp.kind === 'rect' ? shp.halfD : shp.radius;
+  // How far the rim sits along +z (the front). ONE accessor for every footprint — `shapeReach`
+  // answers it for a round tier (its radius), a sheet (its halfD) and an OUTLINE (the farthest
+  // contour point along +z) alike, so round and rect come out byte-identical to the old branch.
+  // ⚠️ This used to read `shp.radius` for anything that wasn't rect, and an outline descriptor
+  // (heart, butterfly, oval, hexagon, glyph) carries NO `radius` field at all. So the seat became
+  // `undefined - 0` = NaN, and NaN travels: `deOverlapSeat` hands it to `nearestOnPolygon`, whose
+  // running best starts at Infinity and can never be beaten by a NaN distance, so it returns null
+  // and the caller dereferences it — "Cannot read properties of null (reading 'x')", reported as a
+  // crash when a fondant doll was perched on a heart cake. Round cakes never showed it because
+  // they have the field the branch assumed everything had.
+  const edge = shapeReach(shp, { x: 0, z: 1 });
   const tiltAngle = isVerge
     ? (cfg.angle_deg ?? DEFAULT_VERGE_ANGLE_DEG) * Math.PI / 180
     : (cfg.tilt_deg ?? 0) * Math.PI / 180;

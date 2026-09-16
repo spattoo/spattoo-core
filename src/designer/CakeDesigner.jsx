@@ -32,7 +32,7 @@ import { shapeByKey, photoFilename } from './photo/photoShapes.js';
 import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
-import { tierShape, topClampInset, boardRingClamp } from './geometry/surface.js';
+import { tierShape, topClampInset, boardRingClamp, shapeReach } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
@@ -6817,7 +6817,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const seed = edgeSeatSeed(pc, shp, mode);
         pos = seed
           ? { x: seed.x, z: seed.z, tiltAngle: seed.tiltAngle, yOffset: seed.yOffset }
-          : { x: 0, z: (shp.kind === 'rect' ? shp.halfD : shp.radius) };
+          // Non-edge rim modes get a bare front-edge point — via the same one accessor edgeSeatSeed
+          // uses, so an outline tier (no `radius` field) yields a real edge instead of NaN.
+          : { x: 0, z: shapeReach(shp, { x: 0, z: 1 }) };
       } else if (slot.zone === ZONES.TOP_SURFACE) {
         pos = { x: 0, z: 0 };
       } else if (slot.zone === ZONES.BOARD) {
@@ -7200,14 +7202,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
           onChange={v => resizeSticker(sticker, v)} />,
       ] });
-      const isGlbTop = sticker?.zone === 'top_surface' && /\.(glb|gltf)(\?|$)/i.test(sticker?.imageUrl ?? '');
-      if (isGlbTop) {
-        const yo = sticker?.yOffset ?? 0;
-        groups.push({ key: 'ht', divider: true, panelLabel: 'Height', controls: [
-          <button key="ht-dn" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { yOffset: Math.max(0, +(yo - 0.1).toFixed(2)) })}>↓</button>,
-          <button key="ht-up" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { yOffset: Math.min(1.2, +(yo + 0.1).toFixed(2)) })}>↑</button>,
-        ] });
-      }
+      /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
+       * There was a `Height` ↓/↑ pair here for a top-surface GLB (added with the faux balls,
+       * d60aeb63), and it is gone because it could only ever do the one thing the cake does not do:
+       * float something above the top.
+       *
+       * ⚠️ EVERY OTHER WRITER OF A TOP STICKER'S `yOffset` SOLVES IT, and this one asked a human to
+       * pick it. `useCakeDesign` seeds it from the calibrated perch/verge seat or from ball stacking;
+       * `manualSeat` recomputes it on every drag; `resizeClusterBall` re-seats after a resize. The
+       * drag's own note is the rule in one line — it "never balances on 1–2 balls and NEVER FLOATS"
+       * — and pressing ↑ lifted a ball straight off the seat that code had just computed for it.
+       * INVARIANTS #10 law 2, inverted: not a freedom that fails to move the thing, but one that
+       * moved it somewhere the cake cannot put it.
+       *
+       * It was also clamped `Math.max(0, …)`, so it could only ever go UP from the seat. Sinking is a
+       * different control and already exists — "Bury" (`insertDepth`) on the insert pose.
+       *
+       * ⚠️ HEIGHT IS A SIDE AFFORDANCE, AND ON THE SIDE IT IS A DRAG, NOT A CONTROL. A decoration on
+       * the wall genuinely has a height to choose, and `DraggableSideSticker` already writes it —
+       * `{ theta, y }` from one raycast, so it goes round the cake and up it in the same gesture.
+       * There is deliberately no Height stepper for the side either; the cake is the control. */
       // Depth (radialOffset) — side stickers only. A photo frame is a flat print that must stay
       // flush on the wall (config-gated on photoMask, like the Fold control on foldable), so it has
       // no Depth control and keeps radialOffset 0.
