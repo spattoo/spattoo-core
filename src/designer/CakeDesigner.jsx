@@ -7917,6 +7917,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           );
         })()}
 
+        {/* ── The colour of THIS piece ───────────────────────────────────────────────────────────
+         * The studio has always had a colour wheel, and it was the only one: a piece arrived wearing
+         * whatever the studio was set to and could never be changed again. Duplicate it and you had
+         * two of the same brown with no way to make one white — reported exactly that way.
+         *
+         * ⚠️ NOTHING IN THE MODEL NEEDED CHANGING, which is why this is a control and not a feature.
+         * A garnish is already its own object with its own `color`, `updateGarnish` already merges
+         * per id, and `duplicateGarnish` already spreads into a fresh id — so two pieces have been
+         * independently colourable all along and there was simply no way to say so.
+         *
+         * ⚠️ IT WRITES THE PARTS TOO. A garnish drawn as several strokes carries a colour PER PART
+         * (`partsOf`, GarnishStudio), and the renderer resolves `pc.color ?? g.color` — so setting
+         * only `g.color` would leave a multi-stroke piece exactly as it was, a control that looks
+         * like it works. Setting both is also what the control CLAIMS: this piece is this colour.
+         * A two-tone drawing keeps its two tones until the wheel is touched, and one undo restores
+         * them.
+         *
+         * The ONE colour control, the same component the studio hands in — never a row of swatches
+         * (INVARIANTS #3). `cakeColors` is what is already on this cake, so a piece can be matched to
+         * a border without eyedropping it. */}
+        <div>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                        textTransform: 'uppercase', marginBottom: 6 }}>
+            Colour
+          </div>
+          <ColorWheel
+            color={g.color ?? garnishColor}
+            onChange={c => updateGarnish(g.id, {
+              color: c,
+              ...(g.parts?.length ? { parts: g.parts.map(pt => ({ ...pt, color: c })) } : {}),
+            })}
+            width={152}
+            cakeColors={[...new Set(collectElementColors(design))]}
+          />
+        </div>
+
         <PenSlider label="Size" value={g.scale ?? 1} min={0.4} max={2} step={0.05}
           onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
         <PenSlider label="Turn" value={g.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
