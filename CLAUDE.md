@@ -110,9 +110,25 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
 
 ## Designer work
 
-Read `src/designer/INVARIANTS.md` first — placement modes, zones, the one-renderer rule, right-side
-popups, and the movable contract. Anything dragged on the cake must register with
-`movableContract()`, or `check:movable` fails the build.
+**Read `src/designer/INVARIANTS.md` first, and open the file — the rules above are a SUBSET of it.**
+Eighteen are numbered there; six are restated here (#11–#16). That gap is not a filing detail, it is
+where the silent ones live: #2 one renderer, #3b nothing may PENETRATE what is already placed, #8
+never hardcode a world dimension, #9's anchoring half, #10's five laws, #17 a studio is lit like the
+cake it authors for, #18 `envMapIntensity` does nothing.
+
+⚠️ **This section is the instruction that gets skipped, and skipping it is cheap because the summary
+above reads like the whole story.** It is not. Worked example, 2026-09-16: a vertical drag was added
+to a piping border with the summary open and the file shut. It wrote the pointer's height straight in
+as the anchor, so the border jumped by however far the grabbed cream and the anchor happened to be
+apart — a plain breach of #10 law 5, "`handleAt` and `dragTo` are exact inverses". Nothing errored,
+every gate passed, 1945 tests were green. It was found by someone asking whether the file gets read.
+
+⚠️ **#10 IS FIVE LAWS, NOT A REGISTRATION.** Anything dragged on the cake must register with
+`movableContract()` or `check:movable` fails the build — but the gate checks that you SIGNED, and the
+suite can only ask three of them (2, 3 and 5). For laws 1 (one place says where it is) and 4 (what you
+can grab is what you can see, from every angle) the script greps two smells and says so itself — a
+grep is not the law, and those two are what broke the cloud and the rainbow six ways in a week. Read
+them before writing a gesture, not after.
 
 ## Gates
 
