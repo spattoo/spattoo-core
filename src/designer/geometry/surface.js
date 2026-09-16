@@ -284,9 +284,17 @@ export function boardRingClamp(board, hole, x, z, margin = 0) {
 export function shapeReach(shape, dir) {
   if (shape.outline) {
     let best = 0;
-    for (const p of shape.outline) {
-      const d = p.x * dir.x + p.z * dir.z;          // projection onto the direction
-      if (d > best) best = d;
+    /* ⚠️ asRings, not the raw outline. A GLYPH cake's outline is one ring PER CHARACTER —
+     * glyphShape builds it as `shapes.map(...)` — so iterating `shape.outline` directly walks
+     * ARRAYS: `p.x` is undefined, every projection is NaN, `d > best` never fires, and the reach
+     * came back 0. Silent, and it read as "pulled to the middle of the cake": a board decoration
+     * collapsed to the centre, and once edgeSeatSeed started asking this question, so did a figure
+     * perched on a number cake's edge. Every sibling here already rings its outline. */
+    for (const ring of asRings(shape.outline)) {
+      for (const p of ring) {
+        const d = p.x * dir.x + p.z * dir.z;        // projection onto the direction
+        if (d > best) best = d;
+      }
     }
     return best;
   }

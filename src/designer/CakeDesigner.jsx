@@ -32,7 +32,7 @@ import { shapeByKey, photoFilename } from './photo/photoShapes.js';
 import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
-import { tierShape, topClampInset, boardRingClamp, shapeReach } from './geometry/surface.js';
+import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
@@ -4930,10 +4930,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // A TOP/rim cluster locks to a ring just inside the rim; a SIDE cluster locks to the wall ring
         // (just outside R) so it slides AROUND the wall — neither can be dragged off the cake.
         const onTop = (seed.yOffset ?? 0) > -seedR;
-        const ring = onTop ? Math.max(0, shp.radius - seedR) : shp.radius + seedR;
         const nx = start.x + (delta.dx ?? 0), nz = start.z + (delta.dz ?? 0);
         const rho = Math.hypot(nx, nz) || 1;
-        delta = { ...delta, dx: (nx / rho) * ring - start.x, dz: (nz / rho) * ring - start.z };
+        const dir = { x: nx / rho, z: nz / rho };
+        // ⚠️ How far the cake reaches IN THIS DIRECTION, never `shp.radius`. An outline tier — heart,
+        // butterfly, oval, glyph — carries no `radius` field, so the ring came out NaN and took every
+        // ball in the clump with it. shapeReach measures the real contour, and on a round tier it IS
+        // the radius, so a round cake is unmoved to the decimal.
+        const reach = shapeReach(shp, dir);
+        const ring = onTop ? Math.max(0, reach - seedR) : reach + seedR;
+        delta = { ...delta, dx: dir.x * ring - start.x, dz: dir.z * ring - start.z };
       }
     }
     moveGroupStickers(key, startPositions, delta);
@@ -5130,7 +5136,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     for (let i = 0; i < ti; i++) baseY += (canvasConfig.tiers[i]?.height ?? BOTTOM_H);
     const height = canvasConfig.tiers[ti]?.height ?? BOTTOM_H;
     const shp = tierShape(canvasConfig.tiers[ti] ?? canvasConfig.tiers[0]);
-    return { baseY, topY: baseY + height, height, shp, R: shp.kind === 'rect' ? 1e6 : shp.radius };
+    // ⚠️ `R` is the CYLINDER model — the radius a clump drapes over. Only the analytic round wall has
+    // one. It used to read `shp.radius` for everything that wasn't rect, so an outline tier handed
+    // `undefined` to the packer. isRoundWall is the existing predicate for "is this actually a
+    // cylinder"; everything else gets the flat-pack sentinel a sheet cake has always used.
+    return { baseY, topY: baseY + height, height, shp, R: isRoundWall(shp) ? shp.radius : 1e6 };
   }
   // Spawn `count` packed balls around `seedCenter` ([x,y,z] world — on the cake top OR side wall), all
   // sharing `clusterId`. The packer rests the clump on the cake and drapes it over the rim / down the
@@ -5173,12 +5183,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function ballSeedCenter(sticker, seedR) {
     const { topY, height, shp, R } = tierGeom(sticker.tierIndex);
     const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
-    if (isSide && shp.kind !== 'rect') {
+    // ⚠️ isRoundWall, not "not rect". Both branches below place a ball ON A CYLINDER of radius R, so
+    // they are only meaningful for the analytic round wall. An outline tier used to fall in here and
+    // multiply by an undefined R; it now falls through to the flat seat, exactly as a sheet cake does.
+    if (isSide && isRoundWall(shp)) {
       const th = sticker.theta ?? Math.atan2(sticker.x ?? 0, sticker.z ?? 0);
       const y = sticker.y ?? (topY - height * 0.4);
       return [(R + seedR) * Math.sin(th), y, (R + seedR) * Math.cos(th)];
     }
-    if (shp.kind !== 'rect') {
+    if (isRoundWall(shp)) {
       let ax = sticker.x ?? 0, az = sticker.z ?? 0;
       const rho = Math.hypot(ax, az), maxR = Math.max(0, R - seedR * 0.5);
       if (rho > maxR) { ax = (ax / rho) * maxR; az = (az / rho) * maxR; }
