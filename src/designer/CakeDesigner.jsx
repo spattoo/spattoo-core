@@ -1941,6 +1941,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
   const [garnishRope, setGarnishRope] = useState(6);
   const [selectedGarnishId, setSelectedGarnishId] = useState(null);
+  /* The most a fan lays down. Named rather than inline because the slider, its readout and the line
+     under the button all have to say the same number, and three literals is how they stop. */
+  const FAN_MAX = 24;
   /* How many pieces the next fan lays down. Lives up here because `renderGarnishBody` is a plain
      function called during render, not a component — a hook inside it would be a hook below a
      branch (check:hooks). Shared across pieces on purpose: it is a tool setting, "how many do you
@@ -7985,8 +7988,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div>
           <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.4,
                         textTransform: 'uppercase', marginBottom: 5 }}>Fan it out</div>
-          <PenSlider label="Pieces" value={fanCount} min={2} max={24} step={1}
-            onChange={setFanCount} fmt={v => String(v)} />
+          {/* ⚠️ THE READOUT SHOWS THE CEILING, not just the current value. A slider sitting at 5 with
+              "5" beside it reads as a control that only goes to 5 — reported exactly that way off a
+              screenshot, by someone who had just been told the range. The number a baker needs in
+              order to decide is the one they have not got yet. */}
+          <PenSlider label="Pieces" value={fanCount} min={2} max={FAN_MAX} step={1}
+            onChange={setFanCount} fmt={v => `${v} / ${FAN_MAX}`} />
           <button onClick={() => fanGarnish(g.id, { count: fanCount, spread: fanSpread(fanCount) })}
             title={`${fanCount} pieces, evenly spread and splayed from where this one sits`}
             style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
@@ -7995,7 +8002,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Fan out {fanCount}
           </button>
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 4, lineHeight: 1.45 }}>
-            Repeats this piece round an arc, centred where it sits now. One undo takes it back.
+            Repeats this piece round an arc, centred where it sits now — up to {FAN_MAX} of them.
+            One undo takes it back.
           </div>
         </div>
 

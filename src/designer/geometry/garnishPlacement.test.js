@@ -507,6 +507,19 @@ describe('the fan control', () => {
     expect(slider).not.toMatch(/fanGarnish/);
   });
 
+  /* ⚠️ A SLIDER SHOWING ONLY ITS CURRENT VALUE READS AS ITS LIMIT. Sitting at 5 with "5" beside it,
+     the control was taken for one that stops at five — reported off a screenshot by someone who had
+     just been told the range. The number a baker needs in order to decide is the one they have not
+     got yet, so the readout carries the ceiling and so does the line under the button. */
+  it('shows the ceiling, not just where the slider happens to be', () => {
+    expect(card).toMatch(/const FAN_MAX = \d+;/);
+    expect(card).toMatch(/fmt=\{v => `\$\{v\} \/ \$\{FAN_MAX\}`\}/);
+    expect(card).toMatch(/up to \{FAN_MAX\} of them/);
+    // and one source for the number, so the three places cannot drift apart
+    expect(card).toMatch(/max=\{FAN_MAX\}/);
+    expect(card).not.toMatch(/max=\{24\}/);
+  });
+
   /* The arc is the geometry's business, not the button's — it used to be written inline at the call
      site, which is why it could not be extended without touching the UI. */
   it('asks the geometry for the arc rather than computing it at the button', () => {
