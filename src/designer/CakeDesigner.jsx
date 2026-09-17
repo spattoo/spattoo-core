@@ -551,12 +551,20 @@ function WritingColourPicker({ writing, design, setWriting, width = 208 }) {
 }
 
 // Compact labelled range row — used by the Cream Pen tool panel.
-function PenSlider({ label, value, min, max, step, onChange, fmt = v => v }) {
+/* `onCommit` fires when the gesture ENDS, not as it moves — for a control whose action cannot be
+ * applied continuously. The fan is the one: `fanGarnish` MULTIPLIES, adding count−1 real garnishes,
+ * so a live wire would strew hundreds of pieces across one drag. Pointer AND key, or the slider
+ * would be dead to a keyboard, which is the half of this that is easy to forget. */
+function PenSlider({ label, value, min, max, step, onChange, onCommit, fmt = v => v }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
       <span style={{ fontSize: 11, fontWeight: 700, color: '#555', minWidth: 56, flexShrink: 0 }}>{label}</span>
       <input type="range" min={min} max={max} step={step} value={value}
         onChange={e => onChange(Number(e.target.value))}
+        {...(onCommit ? {
+          onPointerUp: e => onCommit(Number(e.currentTarget.value)),
+          onKeyUp:     e => onCommit(Number(e.currentTarget.value)),
+        } : {})}
         style={{ flex: 1, minWidth: 0, accentColor: '#1a1a1a' }} />
       <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', minWidth: 32, flexShrink: 0, textAlign: 'right' }}>{fmt(value)}</span>
     </div>
@@ -7991,19 +7999,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* ⚠️ THE READOUT SHOWS THE CEILING, not just the current value. A slider sitting at 5 with
               "5" beside it reads as a control that only goes to 5 — reported exactly that way off a
               screenshot, by someone who had just been told the range. The number a baker needs in
-              order to decide is the one they have not got yet. */}
+              order to decide is the one they have not got yet.
+              ⚠️ AND IT FANS ON RELEASE, not as it moves — there was a button beside it doing that,
+              and a slider plus a button to confirm the slider is one control too many. `onCommit`
+              is what makes the slider safe to wire directly: `fanGarnish` MULTIPLIES, adding
+              count−1 real garnishes, so firing per pixel would strew hundreds across one drag and
+              leave undo nothing single to take back. One gesture, one fan, one undo. */}
           <PenSlider label="Pieces" value={fanCount} min={2} max={FAN_MAX} step={1}
-            onChange={setFanCount} fmt={v => `${v} / ${FAN_MAX}`} />
-          <button onClick={() => fanGarnish(g.id, { count: fanCount, spread: fanSpread(fanCount) })}
-            title={`${fanCount} pieces, evenly spread and splayed from where this one sits`}
-            style={{ padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
-                     border: '1.5px solid #DDD7CD', background: '#fff',
-                     fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
-            Fan out {fanCount}
-          </button>
+            onChange={setFanCount} fmt={v => `${v} / ${FAN_MAX}`}
+            onCommit={n => fanGarnish(g.id, { count: n, spread: fanSpread(n) })} />
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 4, lineHeight: 1.45 }}>
-            Repeats this piece round an arc, centred where it sits now — up to {FAN_MAX} of them.
-            One undo takes it back.
+            Let go and it repeats this piece round an arc, centred where it sits
+            now — up to {FAN_MAX} of them. One undo takes it back.
           </div>
         </div>
 

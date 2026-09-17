@@ -499,12 +499,28 @@ describe('fanSpread', () => {
 describe('the fan control', () => {
   const card = readFileSync(new URL('../CakeDesigner.jsx', import.meta.url), 'utf8');
 
-  it('chooses with a slider and applies with a button, never on change', () => {
-    expect(card).toMatch(/<PenSlider label="Pieces" value=\{fanCount\}[\s\S]*?onChange=\{setFanCount\}/);
-    expect(card).toMatch(/onClick=\{\(\) => fanGarnish\(g\.id, \{ count: fanCount, spread: fanSpread\(fanCount\) \}\)\}/);
-    // the slider's own onChange must not reach fanGarnish
+  it('fans when the gesture ENDS, never while it moves', () => {
     const slider = /<PenSlider label="Pieces"[\s\S]*?\/>/.exec(card)[0];
-    expect(slider).not.toMatch(/fanGarnish/);
+    expect(slider).toMatch(/onCommit=\{n => fanGarnish\(g\.id, \{ count: n, spread: fanSpread\(n\) \}\)\}/);
+    // ⚠️ the live channel must stay clear of it: onChange fires per pixel, and fanGarnish multiplies
+    expect(slider).toMatch(/onChange=\{setFanCount\}/);
+    expect(/onChange=\{[^}]*fanGarnish/.test(slider)).toBe(false);
+  });
+
+  /* ⚠️ AND onCommit MUST ANSWER THE KEYBOARD. A range input is arrow-key operable, and wiring only
+     the pointer would leave the fan unreachable without a mouse — the quiet half of this, because
+     it looks finished when you test it by dragging. */
+  it('commits on pointer and on key, so the slider is not mouse-only', () => {
+    const fn = /function PenSlider[\s\S]*?\n\}/.exec(card)[0];
+    expect(fn).toMatch(/onPointerUp: e => onCommit\(Number\(e\.currentTarget\.value\)\)/);
+    expect(fn).toMatch(/onKeyUp:\s*e => onCommit\(Number\(e\.currentTarget\.value\)\)/);
+    // and a slider that was given no onCommit gets neither handler
+    expect(fn).toMatch(/\{\.\.\.\(onCommit \? \{/);
+  });
+
+  /* A slider plus a button to confirm the slider is one control too many — the button is gone. */
+  it('has no separate apply button beside it', () => {
+    expect(card).not.toMatch(/Fan out \{fanCount\}/);
   });
 
   /* ⚠️ A SLIDER SHOWING ONLY ITS CURRENT VALUE READS AS ITS LIMIT. Sitting at 5 with "5" beside it,
@@ -514,6 +530,9 @@ describe('the fan control', () => {
   it('shows the ceiling, not just where the slider happens to be', () => {
     expect(card).toMatch(/const FAN_MAX = \d+;/);
     expect(card).toMatch(/fmt=\{v => `\$\{v\} \/ \$\{FAN_MAX\}`\}/);
+    /* ⚠️ ON ONE LINE, SPACES INTACT. JSX strips the newline and indent before an expression, so a
+       line break either side of {FAN_MAX} eats the space and the card printed "up to24 of them".
+       Caught by looking at a screenshot, not by any of this — which is the point of rule 6. */
     expect(card).toMatch(/up to \{FAN_MAX\} of them/);
     // and one source for the number, so the three places cannot drift apart
     expect(card).toMatch(/max=\{FAN_MAX\}/);
@@ -524,6 +543,6 @@ describe('the fan control', () => {
      site, which is why it could not be extended without touching the UI. */
   it('asks the geometry for the arc rather than computing it at the button', () => {
     expect(card).not.toMatch(/spread: 0\.55 \+ n \* 0\.09/);
-    expect(card).toMatch(/spread: fanSpread\(fanCount\)/);
+    expect(card).toMatch(/spread: fanSpread\(n\)/);
   });
 });
