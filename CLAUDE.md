@@ -33,6 +33,7 @@ Already built, app-wide, in `src/shared/`:
 | `useNarrow.js` | **The** definition of "is this a phone". Gated by `check:narrow`. |
 | `validators.js`, `image.js`, `useUploadLimits.js` | File validation, compression, and the server's real upload ceiling. |
 | `panelTopBar.jsx` | Back arrow, breadcrumb and dismiss for panel headers. |
+| `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
 Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,
 `PlacementChooser` — all three currently live inside `src/designer/CakeDesigner.jsx`. `ColorWheel` is
@@ -80,6 +81,25 @@ demonstrated repeatedly and expensively. Open the thing, drive it, look at it.
 Driving a React screen from a script: **do not assign `input.value` directly** — that bypasses
 React's value tracker, `onChange` never fires, and you get a moved slider, an unchanged readout and a
 screenshot of something broken that looks fine. Use real pointer or keyboard input.
+
+### 7. If it does something, it must look like it does something
+
+⚠️ **This is judged at REST, on a phone.** A baker's screen has no hover, so an affordance that only
+appears on pointer-over does not exist for most of the people using the app. Hover and press are
+feedback *on top of* a control that already reads as pressable — never the thing that makes it
+legible.
+
+Top-ups shipped with two rows that were plain text, a faint grey balance and a literal `›`. They
+opened whole screens and nobody could tell. Sandeep: *"the two options here do not look like they are
+clickable. make this a standard. any clickable should look like clickable."*
+
+- A row that goes somewhere is **`src/shared/NavRow.jsx`**. Not a `<div>` with an `onClick` and some
+  text in it.
+- A clickable is a `<button>` or an `<a>` — it gets keyboard focus, Enter and Space for free, and a
+  screen reader announces it. There are still **24** `<div onClick>` in `src/` (2026-09-18); every
+  one is a small bug, so do not add the twenty-fifth.
+- Give it a visible resting state (its own surface or edge), a press state, and `:focus-visible`.
+  `.spattoo-navrow` and `.spattoo-pack` are the two worked examples.
 
 ---
 

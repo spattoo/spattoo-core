@@ -1,16 +1,11 @@
 import { useEffect, useState } from 'react';
 import { onCreditsChanged } from '../billing/creditsBus.js';
+import { NavRow } from '../shared/NavRow.jsx';
 
 /* ── Settings → Top-ups ──────────────────────────────────────────────────────────────────────────
  *
- * The two things a baker BUYS beyond their plan, in one place: smart-tool credits and message
- * credits. Everything else in Settings is configuration — how the shop works. These are capacity,
- * and they run out.
- *
- * ⚠️ WHY A GROUP AND NOT TWO MORE SECTIONS. Customer messages lived as its own `<Section>` between
- * "Orders & Delivery" and Privacy, which put a purchase surface in a list of store settings. Sandeep
- * read that as wrong before anyone else did, and he was right: "store hours" and "buy 600 messages"
- * are not the same kind of thing and should not read as siblings.
+ * The two things a baker BUYS beyond their plan: smart-tool credits and message credits. Everything
+ * else in Settings is configuration — how the shop works. These are capacity, and they run out.
  *
  * ⚠️ NAMED BY THE JOB, NEVER "AI" — SUBSCRIPTION_TIERS.md states the rule for smart tools, and the
  * pill, the billing card, the plan copy in migrations 048/051/055 and the marketing pricing table all
@@ -20,45 +15,20 @@ import { onCreditsChanged } from '../billing/creditsBus.js';
  * ⚠️ A ROW IS FURNITURE ONLY IF ITS ENDPOINT EXISTS. Same rule CreditsPill follows — "if not wired
  * the endpoint gets no furniture at all". A row that cannot show a balance and cannot open a working
  * screen is worse than no row, because it reads as a broken feature rather than an absent one.
+ *
+ * ⚠️ THE ROWS ARE `shared/NavRow.jsx`, NOT A LOCAL STYLE OBJECT. The first version hand-rolled them —
+ * plain text, a faint balance and a literal "›" — and they did not read as pressable at all. The
+ * shared row is now the standard for anything that opens something; see the note at the top of it.
  */
 
-const s = {
-  /* Vertical padding only: `Section` already insets its children by 20px, so a row that padded
-     itself horizontally too would sit 40px in and its divider would stop short of the card. */
-  row: {
-    display: 'flex', alignItems: 'center', gap: 12, width: '100%',
-    padding: '14px 0', border: 'none', borderTop: '1px solid #F3F4F6',
-    background: 'none', cursor: 'pointer', textAlign: 'left', font: 'inherit',
-  },
-  firstRow: { borderTop: 'none', paddingTop: 0 },
-  lastRow:  { paddingBottom: 0 },
-  label:  { fontSize: 13.5, fontWeight: 700, color: '#1a1a1a' },
-  hint:   { fontSize: 11.5, color: '#888', marginTop: 2, lineHeight: 1.45 },
-  value:  { fontSize: 13, fontWeight: 700, whiteSpace: 'nowrap' },
-  /* A text glyph, matching CustomersPanel's list rows. Not a new icon: there is no chevron in
-     shared/icons.jsx, and one drawn here would be the only one of its kind in the app. */
-  chev:   { fontSize: 16, color: '#ccc', marginLeft: 2 },
-};
-
 /* The number is the reason a second entry point is worth having at all. The credits pill works
-   because it SHOWS 240 — a menu row reading "Smart tool credits ›" with nothing beside it would be
-   strictly less useful than the pill it duplicates. `null` means "not known yet", which is not the
-   same as zero and must not be drawn as one. */
-function Row({ first, last, label, hint, value, onOpen, primaryColor }) {
-  return (
-    <button type="button" onClick={onOpen}
-            style={{ ...s.row, ...(first ? s.firstRow : null), ...(last ? s.lastRow : null) }}>
-      <span style={{ flex: 1 }}>
-        <span style={s.label}>{label}</span>
-        <span style={{ ...s.hint, display: 'block' }}>{hint}</span>
-      </span>
-      {value != null && (
-        <span style={{ ...s.value, color: primaryColor }}>{value.toLocaleString('en-IN')} left</span>
-      )}
-      <span style={s.chev} aria-hidden="true">&rsaquo;</span>
-    </button>
-  );
-}
+   because it SHOWS 240 — a row reading "Smart tool credits ›" with nothing beside it would be
+   strictly less useful than the pill it duplicates.
+
+   ⚠️ `null` means "not loaded yet", which is NOT zero. Rendering it as "0 left" tells a baker they
+   have run out when we simply do not know, and that is the one wrong answer that changes what they
+   do next. Formatted here, so the row never has to decide. */
+const left = (n) => (n == null ? undefined : `${n.toLocaleString('en-IN')} left`);
 
 export function TopUpsSection({ apiClient, primaryColor = '#2C4433', onOpenSmartTools, onOpenMessages }) {
   const [credits,  setCredits]  = useState(null);
@@ -94,25 +64,23 @@ export function TopUpsSection({ apiClient, primaryColor = '#2C4433', onOpenSmart
   if (!hasCredits && !hasMessages) return null;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {hasCredits && (
-        <Row
-          first last={!hasMessages}
+        <NavRow
           label="Smart tool credits"
           hint="Photo to cake design, and the other smart tools."
-          value={credits}
-          primaryColor={primaryColor}
-          onOpen={onOpenSmartTools}
+          value={left(credits)}
+          accent={primaryColor}
+          onClick={onOpenSmartTools}
         />
       )}
       {hasMessages && (
-        <Row
-          first={!hasCredits} last
+        <NavRow
           label="Message credits"
           hint="SMS and WhatsApp updates to your customers. Email is always free."
-          value={messages}
-          primaryColor={primaryColor}
-          onOpen={onOpenMessages}
+          value={left(messages)}
+          accent={primaryColor}
+          onClick={onOpenMessages}
         />
       )}
     </div>

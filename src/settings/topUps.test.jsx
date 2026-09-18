@@ -13,6 +13,8 @@ const topPanel = readFileSync(new URL('./TopUpsPanel.jsx', import.meta.url), 'ut
 const designer = readFileSync(new URL('../designer/CakeDesigner.jsx', import.meta.url), 'utf8');
 const msgPanel = readFileSync(new URL('./MessageCreditsPanel.jsx', import.meta.url), 'utf8');
 const buyPanel = readFileSync(new URL('../billing/BuyCreditsPanel.jsx', import.meta.url), 'utf8');
+const navRow   = readFileSync(new URL('../shared/NavRow.jsx', import.meta.url), 'utf8');
+const claudeMd = readFileSync(new URL('../../CLAUDE.md', import.meta.url), 'utf8');
 
 /* Comments explain why a name MOVED and are allowed to quote the one it moved from — the old label
    has to be nameable to say what changed. Only rendered code may not carry it. */
@@ -53,15 +55,18 @@ describe('the balance on each row', () => {
      with nothing beside it is strictly less useful than the pill it duplicates, which would leave
      the second entry point with no reason to exist. */
   it('shows how much is left', () => {
-    expect(src).toMatch(/value != null/);            // drawn when known
-    expect(src).toMatch(/left</);                    // and labelled
+    expect(src).toMatch(/\$\{n\.toLocaleString\('en-IN'\)\} left/);   // formatted and labelled
+    expect(navRow).toMatch(/\{value != null &&/);                     // and only drawn when known
   });
 
   /* `null` is "not loaded yet". Rendering it as 0 tells a baker they have run out when we simply do
      not know, which is the one wrong answer that changes what they do next. */
+  /* `null` is "not loaded yet". Rendering it as 0 tells a baker they have run out when we simply do
+     not know, which is the one wrong answer that changes what they do next. Decided in the caller,
+     so the shared row never has to guess what an absent number means. */
   it('never draws "not known" as zero', () => {
-    expect(src).toMatch(/value != null &&/);
-    expect(code).not.toMatch(/value \?\? 0/);
+    expect(src).toMatch(/n == null \? undefined :/);
+    expect(code).not.toMatch(/\?\? 0/);
   });
 
   // The pill re-reads on this bus; a row that did not would contradict the screen it just opened.
@@ -107,6 +112,39 @@ describe('what the rows open', () => {
     expect(msgPanel).toMatch(/import \{ CustomerUpdatesSection \}/);
     expect(msgPanel).toMatch(/<CustomerUpdatesSection/);
     expect(msgPanel).toMatch(/import \{ Panel \} from '\.\.\/shared\/Panel\.jsx'/);
+  });
+});
+
+describe('a row that opens something looks like it does', () => {
+  /* Sandeep, on the first cut: "the two options here do not look like they are clickable. make this
+     a standard. any clickable should look like clickable." They were plain text, a faint balance and
+     a literal "›", and they opened whole screens. */
+  it('uses the shared row rather than a local style object', () => {
+    expect(src).toMatch(/import \{ NavRow \} from '\.\.\/shared\/NavRow\.jsx'/);
+    expect(src).toMatch(/<NavRow/);
+    expect(code).not.toMatch(/rsaquo/);          // no hand-drawn chevron
+    expect(code).not.toMatch(/cursor: 'pointer'/); // nor a hand-rolled pressable
+  });
+
+  /* ⚠️ AT REST, ON A PHONE. A baker's screen has no hover, so an affordance that only appears on
+     pointer-over does not exist for most of the people using it. */
+  it('is pressable at rest, not only on hover', () => {
+    const rest = navRow.slice(navRow.indexOf('.spattoo-navrow {'), navRow.indexOf(':hover'));
+    expect(rest).toMatch(/border:/);
+    expect(rest).toMatch(/box-shadow:/);
+    expect(rest).toMatch(/cursor: pointer/);
+  });
+
+  it('is a real button, with focus and press states', () => {
+    expect(navRow).toMatch(/<button type="button"/);
+    expect(navRow).toMatch(/:focus-visible/);
+    expect(navRow).toMatch(/:active:not\(:disabled\)/);
+  });
+
+  // The standard is only a standard if it is written down where the next person reads the rules.
+  it('is recorded as a project rule', () => {
+    expect(claudeMd).toMatch(/### 7\. If it does something, it must look like it does something/);
+    expect(claudeMd).toMatch(/NavRow\.jsx/);
   });
 });
 
