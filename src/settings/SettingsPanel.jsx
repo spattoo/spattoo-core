@@ -6,7 +6,9 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
-import { CustomerUpdatesSection } from './CustomerUpdatesSection.jsx';
+import { TopUpsSection } from './TopUpsSection.jsx';
+import MessageCreditsPanel from './MessageCreditsPanel.jsx';
+import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { CameraIcon, UploadsIcon, CopyIcon } from '../shared/icons.jsx';
@@ -162,6 +164,13 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   const [urlError, setUrlError] = useState(null);
   const [themes,   setThemes]   = useState([]);
   const [previewOpen, setPreviewOpen] = useState(false);
+  /* ── Top-ups open OVER settings, and come back to it ──
+     Both are portalled Panels at Z.panel, above this docked page, so neither needs settings closed
+     first. That is deliberate: CreditsPill closes settings before opening credits because it fires
+     from the header with no idea what else is open, but a MENU ROW that dismissed the menu it was
+     tapped in would lose the baker their place. */
+  const [creditsOpen,  setCreditsOpen]  = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -597,15 +606,21 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 )}
               </Section>
 
-              {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
-                  Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
-              {/* Before Privacy & Data: a baker looks for this when deciding what their customers
-                  get, which is nearer "how I run my shop" than "my account" (INVARIANTS #12 — lay a
-                  surface out by how often each control is used). */}
-              <Section title="Customer updates">
-                <CustomerUpdatesSection apiClient={apiClient} primaryColor={primaryColor} />
+              {/* ── Top-ups ──
+                  What a baker BUYS, after everything they CONFIGURE and before their own data.
+                  Message credits used to be a <Section> of its own up here, which made a purchase
+                  surface read as a sibling of Store Hours. It is not one. */}
+              <Section title="Top-ups">
+                <TopUpsSection
+                  apiClient={apiClient}
+                  primaryColor={primaryColor}
+                  onOpenSmartTools={() => setCreditsOpen(true)}
+                  onOpenMessages={() => setMessagesOpen(true)}
+                />
               </Section>
 
+              {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
+                  Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
               <PrivacyDataSection apiClient={apiClient} />
 
               {/* Save */}
@@ -631,6 +646,23 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
           )}
         </div>
       </div>
+
+      {/* The SAME BuyCreditsPanel the credits pill opens — a second mount, not a second screen.
+          It returns null while closed, so the extra instance costs nothing until a row is tapped. */}
+      <BuyCreditsPanel
+        open={creditsOpen}
+        onClose={() => setCreditsOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+      />
+
+      <MessageCreditsPanel
+        open={messagesOpen}
+        onClose={() => setMessagesOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        isMobile={isMobile}
+      />
 
       <ThemePreview
         open={previewOpen}
