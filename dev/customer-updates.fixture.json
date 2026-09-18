@@ -65,26 +65,6 @@
   },
   "events": [
     {
-      "slug": "quote_issued_customer",
-      "label": "Quote sent",
-      "when": "As soon as you send a quote",
-      "recommended": true,
-      "messages": 1,
-      "body": "Hi Asha, bekbake has sent you a quote for your cake: Rs. 1,499.\n\nTap below to see the details and accept it. Reply to this message if you'd like to change anything.",
-      "button": "View quote",
-      "image": true
-    },
-    {
-      "slug": "order_ready_customer",
-      "label": "Order ready",
-      "when": "When you mark an order ready",
-      "recommended": true,
-      "messages": 1,
-      "body": "Hi Asha, your cake from bekbake is ready.\n\nPickup: 20 September 2026, 2:30 PM\n\nReply to this message if you need to change anything.",
-      "button": null,
-      "image": true
-    },
-    {
       "slug": "order_placed_customer",
       "label": "Order received",
       "when": "When you write down an order for a customer yourself",
@@ -92,6 +72,16 @@
       "messages": 1,
       "body": "Hi Asha, bekbake has received your cake order.\n\nSize: 1.5 kg\nFlavour: Chocolate, Vanilla\nHome delivery: 20 September 2026, 2:30 PM\n\nTap below to check everything is right and add your email for updates.",
       "button": "View order",
+      "image": true
+    },
+    {
+      "slug": "quote_issued_customer",
+      "label": "Quote sent",
+      "when": "As soon as you send a quote",
+      "recommended": true,
+      "messages": 1,
+      "body": "Hi Asha, bekbake has sent you a quote for your cake: Rs. 1,499.\n\nTap below to see the details and accept it. Reply to this message if you'd like to change anything.",
+      "button": "View quote",
       "image": true
     },
     {
@@ -114,6 +104,16 @@
       "body": "Hi Asha, bekbake has updated the design for your cake.\n\nTap below to take a look. Reply to this message if you'd like anything changed.",
       "button": "View design",
       "image": false
+    },
+    {
+      "slug": "order_ready_customer",
+      "label": "Order ready",
+      "when": "When you mark an order ready",
+      "recommended": true,
+      "messages": 1,
+      "body": "Hi Asha, your cake from bekbake is ready.\n\nPickup: 20 September 2026, 2:30 PM\n\nReply to this message if you need to change anything.",
+      "button": null,
+      "image": true
     },
     {
       "slug": "order_completed_customer",
