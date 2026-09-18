@@ -263,7 +263,20 @@ const s = {
                fontSize: 13.5, lineHeight: 1.5, color: '#2A241F', padding: '10px 12px',
                borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff' },
 
-  wrap:  { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px' },
+  /* ⚠️ DRAWS ITS OWN BACKGROUND, because it is a full-screen surface and the app's body is DARK.
+     apps/app globals.css sets `body { background: #111111 }` on purpose — "so the redirect into the
+     app + the loading state never flash white" — and says in the same breath that "full-screen
+     surfaces draw their own background over this". This one did not. Inside the storefront it never
+     showed, because the storefront paints a light page underneath; used as a GATE on its own route
+     it sat on black, and the title was dark grey on #111.
+     Seen 2026-09-18 on the order page's gate, which a customer reaches from a WhatsApp button — so
+     the first screen they meet was near-unreadable. The designer's door has the same shape and was
+     fixed by the same line. */
+  wrap:  { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px',
+           background: '#FFFFFF', color: '#1a1a1a',
+           // 100vh, not 100%: as a standalone gate its parent has no height, so a percentage
+           // collapsed to the content and left a band of the app's black below it.
+           minHeight: '100vh' },
   title: { fontSize: 18, fontWeight: 800, color: '#2A241F', margin: 0, letterSpacing: '-0.01em' },
   sub:   { fontSize: 13, color: '#7A6C60', margin: 0, lineHeight: 1.5 },
   input: { padding: '13px 14px', borderRadius: 12, border: '1.5px solid #E7DFD5', font: 'inherit',
