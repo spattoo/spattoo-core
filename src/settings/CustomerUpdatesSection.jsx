@@ -207,8 +207,17 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
                 <div style={s.preview}>
                   <div style={s.previewFrom}>From <strong>{sender}</strong></div>
                   <div style={s.bubble}>
-                    {e.body.split('\n').map((line, i) => (
-                      <p key={i} style={{ margin: line ? '0 0 6px' : '0 0 10px' }}>{line}</p>
+                    {/* ⚠️ A SINGLE newline is a LINE BREAK, a blank line is a paragraph — and the
+                        first cut treated both the same, so "Size / Flavour / Home delivery" sat as
+                        far apart as the paragraphs around them. In WhatsApp those three are a tight
+                        block, and a preview that spaces them differently is quietly showing a
+                        message the customer will not get. Caught by looking at it. */}
+                    {e.body.split('\n\n').map((para, i) => (
+                      <p key={i} style={{ margin: i ? '10px 0 0' : 0 }}>
+                        {para.split('\n').map((line, j) => (
+                          <span key={j}>{j > 0 && <br />}{line}</span>
+                        ))}
+                      </p>
                     ))}
                     {e.button && <div style={s.previewBtn}>{e.button}</div>}
                   </div>

@@ -20,10 +20,16 @@ describe('the preview', () => {
   });
 
   /* The body is rendered from the server's text, never from a copy in here. Two copies drift the
-     first time one is reworded, and the version that matters is the one Meta approved. */
+     first time one is reworded, and the version that matters is the one Meta approved.
+
+     ⚠️ ASSERTS THE INTENT, NOT THE SPLIT. This pinned `e.body.split('\n')` exactly, and broke the
+     moment the renderer learned that a single newline is a line break while a blank line is a
+     paragraph — a fix that made the preview MORE faithful. A test that fails when the code gets
+     better is testing the wrong thing. */
   it('renders the server\'s body rather than its own wording', () => {
-    expect(src).toMatch(/e\.body\.split\('\\n'\)/);
-    expect(src).not.toMatch(/has sent you a quote/);   // no template prose in the client
+    expect(src).toMatch(/e\.body\.split\(/);            // the server's text is what is rendered
+    expect(src).not.toMatch(/has sent you a quote/);     // and no template prose lives in the client
+    expect(src).not.toMatch(/has taken down your cake order/);
   });
 
   it('says which parts are real and which are samples', () => {
