@@ -158,11 +158,11 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
             );
             return canBuy ? (
               <button key={p.packKey} type="button" disabled={!!buying || settling}
-                      style={{ ...s.pack, borderColor: primaryColor,
+                      style={{ ...s.pack(primaryColor, true),
                                opacity: buying && buying !== p.packKey ? 0.5 : 1 }}
                       onClick={() => buy(p.packKey)}>{tile}</button>
             ) : (
-              <div key={p.packKey} style={{ ...s.pack, borderColor: '#E5E7EB', cursor: 'default' }}>{tile}</div>
+              <div key={p.packKey} style={s.pack(primaryColor, false)}>{tile}</div>
             );
           })}
         </div>
@@ -296,12 +296,28 @@ const s = {
   balanceLbl: { fontSize: 12, color: '#888', marginTop: 2 },
   usage:      { fontSize: 11, color: '#9BB5A2', marginTop: 6 },
   packs:      { display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1 },
-  pack:       { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                padding: '8px 12px', borderRadius: 10, border: '1.5px solid', background: '#fff',
-                cursor: 'pointer', minWidth: 84 },
-  packMsgs:   { fontSize: 16, fontWeight: 800, lineHeight: 1.1 },
-  packSub:    { fontSize: 9, color: '#888', textTransform: 'uppercase', letterSpacing: 0.4 },
-  packPrice:  { fontSize: 11, color: '#555', marginTop: 2 },
+  /* ⚠️ THEY WERE WHITE ON #FAFCFB — invisible exactly where the decision is made. An outline-only
+     tile on a near-white card reads as a table cell, not as the thing you press to buy. These are
+     the only controls in this screen that cost money, and they receded further than the text around
+     them.
+     Tinted from the BAKER'S OWN primary via color-mix rather than a fixed green, so it stays their
+     colour: a fixed tint would be one more place their branding silently stops applying. */
+  pack:       (primary, buyable) => ({
+                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
+                padding: '9px 12px', borderRadius: 10, minWidth: 84, font: 'inherit',
+                /* ⚠️ THE PERCENTAGES ARE NOT ARBITRARY, and 8%/40% was the first try — it read as plain
+                   grey. A bakery primary is typically very DARK (ours is #2C4433), and a dark colour
+                   mixed into white desaturates before it lightens, so a small percentage gives grey
+                   rather than a pale version of their brand. Judged on screen, not in the head. */
+                border: `1.5px solid ${buyable ? `color-mix(in srgb, ${primary} 62%, #fff)` : '#E5E7EB'}`,
+                background: buyable ? `color-mix(in srgb, ${primary} 13%, #fff)` : '#fff',
+                boxShadow: buyable ? '0 1px 4px rgba(17,24,20,0.10)' : 'none',
+                cursor: buyable ? 'pointer' : 'default',
+              }),
+  packMsgs:   { fontSize: 17, fontWeight: 800, lineHeight: 1.1 },
+  packSub:    { fontSize: 9, color: '#7C8B82', textTransform: 'uppercase', letterSpacing: 0.4 },
+  /* The price is the number a baker actually decides on, and it was the faintest thing in the tile. */
+  packPrice:  { fontSize: 11.5, fontWeight: 700, color: '#3A4740', marginTop: 2 },
   perOrder:   { margin: 0, fontSize: 12, color: '#555' },
   list:       { display: 'flex', flexDirection: 'column', gap: 2 },
   row:        { padding: '12px 0', borderBottom: '1px solid #F3F4F6' },

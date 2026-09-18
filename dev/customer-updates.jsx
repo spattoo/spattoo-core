@@ -16,6 +16,8 @@ import fixture from './customer-updates.fixture.json';
 //   ?buy=1            buying wired, so the packs become real buttons
 //   ?slow=1           a save that takes a second, to watch the optimistic toggle
 //   ?fail=1           a save that fails, which must put the toggle back
+//   ?primary=%23C2185B  a different bakery's brand colour — the pack tiles are tinted FROM it,
+//                     and our own default (#2C4433) is dark and low-chroma enough to read grey
 const q = new URLSearchParams(location.search);
 
 const data = structuredClone(fixture);
@@ -77,7 +79,7 @@ createRoot(document.getElementById('root')).render(
                     letterSpacing: 1, textTransform: 'uppercase', color: '#9BB5A2', background: '#FAFCFB',
                     borderRadius: '16px 16px 0 0' }}>Customer updates</div>
       <div style={{ padding: 20 }}>
-        <CustomerUpdatesSection apiClient={apiClient} primaryColor="#2C4433" />
+        <CustomerUpdatesSection apiClient={apiClient} primaryColor={q.get('primary') ?? '#2C4433'} />
       </div>
     </div>
   </div>

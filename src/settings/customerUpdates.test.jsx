@@ -138,3 +138,27 @@ describe('the preview is a WhatsApp message, not a diagram of one', () => {
     expect(src).toMatch(/tap to add to contacts/);
   });
 });
+
+describe('the pack tiles are the only controls here that cost money', () => {
+  /* ⚠️ THEY WERE WHITE ON #FAFCFB — an outline-only tile on a near-white card reads as a table cell,
+     not as the thing you press to buy, and they receded further than the prose around them. */
+  it('is filled and edged, not an outline on near-white', () => {
+    expect(src).toMatch(/pack:\s*\(primary, buyable\) =>/);
+    expect(src).toMatch(/background: buyable \? `color-mix/);
+    expect(src).toMatch(/boxShadow: buyable/);
+  });
+
+  /* Tinted from the BAKER'S primary, not a fixed green — a hardcoded tint is one more place their
+     branding silently stops applying. */
+  it('takes its colour from the bakery, not from us', () => {
+    expect(src).toMatch(/color-mix\(in srgb, \$\{primary\}/);
+    expect(src).not.toMatch(/background: buyable \? '#[0-9A-Fa-f]{6}'/);
+  });
+
+  /* A tile that cannot be bought must not look pressable: same rule as `canBuy` above, now carried
+     by the style rather than only by the element. */
+  it('looks unpressable when buying is not wired', () => {
+    expect(src).toMatch(/cursor: buyable \? 'pointer' : 'default'/);
+    expect(src).toMatch(/: '#E5E7EB'/);
+  });
+});
