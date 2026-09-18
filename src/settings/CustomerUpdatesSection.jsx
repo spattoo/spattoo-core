@@ -192,7 +192,7 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
                   <div style={s.rowWhen}>{e.when}</div>
                   <button type="button" style={{ ...s.link, color: primaryColor }}
                           onClick={() => setOpenPreview(shown ? null : e.slug)}>
-                    {shown ? 'Hide message' : 'See the message'}
+                    {shown ? 'Hide Preview' : 'Message Preview'}
                   </button>
                 </div>
                 <Toggle checked={on} onChange={() => toggle(e.slug)} />
@@ -314,7 +314,7 @@ const s = {
   badgeWarn:  { fontSize: 9, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase',
                 color: '#8A6D3B', background: '#FCF3E3', padding: '2px 6px', borderRadius: 4 },
   /* ⚠️ UNDERLINED, and lighter than the row title. At weight 700 with no underline this read as a
-     third line of label — "Quote sent / As soon as you send a quote / See the message" scans as three
+     third line of label — "Quote sent / As soon as you send a quote / Message Preview" scans as three
      headings, and the one control that opens the preview looked like text. The preview is what makes
      charging for these fair at all (see the note at the top of this file), so an affordance nobody
      recognises is not a styling detail. Caught by screenshotting it at 375px, not by reading it. */
