@@ -45,6 +45,14 @@ export default function VerifyStep({
   // offering it before that is how a customer waits for a code a telco already scrubbed.
   channels = ['sms'],
   otpRequired = true, onVerified, onBack,
+  // ⚠️ THIS SCREEN IS NOT ALWAYS A SEND. It was written for the enquiry, where the customer really
+  // is handing a design to the baker, so both buttons said so. The order page reuses it as a plain
+  // door: the customer arrived from a WhatsApp link and is proving the address is theirs so they
+  // can SEE their order — nothing is sent, and `onBack` goes to the shop front, not to a cake. A
+  // button reading "Send to 31 Bakers" there tells them pressing it will message the bakery, which
+  // is the one thing it does not do. So the caller names the action; the defaults leave the
+  // enquiry exactly as it was.
+  submitLabel = null, backLabel = 'Back to my cake',
   // The customer's own words, held on the draft by FacetShell. See `noteField` below.
   note = '', onNote,
 }) {
@@ -56,6 +64,7 @@ export default function VerifyStep({
      customer would have read was a bug.
      "the bakery" is not a good name — it is just never a broken one. */
   const bakerName = bakerNameProp || 'the bakery';
+  const sendLabel = submitLabel || `Send to ${bakerName}`;
 
   const [channel, setChannel] = useState(channels[0] ?? 'sms');
   const [noteOpen, setNoteOpen] = useState(false);
@@ -142,9 +151,9 @@ export default function VerifyStep({
         {noteField}
         <button type="button" style={s.primary(primary, ready)} disabled={!ready}
                 onClick={() => onVerified?.(null, phone.trim(), name.trim(), channel)}>
-          Send to {bakerName}
+          {sendLabel}
         </button>
-        <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>Back to my cake</button>
+        <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>{backLabel}</button>
       </div>
     );
   }
@@ -221,7 +230,7 @@ export default function VerifyStep({
           />
           <button type="button" style={s.primary(primary, !!otp.code.trim() && !otp.busy)}
                   disabled={!otp.code.trim() || otp.busy} onClick={otp.verify}>
-            {otp.busy ? 'Checking…' : `Send to ${bakerName}`}
+            {otp.busy ? 'Checking…' : sendLabel}
           </button>
           {/* Error first, before the escape hatches — a wrong digit is the common case, and the
               explanation belongs where the eye already is rather than below three links. */}
@@ -241,7 +250,7 @@ export default function VerifyStep({
       )}
 
       {otp.step === 'start' && otp.err && <div style={s.err}>{otp.err}</div>}
-      <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>Back to my cake</button>
+      <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>{backLabel}</button>
     </div>
   );
 }
