@@ -26,17 +26,48 @@ if (q.has('sent')) data.sent = { last7Days: Number(q.get('sent')), last30Days: N
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
+/* A stand-in for Razorpay Checkout: opens nothing, calls the handler immediately. The point is the
+   code AFTER the payment — the poll that waits for a webhook — which is the half that cannot be
+   reached by clicking around with a test card either. */
+if (q.get('buy') === '1') {
+  let polls = 0;
+  const landsOn = Number(q.get('webhook') ?? 2);   // 0 = never, to see the "taking a minute" path
+  window.Razorpay = function (opts) {
+    console.log('Checkout would say:', opts.description);
+    return { open: () => setTimeout(() => { window.__bought = true; opts.handler({ razorpay_payment_id: 'pay_stub' }); }, 300) };
+  };
+  const realFetch = fetchBalance => async () => {
+    polls += 1;
+    return { ...data, balance: landsOn && polls >= landsOn ? data.balance + 225 : data.balance };
+  };
+  window.__settleStub = realFetch;
+}
+
+let polled = 0;
+const landsOn = Number(q.get('webhook') ?? 2);
 const apiClient = {
-  fetchMessageBalance: async () => data,
+  fetchMessageBalance: async () => {
+    if (q.get('buy') !== '1' || !window.__bought) return data;
+    polled += 1;
+    return { ...data, balance: landsOn && polled >= landsOn ? data.balance + 225 : data.balance };
+  },
   saveMessageSettings: async (list) => {
     if (q.get('slow') === '1') await wait(1000);
     if (q.get('fail') === '1') throw new Error('That did not save. Please try again.');
     data.enabledTypes = list;
     return { enabledTypes: list };
   },
-  // Absent unless asked for: the packs must render as a price list when buying is not wired, and
-  // that is the state the app is actually in today.
-  ...(q.get('buy') === '1' ? { purchaseMessages: (k) => console.log('buy', k) } : {}),
+  /* Absent unless asked for: the packs must render as a price list when buying is not wired.
+     ?buy=1 stubs the server call AND Razorpay, so the whole flow — Checkout, the handler, and the
+     wait for a webhook that has not landed yet — can be driven without a payment. `?webhook=N`
+     makes the balance arrive on the Nth poll; leave it out to see the "taking a minute" path. */
+  ...(q.get('buy') === '1' ? {
+    purchaseMessages: async (packKey) => {
+      const pack = data.packs.find(p => p.packKey === packKey);
+      return { key_id: 'rzp_test', order_id: 'order_stub', amount: pack.totalPaise, currency: 'INR',
+               packKey, messages: pack.messages, ...pack.gst };
+    },
+  } : {}),
 };
 
 createRoot(document.getElementById('root')).render(

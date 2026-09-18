@@ -25,6 +25,8 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
   const [err, setErr]         = useState(null);
   const [saving, setSaving]   = useState(false);
   const [openPreview, setOpenPreview] = useState(null);   // slug whose message is shown
+  const [buying, setBuying]   = useState(null);           // packKey while Checkout is open
+  const [settling, setSettling] = useState(false);        // paid, waiting for the webhook
 
   useEffect(() => {
     let alive = true;
@@ -52,6 +54,60 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
       setData(d => ({ ...d, enabledTypes: before }));
       setErr(e.message || 'That did not save. Please try again.');
     } finally { setSaving(false); }
+  }
+
+  /* ── Buy a pack ─────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ MESSAGES ARE MINTED BY THE WEBHOOK, not by this call and not by Checkout's handler. So after
+   * a successful payment the balance here is still the OLD one, and the screen has to wait for it to
+   * change rather than assume. `settle` polls against the balance captured BEFORE the purchase, which
+   * is what makes "arrived" a fact instead of a guess — the same reason BuyCreditsPanel does it.
+   */
+  async function buy(packKey) {
+    setBuying(packKey); setErr(null);
+    try {
+      const d = await apiClient.purchaseMessages(packKey);
+      if (!window.Razorpay) {
+        await new Promise((resolve, reject) => {
+          const el = document.createElement('script');
+          el.src = 'https://checkout.razorpay.com/v1/checkout.js';
+          el.onload = resolve; el.onerror = reject;
+          document.head.appendChild(el);
+        });
+      }
+      await new Promise(resolve => {
+        const rzp = new window.Razorpay({
+          key: d.key_id, order_id: d.order_id, amount: d.amount, currency: d.currency ?? 'INR',
+          name: 'Spattoo',
+          /* Razorpay's Price Summary shows ONE figure and we cannot add rows to it. `description` is
+             the only text we control there, so the tax split rides in it: a baker who reached
+             Checkout expecting ₹100 can see where ₹118 came from without going back. The numbers
+             come from the same server call that set the charge, so this cannot disagree with the
+             amount beside it. */
+          description: `${d.messages} messages · ₹${(d.basePaise / 100).toFixed(0)} + ₹${(d.gstPaise / 100).toFixed(0)} GST`,
+          theme: { color: primaryColor },
+          handler: () => { resolve(); settle(balance); },
+          modal: { ondismiss: resolve },
+        });
+        rzp.open();
+      });
+    } catch (e) {
+      setErr(e.message || 'Could not start the payment.');
+    } finally { setBuying(null); }
+  }
+
+  /* Poll until the balance CHANGES, not merely until we have refetched — otherwise success and
+     silence look identical. Backs off rather than hammering: a webhook is usually a second or two,
+     occasionally much longer when Razorpay retries. ~30s, then say so plainly. */
+  async function settle(before) {
+    setSettling(true);
+    for (const wait of [1200, 1500, 2000, 2500, 3000, 4000, 5000, 5000, 5000]) {
+      await new Promise(r => setTimeout(r, wait));
+      const fresh = await apiClient.fetchMessageBalance().catch(() => null);
+      if (fresh && fresh.balance !== before) { setData(fresh); setSettling(false); return; }
+    }
+    setSettling(false);
+    setErr('Your payment went through. The messages can take a minute to arrive — reopen this screen shortly.');
   }
 
   if (err && !data) return <Shell><p style={s.err}>{err}</p></Shell>;
@@ -96,8 +152,10 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
               </>
             );
             return canBuy ? (
-              <button key={p.packKey} type="button" style={{ ...s.pack, borderColor: primaryColor }}
-                      onClick={() => apiClient.purchaseMessages(p.packKey)}>{tile}</button>
+              <button key={p.packKey} type="button" disabled={!!buying || settling}
+                      style={{ ...s.pack, borderColor: primaryColor,
+                               opacity: buying && buying !== p.packKey ? 0.5 : 1 }}
+                      onClick={() => buy(p.packKey)}>{tile}</button>
             ) : (
               <div key={p.packKey} style={{ ...s.pack, borderColor: '#E5E7EB', cursor: 'default' }}>{tile}</div>
             );
@@ -168,6 +226,7 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
         <p style={s.muted}>Recharging is not switched on yet — these are the packs and what they will cost.</p>
       )}
 
+      {settling && <p style={s.muted}>Payment received — waiting for your messages to arrive…</p>}
       {err && <p style={s.err}>{err}</p>}
       {saving && <p style={s.muted}>Saving…</p>}
     </Shell>
