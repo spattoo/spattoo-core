@@ -203,8 +203,14 @@ const s = {
                 color: '#2C4433', background: '#E8F0EA', padding: '2px 6px', borderRadius: 4 },
   badgeWarn:  { fontSize: 9, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase',
                 color: '#8A6D3B', background: '#FCF3E3', padding: '2px 6px', borderRadius: 4 },
-  link:       { background: 'none', border: 'none', padding: '4px 0 0', fontSize: 11,
-                fontWeight: 700, cursor: 'pointer', textAlign: 'left' },
+  /* ⚠️ UNDERLINED, and lighter than the row title. At weight 700 with no underline this read as a
+     third line of label — "Quote sent / As soon as you send a quote / See the message" scans as three
+     headings, and the one control that opens the preview looked like text. The preview is what makes
+     charging for these fair at all (see the note at the top of this file), so an affordance nobody
+     recognises is not a styling detail. Caught by screenshotting it at 375px, not by reading it. */
+  link:       { background: 'none', border: 'none', padding: '4px 0 0', fontSize: 11.5,
+                fontWeight: 600, cursor: 'pointer', textAlign: 'left',
+                textDecoration: 'underline', textUnderlineOffset: 2 },
   warn:       { margin: '8px 0 0', fontSize: 11, color: '#8A6D3B', background: '#FCF3E3',
                 padding: '6px 10px', borderRadius: 8 },
   preview:    { marginTop: 10 },
