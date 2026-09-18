@@ -49,8 +49,10 @@ describe('the promise that nothing breaks without paying', () => {
     expect(src.indexOf('Email updates are always free')).toBeLessThan(src.indexOf('messages left'));
   });
 
+  /* Now inside the "How are these credits used?" disclosure rather than a second paragraph — the
+     detail folds, the promise above it does not. [\s\S] rather than . because the sentence wraps. */
   it('tells the baker the free way to keep it free', () => {
-    expect(src).toMatch(/Add your customer&rsquo;s email .* cost you nothing/);
+    expect(src).toMatch(/Add your customer&rsquo;s email [\s\S]*cost you nothing/);
   });
 
   it('reads zero choices as a complete answer, not an empty one', () => {

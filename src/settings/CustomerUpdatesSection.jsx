@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Toggle } from './controls.jsx';
+import { Disclosure } from '../shared/Disclosure.jsx';
 
 // ── Settings → Customer updates ──────────────────────────────────────────────────────────────────
 //
@@ -124,15 +125,18 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
 
   return (
     <Shell>
-      {/* The principle, first and plainly. Everything below is downstream of it. */}
-      <p style={s.lede}>
-        <strong>Email updates are always free.</strong> SMS and WhatsApp are optional — Spattoo sends
-        them to your customers for you, and they see <strong>{sender}</strong> as the sender with your
-        bakery&rsquo;s name in the message.
-      </p>
-      <p style={s.lede}>
-        Add your customer&rsquo;s email when you take an order and their updates cost you nothing.
-      </p>
+      {/* ⚠️ THE FREE-EMAIL PROMISE STAYS OUT IN THE OPEN, and only the detail folds away. The note at
+          the top of this file is explicit that this sentence is the FEATURE, not a disclaimer: a
+          baker who never recharges loses nothing, which is what makes this an upgrade rather than a
+          toll. Folded behind a link it would be a promise nobody reads, and the fairness argument
+          the whole screen rests on would go with it. */}
+      <p style={s.lede}><strong>Email updates are always free.</strong></p>
+      <Disclosure label="How are these credits used?" accent={primaryColor}>
+        SMS and WhatsApp are optional — Spattoo sends them to your customers for you, and they see{' '}
+        <strong>{sender}</strong> as the sender with your bakery&rsquo;s name in the message. One
+        message spends one credit. Add your customer&rsquo;s email when you take an order and their
+        updates cost you nothing.
+      </Disclosure>
 
       {/* ⚠️ THE BALANCE SAT BESIDE THE TILES AND BOTH LOST. Side by side, the tiles had roughly
           half the panel to share between four of them, so each was ~84px — too small to read as

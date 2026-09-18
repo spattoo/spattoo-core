@@ -33,6 +33,7 @@ Already built, app-wide, in `src/shared/`:
 | `useNarrow.js` | **The** definition of "is this a phone". Gated by `check:narrow`. |
 | `validators.js`, `image.js`, `useUploadLimits.js` | File validation, compression, and the server's real upload ceiling. |
 | `panelTopBar.jsx` | Back arrow, breadcrumb and dismiss for panel headers. |
+| `Disclosure.jsx` | **The** "question you can open" — a labelled toggle with the shared chevron, and an answer folded under it. For the explanation a new baker needs and a returning one has read fifty times. |
 | `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
 Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,

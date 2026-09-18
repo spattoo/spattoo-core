@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { creditsChanged } from './creditsBus.js';
 import { Panel } from '../shared/Panel.jsx';
+import { Disclosure } from '../shared/Disclosure.jsx';
 
 // ── Buy credits ──────────────────────────────────────────────────────────────────────
 // A screen about ONE thing: how many credits you have and how to get more.
@@ -205,11 +206,11 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
             Three examples, not all six — the list below is the full set with its prices, and a lede
             that enumerates everything is a second price list nobody reads. */}
         {!loading && (
-          <p style={s.lede}>
+          <Disclosure label="How are these credits used?">
             Smart tools do a slow job for you — turning a customer&rsquo;s photo into a cake design,
             writing an enquiry up as an order, or working out how a decoration was made. Each one
-            spends a few credits.
-          </p>
+            spends a few credits, and what each costs is listed below.
+          </Disclosure>
         )}
 
         {/* ── The two buckets ──────────────────────────────────────────────────────────
