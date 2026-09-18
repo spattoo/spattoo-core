@@ -118,8 +118,12 @@ describe('the preview is a WhatsApp message, not a diagram of one', () => {
   it('shows a picture only where the template has one', () => {
     expect(src).toMatch(/\{e\.image && \(/);
     expect(src).toMatch(/fallbackImageUrl/);
-    // and says so rather than inventing a photo when none is configured
-    expect(src).toMatch(/Your customer&rsquo;s cake shows here/);
+    /* ⚠️ AND IT SAYS SO ON THE IMAGE ITSELF. The words in the bubble carry the baker's own bakery
+       name, so they read as theirs; the cake does not, and an unlabelled generic illustration
+       invites "whose cake is that?". It is also the stand-in for an order with NO picture, which is
+       the less common case — unlabelled, it teaches the wrong thing about what customers see. */
+    expect(src).toMatch(/Your cake&rsquo;s picture goes here/);
+    expect(src).toMatch(/mediaNote/);
   });
 
   it('carries a clock and an arrowed call to action', () => {

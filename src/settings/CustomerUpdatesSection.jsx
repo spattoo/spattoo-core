@@ -229,8 +229,11 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
                       {e.image && (
                         <div style={s.media}>
                           {fallbackImageUrl
-                            ? <img src={fallbackImageUrl} alt="" style={s.bubbleImg} />
-                            : <div style={s.imgNone}>Your customer&rsquo;s cake shows here</div>}
+                            ? <>
+                                <img src={fallbackImageUrl} alt="" style={s.bubbleImg} />
+                                <span style={s.mediaNote}>Your cake&rsquo;s picture goes here</span>
+                              </>
+                            : <div style={s.imgNone}>Your cake&rsquo;s picture goes here</div>}
                         </div>
                       )}
 
@@ -351,7 +354,15 @@ const s = {
                 background: '#F3EFEA', borderRadius: 6 },
   /* WhatsApp insets media by a few pixels and rounds it; bleeding it to the bubble edge is the
      giveaway that something is a drawing of a message rather than one. */
-  media:      { padding: 3, paddingBottom: 0 },
+  media:      { padding: 3, paddingBottom: 0, position: 'relative' },
+  /* ⚠️ THE PICTURE IS THE ONE PART OF THE PREVIEW THAT IS NOT THE BAKER'S OWN. The words carry
+     their bakery name, so they read as theirs; the cake is a generic illustration and without
+     saying so it invites the obvious question — "whose cake is that?". It is also the stand-in
+     shown only when an order has no picture of its own, which is the less common case, so leaving
+     it unlabelled would teach the wrong thing about what customers usually see. */
+  mediaNote:  { position: 'absolute', left: 9, bottom: 9, padding: '3px 7px', borderRadius: 11,
+                background: 'rgba(11,20,26,0.62)', color: '#fff', fontSize: 9.5, fontWeight: 600,
+                letterSpacing: '0.01em', pointerEvents: 'none' },
   /* Stands in only when NOTIFICATION_FALLBACK_IMAGE_KEY is unset, which is also exactly when an
      image-header template would be skipped rather than sent. Saying so beats drawing a photo. */
   imgNone:    { padding: '18px 12px', background: '#F3EFEA', fontSize: 10.5, color: '#8696A0',
