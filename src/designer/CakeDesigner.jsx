@@ -97,6 +97,7 @@ import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
 import TemplatesPanel from '../settings/TemplatesPanel';
 import BillingPanel from '../settings/BillingPanel';
+import TopUpsPanel from '../settings/TopUpsPanel.jsx';
 import CreditsPill from '../billing/CreditsPill.jsx';
 import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
@@ -2314,6 +2315,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
   const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
+  const [topUpsPanelOpen,     setTopUpsPanelOpen]     = useState(false);
   // Privacy & Data, opened from the LAPSED gate. Separate from the settings-menu route because that
   // whole menu is unrendered once access is blocked — see the exit row on the gate.
   const [lapsedPrivacyOpen, setLapsedPrivacyOpen] = useState(false);
@@ -2888,6 +2890,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
         // permission can answer. See spattoo-docs/features/reel-capture.md.
 
+        /* ⚠️ EITHER capability, not both. Buying a pack needs 'billing:manage' (the purchase route
+           says so) but choosing WHICH messages customers get needs 'customer:manage'. Gating on
+           billing alone would take the event switches away from someone who reached them yesterday
+           through Store Settings, which is gated on 'store:manage'. Nobody loses a door they had. */
+        ...(hasCap('billing:manage') || hasCap('customer:manage')
+          ? [{ id: 'topups', label: 'Top-ups', open: () => setTopUpsPanelOpen(true), active: topUpsPanelOpen }] : []),
         ...(hasCap('billing:manage') ? [{ id: 'billing', label: 'Billing', open: () => setBillingPanelOpen(true), active: billingPanelOpen }] : []),
         ...(STAFF_UI_ENABLED && hasCap('staff:manage') ? [{ id: 'staff', label: 'Add Staff', open: () => setAddUserModal(true) }] : []),
       ],
@@ -2898,7 +2906,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesPanelOpen, billingPanelOpen]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesPanelOpen, billingPanelOpen, topUpsPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -2941,6 +2949,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setFlavoursPanelOpen(false);
     setTemplatesPanelOpen(false);
     setBillingPanelOpen(false);
+    setTopUpsPanelOpen(false);
     setOrdersPanelOpen(false);
     setCustomersPanelOpen(false);
     setInvitePanelOpen(false);
@@ -8938,6 +8947,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </Panel>
           )}
 
+          <TopUpsPanel
+            open={topUpsPanelOpen}
+            onClose={() => setTopUpsPanelOpen(false)}
+            apiClient={apiClient}
+            primaryColor={primaryColor}
+            isMobile={isMobile}
+          />
           <BuyCreditsPanel
             open={buyCreditsOpen}
             onClose={() => setBuyCreditsOpen(false)}
@@ -11411,6 +11427,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       />
 
       {/* ── Billing panel ── */}
+      <TopUpsPanel
+        open={topUpsPanelOpen}
+        onClose={() => setTopUpsPanelOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        isMobile={isMobile}
+      />
       <BuyCreditsPanel
         open={buyCreditsOpen}
         onClose={() => setBuyCreditsOpen(false)}

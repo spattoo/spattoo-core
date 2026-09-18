@@ -1,8 +1,6 @@
 import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { TopUpsSection } from '../src/settings/TopUpsSection.jsx';
-import MessageCreditsPanel from '../src/settings/MessageCreditsPanel.jsx';
-import BuyCreditsPanel from '../src/billing/BuyCreditsPanel.jsx';
+import TopUpsPanel from '../src/settings/TopUpsPanel.jsx';
 import fixture from './customer-updates.fixture.json';
 
 // ── Settings → Top-ups, in the states you cannot reach by using the app ──────────────────────────
@@ -42,38 +40,21 @@ const apiClient = {
 };
 
 function Harness() {
-  const [msgOpen, setMsgOpen] = useState(false);
-  const [creditsOpen, setCreditsOpen] = useState(false);
+  /* The real destination, opened the way the Settings menu opens it — not the section on its own.
+     `?closed=1` to see the button that opens it rather than the panel. */
+  const [open, setOpen] = useState(!has('closed'));
 
   return (
-    <div style={{ maxWidth: 560, margin: '0 auto', padding: 20,
-                  fontFamily: "'Quicksand', system-ui, sans-serif", background: '#F4F8F5', minHeight: '100vh' }}>
-      {/* The same card chrome `Section` draws, so the rows are judged at the width and inset they
-          will actually have rather than floating on a bare page. */}
-      <div style={{ background: '#fff', borderRadius: 16, boxShadow: '0 2px 12px rgba(0,0,0,0.06)' }}>
-        <div style={{ padding: '12px 20px', borderBottom: '1px solid #F3F4F6', fontSize: 11, fontWeight: 800,
-                      letterSpacing: 1, textTransform: 'uppercase', color: '#9BB5A2', background: '#FAFCFB',
-                      borderRadius: '16px 16px 0 0' }}>Top-ups</div>
-        <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <TopUpsSection
-            apiClient={apiClient}
-            primaryColor="#2C4433"
-            onOpenSmartTools={() => setCreditsOpen(true)}
-            onOpenMessages={() => setMsgOpen(true)}
-          />
-        </div>
-      </div>
-
-      <BuyCreditsPanel
-        open={creditsOpen}
-        onClose={() => setCreditsOpen(false)}
-        apiClient={apiClient}
-        primaryColor="#2C4433"
-      />
-
-      <MessageCreditsPanel
-        open={msgOpen}
-        onClose={() => setMsgOpen(false)}
+    <div style={{ minHeight: '100vh', background: '#F4F8F5', padding: 20,
+                  fontFamily: "'Quicksand', system-ui, sans-serif" }}>
+      <button type="button" onClick={() => setOpen(true)}
+              style={{ padding: '10px 16px', borderRadius: 10, border: '1.5px solid #D8E4DB',
+                       background: '#fff', font: 'inherit', fontWeight: 700, cursor: 'pointer' }}>
+        Settings › Top-ups
+      </button>
+      <TopUpsPanel
+        open={open}
+        onClose={() => setOpen(false)}
         apiClient={apiClient}
         primaryColor="#2C4433"
       />
