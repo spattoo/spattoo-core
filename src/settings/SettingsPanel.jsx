@@ -6,6 +6,7 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
+import { CustomerUpdatesSection } from './CustomerUpdatesSection.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { CameraIcon, UploadsIcon, CopyIcon } from '../shared/icons.jsx';
@@ -598,6 +599,13 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
 
               {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
                   Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
+              {/* Before Privacy & Data: a baker looks for this when deciding what their customers
+                  get, which is nearer "how I run my shop" than "my account" (INVARIANTS #12 — lay a
+                  surface out by how often each control is used). */}
+              <Section title="Customer updates">
+                <CustomerUpdatesSection apiClient={apiClient} primaryColor={primaryColor} />
+              </Section>
+
               <PrivacyDataSection apiClient={apiClient} />
 
               {/* Save */}
