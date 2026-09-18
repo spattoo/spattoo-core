@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 const src      = readFileSync(new URL('./TopUpsSection.jsx', import.meta.url), 'utf8');
 const panel    = readFileSync(new URL('./SettingsPanel.jsx', import.meta.url), 'utf8');
 const msgPanel = readFileSync(new URL('./MessageCreditsPanel.jsx', import.meta.url), 'utf8');
+const buyPanel = readFileSync(new URL('../billing/BuyCreditsPanel.jsx', import.meta.url), 'utf8');
 
 /* Comments explain why a name MOVED and are allowed to quote the one it moved from — the old label
    has to be nameable to say what changed. Only rendered code may not carry it. */
@@ -24,6 +25,14 @@ describe('the names', () => {
   it('names the job, never the technology', () => {
     expect(src).toMatch(/Smart tool credits/);
     expect(code).not.toMatch(/AI credits/i);
+  });
+
+  /* A row saying "Smart tool credits" must not open a panel headed something else. The panel said
+     "Credits", which named nothing and disagreed with the pill's own tooltip — harmless while the
+     only way in was an unlabelled number, wrong the moment a labelled row pointed at it. */
+  it('opens a panel headed the same as the row', () => {
+    expect(buyPanel).toMatch(/title="Smart tool credits"/);
+    expect(buyPanel).not.toMatch(/title="Credits"/);
   });
 
   /* Both rows are "<what it is for> credits". The pair was deliberately made the same shape so

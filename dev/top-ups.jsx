@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { TopUpsSection } from '../src/settings/TopUpsSection.jsx';
 import MessageCreditsPanel from '../src/settings/MessageCreditsPanel.jsx';
+import BuyCreditsPanel from '../src/billing/BuyCreditsPanel.jsx';
 import fixture from './customer-updates.fixture.json';
 
 // ── Settings → Top-ups, in the states you cannot reach by using the app ──────────────────────────
@@ -31,11 +32,18 @@ const apiClient = {
     fetchMessageBalance: has('loading') ? never : async () => ({ ...fixture, balance: messages }),
   }),
   saveMessageSettings: async (list) => ({ enabledTypes: list }),
+  /* Enough of the billing endpoints for BuyCreditsPanel to open, so the WHOLE row-to-screen journey
+     can be seen — including that the panel is headed the same as the row that opened it. */
+  fetchAiCreditPacks: async () => ({ canBuy: true, packs: [
+    { packKey: 'ai_200', credits: 200, basePaise: 19900, totalPaise: 23482 },
+    { packKey: 'ai_500', credits: 500, basePaise: 44900, totalPaise: 52982 },
+  ] }),
+  fetchAiCreditHistory: async () => ({ rows: [] }),
 };
 
 function Harness() {
   const [msgOpen, setMsgOpen] = useState(false);
-  const [note, setNote] = useState(null);
+  const [creditsOpen, setCreditsOpen] = useState(false);
 
   return (
     <div style={{ maxWidth: 560, margin: '0 auto', padding: 20,
@@ -50,15 +58,18 @@ function Harness() {
           <TopUpsSection
             apiClient={apiClient}
             primaryColor="#2C4433"
-            /* BuyCreditsPanel needs the billing endpoints; this harness is about the ROWS, so the
-               smart-tool row reports rather than opens. The real wiring is pinned in topUps.test.jsx. */
-            onOpenSmartTools={() => setNote('Smart tool credits → BuyCreditsPanel (the pill’s own screen)')}
+            onOpenSmartTools={() => setCreditsOpen(true)}
             onOpenMessages={() => setMsgOpen(true)}
           />
         </div>
       </div>
 
-      {note && <p style={{ fontSize: 12, color: '#4A5D51', marginTop: 14 }}>{note}</p>}
+      <BuyCreditsPanel
+        open={creditsOpen}
+        onClose={() => setCreditsOpen(false)}
+        apiClient={apiClient}
+        primaryColor="#2C4433"
+      />
 
       <MessageCreditsPanel
         open={msgOpen}

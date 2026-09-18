@@ -167,8 +167,13 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   // would make them stop what they were doing. Not-loaded and none-left must never render alike.
   const loading = !data;
 
+  /* ⚠️ "Smart tool credits", not "Credits" — SUBSCRIPTION_TIERS.md: name the JOB, never "AI", and
+     never so short it names nothing. The pill's own tooltip has always said "Smart tool credits —
+     N left", so the two halves of the same gesture disagreed; that was invisible while the only way
+     in was an unlabelled number, and stopped being invisible the moment Settings → Top-ups grew a
+     row SAYING "Smart tool credits" that opened a panel headed "Credits". */
   return (
-    <Panel onClose={close} title="Credits" width={420} bodyPadding={18}>
+    <Panel onClose={close} title="Smart tool credits" width={420} bodyPadding={18}>
       <style>{PACK_CSS}</style>
       {/* One wrapper because the panel body is the scroller, and the loading state needs a floor:
           without it the panel opens as a small box and grows as the balance arrives, which reads as
