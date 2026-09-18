@@ -162,3 +162,42 @@ describe('the pack tiles are the only controls here that cost money', () => {
     expect(src).toMatch(/: '#E5E7EB'/);
   });
 });
+
+describe('the layout of what you have and what you can buy', () => {
+  /* ⚠️ THE BALANCE SAT BESIDE THE TILES AND BOTH LOST. Sharing the width left four tiles at ~84px
+     each — too small to read as something you press, and the price inside too small to compare. */
+  it('stacks the balance above the tiles rather than beside them', () => {
+    expect(src).toMatch(/balanceRow:\s*\{ display: 'flex', flexDirection: 'column'/);
+    expect(src).not.toMatch(/flexDirection: narrow \? 'column' : 'row'/);
+  });
+
+  /* A GRID, not a wrapping flex row: four tiles in two even columns at every width. The flex version
+     put three on one line and stranded the fourth, which read as an accident rather than a layout. */
+  it('lays the packs out in two even columns', () => {
+    expect(src).toMatch(/gridTemplateColumns: 'repeat\(2, 1fr\)'/);
+  });
+
+  // "0 messages left" is one fact and should read as one line, not three.
+  it('puts the number and its unit on one baseline', () => {
+    expect(src).toMatch(/balanceBlock: \{ display: 'flex', alignItems: 'baseline'/);
+  });
+});
+
+describe('the list of message types', () => {
+  /* ⚠️ IT HAD NO HEADING. Six toggles simply began after a sentence about pack prices, and nothing
+     said what they were for. */
+  it('says what the toggles are for', () => {
+    expect(src).toMatch(/<h4 style=\{s\.listHead\}>Choose what to send<\/h4>/);
+  });
+
+  /* The running total counts what is ticked BELOW it. Floating between the packs and the list it
+     read as a fact about the packs. */
+  it('keeps the running total with the list it counts', () => {
+    const head = src.indexOf('Choose what to send');
+    const total = src.indexOf('per order</strong> with your current choices');
+    const list = src.indexOf('<div style={s.list}>');
+    expect(head).toBeGreaterThan(-1);
+    expect(head).toBeLessThan(total);
+    expect(total).toBeLessThan(list);
+  });
+});

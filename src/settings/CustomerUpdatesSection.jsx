@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react';
 import { Toggle } from './controls.jsx';
-import { useNarrow } from '../shared/useNarrow.js';
 
 // ── Settings → Customer updates ──────────────────────────────────────────────────────────────────
 //
@@ -20,7 +19,6 @@ import { useNarrow } from '../shared/useNarrow.js';
 const money = (paise) => `₹${Math.round(paise / 100).toLocaleString('en-IN')}`;
 
 export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) {
-  const narrow = useNarrow();
   const [data, setData]       = useState(null);
   const [err, setErr]         = useState(null);
   const [saving, setSaving]   = useState(false);
@@ -136,18 +134,22 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
         Add your customer&rsquo;s email when you take an order and their updates cost you nothing.
       </p>
 
-      <div style={{ ...s.balanceRow, flexDirection: narrow ? 'column' : 'row' }}>
-        <div>
-          <div style={s.balanceNum}>{balance.toLocaleString('en-IN')}</div>
-          <div style={s.balanceLbl}>messages left</div>
+      {/* ⚠️ THE BALANCE SAT BESIDE THE TILES AND BOTH LOST. Side by side, the tiles had roughly
+          half the panel to share between four of them, so each was ~84px — too small to read as
+          something you press, and the price inside it too small to compare. Stacked, the balance
+          gets a line of its own and the tiles get the full width. */}
+      <div style={s.balanceRow}>
+        <div style={s.balanceBlock}>
+          <span style={s.balanceNum}>{balance.toLocaleString('en-IN')}</span>
+          <span style={s.balanceLbl}>messages left</span>
           {sent?.last7Days > 0 && (
-            <div style={s.usage}>{sent.last7Days} sent this week · {sent.last30Days} in 30 days</div>
+            <span style={s.usage}>{sent.last7Days} sent this week · {sent.last30Days} in 30 days</span>
           )}
         </div>
         {/* ⚠️ A TILE IS A BUTTON ONLY IF BUYING WORKS. Until the purchase flow lands these are a
             price list, not controls — a tile that looks pressable and does nothing is the worst of
             the three states, because the baker reads the silence as a broken payment. */}
-        <div style={{ ...s.packs, justifyContent: narrow ? 'flex-start' : 'flex-end' }}>
+        <div style={s.packs}>
           {packs.map(p => {
             const tile = (
               <>
@@ -168,8 +170,11 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
         </div>
       </div>
 
-      {/* ⚠️ The running total, because the per-message price is not the number a baker is deciding
-          with. "2 messages per order" is what tells them whether a pack lasts a month or a year. */}
+      {/* ⚠️ THE LIST HAD NO HEADING, so six toggles simply began after a sentence about pack prices
+          and nothing said what they were FOR. The running total belongs under the heading rather
+          than above it: it counts what is ticked below, and floating between the packs and the list
+          it read as a fact about the packs. */}
+      <h4 style={s.listHead}>Choose what to send</h4>
       <p style={s.perOrder}>
         {perOrder === 0
           ? 'No paid updates — your customers hear from you by email only.'
@@ -290,12 +295,17 @@ function Shell({ children }) {
 
 const s = {
   lede:       { margin: 0, fontSize: 13, lineHeight: 1.5, color: '#444' },
-  balanceRow: { display: 'flex', gap: 16, alignItems: 'center', justifyContent: 'space-between',
+  balanceRow: { display: 'flex', flexDirection: 'column', gap: 12,
                 padding: '14px 16px', background: '#FAFCFB', borderRadius: 12, border: '1px solid #EEF2EF' },
-  balanceNum: { fontSize: 28, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 },
-  balanceLbl: { fontSize: 12, color: '#888', marginTop: 2 },
-  usage:      { fontSize: 11, color: '#9BB5A2', marginTop: 6 },
-  packs:      { display: 'flex', gap: 8, flexWrap: 'wrap', flex: 1 },
+  /* The number and its unit on ONE baseline. Stacked they took three lines for two words and pushed
+     the tiles down; "0 messages left" is one fact and should read as one. */
+  balanceBlock: { display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 7 },
+  balanceNum: { fontSize: 30, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 },
+  balanceLbl: { fontSize: 13, color: '#888' },
+  usage:      { fontSize: 11, color: '#9BB5A2', width: '100%' },
+  /* A GRID, not a wrapping flex row. Four tiles in two even columns whatever the width — the flex
+     version put three on one line and stranded the fourth on its own, which read as an accident. */
+  packs:      { display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 9 },
   /* ⚠️ THEY WERE WHITE ON #FAFCFB — invisible exactly where the decision is made. An outline-only
      tile on a near-white card reads as a table cell, not as the thing you press to buy. These are
      the only controls in this screen that cost money, and they receded further than the text around
@@ -304,7 +314,7 @@ const s = {
      colour: a fixed tint would be one more place their branding silently stops applying. */
   pack:       (primary, buyable) => ({
                 display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1,
-                padding: '9px 12px', borderRadius: 10, minWidth: 84, font: 'inherit',
+                padding: '15px 12px', borderRadius: 12, font: 'inherit',
                 /* ⚠️ THE PERCENTAGES ARE NOT ARBITRARY, and 8%/40% was the first try — it read as plain
                    grey. A bakery primary is typically very DARK (ours is #2C4433), and a dark colour
                    mixed into white desaturates before it lightens, so a small percentage gives grey
@@ -314,10 +324,11 @@ const s = {
                 boxShadow: buyable ? '0 1px 4px rgba(17,24,20,0.10)' : 'none',
                 cursor: buyable ? 'pointer' : 'default',
               }),
-  packMsgs:   { fontSize: 17, fontWeight: 800, lineHeight: 1.1 },
-  packSub:    { fontSize: 9, color: '#7C8B82', textTransform: 'uppercase', letterSpacing: 0.4 },
+  packMsgs:   { fontSize: 23, fontWeight: 800, lineHeight: 1.05 },
+  packSub:    { fontSize: 9.5, color: '#7C8B82', textTransform: 'uppercase', letterSpacing: 0.5 },
   /* The price is the number a baker actually decides on, and it was the faintest thing in the tile. */
-  packPrice:  { fontSize: 11.5, fontWeight: 700, color: '#3A4740', marginTop: 2 },
+  packPrice:  { fontSize: 13, fontWeight: 700, color: '#3A4740', marginTop: 5 },
+  listHead:   { fontSize: 13.5, fontWeight: 800, color: '#1a1a1a', margin: '18px 0 0' },
   perOrder:   { margin: 0, fontSize: 12, color: '#555' },
   list:       { display: 'flex', flexDirection: 'column', gap: 2 },
   row:        { padding: '12px 0', borderBottom: '1px solid #F3F4F6' },
