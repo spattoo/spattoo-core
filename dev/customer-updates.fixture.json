@@ -84,11 +84,11 @@
     },
     {
       "slug": "order_placed_customer",
-      "label": "Order taken",
+      "label": "Order received",
       "when": "When you write down an order for a customer yourself",
       "recommended": false,
       "messages": 1,
-      "body": "Hi Asha, bekbake has taken down your cake order.\n\nSize: 1.5 kg\nFlavour: Chocolate, Vanilla\nHome delivery: 20 September 2026, 2:30 PM\n\nTap below to check everything is right and add your email for updates.",
+      "body": "Hi Asha, bekbake has received your cake order.\n\nSize: 1.5 kg\nFlavour: Chocolate, Vanilla\nHome delivery: 20 September 2026, 2:30 PM\n\nTap below to check everything is right and add your email for updates.",
       "button": "View order"
     },
     {
