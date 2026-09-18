@@ -38,7 +38,8 @@ const CHANNEL = {
 };
 
 export default function VerifyStep({
-  apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '', initialEmail = '', initialName = '',
+  apiBaseUrl, slug, bakerName: bakerNameProp, captchaSiteKey, primary,
+  initialPhone = '', initialEmail = '', initialName = '',
   // Which channels the SERVER will accept, in its order of preference — read back from /settings so
   // a channel we cannot deliver on is never offered. SMS to an Indian number needs DLT clearance;
   // offering it before that is how a customer waits for a code a telco already scrubbed.
@@ -47,6 +48,15 @@ export default function VerifyStep({
   // The customer's own words, held on the draft by FacetShell. See `noteField` below.
   note = '', onNote,
 }) {
+  /* ⚠️ THE NAME IS NOT GUARANTEED, and this screen says it seven times. It comes from
+     /storefront/:slug/settings, and both callers deliberately swallow a failed read rather than
+     strand the gate (`.catch(() => setSettings({}))`) — so a 404, an unpublished storefront or a
+     flaky network leaves it undefined and every line here reads "Who shall undefined ask for?".
+     Seen 2026-09-18 on the order page, which is reached from a WhatsApp button, so the first thing a
+     customer would have read was a bug.
+     "the bakery" is not a good name — it is just never a broken one. */
+  const bakerName = bakerNameProp || 'the bakery';
+
   const [channel, setChannel] = useState(channels[0] ?? 'sms');
   const [noteOpen, setNoteOpen] = useState(false);
   // ONE field holding whichever contact the chosen channel wants. Seeded from the matching side of
