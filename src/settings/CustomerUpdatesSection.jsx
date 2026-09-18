@@ -113,7 +113,12 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
   if (err && !data) return <Shell><p style={s.err}>{err}</p></Shell>;
   if (!data)        return <Shell><p style={s.muted}>Loading…</p></Shell>;
 
-  const { balance, packs = [], events = [], sender, sent } = data;
+  const { balance, packs = [], events = [], sender, sent, fallbackImageUrl = null } = data;
+  /* The clock, so the bubble reads as a message that just arrived rather than a diagram of one.
+     Taken from the baker's own device on purpose — a hardcoded "6:43 PM" is the kind of detail that
+     makes a mock-up look like a mock-up. */
+  const sampleTime = new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' })
+    .toUpperCase().replace(/\s+/g, ' ');
   // Buying is wired separately from this screen; until it is, say so rather than offering a control
   // that swallows the click.
   const canBuy = typeof apiClient.purchaseMessages === 'function';
@@ -205,21 +210,55 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
 
               {shown && (
                 <div style={s.preview}>
-                  <div style={s.previewFrom}>From <strong>{sender}</strong></div>
-                  <div style={s.bubble}>
-                    {/* ⚠️ A SINGLE newline is a LINE BREAK, a blank line is a paragraph — and the
-                        first cut treated both the same, so "Size / Flavour / Home delivery" sat as
-                        far apart as the paragraphs around them. In WhatsApp those three are a tight
-                        block, and a preview that spaces them differently is quietly showing a
-                        message the customer will not get. Caught by looking at it. */}
-                    {e.body.split('\n\n').map((para, i) => (
-                      <p key={i} style={{ margin: i ? '10px 0 0' : 0 }}>
-                        {para.split('\n').map((line, j) => (
-                          <span key={j}>{j > 0 && <br />}{line}</span>
+                  <div style={s.chat}>
+                    {/* Who it comes from, drawn the way WhatsApp draws it. This replaced a "From
+                        Spattoo" caption, which stated the same fact and showed none of it. */}
+                    <div style={s.chatHead}>
+                      <span style={s.avatar}>S</span>
+                      <div>
+                        <div style={s.chatName}>{sender}</div>
+                        <div style={s.chatSub}>tap to add to contacts</div>
+                      </div>
+                    </div>
+
+                    <div style={s.bubble}>
+                      {/* Only where the template really carries one — `image` comes from the server's
+                          own list, which mirrors table A of plans/whatsapp-templates.md. A picture
+                          drawn on a message that has none would break the preview's promise just as
+                          badly as wrong words would. */}
+                      {e.image && (
+                        <div style={s.media}>
+                          {fallbackImageUrl
+                            ? <img src={fallbackImageUrl} alt="" style={s.bubbleImg} />
+                            : <div style={s.imgNone}>Your customer&rsquo;s cake shows here</div>}
+                        </div>
+                      )}
+
+                      <div style={s.bubbleBody}>
+                        {/* ⚠️ A SINGLE newline is a LINE BREAK, a blank line is a paragraph — and the
+                            first cut treated both the same, so "Size / Flavour / Home delivery" sat
+                            as far apart as the paragraphs around them. In WhatsApp those three are a
+                            tight block, and a preview that spaces them differently is quietly showing
+                            a message the customer will not get. Caught by looking at it. */}
+                        {e.body.split('\n\n').map((para, i) => (
+                          <p key={i} style={{ margin: i ? '10px 0 0' : 0 }}>
+                            {para.split('\n').map((line, j) => (
+                              <span key={j}>{j > 0 && <br />}{line}</span>
+                            ))}
+                          </p>
                         ))}
-                      </p>
-                    ))}
-                    {e.button && <div style={s.previewBtn}>{e.button}</div>}
+                      </div>
+                      <div style={s.time}>{sampleTime}</div>
+                      {e.button && (
+                        <div style={s.previewBtn}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                               strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                            <path d="M7 17 17 7M9 7h8v8" />
+                          </svg>
+                          {e.button}
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <div style={s.previewNote}>
                     Your bakery&rsquo;s name is real; the customer, price and date are examples.
@@ -281,12 +320,47 @@ const s = {
                 textDecoration: 'underline', textUnderlineOffset: 2 },
   warn:       { margin: '8px 0 0', fontSize: 11, color: '#8A6D3B', background: '#FCF3E3',
                 padding: '6px 10px', borderRadius: 8 },
+  /* ── The preview is a WhatsApp conversation, because that is where it lands ──────────────────────
+   *
+   * ⚠️ THE BUBBLE WAS #E7FFDB, WHICH IS THE WRONG SIDE OF THE CONVERSATION. That green is WhatsApp's
+   * OUTGOING colour — the one your own messages wear. Every message here is one the CUSTOMER
+   * receives, so it arrives as an incoming bubble: white, left, with the tail on the left. The old
+   * preview showed the baker their own sent message, which is not the thing they are paying for and
+   * not what anyone will see.
+   *
+   * Colours are WhatsApp's light theme as it actually renders: #EFE7DE chat ground, #FFFFFF incoming
+   * bubble under a 1px hairline shadow, #111B21 text, #667781 timestamps, #00A884 for a call-to-
+   * action. Sandeep sent a real message from our own number to check these against. */
   preview:    { marginTop: 10 },
-  previewFrom:{ fontSize: 10, color: '#888', marginBottom: 4 },
-  bubble:     { background: '#E7FFDB', borderRadius: 12, padding: '10px 12px',
-                fontSize: 12.5, lineHeight: 1.45, color: '#111', whiteSpace: 'pre-wrap' },
-  previewBtn: { marginTop: 8, paddingTop: 8, borderTop: '1px solid #C9E6BB', textAlign: 'center',
-                fontSize: 12, fontWeight: 600, color: '#0A7CFF' },
+  chat:       { background: '#EFE7DE', borderRadius: 10, padding: 8 },
+  chatHead:   { display: 'flex', alignItems: 'center', gap: 7, padding: '2px 2px 8px' },
+  /* Not the real logo: nothing in this bundle can be sure of a path to one — the library is vendored
+     into two different apps. A brand-green disc reads as an avatar at 22px, which is all it must do. */
+  avatar:     { width: 22, height: 22, borderRadius: '50%', background: '#2C4433', color: '#F4F8F5',
+                fontSize: 11, fontWeight: 800, display: 'flex', alignItems: 'center',
+                justifyContent: 'center', flexShrink: 0, letterSpacing: '-0.02em' },
+  chatName:   { fontSize: 11.5, fontWeight: 700, color: '#111B21', lineHeight: 1.2 },
+  /* ⚠️ HONEST, AND SLIGHTLY UNCOMFORTABLE ON PURPOSE. The customer has not saved this number, so
+     WhatsApp shows exactly this. A baker paying for a message sent under our name should see that
+     it arrives from someone their customer does not know
+     (plans/whose-name-is-on-the-message.md). */
+  chatSub:    { fontSize: 9.5, color: '#667781', lineHeight: 1.2 },
+  bubble:     { background: '#FFFFFF', borderRadius: 8, borderTopLeftRadius: 2, overflow: 'hidden',
+                boxShadow: '0 1px 0.5px rgba(11,20,26,0.13)', maxWidth: '94%' },
+  bubbleImg:  { display: 'block', width: '100%', maxHeight: 132, objectFit: 'cover',
+                background: '#F3EFEA', borderRadius: 6 },
+  /* WhatsApp insets media by a few pixels and rounds it; bleeding it to the bubble edge is the
+     giveaway that something is a drawing of a message rather than one. */
+  media:      { padding: 3, paddingBottom: 0 },
+  /* Stands in only when NOTIFICATION_FALLBACK_IMAGE_KEY is unset, which is also exactly when an
+     image-header template would be skipped rather than sent. Saying so beats drawing a photo. */
+  imgNone:    { padding: '18px 12px', background: '#F3EFEA', fontSize: 10.5, color: '#8696A0',
+                textAlign: 'center', lineHeight: 1.4, borderRadius: 6 },
+  bubbleBody: { padding: '6px 9px 4px', fontSize: 12.5, lineHeight: 1.45, color: '#111B21' },
+  time:       { fontSize: 10, color: '#667781', textAlign: 'right', padding: '0 9px 5px' },
+  previewBtn: { borderTop: '1px solid rgba(0,0,0,0.08)', textAlign: 'center', padding: '8px 0',
+                fontSize: 12.5, fontWeight: 500, color: '#00A884',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5 },
   previewNote:{ fontSize: 10, color: '#9BB5A2', marginTop: 5 },
   muted:      { margin: 0, fontSize: 12, color: '#888' },
   err:        { margin: 0, fontSize: 12, color: '#B00020' },

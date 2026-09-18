@@ -15,8 +15,12 @@ import { readFileSync } from 'node:fs';
 const src = readFileSync(new URL('./CustomerUpdatesSection.jsx', import.meta.url), 'utf8');
 
 describe('the preview', () => {
+  /* Was a "From Spattoo" caption, which STATED who it comes from and showed none of it. The chat
+     header does the same job the way the customer will actually meet it — avatar, name, and the
+     line WhatsApp shows for a number they have not saved. */
   it('shows who the message comes from', () => {
-    expect(src).toMatch(/From <strong>\{sender\}<\/strong>/);
+    expect(src).toMatch(/<div style=\{s\.chatName\}>\{sender\}<\/div>/);
+    expect(src).toMatch(/style=\{s\.avatar\}/);
   });
 
   /* The body is rendered from the server's text, never from a copy in here. Two copies drift the
@@ -84,5 +88,49 @@ describe('the choices', () => {
   it('is optimistic, and puts the toggle back if the save fails', () => {
     expect(src).toMatch(/const before = data\.enabledTypes;/);
     expect(src).toMatch(/setData\(d => \(\{ \.\.\.d, enabledTypes: before \}\)\)/);
+  });
+});
+
+describe('the preview is a WhatsApp message, not a diagram of one', () => {
+  const code = src.split('\n').filter(l => !/^\s*(\/\/|\*|\/\*)/.test(l)).join('\n');
+
+  /* ⚠️ #E7FFDB IS THE WRONG SIDE OF THE CONVERSATION. It is WhatsApp's OUTGOING colour — what your
+     own sent messages wear. Every message here is one the CUSTOMER receives, so it is an incoming
+     bubble: white, left, tail on the left. The first version was green, which showed the baker
+     their own sent message rather than the thing they are paying to have delivered. */
+  it('draws an incoming bubble, not an outgoing one', () => {
+    expect(code).not.toMatch(/#E7FFDB/i);
+    expect(src).toMatch(/bubble:\s*\{\s*background: '#FFFFFF'/);
+    expect(src).toMatch(/borderTopLeftRadius: 2/);        // the tail side
+  });
+
+  // Checked against a real message sent from our own number, not picked by eye.
+  it('uses WhatsApp\'s own colours', () => {
+    expect(src).toMatch(/#EFE7DE/);        // chat ground
+    expect(src).toMatch(/#111B21/);        // body text
+    expect(src).toMatch(/#667781/);        // timestamp
+    expect(src).toMatch(/#00A884/);        // call to action
+  });
+
+  /* The picture is drawn ONLY where the template actually carries one — `image` comes from the
+     server's list, which mirrors table A of plans/whatsapp-templates.md. Drawing a photo on a
+     message that has none breaks the preview's promise exactly as badly as wrong words would. */
+  it('shows a picture only where the template has one', () => {
+    expect(src).toMatch(/\{e\.image && \(/);
+    expect(src).toMatch(/fallbackImageUrl/);
+    // and says so rather than inventing a photo when none is configured
+    expect(src).toMatch(/Your customer&rsquo;s cake shows here/);
+  });
+
+  it('carries a clock and an arrowed call to action', () => {
+    expect(src).toMatch(/sampleTime/);
+    expect(src).toMatch(/toUpperCase\(\)/);               // "7:29 PM", not en-IN's "7:29 pm"
+    expect(src).toMatch(/\{e\.button && \(/);
+  });
+
+  /* The customer has not saved this number, so WhatsApp really does say this. A baker paying to
+     send under our name should see that it lands from someone their customer does not know. */
+  it('does not hide that the sender is a stranger to the customer', () => {
+    expect(src).toMatch(/tap to add to contacts/);
   });
 });
