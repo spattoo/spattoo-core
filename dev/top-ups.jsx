@@ -24,7 +24,22 @@ const messages = has('zero') ? 0 : Number(q.get('messages') ?? 110);
 
 const apiClient = {
   ...(has('nocredits') || has('none') ? {} : {
-    fetchAiCredits: has('loading') ? never : async () => ({ spendable: credits, usedPct: 40 }),
+    /* The real shape from GET /api/baker/ai-credits: a monthly allowance, a bought wallet, and the
+       action price list. Without `actions` the "What each one costs" block never renders, and a
+       harness that silently omits half the screen cannot be used to judge it. Costs are the real
+       rows from credit_costs. */
+    fetchAiCredits: has('loading') ? never : async () => ({
+      spendable: credits, usedPct: 40, allowance: 800, allowanceLeft: credits,
+      walletBalance: 0, resetsOn: '2026-10-11',
+      actions: [
+        { actionKey: 'photo_to_cake_design',   label: 'Cake design',                      credits: 20 },
+        { actionKey: 'enquiry_to_draft_order', label: 'Draft order',                      credits: 2 },
+        { actionKey: 'sticker_generate',       label: 'Decoration',                       credits: 60 },
+        { actionKey: 'photo_to_xray_estimate', label: 'X-Ray — read a cake photo',        credits: 15 },
+        { actionKey: 'edible_print_generate',  label: 'X-Ray — make an edible print',     credits: 16 },
+        { actionKey: 'element_build_guide',    label: 'X-Ray — how to make a decoration', credits: 20 },
+      ],
+    }),
   }),
   ...(has('nomessages') || has('none') ? {} : {
     fetchMessageBalance: has('loading') ? never : async () => ({ ...fixture, balance: messages }),

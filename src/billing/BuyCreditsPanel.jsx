@@ -196,6 +196,22 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
           )}
         </div>
 
+        {/* ⚠️ WHAT A CREDIT IS FOR, BEFORE ANY NUMBER ABOUT IT. The panel went straight from "800
+            credits to spend" to a price list reading "X-Ray — read a cake photo", which assumes the
+            reader already knows what a smart tool is and what X-Ray means. A baker who has just
+            signed up knows neither, and this is the screen where they are deciding to spend money.
+            Sandeep: "for a new user, he wont have any clue what these credits are used for."
+
+            Three examples, not all six — the list below is the full set with its prices, and a lede
+            that enumerates everything is a second price list nobody reads. */}
+        {!loading && (
+          <p style={s.lede}>
+            Smart tools do a slow job for you — turning a customer&rsquo;s photo into a cake design,
+            writing an enquiry up as an order, or working out how a decoration was made. Each one
+            spends a few credits.
+          </p>
+        )}
+
         {/* ── The two buckets ──────────────────────────────────────────────────────────
             The headline number is a SUM of two things with different rules — one resets on the
             1st, one never expires — and showing only the total means a baker watching it fall
@@ -231,9 +247,13 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
         )}
 
         {/* WHAT THEY BUY, before what they cost. A pack is meaningless without knowing what a
-            credit does, and this is the one screen where someone is deciding to spend money. */}
+            credit does, and this is the one screen where someone is deciding to spend money.
+            The heading is not decoration: without it the list ran straight on from the balance
+            breakdown and read as more numbers about the balance. */}
         {(data?.actions ?? []).length > 0 && (
-          <div style={s.priceList}>
+          <div>
+            <h4 style={s.listHead}>What each one costs</h4>
+            <div style={s.priceList}>
             {data.actions.map(a => (
               <div key={a.actionKey} style={s.priceRow}>
                 <span style={{ color: '#4A5D51', fontWeight: 600 }}>{a.label}</span>
@@ -242,6 +262,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                 </span>
               </div>
             ))}
+            </div>
           </div>
         )}
 
@@ -513,6 +534,10 @@ const s = {
   balance: { display: 'flex', flexDirection: 'column', gap: 2 },
   // Sized to the real number's line box, so nothing shifts when it swaps in.
   numSkeleton: { width: 132, height: 41, borderRadius: 9, background: '#F1F5F2' },
+  /* The one paragraph on this screen. Sits under the balance because a returning baker opened the
+     panel to see the number, and a new one cannot read the number until they know what it buys. */
+  lede:      { fontSize: 12.5, color: '#5A6B60', lineHeight: 1.55, margin: 0, fontWeight: 600 },
+  listHead:  { fontSize: 12.5, fontWeight: 800, color: '#2C4433', margin: '0 0 7px' },
   priceList: {
     background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px',
     display: 'flex', flexDirection: 'column', gap: 4,

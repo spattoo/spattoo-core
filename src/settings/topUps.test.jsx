@@ -184,3 +184,30 @@ describe('it left the store settings', () => {
     expect(designer).toMatch(/setTopUpsPanelOpen\(false\);/);
   });
 });
+
+describe('the credits panel explains itself', () => {
+  /* ⚠️ IT WENT STRAIGHT FROM A NUMBER TO A PRICE LIST. "800 credits to spend", then rows reading
+     "X-Ray — read a cake photo", which assume the reader already knows what a smart tool is and what
+     X-Ray means. Somebody who signed up this morning knows neither, and this is the screen where
+     they decide to spend money. Sandeep: "for a new user, he wont have any clue what these credits
+     are used for." */
+  it('says what a credit buys before it says how many you have left', () => {
+    expect(buyPanel).toMatch(/Smart tools do a slow job for you/);
+    const lede = buyPanel.indexOf('Smart tools do a slow job');
+    const list = buyPanel.indexOf('data.actions.map');
+    expect(lede).toBeGreaterThan(-1);
+    expect(lede).toBeLessThan(list);          // meaning before prices
+  });
+
+  /* Three examples, not all six. The list below is the full set with its costs, and a lede that
+     enumerates everything is a second price list nobody reads. */
+  it('gives examples rather than repeating the price list', () => {
+    const lede = buyPanel.slice(buyPanel.indexOf('Smart tools do a slow job'));
+    expect(lede.slice(0, 400)).not.toMatch(/X-Ray/);
+  });
+
+  // Without a heading the costs ran on from the balance breakdown and read as more numbers about it.
+  it('heads the cost list', () => {
+    expect(buyPanel).toMatch(/<h4 style=\{s\.listHead\}>What each one costs<\/h4>/);
+  });
+});
