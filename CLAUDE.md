@@ -34,6 +34,7 @@ Already built, app-wide, in `src/shared/`:
 | `validators.js`, `image.js`, `useUploadLimits.js` | File validation, compression, and the server's real upload ceiling. |
 | `panelTopBar.jsx` | Back arrow, breadcrumb and dismiss for panel headers. |
 | `Disclosure.jsx` | **The** "question you can open" — a labelled toggle with the shared chevron, and an answer folded under it. For the explanation a new baker needs and a returning one has read fifty times. |
+| `canvas/envMap.js` | **The** answer to "which HDRI lights this scene". A host mounting anything that draws a cake must call `configureEnvMap(assetsBase)`; without it the scene silently falls back to a 1.4MB drei preset from GitHub raw. Gated by `check:env-map`. |
 | `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
 Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,
@@ -154,7 +155,7 @@ them before writing a gesture, not after.
 ## Gates
 
 `npm run verify` runs them all: `bindings`, `paths`, `fonts`, `cors`, `hooks`, `movable`, `narrow`,
-`occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
+`env-map`, `occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
 judgement calls in 1, 2, 3 and 6 are not checkable and are yours to keep.
 
 Git hooks need node and gitleaks on PATH; a login shell that has not sourced nvm will fail them:
