@@ -1,4 +1,27 @@
 <!DOCTYPE html>
-<html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width, initial-scale=1"/>
-<title>VerifyStep</title></head><body><div id="root"></div>
-<script type="module" src="./verify-step.jsx"></script></body></html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>VerifyStep</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Quicksand:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body, #root { height: 100%; }
+
+      /* ── The HOST app, mirrored, because both of this screen's shipped bugs were host bugs ──────
+         1. `body { background: #111111 }` is apps/app's globals.css, set on purpose "so the redirect
+            into the app + the loading state never flash white" — and the gate is a full-screen
+            surface, which that file says must draw its own ground over it. It did not, and shipped
+            dark type on black. A harness on a white body cannot see that, which is why it did not.
+         2. The tailwind preflight blockifies replaced elements (img, svg, canvas…). Without the line
+            below, a logo renders here the way the BROWSER defaults it and in production as a block. */
+      body { background: #111111; }
+      img, svg, video, canvas, audio, iframe, embed, object { display: block; vertical-align: middle; }
+    </style>
+  </head>
+  <body><div id="root"></div>
+  <script type="module" src="./verify-step.jsx"></script></body>
+</html>
