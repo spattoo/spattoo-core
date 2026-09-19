@@ -103,6 +103,12 @@ export default function VerifyStep({
 
   const [channel, setChannel] = useState(channels[0] ?? 'sms');
   const [noteOpen, setNoteOpen] = useState(false);
+  /* ⚠️ A FAILED CAPTCHA USED TO BE INVISIBLE. The widget went to its error state, the token was
+     cleared, and "Send code" simply stayed grey — so the screen said nothing at all about why the
+     only button on it would not work, and the report that came back was "captcha failed" with no
+     code attached, twice. Turnstile hands us a code; it is now shown, because the person who can
+     actually tell us what happened is the customer standing in front of it. */
+  const [captchaErr, setCaptchaErr] = useState(null);
   // ONE field holding whichever contact the chosen channel wants. Seeded from the matching side of
   // the draft — an email typed last time should not reappear in a box now labelled Phone number.
   const [phone, setPhone] = useState((channels[0] ?? 'sms') === 'email' ? initialEmail : initialPhone);
@@ -230,9 +236,21 @@ export default function VerifyStep({
   // ONE widget for the whole step, rendered outside the step branch so moving to the code entry
   // does not remount it — a remount would throw away a solved captcha the resend still needs.
   const captchaEl = (
-    <Captcha ref={otp.captchaRef} siteKey={captchaSiteKey}
-             onVerify={otp.setCaptchaToken} onExpire={() => otp.setCaptchaToken(null)}
-             style={{ margin: '2px 0' }} />
+    <>
+      <Captcha ref={otp.captchaRef} siteKey={captchaSiteKey}
+               onVerify={(t) => { setCaptchaErr(null); otp.setCaptchaToken(t); }}
+               onExpire={() => otp.setCaptchaToken(null)}
+               onError={setCaptchaErr}
+               style={{ margin: '2px 0' }} />
+      {/* The code is in the text on purpose. It is meaningless to a customer and it is the entire
+          diagnosis to whoever they send the screenshot to — 110200 is a hostname that is not on the
+          widget's allowlist, 600* is "bot behaviour detected", 400020 a bad key. */}
+      {captchaErr && (
+        <div style={s.err}>
+          {`The security check did not pass (${captchaErr || 'no code'}). Reload the page and try again.`}
+        </div>
+      )}
+    </>
   );
 
   return shell(
