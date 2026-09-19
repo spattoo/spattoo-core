@@ -17,9 +17,14 @@ const src = readFileSync(new URL('./VerifyStep.jsx', import.meta.url), 'utf8');
 /* ⚠️ COMMENTS DO NOT COUNT — three gates in this project have passed on a word that only ever
    appeared in prose explaining it. Every file here documents itself at length, so a match anywhere
    in the text proves nothing about what renders. */
+/* ⚠️ BLOCK COMMENTS FIRST, THEN THE BRACES. Stripping `{/* … *​/}` as one unit BEFORE plain block
+   comments looks tidier and is wrong: the lazy match runs from the first `{/*` to the first later
+   `*​/}`, and every plain `/* … *​/` in between is inside that span — so one JSX comment near the top
+   of a file silently deletes half of it. Measured here: the whole of VerifyStep from its first JSX
+   comment onwards vanished, and an assertion about real code passed as "not present".
+   Doing it the other way round leaves bare `{}` fragments, which match nothing and matter to nobody. */
 const code = (f) => f
-  .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')                 // JSX comment blocks
-  .replace(/\/\*[\s\S]*?\*\//g, '')                             // block comments
+  .replace(/\/\*[\s\S]*?\*\//g, '')                             // block comments, JSX ones included
   .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');   // line comments
 
 describe('the name it says seven times', () => {
@@ -119,5 +124,17 @@ describe('it is legible wherever it is mounted', () => {
     const design = readFileSync(new URL('../../../../spattoo-web/apps/app/app/[slug]/design/DesignerClient.tsx', import.meta.url), 'utf8');
     const order  = readFileSync(new URL('../../../../spattoo-web/apps/app/app/[slug]/orders/[id]/OrderDetailClient.tsx', import.meta.url), 'utf8');
     for (const f of [design, order]) expect(code(f)).toMatch(/standalone\b/);
+  });
+});
+
+describe('the channel the server chooses', () => {
+  /* The order gate learns which contact the customer has from an endpoint, so `channels` is the
+     baker's list on the first render and one channel a moment later. `channel` is seeded in a
+     useState initialiser, which never re-reads — so the live dev gate asked for an email while
+     `order-channel/... → {"channels":["sms"]}` sat in the network tab. */
+  it('adopts a channel that arrives after the first render', () => {
+    expect(code(src)).toMatch(/if \(!channels\.length \|\| channels\.includes\(channel\)\) return;/);
+    // And only then: a tab the customer pressed themselves must not be overruled.
+    expect(code(src)).toMatch(/const offered = channels\.join\('\|'\);/);
   });
 });

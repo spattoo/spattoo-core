@@ -44,9 +44,14 @@ const ACCEPTED = {
 /* ⚠️ COMMENTS DO NOT COUNT. Every file that stopped using `›` EXPLAINS that it stopped, quoting the
    glyph — which is how this codebase documents itself. An earlier gate written this morning matched
    text anywhere in the file and passed happily while the real call was commented out. */
+/* ⚠️ AND THE ORDER OF THE TWO STRIPS MATTERS. Taking `{/* … *​/}` out as one unit FIRST looks tidier
+   and eats files: the lazy match runs from the first `{/*` to the first later `*​/}`, so every plain
+   block comment in between is inside that span. Proven 2026-09-19 in verifyStep.test.jsx, where it
+   deleted everything in VerifyStep after its first JSX comment and an assertion about real code
+   passed as "not present". Plain block comments first covers JSX ones too; the leftover `{}` matches
+   nothing. */
 const codeOnly = (s) => s
-  .replace(/\{\s*\/\*[\s\S]*?\*\/\s*\}/g, '')     // JSX comment blocks
-  .replace(/\/\*[\s\S]*?\*\//g, '')               // block comments
+  .replace(/\/\*[\s\S]*?\*\//g, '')               // block comments, JSX ones included
   .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');
 
 // A raw chevron: the text glyph, its entity, or a hand-drawn path of the same mark.

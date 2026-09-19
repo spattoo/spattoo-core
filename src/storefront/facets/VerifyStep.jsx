@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Captcha } from '../../auth/Captcha.jsx';
 import { useOtp } from '../useOtp.js';
 import { FONT, SERIF, alpha, darken, lum, mix, onColor } from '../storefrontKit.js';
@@ -164,6 +164,26 @@ export default function VerifyStep({
   ), [apiBaseUrl, slug, phone, channel, name]);
 
   const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim(), name.trim(), channel) });
+
+  /* ⚠️ `channels` ARRIVES AFTER THE FIRST RENDER, AND useState DOES NOT NOTICE. The order gate asks
+     the server which contact THIS order's customer has, so `channels` starts as the baker's list and
+     becomes `['sms']` a moment later — but `channel` was seeded from `channels[0]` in a useState
+     initialiser, which is read exactly once. The screen therefore kept asking for an email while the
+     server had already said the customer has a phone.
+     Found by opening the live dev gate, not by reading: the network tab showed
+     `order-channel/... → {"channels":["sms"]}` and the field on screen said "Email address".
+     Only corrects a channel the server will no longer accept, so a deliberate tab choice stands. */
+  const offered = channels.join('|');
+  useEffect(() => {
+    if (!channels.length || channels.includes(channel)) return;
+    const next = channels[0];
+    setChannel(next);
+    // The contact belongs to the channel — the same reason the tab handler clears it.
+    setPhone(next === 'email' ? initialEmail : initialPhone);
+    otp.setErr(null);
+    // `offered` is the string form of `channels`, which is a new array identity on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [offered]);
 
   // ── "Anything else?" ──────────────────────────────────────────────────────────────────────────
   // The facets ask the four questions worth asking everybody. This is the fifth, which is different
