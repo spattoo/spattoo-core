@@ -7,6 +7,23 @@ The shared cake designer, baker app and storefront. It is **vendored** into `spa
 
 ---
 
+## Before you act — the five triggers
+
+⚠️ **This list exists because the prose below does not get recalled mid-task.** Everything here is
+stated at length further down, with the reasoning and the worked failures. This is the part phrased
+as *"when you are about to do X, do Y first"*, because that is the shape a rule has to be in to fire
+at the moment it is needed. If a rule cannot be written as a trigger, it belongs in a gate, not here.
+
+| When you are about to… | Do this first |
+|---|---|
+| build a component, a helper, a row, a panel | grep for the BEHAVIOUR (`:hover`, `focus-visible`, `›`), not the name. Say what came back. |
+| say "we should add / the problem is / that already works" | run the command that proves it, and show it in the same message. No command → say it is unchecked. |
+| write a number, a price, a count, a limit | find where it is defined. If it lives on another surface, state the dependency and quantify NOTHING. |
+| call a screen done | open it, drive it with real input, look at it. A green suite is not a working screen. |
+| diagnose anything outside this repo | read `spattoo-docs` and the vendor's own docs before proposing a remedy. Expensive cure → reproduce the fault first. |
+
+Everything below is the reasoning. These five are the part that has to fire without being re-read.
+
 ## The rules that apply to EVERY module
 
 These are project-wide: designer, storefront, orders, settings, admin, chef's desk. They are stated
