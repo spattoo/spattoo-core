@@ -18,8 +18,8 @@ const q = new URLSearchParams(location.search);
 const BAKER = q.get('named') === '1' ? 'Feelings and Flavours' : undefined;
 const COPY = {
   design: {
-    title: "Who's designing?",
-    lede: `We just need to know who you are before you start. ${BAKER ?? 'The bakery'} only sees your cake when you choose to send it.`,
+    title: "Almost there — let's design your cake",
+    lede: 'A quick code to open the designer. We only see your cake when you choose to send it.',
     submitLabel: 'Start designing',
   },
   order: {

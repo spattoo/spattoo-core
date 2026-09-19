@@ -1408,6 +1408,20 @@ function PlusGlyph({ size = 20 }) {
   );
 }
 
+/* ── A person's name, for showing ───────────────────────────────────────────────────────────────
+ *
+ * ⚠️ `${first} ${last}` PRINTS "Sandeep null". A template literal stringifies null, and `.trim()`
+ * cannot help because "null" is a real four-character word by then. Seen in the designer's account
+ * menu on 2026-09-19 — and a null last name is not a data fault to go and fix: `splitName` in
+ * storefront/facets/cakeDraft.js returns `lastName: undefined` for a single-word name, which is most
+ * of them, and plenty of people have one name.
+ *
+ * One definition because the same join appeared three times in this file — the menu, the tooltip and
+ * the sidebar row — and all three were wrong the same way.
+ */
+const personName = (u, fallback) =>
+  [u?.firstName, u?.lastName].filter(Boolean).join(' ').trim() || fallback;
+
 /** Double chevron: "there is more below". Two rather than one because a single chevron in this
  *  position reads as a collapse control — something that would fold the sheet away — where a
  *  doubled one is the scroll idiom. */
@@ -9059,7 +9073,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {profileOpen && (
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
                   <div style={s.dropdownUserInfo}>
-                    <div style={s.dropdownName}>{userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}</div>
+                    <div style={s.dropdownName}>{personName(userData, 'My Account')}</div>
                     {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.dropdownDivider} />
@@ -9233,7 +9247,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             })}
 
             <div style={{ position: 'relative' }} ref={profileRef}>
-              <SidebarTooltip label={userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'Profile'}>
+              <SidebarTooltip label={personName(userData, 'Profile')}>
                 <button
                   style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
                   onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
@@ -9244,7 +9258,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <RailMenu style={{ top: 'auto', bottom: 0 }}>
                   <div style={s.railDropdownUserInfo}>
                     <div style={s.railDropdownName}>
-                      {userData ? `${userData.firstName} ${userData.lastName}`.trim() : 'My Account'}
+                      {personName(userData, 'My Account')}
                     </div>
                     {userData?.email && <div style={s.railDropdownEmail}>{userData.email}</div>}
                   </div>

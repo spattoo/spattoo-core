@@ -59,7 +59,9 @@ describe('the words are true in the doorway they are used in', () => {
      Sandeep, 2026-09-19: "i came here to design the cake and the cake design is not ready yet." */
   it('takes its heading and reason from the caller', () => {
     expect(src).toMatch(/title = null, lede = null/);
-    expect(src).toMatch(/title \?\? `Who shall \$\{bakerName\} ask for\?`/);
+    // A default exists so the enquiry needs no props; assert the MECHANISM, not the wording, or
+    // this fails every time the copy is improved.
+    expect((src.match(/title \?\? /g) ?? []).length).toBeGreaterThanOrEqual(2);
     expect(src).toMatch(/lede \?\? \(channel === 'email'/);
   });
 
@@ -79,7 +81,9 @@ describe('the words are true in the doorway they are used in', () => {
       expect(f).toMatch(/title="/);
       expect(f).toMatch(/lede=/);
     }
-    expect(design).toMatch(/only sees your cake when you choose to send it/);
+    /* The sentence that does the actual work: it tells somebody at the designer door that nothing
+       has gone to the baker yet. Matched on the durable half, not the pronoun. */
+    expect(design).toMatch(/when you choose to send it/);
   });
 });
 

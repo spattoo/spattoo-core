@@ -150,8 +150,8 @@ export default function VerifyStep({
     const ready = !!phone.trim() && named;
     return (
       <div style={s.wrap}>
-        <h3 style={s.title}>{title ?? `Who shall ${bakerName} ask for?`}</h3>
-        <p style={s.sub}>{lede ?? `${bakerName} will call or message you about your cake.`}</p>
+        <h3 style={s.title}>{title ?? "We can't wait to bake this"}</h3>
+        <p style={s.sub}>{lede ?? 'We\u2019ll call or message you about your cake.'}</p>
         <input style={s.input} value={name} onChange={e => setName(e.target.value)}
                placeholder="Your name" autoFocus aria-label="Your name" />
         <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
@@ -179,7 +179,7 @@ export default function VerifyStep({
       <h3 style={s.title}>
         {/* Only the FIRST screen is context-dependent. "Enter the code" is true wherever this is
             used, and so is the line under it. */}
-        {otp.step === 'start' ? (title ?? `Who shall ${bakerName} ask for?`) : 'Enter the code'}
+        {otp.step === 'start' ? (title ?? "We can't wait to bake this") : 'Enter the code'}
       </h3>
       <p style={s.sub}>
         {otp.step === 'start'
@@ -187,8 +187,8 @@ export default function VerifyStep({
           // true and it is the customer's benefit, not ours — which is exactly why a caller whose
           // reason is DIFFERENT has to be able to say so.
           ? (lede ?? (channel === 'email'
-              ? `${bakerName} will be in touch about your cake, so we just need to check this reaches you.`
-              : `${bakerName} will call or message you about your cake, so we just need to check the number works.`))
+              ? 'We\u2019ll be in touch about your cake, so we just need to check this reaches you.'
+              : 'We\u2019ll call or message you about your cake, so we just need to check this number works.'))
           : <>We sent a 6-digit code to <b>{phone.trim()}</b>.</>}
       </p>
 
