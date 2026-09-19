@@ -13,11 +13,14 @@
  * in the designer itself, and it is built the other way round on purpose: it points at real controls
  * rather than counting stages.
  *
- * ⚠️ AND THE WORDS ARE THE TOUR'S WORDS. The customer meets this, signs in, and is met by DesignTour
- * saying the same three things about the same three stages. Two vocabularies for one journey is how
- * somebody ends up wondering whether "add decorations" and "browse elements" are different tasks.
- * If the labels here and the titles in `designer/tour/DesignTour.jsx` ever disagree, that is a bug in
- * whichever one moved.
+ * ⚠️ AND THE WORDS ARE THE PRODUCT'S OWN WORDS — the menu item and the button, not a nicer synonym.
+ * "Add decorations" because the designer's rail says **Decorations** (CakeDesigner.jsx:2795), and
+ * "Request quote" because that is what the submit button says (OrderModal.jsx:697). Sandeep, on why:
+ * "i deliberatly want the word decorations so the user after logging in can easily map the menu item
+ * decorations." Somebody crosses this door and then has to FIND these things; a label that reads
+ * better but names nothing on the next screen makes them hunt.
+ * `designer/tour/DesignTour.jsx` greets them inside and must agree — if its titles and these labels
+ * ever drift, whichever one stopped matching the control it points at is the bug.
  *
  * Not interactive, deliberately: nothing here can be pressed, because none of these places can be
  * reached yet. Root CLAUDE.md rule 7 cuts both ways — a thing that does nothing must not look as
