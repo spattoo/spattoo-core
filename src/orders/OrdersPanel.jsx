@@ -1354,6 +1354,39 @@ function DietChips({ reqs, small = false }) {
   );
 }
 
+/* ── The customer we may not be able to tell anything ────────────────────────────────────────────
+ *
+ * `InfoRow` renders NOTHING when a value is empty, so a customer with no email address has always
+ * looked exactly like one whose email simply was not worth a line — and the baker had no way to know
+ * that every update on this order depends on a paid channel they may not have switched on.
+ *
+ * ⚠️ IT NAMES THE DEPENDENCY AND QUANTIFIES NOTHING. The cost of a message lives in `credit_costs`
+ * and `credit_packs`, which exist so an admin can retune them without a deploy, and the Message
+ * Credits screen is where that arithmetic belongs. A second copy here would start lying the day
+ * either moves — see `check:priced-copy`, and BillingPanel's own note.
+ *
+ * ⚠️ AND IT DOES NOT PROMISE THE MESSAGE WILL GO. "Updates will be sent by WhatsApp" is false in the
+ * two cases that matter most: `maySpendMessage` refuses when the baker has not switched that type on
+ * ("The bakery has not switched this update on") and when the balance is gone ("The bakery has no
+ * messages left"), and each refusal is a SKIP — nothing is sent at all. A baker reading a promise
+ * while their balance is zero is being misinformed at the exact moment it costs them the order.
+ *
+ * Email is the one channel that is never refused: `messageBalance.js` — "Paid customer updates
+ * (SMS/WhatsApp) are optional and bought in packs; email and push stay free."
+ *
+ * Only when there is no email. Nagging on the common case is how a warning stops being read.
+ */
+function NoEmailNotice() {
+  return (
+    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#8A5A1E', background: '#FDF3E3',
+                  border: '1px solid #F0DCB8', borderRadius: 9, padding: '9px 11px' }}>
+      <strong style={{ fontWeight: 800 }}>No email address for this customer.</strong>
+      {' '}They will only hear about this order if WhatsApp updates are switched on and you have
+      message credits. Email updates cost nothing — add one on their customer record.
+    </div>
+  );
+}
+
 function DetailSections({ order, name, flavours, delivDate }) {
   const customer = order.customers;
   return (
@@ -1362,6 +1395,9 @@ function DetailSections({ order, name, flavours, delivDate }) {
         <InfoRow label="Name"  value={name} />
         <InfoRow label="Phone" value={customer?.phone} />
         <InfoRow label="Email" value={customer?.email} />
+        {/* Under the Email row, where the absence is: the row itself renders nothing, so this is the
+            only thing on the screen that says the address is missing rather than merely unshown. */}
+        {customer && !customer.email && <NoEmailNotice />}
       </Section>
 
       <Section title="Order">

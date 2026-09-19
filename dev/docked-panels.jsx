@@ -50,7 +50,11 @@ const ORDERS = [
     flavours: [{ tier: 0, name: 'Blueberry' }],
     // The egg answer must NOT reach this row — it is a choice, not a deviation.
     dietary_requirements: [{ key: 'egg', label: 'With egg', kind: 'diet' }],
-    customers: { first_name: 'asha', last_name: 'rao', phone: '9000000000' } },
+    /* ⚠️ THE ONE WITH AN EMAIL. Every fixture here was phone-only, so the harness could only ever
+       show the no-email notice and never its absence — and "it renders" would have been the
+       whole test. A fixture set that can only produce one branch is not a fixture set. */
+    customers: { first_name: 'asha', last_name: 'rao', phone: '9000000000',
+                 email: 'asha@example.com' } },
 ];
 
 const STATUSES = [
