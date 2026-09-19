@@ -51,6 +51,38 @@ describe('the buttons name what pressing them does', () => {
   });
 });
 
+describe('the words are true in the doorway they are used in', () => {
+  /* ⚠️ "<baker> will be in touch about your cake" is TRUE at enquiry submit and false at the other
+     two doors. At the designer door nothing has been sent, there is no cake yet, and the gate asks
+     only because the designer cannot work without a session — every catalogue route behind it 401s.
+     Promising a call in order to open a tool commits the baker to something nobody asked them about.
+     Sandeep, 2026-09-19: "i came here to design the cake and the cake design is not ready yet." */
+  it('takes its heading and reason from the caller', () => {
+    expect(src).toMatch(/title = null, lede = null/);
+    expect(src).toMatch(/title \?\? `Who shall \$\{bakerName\} ask for\?`/);
+    expect(src).toMatch(/lede \?\? \(channel === 'email'/);
+  });
+
+  /* Only the FIRST screen is context-dependent. "Enter the code" and "We sent a 6-digit code to X"
+     are true wherever this is used, so they are not overridable — one less thing a caller can get
+     wrong. */
+  it('does not let the code screen be renamed', () => {
+    expect(src).toMatch(/: 'Enter the code'/);
+    expect(src).toMatch(/We sent a 6-digit code to/);
+  });
+
+  // Both non-enquiry callers must actually pass copy, or the default promise reappears.
+  it('is overridden at both doors that are not the enquiry', () => {
+    const design = readFileSync(new URL('../../../../spattoo-web/apps/app/app/[slug]/design/DesignerClient.tsx', import.meta.url), 'utf8');
+    const order  = readFileSync(new URL('../../../../spattoo-web/apps/app/app/[slug]/orders/[id]/OrderDetailClient.tsx', import.meta.url), 'utf8');
+    for (const f of [design, order]) {
+      expect(f).toMatch(/title="/);
+      expect(f).toMatch(/lede=/);
+    }
+    expect(design).toMatch(/only sees your cake when you choose to send it/);
+  });
+});
+
 describe('it is legible wherever it is mounted', () => {
   /* Standalone on the app, its parent is globals.css's `body { background: #111111 }`. Without its
      own ground it rendered dark grey on black — a gate nobody could read, so nobody could pass. */

@@ -53,6 +53,14 @@ export default function VerifyStep({
   // is the one thing it does not do. So the caller names the action; the defaults leave the
   // enquiry exactly as it was.
   submitLabel = null, backLabel = 'Back to my cake',
+  // ⚠️ AND THE WORDS, for the same reason as the buttons. "${bakerName} will be in touch about your
+  // cake" is true at SUBMIT and false at the designer door: nothing has been sent, there is no cake
+  // yet, and nobody is getting in touch. The door asks only because the designer cannot work without
+  // a session — every catalogue route behind it 401s (see "THE ONE EXCEPTION" above). Telling
+  // somebody they will be contacted, to open a tool, is a promise made on the baker's behalf that
+  // the baker has not been asked about.
+  // Sandeep, 2026-09-19: "i came here to design the cake and the cake design is not ready yet."
+  title = null, lede = null,
   // The customer's own words, held on the draft by FacetShell. See `noteField` below.
   note = '', onNote,
 }) {
@@ -142,8 +150,8 @@ export default function VerifyStep({
     const ready = !!phone.trim() && named;
     return (
       <div style={s.wrap}>
-        <h3 style={s.title}>Who shall {bakerName} ask for?</h3>
-        <p style={s.sub}>{bakerName} will call or message you about your cake.</p>
+        <h3 style={s.title}>{title ?? `Who shall ${bakerName} ask for?`}</h3>
+        <p style={s.sub}>{lede ?? `${bakerName} will call or message you about your cake.`}</p>
         <input style={s.input} value={name} onChange={e => setName(e.target.value)}
                placeholder="Your name" autoFocus aria-label="Your name" />
         <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
@@ -169,15 +177,18 @@ export default function VerifyStep({
   return (
     <div style={s.wrap}>
       <h3 style={s.title}>
-        {otp.step === 'start' ? `Who shall ${bakerName} ask for?` : 'Enter the code'}
+        {/* Only the FIRST screen is context-dependent. "Enter the code" is true wherever this is
+            used, and so is the line under it. */}
+        {otp.step === 'start' ? (title ?? `Who shall ${bakerName} ask for?`) : 'Enter the code'}
       </h3>
       <p style={s.sub}>
         {otp.step === 'start'
           // Says why, because "verify your number" with no reason reads as a hoop. The reason is
-          // true and it is the customer's benefit, not ours.
-          ? (channel === 'email'
+          // true and it is the customer's benefit, not ours — which is exactly why a caller whose
+          // reason is DIFFERENT has to be able to say so.
+          ? (lede ?? (channel === 'email'
               ? `${bakerName} will be in touch about your cake, so we just need to check this reaches you.`
-              : `${bakerName} will call or message you about your cake, so we just need to check the number works.`)
+              : `${bakerName} will call or message you about your cake, so we just need to check the number works.`))
           : <>We sent a 6-digit code to <b>{phone.trim()}</b>.</>}
       </p>
 
