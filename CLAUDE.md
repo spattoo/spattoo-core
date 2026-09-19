@@ -31,6 +31,22 @@ broken; server-side captcha verification that would have broken the captcha, bec
 are single-use; a support ticket chased over a PE–TM chain that was already Active; and a session
 helper for the admin smoke gate that `npm run smoke:session` already was.
 
+⚠️ **SHOW THE CHECK IN THE SAME MESSAGE AS THE CLAIM, OR SAY IT IS UNCHECKED.** This is the rule that
+makes the rest of rule 1 real, and it is the one that was missing. Every breach so far has been a
+sentence, not a commit — a gate at commit time cannot see a claim made in conversation, and by the
+time it could, the wrong thing has already been acted on. So: any statement about how this system
+behaves — a cost, a mechanism, a "we already have", a "that will happen" — ships beside the command
+that proved it. No command means the words are "I have not checked this."
+
+⚠️ **A NUMBER INSIDE A PROPOSAL IS A CLAIM TOO.** 2026-09-19, drafting a baker-facing notice: "updates
+go by WhatsApp and use a credit each". Nobody asked for a price; it was invented while writing the
+sentence. What the code does: `spendMessage` debits ONE PER PAID CHANNEL SEND, so a type with both SMS
+and WhatsApp on costs two for one update; only the types the baker switched on cost anything; and
+`order_placed_customer` is free when the customer placed it. Sandeep: *"why do you make these
+promises?"* **When the fact belongs to another surface — cost, balance, entitlement — state the
+dependency and quantify NOTHING**, so there is only ever one copy of the rule. `check-plan-copy.mjs`
+exists because two surfaces both stating a plan's claims is how one of them goes stale.
+
 **Do these before proposing, and say what came back** — "I looked" is not the same as having looked:
 - **Grep for the BEHAVIOUR, not the name.** `.spattoo-pack` is not findable by searching "NavRow"; it
   is findable by searching `:hover`, `focus-visible`, `›`.
