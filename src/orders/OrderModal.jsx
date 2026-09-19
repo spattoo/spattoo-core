@@ -273,6 +273,26 @@ export default function OrderModal({
   const isMobile = useNarrow(600);
   const { maxImageBytes } = useUploadLimits(apiClient);
 
+  /* ── The email we did NOT ask for at the door ──────────────────────────────────────────────────
+   *
+   * The storefront door asks for a phone and nothing else, because in India that is the contact
+   * people actually use — an Android owner has a Gmail address and does not read it. So a customer
+   * arrives at this form verified, reachable, and with no email on file.
+   *
+   * This is the right moment to ask. They are requesting a price, they want it in writing, and the
+   * field costs nothing here — where at the door it costs a visitor who has not decided to stay.
+   *
+   * ⚠️ ASKED ONLY WHEN WE HAVE NONE. `hasEmail` comes from the server, scoped to this bakery, so
+   * somebody who gave it on their last order is never asked twice — being asked again for something
+   * you have already given reads as not being listened to.
+   *
+   * ⚠️ AND NEVER REQUIRED. It stays out of `missing`, so it can never be the reason the button will
+   * not press. A customer with a working phone stopped at the last step of a quote by an optional
+   * field is the exact person the phone-first door was built for, and the baker can ring them.
+   */
+  const [askEmail, setAskEmail] = useState(false);
+  const [quoteEmail, setQuoteEmail] = useState('');
+
   // Reference photos (manual orders only) — [{ key, preview }]; only `key` is sent.
   const [referenceKeys, setReferenceKeys] = useState([]);
 
@@ -450,6 +470,18 @@ export default function OrderModal({
   const [submitting,   setSubmitting]   = useState(false);
   const [submitError,  setSubmitError]  = useState(null);
   const [orderId,      setOrderId]      = useState(null);
+
+  /* Customer mode only, and silent on failure: a read that decides whether to show one optional
+     field must never be the thing that stops a quote. A failed read simply does not ask. */
+  useEffect(() => {
+    if (mode !== 'customer' || !bakerSlug) return undefined;
+    if (typeof apiClient?.fetchCustomerProfile !== 'function') return undefined;
+    let alive = true;
+    apiClient.fetchCustomerProfile(bakerSlug)
+      .then(p => { if (alive) setAskEmail(p?.hasEmail === false); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [mode, bakerSlug, apiClient]);
 
   // Load customers on mount — baker mode only (a customer never lists the baker's
   // customers; their own identity comes from the session).
@@ -689,6 +721,10 @@ export default function OrderModal({
         deliveryTime:        deliveryTime  || undefined,
         deliveryMode,
         deliveryAddress:     deliveryMode === 'home_delivery' ? deliveryAddress : undefined,
+        /* Only when we asked and they typed something usable. The server fills it in ONLY where the
+           row has none and never overwrites, so a stray value here cannot redirect anybody's mail —
+           but sending an obviously broken one would still store a dead address as if it were good. */
+        email: askEmail && quoteEmail.trim() && isValidEmail(quoteEmail) ? quoteEmail.trim() : undefined,
       });
       setOrderId(result?.orderId ?? 'ok');
       // It is theirs now — the same rule the storefront's own submit follows. On SUCCESS only, so a
@@ -862,6 +898,33 @@ export default function OrderModal({
                 written server-side by POST /api/customer/orders (source 'quote'), so it cannot be
                 skipped by the client. Customer mode only — a baker placing an order already accepted
                 at signup/gate. Sits directly above the submit button so it is unmissable. */}
+            {/* ⚠️ ABOVE the consent line and the button, not below them. INVARIANTS #11 — a field
+                placed under the thing that submits it is a field people post past. And it says WHY
+                it is wanted: "so we can send it to you" is the difference between one more box and a
+                reason to fill one in. */}
+            {mode === 'customer' && isLastStep && askEmail && (
+              <div style={{ marginBottom: 12 }}>
+                <label htmlFor="quote-email"
+                       style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#2A241F',
+                                marginBottom: 5, fontFamily: "'Quicksand',sans-serif" }}>
+                  Your email <span style={{ fontWeight: 600, color: '#8A8078' }}>(optional)</span>
+                </label>
+                <input
+                  id="quote-email" type="email" inputMode="email" value={quoteEmail}
+                  onChange={e => setQuoteEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10,
+                           border: `1.5px solid ${quoteEmail.trim() && !isValidEmail(quoteEmail) ? '#C0392B' : '#E7DFD5'}`,
+                           fontSize: 14.5, color: '#2A241F', fontFamily: "'Quicksand',sans-serif" }}
+                />
+                <div style={{ fontSize: 11.5, lineHeight: 1.45, marginTop: 5, fontFamily: "'Quicksand',sans-serif",
+                              color: quoteEmail.trim() && !isValidEmail(quoteEmail) ? '#C0392B' : '#8A8078' }}>
+                  {quoteEmail.trim() && !isValidEmail(quoteEmail)
+                    ? 'That does not look like an email address.'
+                    : 'So we can send your quote in writing. We already have your phone number.'}
+                </div>
+              </div>
+            )}
             {mode === 'customer' && isLastStep && (
               <div style={{ fontSize: 11, lineHeight: 1.45, color: '#888', textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                 By requesting a quote you agree to the{' '}
