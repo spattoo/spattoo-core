@@ -25,6 +25,10 @@ const COPY = {
   design: {
     standalone: true,
     eyebrow: 'Cake designer',
+    /* ⚠️ THE SAME WORDS DesignTour USES, one screen later. Its three titles are "Start with the
+       cake", "Add decorations", "Then ask for a price"; these are the short forms of exactly those,
+       in the same order, so the map and the tour describe one journey. */
+    steps: ['Sign in', 'Pick a shape', 'Decorate', 'Ask a price'],
     title: "Almost there — let's design your cake",
     lede: 'A quick code to open the designer. We only see your cake when you choose to send it.',
     submitLabel: 'Start designing',

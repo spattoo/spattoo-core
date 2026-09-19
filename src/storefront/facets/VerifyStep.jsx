@@ -3,6 +3,7 @@ import { Captcha } from '../../auth/Captcha.jsx';
 import { useOtp } from '../useOtp.js';
 import { FONT, SERIF, alpha, darken, lum, mix, onColor } from '../storefrontKit.js';
 import { useTrimmedLogo } from '../../shared/useTrimmedLogo.js';
+import { Steps } from '../../shared/Steps.jsx';
 
 // ── Proving the number, at the last possible moment ─────────────────────────────────────────────
 // The baker's next action on every enquiry is to phone the customer. That makes the number the one
@@ -88,6 +89,13 @@ export default function VerifyStep({
   // One small line above the title saying where this is ("Your order", "Cake designer"). The title
   // says what happens next; this says what you are standing in front of.
   eyebrow = null,
+  /* The whole journey, as a row of numbered stages, with this door as the first one. Only the
+     DESIGNER door passes it: signing in there buys four stages of work, and none of them is visible
+     from the outside, so the door has to say what it is for. The order door is one stage — prove it
+     is you, read your order — and a stepper over two boxes would be ceremony.
+     ⚠️ Never carried past the door. See the note at the top of shared/Steps.jsx: the designer is not
+     a wizard, and four numbered steps around a freeform tool describe a product we do not have. */
+  steps = null,
   // The customer's own words, held on the draft by FacetShell. See `noteField` below.
   note = '', onNote,
 }) {
@@ -147,6 +155,15 @@ export default function VerifyStep({
   // Above the title, in the baker's own ink. Standalone only — inside the sheet the facet header is
   // already doing this job two inches higher.
   const eyebrowEl = eyebrow && standalone ? <div style={s.eyebrow}>{eyebrow}</div> : null;
+
+  /* Under the lede rather than above the title: the title says what to do NOW, and a map of the
+     whole journey read first would bury it. INVARIANTS #11 — narrating text goes beside or before
+     the thing it narrates; this narrates what comes AFTER, so it follows.
+     Only on the first screen. Once a code has been sent, the one thing that matters is the six
+     digits, and everything else on that screen is competing with them. */
+  const stepsEl = steps?.length && standalone
+    ? <Steps steps={steps} current={0} accent={s.stepAccent} />
+    : null;
 
   const send = useCallback(async (captchaToken) => {
     await postJSON(`${apiBaseUrl}/api/storefront/${slug}/send-otp`, {
@@ -234,6 +251,7 @@ export default function VerifyStep({
         {eyebrowEl}
         <h3 style={s.title}>{title ?? "We can't wait to bake this"}</h3>
         <p style={s.sub}>{lede ?? 'We\u2019ll call or message you about your cake.'}</p>
+        {stepsEl}
         {askName && (
           <input className="spattoo-gate-input" style={s.input} value={name}
                  onChange={e => setName(e.target.value)}
@@ -291,6 +309,8 @@ export default function VerifyStep({
               : 'We\u2019ll call or message you about your cake, so we just need to check this number works.'))
           : <>We sent a 6-digit code to <b>{phone.trim()}</b>.</>}
       </p>
+
+      {otp.step === 'start' && stepsEl}
 
       {/* Only when there is a genuine choice. One channel is not a decision, and rendering a single
           disabled-looking tab would invite somebody to hunt for the other. */}
@@ -515,6 +535,9 @@ function makeStyles(primary, standalone) {
                  letterSpacing: '0.01em', margin: '0 0 2px' },
     eyebrow:   { fontSize: 10.5, fontWeight: 800, letterSpacing: 2, textTransform: 'uppercase',
                  color: label, textAlign: 'center', margin: '6px 0 -2px' },
+    // Not a style — the colour Steps paints its dots and joining line with. Same `brand`, so a pale
+    // bakery colour is already safe here and the row cannot disagree with the eyebrow above it.
+    stepAccent: brand,
 
     /* Serif and centred ONLY standalone. Inside the sheet the type belongs to the baker's chosen
        theme, and dropping Cormorant into a shop that picked Montserrat would be this screen
