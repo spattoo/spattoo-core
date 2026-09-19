@@ -63,6 +63,20 @@ const STATUSES = [
 ];
 
 const apiClient = {
+  /* ⚠️ THREE STATES, AND THE THIRD IS THE TRAP. `?balance=` picks what the no-email notice reads:
+       (none)  the balance never resolves — the notice must NOT say "0", it must say nothing about a
+               number. TopUpsSection learned this first: an unknown balance rendered as zero tells a
+               baker they have run out when we simply do not know.
+       ?balance=0    empty — the loud case, "they will not be told anything".
+       ?balance=240  healthy — the number is the answer to "am I covered?". */
+  fetchMessageBalance: async () => {
+    // Read here, not from the component's `q`: this object is module-level and `q` is not in scope.
+    // The first version referenced it anyway, the call threw, the .catch swallowed it, and all three
+    // states rendered identically — a harness agreeing with itself about nothing.
+    const b = new URLSearchParams(location.search).get('balance');
+    if (b === null) return new Promise(() => {});      // never resolves: "not loaded"
+    return { balance: Number(b) };
+  },
   fetchOrders:        async () => ORDERS,
   /* Its PRESENCE is what switches the List/Calendar strip on (`hasCalendar` tests for the function,
      not for a flag), so without it the harness silently could not reach that control at all — which
@@ -120,6 +134,9 @@ function App() {
     // Non-null only when the panel was opened FROM somewhere, which is the only case a
     // back control is honest. Mirrors CakeDesigner, where it is set alongside a filter.
     onBack: fromDash ? () => setClosed('onBack — returned to Dashboard') : null,
+    // The way through from the no-email notice. Present here so the button is exercised; a host
+    // without it (admin) renders the notice with no link rather than a button that does nothing.
+    onOpenMessageCredits: () => setClosed('onOpenMessageCredits — opened Message credits'),
   };
 
   return (

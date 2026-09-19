@@ -1089,7 +1089,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, bakerName = null, statusIndex = DEFAULT_STATUS_INDEX }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, bakerName = null, statusIndex = DEFAULT_STATUS_INDEX, onOpenMessageCredits = null }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -1265,7 +1265,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               <CustomPhotosSection order={order} />
               <ReferencePhotosSection order={order} apiClient={apiClient} />
               <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
-              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
+              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate}
+                              apiClient={apiClient} onOpenMessageCredits={onOpenMessageCredits} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
@@ -1315,7 +1316,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} />
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
               <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={advance} busy={changingStatus} primaryColor={primaryColor} />
-              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
+              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate}
+                              apiClient={apiClient} onOpenMessageCredits={onOpenMessageCredits} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
@@ -1376,7 +1378,27 @@ function DietChips({ reqs, small = false }) {
  *
  * Only when there is no email. Nagging on the common case is how a warning stops being read.
  */
-function NoEmailNotice() {
+function NoEmailNotice({ apiClient, onOpenMessageCredits }) {
+  /* ⚠️ `null` IS "NOT LOADED", AND IT IS NOT ZERO. TopUpsSection learned this first and says so:
+     rendering an unknown balance as "0 left" tells a baker they have run out when we simply do not
+     know — and that is the one wrong answer that changes what they do next. So the hard warning
+     below fires only on a balance we have actually READ. */
+  const [balance, setBalance] = useState(null);
+
+  useEffect(() => {
+    if (typeof apiClient?.fetchMessageBalance !== 'function') return undefined;
+    let alive = true;
+    apiClient.fetchMessageBalance()
+      .then(d => { if (alive) setBalance(typeof d?.balance === 'number' ? d.balance : null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient]);
+
+  /* ⚠️ THE NUMBER IS READ, NEVER WRITTEN HERE. A literal would be a second copy of a value that moves
+     — `check:priced-copy` fails the build for one, and BillingPanel's note says why: "a client
+     carrying its own copy starts lying the moment they move." */
+  const empty = balance === 0;
+
   return (
     <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#8A5A1E', background: '#FDF3E3',
                   border: '1px solid #F0DCB8', borderRadius: 9, padding: '9px 11px' }}>
@@ -1385,13 +1407,40 @@ function NoEmailNotice() {
           which is a thing the baker can still fix. Sandeep: "this means the customer does not own a
           email address." */}
       <strong style={{ fontWeight: 800 }}>This customer has not provided an email address.</strong>
-      {' '}They will only hear about this order if WhatsApp updates are switched on and you have
-      message credits. Email updates cost nothing — add one on their customer record.
+      {' '}
+      {empty
+        /* The case worth being loud about: no free channel and nothing to pay with, so this order
+           goes past them in silence. Said plainly, because a baker who reads "updates will go by
+           WhatsApp" while their balance is zero has been misinformed at the moment it costs them. */
+        ? <>You have <strong style={{ fontWeight: 800 }}>no message credits left</strong>, so they will
+            not be told anything about this order.</>
+        : <>They will only hear about this order if WhatsApp updates are switched on{
+            /* The question this notice provokes is "am I covered?", and the balance is the answer to
+               it. Shown rather than linked to a shop: a buy screen answers an upsell, a number
+               answers the question. Sandeep, 2026-09-19: "if the baker does not know how much is the
+               available balance - if its too low, already there is no customer email - so might want
+               to quickly check the balance?" */
+            balance != null ? <> — you have {balance.toLocaleString('en-IN')} left</> : ' and you have message credits'
+          }.</>}
+      {' '}Email updates cost nothing — add one on their customer record.
+      {onOpenMessageCredits && (
+        <>
+          {' '}
+          {/* A real button, not text with a handler (rule 7): it takes focus, answers Enter, and a
+              screen reader announces it. */}
+          <button type="button" onClick={onOpenMessageCredits}
+                  style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                           fontWeight: 800, color: '#8A5A1E', textDecoration: 'underline',
+                           textUnderlineOffset: 2, cursor: 'pointer' }}>
+            Message credits
+          </button>
+        </>
+      )}
     </div>
   );
 }
 
-function DetailSections({ order, name, flavours, delivDate }) {
+function DetailSections({ order, name, flavours, delivDate, apiClient, onOpenMessageCredits }) {
   const customer = order.customers;
   return (
     <>
@@ -1401,7 +1450,9 @@ function DetailSections({ order, name, flavours, delivDate }) {
         <InfoRow label="Email" value={customer?.email} />
         {/* Under the Email row, where the absence is: the row itself renders nothing, so this is the
             only thing on the screen that says the address is missing rather than merely unshown. */}
-        {customer && !customer.email && <NoEmailNotice />}
+        {customer && !customer.email && (
+          <NoEmailNotice apiClient={apiClient} onOpenMessageCredits={onOpenMessageCredits} />
+        )}
       </Section>
 
       <Section title="Order">
@@ -1540,7 +1591,11 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null,
+  /* Opens Top-ups → Message credits. Only the no-email notice uses it, and it is optional: a host
+     that cannot go there (the harness, admin) simply renders the notice without the way through
+     rather than a button that does nothing. */
+  onOpenMessageCredits = null }) {
   const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1750,6 +1805,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
                     bakerSlug={bakerSlug}
                     bakerName={bakerName}
                     statusIndex={statusIndex}
+                    onOpenMessageCredits={onOpenMessageCredits}
                   />
                 : <Empty>Select an order to view details.</Empty>
               }

@@ -2330,6 +2330,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
   const [topUpsPanelOpen,     setTopUpsPanelOpen]     = useState(false);
+  /* Which screen Top-ups opens on. Null is its own menu; the order panel's no-email notice sends
+     a baker straight to 'messages', because the question it raises is answered there and nowhere
+     else. Cleared on close so the next plain open lands on the menu again. */
+  const [topUpsView,          setTopUpsView]          = useState(null);
   // Privacy & Data, opened from the LAPSED gate. Separate from the settings-menu route because that
   // whole menu is unrendered once access is blocked — see the exit row on the gate.
   const [lapsedPrivacyOpen, setLapsedPrivacyOpen] = useState(false);
@@ -8970,7 +8974,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           <TopUpsPanel
             open={topUpsPanelOpen}
-            onClose={() => setTopUpsPanelOpen(false)}
+            initialView={topUpsView}
+            onClose={() => { setTopUpsPanelOpen(false); setTopUpsView(null); }}
             apiClient={apiClient}
             primaryColor={primaryColor}
             isMobile={isMobile}
@@ -11517,6 +11522,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // offered at all, rather than offered and writing nothing.
         bakerName={bakerData?.name ?? null}
         onNewOrderForDate={hasCap('order:manage') ? startOrderForDate : null}
+        /* The no-email notice on an order asks "am I covered?", and Message credits is where that is
+           answered. Gated on `billing:manage`: a baker who cannot buy or configure credits should not
+           be sent to a screen that only offers both — for them the notice keeps its text and loses
+           the way through, which is why the prop is optional. */
+        onOpenMessageCredits={hasCap('billing:manage')
+          ? () => { setOrdersPanelOpen(false); setTopUpsView('messages'); setTopUpsPanelOpen(true); }
+          : null}
         onEditDesign={(order, opts) => {
           // Locked orders (confirmed onward) open READ-ONLY in the 3D viewer — never
           // loaded into the editor, so the design can't be changed or saved.
