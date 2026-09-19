@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { cookieDomain } from './DesignTour.jsx';
 
 // ── The cookie has to survive going live ─────────────────────────────────────────────────────────
@@ -44,5 +45,41 @@ describe('cookieDomain declines to set a Domain it cannot have', () => {
   // deliberate rather than an oversight in the derivation.
   it('still derives a public suffix — the caller handles the refusal', () => {
     expect(cookieDomain('spattoo-app-dev.vercel.app')).toBe('; domain=.vercel.app');
+  });
+});
+
+describe('the customer sees the moves they actually make', () => {
+  const src = readFileSync(new URL('./DesignTour.jsx', import.meta.url), 'utf8');
+
+  /* ⚠️ "Use your photo" read as a photo OF THEM — Sandeep, 2026-09-19: "why should they use their
+     own photo" — and bundled two unrelated ideas: a picture printed ON the cake, and a reference
+     cake to copy. A customer never saw it either: `uploads` is not in MOBILE_PRIMARY, so on a phone
+     it sits behind More, the anchor does not exist and the step is skipped. A phone is the
+     customer's case, not the exception. */
+  it('does not offer a customer the uploads step', () => {
+    // The customer branch is the array before the `: [` that starts the baker's.
+    const customer = src.slice(src.indexOf("mode === 'customer'"), src.indexOf('  : ['));
+    expect(customer).not.toMatch(/uploads/);
+    expect(src).not.toMatch(/Use your photo/);   // and the confusing title is gone in both modes
+  });
+
+  // Shape, decorate, ask — in the order somebody actually does them.
+  it('walks shape → decorations → price', () => {
+    const at = (t) => src.indexOf(t);
+    expect(at('Start with the cake')).toBeGreaterThan(-1);
+    expect(at('Start with the cake')).toBeLessThan(at("title: 'Add decorations'"));
+    expect(at("title: 'Add decorations'")).toBeLessThan(at('Then ask for a price'));
+  });
+
+  /* Shape rides on the canvas step rather than getting its own: both live on a tapped tier, and a
+     shape step could not be anchored — the cake is a WebGL canvas with no addressable parts. */
+  it('tells them where the shape lives', () => {
+    expect(src).toMatch(/Tap a tier to set its shape, size and colour/);
+  });
+
+  /* ⚠️ A step change nobody sees is a step change that did not happen. Every customer who ran v1
+     keeps their cookie and would never meet the new steps. */
+  it('bumps the seen key when the steps change', () => {
+    expect(src).toMatch(/spattoo\.tour\.customer\.v2/);
   });
 });
