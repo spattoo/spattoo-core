@@ -73,3 +73,22 @@ export function CopyIcon({ size = 16 }) {
     </svg>
   );
 }
+
+/* ── The mark that means "this opens something" ──────────────────────────────────────────────────
+ *
+ * A right chevron, drawn once. It was a literal "›" character in four places — TopUpsSection,
+ * CustomersPanel, BuyCreditsPanel's pack rows and the storefront's gallery arrows — each with its
+ * own size, weight and colour, which is how the same promise ends up looking like four different
+ * ones. The glyph also inherits whatever font is loaded, so it changed shape between screens.
+ *
+ * Paired with `shared/NavRow.jsx`, which is the standard row this belongs on. If you are drawing
+ * this by hand, the row around it probably wants NavRow instead.
+ */
+export function ChevronRightIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="m9 18 6-6-6-6" />
+    </svg>
+  );
+}

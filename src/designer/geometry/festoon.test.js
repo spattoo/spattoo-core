@@ -72,6 +72,116 @@ describe('perimeterBreaks — where the wall turns a corner', () => {
   });
 });
 
+/* ── An outline shape is a POLYGON, and that is what broke this ─────────────────────────────────
+ *
+ * ⚠️ THE BUG. `perimeter()` on an outline is `polygonPerimeter` over ~160 points, and its normal is
+ * per SEGMENT — piecewise constant. It does not turn gradually; it holds still along a facet and
+ * jumps at a vertex. The detector compared NEIGHBOURING samples, which on a polygon asks "did the
+ * normal jump here", and the answer is yes at every vertex. So every outline shape reported one
+ * corner per vertex: a heart 93, a butterfly 160, and an OVAL — which has no corners whatsoever —
+ * 160. Each of those runs was ~0.05 long and each was still forced to hold one whole swag, squeezed
+ * to 0.03× the calibrated size. Reported as "garland doesn't look right on a heart": a few correct
+ * drapes with dense clots of crushed rope between them.
+ *
+ * ⚠️ AND IT WAS INVISIBLE TO EVERY TEST ABOVE, because they all use `circlePerimeter` and
+ * `roundedRectPerimeter` — analytic curves whose normals turn smoothly. Not one of them touches the
+ * polygon path, which is every shape the catalogue can author. That is the gap this block closes,
+ * and why it drives `tierShape` rather than building a perimeter by hand.
+ */
+describe('perimeterBreaks — on the shapes a catalogue can actually hold', () => {
+  const perim = (tier) => pipingPerimeters(tierShape(tier))[0];
+
+  /* The whole table, at three proportions each, because the fault showed on some and not others:
+     a square heart reported 93 breaks and a wide one 97, and picking either alone would have looked
+     like a one-off. `null` = no single right answer, only "a small stable number, never one per
+     vertex" — a butterfly's notches are real corners and nobody has decided how many. */
+  it.each([
+    ['round',        { radius: 1.2 },                                              0],
+    ['round large',  { radius: 1.8 },                                              0],
+    ['rect',         { shape: 'rect', width: 2.16, depth: 1.56 },                  4],
+    ['rect square',  { shape: 'rect', width: 2.2, depth: 2.2 },                    4],
+    ['hexagon',      { shapeFamily: 'polygon', shapeConfig: { sides: 6 }, width: 2.4, depth: 2.4 }, 6],
+    ['heart',        { shapeFamily: 'heart', width: 2.4, depth: 2.4 },             2],
+    ['heart wide',   { shapeFamily: 'heart', width: 3.0, depth: 2.0 },          null],
+    ['heart deep',   { shapeFamily: 'heart', width: 2.0, depth: 3.0 },          null],
+    ['butterfly',    { shapeFamily: 'butterfly', width: 2.4, depth: 2.4 },      null],
+    ['oval',         { shapeFamily: 'oval', width: 2.4, depth: 2.4 },               0],
+    ['oval wide',    { shapeFamily: 'oval', width: 3.0, depth: 2.0 },               0],
+    ['oval flat',    { shapeFamily: 'oval', width: 3.4, depth: 1.6 },               2],
+  ])('%s', (_name, tier, expected) => {
+    const breaks = perimeterBreaks(perim(tier));
+    if (expected !== null) expect(breaks).toHaveLength(expected);
+    // The real guarantee, and the one that failed: a corner per vertex is never an answer.
+    expect(breaks.length).toBeLessThan(12);
+  });
+
+  /* ⚠️ AN OVAL IS THE CASE THAT PROVES IT WAS FACETING AND NOT GEOMETRY. A round-ish one is a
+     smooth closed curve with no corner anywhere — the same shape as a circle as far as a garland
+     cares — so a break on THIS is the polygon being read rather than the oval. It used to report
+     160 of them. */
+  it('a round-ish oval has no corners at all', () => {
+    for (const [w, d] of [[2.4, 2.4], [3.0, 2.0], [2.0, 3.0]]) {
+      expect(perimeterBreaks(perim({ shapeFamily: 'oval', width: w, depth: d }))).toEqual([]);
+    }
+  });
+
+  /* ⚠️ AND A FLAT ONE BREAKS AT ITS TWO ENDS, WHICH IS CORRECT, not a leftover of the old fault.
+     Past about 1.8:1 an ellipse really does concentrate its turning at the ends — that is what an
+     ellipse IS — and a garland joined there reads as joined at the ends rather than draped over
+     them. Measured, the transition sits between 1.5:1 (none) and 1.78:1 (two), and it stays at two
+     out to 2.9:1; the runs are each exactly half the wall and the swags land at 1.06–1.12× of the
+     calibrated size. The distinction that matters is not "any break" but "a break with nothing
+     between it and the next one", which is what the size assertion below actually guards. */
+  it('a flat oval breaks at its two ends and nowhere else', () => {
+    for (const [w, d] of [[3.2, 1.8], [3.4, 1.6], [4.0, 1.4]]) {
+      const p = perim({ shapeFamily: 'oval', width: w, depth: d });
+      const at = perimeterBreaks(p).map(b => b / p.length);
+      expect(at).toHaveLength(2);
+      expect(Math.abs(at[1] - at[0])).toBeCloseTo(0.5, 1);   // the two ends, opposite each other
+    }
+  });
+
+  /* A heart's two corners are its TIP and its CLEFT, and they are half a perimeter apart — the
+     shape is symmetric about +Z, so each side of it is one continuous face. Positions, not just a
+     count: two breaks in the wrong places would pass a length assertion and still drape a swag
+     over the point. */
+  it('breaks a heart at its point and its cleft, and nowhere else', () => {
+    const p = perim({ shapeFamily: 'heart', width: 2.4, depth: 2.4 });
+    const at = perimeterBreaks(p).map(b => b / p.length);
+    expect(at).toHaveLength(2);
+    expect(Math.abs(at[1] - at[0])).toBeCloseTo(0.5, 1);    // diametrically opposite
+  });
+});
+
+describe('buildFestoons — on an outline cake', () => {
+  const heart = tierShape({ shapeFamily: 'heart', width: 2.4, depth: 2.4 });
+  const perims = pipingPerimeters(heart);
+
+  /* The number the eye actually judges. Before: 93 swags at 0.03× — a solid crust of rope. */
+  it('lays down a handful of swags, not one per polygon vertex', () => {
+    const geos = build(perims);
+    expect(geos.length).toBeGreaterThan(2);
+    expect(geos.length).toBeLessThan(12);
+  });
+
+  /* Every swag the right SIZE, which is the file's stated guarantee and the thing a crushed one
+     breaks. Measured as length along the wall: the largest and smallest swag must be within the
+     √2/(1/√2) band of each other — a factor of two end to end. */
+  it('keeps every swag within the size band it promises', () => {
+    const spans = build(perims).map(g => {
+      const bb = bbox(g);
+      return Math.max(bb.max.x - bb.min.x, bb.max.z - bb.min.z);
+    });
+    expect(Math.max(...spans) / Math.min(...spans)).toBeLessThan(2);
+  });
+
+  /* And still ON the wall — the original spikes bug, re-checked on a shape it was never run on. */
+  it('drapes along the wall rather than pointing out of it', () => {
+    const corner = 1.2 * Math.SQRT2;
+    for (const g of build(perims)) expect(reach(g)).toBeLessThan(corner + 0.2);
+  });
+});
+
 describe('buildFestoons — a round cake is unchanged', () => {
   it('lays down exactly the authored number of swags', () => {
     expect(build([circlePerimeter(RADIUS)], { festoons: 6 })).toHaveLength(6);

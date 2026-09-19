@@ -1,0 +1,131 @@
+{
+  "balance": 0,
+  "enabledTypes": [
+    "quote_issued_customer",
+    "order_ready_customer"
+  ],
+  "everSaved": true,
+  "packs": [
+    {
+      "packKey": "msg_110",
+      "messages": 110,
+      "basePaise": 5000,
+      "label": "Starter",
+      "totalPaise": 5900,
+      "gst": {
+        "basePaise": 5000,
+        "gstPaise": 900,
+        "totalPaise": 5900,
+        "ratePct": 18
+      }
+    },
+    {
+      "packKey": "msg_225",
+      "messages": 225,
+      "basePaise": 10000,
+      "label": "Standard",
+      "totalPaise": 11800,
+      "gst": {
+        "basePaise": 10000,
+        "gstPaise": 1800,
+        "totalPaise": 11800,
+        "ratePct": 18
+      }
+    },
+    {
+      "packKey": "msg_600",
+      "messages": 600,
+      "basePaise": 25000,
+      "label": "Value",
+      "totalPaise": 29500,
+      "gst": {
+        "basePaise": 25000,
+        "gstPaise": 4500,
+        "totalPaise": 29500,
+        "ratePct": 18
+      }
+    },
+    {
+      "packKey": "msg_1250",
+      "messages": 1250,
+      "basePaise": 50000,
+      "label": "Bulk",
+      "totalPaise": 59000,
+      "gst": {
+        "basePaise": 50000,
+        "gstPaise": 9000,
+        "totalPaise": 59000,
+        "ratePct": 18
+      }
+    }
+  ],
+  "sent": {
+    "last7Days": 0,
+    "last30Days": 0
+  },
+  "events": [
+    {
+      "slug": "order_placed_customer",
+      "label": "Order received",
+      "when": "When you write down an order for a customer yourself",
+      "recommended": false,
+      "messages": 1,
+      "body": "Hi Asha, bekbake has received your cake order.\n\nSize: 1.5 kg\nFlavour: Chocolate, Vanilla\nHome delivery: 20 September 2026, 2:30 PM\n\nTap below to check everything is right and add your email for updates.",
+      "button": "View order",
+      "image": true
+    },
+    {
+      "slug": "quote_issued_customer",
+      "label": "Quote sent",
+      "when": "As soon as you send a quote",
+      "recommended": true,
+      "messages": 1,
+      "body": "Hi Asha, bekbake has sent you a quote for your cake: Rs. 1,499.\n\nTap below to see the details and accept it. Reply to this message if you'd like to change anything.",
+      "button": "View quote",
+      "image": true
+    },
+    {
+      "slug": "order_confirmed_customer",
+      "label": "Order confirmed",
+      "when": "When you confirm an order",
+      "recommended": false,
+      "messages": 1,
+      "body": "Hi Asha, your cake order with bekbake is confirmed. Total: Rs. 1,499.\n\nWe'll message you again when it's ready.",
+      "button": "View order",
+      "image": false
+    },
+    {
+      "slug": "design_updated_customer",
+      "label": "Design updated",
+      "when": "Each time you change a design",
+      "recommended": false,
+      "messages": 1,
+      "repeats": true,
+      "body": "Hi Asha, bekbake has updated the design for your cake.\n\nTap below to take a look. Reply to this message if you'd like anything changed.",
+      "button": "View design",
+      "image": false
+    },
+    {
+      "slug": "order_ready_customer",
+      "label": "Order ready",
+      "when": "When you mark an order ready",
+      "recommended": true,
+      "messages": 1,
+      "body": "Hi Asha, your cake from bekbake is ready.\n\nPickup: 20 September 2026, 2:30 PM\n\nReply to this message if you need to change anything.",
+      "button": null,
+      "image": true
+    },
+    {
+      "slug": "order_completed_customer",
+      "label": "Thank you",
+      "when": "When you mark an order complete",
+      "recommended": false,
+      "messages": 1,
+      "body": "Thank you for ordering from bekbake, Asha. We hope your cake made the moment special.\n\nWishing you many more celebrations.",
+      "button": null,
+      "image": false
+    }
+  ],
+  "sender": "Spattoo",
+  "fallbackImageUrl": "https://pub-f209bfdd98604bdaa578e71b0cdd2130.r2.dev/brand/message-fallback.png"
+}

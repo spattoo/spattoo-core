@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import FacetShell from './facets/FacetShell.jsx';
 import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import HeroCake3D from './HeroCake3D.jsx';
+import { configureEnvMap } from '../designer/canvas/envMap.js';
 import Shopfront from './heroes/Shopfront.jsx';
 import CakeLine from './heroes/CakeLine.jsx';
 import { FONT, SERIF, buildContent, storefrontText, buildPalette, applyFontTheme, resolveSections, lighten, darken, mix, alpha, onColor, safeHref, normalizeIgHandle } from './storefrontKit.js';
@@ -102,7 +103,23 @@ export default function CustomerStorefront({
   // what actually happens. And not "your PERFECT cake" — that is a promise the baker has to keep,
   // not one we may make on their behalf. See plans/storefront-facets.md, "The labels".
   designLabel = 'Let’s make your cake',
+  /* ⚠️ WITHOUT THIS THE STOREFRONT LIGHTS ITSELF FROM GITHUB. Every cake here — the hero and the
+     chooser's preview — is lit by an HDRI, and `envProps` falls back to a drei PRESET when no assets
+     base is configured. That preset resolves to a 1.4 MB file on raw.githubusercontent.com: 15× the
+     96 KB one we self-host, fetched before the first cake appears, from a CDN this codebase already
+     calls "flaky / rate-limited" in SafeEnvironment's own comment.
+     It also lights the storefront with a DIFFERENT environment from the designer, so the hero shows
+     a cake nobody tuned — and `SafeEnvironment` swallows a failure into flat lighting, so the day
+     CSP stops being report-only it breaks in silence.
+     Found 2026-09-19 in the live dev storefront's console, which had been printing the warning
+     `envProps` deliberately logs for exactly this. The same bug hit four preview canvases on
+     2026-08-17 (see canvas/envMap.js) — this was the fifth, and the one customers actually see. */
+  cfAssetsBase = null,
 }) {
+  // Before children render, so HeroCake3D and CakeVisual read the resolved URL this pass. A
+  // module-level singleton by design: threading it as a prop through six components is how four of
+  // them came to be missing it (canvas/envMap.js says so).
+  configureEnvMap(cfAssetsBase);
   // ONE authority for "which baker is this". The prop is how the host addresses us; baker.slug is
   // what the record says. They agree in production — but FacetShell used to derive its own from
   // baker.slug while this component used the prop, and when a caller passed only one of them the

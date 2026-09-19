@@ -15,12 +15,32 @@ cites "the root CLAUDE.md" as their home, and for a long time that file did not 
 were only ever read by whoever happened to open a doc under `src/designer/`. The gap was not
 theoretical: a hand-rolled chip was committed in `85cb0ef` while `src/shared/Chip.jsx` sat unused.
 
-### 1. Scan for what exists before building it
+### 1. Scan for what exists before building it — or before RECOMMENDING it
 
 ⚠️ **This is the rule that gets broken, and it gets broken by writing something good.** Nobody
 copy-pastes a component on purpose; they build a fresh one because they never looked. `check:dup`
 will not save you — it measures textual similarity, and a 12-line style object that reinvents a
 60-line component is not a clone of it.
+
+⚠️ **AND IT APPLIES TO ADVICE, NOT ONLY TO CODE.** `INVARIANTS.md` #3 states this for designer
+components — *"open the piping code and reuse it, never approximate from memory"* — and reading it as
+being only about the designer is how it gets broken everywhere else. A diagnosis, a suggested fix and
+a "we should add X" are all builds. Five in one day (2026-09-19): a shared row component that
+`.spattoo-pack` had already solved; a new link host proposed before one `curl` showed nothing was
+broken; server-side captcha verification that would have broken the captcha, because Turnstile tokens
+are single-use; a support ticket chased over a PE–TM chain that was already Active; and a session
+helper for the admin smoke gate that `npm run smoke:session` already was.
+
+**Do these before proposing, and say what came back** — "I looked" is not the same as having looked:
+- **Grep for the BEHAVIOUR, not the name.** `.spattoo-pack` is not findable by searching "NavRow"; it
+  is findable by searching `:hover`, `focus-visible`, `›`.
+- **Read the file's own comments and `package.json` scripts.** This codebase explains itself at
+  length, and four of those five were already written down by whoever hit them first.
+- **Check `spattoo-docs` before diagnosing anything outside this repo.**
+- **Check the vendor's own docs before proposing to use their API** — single-use, expiry, idempotency.
+- **When the remedy is expensive** — a migration, a redeploy, re-approving a third party's templates,
+  a support ticket — **reproduce the fault before designing the fix.** The cost of the cure sets how
+  hard the disease has to be proven.
 
 Already built, app-wide, in `src/shared/`:
 
@@ -33,6 +53,9 @@ Already built, app-wide, in `src/shared/`:
 | `useNarrow.js` | **The** definition of "is this a phone". Gated by `check:narrow`. |
 | `validators.js`, `image.js`, `useUploadLimits.js` | File validation, compression, and the server's real upload ceiling. |
 | `panelTopBar.jsx` | Back arrow, breadcrumb and dismiss for panel headers. |
+| `Disclosure.jsx` | **The** "question you can open" — a labelled toggle with the shared chevron, and an answer folded under it. For the explanation a new baker needs and a returning one has read fifty times. |
+| `canvas/envMap.js` | **The** answer to "which HDRI lights this scene". A host mounting anything that draws a cake must call `configureEnvMap(assetsBase)`; without it the scene silently falls back to a 1.4MB drei preset from GitHub raw. Gated by `check:env-map`. |
+| `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
 Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,
 `PlacementChooser` — all three currently live inside `src/designer/CakeDesigner.jsx`. `ColorWheel` is
@@ -81,6 +104,25 @@ Driving a React screen from a script: **do not assign `input.value` directly** �
 React's value tracker, `onChange` never fires, and you get a moved slider, an unchanged readout and a
 screenshot of something broken that looks fine. Use real pointer or keyboard input.
 
+### 7. If it does something, it must look like it does something
+
+⚠️ **This is judged at REST, on a phone.** A baker's screen has no hover, so an affordance that only
+appears on pointer-over does not exist for most of the people using the app. Hover and press are
+feedback *on top of* a control that already reads as pressable — never the thing that makes it
+legible.
+
+Top-ups shipped with two rows that were plain text, a faint grey balance and a literal `›`. They
+opened whole screens and nobody could tell. Sandeep: *"the two options here do not look like they are
+clickable. make this a standard. any clickable should look like clickable."*
+
+- A row that goes somewhere is **`src/shared/NavRow.jsx`**. Not a `<div>` with an `onClick` and some
+  text in it.
+- A clickable is a `<button>` or an `<a>` — it gets keyboard focus, Enter and Space for free, and a
+  screen reader announces it. There are still **24** `<div onClick>` in `src/` (2026-09-18); every
+  one is a small bug, so do not add the twenty-fifth.
+- Give it a visible resting state (its own surface or edge), a press state, and `:focus-visible`.
+  `.spattoo-navrow` and `.spattoo-pack` are the two worked examples.
+
 ---
 
 - **A control and what it changes must be visible at the same time** (INVARIANTS #11). The most
@@ -110,14 +152,30 @@ screenshot of something broken that looks fine. Use real pointer or keyboard inp
 
 ## Designer work
 
-Read `src/designer/INVARIANTS.md` first — placement modes, zones, the one-renderer rule, right-side
-popups, and the movable contract. Anything dragged on the cake must register with
-`movableContract()`, or `check:movable` fails the build.
+**Read `src/designer/INVARIANTS.md` first, and open the file — the rules above are a SUBSET of it.**
+Eighteen are numbered there; six are restated here (#11–#16). That gap is not a filing detail, it is
+where the silent ones live: #2 one renderer, #3b nothing may PENETRATE what is already placed, #8
+never hardcode a world dimension, #9's anchoring half, #10's five laws, #17 a studio is lit like the
+cake it authors for, #18 `envMapIntensity` does nothing.
+
+⚠️ **This section is the instruction that gets skipped, and skipping it is cheap because the summary
+above reads like the whole story.** It is not. Worked example, 2026-09-16: a vertical drag was added
+to a piping border with the summary open and the file shut. It wrote the pointer's height straight in
+as the anchor, so the border jumped by however far the grabbed cream and the anchor happened to be
+apart — a plain breach of #10 law 5, "`handleAt` and `dragTo` are exact inverses". Nothing errored,
+every gate passed, 1945 tests were green. It was found by someone asking whether the file gets read.
+
+⚠️ **#10 IS FIVE LAWS, NOT A REGISTRATION.** Anything dragged on the cake must register with
+`movableContract()` or `check:movable` fails the build — but the gate checks that you SIGNED, and the
+suite can only ask three of them (2, 3 and 5). For laws 1 (one place says where it is) and 4 (what you
+can grab is what you can see, from every angle) the script greps two smells and says so itself — a
+grep is not the law, and those two are what broke the cloud and the rainbow six ways in a week. Read
+them before writing a gesture, not after.
 
 ## Gates
 
 `npm run verify` runs them all: `bindings`, `paths`, `fonts`, `cors`, `hooks`, `movable`, `narrow`,
-`occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
+`env-map`, `one-chevron`, `occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
 judgement calls in 1, 2, 3 and 6 are not checkable and are yours to keep.
 
 Git hooks need node and gitleaks on PATH; a login shell that has not sourced nvm will fail them:

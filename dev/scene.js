@@ -31,7 +31,12 @@
 // by construction. The ONLY thing a harness was missing is the assets base, so that is the only thing
 // this supplies — a second place to configure the scene would be a second place for it to drift.
 import { configureEnvMap } from '../src/designer/canvas/envMap.js';
+import { configureStrokeMeshes } from '../src/designer/canvas/strokeMesh.js';
 
 export const HARNESS_ASSETS_BASE = '/cdn';
 
 configureEnvMap(HARNESS_ASSETS_BASE);
+/* The modelled cream styles (Vertical Piping) load their stroke mesh from the same assets base. Without
+   it a harness on the real scene silently renders those styles as a SMOOTH wall — a measurement of a
+   cake nobody ordered. */
+configureStrokeMeshes(HARNESS_ASSETS_BASE);

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { ChevronRightIcon } from '../shared/icons.jsx';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
@@ -146,7 +147,9 @@ function OrderHistoryRow({ order, onViewOrder }) {
         <div style={{ fontSize: 11, fontWeight: 700, padding: '3px 8px', borderRadius: 6, background: st.bg, color: st.color, flexShrink: 0, textTransform: 'capitalize' }}>
           {order.status}
         </div>
-        <span style={{ fontSize: 16, color: '#ccc' }}>›</span>
+        {/* The one chevron (shared/icons.jsx), not a "›" — a text glyph takes whatever font is
+            loaded, so the same mark changed shape between screens. */}
+        <span style={{ display: 'flex', color: '#ccc' }}><ChevronRightIcon size={16} /></span>
       </div>
     </div>
   );

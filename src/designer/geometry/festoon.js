@@ -68,22 +68,58 @@ const TWO_PI = Math.PI * 2;
 // That single rule gives a round cake no breaks at all (one closed run — precisely the behaviour
 // that existed before corners were a concept), a sheet cake four, and a heart its point and cleft.
 //
+// ── ⚠️ AN OUTLINE'S NORMALS ARE A STAIRCASE, AND THIS READ THEM AS 160 CORNERS ──────────────────
+// `perimeter()` on an outline shape is `polygonPerimeter` — a ~160-point POLYGON whose normal is
+// computed per SEGMENT and is therefore piecewise constant. It does not turn gradually: it holds
+// still along each facet and jumps at each vertex. Sampling that 720 times and comparing NEIGHBOURS
+// asks "did the normal jump between these two samples", and on a polygon the answer is yes at every
+// vertex and no everywhere else — so every shape built from an outline reported one corner per
+// vertex. An oval, which has no corners at all, reported 160.
+//
+// What that does to the cake is the bug as reported ("garland doesn't look right on a heart"): the
+// heart came out as 93 runs, three of them real and ninety of them 0.05 long, each still forced to
+// hold one whole swag, squeezed to 0.03× the size it was calibrated at. On the cake that is a few
+// correct drapes with dense clots of crushed rope between them, which is exactly what the
+// screenshot showed.
+//
+// So the direction is taken from a CHORD across the sample window rather than from the normal at a
+// point. A chord spanning many facets is smooth on a faceted polygon and unchanged on a smooth one,
+// which is why round, rect and hexagon come out identical while every outline shape is fixed.
+//
+// Two numbers, both measured rather than picked (festoon.test.js runs every shape at three
+// proportions and asserts the whole table):
+//   `window`    the arc the turn is measured across, as a fraction of the perimeter. It must span
+//               several facets — at 1/36 of a ~160-point outline it spans about four — and stay well
+//               under the shortest real face, or a genuine corner is averaged away. At 1/48 the
+//               faceting starts to come back; at 1/12 a hexagon's corners disappear.
+//   `sharpness` how much faster than a circle counts as a corner. 2 is the middle of the widest
+//               plateau: every shape holds its answer from 2 to 2.5, and it is where an oval (none)
+//               and a hexagon (six) are both right. The old value 4 is not comparable — it was a
+//               threshold on a single step, and this one is across a window.
+const CORNER_WINDOW = 1 / 36;
+
 // Returned as arc-length positions along `perim`, ascending.
-export function perimeterBreaks(perim, { sharpness = 4, samples = 720 } = {}) {
+export function perimeterBreaks(perim, { sharpness = 2, samples = 720, window = CORNER_WINDOW } = {}) {
   const L = perim.length;
   if (!(L > 0)) return [];
-  const ang = [];
+  const W = Math.max(1, Math.round((samples * window) / 2));    // half-window, in samples
+  const pts = [];
+  for (let i = 0; i < samples; i++) pts.push(perim.at((i / samples) * L));
+  const at = (i) => pts[((i % samples) + samples) % samples];
+  // Tangent direction as a CHORD across the window — see the staircase note above.
+  const dir = [];
   for (let i = 0; i < samples; i++) {
-    const p = perim.at((i / samples) * L);
-    ang.push(Math.atan2(p.nz, p.nx));
+    const a = at(i - W), b = at(i + W);
+    dir.push(Math.atan2(b.z - a.z, b.x - a.x));
   }
-  const limit = (TWO_PI / samples) * sharpness;        // a circle turns exactly 2π/samples per step
-  const hot = ang.map((a, i) => {
-    let d = ang[(i + 1) % samples] - a;
+  const turn = (i) => {
+    let d = dir[(i + W) % samples] - dir[(((i - W) % samples) + samples) % samples];
     while (d >  Math.PI) d -= TWO_PI;
     while (d < -Math.PI) d += TWO_PI;
-    return Math.abs(d) > limit;
-  });
+    return d;
+  };
+  const limit = ((TWO_PI * (2 * W)) / samples) * sharpness;     // what a circle turns across the window
+  const hot = dir.map((_, i) => Math.abs(turn(i)) > limit);
   // All cool → a circle. All hot → a shape so uniformly sharp there is no corner to speak of
   // (a many-sided polygon read at this sample rate); both mean "one continuous run".
   if (!hot.some(Boolean) || hot.every(Boolean)) return [];
@@ -105,6 +141,32 @@ export function perimeterBreaks(perim, { sharpness = 4, samples = 720 } = {}) {
     }
   }
   return out.sort((a, b) => a - b);
+}
+
+// ── A stub is not a face ────────────────────────────────────────────────────────────────────────
+// `fitRun` below forces `Math.max(1, …)` swags into whatever run it is handed, so a run shorter than
+// one swag produces a crushed one — which is how this file came to promise a √2 bound it did not
+// keep ("a swag can never be stretched past √2 or squeezed below 1/√2 … whatever the wall
+// measures"). Two corners close enough to leave no face between them are really one corner, so the
+// break is dropped and the stub merges into its neighbour, and the promise becomes true.
+//
+// Every current shape leaves this a no-op — the corner rule above no longer produces stubs. It is
+// here because a cake shape is a DB ROW (CLAUDE.md #2): the next outline is authored, not shipped,
+// and nothing about it will have been seen by this file.
+const MIN_RUN_FRAC = 1 / Math.SQRT2;
+
+function dropStubs(breaks, L, minRun) {
+  const out = breaks.slice();
+  while (out.length >= 2) {
+    const lens = out.map((b, i) => (((out[(i + 1) % out.length] - b) % L) + L) % L || L);
+    let worst = 0;
+    for (let i = 1; i < lens.length; i++) if (lens[i] < lens[worst]) worst = i;
+    if (lens[worst] >= minRun) return out;
+    // Removing the break that OPENS the shortest run merges that stub backwards into its
+    // neighbour, keeping the other corner of the too-close pair.
+    out.splice(worst, 1);
+  }
+  return [];        // fewer than two corners is not a shape with corners: one closed run.
 }
 
 // The wall between two corners (or the whole closed loop when there are none), cut into whole
@@ -217,7 +279,7 @@ export function buildFestoons(scene, {
   const out = [];
   for (const perim of perims) {
     if (!(perim?.length > 0)) continue;
-    const breaks = perimeterBreaks(perim);
+    const breaks = dropStubs(perimeterBreaks(perim), perim.length, calibSpan * MIN_RUN_FRAC);
     const runs = breaks.length
       ? breaks.map((b, i) => ({
           start: b,

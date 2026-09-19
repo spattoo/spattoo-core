@@ -30,6 +30,21 @@ describe('shapeReach', () => {
     const heart = { outline: [{ x: 0, z: -1 }, { x: 1.4, z: 0.2 }, { x: 0, z: 1 }, { x: -1.4, z: 0.2 }] };
     expect(shapeReach(heart, { x: 1, z: 0 })).toBeCloseTo(1.4, 6);
   });
+
+  it('measures a MULTI-RING outline — a glyph cake is one ring PER CHARACTER', () => {
+    /* ⚠️ The case that was silently wrong. `glyphShape` builds a number/letter cake's outline as
+     * `shapes.map(...)`, so it is an array of RINGS, not of points. Iterating it directly made `p.x`
+     * undefined, every projection NaN, and — because NaN loses `d > best` — the reach came back 0.
+     * It never threw: a board decoration just collapsed to the centre of the cake, and a figure
+     * perched on the edge seated at z = 0 once edgeSeatSeed began asking this question. */
+    const left  = [{ x: -2, z: -1 }, { x: -1, z: -1 }, { x: -1, z: 1 }, { x: -2, z: 1 }];
+    const right = [{ x: 1, z: -1 }, { x: 2.5, z: -1 }, { x: 2.5, z: 1 }, { x: 1, z: 1 }];
+    const digits = { outline: [left, right] };
+    expect(shapeReach(digits, { x: 1, z: 0 })).toBeCloseTo(2.5, 6);   // the far edge of the RIGHT digit
+    expect(shapeReach(digits, { x: -1, z: 0 })).toBeCloseTo(2, 6);    // …and of the left one
+    expect(shapeReach(digits, { x: 0, z: 1 })).toBeCloseTo(1, 6);
+    expect(shapeReach(digits, { x: 1, z: 0 })).not.toBe(0);           // the old answer, for every direction
+  });
 });
 
 describe('boardRingClamp', () => {

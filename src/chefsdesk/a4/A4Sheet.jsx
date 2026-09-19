@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
 import { sized, resized, moved } from './geometry.js';
-import { chrome, StudioHeader, useStudioNarrow } from '../studioChrome.jsx';
+import { chrome, StudioHeader, StudioOverlay, useStudioNarrow } from '../studioChrome.jsx';
 
 // ── The A4 print sheet ────────────────────────────────────────────────────────────────────────────
 // A to-scale A4 page the baker lays images out on, then downloads as a print-ready PDF for an edible
@@ -265,7 +265,10 @@ export default function A4Sheet({
   }
 
   return (
-    <div style={s.overlay} onPointerDown={() => select(null)}>
+    /* StudioOverlay, not a bare div on `chrome.overlay`: the surface portals to the document, which
+       is the only place Z.studio outranks anything. Opened from inside a `dockedPage` (fixed,
+       z-index 300) it does not, and the rail at 315 painted over this sheet. */
+    <StudioOverlay onPointerDown={() => select(null)}>
       <style>{`.ps-strip::-webkit-scrollbar{display:none}`}</style>
       {showTip && (
         <div style={{ ...s.tipPopup, ...(isMobile ? { bottom: 16, right: 16 } : { top: 74, right: 24 }) }}
@@ -406,7 +409,7 @@ export default function A4Sheet({
           </div>
         </div>
       </div>
-    </div>
+    </StudioOverlay>
   );
 }
 

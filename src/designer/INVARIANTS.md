@@ -102,6 +102,16 @@ reported a failure. **A cake that is drawn twice will eventually be two differen
 When asked to do something "like the piping popup," **open the piping code and reuse it** — never
 approximate from memory or build a parallel version.
 
+⚠️ **THIS INVARIANT IS NOT ABOUT THE DESIGNER. It is about looking first, and it is broken hardest
+outside this file's subject** — in shared UI, in tooling, and in diagnosing anything external. Read as
+"a designer rule", it stops applying exactly where nobody is watching. Five in one day (2026-09-19):
+`NavRow` written while `.spattoo-pack` already had hover/press/focus solved; a link host proposed
+before a single `curl` showed nothing was broken; server-side captcha verification offered that would
+have BROKEN the captcha, because Turnstile tokens are single-use; a vendor support ticket chased over
+a chain that was already Active; and a session helper drafted for the admin smoke gate that
+`npm run smoke:session` already was, with a comment naming that exact case. The procedure is in the
+root `CLAUDE.md` rule 1.
+
 ### 3b. Nothing a customer places may PENETRATE what is already there
 A cake is built in layers, and anything added later has to make room for what is already on it. There
 is ONE rule for this and it is not per-element:

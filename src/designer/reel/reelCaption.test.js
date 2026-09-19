@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { DESIGNER_GROUND } from '../constants.js';
 import {
   CAPTION, SPATTOO_MARK, captionText, luminanceOf, captionColours, ensureCaptionFont, drawCaption,
 } from './reelCaption.js';
@@ -67,7 +68,8 @@ describe('drawCaption with the name turned off', () => {
 
 describe('captionColours', () => {
   it('puts ink on the light grounds and chalk on the dark ones', () => {
-    const light = ['#f4f4f5', '#FBF3E7', '#FBEFEF'].map(h => captionColours(h).fill);
+    // DESIGNER_GROUND is the "Studio" ground a take starts on — whatever it is, it must stay a LIGHT one.
+    const light = ['#f4f4f5', DESIGNER_GROUND, '#FBF3E7', '#FBEFEF'].map(h => captionColours(h).fill);
     const dark  = ['#2E3A36', '#14181A'].map(h => captionColours(h).fill);
     expect(light.every(c => c.startsWith('rgba(28'))).toBe(true);
     expect(dark.every(c => c.startsWith('rgba(255'))).toBe(true);

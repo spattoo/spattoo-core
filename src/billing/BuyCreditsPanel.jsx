@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
+import { ChevronRightIcon } from '../shared/icons.jsx';
 import { creditsChanged } from './creditsBus.js';
 import { Panel } from '../shared/Panel.jsx';
+import { Disclosure } from '../shared/Disclosure.jsx';
 
 // ── Buy credits ──────────────────────────────────────────────────────────────────────
 // A screen about ONE thing: how many credits you have and how to get more.
@@ -167,8 +169,13 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
   // would make them stop what they were doing. Not-loaded and none-left must never render alike.
   const loading = !data;
 
+  /* ⚠️ "Smart tool credits", not "Credits" — SUBSCRIPTION_TIERS.md: name the JOB, never "AI", and
+     never so short it names nothing. The pill's own tooltip has always said "Smart tool credits —
+     N left", so the two halves of the same gesture disagreed; that was invisible while the only way
+     in was an unlabelled number, and stopped being invisible the moment Settings → Top-ups grew a
+     row SAYING "Smart tool credits" that opened a panel headed "Credits". */
   return (
-    <Panel onClose={close} title="Credits" width={420} bodyPadding={18}>
+    <Panel onClose={close} title="Smart tool credits" width={420} bodyPadding={18}>
       <style>{PACK_CSS}</style>
       {/* One wrapper because the panel body is the scroller, and the loading state needs a floor:
           without it the panel opens as a small box and grows as the balance arrives, which reads as
@@ -190,6 +197,22 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
             </div>
           )}
         </div>
+
+        {/* ⚠️ WHAT A CREDIT IS FOR, BEFORE ANY NUMBER ABOUT IT. The panel went straight from "800
+            credits to spend" to a price list reading "X-Ray — read a cake photo", which assumes the
+            reader already knows what a smart tool is and what X-Ray means. A baker who has just
+            signed up knows neither, and this is the screen where they are deciding to spend money.
+            Sandeep: "for a new user, he wont have any clue what these credits are used for."
+
+            Three examples, not all six — the list below is the full set with its prices, and a lede
+            that enumerates everything is a second price list nobody reads. */}
+        {!loading && (
+          <Disclosure label="How are these credits used?">
+            Smart tools do a slow job for you — turning a customer&rsquo;s photo into a cake design,
+            writing an enquiry up as an order, or working out how a decoration was made. Each one
+            spends a few credits, and what each costs is listed below.
+          </Disclosure>
+        )}
 
         {/* ── The two buckets ──────────────────────────────────────────────────────────
             The headline number is a SUM of two things with different rules — one resets on the
@@ -226,9 +249,13 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
         )}
 
         {/* WHAT THEY BUY, before what they cost. A pack is meaningless without knowing what a
-            credit does, and this is the one screen where someone is deciding to spend money. */}
+            credit does, and this is the one screen where someone is deciding to spend money.
+            The heading is not decoration: without it the list ran straight on from the balance
+            breakdown and read as more numbers about the balance. */}
         {(data?.actions ?? []).length > 0 && (
-          <div style={s.priceList}>
+          <div>
+            <h4 style={s.listHead}>What each one costs</h4>
+            <div style={s.priceList}>
             {data.actions.map(a => (
               <div key={a.actionKey} style={s.priceRow}>
                 <span style={{ color: '#4A5D51', fontWeight: 600 }}>{a.label}</span>
@@ -237,6 +264,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                 </span>
               </div>
             ))}
+            </div>
           </div>
         )}
 
@@ -380,7 +408,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                       the X-Ray costs above them, which are priced the same way and are NOT buyable.
                       Absent when blocked: an arrow pointing nowhere is worse than no arrow. */}
                   {!p.blocked && (
-                    <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1, color: '#C3D3C8', fontWeight: 700 }}>›</span>
+                    <span style={{ display: 'flex', color: '#C3D3C8' }}><ChevronRightIcon size={17} /></span>
                   )}
                 </div>
               </button>
@@ -508,6 +536,10 @@ const s = {
   balance: { display: 'flex', flexDirection: 'column', gap: 2 },
   // Sized to the real number's line box, so nothing shifts when it swaps in.
   numSkeleton: { width: 132, height: 41, borderRadius: 9, background: '#F1F5F2' },
+  /* The one paragraph on this screen. Sits under the balance because a returning baker opened the
+     panel to see the number, and a new one cannot read the number until they know what it buys. */
+  lede:      { fontSize: 12.5, color: '#5A6B60', lineHeight: 1.55, margin: 0, fontWeight: 600 },
+  listHead:  { fontSize: 12.5, fontWeight: 800, color: '#2C4433', margin: '0 0 7px' },
   priceList: {
     background: '#F7FAF8', border: '1px solid #E8EFE9', borderRadius: 11, padding: '11px 13px',
     display: 'flex', flexDirection: 'column', gap: 4,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose } from './placement.js';
-import { TIER_RADII, STICKER_SIZE } from './constants.js';
-import { topContains } from './geometry/surface.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
+import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
 
 // Contract: every element type flows through the SAME placement logic. These fixtures stand in
@@ -718,5 +718,56 @@ describe('zoneSeatFields writes the coerced pose', () => {
   it('still writes hug on a wall', () => {
     const pc = { side: 'hug' };
     expect(zoneSeatFields(pc, 'side').placementMode).toBe('hug');
+  });
+});
+
+// ── A decoration seated on the rim of a NON-ROUND cake ──────────────────────────────────────────
+// Regression: perching a fondant doll on a heart crashed the designer with "Cannot read properties
+// of null (reading 'x')", and took the WebGL context with it. `edgeSeatSeed` read `shp.radius` for
+// every shape that wasn't a rect — but an outline descriptor (heart, butterfly, oval, hexagon,
+// glyph) has no `radius` field, so the seat came out `undefined - 0` = NaN. `deOverlapSeat` then
+// handed that to `nearestOnPolygon`, whose running best starts at Infinity and can never be beaten
+// by a NaN distance, so it returned null and the caller read `.x` off it. Round cakes were fine
+// because they happen to have the field the branch assumed every shape had.
+describe('edgeSeatSeed — every footprint has a front edge, not just one carrying a radius', () => {
+  const EDGE_MODES = [PLACEMENT_MODES.PERCH, PLACEMENT_MODES.VERGE];
+
+  it('seats an edge-mode element on an OUTLINE tier without NaN (the reported heart crash)', () => {
+    const shp = tierShape({ shapeFamily: 'heart' });
+    expect(shp.kind).toBe('outline');
+    expect(shp.radius).toBeUndefined();          // the whole reason the old branch produced NaN
+    for (const mode of EDGE_MODES) {
+      const seed = edgeSeatSeed({}, shp, mode);
+      expect(Number.isFinite(seed.z)).toBe(true);
+      expect(seed.z).toBeGreaterThan(0);         // in front of centre, on the rim
+      // …and it survives the seat path that actually threw.
+      const seat = deOverlapSeat(shp, ZONES.RIM, { x: seed.x, z: seed.z }, []);
+      expect(Number.isFinite(seat.x)).toBe(true);
+      expect(Number.isFinite(seat.z)).toBe(true);
+    }
+  });
+
+  it('leaves round and rect exactly where they always sat', () => {
+    const round = tierShape({ shapeFamily: 'circle', radius: 1.2 });
+    expect(edgeSeatSeed({}, round, PLACEMENT_MODES.PERCH).z).toBeCloseTo(round.radius, 12);
+    const rect = tierShape({ shape: 'rect', width: 3, depth: 2 });
+    expect(edgeSeatSeed({}, rect, PLACEMENT_MODES.PERCH).z).toBeCloseTo(rect.halfD, 12);
+  });
+
+  it('applies edge_inset on an outline the same way it does on a round', () => {
+    const shp = tierShape({ shapeFamily: 'heart' });
+    const bare  = edgeSeatSeed({}, shp, PLACEMENT_MODES.PERCH).z;
+    const inset = edgeSeatSeed({ perch: { edge_inset: 0.2 } }, shp, PLACEMENT_MODES.PERCH).z;
+    expect(inset).toBeCloseTo(bare - 0.2, 12);
+  });
+
+  it('a non-finite coordinate can never take a clamp down again', () => {
+    const shp = tierShape({ shapeFamily: 'heart' });
+    for (const bad of [NaN, undefined, Infinity]) {
+      expect(() => snapToRim(shp, 0, bad)).not.toThrow();
+      expect(() => topClamp(shp, bad, 0)).not.toThrow();
+      expect(Number.isFinite(snapToRim(shp, 0, bad).x)).toBe(true);
+      expect(Number.isFinite(topClamp(shp, bad, 0).z)).toBe(true);
+    }
   });
 });

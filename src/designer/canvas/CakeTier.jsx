@@ -452,7 +452,7 @@ function wallHit(ray, { shape, radius, baseY, height }) {
  * `alt` is a second InstancedMesh rather than a second material on the first: A and B are different
  * GEOMETRIES, and an instanced draw takes one.
  */
-function InstancedShells({ geometry, shellScale, placements, color, softness, gradient, selected, dragHandler = null }) {
+function InstancedShells({ geometry, shellScale, placements, color, softness, gradient, selected, dragHandler = null, userData = null }) {
   const ref = useRef(null);
   const matRef = useRef(null);
   const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
@@ -479,7 +479,8 @@ function InstancedShells({ geometry, shellScale, placements, color, softness, gr
       key={placements.length}
       args={[geometry, undefined, placements.length]}
       castShadow
-      {...(dragHandler ? { userData: PIPING_HANDLE_DATA, onPointerDown: dragHandler } : {})}
+      {...(dragHandler ? { userData: PIPING_HANDLE_DATA, onPointerDown: dragHandler }
+                        : userData ? { userData } : {})}
     >
       <meshPhysicalMaterial ref={matRef}
         {...creamMaterialProps(softness, color)}
@@ -493,7 +494,7 @@ function InstancedShells({ geometry, shellScale, placements, color, softness, gr
 // Render every position, alternating between version A and the alternate B per `pattern`
 // (a repeating cycle like "AB" or "AAB"). B uses its own geometry, rotation, and a radial/
 // height shift relative to A. When B is absent / not active, every shell is A (unchanged).
-function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected, dragHandler = null }) {
+function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected, dragHandler = null, userData = null }) {
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
@@ -525,7 +526,8 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
         placements={g.placements} color={color} softness={softness} gradient={gradient} selected={selected}
         dragHandler={dragHandler
           ? (e) => { const i = g.indices[e.instanceId ?? 0]; if (i != null) dragHandler(i)(e); }
-          : null} />
+          : null}
+        userData={userData} />
     );
   });
 }
@@ -536,7 +538,7 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
 // Clones are memoised so re-renders are cheap and geometry/materials stay shared across instances.
 // (Swag `tq` tilt and per-instance selection tint are intentionally omitted — decorations don't
 // swag, and INVARIANTS #5a bans material-tint selection; the ring's card carries selection.)
-function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0], dragHandler = null }) {
+function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0], dragHandler = null, forceHandle = false }) {
   const clones = useMemo(() => {
     if (!scene) return [];
     return positions.map(() => { const c = scene.clone(true); c.scale.setScalar(shellScale); return c; });
@@ -545,7 +547,10 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
   // A decoration keeps its own GLB scene, so there is no CreamMesh to hang PIPING_HANDLE_DATA on —
   // tag the clone's meshes directly, so CakeCanvas' capture-phase raycast suspends orbit for these
   // too. Cleared again when the ring stops being draggable (mode change / capability untick).
-  const draggable = !!dragHandler;
+  // `forceHandle` is the ring case: there is no per-piece dragHandler, but the whole layer slides
+  // vertically and the group above takes the press — so the meshes must still be marked, or orbit
+  // eats the gesture.
+  const draggable = !!dragHandler || forceHandle;
   useEffect(() => {
     clones.forEach(c => c.traverse(o => { if (o.isMesh) o.userData.isPipingHandle = draggable || undefined; }));
   }, [clones, draggable]);
@@ -564,9 +569,10 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
 
 // Render the bent-strip festoons (U-shaped swags). Each entry is a pre-bent BufferGeometry
 // from buildFestoons(); we just paint them in the ring's colour with the same cream material.
-function renderFestoons({ festoonGeos, color, softness, gradient, selected }) {
+function renderFestoons({ festoonGeos, color, softness, gradient, selected, userData = null }) {
   return festoonGeos.map((g, i) => (
-    <CreamMesh key={i} geometry={g} color={color} softness={softness} gradient={gradient} selected={selected} />
+    <CreamMesh key={i} geometry={g} color={color} softness={softness} gradient={gradient} selected={selected}
+      userData={userData} />
   ));
 }
 
@@ -610,10 +616,61 @@ function proudOfWall(bb, shape, radius) {
 }
 
 // Render a single pre-formed RING GLB as ONE band wrapping the wall (no repetition).
-function renderWrap({ wrapGeo, color, softness, gradient, selected }) {
+function renderWrap({ wrapGeo, color, softness, gradient, selected, userData = null }) {
   return (
-    <CreamMesh geometry={wrapGeo} color={color} softness={softness} gradient={gradient} selected={selected} />
+    <CreamMesh geometry={wrapGeo} color={color} softness={softness} gradient={gradient} selected={selected}
+      userData={userData} />
   );
+}
+
+// ── Sliding a whole LAYER up and down the wall ────────────────────────────────
+// A ring, a swag and a wrap band have no per-piece angle to write to, so `useSinglePieceDrag` above
+// leaves them alone — and for a long time that meant the ONLY way to move one was the card's Height
+// stepper, a ±0.05 button beside a number. A number is a poor way to say "a bit lower": the baker is
+// looking at the cake, and the answer they want is where their finger is.
+//
+// So this is the same gesture with one degree of freedom instead of two. It hits the tier WALL
+// (never a flat plane at the current level, which would drift as the piece rose) and hands back the
+// height in TIER-LOCAL units, which is the frame the layer's anchor already lives in. The host
+// clamps it — see `setBoardAnchor` — so this and the stepper cannot disagree about the same cake.
+//
+// Board/side only. A rim ring sits ON the top edge and lifting it would leave it in mid-air, which
+// is the same reason the single-piece drag sends no height for the rim.
+function useLayerHeightDrag({ active, canMove, onMoveHeight, wall, anchorY }) {
+  const { camera, gl } = useThree();
+  return useMemo(() => {
+    if (!active || !onMoveHeight || !wall) return null;
+    return (e) => {
+      // No stopPropagation, for the same reason as the piece drag: the group's onClick is what
+      // selects this layer, and that must keep working whether the press becomes a drag or a tap.
+      const canvas = gl.domElement;
+      const start = { x: e.clientX, y: e.clientY };
+      let dragged = false;
+      let grabOff = null;
+      function onMove(ev) {
+        const dx = ev.clientX - start.x, dy = ev.clientY - start.y;
+        if (dx * dx + dy * dy > DRAG_SLOP_SQ) dragged = true;
+        if (!dragged || !canMove) return;
+        const hit = wallHit(pointerRay(ev, canvas, camera), wall);
+        if (!hit) return;              // pointer left the cake — leave it where it is
+        /* ⚠️ THE GRAB OFFSET, and without it the border JUMPS on the first move. Writing the
+           pointer's own height as the anchor puts the anchor under the finger — but a garland is
+           grabbed by a bead, and its anchor is somewhere else entirely, so the layer leapt by
+           however far those two happened to be apart before it started following. INVARIANTS #10
+           law 5: `handleAt` and `dragTo` are exact inverses, which means what you grabbed stays
+           under the pointer. Measured once, on the first move that counts as a drag, because the
+           anchor MOVES as the drag proceeds and re-reading it would cancel the correction out. */
+        if (grabOff == null) grabOff = anchorY - (hit.y - wall.baseY);
+        onMoveHeight(hit.y - wall.baseY + grabOff);
+      }
+      function onUp() {
+        canvas.removeEventListener('pointermove', onMove);
+        canvas.removeEventListener('pointerup', onUp);
+      }
+      canvas.addEventListener('pointermove', onMove);
+      canvas.addEventListener('pointerup', onUp);
+    };
+  }, [active, canMove, onMoveHeight, wall, anchorY, camera, gl]);
 }
 
 // ── Top piping ring — GLB shells hugging the top edge ─────────────────────────
@@ -695,7 +752,7 @@ function TopPipingRingImpl({
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
-  canMove = true, onMoveInstance = null,
+  canMove = true, onMoveInstance = null, onMoveHeight = null,
 }) {
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
@@ -831,7 +888,7 @@ function BottomPipingRingImpl({
   bend = false, bendRing = false, festoons = 6, bendDepth = 0.4, bendTilt = 0,
   wrap = false, wrapTilt = 0, wrapSize = 1,
   selected = false, onClick,
-  canMove = true, onMoveInstance = null,
+  canMove = true, onMoveInstance = null, onMoveHeight = null,
 }) {
   const { scene }          = useGLTF(glbPath);
   const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
@@ -897,6 +954,13 @@ function BottomPipingRingImpl({
   const dragHandler = useSinglePieceDrag({
     active: arrangement === 'single' && !wrap && !bend,
     canMove, onMoveInstance, radius, off, baseY: yBase + yOffset, shape, wall,
+  });
+
+  // …and everything that ISN'T single slides up and down instead. A ring, a swag and a wrap band go
+  // all the way round, so there is no piece to place and no angle to write — only a height, which
+  // used to be reachable solely through the card's ± stepper.
+  const heightDrag = useLayerHeightDrag({
+    active: !dragHandler, canMove, onMoveHeight, wall, anchorY: yOffset,
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped on the wall from the
@@ -966,18 +1030,25 @@ function BottomPipingRingImpl({
 
   if (!A && !festoonGeos && !wrapGeo) return null;
 
+  /* ⚠️ THE PRESS GOES ON THE GROUP, AND THE MARK ON EACH MESH, and both are needed. r3f bubbles
+     the pointer event up this group, so one handler covers a ring of forty shells; but OrbitControls
+     is suspended by a CAPTURE-phase raycast in CakeCanvas that reads `userData.isPipingHandle` off
+     whatever the ray actually hit — a mesh. Without the mark the press rotates the cake and the drag
+     never starts; without the group handler only one shell would be grabbable. */
+  const grab = heightDrag ? PIPING_HANDLE_DATA : null;
+
   return (
-    <group onClick={onClick}>
+    <group onClick={onClick} {...(heightDrag ? { onPointerDown: heightDrag } : {})}>
       {finish === 'element'
-        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} dragHandler={dragHandler} />
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} dragHandler={dragHandler} forceHandle={!!heightDrag} />
         : wrapGeo
-        ? renderWrap({ wrapGeo, color, softness, gradient, selected })
+        ? renderWrap({ wrapGeo, color, softness, gradient, selected, userData: grab })
         : festoonGeos
-        ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
+        ? renderFestoons({ festoonGeos, color, softness, gradient, selected, userData: grab })
         : renderShells({
             positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
-            color, softness, gradient, selected, dragHandler,
+            color, softness, gradient, selected, dragHandler, userData: grab,
           })}
     </group>
   );
@@ -1438,6 +1509,7 @@ export default function CakeTier({
   // host owns it because only the host has the catalogue; default movable so a preview never invents
   // a restriction (same contract as isStickerMovable).
   onPipingInstanceMove = null,
+  onPipingLayerHeight = null,
   pipingMovable = () => true,
   onClick,
 }) {
@@ -1703,6 +1775,7 @@ export default function CakeTier({
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : bottomPipingSelected}
       canMove={pipingMovable(p)}
       onMoveInstance={onPipingInstanceMove ? (index, angle, wallY) => onPipingInstanceMove('board', p.layerId, index, angle, wallY) : null}
+      onMoveHeight={onPipingLayerHeight ? (wallY) => onPipingLayerHeight(p.layerId, wallY) : null}
       onClick={e => { e.stopPropagation(); onBottomPipingClick?.(e, p.layerId); }} />
   ));
 

@@ -2,6 +2,7 @@ import { StrictMode, useState } from 'react';
 import { useNarrow } from '../src/shared/useNarrow.js';
 import { createRoot } from 'react-dom/client';
 import OrdersPanel from '../src/orders/OrdersPanel.jsx';
+import { RAIL_OVER_PAGE_Z } from '../src/shared/rail.js';
 import CustomersPanel from '../src/customers/CustomersPanel.jsx';
 
 /* ── The docked panels, and how you leave them ────────────────────────────────────────
@@ -34,7 +35,8 @@ const TALL_12KG = {
 
 const ORDERS = [
   { id: 'o0', status: 'confirmed', delivery_date: '2026-09-12', weight_kg: 12,
-    design_snapshot: TALL_12KG, flavours: [{ tier: 0, name: 'Blueberry' }],
+    design_snapshot: { ...TALL_12KG, decorations: [{ elementId: 'e1' }, { elementId: 'e2' }] },
+    flavours: [{ tier: 0, name: 'Blueberry' }],
     dietary_requirements: [],
     customers: { first_name: 'Jay', last_name: 'test', phone: '9000000000' } },
   { id: 'o1', status: 'requested', delivery_date: '2026-08-29', weight_kg: 1,
@@ -82,6 +84,19 @@ const apiClient = {
    * have shown without an account was the one it hid. */
   fetchEntitlements:  async () => ({ ent: { xray_reports: true } }),
   fetchOrderAudit:    async () => [],
+  /* ⚠️ "Print & cut-outs" is gated on the order HAVING something to cut — `CutoutLauncher` returns
+   * null with no decoration ids and no edible prints — so without these two the button does not
+   * exist and the sheet behind it is unreachable from here. That is how it came to be opened, by a
+   * baker, from an order screen, with nobody having ever seen it beside the rail.
+   *
+   * The artwork is inline PNG rather than a URL: the sheet TRACES the alpha channel on a canvas, and
+   * a cross-origin image taints it, so a remote picture would fail at getImageData and show an empty
+   * outline that looks like a tracing bug. */
+  fetchElements: async () => ([
+    { id: 'e1', name: 'Blossom',  image_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAB+ElEQVR4nO3Ry3FCMRAFUcJ0FA6XdOyCBRuK30Ojlu50V929NOd0MjMzMzMzM7PYzj+/f/Qb7EAXuNGj/9S6ClDB4QhUsYujIcUuikYTuigaSeiiaBShC6MhRC6KPr7QhdEHF7kw+tAiF0Ufd6XRFsOjD7riaJNh0YdcebTN19EH3GG00eHow+002urj6IPtONrs7ehD7Tza7mX0gRJGGz6NPk7CaMOH0YdJGm15F32QxNGmt+hDJI+2vUYfIXm0rbjJyPTHO03g8InbYAKHT9wGEzh84jaYwOETOHziNpjA4RM4fOI2mMDhEzh8AodP3AYTOHwCh0/g8AkcPoHDJ3D4BA6fwOETOHziNpjIwfsaV+C1J3D4BA6fwOETOHwCh0/g8AkcPoHDNwRY5DU3DFfgNSdw+AQO31BgkdfacFyB15rA4SsBFnmNleEKvMYEDl8psMjhuAI3ABY5HFfgBsAih+MK3ABY5HBckRvgXqKPkDza9hZ9iMTRpnfRB0kabfkw+jAJow2fRh8nYbThy+gD7Tza7u3oQ+042uzj6IPtNNrqcPThdhht9HX0AVcebTMs+pArjjYZHn3QlUZblEYfV9gJ0YcWd0L0wcWdFH18YSdEQ4g7KRpF2EnRSMJOikYTdmI0pKgTE7VZgto14czMzMzMzFr3D78xf7bvIjwlAAAAAElFTkSuQmCC' },
+    { id: 'e2', name: 'Bunting',  image_url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAACJElEQVR4nO3RS05DQQwFUdbJiAWxZxCDIKSQz8tru+x2lXTn3T5vb2ZmZmZmZnd7//z4ot9gQf3gXka/xRb3F1fkzfoPV+RNuocrcvOewRW5aUdwRW7WK7giN+kMrsjFW4ErctFW4opcrAhckYsUiSsyXAauyFCZuCInR+CKnBSJK3JwNKzIgdGgIgdGQ4ocGA0ocmA0nMiB0WAiB0ZDiRwYDSRyYDSMyIHRICIHRkOIHBgNIHJg9OFFDow+uMiB0YcWOTD6wBVGG4RFH7bSaIvl0QetONpkWfQhK4+2OR19wA6jjV6OPlyn0VaHow/WcbTZ09GH6jza7mH0gXYYbXgz+jA7jba8ij7IjqNNf6MPsfNoW3F3RqY/PmniDpi4AybugIk7YOIOmLgDJu6AiTtg4g6YyBvvMK7IffYyrsj1dxpX5LpbhityvS3HFbnOwnBF5heOK/IAXJEH4Io8AFfkAbiX6EPsONr0KvogO422vBl9mB1GGz6MPlDn0XZPRx+q42izw9EH6zTa6uXow3UYbXQ6+oCVR9ssiz5kxdEmy6MPWmm0RVj0YSuMNgiPPrC4CdGHFjch+uDiJkQfXtyEaABxE6IhxE2IBhE3IRpG3IRoIHEToqHETYgGEzchGk7chGhAcROiIcVNiAYVNyEaVtyExB2QuAMSd0DiDkjcAYk7IHEHJO6AxB2QuAMSd0DiDkjcAYk7IHEHJK6ZmZmZne4b+CCuVtKV8moAAAAASUVORK5CYII=' },
+  ]),
+  fetchOrderEdiblePrints: async () => ({ prints: [] }),
 };
 
 function App() {
@@ -106,8 +121,14 @@ function App() {
   return (
     <div style={{ height: '100%', position: 'relative' }}>
       {/* Stand-in for the spatula rail. The leading control is judged against THIS. */}
+      {/* ⚠️ THE REAL RANK, not a round number that looks tall enough. This said 400 and that is why
+          the harness could not show the bug it was best placed to catch: the rail lifts to
+          RAIL_OVER_PAGE_Z (315) over a docked page, and whether it paints over what the panel opens
+          is decided by 315 against the DOCKED PAGE's 300 — a comparison a stand-in at 400 fakes the
+          answer to in both directions. Print & cut-outs was reported covered by the rail in the
+          real app while this harness showed it clear. */}
       {!isMobile && <div style={{
-        position: 'fixed', left: 0, top: 0, bottom: 0, width: 76, zIndex: 400,
+        position: 'fixed', left: 0, top: 0, bottom: 0, width: 76, zIndex: RAIL_OVER_PAGE_Z,
         background: '#141815', color: '#9BB5A2', display: 'flex', flexDirection: 'column',
         alignItems: 'center', paddingTop: 18, gap: 22, fontSize: 9, fontWeight: 700,
       }}>

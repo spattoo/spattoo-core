@@ -31,7 +31,10 @@ import { Z } from '../../shared/Panel.jsx';
 // than assumed — the rail is a column on the left at desktop width and a bar along the bottom on a
 // phone, so "put it to the right of the target" is wrong exactly half the time.
 
-const SEEN_KEY = 'spattoo.tour.customer.v1';   // v1: bump to re-show after the steps change
+// v2 (2026-09-19): the steps changed, so everyone who saw v1 — including every customer who has
+// already used the designer — needs to see them again. Forgetting this bump is how an improved tour
+// reaches nobody.
+const SEEN_KEY = 'spattoo.tour.customer.v2';   // bump to re-show after the steps change
 
 // ── Where "seen" lives, and why it is two different places ──────────────────────────────────────
 // BAKER — a column, baker_appusers.tour_seen_at (migration 060), read from /me and written by
@@ -66,14 +69,33 @@ export const cookieDomain = (hostname) => {
 // Step 1 covers rotate AND tap-a-tier together. They were two steps, and the second could not be
 // anchored honestly — the cake is a WebGL canvas, so there is no element for "the bottom tier", and
 // a second spotlight on the same rectangle reads as the tour being stuck.
-const stepsFor = (mode) => [
-  { target: 'canvas',   title: 'Turn it around',  body: 'Drag to spin the cake. Tap a tier to change its colour or frosting.' },
-  { target: 'elements', title: 'Add decorations', body: 'Toppers, piping, flowers — browse and place them on the cake.' },
-  { target: 'uploads',  title: 'Use your photo',  body: 'Upload a picture to put on the cake, or a design you want copied.' },
-  mode === 'customer'
-    ? { target: 'quote', title: 'Ask for a price', body: 'Happy with it? Send it to the bakery and they will come back with a quote.' }
-    : { target: 'quote', title: 'Turn it into an order', body: 'Happy with it? Save it against a customer and it lands in your orders.' },
-];
+// ── ⚠️ "USE YOUR PHOTO" IS GONE FROM THE CUSTOMER'S TOUR, for two reasons ───────────────────────
+//
+// 1. It read as a photo OF THEM. Sandeep, 2026-09-19: "why should they use their own photo". The
+//    body then bundled two unrelated things — a picture printed ON the cake, and a reference cake to
+//    copy — which is two steps' worth of idea in one title that named neither.
+// 2. A customer never saw it anyway. `uploads` is not in MOBILE_PRIMARY (designer/mobileNav.js), so
+//    on a phone it sits behind More, the anchor does not exist, and the step is skipped — and a
+//    phone is the customer's case, not the exception.
+//
+// So the customer's tour is now the three moves they actually make, in the order they make them:
+// shape the cake, decorate it, ask for a price. A baker keeps the uploads step — they have the rail
+// item at desktop width and they are the one who uploads a reference a customer sent them — but it
+// is titled for what it does rather than whose photo it is.
+const stepsFor = (mode) => (mode === 'customer'
+  ? [
+      // Covers "choose the shape" as well as turning: both live on a tapped tier, and a separate
+      // step for shape could not be anchored — the cake is a WebGL canvas with no addressable parts.
+      { target: 'canvas',   title: 'Start with the cake',  body: 'Tap a tier to set its shape, size and colour. Drag to turn the cake around.' },
+      { target: 'elements', title: 'Add decorations',      body: 'Toppers, piping, flowers — browse and place them on your cake.' },
+      { target: 'quote',    title: 'Then ask for a price', body: 'Happy with it? Send it to the bakery and they will come back with a quote.' },
+    ]
+  : [
+      { target: 'canvas',   title: 'Turn it around',         body: 'Drag to spin the cake. Tap a tier to change its shape, size or colour.' },
+      { target: 'elements', title: 'Add decorations',        body: 'Toppers, piping, flowers — browse and place them on the cake.' },
+      { target: 'uploads',  title: 'Upload an image',        body: 'A picture to print on the cake, or a reference design to copy.' },
+      { target: 'quote',    title: 'Turn it into an order',  body: 'Happy with it? Save it against a customer and it lands in your orders.' },
+    ]);
 
 const seenCookie = () => {
   try { return document.cookie.split('; ').some(c => c.startsWith(`${SEEN_KEY}=`)); } catch { return true; }

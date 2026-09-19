@@ -32,8 +32,7 @@ import {
   DESIGNER_GROUND,
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
-  BOTTOM_BASE,
-} from '../constants.js';
+  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import RainbowArch from './RainbowArch.jsx';
@@ -81,6 +80,14 @@ export function boardOf(bottomTier) {
   return isRect
     ? { kind: 'rect', width, depth, halfW: width / 2, halfD: depth / 2, radius: Math.max(width, depth) / 2 }
     : { kind: 'round', radius: boundingRadius(shp) + 0.6, width, depth };
+}
+
+/* How far the board reaches toward the viewer (+Z). The FRONT marker is laid beside this, and
+ * board-level things are measured against it, so it is worked out once here rather than at each
+ * site — `board.radius` on a round drum is NOT the same number as `halfD` on a rect one, and a
+ * caller that reaches for the wrong field is wrong only for half the shapes. */
+export function boardFrontZ(board) {
+  return board.kind === 'rect' ? board.halfD : board.radius;
 }
 
 // ── Dragging a generated decoration by the THING, not by a dot ──────────────────────────────────
@@ -2293,17 +2300,36 @@ function CameraSnapper({ snapCameraRef, turnCameraRef, orbitRef }) {
 }
 
 
-// `frontZ` is the cake's front-edge distance along +Z (the front is +Z for every shape):
-// round → radius; every other shape (rect, number, outline) → halfD (outlines fill [-1,1]², so
-// the front-most point — a heart's tip — sits at halfD). The label sits a fixed gap beyond that edge.
+/* ── Which way the cake faces, written on the floor in front of it ──────────────────────────────
+ *
+ * ⚠️ MEASURED FROM THE BOARD, NOT FROM THE CAKE. It used to sit `cake front edge + 0.82`, and that
+ * was right only where the two happen to agree. A round drum is `boundingRadius + 0.6` and a round
+ * cake's front edge is its radius, so the marker cleared the gold by 0.22; a rect board is the
+ * tier's depth + 0.9, clearing by 0.37. An OUTLINE shape has no such luck: `boundingRadius` measures
+ * the farthest point on the CONTOUR — a heart's side lobes — while the cake's front edge is `halfD`,
+ * which is a different axis entirely. The board grew past the marker and the word was half buried in
+ * the gold. Reported on a heart; measured afterwards, every outline family did it, and every one of
+ * them did it worse when the cake is wider than it is deep:
+ *
+ *     heart 0.015 · butterfly −0.066 · heart wide −0.354 · butterfly wide −0.399 · oval wide −0.280
+ *
+ * So the marker asks the thing it actually lies beside. The gap is the one a round cake has always
+ * had — the shape this was evidently tuned on — and it is now the same on every shape rather than
+ * 0.22 on some, 0.37 on others and negative on the rest.
+ */
+const FRONT_MARKER_GAP = 0.22;
+
 function FrontMarker({ frontZ }) {
   return (
     <Text
       font={textFont}          // SEC-WEB-7 — bundled; omitting it re-introduces the jsdelivr fetch
-      position={[0, 0.002, frontZ + 0.82]}
+      position={[0, 0.002, frontZ + FRONT_MARKER_GAP]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}
-      color="#c8b8a2"
+      // Deeper than the #c8b8a2 it was: on the #e5e2de studio floor that sat only just below the floor and
+      // read as faint, and #a3927c was still asked to go a step darker. Still the same warm family, so it
+      // guides without competing with the cake.
+      color="#8a7a66"
       anchorX="center"
       anchorY="middle"
       letterSpacing={0.06}
@@ -2385,6 +2411,7 @@ function CakeScene({
   // Same capability contract as isStickerMovable below, read off the piping LAYER (layer.id is the
   // element id) rather than the sticker.
   onPipingInstanceMove = null,
+  onPipingLayerHeight = null,
   isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   // Is THIS decoration allowed to be dragged? A function rather than a flag on the sticker, because
@@ -2475,6 +2502,8 @@ function CakeScene({
   const { tierData, bottomShp, board } = cakeScene;
   tierDataRef.current = tierData;
 
+  const onFloorClick = e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); };
+
   return (
     <>
       <SceneLights shadows />
@@ -2484,56 +2513,58 @@ function CakeScene({
           with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
           only way to see it was to read scene.background out of a running page.
           Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
-      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_GROUND)} />
+      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_WALL)} />
       <SceneEnv />
 
       {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
           a grey slab on a transparent background, which is not a cutout — it is a worse photo than
           the one with a proper ground. The contact shadow goes too, and that is the honest cost:
           nothing for it to fall on. */}
-      {!filmCutout && <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow
-        onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); }}>
-        {/* ⚠️ MUCH bigger while filming, and not for the reason it looks like.
-            Matching the floor's colour to the sky's is not enough to hide the join: the floor is a
-            lit standard material and the background is a flat clear colour, so the two render
-            differently however equal their hex. The 30×30 plane's far edge landed inside a portrait
-            frame and drew a hard diagonal across the top of every reel.
-            Pushing the edge far past the frame turns the floor into a cyclorama — it fills the shot
-            edge to edge and the only thing left telling you there is a floor at all is the cake's
-            own shadow, which is exactly what a photographer would want. Two triangles either way. */}
-        <planeGeometry args={filmGround ? [400, 400] : [30, 30]} />
-        {/* Was #fce8d5 — warm, saturated, and almost exactly the same LIGHTNESS as an ivory cake, so
-            a white cake had nothing to separate from and read as flat. The fix is a wider value gap,
-            and the direction came from the TEMPLATE THUMBNAILS: they flatten onto white and the same
-            cake reads perfectly there, because an ivory cake against near-white becomes the darker,
-            more saturated object.
-            So lighter and much less saturated, rather than darker. It also closes a gap that existed
-            anyway — the studio and the thumbnail looked like two different products.
-            ⚠️ Check a DARK cake (chocolate, navy) before calling this done: white-on-warm was simply
-            the first failure to show up, and a fix at one end can break the other. */}
-        {/* ⚠️ A SHADOW CATCHER WHILE FILMING, not a painted floor.
-            A lit plane and a flat sky never match, however carefully their hex values agree — the
-            plane is shaded and the background is not — so every take had a faint horizon across it.
-            The reel's 9:16 crop usually kept it out of shot; a 4:3 photo cannot. shadowMaterial
-            renders NOTHING except where a shadow falls, so floor and sky are literally the same
-            pixels and there is no join to see, while the cake keeps the contact shadow that stops it
-            floating. Off-camera the floor is still a real surface — it is what a click lands on to
-            deselect, and it is not trying to disappear. */}
-        {filmGround
-          /* 0.30. At 0.16 the shadow was invisible and I nearly concluded nothing was casting one
-             — the probe had been sampling BELOW the board, and the key light sits at [6,14,8] so the
-             shadow falls to its LEFT. Measure where the light puts it, not where you expect it. */
-          ? <shadowMaterial opacity={0.30} />
-          : <meshStandardMaterial color="#faf7f4" roughness={0.85} />}
-      </mesh>}
+      {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
+          a grey slab on a transparent background — so no floor at all for a cutout. */}
+      {!filmCutout && (filmGround ? (
+        <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onFloorClick}>
+          {/* WHILE FILMING: a shadow catcher over a flat ground, so floor and sky are the same pixels and
+              no take carries a horizon. MUCH bigger than the editing floor, so its edge is never in a
+              portrait frame. 0.30 opacity — at 0.16 the shadow was invisible; the key light at [6,14,8]
+              throws it to the LEFT of the board, so measure there. */}
+          <planeGeometry args={[400, 400]} />
+          <shadowMaterial opacity={0.30} />
+        </mesh>
+      ) : (
+        <>
+          {/* ⚠️ WHILE EDITING: A FLOOR MEETING A WALL (trial, 2026-09-14).
+              A lit floor never shows the colour it is given — #faf7f4 rendered 235,232,230, the same
+              lightness as a white cake's top, and filled most of the canvas. A shadow catcher alone
+              fixed that but left one flat colour with no floor/wall separation.
+              So: an UNLIT floor (toneMapped off, exactly the colours asked for) — DESIGNER_GROUND up to a
+              straight, crisp horizon DESIGNER_HORIZON behind the cake, DESIGNER_WALL beyond it — over a
+              DESIGNER_WALL background, so past the plane's edge the wall simply continues. See
+              studioFloorMaterial. */}
+          {/* ⚠️ DRAWN FIRST AND WRITES NO DEPTH. It lies at y = 0, and so do things that must show on it —
+              the FRONT marker is a hair above the floor and was hidden by this plane on the first cut. A
+              floor that never occludes anything cannot swallow a marker, a shadow or a board edge. */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} renderOrder={-1}
+            material={studioFloorMaterial(DESIGNER_GROUND, DESIGNER_WALL, DESIGNER_HORIZON)}>
+            <planeGeometry args={[30, 30]} />
+          </mesh>
+          {/* The contact shadow, on its own catcher just above the painted floor — and the surface a click
+              on the floor lands on, to deselect. */}
+          {/* At y = 0, NOT lifted: shadowMaterial writes depth, and a catcher raised even 2 mm covered the FRONT
+              marker that lies just above the floor. The painted floor below writes no depth, so they cannot fight. */}
+          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onFloorClick}>
+            <planeGeometry args={[30, 30]} />
+            <shadowMaterial opacity={0.30} />
+          </mesh>
+        </>
+      ))}
 
-      {/* The front marker sits on the CAKE's front edge (not the board): rect → its depth, a number → its
-          own half-depth, round → its radius. */}
+      {/* The front marker lies beyond the BOARD's front edge — see FrontMarker for why the cake's own
+          edge is the wrong thing to measure from on any shape whose outline is wider than it is deep. */}
       {/* ⚠️ Not while filming. It is an editing aid — it tells the baker which way the cake faces
           while they work — and it was being burned into finished reels, where it reads as a stray
           watermark nobody can explain. */}
-      {bottomShp && !filmGround
-        && <FrontMarker frontZ={isRoundWall(bottomShp) ? bottomShp.radius : bottomShp.halfD} />}
+      {board && !filmGround && <FrontMarker frontZ={boardFrontZ(board)} />}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
           off-screen capture and the read-only previews render, so what a customer sees and what the
@@ -2550,7 +2581,7 @@ function CakeScene({
           orbitRef, gestureOnStickerRef,
           selectedTier, onTierClick, onDeselect,
           selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, pipingToolbar,
-          onPipingInstanceMove, isPipingMovable,
+          onPipingInstanceMove, onPipingLayerHeight, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
           selectedGarnishId, onGarnishSelect, onGarnishMove,
@@ -2655,7 +2686,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
     onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
-    onPipingInstanceMove = null, isPipingMovable = () => true,
+    onPipingInstanceMove = null, onPipingLayerHeight = null, isPipingMovable = () => true,
     selectedTextId = null, onTextSelect = NOOP, onTextMove = NOOP, onTextContentChange = NOOP, textToolbar = null,
     selectedAgeId = null, onAgeSelect, onAgeMove,
     selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
@@ -2743,6 +2774,7 @@ function CakeContent({ config, scene, edit = null }) {
             creamLayers={tier.creamLayers ?? []}
             highlightPipingId={highlightPipingId}
             pipingMovable={isPipingMovable}
+            onPipingLayerHeight={onPipingLayerHeight ? (layerId, wallY) => onPipingLayerHeight(i, layerId, wallY) : null}
             onPipingInstanceMove={onPipingInstanceMove
               ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
               : null}
@@ -3147,6 +3179,45 @@ function CakeThumbnailScene({ config, shadows = false }) {
 /* Exported so a dev harness can stand the cake on the same ground the designer does. It sets
  * `scene.background` only — never `scene.environment` — so it cannot light anything; it decides what
  * a PERSON sees behind the cake, which is the half of a colour judgement the numbers do not cover. */
+/* The editing floor's paint: DESIGNER_GROUND on the near side of a straight line, DESIGNER_WALL beyond
+ * it — the line being every point `horizon` world units past the cake's centre along the camera's
+ * horizontal view direction. A line of constant depth on a flat floor projects as a STRAIGHT horizontal
+ * line on screen, and measuring from the centre keeps it in the same place relative to the cake when the
+ * view is turned or zoomed.
+ *
+ * ⚠️ CRISP, NOT BLENDED. The edge is anti-aliased over one screen pixel (fwidth) and no more — a wider
+ * blend read as blur. And UNLIT (MeshBasicMaterial, toneMapped off), so both colours are exactly the
+ * ones asked for, whatever the lamps do; the change is spliced into three's own shader so its colour
+ * management still applies. Cached per colour set: one material for every render of the scene. */
+const _studioFloorMaterials = new Map();
+function studioFloorMaterial(floor, wall, horizon) {
+  const key = `${floor}|${wall}|${horizon}`;
+  if (_studioFloorMaterials.has(key)) return _studioFloorMaterials.get(key);
+  const mat = new THREE.MeshBasicMaterial({ color: floor, toneMapped: false, depthWrite: false });
+  const uWall = { value: new THREE.Color(wall) };
+  const uHorizon = { value: horizon };
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.uWall = uWall;
+    shader.uniforms.uHorizon = uHorizon;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec3 vFloorWorld;')
+      .replace('#include <begin_vertex>', '#include <begin_vertex>\nvFloorWorld = (modelMatrix * vec4(transformed, 1.0)).xyz;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform vec3 uWall;\nuniform float uHorizon;\nvarying vec3 vFloorWorld;')
+      .replace('vec4 diffuseColor = vec4( diffuse, opacity );', [
+        'vec2 toCentre = -cameraPosition.xz;',
+        'vec2 viewDir = length(toCentre) > 1e-4 ? normalize(toCentre) : vec2(0.0, -1.0);',
+        'float past = dot(vFloorWorld.xz, viewDir);',
+        'float px = max(fwidth(past), 1e-5);',
+        'float wallness = smoothstep(uHorizon - px, uHorizon + px, past);',
+        'vec4 diffuseColor = vec4( mix(diffuse, uWall, wallness), opacity );',
+      ].join('\n'));
+  };
+  mat.customProgramCacheKey = () => 'studio-floor-horizon';
+  _studioFloorMaterials.set(key, mat);
+  return mat;
+}
+
 export function SceneBackground({ colour }) {
   const { gl, scene } = useThree();
   useEffect(() => {
@@ -3408,6 +3479,7 @@ export default function CakeCanvas({
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onPipingInstanceMove = null,
+  onPipingLayerHeight = null,
   isPipingMovable = () => true,
   selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany, stickerToolbar,
   // { controlFor(sticker) -> {value,min,max,step}, onResize(sticker, value) } — the ONE size path,
@@ -3549,6 +3621,7 @@ export default function CakeCanvas({
         pipingStyles={pipingStyles}
         pipingToolbar={pipingToolbar}
         onPipingInstanceMove={onPipingInstanceMove}
+        onPipingLayerHeight={onPipingLayerHeight}
         isPipingMovable={isPipingMovable}
         selectedTextId={selectedTextId}
         onTextSelect={onTextSelect}

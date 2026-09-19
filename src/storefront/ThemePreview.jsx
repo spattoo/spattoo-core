@@ -6,7 +6,7 @@ import { CakeSpinner } from '../designer/canvas/CakeSpinner.jsx';
 import { STOREFRONT_TEXT, FONT_THEMES, resolveSections, newSection } from './storefrontKit.js';
 import { TEMPLATES } from './templates.js';
 import RightsAttestation from '../legal/RightsAttestation.jsx';
-import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
+import { Panel, ConfirmPanel, Takeover } from '../shared/Panel.jsx';
 import { ShareIcon } from '../shared/icons.jsx';
 
 const TEXT_FIELDS = [
@@ -671,7 +671,17 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     ? Math.min(1, (stageSize.width - framePad) / DESKTOP_W, (stageSize.height - framePad) / DESKTOP_H)
     : 0.1;
 
+  /* ⚠️ PORTALLED. This is a full-screen DESTINATION — the baker's storefront, at 1:1, with its own
+   * top bar and its own Back — and it is opened from a button inside SettingsPanel, whose root is
+   * `dockedPage`: position:fixed, z-index 300, which MAKES a stacking context. So `s.overlay`'s 400
+   * was resolved inside that 300 and lost to the rail's RAIL_OVER_PAGE_Z (315), a sibling of it. The
+   * rail painted down the left of the storefront preview, over the very thing being judged.
+   *
+   * 400 is the right RANK — rail.js records it as where app-wide overlays sit, above the rail — but a
+   * rank only means anything from the context the rail is in. Same fault as X-Ray and the print
+   * studio; see Takeover in shared/Panel.jsx. */
   return (
+    <Takeover>
     <div style={s.overlay}>
       <div style={s.topbar}>
         <button type="button" style={s.cancel} onClick={onClose}>← Back</button>
@@ -933,6 +943,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </ConfirmPanel>
       )}
     </div>
+    </Takeover>
   );
 }
 

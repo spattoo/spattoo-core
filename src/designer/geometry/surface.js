@@ -185,13 +185,25 @@ export function pipingHolePerimeters(shape) {
 //   Round: pull onto the inscribed circle of radius·k (matches the old r>maxR rescale).
 //   Rect:  clamp each axis independently to halfW·k / halfD·k, so a decoration can reach
 //          the rectangle's corners instead of being trapped in an inscribed circle.
+// A coordinate that is not a finite number has no position on any surface, and letting one through
+// is how a single upstream NaN took the whole designer down: `nearestOnPolygon` compares NaN
+// distances against its Infinity seed, never beats it, returns null, and the callers below read
+// `.x` off it. The tier centre is the one point inside every footprint, so a meaningless coordinate
+// lands there instead of white-screening the app. ⚠️ This is a net, not a fix — the real repair is
+// always at whatever produced the NaN (see edgeSeatSeed, which produced one for every outline shape).
+const finiteCoord = v => (Number.isFinite(v) ? v : 0);
+
 export function topClamp(shape, x, z, k = 0.92) {
+  x = finiteCoord(x); z = finiteCoord(z);
   if (shape.outline) {
     // The footprint shrunk by k, keeping its silhouette — a decoration on a heart stays inside the
     // HEART, not inside some inscribed circle that would strand the lobes.
     const inner = scalePolygon(shape.outline, k);
     if (pointInPolygon(inner, x, z)) return { x, z };
     const p = nearestOnPolygon(inner, x, z);
+    // Only a degenerate outline (a ring with no points) leaves nothing to snap to; a real footprint
+    // always answers. Keeping the point beats throwing inside a render.
+    if (!p) return { x, z };
     return { x: p.x, z: p.z };
   }
   if (shape.kind === 'rect') {
@@ -272,9 +284,17 @@ export function boardRingClamp(board, hole, x, z, margin = 0) {
 export function shapeReach(shape, dir) {
   if (shape.outline) {
     let best = 0;
-    for (const p of shape.outline) {
-      const d = p.x * dir.x + p.z * dir.z;          // projection onto the direction
-      if (d > best) best = d;
+    /* ⚠️ asRings, not the raw outline. A GLYPH cake's outline is one ring PER CHARACTER —
+     * glyphShape builds it as `shapes.map(...)` — so iterating `shape.outline` directly walks
+     * ARRAYS: `p.x` is undefined, every projection is NaN, `d > best` never fires, and the reach
+     * came back 0. Silent, and it read as "pulled to the middle of the cake": a board decoration
+     * collapsed to the centre, and once edgeSeatSeed started asking this question, so did a figure
+     * perched on a number cake's edge. Every sibling here already rings its outline. */
+    for (const ring of asRings(shape.outline)) {
+      for (const p of ring) {
+        const d = p.x * dir.x + p.z * dir.z;        // projection onto the direction
+        if (d > best) best = d;
+      }
     }
     return best;
   }
@@ -290,8 +310,10 @@ export function shapeReach(shape, dir) {
 // (where a centre-seated element would bury its lower half in the cake). Round → project to the
 // radius; rect → nearest point on the rounded-rect perimeter (via nearestU).
 export function snapToRim(shape, x, z) {
+  x = finiteCoord(x); z = finiteCoord(z);
   if (shape.outline) {
     const p = nearestOnPolygon(shape.outline, x, z);
+    if (!p) return { x, z };
     return { x: p.x, z: p.z };
   }
   if (shape.kind !== 'rect') {

@@ -38,15 +38,42 @@ const CHANNEL = {
 };
 
 export default function VerifyStep({
-  apiBaseUrl, slug, bakerName, captchaSiteKey, primary, initialPhone = '', initialEmail = '', initialName = '',
+  apiBaseUrl, slug, bakerName: bakerNameProp, captchaSiteKey, primary,
+  initialPhone = '', initialEmail = '', initialName = '',
   // Which channels the SERVER will accept, in its order of preference — read back from /settings so
   // a channel we cannot deliver on is never offered. SMS to an Indian number needs DLT clearance;
   // offering it before that is how a customer waits for a code a telco already scrubbed.
   channels = ['sms'],
   otpRequired = true, onVerified, onBack,
+  // ⚠️ THIS SCREEN IS NOT ALWAYS A SEND. It was written for the enquiry, where the customer really
+  // is handing a design to the baker, so both buttons said so. The order page reuses it as a plain
+  // door: the customer arrived from a WhatsApp link and is proving the address is theirs so they
+  // can SEE their order — nothing is sent, and `onBack` goes to the shop front, not to a cake. A
+  // button reading "Send to 31 Bakers" there tells them pressing it will message the bakery, which
+  // is the one thing it does not do. So the caller names the action; the defaults leave the
+  // enquiry exactly as it was.
+  submitLabel = null, backLabel = 'Back to my cake',
+  // ⚠️ AND THE WORDS, for the same reason as the buttons. "${bakerName} will be in touch about your
+  // cake" is true at SUBMIT and false at the designer door: nothing has been sent, there is no cake
+  // yet, and nobody is getting in touch. The door asks only because the designer cannot work without
+  // a session — every catalogue route behind it 401s (see "THE ONE EXCEPTION" above). Telling
+  // somebody they will be contacted, to open a tool, is a promise made on the baker's behalf that
+  // the baker has not been asked about.
+  // Sandeep, 2026-09-19: "i came here to design the cake and the cake design is not ready yet."
+  title = null, lede = null,
   // The customer's own words, held on the draft by FacetShell. See `noteField` below.
   note = '', onNote,
 }) {
+  /* ⚠️ THE NAME IS NOT GUARANTEED, and this screen says it seven times. It comes from
+     /storefront/:slug/settings, and both callers deliberately swallow a failed read rather than
+     strand the gate (`.catch(() => setSettings({}))`) — so a 404, an unpublished storefront or a
+     flaky network leaves it undefined and every line here reads "Who shall undefined ask for?".
+     Seen 2026-09-18 on the order page, which is reached from a WhatsApp button, so the first thing a
+     customer would have read was a bug.
+     "the bakery" is not a good name — it is just never a broken one. */
+  const bakerName = bakerNameProp || 'the bakery';
+  const sendLabel = submitLabel || `Send to ${bakerName}`;
+
   const [channel, setChannel] = useState(channels[0] ?? 'sms');
   const [noteOpen, setNoteOpen] = useState(false);
   // ONE field holding whichever contact the chosen channel wants. Seeded from the matching side of
@@ -123,8 +150,8 @@ export default function VerifyStep({
     const ready = !!phone.trim() && named;
     return (
       <div style={s.wrap}>
-        <h3 style={s.title}>Who shall {bakerName} ask for?</h3>
-        <p style={s.sub}>{bakerName} will call or message you about your cake.</p>
+        <h3 style={s.title}>{title ?? "We can't wait to bake this"}</h3>
+        <p style={s.sub}>{lede ?? 'We\u2019ll call or message you about your cake.'}</p>
         <input style={s.input} value={name} onChange={e => setName(e.target.value)}
                placeholder="Your name" autoFocus aria-label="Your name" />
         <input style={s.input} value={phone} onChange={e => setPhone(e.target.value)}
@@ -132,9 +159,9 @@ export default function VerifyStep({
         {noteField}
         <button type="button" style={s.primary(primary, ready)} disabled={!ready}
                 onClick={() => onVerified?.(null, phone.trim(), name.trim(), channel)}>
-          Send to {bakerName}
+          {sendLabel}
         </button>
-        <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>Back to my cake</button>
+        <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>{backLabel}</button>
       </div>
     );
   }
@@ -150,15 +177,18 @@ export default function VerifyStep({
   return (
     <div style={s.wrap}>
       <h3 style={s.title}>
-        {otp.step === 'start' ? `Who shall ${bakerName} ask for?` : 'Enter the code'}
+        {/* Only the FIRST screen is context-dependent. "Enter the code" is true wherever this is
+            used, and so is the line under it. */}
+        {otp.step === 'start' ? (title ?? "We can't wait to bake this") : 'Enter the code'}
       </h3>
       <p style={s.sub}>
         {otp.step === 'start'
           // Says why, because "verify your number" with no reason reads as a hoop. The reason is
-          // true and it is the customer's benefit, not ours.
-          ? (channel === 'email'
-              ? `${bakerName} will be in touch about your cake, so we just need to check this reaches you.`
-              : `${bakerName} will call or message you about your cake, so we just need to check the number works.`)
+          // true and it is the customer's benefit, not ours — which is exactly why a caller whose
+          // reason is DIFFERENT has to be able to say so.
+          ? (lede ?? (channel === 'email'
+              ? 'We\u2019ll be in touch about your cake, so we just need to check this reaches you.'
+              : 'We\u2019ll call or message you about your cake, so we just need to check this number works.'))
           : <>We sent a 6-digit code to <b>{phone.trim()}</b>.</>}
       </p>
 
@@ -211,7 +241,7 @@ export default function VerifyStep({
           />
           <button type="button" style={s.primary(primary, !!otp.code.trim() && !otp.busy)}
                   disabled={!otp.code.trim() || otp.busy} onClick={otp.verify}>
-            {otp.busy ? 'Checking…' : `Send to ${bakerName}`}
+            {otp.busy ? 'Checking…' : sendLabel}
           </button>
           {/* Error first, before the escape hatches — a wrong digit is the common case, and the
               explanation belongs where the eye already is rather than below three links. */}
@@ -231,7 +261,7 @@ export default function VerifyStep({
       )}
 
       {otp.step === 'start' && otp.err && <div style={s.err}>{otp.err}</div>}
-      <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>Back to my cake</button>
+      <button type="button" style={{ ...s.link, marginTop: 2 }} onClick={onBack}>{backLabel}</button>
     </div>
   );
 }
@@ -253,7 +283,20 @@ const s = {
                fontSize: 13.5, lineHeight: 1.5, color: '#2A241F', padding: '10px 12px',
                borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff' },
 
-  wrap:  { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px' },
+  /* ⚠️ DRAWS ITS OWN BACKGROUND, because it is a full-screen surface and the app's body is DARK.
+     apps/app globals.css sets `body { background: #111111 }` on purpose — "so the redirect into the
+     app + the loading state never flash white" — and says in the same breath that "full-screen
+     surfaces draw their own background over this". This one did not. Inside the storefront it never
+     showed, because the storefront paints a light page underneath; used as a GATE on its own route
+     it sat on black, and the title was dark grey on #111.
+     Seen 2026-09-18 on the order page's gate, which a customer reaches from a WhatsApp button — so
+     the first screen they meet was near-unreadable. The designer's door has the same shape and was
+     fixed by the same line. */
+  wrap:  { display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px',
+           background: '#FFFFFF', color: '#1a1a1a',
+           // 100vh, not 100%: as a standalone gate its parent has no height, so a percentage
+           // collapsed to the content and left a band of the app's black below it.
+           minHeight: '100vh' },
   title: { fontSize: 18, fontWeight: 800, color: '#2A241F', margin: 0, letterSpacing: '-0.01em' },
   sub:   { fontSize: 13, color: '#7A6C60', margin: 0, lineHeight: 1.5 },
   input: { padding: '13px 14px', borderRadius: 12, border: '1.5px solid #E7DFD5', font: 'inherit',

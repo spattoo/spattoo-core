@@ -17,7 +17,7 @@ import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
-import { Panel } from '../shared/Panel.jsx';
+import { Panel, Takeover, Z } from '../shared/Panel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
@@ -107,6 +107,14 @@ const PencilGlyph = () => (
 // `variant='row'` (default) = icon + label inline (desktop, below the cake).
 // `variant='stack'` = compact column, icon over a small caption (`short`) for the
 // mobile side-strip. Full `label` stays as title + aria-label for accessibility.
+//
+// ⚠️ `short` MAY SHORTEN A NAME; IT MAY NOT CHANGE ONE. "Edit in 3D" → "3D Edit" and "X-Ray report"
+// → "X-Ray" drop words the phone does not have room for and the baker does not need. "Print &
+// cut-outs" → "Cut-outs" did something else: it dropped one of the two things the button gives you,
+// and a baker reading the strip was told the sheet was only about cutting. Reported as exactly that.
+// So `short` also takes JSX — a caption that wraps where the words allow, rather than one that says
+// less. Two lines cost the strip NOTHING horizontally (it is as wide as its widest caption either
+// way, and "cut-outs" is already that), which is why there was never a trade to make here.
 function IconAction({ glyph, label, short, hint, onClick, disabled, variant = 'row' }) {
   const stack = variant === 'stack';
   return (
@@ -128,6 +136,9 @@ function IconAction({ glyph, label, short, hint, onClick, disabled, variant = 'r
         background: stack ? 'transparent' : '#fff',
         fontSize: stack ? 10.5 : 13, fontWeight: 700, color: '#444', fontFamily: 'inherit',
         lineHeight: 1.2, cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1, whiteSpace: 'nowrap',
+        // Centred because a caption may be two lines; nowrap stays, so the ONLY break is one the
+        // caption asks for. Natural wrapping would break "cut-outs" at its hyphen into three.
+        textAlign: 'center',
       }}
     >
       {glyph}<span>{stack ? (short ?? label) : label}</span>
@@ -209,7 +220,11 @@ function CutoutLauncher({ order, apiClient, variant }) {
   if (!ids.length && !prints.length) return null;
   return (
     <>
-      <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs" short="Cut-outs"
+      <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs"
+                  /* Two lines on the phone, not a different word — see IconAction. The break is
+                     after the "&" because "Print &" and "cut-outs" are the two halves of what this
+                     hands over, and neither half alone describes the sheet. */
+                  short={<>Print &amp;<br />cut-outs</>}
                   onClick={() => setOpen(true)} variant={variant} />
       {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
     </>
@@ -287,23 +302,34 @@ function CutoutModal({ ids, prints = [], order, apiClient, onClose }) {
     [elements, prints],
   );
 
+  /* ⚠️ PORTALLED, and the bare 60 is why it had to be. This opens from an order inside OrdersPanel,
+   * whose root is `dockedPage` — position:fixed at z-index 300, a stacking context — so every number
+   * in here was resolved inside it while the rail sat at RAIL_OVER_PAGE_Z (315) beside it.
+   *
+   * The sheet ITSELF was reported buried under the rail, and that was A4Sheet's own overlay, fixed
+   * separately. What is left here is the shell around it: the scrim, and the two states that show
+   * BEFORE the sheet exists — "Loading decorations…" while every image is traced, and the error
+   * banner when one cannot be. Those are the only things this card ever paints, and they were
+   * painting inside the page. Z.panel because that is what this is: a dialog, not a destination. */
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: 60,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-         onClick={onClose}>
-      <div style={{ background: '#fff', borderRadius: 14, maxWidth: 1040, width: '100%',
-                    maxHeight: '92vh', overflow: 'auto', position: 'relative' }}
-           onClick={e => e.stopPropagation()}>
-        <button onClick={onClose} aria-label="Close"
-                style={{ position: 'absolute', top: 10, right: 12, border: 'none', background: 'none',
-                         fontSize: 20, cursor: 'pointer', color: '#6B8C74', zIndex: 1 }}>×</button>
-        {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
-        {sheetItems === null
-          ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
-          : <CutoutSheet elements={sheetItems} title={order?.customer_name || order?.id || 'cake'}
-                         onClose={onClose} />}
+    <Takeover>
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: Z.panel,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+           onClick={onClose}>
+        <div style={{ background: '#fff', borderRadius: 14, maxWidth: 1040, width: '100%',
+                      maxHeight: '92vh', overflow: 'auto', position: 'relative' }}
+             onClick={e => e.stopPropagation()}>
+          <button onClick={onClose} aria-label="Close"
+                  style={{ position: 'absolute', top: 10, right: 12, border: 'none', background: 'none',
+                           fontSize: 20, cursor: 'pointer', color: '#6B8C74', zIndex: 1 }}>×</button>
+          {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
+          {sheetItems === null
+            ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
+            : <CutoutSheet elements={sheetItems} title={order?.customer_name || order?.id || 'cake'}
+                           onClose={onClose} />}
+        </div>
       </div>
-    </div>
+    </Takeover>
   );
 }
 

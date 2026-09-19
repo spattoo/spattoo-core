@@ -18,6 +18,15 @@ describe('freeTimeLabel', () => {
     expect(freeTimeLabel(YEARLY)).toBe('2 months free');
   });
 
+  /* ⚠️ A TRAP, pinned so it fails loudly rather than in copy nobody re-reads. `discount_pct` 17 is
+     the INTENT; the prices are really 16.5–16.6% off (price_yearly is a round ₹9,999). Somebody
+     "reconciling" the column to the arithmetic would take 12 × 16.5% = 1.98 months, floor it, and
+     silently turn the yearly headline into "1 month free". Decided 2026-09-14: the two are meant to
+     differ — the ladder is the intent, the card carries the exact percentage. */
+  it('collapses to ONE month if discount_pct is edited down to match the real prices', () => {
+    expect(freeTimeLabel({ ...YEARLY, discount_pct: 16.5 })).toBe('1 month free');
+  });
+
   /* ⚠️ The reason this function exists. 3 × 10% = 0.30 months. Said in months it is a fraction
      nobody says out loud; said in days it is "9 days free" — accurate, and it undersells a tenth
      off, because nine is just a small number. Below a month the percentage is the bigger TRUE

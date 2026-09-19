@@ -1,7 +1,7 @@
+import { readFileSync } from 'node:fs';
 import { describe, it, expect } from 'vitest';
 import { movableContract } from './movableContract.js';
-import { GARNISH_DEFAULTS, garnishPlacement, garnishDragTo, clampRadius, fanPlacements,
-  garnishPlacementOptions, garnishSeat, garnishWhere } from './garnishPlacement.js';
+import { GARNISH_DEFAULTS, garnishPlacement, garnishDragTo, clampRadius, fanPlacements, garnishPlacementOptions, garnishSeat, garnishWhere, fanSpread } from './garnishPlacement.js';
 import { sideSeatOffset } from '../placement.js';
 
 const CAKE = { radius: 1.2, topY: 1.55, boardY: 0.1 };
@@ -439,5 +439,110 @@ describe('placement options from the garnish tool\'s config', () => {
     expect(garnishWhere({ zone: 'top', mode: 'stand' })).toBe('On the top tier, standing up');
     expect(garnishWhere({ zone: 'board', mode: 'lie' })).toBe('On the board, lying flat');
     expect(garnishWhere({ zone: 'side', mode: 'lie' })).toBe('On the side of the tier, pressed flat against it');
+  });
+});
+
+/* ── How wide a fan opens ────────────────────────────────────────────────────────────────────────
+ *
+ * The card offered 3, 5 and 7 and computed the arc at the button: `0.55 + n * 0.09`. Asked for more
+ * pieces — a band round a whole tier rather than a spray on the top — that line does not extend: read
+ * as the GAP BETWEEN PIECES it keeps closing, so 24 pieces would land 6.8° apart, stacked on each
+ * other. A slider wired to it would have shipped a control whose upper half produces a smear.
+ *
+ * ⚠️ THE TUNED PART MUST NOT MOVE. 3, 5 and 7 are a LOOK somebody chose by eye, and every cake
+ * already fanned was fanned with them.
+ */
+describe('fanSpread', () => {
+  const GAP = (n) => fanSpread(n) / (n - 1);
+
+  it('leaves the three the card already offered exactly as they were', () => {
+    for (const n of [3, 5, 7]) expect(fanSpread(n)).toBeCloseTo(0.55 + n * 0.09, 12);
+  });
+
+  /* Below seven the fan TIGHTENS as it grows — that is the tuned look, and it is what makes five
+     read as a spray rather than as five things in a row. */
+  it('closes the gap up to seven, the way it was tuned to', () => {
+    expect(GAP(3)).toBeGreaterThan(GAP(5));
+    expect(GAP(5)).toBeGreaterThan(GAP(7));
+  });
+
+  /* Past seven the spacing holds and the ARC grows instead. The two rules meet exactly at seven, so
+     there is no step in the middle of the slider. */
+  it('holds the seven-piece spacing above seven, and meets it without a jump', () => {
+    for (const n of [8, 12, 16, 24]) expect(GAP(n)).toBeCloseTo(GAP(7), 12);
+  });
+
+  /* ⚠️ A fan cannot pass a full turn: beyond it the last piece laps the first and the arc reads as a
+     mistake. `(n-1)/n` of a turn is the widest honest one — a full ring with a single gap. */
+  it('never opens past a full circle, however many pieces', () => {
+    for (let n = 2; n <= 200; n++) {
+      expect(fanSpread(n)).toBeLessThanOrEqual((Math.PI * 2 * (n - 1)) / n + 1e-12);
+      expect(fanSpread(n)).toBeLessThan(Math.PI * 2);
+    }
+  });
+
+  it('is monotonic — more pieces is never a narrower fan', () => {
+    for (let n = 3; n <= 60; n++) expect(fanSpread(n)).toBeGreaterThanOrEqual(fanSpread(n - 1));
+  });
+
+  it('survives a count that is not a whole number, or below two', () => {
+    expect(fanSpread(5.4)).toBeCloseTo(fanSpread(5), 12);
+    expect(fanSpread(0)).toBeCloseTo(fanSpread(2), 12);
+    expect(fanSpread(-3)).toBeCloseTo(fanSpread(2), 12);
+  });
+});
+
+/* ⚠️ THE SLIDER CANNOT APPLY AS IT MOVES, and this is the assertion that keeps that true. `fanGarnish`
+   MULTIPLIES — it adds count−1 real garnishes and moves the original — so a live slider would strew
+   hundreds of pieces across one drag and leave undo with no single step to take back. The slider
+   chooses the number; a button does it. */
+describe('the fan control', () => {
+  const card = readFileSync(new URL('../CakeDesigner.jsx', import.meta.url), 'utf8');
+
+  it('fans when the gesture ENDS, never while it moves', () => {
+    const slider = /<PenSlider label="Pieces"[\s\S]*?\/>/.exec(card)[0];
+    expect(slider).toMatch(/onCommit=\{n => fanGarnish\(g\.id, \{ count: n, spread: fanSpread\(n\) \}\)\}/);
+    // ⚠️ the live channel must stay clear of it: onChange fires per pixel, and fanGarnish multiplies
+    expect(slider).toMatch(/onChange=\{setFanCount\}/);
+    expect(/onChange=\{[^}]*fanGarnish/.test(slider)).toBe(false);
+  });
+
+  /* ⚠️ AND onCommit MUST ANSWER THE KEYBOARD. A range input is arrow-key operable, and wiring only
+     the pointer would leave the fan unreachable without a mouse — the quiet half of this, because
+     it looks finished when you test it by dragging. */
+  it('commits on pointer and on key, so the slider is not mouse-only', () => {
+    const fn = /function PenSlider[\s\S]*?\n\}/.exec(card)[0];
+    expect(fn).toMatch(/onPointerUp: e => onCommit\(Number\(e\.currentTarget\.value\)\)/);
+    expect(fn).toMatch(/onKeyUp:\s*e => onCommit\(Number\(e\.currentTarget\.value\)\)/);
+    // and a slider that was given no onCommit gets neither handler
+    expect(fn).toMatch(/\{\.\.\.\(onCommit \? \{/);
+  });
+
+  /* A slider plus a button to confirm the slider is one control too many — the button is gone. */
+  it('has no separate apply button beside it', () => {
+    expect(card).not.toMatch(/Fan out \{fanCount\}/);
+  });
+
+  /* ⚠️ A SLIDER SHOWING ONLY ITS CURRENT VALUE READS AS ITS LIMIT. Sitting at 5 with "5" beside it,
+     the control was taken for one that stops at five — reported off a screenshot by someone who had
+     just been told the range. The number a baker needs in order to decide is the one they have not
+     got yet, so the readout carries the ceiling and so does the line under the button. */
+  it('shows the ceiling, not just where the slider happens to be', () => {
+    expect(card).toMatch(/const FAN_MAX = \d+;/);
+    expect(card).toMatch(/fmt=\{v => `\$\{v\} \/ \$\{FAN_MAX\}`\}/);
+    /* ⚠️ ON ONE LINE, SPACES INTACT. JSX strips the newline and indent before an expression, so a
+       line break either side of {FAN_MAX} eats the space and the card printed "up to24 of them".
+       Caught by looking at a screenshot, not by any of this — which is the point of rule 6. */
+    expect(card).toMatch(/up to \{FAN_MAX\} of them/);
+    // and one source for the number, so the three places cannot drift apart
+    expect(card).toMatch(/max=\{FAN_MAX\}/);
+    expect(card).not.toMatch(/max=\{24\}/);
+  });
+
+  /* The arc is the geometry's business, not the button's — it used to be written inline at the call
+     site, which is why it could not be extended without touching the UI. */
+  it('asks the geometry for the arc rather than computing it at the button', () => {
+    expect(card).not.toMatch(/spread: 0\.55 \+ n \* 0\.09/);
+    expect(card).toMatch(/spread: fanSpread\(n\)/);
   });
 });

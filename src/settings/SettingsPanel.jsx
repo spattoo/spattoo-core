@@ -596,6 +596,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 )}
               </Section>
 
+              {/* Top-ups is NOT here. What a baker buys is its own destination on the Settings
+                  menu (settings/TopUpsPanel.jsx) — it is not a detail of how their shop is
+                  configured, and it should not be found by scrolling a form opened for something
+                  else. */}
               {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
                   Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
               <PrivacyDataSection apiClient={apiClient} />
