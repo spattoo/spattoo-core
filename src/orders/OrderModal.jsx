@@ -289,6 +289,14 @@ export default function OrderModal({
    * ⚠️ AND NEVER REQUIRED. It stays out of `missing`, so it can never be the reason the button will
    * not press. A customer with a working phone stopped at the last step of a quote by an optional
    * field is the exact person the phone-first door was built for, and the baker can ring them.
+   *
+   * ⚠️ AND THE HELP TEXT NAMES THE CONSEQUENCE, which is not a sales line — it is what the code does.
+   * `messageBalance.js`: "the notification still goes by email, which is free and always on", while
+   * SMS and WhatsApp are bought in packs and stay OFF until a baker switches them on. So for somebody
+   * who gives us no address, `quote_issued_customer` may genuinely never arrive and the cake quietly
+   * dies waiting. "So we can send your quote in writing" described a nicety; this describes the real
+   * reason, which is the only kind of ask worth making of anybody.
+   * Sandeep, 2026-09-19: "explain the real need of email".
    */
   const [askEmail, setAskEmail] = useState(false);
   const [quoteEmail, setQuoteEmail] = useState('');
@@ -921,7 +929,8 @@ export default function OrderModal({
                               color: quoteEmail.trim() && !isValidEmail(quoteEmail) ? '#C0392B' : '#8A8078' }}>
                   {quoteEmail.trim() && !isValidEmail(quoteEmail)
                     ? 'That does not look like an email address.'
-                    : 'So we can send your quote in writing. We already have your phone number.'}
+                    : 'Your baker will send a price for this cake. Add your email so we can send you '
+                      + 'the quote, and any updates to your order.'}
                 </div>
               </div>
             )}
@@ -931,7 +940,6 @@ export default function OrderModal({
                 <a href={`${legalBase}/terms`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Terms of Service</a>
                 {' '}and{' '}
                 <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
-                {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
               </div>
             )}
             {/* Why the button will not press. Named fields, in the order they appear on the step —
