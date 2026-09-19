@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { ChevronRightIcon } from '../shared/icons.jsx';
 import { creditsChanged } from './creditsBus.js';
 import { Panel } from '../shared/Panel.jsx';
 import { Disclosure } from '../shared/Disclosure.jsx';
@@ -407,7 +408,7 @@ export default function BuyCreditsPanel({ open, onClose, apiClient, primaryColor
                       the X-Ray costs above them, which are priced the same way and are NOT buyable.
                       Absent when blocked: an arrow pointing nowhere is worse than no arrow. */}
                   {!p.blocked && (
-                    <span aria-hidden="true" style={{ fontSize: 17, lineHeight: 1, color: '#C3D3C8', fontWeight: 700 }}>›</span>
+                    <span style={{ display: 'flex', color: '#C3D3C8' }}><ChevronRightIcon size={17} /></span>
                   )}
                 </div>
               </button>
