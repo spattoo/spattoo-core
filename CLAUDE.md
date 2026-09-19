@@ -15,12 +15,32 @@ cites "the root CLAUDE.md" as their home, and for a long time that file did not 
 were only ever read by whoever happened to open a doc under `src/designer/`. The gap was not
 theoretical: a hand-rolled chip was committed in `85cb0ef` while `src/shared/Chip.jsx` sat unused.
 
-### 1. Scan for what exists before building it
+### 1. Scan for what exists before building it — or before RECOMMENDING it
 
 ⚠️ **This is the rule that gets broken, and it gets broken by writing something good.** Nobody
 copy-pastes a component on purpose; they build a fresh one because they never looked. `check:dup`
 will not save you — it measures textual similarity, and a 12-line style object that reinvents a
 60-line component is not a clone of it.
+
+⚠️ **AND IT APPLIES TO ADVICE, NOT ONLY TO CODE.** `INVARIANTS.md` #3 states this for designer
+components — *"open the piping code and reuse it, never approximate from memory"* — and reading it as
+being only about the designer is how it gets broken everywhere else. A diagnosis, a suggested fix and
+a "we should add X" are all builds. Five in one day (2026-09-19): a shared row component that
+`.spattoo-pack` had already solved; a new link host proposed before one `curl` showed nothing was
+broken; server-side captcha verification that would have broken the captcha, because Turnstile tokens
+are single-use; a support ticket chased over a PE–TM chain that was already Active; and a session
+helper for the admin smoke gate that `npm run smoke:session` already was.
+
+**Do these before proposing, and say what came back** — "I looked" is not the same as having looked:
+- **Grep for the BEHAVIOUR, not the name.** `.spattoo-pack` is not findable by searching "NavRow"; it
+  is findable by searching `:hover`, `focus-visible`, `›`.
+- **Read the file's own comments and `package.json` scripts.** This codebase explains itself at
+  length, and four of those five were already written down by whoever hit them first.
+- **Check `spattoo-docs` before diagnosing anything outside this repo.**
+- **Check the vendor's own docs before proposing to use their API** — single-use, expiry, idempotency.
+- **When the remedy is expensive** — a migration, a redeploy, re-approving a third party's templates,
+  a support ticket — **reproduce the fault before designing the fix.** The cost of the cure sets how
+  hard the disease has to be proven.
 
 Already built, app-wide, in `src/shared/`:
 
