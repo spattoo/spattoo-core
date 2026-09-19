@@ -208,7 +208,7 @@ them before writing a gesture, not after.
 ## Gates
 
 `npm run verify` runs them all: `bindings`, `paths`, `fonts`, `cors`, `hooks`, `movable`, `narrow`,
-`env-map`, `one-chevron`, `occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
+`env-map`, `one-chevron`, `priced-copy`, `occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
 judgement calls in 1, 2, 3 and 6 are not checkable and are yours to keep.
 
 Git hooks need node and gitleaks on PATH; a login shell that has not sourced nvm will fail them:
