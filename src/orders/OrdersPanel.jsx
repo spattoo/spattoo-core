@@ -1412,8 +1412,8 @@ function NoEmailNotice({ apiClient, onOpenMessageCredits }) {
         /* The case worth being loud about: no free channel and nothing to pay with, so this order
            goes past them in silence. Said plainly, because a baker who reads "updates will go by
            WhatsApp" while their balance is zero has been misinformed at the moment it costs them. */
-        ? <>You have <strong style={{ fontWeight: 800 }}>no message credits left</strong>, so they will
-            not be told anything about this order.</>
+        ? <>You have <strong style={{ fontWeight: 800 }}>no message credits left</strong>. Your customer
+            will not receive any updates for this order.</>
         : <>They will only hear about this order if WhatsApp updates are switched on{
             /* The question this notice provokes is "am I covered?", and the balance is the answer to
                it. Shown rather than linked to a shop: a buy screen answers an upsell, a number
