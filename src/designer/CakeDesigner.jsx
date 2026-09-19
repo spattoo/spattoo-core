@@ -2689,7 +2689,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       setOrdersPanelOpen(true);
       return;
     }
-    if (target?.open === 'billing') { setBuyCreditsOpen(true); return; }
+    /* ⚠️ The BILLING panel, not buy-credits. `?panel=billing` is shared by two families — the
+       subscription types (activated, renewed, cancelled, expired, renewing, payment_failed, the
+       trial reminders) and the credit ones (credits_low, credits_exhausted, credits_purchased) —
+       so whichever panel opens here has to serve both. BillingPanel does: it takes `onBuyCredits`
+       and opens BuyCreditsPanel from inside itself. BuyCreditsPanel has no way back, so opening it
+       served only the credit half, and a baker tapping "your payment failed" was shown a credit
+       top-up instead of the subscription they came to rescue. */
+    if (target?.open === 'billing') { setBillingPanelOpen(true); return; }
     // The rail's own Templates action — the cake templates to start a design from, not the Template
     // visibility settings panel.
     if (target?.open === 'templates') { openTemplatesRef.current?.(); return; }
