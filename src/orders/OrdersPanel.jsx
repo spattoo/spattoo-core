@@ -1356,8 +1356,8 @@ function DietChips({ reqs, small = false }) {
 
 /* ── The customer we may not be able to tell anything ────────────────────────────────────────────
  *
- * `InfoRow` renders NOTHING when a value is empty, so a customer with no email address has always
- * looked exactly like one whose email simply was not worth a line — and the baker had no way to know
+ * `InfoRow` renders NOTHING when a value is empty, so a customer who has not given us an email has
+ * always looked exactly like one whose address simply was not worth a line — and the baker had no way to know
  * that every update on this order depends on a paid channel they may not have switched on.
  *
  * ⚠️ IT NAMES THE DEPENDENCY AND QUANTIFIES NOTHING. The cost of a message lives in `credit_costs`
@@ -1380,7 +1380,11 @@ function NoEmailNotice() {
   return (
     <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#8A5A1E', background: '#FDF3E3',
                   border: '1px solid #F0DCB8', borderRadius: 9, padding: '9px 11px' }}>
-      <strong style={{ fontWeight: 800 }}>No email address for this customer.</strong>
+      {/* ⚠️ A FACT ABOUT OUR RECORDS, NOT ABOUT THE PERSON. "No email address for this customer" reads
+          as though they do not have one — almost everybody does; they have simply not given it to us,
+          which is a thing the baker can still fix. Sandeep: "this means the customer does not own a
+          email address." */}
+      <strong style={{ fontWeight: 800 }}>This customer has not provided an email address.</strong>
       {' '}They will only hear about this order if WhatsApp updates are switched on and you have
       message credits. Email updates cost nothing — add one on their customer record.
     </div>
