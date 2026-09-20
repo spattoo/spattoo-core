@@ -6937,22 +6937,51 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))}
           </div>
         </div>
-        {surfOpts.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span style={s.editPanelLabel}>Surface</span>
-            <div style={{ display: 'flex', gap: 5 }}>
-              {surfOpts.map(z => (
-                <button key={z} style={tierBtn(effSurface === z)} onClick={() => setFoilSurface(z)}>{SURF_LABEL[z] ?? z}</button>
-              ))}
-            </div>
+        {/* ⚠️ SURFACE AND SIZE SHARE A ROW. Sandeep: "surface and size control should be on same
+            row. size should be a dialer." Two rows for a two-button chooser and one control is the
+            same waste the Size+Spin merge fixed on the decoration cards.
+            ⚠️ The row's LABEL IS COMPUTED, not hardcoded: Surface only renders when the element
+            allows more than one zone (surfOpts.length > 1), so a side-only foil would otherwise
+            show a row labelled "Surface" containing nothing but a size dial. */}
+        {(surfOpts.length > 1 || flakes[foilSel]) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={s.editPanelLabel}>{surfOpts.length > 1 ? 'Surface' : 'Size'}</span>
+            {surfOpts.length > 1 && (
+              <div style={{ display: 'flex', gap: 5 }}>
+                {surfOpts.map(z => (
+                  <button key={z} style={tierBtn(effSurface === z)} onClick={() => setFoilSurface(z)}>{SURF_LABEL[z] ?? z}</button>
+                ))}
+              </div>
+            )}
+            {flakes[foilSel] && (() => {
+              // Bounds + increment from the element's placement_config.scale (placement.js), unchanged.
+              const sc = scaleRangeOf(elementById.get(card.elementId), 0.1, 1.5, 0.05);
+              return (<>
+                {surfOpts.length > 1 && (
+                  <span key="sz-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Size</span>
+                )}
+                {/* ⚠️ SizeDial, not PenSlider. CLAUDE.md: "SizeDial is THE size control" — and a
+                    46px dial costs a fraction of the width a full-bleed range input did, which is
+                    what let Surface share this line at all. It DOES diverge from nine sibling
+                    PenSliders (cream Height/Lift/Torn, writing, topper); those are separate asks. */}
+                <SizeDial size={flakes[foilSel].size ?? 0.5} min={sc.min} max={sc.max} step={sc.step}
+                  onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} />
+              </>);
+            })()}
           </div>
         )}
         <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
           onClick={() => addFoilToTier(foilTier, effSurface)}>Add foil</button>
         {flakes.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+          /* ⚠️ ONE SCROLLING ROW, NOT A WRAPPING GRID. Sandeep: "all the added foil should be a on a
+             scrollable row." Thirteen flakes wrapped to four rows and pushed Size and the remove
+             button off a phone screen — and the count only grows, so the card got taller with every
+             tap. s.previewRow is the same scroller the ring tiles and placement tiles use (flex,
+             overflowX auto, hidden scrollbar); flexShrink:0 on each pill is what makes them scroll
+             instead of squeezing. */
+          <div style={s.previewRow}>
             {flakes.map((_, i) => (
-              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
+              <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
                 border: foilSel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: foilSel === i ? '#EEF4EF' : '#fff' }}>
                 <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' }}>Flake {i + 1}</button>
                 <button title="Remove" onClick={() => { if (foilSel >= i) setFoilSel(v => Math.max(0, v - 1)); removeFoilFlake(foilTier, i); }}
@@ -6961,14 +6990,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))}
           </div>
         )}
-        {flakes[foilSel] && (() => {
-          // Dial bounds + increment from the element's placement_config.scale (fallbacks if absent).
-          const sc = scaleRangeOf(elementById.get(card.elementId), 0.1, 1.5, 0.05);
-          return (
-            <PenSlider label="Size" value={flakes[foilSel].size ?? 0.5} min={sc.min} max={sc.max} step={sc.step}
-              onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} fmt={v => v.toFixed(2)} />
-          );
-        })()}
+        {/* Size now shares the Surface row above, as a dial — see the note there. */}
         {/* ⚠️ This had rebuilt s.deleteBtn inline — same #fff0f0, same #f5c0c0, same red — on top of
             s.iconBtn. Exactly what rule 1 describes: nobody copies a component on purpose, they
             rewrite it because they never looked. The WORDS stay tier-scoped, because that is what the
