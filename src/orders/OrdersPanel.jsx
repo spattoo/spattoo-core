@@ -1356,86 +1356,110 @@ function DietChips({ reqs, small = false }) {
   );
 }
 
-/* ── The customer we may not be able to tell anything ────────────────────────────────────────────
+/* ── Can this customer actually be told anything? ────────────────────────────────────────────────
  *
  * `InfoRow` renders NOTHING when a value is empty, so a customer who has not given us an email has
- * always looked exactly like one whose address simply was not worth a line — and the baker had no way to know
- * that every update on this order depends on a paid channel they may not have switched on.
+ * always looked exactly like one whose address was not worth a line — and the baker had no way to
+ * know that every update on this order then depends on a paid channel they may not have running.
  *
- * ⚠️ IT NAMES THE DEPENDENCY AND QUANTIFIES NOTHING. The cost of a message lives in `credit_costs`
- * and `credit_packs`, which exist so an admin can retune them without a deploy, and the Message
- * Credits screen is where that arithmetic belongs. A second copy here would start lying the day
- * either moves — see `check:priced-copy`, and BillingPanel's own note.
+ * ── THE TWO CHANNELS ARE DIFFERENT THINGS, AND THE COPY HAS TO SAY SO ───────────────────────────
+ * Email is free and needs nothing switched on. WhatsApp costs a message credit per send and only
+ * goes when the baker has switched that update on AND has a balance. An earlier draft ran "no email
+ * address" straight into "no message credits" and read as though email cost money too.
+ * Sandeep: "its not saying that email and watsapp messages are different."
  *
- * ⚠️ AND IT DOES NOT PROMISE THE MESSAGE WILL GO. "Updates will be sent by WhatsApp" is false in the
- * two cases that matter most: `maySpendMessage` refuses when the baker has not switched that type on
- * ("The bakery has not switched this update on") and when the balance is gone ("The bakery has no
- * messages left"), and each refusal is a SKIP — nothing is sent at all. A baker reading a promise
- * while their balance is zero is being misinformed at the exact moment it costs them the order.
+ * ⚠️ AND ADDING AN EMAIL DOES NOT MAKE ANYTHING FREE. A draft promised "add their email and updates
+ * become free" — it is not true. Every enabled channel sends once each; the only suppression is
+ * `fallback_for`, and migration 095 does not accept 'email' as a value, so a WhatsApp send is
+ * unaffected by an address existing. An email is INSURANCE, not a saving: it is what reaches them
+ * when credits run out. Sandeep caught this: "even with email, it ll cost them."
  *
- * Email is the one channel that is never refused: `messageBalance.js` — "Paid customer updates
- * (SMS/WhatsApp) are optional and bought in packs; email and push stay free."
+ * ── TWO WEIGHTS, BECAUSE THEY ARE NOT THE SAME NEWS ─────────────────────────────────────────────
+ * ALERT — the customer will receive NOTHING. No email, and either no credits or no paid update
+ *   switched on. Something is broken and an order may quietly die.
+ * QUIET — they have an email, so they ARE being reached, free. Nothing is wrong; this only mentions
+ *   that WhatsApp exists. Putting that in the same amber box teaches a baker the box means "FYI",
+ *   after which the one that costs them an order gets skimmed past too.
  *
- * Only when there is no email. Nagging on the common case is how a warning stops being read.
+ * Nothing at all when the balance has not loaded: `null` is "not known", never zero — TopUpsSection
+ * wrote that lesson down first, and warning on a number we have not read is worse than silence.
  */
-function NoEmailNotice({ apiClient, onOpenMessageCredits }) {
-  /* ⚠️ `null` IS "NOT LOADED", AND IT IS NOT ZERO. TopUpsSection learned this first and says so:
-     rendering an unknown balance as "0 left" tells a baker they have run out when we simply do not
-     know — and that is the one wrong answer that changes what they do next. So the hard warning
-     below fires only on a balance we have actually READ. */
-  const [balance, setBalance] = useState(null);
+function CustomerReachNotice({ customer, apiClient, onOpenMessageCredits }) {
+  const [msg, setMsg] = useState(null);   // { balance, enabledTypes } — null until read
 
   useEffect(() => {
     if (typeof apiClient?.fetchMessageBalance !== 'function') return undefined;
     let alive = true;
     apiClient.fetchMessageBalance()
-      .then(d => { if (alive) setBalance(typeof d?.balance === 'number' ? d.balance : null); })
+      .then(d => { if (alive && typeof d?.balance === 'number') setMsg(d); })
       .catch(() => {});
     return () => { alive = false; };
   }, [apiClient]);
 
-  /* ⚠️ THE NUMBER IS READ, NEVER WRITTEN HERE. A literal would be a second copy of a value that moves
-     — `check:priced-copy` fails the build for one, and BillingPanel's note says why: "a client
-     carrying its own copy starts lying the moment they move." */
-  const empty = balance === 0;
+  if (!customer || !msg) return null;
+
+  const hasEmail = !!customer.email;
+  /* Empty means the baker has switched every paid customer update OFF, and `maySpendMessage`
+     refuses on exactly that ("The bakery has not switched this update on") — so nothing paid can
+     send, whatever the balance says. A non-empty list only means a send is POSSIBLE; whether the
+     WhatsApp channel row is enabled in admin is not visible from here, which is why the wording
+     below never promises delivery, only names what is missing. */
+  const whatsappOff = !(msg.enabledTypes?.length > 0);
+  const noCredits   = msg.balance <= 0;
+
+  // Reached for free. The only thing left to say is that another channel exists.
+  if (hasEmail) {
+    if (!whatsappOff && !noCredits) return null;           // nothing missing — say nothing
+    return (
+      <div style={{ fontSize: 11.5, lineHeight: 1.5, color: '#8A8078' }}>
+        {/* ⚠️ NAMES THE STATE, like the alert does. A generic "set up message credits" is advice to
+            BUY something a baker sitting on 240 of them already has — the quiet line is quiet, not
+            vague, and wrong advice is what makes a nudge get ignored. */}
+        Updates go by email.{' '}
+        {whatsappOff ? 'Switch on WhatsApp updates in ' : 'Top up '}
+        {onOpenMessageCredits
+          ? <button type="button" onClick={onOpenMessageCredits}
+                    style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                             fontWeight: 700, color: '#8A8078', textDecoration: 'underline',
+                             textUnderlineOffset: 2, cursor: 'pointer' }}>
+              message credits
+            </button>
+          : 'message credits'}
+        {whatsappOff ? ' to send them there too.' : ' to send them on WhatsApp too.'}
+      </div>
+    );
+  }
+
+  // No email, and WhatsApp can reach them: they ARE told, on the paid channel. Nothing is broken and
+  // nothing here is actionable, so nothing is said.
+  if (!whatsappOff && !noCredits) return null;
+
+  /* ⚠️ SWITCHED-OFF IS NAMED BEFORE NO-CREDITS, and the order is the order of the fix: switching an
+     update on is free and has to happen first, and sending a baker to BUY credits they will not
+     spend is the kind of wrong advice that gets a notice ignored. Once updates are on, the
+     no-credits variant is what they see next. */
+  const fix = whatsappOff
+    ? { because: 'WhatsApp updates are switched off', action: 'switch them on' }
+    : { because: 'you have no message credits left',  action: 'top up credits so we can reach them on WhatsApp' };
 
   return (
     <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#8A5A1E', background: '#FDF3E3',
                   border: '1px solid #F0DCB8', borderRadius: 9, padding: '9px 11px' }}>
       {/* ⚠️ A FACT ABOUT OUR RECORDS, NOT ABOUT THE PERSON. "No email address for this customer" reads
           as though they do not have one — almost everybody does; they have simply not given it to us,
-          which is a thing the baker can still fix. Sandeep: "this means the customer does not own a
-          email address." */}
-      <strong style={{ fontWeight: 800 }}>This customer has not provided an email address.</strong>
-      {' '}
-      {empty
-        /* The case worth being loud about: no free channel and nothing to pay with, so this order
-           goes past them in silence. Said plainly, because a baker who reads "updates will go by
-           WhatsApp" while their balance is zero has been misinformed at the moment it costs them. */
-        ? <>You have <strong style={{ fontWeight: 800 }}>no message credits left</strong>. Your customer
-            will not receive any updates for this order.</>
-        : <>They will only hear about this order if WhatsApp updates are switched on{
-            /* The question this notice provokes is "am I covered?", and the balance is the answer to
-               it. Shown rather than linked to a shop: a buy screen answers an upsell, a number
-               answers the question. Sandeep, 2026-09-19: "if the baker does not know how much is the
-               available balance - if its too low, already there is no customer email - so might want
-               to quickly check the balance?" */
-            balance != null ? <> — you have {balance.toLocaleString('en-IN')} left</> : ' and you have message credits'
-          }.</>}
-      {' '}Email updates cost nothing — add one on their customer record.
-      {onOpenMessageCredits && (
-        <>
-          {' '}
-          {/* A real button, not text with a handler (rule 7): it takes focus, answers Enter, and a
-              screen reader announces it. */}
-          <button type="button" onClick={onOpenMessageCredits}
+          and that is a thing the baker can still ask for. */}
+      <strong style={{ fontWeight: 800 }}>
+        This customer has not provided an email address, and {fix.because}
+      </strong>
+      {' '}— so they will not receive any updates for this order. Add their email, or{' '}
+      {onOpenMessageCredits
+        ? <button type="button" onClick={onOpenMessageCredits}
                   style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
                            fontWeight: 800, color: '#8A5A1E', textDecoration: 'underline',
                            textUnderlineOffset: 2, cursor: 'pointer' }}>
-            Message credits
+            {fix.action}
           </button>
-        </>
-      )}
+        : fix.action}.
     </div>
   );
 }
@@ -1450,9 +1474,8 @@ function DetailSections({ order, name, flavours, delivDate, apiClient, onOpenMes
         <InfoRow label="Email" value={customer?.email} />
         {/* Under the Email row, where the absence is: the row itself renders nothing, so this is the
             only thing on the screen that says the address is missing rather than merely unshown. */}
-        {customer && !customer.email && (
-          <NoEmailNotice apiClient={apiClient} onOpenMessageCredits={onOpenMessageCredits} />
-        )}
+        <CustomerReachNotice customer={customer} apiClient={apiClient}
+                             onOpenMessageCredits={onOpenMessageCredits} />
       </Section>
 
       <Section title="Order">

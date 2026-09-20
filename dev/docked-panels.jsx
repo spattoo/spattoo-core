@@ -73,9 +73,17 @@ const apiClient = {
     // Read here, not from the component's `q`: this object is module-level and `q` is not in scope.
     // The first version referenced it anyway, the call threw, the .catch swallowed it, and all three
     // states rendered identically — a harness agreeing with itself about nothing.
-    const b = new URLSearchParams(location.search).get('balance');
+    const q = new URLSearchParams(location.search);
+    const b = q.get('balance');
     if (b === null) return new Promise(() => {});      // never resolves: "not loaded"
-    return { balance: Number(b) };
+    /* ⚠️ `enabledTypes` MATTERS AS MUCH AS THE BALANCE, and leaving it out of this stub made three of
+       the notice's branches unreachable — an absent list reads as "WhatsApp switched off", so the
+       harness could only ever produce that one. `?types=0` is the switched-off case; anything else
+       is the baker's default two. */
+    const types = q.get('types') === '0'
+      ? []
+      : ['quote_issued_customer', 'order_ready_customer'];
+    return { balance: Number(b), enabledTypes: types };
   },
   fetchOrders:        async () => ORDERS,
   /* Its PRESENCE is what switches the List/Calendar strip on (`hasCalendar` tests for the function,
