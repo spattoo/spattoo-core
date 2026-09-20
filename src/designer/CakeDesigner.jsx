@@ -2086,37 +2086,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const tagNameBySlug = useMemo(
     () => new Map((filterTags ?? []).map(t => [t.slug, t.name])), [filterTags]);
 
-  /* ── ONE answer, used three times ──────────────────────────────────────────────────────────────
-   * The grid renders it, the count beside the funnel reports it, and (below) the chips are narrowed
-   * by what the unfiltered set can match. Computing it in the JSX meant the only way to know how
-   * many results a chip produced was to scroll past the whole filter form and count them.
-   */
-  const shownTemplates = useMemo(() => {
-    const q = tmplSearch.trim().toLowerCase();
-    const applied = { q, tags: templateFilters, weight: filterWeight, age: filterAge };
-    return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
-  }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
-
-  /* What Apply would give, on the button, before it is pressed. Same predicate as the grid — the one
-     thing that must never be a second copy, because the wrong answer would be the one being sold. */
-  const draftCount = useMemo(() => {
-    if (!tmplFiltersOpen) return 0;
-    const q = tmplSearch.trim().toLowerCase();
-    const draft = { q, tags: draftFilters, weight: draftWeight, age: draftAge };
-    return (templates ?? []).filter(t => templateMatches(t, draft, tagNameBySlug)).length;
-  }, [tmplFiltersOpen, templates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
-
-  /* ⚠️ ONLY TAGS SOMETHING CARRIES. Derived from every loaded template, NOT from `shownTemplates` —
-     narrowing by the current selection would make the other chips vanish as soon as one was picked,
-     which is a filter that dismantles itself. See the note on FilterPanel for why this exists. */
-  // How many chips are on. The badge on the funnel, and the test for "is anything narrowing this".
-  const tmplActiveFilters = Object.values(templateFilters)
-    .filter(v => (Array.isArray(v) ? v.length > 0 : !!v)).length;
-
-  const offeredTags = useMemo(() => {
-    const present = new Set((templates ?? []).flatMap(t => t.tag_slugs ?? []));
-    return (filterTags ?? []).filter(t => present.has(t.slug));
-  }, [templates, filterTags]);
   const [elemSearch,      setElemSearch]      = useState('');
 
   // The decoration-grid filter: honour the search box, and hide pattern_only building blocks (a
@@ -2309,6 +2278,52 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+
+  /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
+   * These four read `templates` (declared just above) and `tmplSearch`. They used to sit ~220 lines
+   * higher, where BOTH were still in the temporal dead zone: `const` is hoisted but unreadable until
+   * its initialiser runs, so CakeDesignerInner threw "Cannot access 'templates' before
+   * initialization" on EVERY render and the whole app showed "Something went wrong". Minified it
+   * read as `Cannot access 'im'`, which is most of why it was not obvious from production.
+   *
+   * ⚠️ A useMemo DEPENDENCY ARRAY is component-body code. The factory is deferred; `[templates,
+   * tmplSearch, …]` is evaluated immediately, so a useMemo is NOT a place to hide a forward
+   * reference. That is what made this look safe.
+   *
+   * THE THIRD TIME IN THIS FILE — see selectedEl and stackSingleCard, same note: keep derivations
+   * next to what they derive. check:bindings cannot catch it; the name IS declared where this
+   * function can see it, which is the only question that gate asks. */
+  /* ── ONE answer, used three times ──────────────────────────────────────────────────────────────
+   * The grid renders it, the count beside the funnel reports it, and (below) the chips are narrowed
+   * by what the unfiltered set can match. Computing it in the JSX meant the only way to know how
+   * many results a chip produced was to scroll past the whole filter form and count them.
+   */
+  const shownTemplates = useMemo(() => {
+    const q = tmplSearch.trim().toLowerCase();
+    const applied = { q, tags: templateFilters, weight: filterWeight, age: filterAge };
+    return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
+  }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+
+  /* What Apply would give, on the button, before it is pressed. Same predicate as the grid — the one
+     thing that must never be a second copy, because the wrong answer would be the one being sold. */
+  const draftCount = useMemo(() => {
+    if (!tmplFiltersOpen) return 0;
+    const q = tmplSearch.trim().toLowerCase();
+    const draft = { q, tags: draftFilters, weight: draftWeight, age: draftAge };
+    return (templates ?? []).filter(t => templateMatches(t, draft, tagNameBySlug)).length;
+  }, [tmplFiltersOpen, templates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
+
+  /* ⚠️ ONLY TAGS SOMETHING CARRIES. Derived from every loaded template, NOT from `shownTemplates` —
+     narrowing by the current selection would make the other chips vanish as soon as one was picked,
+     which is a filter that dismantles itself. See the note on FilterPanel for why this exists. */
+  // How many chips are on. The badge on the funnel, and the test for "is anything narrowing this".
+  const tmplActiveFilters = Object.values(templateFilters)
+    .filter(v => (Array.isArray(v) ? v.length > 0 : !!v)).length;
+
+  const offeredTags = useMemo(() => {
+    const present = new Set((templates ?? []).flatMap(t => t.tag_slugs ?? []));
+    return (filterTags ?? []).filter(t => present.has(t.slug));
+  }, [templates, filterTags]);
   const textInputRef = useRef();
   const thumbContainerRef = useRef();
   // Draws the capture canvas a frame on demand. The browser stops animating a hidden or minimised
