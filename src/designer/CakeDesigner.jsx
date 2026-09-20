@@ -19,6 +19,8 @@ import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+// The templates panel's predicate — pure, its own module, and therefore testable.
+import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
@@ -694,12 +696,7 @@ const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', materi
    `offeredTags` hides it until somebody tags one. */
 const TMPL_CATS = ['occasion', 'style', 'color', 'gender'];
 
-/* Where the "Suits age" slider stops, and therefore where its readout turns into "18+".
-   ⚠️ READ OFF THE CATALOGUE, not chosen. Counted on dev: the number of matching templates is flat at
-   11 from age 16 through 60, so past 18 a longer track moves a thumb and changes nothing. If the
-   catalogue ever grows designs that discriminate above this, raise it — the constant is here so that
-   is one edit and the label, the track and the predicate cannot disagree about it. */
-const AGE_FILTER_MAX = 18;
+
 
 // `light` = drawn on the dark filled button the funnel becomes while the drawer is open.
 function FunnelIcon({ size = 15, active, light }) {
@@ -726,7 +723,7 @@ function FunnelIcon({ size = 15, active, light }) {
  * Narrowing rather than deleting: the day somebody tags a template `kids-4-12` in admin, the chip
  * comes back on its own. A hardcoded list of "categories we support" would not.
  */
-function FilterPanel({ allTags, active, onChange, categories, open, children }) {
+function FilterPanel({ allTags, active, onChange, categories, open, onApply, onClear, count, children }) {
   const byCategory = categories.reduce((acc, cat) => {
     const tags = allTags.filter(t => t.category === cat);
     if (tags.length) acc[cat] = tags;
@@ -746,10 +743,16 @@ function FilterPanel({ allTags, active, onChange, categories, open, children }) 
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {tags.map(tag => {
-                      const on = active[cat] === tag.slug;
+                      const picked = Array.isArray(active[cat]) ? active[cat] : (active[cat] ? [active[cat]] : []);
+                      const on = picked.includes(tag.slug);
                       return (
                         <button key={tag.slug}
-                          onClick={() => onChange({ ...active, [cat]: on ? null : tag.slug })}
+                          aria-pressed={on}
+                          onClick={() => onChange({
+                            ...active,
+                            // Toggles within the list: a second occasion ADDS rather than replaces.
+                            [cat]: on ? picked.filter(x => x !== tag.slug) : [...picked, tag.slug],
+                          })}
                           style={{ padding: '3px 8px', borderRadius: 20, border: `1.5px solid ${on ? '#1a1a1a' : '#999999'}`, background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#666', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", lineHeight: 1.4 }}
                         >
                           {tag.name}
@@ -762,45 +765,31 @@ function FilterPanel({ allTags, active, onChange, categories, open, children }) 
             : !children && <span style={{ fontSize: 10, color: '#c8b8a2', fontStyle: 'italic' }}>No tags configured yet</span>
           }
           {children}
+
+          {/* ── Apply ──────────────────────────────────────────────────────────────────────────
+              ⚠️ IT CLOSES THE DRAWER, and that is half its job. The filter form is taller than a
+              phone, so committing without closing would leave a baker looking at the same chips
+              they were already looking at, with the results they asked for somewhere below the
+              fold. The count on the button is what the selection WILL give — the same predicate the
+              grid uses, so the number cannot promise something the grid then disagrees with.
+              "Clear" empties the draft rather than the applied set: nothing changes until Apply. */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+            <button type="button" onClick={onClear}
+              style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10.5,
+                       fontWeight: 700, color: '#666', fontFamily: "'Quicksand', sans-serif", padding: '6px 2px' }}>
+              Clear
+            </button>
+            <button type="button" onClick={onApply}
+              style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
+                       background: '#1a1a1a', color: '#fff', fontSize: 11.5, fontWeight: 800,
+                       fontFamily: "'Quicksand', sans-serif" }}>
+              {count === 0 ? 'Apply — nothing matches' : `Apply · ${count} template${count === 1 ? '' : 's'}`}
+            </button>
+          </div>
         </div>
       )}
     </div>
   );
-}
-
-/* ── What a search box on a catalogue is actually for ────────────────────────────────────────────
- *
- * ⚠️ IT SEARCHED THE NAME AND NOTHING ELSE, so typing "Birthday" returned nothing while 65 templates
- * carried the `birthday` tag. Sandeep, 2026-09-20: "i searched with the work Birthday - nothing
- * returned. i think search is working only on the template name."
- *
- * Nobody types a template's name — a baker does not know it. They type the OCCASION, the COLOUR, the
- * STYLE: the same words the chips below are made of. So the haystack is the name plus every tag,
- * which also means a word that is BOTH a name fragment and a tag finds both.
- *
- * Matched against the tag's display name AND its slug, because they diverge exactly where somebody
- * is most likely to type: "Valentine's" is `valentines`, "Multi-color" is `multi-color`, and a
- * hyphen-or-apostrophe mismatch is not a miss anybody could explain.
- */
-function matchesTemplateSearch(t, q, nameBySlug) {
-  if (!q) return true;
-  if (t.name?.toLowerCase().includes(q)) return true;
-  return (t.tag_slugs ?? []).some((slug) => {
-    if (String(slug).toLowerCase().includes(q)) return true;
-    /* ⚠️ THE DISPLAY NAME TOO, and it has to come from the client's tag list — the template payload
-       carries `tag_slugs` and no names (lib/templateList.js). Slug and name diverge exactly where
-       somebody is most likely to type: "Valentine's" is `valentines`, "Baby Shower" is `baby-shower`.
-       A miss on an apostrophe or a hyphen is not one anybody could explain. */
-    const name = nameBySlug?.get?.(slug);
-    return !!name && name.toLowerCase().includes(q);
-  });
-}
-
-function matchesFilters(item, filters) {
-  return Object.entries(filters).every(([, slug]) => {
-    if (!slug) return true;
-    return item.tag_slugs?.includes(slug);
-  });
 }
 
 // TOPPERS + PIPING STYLES are loaded from Supabase cake_elements table
@@ -2128,6 +2117,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // The filter drawer, opened from the funnel BESIDE the search box — so the state lives out here
   // with the thing it filters rather than inside the drawer that draws it.
   const [tmplFiltersOpen, setTmplFiltersOpen] = useState(false);
+  /* ── The drawer is a DRAFT, and Apply is what commits it ───────────────────────────────────────
+   * Chips used to take effect on tap. That was defensible — the work was already done — but it made
+   * building a compound filter a series of separate events, each one re-sorting the grid under a
+   * panel nobody could see past. Staging them means "birthday, and 4 years old, and pink" is ONE
+   * decision, taken when it is finished.
+   * ⚠️ EVERYTHING IN THE DRAWER STAGES, not just the chips. A weight or an age that applied live
+   * while the chips waited would be two rules on one form, and the half that jumped would look like
+   * a bug. Seeded from what is applied whenever the drawer opens, so closing without applying
+   * genuinely changes nothing. */
+  const [draftFilters, setDraftFilters] = useState({});
+  const [draftWeight,  setDraftWeight]  = useState('');
+  const [draftAge,     setDraftAge]     = useState('');
 
   /* slug → display name, for the search box. The tag list is loaded anyway for the chips. */
   const tagNameBySlug = useMemo(
@@ -2140,38 +2141,25 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    */
   const shownTemplates = useMemo(() => {
     const q = tmplSearch.trim().toLowerCase();
-    return (templates ?? []).filter((t) => {
-      if (!matchesTemplateSearch(t, q, tagNameBySlug)) return false;
-      if (!matchesFilters(t, templateFilters)) return false;
-      if (filterWeight) {
-        const w = parseFloat(filterWeight);
-        if (!isNaN(w) && t.attrs?.min_weight_kg != null && t.attrs.min_weight_kg > w) return false;
-      }
-      if (filterAge !== '') {
-        const age = parseInt(filterAge, 10);
-        if (!isNaN(age)) {
-          /* ⚠️ THE TOP OF THE TRACK MEANS "18 OR OLDER", NOT "EXACTLY 18", because that is what the
-             readout says. Testing 18 exactly would drop every template whose `min_age` is 20 — and
-             there are such rows — so the label would have promised adults and quietly excluded some
-             of them. At the ceiling the only question is whether a design reaches adulthood at all.
-             Below it, the ordinary overlap: this age must fall inside [min_age, max_age]. */
-          if (age >= AGE_FILTER_MAX) {
-            if (t.attrs?.max_age != null && t.attrs.max_age < AGE_FILTER_MAX) return false;
-          } else {
-            if (t.attrs?.min_age != null && t.attrs.min_age > age) return false;
-            if (t.attrs?.max_age != null && t.attrs.max_age < age) return false;
-          }
-        }
-      }
-      return true;
-    });
+    const applied = { q, tags: templateFilters, weight: filterWeight, age: filterAge };
+    return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
   }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+
+  /* What Apply would give, on the button, before it is pressed. Same predicate as the grid — the one
+     thing that must never be a second copy, because the wrong answer would be the one being sold. */
+  const draftCount = useMemo(() => {
+    if (!tmplFiltersOpen) return 0;
+    const q = tmplSearch.trim().toLowerCase();
+    const draft = { q, tags: draftFilters, weight: draftWeight, age: draftAge };
+    return (templates ?? []).filter(t => templateMatches(t, draft, tagNameBySlug)).length;
+  }, [tmplFiltersOpen, templates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
 
   /* ⚠️ ONLY TAGS SOMETHING CARRIES. Derived from every loaded template, NOT from `shownTemplates` —
      narrowing by the current selection would make the other chips vanish as soon as one was picked,
      which is a filter that dismantles itself. See the note on FilterPanel for why this exists. */
   // How many chips are on. The badge on the funnel, and the test for "is anything narrowing this".
-  const tmplActiveFilters = Object.values(templateFilters).filter(Boolean).length;
+  const tmplActiveFilters = Object.values(templateFilters)
+    .filter(v => (Array.isArray(v) ? v.length > 0 : !!v)).length;
 
   const offeredTags = useMemo(() => {
     const present = new Set((templates ?? []).flatMap(t => t.tag_slugs ?? []));
@@ -7920,19 +7908,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </>)}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Font</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
-          {(w.style === 'acrylic'
+        {/* ⚠️ NAMES IN A SCROLLING STRIP, NOT SPECIMEN TILES — and the argument against this is
+            written down in TopperComposer's FaceList: "a dropdown of font NAMES is the thing every
+            card-topper site gets wrong: the one question is what it looks like, and a name in the
+            browser's UI font cannot answer it."
+
+            That objection is about a DROPDOWN, and it stands: a native select hides the list and, on
+            a phone, throws a wheel over the very cake you are judging against. A strip does neither.
+            Sandeep: "user can see that on the cake and keep the best one" — with the sheet docked at
+            the bottom and the cake live above it, tapping along the strip answers "what does it look
+            like" with the actual cake rather than a 54px thumbnail of it. That is INVARIANTS #11 in
+            its favour: the control and its effect, visible together.
+
+            ⚠️ Segmented rather than a hand-rolled row, because a font is a MUTUALLY EXCLUSIVE choice
+            (its own comment draws that line against Chip) and it brings the tablist ARIA, the roving
+            tabindex and the 44px target the tiles never had. Eleven names wrap to three rows inside
+            a tinted track on a phone, which is no smaller than the grid — hence `scroll`. */}
+        <Segmented
+          scroll
+          isMobile={isMobile}
+          label="Lettering font"
+          value={w.font ?? ''}
+          items={(w.style === 'acrylic'
             ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
             : CREAM_FONTS
-          ).map(f => {
-            const Btn = w.style === 'acrylic' ? AcrylicFontButton : CreamFontButton;
-            return (
-              <Btn key={f.key} fontKey={f.key} label={f.label}
-                selected={w.font === f.key}
-                onClick={() => setWriting({ font: f.key, ...(w.style === 'acrylic' ? { tracking: faceFit(f.key) } : {}) })} />
-            );
-          })}
-        </div>
+          ).map(f => ({ id: f.key, label: f.label }))}
+          onChange={k => setWriting({ font: k, ...(w.style === 'acrylic' ? { tracking: faceFit(k) } : {}) })}
+        />
 
         {/* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
             reflections, gloss black is pigment under clear. So the wheel is replaced rather than
@@ -8029,7 +8031,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {w.style !== 'acrylic' && (
           <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
         )}
-        <PenSlider label="Size"      value={w.fit ?? writingFit(w.style)} min={0.3} max={0.95} step={0.05}  onChange={v => setWriting({ fit: v })}       fmt={v => `${Math.round(v * 100)}%`} />
+        {/* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the control
+            this app already means by "how big". */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, padding: '2px 0' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+            <SizeDial size={w.fit ?? writingFit(w.style)} min={0.3} max={0.95} step={0.05}
+              onChange={v => setWriting({ fit: v })} />
+            <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Size</span>
+          </div>
+          {/* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake — so it is an OffsetDial, not
+              a SizeDial. Its zero mark is the value a baker most wants to get back to. */}
+          {surface !== 'side' && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+              <OffsetDial value={w.yaw ?? 0} min={-180} max={180} step={1} label="Rotate"
+                onChange={v => setWriting({ yaw: v })} />
+              <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rotate</span>
+            </div>
+          )}
+        </div>
         {/* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at `tracking`.
             On acrylic the equivalent number is negative by design: the letters have to overlap so the
             word cuts as one piece. It is calibrated PER FACE, by eye, and topperFaces.js records what
@@ -8045,9 +8064,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             from a sheet; bending the baseline is a piped-writing idea. */}
         {surface !== 'side' && w.style !== 'acrylic' && (
           <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
-        )}
-        {surface !== 'side' && (
-          <PenSlider label="Rotate"  value={w.yaw ?? 0}          min={-180}  max={180}  step={1}     onChange={v => setWriting({ yaw: v })}       fmt={v => `${Math.round(v)}°`} />
         )}
         {/* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the rows
             nest until they meet rather than sitting on a baseline — so it is bounded by the shapes,
@@ -9891,7 +9907,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               />
               <button
                 type="button"
-                onClick={() => setTmplFiltersOpen(o => !o)}
+                onClick={() => {
+                  // Opening seeds the draft from what is live; closing by the funnel discards it.
+                  if (!tmplFiltersOpen) {
+                    setDraftFilters(templateFilters);
+                    setDraftWeight(filterWeight);
+                    setDraftAge(filterAge);
+                  }
+                  setTmplFiltersOpen(o => !o);
+                }}
                 aria-expanded={tmplFiltersOpen}
                 aria-label={tmplFiltersOpen ? 'Hide filters' : 'Show filters'}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer',
@@ -9916,7 +9940,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     : `${shownTemplates.length} of ${templates.length} template${templates.length === 1 ? '' : 's'}`}
                 </span>
                 <button type="button"
-                  onClick={() => { setTemplateFilters({}); setTmplSearch(''); setFilterWeight(''); setFilterAge(''); }}
+                  onClick={() => {
+                    setTemplateFilters({}); setTmplSearch(''); setFilterWeight(''); setFilterAge('');
+                    setDraftFilters({});    setDraftWeight(''); setDraftAge('');
+                  }}
                   style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: '#1a1a1a', fontWeight: 700, fontFamily: "'Quicksand', sans-serif", padding: 0 }}>
                   clear
                 </button>
@@ -9927,15 +9954,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* Filter panel — inside scroll, avoids outer flex/overflow conflicts */}
             <FilterPanel
               allTags={offeredTags}
-              active={templateFilters}
-              onChange={setTemplateFilters}
+              active={draftFilters}
+              onChange={setDraftFilters}
               categories={TMPL_CATS}
               open={tmplFiltersOpen}
+              count={draftCount}
+              onClear={() => { setDraftFilters({}); setDraftWeight(''); setDraftAge(''); }}
+              onApply={() => {
+                setTemplateFilters(draftFilters);
+                setFilterWeight(draftWeight);
+                setFilterAge(draftAge);
+                setTmplFiltersOpen(false);   // the results are the point; the form is not
+              }}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                   <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Weight</span>
-                  <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={filterWeight} onChange={e => setFilterWeight(e.target.value)}
+                  <input type="number" min="0" step="0.5" placeholder="e.g. 2" value={draftWeight} onChange={e => setDraftWeight(e.target.value)}
                     style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #999999', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
                   <span style={{ fontSize: 10, color: '#aaa' }}>kg+</span>
                 </div>
@@ -9961,13 +9996,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     filters, and "any" puts it back. */}
                 <Slider
                   label="Suits age"
-                  value={filterAge === '' ? null : Number(filterAge)}
+                  value={draftAge === '' ? null : Number(draftAge)}
                   min={0} max={AGE_FILTER_MAX} step={1}
                   placeholder="any age"
                   accent="#1a1a1a"
                   fmt={(v) => (v >= AGE_FILTER_MAX ? `${AGE_FILTER_MAX}+` : `${v} yr${v === 1 ? '' : 's'}`)}
-                  onChange={(v) => setFilterAge(String(v))}
-                  onClear={() => setFilterAge('')}
+                  onChange={(v) => setDraftAge(String(v))}
+                  onClear={() => setDraftAge('')}
                 />
               </div>
             </FilterPanel>
