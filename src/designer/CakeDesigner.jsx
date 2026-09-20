@@ -3836,19 +3836,33 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // instant its outer edge touches the next ring out (else the rim edge); moving INWARD stops
   // when its inner edge touches the next ring in (else the cake centre, or the cylinder of the
   // tier resting on this rim). Bands use each shell's measured radial width — exact, no guesses.
-  function handlePipingRadialOffsetChange(tierIndex, zone, v) {
-    const cur = ringPiping(tierIndex, zone);
-    if (zone !== 'rim' || !cur) { updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: v })); return; }
-    const radius  = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
-    const base    = cur.extraRadialOffset ?? 0;
-    const flip    = cur.userFlipTop !== undefined ? cur.userFlipTop : (cur.flipTop ?? false);
+  /* ── HOW FAR CAN THIS RIM RING ACTUALLY TRAVEL? ─────────────────────────────────────────────────
+   *
+   * Split out of handlePipingRadialOffsetChange so something other than the clamp can ASK. The
+   * stepper never needed to: it nudges by ±0.05 and lets the clamp refuse. A dial does — a dial
+   * without a real min and max either offers travel that is silently clamped (a control that moves
+   * and does nothing, which is worse than the stepper it replaced) or invents limits and quietly
+   * takes away positions a baker can reach today.
+   *
+   * ⚠️ THE RANGE IS NOT A CONSTANT. It is recomputed from the tier's radius, this shell's MEASURED
+   * post-tilt reach, the ring's own depth, the cylinder of any tier resting on this rim, and every
+   * neighbouring ring on it. Add a ring, resize one, switch tiers, and the answer changes. Anything
+   * that caches this will be wrong the moment a second ring appears.
+   *
+   * Returned in userRadialOffset space — what the caller passes in — not outer-edge space. The two
+   * differ by `radius + reachOut + base`, which is a constant shift for a given ring, so clamping in
+   * either space gives the identical result; this one is simply the space the UI speaks.
+   */
+  function rimRadialTravel(tierIndex, cur) {
+    const radius   = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
+    const base     = cur.extraRadialOffset ?? 0;
+    const flip     = cur.userFlipTop !== undefined ? cur.userFlipTop : (cur.flipTop ?? false);
     const reachOut = radius * getShellExtents(cur.glbUrl, flip, cur.size ?? 1).radialOutFrac;
     const [curIn, curOut] = rimRadialBand(cur, tierIndex);
-    const depth   = curOut - curIn;   // our radial width
-    const EPS = 1e-4;
-    // Work in outer-edge space (distance from centre), then convert back. The outer edge stops
-    // at the rim or the next ring out; the inner edge (outer − depth) stops at the centre, the
-    // cylinder of the tier above, or the next ring in.
+    const depth    = curOut - curIn;   // our radial width
+    // Work in outer-edge space (distance from centre). The outer edge stops at the rim or the next
+    // ring out; the inner edge (outer − depth) stops at the centre, the cylinder of the tier above,
+    // or the next ring in.
     let outerMax = radius;            // rim edge
     let outerMin = depth;             // inner edge ≥ cake centre (0)
     const upper = tierAbove(canvasConfig.tiers, tierIndex);
@@ -3862,10 +3876,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       if ((nin + nout) / 2 < curCenter) outerMin = Math.max(outerMin, nout + depth);  // inside  → our inner edge rests on its outer edge
       else                              outerMax = Math.min(outerMax, nin);           // outside → our outer edge stops at its inner edge
     });
-    const desiredOuter = radius + (base + v) + reachOut;
-    const clampedOuter = Math.min(Math.max(outerMin, desiredOuter), Math.max(outerMin, outerMax));
-    const clampedE     = clampedOuter - radius - reachOut;   // back to combined offset
-    updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: +(clampedE - base).toFixed(4) }));
+    // Back to the offset the caller speaks. outerMax is floored at outerMin so a rim with no room
+    // left reports a single point rather than an inverted range.
+    const toOffset = outer => outer - radius - reachOut - base;
+    return { min: toOffset(outerMin), max: toOffset(Math.max(outerMin, outerMax)) };
+  }
+
+  // Moving OUTWARD stops the instant its outer edge touches the next ring out (else the rim edge);
+  // moving INWARD stops when its inner edge touches the next ring in (else the cake centre, or the
+  // cylinder of the tier resting on this rim). The bounds themselves live in rimRadialTravel, so the
+  // control and the clamp can never disagree about how far a ring may go.
+  function handlePipingRadialOffsetChange(tierIndex, zone, v) {
+    const cur = ringPiping(tierIndex, zone);
+    // ⚠️ Board and side rings are UNBOUNDED, exactly as before. Nothing nests on a wall the way rim
+    // rings nest inside one another, so there is no band to compute — and inventing one here would
+    // quietly stop a baker doing something that works today.
+    if (zone !== 'rim' || !cur) { updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: v })); return; }
+    const { min, max } = rimRadialTravel(tierIndex, cur);
+    updateRing(tierIndex, zone, p => ({ ...p, userRadialOffset: +Math.min(max, Math.max(min, v)).toFixed(4) }));
   }
 
   /* Where a board/side layer's anchor SITS when it is asked to sit at `yo`, and what `userYOffset`
