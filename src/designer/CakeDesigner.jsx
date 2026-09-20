@@ -7684,18 +7684,44 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        *
        * ⚠️ Spin stays CONDITIONAL inside the row (top surface only — see the note below), so a side
        * decoration gets the Size row alone rather than a caption with nothing under it. */
-      const spinCtls = sticker?.zone === 'top_surface' ? (() => {
-        const rot = sticker?.rotation ?? 0;
-        return [
-          <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, marginLeft: 10 }}>Spin</span>,
-          <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
-          <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
-        ];
-      })() : [];
+      /* ⚠️ Declared HERE, above the Size row, because that row now READS it. Depth (radialOffset) is
+       * side-only: a photo frame is a flat print that must stay flush on the wall, so it is
+       * config-gated on photoMask exactly like the Fold control on foldable. */
+      const isSide = (sticker?.zone === 'side' || sticker?.zone === 'middle_tier') && !sticker?.photoMask;
+      /* ⚠️ ONE COMPANION SLOT BESIDE Size, and WHICH control fills it depends on where the decoration
+       * sits. Sandeep: "when the TOP checkbox is selected, spin control looks correct. but when i
+       * checked the SIDE checkbox, spin is back on the below line."
+       *
+       * What he is seeing on SIDE is Depth, not Spin — Spin is top-surface only — but the complaint
+       * is the same one and it is right: the second control was taking a whole extra row again. The
+       * two are MUTUALLY EXCLUSIVE BY ZONE (a sticker is on the top surface or on the side, never
+       * both), so a single companion slot serves both and no row is ever spent on one label plus two
+       * small buttons.
+       *
+       * marginLeft on the label is what separates the companion from the dial; Depth never had it
+       * because it used to start its own row. */
+      const companionCtls =
+        sticker?.zone === 'top_surface' ? (() => {
+          const rot = sticker?.rotation ?? 0;
+          return [
+            <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, marginLeft: 10 }}>Spin</span>,
+            <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
+            <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
+          ];
+        })()
+        : isSide ? (() => {
+          const ro = sticker?.radialOffset ?? 0;
+          return [
+            <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, marginLeft: 10 }}>Depth</span>,
+            <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
+            <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
+          ];
+        })()
+        : [];
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
         <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
           onChange={v => resizeSticker(sticker, v)} />,
-        ...spinCtls,
+        ...companionCtls,
       ] });
       /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
        * There was a `Height` ↓/↑ pair here for a top-surface GLB (added with the faux balls,
@@ -7717,18 +7743,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * the wall genuinely has a height to choose, and `DraggableSideSticker` already writes it —
        * `{ theta, y }` from one raycast, so it goes round the cake and up it in the same gesture.
        * There is deliberately no Height stepper for the side either; the cake is the control. */
-      // Depth (radialOffset) — side stickers only. A photo frame is a flat print that must stay
-      // flush on the wall (config-gated on photoMask, like the Fold control on foldable), so it has
-      // no Depth control and keeps radialOffset 0.
-      const isSide = (sticker?.zone === 'side' || sticker?.zone === 'middle_tier') && !sticker?.photoMask;
-      if (isSide) {
-        const ro = sticker?.radialOffset ?? 0;
-        groups.push({ key: 'ro', divider: true, controls: [
-          <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Depth</span>,
-          <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
-          <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
-        ] });
-      }
+      /* Depth now rides in the Size row as the SIDE companion — see companionCtls above. `isSide` is
+         declared up there too, because that row reads it. */
       // Pose — only where the element's config offers this zone more than one (zoneHasChoice), so an
       // element with a single pose grows no control. Standing vs hugging is a RE-SEAT: see
       // setStickerPose for why yOffset/tilt/insert are cleared and x/z re-clamped.
