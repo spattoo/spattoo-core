@@ -829,15 +829,51 @@ function BuryRow({ insertDepth, onChange }) {
 function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], locked = false,
                             canResize = true, canTilt = true, onToggle, onUpdate }) {
   const cap = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
+  /* ⚠️ NULL UNTIL A TILE IS TAPPED, then resolved against the slots that actually exist — the same
+   * shape as activePipingRing, and for the same reason: slots change as an element is placed and
+   * removed, so a stored key can name a slot that is gone. Tapped (if still present) → the first
+   * slot ON the cake → the first slot. That last fallback is what lets this need no effect to
+   * reset it when the card switches to a different element. */
+  const [activeSlotKey, setActiveSlotKey] = useState(null);
+  const activeSlot = slots.find(sl => sl.key === activeSlotKey)
+                  ?? slots.find(sl => sl.checked)
+                  ?? slots[0];
   return (
     <div style={{ width: '100%' }}>
       <div style={{ fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 0.3, marginBottom: 6 }}>PLACEMENT</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* ── The slots, side by side ──────────────────────────────────────────────────────────────
+          Sandeep: "image topper card also has preview. we should make them look side by side, just
+          the way we did for piping elements."
+
+          Same waste as the rings had: the tile was full-width while the cake inside it used the
+          middle ~40%, so TOP + SIDE cost ~270px of a phone to show two small cakes and a lot of
+          grey. Side by side they cost ~120px and each cake is the size it always was.
+
+          ⚠️ TICKING AND SELECTING ARE DIFFERENT GESTURES. The checkbox (PreviewTile's own, top-left)
+          places or removes the element on that slot; tapping the tile BODY makes it the slot the
+          controls below are editing. One gesture doing both would take a topper off the cake when
+          you meant to resize it.
+
+          ⚠️ AND THE CONTROLS FOLLOW THE SELECTION, which is the half of this that is not layout.
+          Every checked slot used to print its own Size/Tilt/Bury directly beneath its tile, which
+          read fine in a column. In a ROW there is nothing above a control block saying which tile it
+          belongs to, so two placed slots would stack two identical control sets under one row — the
+          exact illegibility the piping note warns about. One slot at a time is not a reduction here;
+          it is what makes the row readable. */}
+      <div style={s.previewRow}>
         {slots.map(slot => (
-          <div key={slot.key}>
-            <PreviewTile checked={slot.checked} onToggle={() => onToggle(slot)} label={slot.label} height={116} locked={locked}>
+          <div key={slot.key}
+               onClick={() => setActiveSlotKey(slot.key)}
+               style={{ ...s.previewTile, ...(slot.key === activeSlot?.key ? s.previewTileOn : {}) }}>
+            <PreviewTile checked={slot.checked} onToggle={() => onToggle(slot)} label={slot.label} height={74} locked={locked}>
               <TopperPreview glbUrl={previewUrl} placement={slot.placement} mode={slot.mode} tiers={tiers} tierIndex={slot.tierIndex} baseRotation={baseRotation} />
             </PreviewTile>
+          </div>
+        ))}
+      </div>
+      {/* Controls for the SELECTED slot only — see the note above. */}
+      {[activeSlot].filter(Boolean).map(slot => (
+          <div key={`ctl-${slot.key}`}>
             {slot.sticker && (
               /* ⚠️ WRAPS, and the gap is small enough that Size + Tilt fit side by side.
                  Without this the row is a nowrap centred flex line inside a 200px panel that clips:
@@ -874,7 +910,6 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
             )}
           </div>
         ))}
-      </div>
     </div>
   );
 }
@@ -10944,14 +10979,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   A row with one tile is a row with one tile; the special case bought nothing and
                   cost the one property worth having, that a ring is derived and drawn in one place. */}
               {candidates.length > 0 && (
-                <div style={s.pipingRingRow}>
+                <div style={s.previewRow}>
                   {candidates.map(({ tierIndex, zone, label }) => {
                     const v  = ringView(tierIndex, zone);
                     const on = activeRing.tierIndex === tierIndex && activeRing.zone === zone;
                     return (
                       <div key={`tile-${zone}-${tierIndex}`}
                            onClick={() => setActivePipingRing({ tierIndex, zone })}
-                           style={{ ...s.pipingRingTile, ...(on ? s.pipingRingTileOn : {}) }}>
+                           style={{ ...s.previewTile, ...(on ? s.previewTileOn : {}) }}>
                         <PreviewTile checked={!!v.applied} label={label} height={74}
                           locked={!pipingDeletable}
                           onToggle={() => togglePipingZone(tierIndex, zone, !!v.applied)}>
@@ -12927,19 +12962,24 @@ const s = {
     fontSize: 9.5, color: '#b29aa2', background: 'none', border: 'none', cursor: 'pointer',
     padding: '0 2px', fontFamily: "'Quicksand',sans-serif", fontWeight: 700,
   },
-  pipingRingRow: {
+  /* ⚠️ RENAMED FROM pipingRing*, because it is not piping's any more. The placement chooser
+     (toppers, stickers, every decorEl) now draws the same row — Sandeep: "image topper card also has
+     preview. we should make them look side by side, just the way we did for piping elements". A
+     shared style still called `pipingRingRow` is how the next person decides it is piping-only and
+     writes a second copy, which is rule 1 and the reason .spattoo-pack keeps being cited. */
+  previewRow: {
     display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none',
     paddingBottom: 4, marginBottom: 2,
   },
   /* 104 keeps the cake inside the tile at roughly the size it had at full width — the grey around it
      was the waste, not the render. flexShrink:0 so tiles scroll instead of squeezing. */
-  pipingRingTile: {
+  previewTile: {
     width: 104, flexShrink: 0, cursor: 'pointer',
     borderRadius: 12, padding: 3, border: '1.5px solid transparent',
   },
-  // Which ring the controls below are editing. Bordered rather than tinted: the tile is mostly a
+  // Which tile the controls below are editing. Bordered rather than tinted: the tile is mostly a
   // photograph of a cake, and a wash over it would change the colour being judged.
-  pipingRingTileOn: { border: '1.5px solid #1a1a1a', background: 'rgba(0,0,0,0.04)' },
+  previewTileOn: { border: '1.5px solid #1a1a1a', background: 'rgba(0,0,0,0.04)' },
   dockedSheetHeader: {
     position: 'sticky', top: 0, zIndex: 1, flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
