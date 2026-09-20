@@ -693,10 +693,22 @@ function FunnelIcon({ size = 15, active }) {
   );
 }
 
-function FilterPanel({ allTags, active, onChange, categories, children }) {
-  const [open, setOpen] = useState(false);
-  const activeCount = Object.values(active).filter(Boolean).length;
-
+/* ── The filter drawer ───────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ CONTROLLED, because the funnel that opens it now lives OUTSIDE it — beside the search box,
+ * where it belongs. Sandeep, 2026-09-20: "make the filter icon next to the seach box, not below."
+ * It sat under the input and read as the first row of the results.
+ *
+ * ⚠️ AND IT ONLY OFFERS WHAT SOMETHING CAN MATCH. `allTags` is every tag that exists; the chips are
+ * narrowed to the ones at least one loaded template actually carries. Measured on dev: 28 templates
+ * hold 65 occasion, 27 colour, 13 style, 9 material and 3 theme tags — and ZERO age_group or gender.
+ * So AGE GROUP and GENDER were five and two chips that could never return a single result, which is
+ * exactly what "i just searched with age group but its not working" was. The filter was correct and
+ * the promise was empty.
+ * Narrowing rather than deleting: the day somebody tags a template `kids-4-12` in admin, the chip
+ * comes back on its own. A hardcoded list of "categories we support" would not.
+ */
+function FilterPanel({ allTags, active, onChange, categories, open, children }) {
   const byCategory = categories.reduce((acc, cat) => {
     const tags = allTags.filter(t => t.category === cat);
     if (tags.length) acc[cat] = tags;
@@ -704,28 +716,10 @@ function FilterPanel({ allTags, active, onChange, categories, children }) {
   }, {});
 
   return (
-    <div style={{ borderBottom: '1px solid #999999', marginBottom: 6 }}>
-      {/* Toggle row */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 0 6px' }}>
-        <button
-          onClick={() => setOpen(o => !o)}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
-        >
-          <FunnelIcon active={activeCount > 0 || open} />
-          {activeCount > 0 && (
-            <span style={{ fontSize: 9, fontWeight: 800, color: '#1a1a1a', fontFamily: "'Quicksand', sans-serif" }}>{activeCount}</span>
-          )}
-        </button>
-        {activeCount > 0 && (
-          <button onClick={() => onChange({})} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 9, color: '#1a1a1a', fontWeight: 700, fontFamily: "'Quicksand', sans-serif" }}>
-            clear
-          </button>
-        )}
-      </div>
-
+    <div style={{ borderBottom: open ? '1px solid #999999' : 'none', marginBottom: open ? 6 : 0 }}>
       {/* Filter controls */}
       {open && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingBottom: 10 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, padding: '6px 0 10px' }}>
           {Object.keys(byCategory).length > 0
             ? Object.entries(byCategory).map(([cat, tags]) => (
                 <div key={cat}>
@@ -754,6 +748,34 @@ function FilterPanel({ allTags, active, onChange, categories, children }) {
       )}
     </div>
   );
+}
+
+/* ── What a search box on a catalogue is actually for ────────────────────────────────────────────
+ *
+ * ⚠️ IT SEARCHED THE NAME AND NOTHING ELSE, so typing "Birthday" returned nothing while 65 templates
+ * carried the `birthday` tag. Sandeep, 2026-09-20: "i searched with the work Birthday - nothing
+ * returned. i think search is working only on the template name."
+ *
+ * Nobody types a template's name — a baker does not know it. They type the OCCASION, the COLOUR, the
+ * STYLE: the same words the chips below are made of. So the haystack is the name plus every tag,
+ * which also means a word that is BOTH a name fragment and a tag finds both.
+ *
+ * Matched against the tag's display name AND its slug, because they diverge exactly where somebody
+ * is most likely to type: "Valentine's" is `valentines`, "Multi-color" is `multi-color`, and a
+ * hyphen-or-apostrophe mismatch is not a miss anybody could explain.
+ */
+function matchesTemplateSearch(t, q, nameBySlug) {
+  if (!q) return true;
+  if (t.name?.toLowerCase().includes(q)) return true;
+  return (t.tag_slugs ?? []).some((slug) => {
+    if (String(slug).toLowerCase().includes(q)) return true;
+    /* ⚠️ THE DISPLAY NAME TOO, and it has to come from the client's tag list — the template payload
+       carries `tag_slugs` and no names (lib/templateList.js). Slug and name diverge exactly where
+       somebody is most likely to type: "Valentine's" is `valentines`, "Baby Shower" is `baby-shower`.
+       A miss on an apostrophe or a hyphen is not one anybody could explain. */
+    const name = nameBySlug?.get?.(slug);
+    return !!name && name.toLowerCase().includes(q);
+  });
 }
 
 function matchesFilters(item, filters) {
@@ -2072,6 +2094,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templateFilters, setTemplateFilters] = useState({});
   const [filterWeight,    setFilterWeight]    = useState('');
   const [filterAge,       setFilterAge]       = useState('');
+  // The filter drawer, opened from the funnel BESIDE the search box — so the state lives out here
+  // with the thing it filters rather than inside the drawer that draws it.
+  const [tmplFiltersOpen, setTmplFiltersOpen] = useState(false);
   const [elemSearch,      setElemSearch]      = useState('');
 
   // The decoration-grid filter: honour the search box, and hide pattern_only building blocks (a
@@ -6635,7 +6660,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </div>
           );
         })}
-        <button onClick={() => removePattern(card)} style={{ marginTop: 2, fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", textAlign: 'left', padding: 0 }}>Remove</button>
+        <button onClick={() => removePattern(card)} style={{ ...s.deleteBtn, marginTop: 6, alignSelf: 'flex-start' }}>Remove from cake</button>
       </div>
     );
   }
@@ -6944,8 +6969,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {finishSliderControls(members[0]?.metalness, mat => setClusterFinish(card.clusterId, mat))}
           </div>
         </div>
-        <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
-          onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove</button>
+        <button style={{ ...s.deleteBtn, width: '100%' }}
+          onClick={() => { members.forEach(m => removeSticker(m.id)); clearAllSelections(); }}>Remove from cake</button>
       </div>
     );
   }
@@ -7377,9 +7402,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         ] });
       }
       groups.push({ key: 'actions', divider: false, footer: true, controls: [
-        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }}
+        <button key="del" style={s.deleteBtn}
           onClick={() => { design.stickers.filter(s => s.elementId === elId).forEach(s => removeSticker(s.id)); clearAllSelections(); }}>
-          Remove
+          Remove from cake
         </button>,
       ] });
     }
@@ -7952,8 +7977,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Recentre
           </button>
           <button onClick={() => { clearWriting(); clearAllSelections(); }}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#b56', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
-            Remove
+            style={{ ...s.deleteBtn, flex: 1 }}>
+            Remove from cake
           </button>
         </div>
       </>
@@ -8061,10 +8086,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
 
         <button onClick={() => { removeTopper(t.id); setSelectedEl(null); }}
-          style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
-                   border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
-                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
-          Remove
+          style={{ ...s.deleteBtn, alignSelf: 'flex-start' }}>
+          Remove from cake
         </button>
       </div>
     );
@@ -8230,10 +8253,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Duplicate
         </button>
         <button onClick={() => { removeGarnish(g.id); setSelectedGarnishId(null); }}
-          style={{ alignSelf: 'flex-start', padding: '7px 12px', borderRadius: 9, cursor: 'pointer',
-                   border: '1.5px solid #E0C9C9', background: '#fff', color: '#A33',
-                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 800 }}>
-          Remove
+          style={{ ...s.deleteBtn, alignSelf: 'flex-start' }}>
+          Remove from cake
         </button>
         </div>
       </div>
@@ -8537,9 +8558,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Line them up
           </button>
           <button onClick={removeNameBlocks}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
-              background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
-            Remove
+            style={{ ...s.deleteBtn, flex: 1 }}>
+            Remove from cake
           </button>
         </div>
       </>
@@ -8629,9 +8649,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
           <button onClick={() => removeCloud(card.tierIndex, cl.id)}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
-              background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
-            Remove
+            style={{ ...s.deleteBtn, flex: 1 }}>
+            Remove from cake
           </button>
         </div>
       </>
@@ -8763,9 +8782,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
           <button onClick={() => removeRainbow(card.tierIndex, rb.id)}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
-              background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
-            Remove
+            style={{ ...s.deleteBtn, flex: 1 }}>
+            Remove from cake
           </button>
         </div>
       </>
@@ -10553,8 +10571,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {stackSingleCard && (
                 <div style={s.dockedSheetHeader}>
                   <span style={s.dockedSheetGrip} aria-hidden="true" />
-                  <button style={s.iconBtn} aria-label="Done editing"
-                          onClick={() => { clearAllSelections(); setExpandedPipingId(null); }}>✓</button>
+                  {/* ⚠️ A WORD, NOT A TICK, and filled rather than faint. Sandeep, on the tick:
+                      "tick mark is not obvious here. should be a better way for the normal user to
+                      say a way for Done". He is right, and CLAUDE.md rule 7 is the rule it broke —
+                      "if it does something, it must look like it does something", JUDGED AT REST on
+                      a phone, where there is no hover to rescue a faint control.
+                      ✕ survives as a bare glyph because "close" is universal. ✓ meaning "I have
+                      finished with this element, give me the menu back" is not — and a pale grey
+                      circle reads as a status badge, not a button. #1a1a1a is what "active" already
+                      means across this app (the toolbar's pressed button, editTabOn). */}
+                  <button style={s.doneBtn}
+                          onClick={() => { clearAllSelections(); setExpandedPipingId(null); }}>Done</button>
                 </div>
               )}
 
@@ -11141,8 +11168,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
                   <button
                     onPointerDown={e => { e.stopPropagation(); removePipingCard(pipingPopupEl.cardId); }}
-                    style={{ fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>
-                    Remove
+                    style={s.deleteBtn}>
+                    Remove from cake
                   </button>
                 </div>
               )}
@@ -12533,17 +12560,32 @@ const s = {
   wheelTitle: {
     fontSize:11, fontWeight:700, color:'#666', letterSpacing:1.5, textTransform:'uppercase',
   },
+  /* ── THE destructive action, and THE finishing one ──────────────────────────────────────────────
+   *
+   * ⚠️ BOTH OF THESE ALREADY EXISTED AND BOTH HAD ZERO USERS, while TEN hand-rolled Remove buttons
+   * drifted around them: three different reds (#e53935, #b56, #A33), four shapes, five layouts, for
+   * one action. That is CLAUDE.md rule 1's worked example happening a second time in this very file —
+   * "a hand-rolled chip was committed in 85cb0ef while src/shared/Chip.jsx sat unused". check:dup
+   * cannot see it: each was a single styled <button> far under jscpd's token floor.
+   *
+   * ⚠️ `flex: 1` is NOT in the base any more. It was, which is why these fitted only a row of equal
+   * buttons and every other placement hand-rolled its own. Layout belongs to the call site; these
+   * say what a control MEANS, not where it sits.
+   *
+   * doneBtn is filled rather than tinted. It was #6c47ff on #f0f0ff, and a pale control is exactly
+   * what Sandeep reported on the tick — rule 7 is judged AT REST on a phone, with no hover to
+   * rescue it. #1a1a1a is what "active" already means across this app. */
   deleteBtn: {
-    flex: 1, padding: '8px 0', borderRadius: 10,
+    padding: '8px 14px', borderRadius: 10,
     background: '#fff0f0', border: '1.5px solid #f5c0c0',
     fontSize: 11, fontWeight: 700, color: '#e53935', cursor: 'pointer',
     fontFamily: "'Quicksand',sans-serif",
   },
   doneBtn: {
-    flex: 1, padding: '8px 0', borderRadius: 10,
-    background: '#f0f0ff', border: '1.5px solid #c0c0f5',
-    fontSize: 11, fontWeight: 700, color: '#6c47ff', cursor: 'pointer',
-    fontFamily: "'Quicksand',sans-serif",
+    minHeight: 34, padding: '0 18px', borderRadius: 10, border: 'none',
+    background: '#1a1a1a', color: '#fff', cursor: 'pointer',
+    fontSize: 13, fontWeight: 700, fontFamily: "'Quicksand',sans-serif",
+    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
   },
   iconBtn: {
     background:'#f3f4f6', border:'none', width:28, height:28, borderRadius:'50%',
