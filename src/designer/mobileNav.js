@@ -40,7 +40,15 @@
  * nothing at all. Only Orders carries a menu today and it is primary. `strandedMenus` below exists
  * to make it loud rather than silent if that ever stops being true.
  */
-export const MOBILE_PRIMARY = ['new', 'dashboard', 'elements', 'orders', 'templates'];
+/* ⚠️ THE ORDER IS THE JOB, NOT THE HISTORY (INVARIANTS #12). Sandeep set it directly:
+ *
+ *     New · Templates · Decor · Orders · Dashboard
+ *
+ * It reads left to right as the work actually goes: START a cake (New, or from a Template — the two
+ * beginnings, now adjacent), DECORATE it, then run the bakery (Orders, Dashboard). Templates arrived
+ * last and was simply appended to the end, which put a starting move after two management ones.
+ * Dashboard moves to the far end: it is the thing you glance at, not the thing you are doing. */
+export const MOBILE_PRIMARY = ['new', 'templates', 'elements', 'orders', 'dashboard'];
 
 /**
  * Divide the rail into the strip and the More sheet.
