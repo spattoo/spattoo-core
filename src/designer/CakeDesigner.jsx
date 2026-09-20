@@ -7018,7 +7018,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.previewRow}>
             {flakes.map((_, i) => (
               <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
-                border: foilSel === i ? `1.5px solid ${INK}` : '1.5px solid #ddd', background: foilSel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
+                border: foilSel === i ? `1.5px solid ${INK}` : `1.5px solid ${LINE}`, background: foilSel === i ? INK_TINT : SURFACE }}>
                 <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: INK, cursor: 'pointer' }}>Flake {i + 1}</button>
                 <button title="Remove" onClick={() => { if (foilSel >= i) setFoilSel(v => Math.max(0, v - 1)); removeFoilFlake(foilTier, i); }}
                   style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
@@ -7077,7 +7077,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {layers.map((l, i) => (
               <span key={l.layerId} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
-                border: sel === i ? `1.5px solid ${INK}` : '1.5px solid #ddd', background: sel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
+                border: sel === i ? `1.5px solid ${INK}` : `1.5px solid ${LINE}`, background: sel === i ? INK_TINT : SURFACE }}>
                 <button onClick={() => setCreamSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: INK, cursor: 'pointer' }}>Band {i + 1}</button>
                 <button title="Remove" onClick={() => { if (creamPaint?.layerId === l.layerId) setCreamPaint(null); if (sel >= i) setCreamSel(v => Math.max(0, v - 1)); removeCreamLayer(creamTier, l.layerId); }}
                   style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
@@ -7087,32 +7087,69 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
         {band && (
           <>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={s.editPanelLabel}>Colour</span>
-              <input type="color" value={band.color} onChange={e => up(x => ({ ...x, color: e.target.value }))}
-                style={{ width: 36, height: 26, border: '1.5px solid #ddd', borderRadius: 7, cursor: 'pointer', background: '#fff', padding: 0 }} />
-            </div>
-            {/* Anchor: Bottom = band rises from the base (torn TOP edge); Top = band hangs from the rim
-                (torn BOTTOM edge). One of each leaves the classic gap-in-the-middle two-tone. */}
-            <div style={{ display: 'flex', gap: 6 }}>
-              <button style={{ ...chip(band.fillSide !== 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'below' }))}>Bottom</button>
-              <button style={{ ...chip(band.fillSide === 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'above' }))}>Top</button>
-            </div>
-            {/* ⚠️ THREE DIALS IN ONE SCROLLING ROW. Sandeep: "cream layer- make the controls dialers,
-                in one scrollable row, buttons in black." Three full-bleed range inputs cost three
-                rows of a phone and pushed the presets, Gold edge and Paint edge below the fold; the
-                same three as 46px dials fit one row. s.previewRow is the scroller the ring tiles,
-                placement tiles and foil flakes already use — a fifth hand-rolled one would be the
-                copy rule 1 warns about. Each dial keeps its caption, because three unlabelled dials
-                are indistinguishable (learned on the photo frame an hour ago). */}
+            {/* ⚠️ ONE SCROLLING ROW FOR THE WHOLE BAND. Sandeep: "color. 2 Surface TOP | SiDE 3.Gold
+                edge 4. Height 5. Lift 5. Torn all should be in one scrollable row." Colour, the
+                anchor pair and Gold edge each cost a full-width block of a phone, so the three dials
+                that already shared a row still sat fourth on a stack five deep.
+                ⚠️ MIXED CELLS, ONE BASELINE. A swatch is not a dial and a chip pair is not either,
+                so every cell is a fixed 46px-tall box with its caption underneath — that is what
+                keeps a row of different controls from reading as ragged. s.previewRow is the same
+                scroller the ring tiles, flakes and flicks use; a sixth hand-rolled one is the copy
+                rule 1 warns about.
+                ⚠️ THE CAPTIONS STAY. Six unlabelled cells are worse than the stack they replaced —
+                the photo-frame lesson, and it applies harder here because these are not all dials.
+                ⚠️ `fmt` ON LIFT AND TORN IS NOT COSMETIC. Lift is 0–0.12 and Torn 0–0.18, both
+                stepping 0.005; at SizeDial's default one decimal they read "0.0" and "0.1" for
+                almost their entire travel — visible in the card before this change. */}
             <div style={s.previewRow}>
+              {/* Colour — the band's own, sized to sit level with the dials beside it. */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                <div style={{ height: 46, display: 'flex', alignItems: 'center' }}>
+                  <input type="color" value={band.color} onChange={e => up(x => ({ ...x, color: e.target.value }))}
+                    style={{ width: 40, height: 30, border: `1.5px solid ${LINE}`, borderRadius: 7, cursor: 'pointer', background: SURFACE, padding: 0 }} />
+                </div>
+                <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Colour</span>
+              </div>
+
+              {/* Anchor: Bottom = band rises from the base (torn TOP edge); Top = band hangs from the
+                  rim (torn BOTTOM edge). One of each leaves the classic gap-in-the-middle two-tone.
+                  Labelled "Surface" per Sandeep, though the two remain Bottom/Top — they set which
+                  edge is torn, not which face of the cake the band sits on. */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                <div style={{ height: 46, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <button style={chip(band.fillSide !== 'above')} onClick={() => up(x => ({ ...x, fillSide: 'below' }))}>Bottom</button>
+                  <button style={chip(band.fillSide === 'above')} onClick={() => up(x => ({ ...x, fillSide: 'above' }))}>Top</button>
+                </div>
+                <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Surface</span>
+              </div>
+
+              {/* Gold edge — the checkbox becomes a toggle chip, and its colour still appears only
+                  once the edge is on. Same two controls, same behaviour, one cell instead of a row. */}
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                <div style={{ height: 46, display: 'flex', alignItems: 'center', gap: 4 }}>
+                  {/* ⚠️ THE ROW IS MEANT TO OVERFLOW. Six cells come to ~410px inside ~372px, so the
+                      last dial peeks at the right edge — and that peek IS the affordance: it is what
+                      says the row can be pushed sideways, exactly as the flake and flick pill rows
+                      already work. A tick was tried here instead of the word to buy back the width;
+                      it read as a puzzle, and it was solving a problem the scroller does not have. */}
+                  <button style={chip(!!band.gold?.on)} aria-pressed={!!band.gold?.on}
+                    onClick={() => up(x => ({ ...x, gold: { ...(x.gold ?? {}), on: !x.gold?.on } }))}>Gold</button>
+                  {band.gold?.on && (
+                    <input type="color" value={band.gold?.color ?? '#c89b3c'}
+                      onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))}
+                      style={{ width: 30, height: 26, border: `1.5px solid ${LINE}`, borderRadius: 6, cursor: 'pointer', padding: 0 }} />
+                  )}
+                </div>
+                <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Gold edge</span>
+              </div>
+
               {[
-                { k: 'Height', v: band.height ?? 0.5, min: hMin, max: hMax, step: hStep, set: v => up(x => ({ ...x, height: v })) },
-                { k: 'Lift',   v: band.lift,          min: 0,    max: 0.12, step: 0.005, set: v => up(x => ({ ...x, lift: v })) },
-                { k: 'Torn',   v: band.noise,         min: 0,    max: 0.18, step: 0.005, set: v => up(x => ({ ...x, noise: v })) },
+                { k: 'Height', v: band.height ?? 0.5, min: hMin, max: hMax, step: hStep, fmt: v => v.toFixed(2), set: v => up(x => ({ ...x, height: v })) },
+                { k: 'Lift',   v: band.lift,          min: 0,    max: 0.12, step: 0.005, fmt: v => v.toFixed(3), set: v => up(x => ({ ...x, lift: v })) },
+                { k: 'Torn',   v: band.noise,         min: 0,    max: 0.18, step: 0.005, fmt: v => v.toFixed(3), set: v => up(x => ({ ...x, noise: v })) },
               ].map(d => (
                 <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} onChange={d.set} />
+                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
                   <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
                 </div>
               ))}
@@ -7122,12 +7159,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button key={name} style={chip(false)} onClick={() => up(x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name}</button>
               ))}
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: INK }}>
-              <input type="checkbox" checked={!!band.gold?.on} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), on: e.target.checked } }))} />
-              Gold edge
-              {band.gold?.on && <input type="color" value={band.gold?.color ?? '#c89b3c'} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))}
-                style={{ width: 30, height: 22, border: '1.5px solid #ddd', borderRadius: 6, cursor: 'pointer', padding: 0 }} />}
-            </label>
+            {/* Gold edge moved into the row above — see the note there. */}
             <button style={{ ...action, ...(painting ? { background: INK, color: '#fff', borderColor: INK } : {}) }}
               onClick={() => setCreamPaint(painting ? null : { tierIndex: creamTier, layerId: band.layerId })}>
               {painting ? 'Painting edge — drag on the cake' : 'Paint edge'}
