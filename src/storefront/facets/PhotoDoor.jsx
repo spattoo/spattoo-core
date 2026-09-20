@@ -112,9 +112,11 @@ export default function PhotoDoor({ draft, patch, bakerName, slug, onBack }) {
         <span style={s.hint}>{photos.length}/{MAX_PHOTOS}</span>
       </div>
 
+      {/* "as a reference" already carries it: a reference is by definition not a copy, and spelling
+          that out was the sentence telling a customer what they will NOT get at the moment they are
+          offering something. */}
       <p style={s.body}>
-        A screenshot or a photo of a cake you like. {bakerName} will use it as a reference — they
-        {' '}will not copy it exactly.
+        A screenshot or a photo of a cake you like. {bakerName} will use it as a reference.
       </p>
 
       {/* ── Someone else may be in the picture ───────────────────────────────────────────────────
