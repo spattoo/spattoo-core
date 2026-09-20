@@ -142,6 +142,21 @@ CAT_ELEMENTS.push({
  *
  * `top_drip` is the placement key that routes a ring down the drip branch (Length + Gloss + Flood
  * instead of Size); `cluster` is what grows the ball into a cluster and gives the card its handle. */
+/* ⚠️ A SECOND-CREAM BAND, so the cream-layer card exists in this harness at all. Its Height/Lift/
+ * Torn controls, the band pills, the presets and Paint edge could only be judged from source —
+ * the EIGHTH state this file has had to be taught today (catalogue, GLB, edge seat, two-button
+ * footer, number topper, photo frame, drip/piping, and now this).
+ * `second_cream` is the placement key renderCreamBody reads for its height_range. */
+CAT_ELEMENTS.push({
+  id: 'e17', name: 'Cream band', description: 'a raised buttercream band with a torn edge',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f6e7ea'), thumbnail_url: CAT_THUMB('#f6e7ea'), thumb_key: null,
+  allowed_zones: ['side'],
+  allowed_actions: { color: true, delete: true, resize: true },
+  placement_config: { second_cream: { height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
+  default_color: '#E8A0B0', sort_order: 17,
+});
+
 CAT_ELEMENTS.push({
   id: 'e14', name: 'Chocolate drip', description: 'a rim drip with optional flooded top',
   element_type_id: 'et-drip', category_id: 'cat-1',

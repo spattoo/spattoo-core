@@ -581,8 +581,11 @@ function PenSlider({ label, value, min, max, step, onChange, onCommit, fmt = v =
 // don't each carry a copy (the jscpd duplication gate).
 function FinishTierPicker({ tiers, tier, onPick }) {
   if (tiers.length <= 1) return null;
+  /* ⚠️ BLACK, like the cards it sits in. Sandeep: "buttons in black". This picker renders directly
+     ABOVE the foil/cream buttons, so leaving it green would have left every finish card arguing
+     with its own first row — the "two standards on one screen" problem, in miniature. */
   const btn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-    border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
+    border: active ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a' });
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={s.editPanelLabel}>Tier</span>
@@ -6921,7 +6924,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const effSurface = surfOpts.includes(foilSurface) ? foilSurface : surfOpts[0];
     const SURF_LABEL = { side: 'Side', top_surface: 'Top' };
     const tierBtn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-      border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
+      border: active ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a' });
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Torn shards of edible foil pressed onto the cake. Add a few, then drag each dot to move it.</div>
@@ -6932,7 +6935,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {Object.entries(colors).map(([name, hex]) => (
               <button key={name} onClick={() => setAllFoilColor(hex)} title={name}
                 style={{ padding: '5px 12px', borderRadius: 14, fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
-                  border: foilColor.toLowerCase() === hex.toLowerCase() ? '2px solid #3D5A44' : '1.5px solid #C5D4C8',
+                  border: foilColor.toLowerCase() === hex.toLowerCase() ? '2px solid #1a1a1a' : '1.5px solid #ddd',
                   background: hex, color: '#3d2f12' }}>{name}</button>
             ))}
           </div>
@@ -6970,7 +6973,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             })()}
           </div>
         )}
-        <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
+        {/* s.doneBtn — the app's primary. See the note on chip() above for why this is not green. */}
+        <button style={{ ...s.doneBtn, width: '100%' }}
           onClick={() => addFoilToTier(foilTier, effSurface)}>Add foil</button>
         {flakes.length > 0 && (
           /* ⚠️ ONE SCROLLING ROW, NOT A WRAPPING GRID. Sandeep: "all the added foil should be a on a
@@ -6982,8 +6986,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.previewRow}>
             {flakes.map((_, i) => (
               <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
-                border: foilSel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: foilSel === i ? '#EEF4EF' : '#fff' }}>
-                <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' }}>Flake {i + 1}</button>
+                border: foilSel === i ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: foilSel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
+                <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#1a1a1a', cursor: 'pointer' }}>Flake {i + 1}</button>
                 <button title="Remove" onClick={() => { if (foilSel >= i) setFoilSel(v => Math.max(0, v - 1)); removeFoilFlake(foilTier, i); }}
                   style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: '#e53935', cursor: 'pointer' }}>×</button>
               </span>
@@ -7019,17 +7023,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const hStep = typeof hr.step === 'number' && hr.step > 0 ? hr.step : 0.05;
     const up = (fn) => band && updateCreamLayer(creamTier, band.layerId, fn);
     const painting = creamPaint?.tierIndex === creamTier && creamPaint?.layerId === band?.layerId;
+    /* ⚠️ BLACK, NOT GREEN. Sandeep: "buttons in black" — which also settles the question left open
+       on the foil card ("see the buttons are in green color"). #1a1a1a is what "active" already
+       means everywhere else in this app (doneBtn, the toolbar's pressed state, editTabOn), so the
+       finish cards now agree with every other card instead of carrying their own tone. */
     const chip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-      border: active ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: active ? '#3D5A44' : '#fff', color: active ? '#fff' : '#3D5A44' });
+      border: active ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a' });
     const action = { width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-      border: '1.5px solid #C5D4C8', background: '#fff', color: '#3D5A44', padding: '8px' };
+      border: '1.5px solid #ddd', background: '#fff', color: '#1a1a1a', padding: '8px' };
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A raised second buttercream band with a torn edge. Add a band, then scrape its edge on the cake (turn on Auto-rotate to go around).</div>
         <FinishTierPicker tiers={design.tiers} tier={creamTier} onPick={i => { setCreamTier(i); setCreamSel(0); }} />
-        <button style={{ width: '100%', borderRadius: 8, fontSize: 12, fontWeight: 800, color: '#fff', background: '#3D5A44', border: 'none', padding: '9px', cursor: 'pointer' }}
+        <button style={{ ...s.doneBtn, width: '100%' }}
           onClick={() => addCreamToTier(creamTier)}>+ Add band</button>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#3D5A44' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#1a1a1a' }}>
           <input type="checkbox" checked={creamAutoRotate} onChange={e => setCreamAutoRotate(e.target.checked)} />
           Auto-rotate (spin to paint)
         </label>
@@ -7037,8 +7045,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {layers.map((l, i) => (
               <span key={l.layerId} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
-                border: sel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8', background: sel === i ? '#EEF4EF' : '#fff' }}>
-                <button onClick={() => setCreamSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#3D5A44', cursor: 'pointer' }}>Band {i + 1}</button>
+                border: sel === i ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: sel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
+                <button onClick={() => setCreamSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#1a1a1a', cursor: 'pointer' }}>Band {i + 1}</button>
                 <button title="Remove" onClick={() => { if (creamPaint?.layerId === l.layerId) setCreamPaint(null); if (sel >= i) setCreamSel(v => Math.max(0, v - 1)); removeCreamLayer(creamTier, l.layerId); }}
                   style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: '#e53935', cursor: 'pointer' }}>×</button>
               </span>
@@ -7050,7 +7058,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={s.editPanelLabel}>Colour</span>
               <input type="color" value={band.color} onChange={e => up(x => ({ ...x, color: e.target.value }))}
-                style={{ width: 36, height: 26, border: '1.5px solid #C5D4C8', borderRadius: 7, cursor: 'pointer', background: '#fff', padding: 0 }} />
+                style={{ width: 36, height: 26, border: '1.5px solid #ddd', borderRadius: 7, cursor: 'pointer', background: '#fff', padding: 0 }} />
             </div>
             {/* Anchor: Bottom = band rises from the base (torn TOP edge); Top = band hangs from the rim
                 (torn BOTTOM edge). One of each leaves the classic gap-in-the-middle two-tone. */}
@@ -7058,21 +7066,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <button style={{ ...chip(band.fillSide !== 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'below' }))}>Bottom</button>
               <button style={{ ...chip(band.fillSide === 'above'), flex: 1 }} onClick={() => up(x => ({ ...x, fillSide: 'above' }))}>Top</button>
             </div>
-            <PenSlider label="Height" value={band.height ?? 0.5} min={hMin} max={hMax} step={hStep} onChange={v => up(x => ({ ...x, height: v }))} fmt={v => v.toFixed(2)} />
-            <PenSlider label="Lift" value={band.lift} min={0} max={0.12} step={0.005} onChange={v => up(x => ({ ...x, lift: v }))} fmt={v => v.toFixed(3)} />
-            <PenSlider label="Torn" value={band.noise} min={0} max={0.18} step={0.005} onChange={v => up(x => ({ ...x, noise: v }))} fmt={v => v.toFixed(3)} />
+            {/* ⚠️ THREE DIALS IN ONE SCROLLING ROW. Sandeep: "cream layer- make the controls dialers,
+                in one scrollable row, buttons in black." Three full-bleed range inputs cost three
+                rows of a phone and pushed the presets, Gold edge and Paint edge below the fold; the
+                same three as 46px dials fit one row. s.previewRow is the scroller the ring tiles,
+                placement tiles and foil flakes already use — a fifth hand-rolled one would be the
+                copy rule 1 warns about. Each dial keeps its caption, because three unlabelled dials
+                are indistinguishable (learned on the photo frame an hour ago). */}
+            <div style={s.previewRow}>
+              {[
+                { k: 'Height', v: band.height ?? 0.5, min: hMin, max: hMax, step: hStep, set: v => up(x => ({ ...x, height: v })) },
+                { k: 'Lift',   v: band.lift,          min: 0,    max: 0.12, step: 0.005, set: v => up(x => ({ ...x, lift: v })) },
+                { k: 'Torn',   v: band.noise,         min: 0,    max: 0.18, step: 0.005, set: v => up(x => ({ ...x, noise: v })) },
+              ].map(d => (
+                <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} onChange={d.set} />
+                  <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
+                </div>
+              ))}
+            </div>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {Object.keys(SECOND_CREAM_PRESETS).map(name => (
                 <button key={name} style={chip(false)} onClick={() => up(x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name}</button>
               ))}
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#3D5A44' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#1a1a1a' }}>
               <input type="checkbox" checked={!!band.gold?.on} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), on: e.target.checked } }))} />
               Gold edge
               {band.gold?.on && <input type="color" value={band.gold?.color ?? '#c89b3c'} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))}
-                style={{ width: 30, height: 22, border: '1.5px solid #C5D4C8', borderRadius: 6, cursor: 'pointer', padding: 0 }} />}
+                style={{ width: 30, height: 22, border: '1.5px solid #ddd', borderRadius: 6, cursor: 'pointer', padding: 0 }} />}
             </label>
-            <button style={{ ...action, ...(painting ? { background: '#3D5A44', color: '#fff', borderColor: '#3D5A44' } : {}) }}
+            <button style={{ ...action, ...(painting ? { background: '#1a1a1a', color: '#fff', borderColor: '#1a1a1a' } : {}) }}
               onClick={() => setCreamPaint(painting ? null : { tierIndex: creamTier, layerId: band.layerId })}>
               {painting ? 'Painting edge — drag on the cake' : 'Paint edge'}
             </button>
