@@ -6216,7 +6216,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * ⚠️ `age` is the only form today, so this reads as a type branch and is one. If a second arrives,
    * the rule to name is "does this editor collect a value or adjust a thing", not a list of ids. */
-  const editingOnPhone = isMobile && showRightPanel;
 
   // Measured rather than assumed: the height can come from the content, from a drag, or from the
   // 60% cap, and the canvas has to inset by whichever it actually was.
@@ -6430,6 +6429,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // decorations puts the rest of the cake behind a column the baker did not ask for. The handle is
   // what asks for the list, and it still does.
   const stackSingleCard = isMobile && !stackFlyoutOpen && stackHasExpandedCard;
+
+  /* ⚠️ DECLARED HERE, NOT BESIDE showRightPanel, AND THE REASON IS A CRASH.
+   * It reads stackSingleCard, which is defined on the line above — 213 lines BELOW where this used
+   * to sit. `const` is hoisted but unreadable until its initialiser runs, so reading it earlier is
+   * the temporal dead zone: CakeDesignerInner throws "Cannot access 'stackSingleCard' before
+   * initialization" on EVERY render and the app shows "Something went wrong". This file already
+   * carries that scar once, on selectedEl, with the same note: keep derivations next to what they
+   * derive. check:bindings does not catch it — the name IS declared where this function can see it,
+   * which is the question that gate asks. */
+  const editingOnPhone = isMobile && (showRightPanel || stackSingleCard);
 
   // The handle has three states to move between, not two: shut, one card, and the whole list.
   //   · shut or one card → open the list. From a single card that is "and show me the others",
@@ -10393,20 +10402,59 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {elementStackOpen && stackShown && (
             <div ref={pipingPopupRef} className="piping-popup-scroll"
               style={isMobile
+                /* ⚠️ THE LIST AND AN EDITOR ARE DIFFERENT SHAPES, and `stackSingleCard` already
+                   separates them: it is true only when the stack was opened by TAPPING SOMETHING ON
+                   THE CAKE, so exactly one card is showing. That is an editor, and an editor belongs
+                   at the bottom where a thumb is and where it leaves the cake visible. Opened by the
+                   handle instead, the stack is a LIST of everything on the cake — that stays on the
+                   right, because a list is for scanning, not for editing.
+
+                   Sandeep, on the old behaviour: "problem is - it isnot closing after its selection".
+                   It was never failing to close — the card carries no close button on purpose ("a
+                   layer leaves the cake by unchecking its rings"), and the only way out was tapping
+                   its title, which looks like a heading. On a 200px desktop column that is survivable;
+                   at STACK_W_MOBILE_OPEN it covers the cake with no visible exit. */
+                ? stackSingleCard
+                  ? { ...s.editPopup,
+                      left: 0, right: 0, top: 'auto', bottom: 0, width: 'auto',
+                      maxHeight: '62vh',
+                      borderRadius: '16px 16px 0 0',
+                      /* Solid enough to read against a cake of any colour. The see-through treatment
+                         below is for the list, where seeing the cake through it is the point. */
+                      background: 'rgba(255,255,255,0.96)',
+                      backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
+                      boxShadow: '0 -2px 16px rgba(0,0,0,0.10)' }
                 // Mobile: a see-through, narrower overlay so the cake shows THROUGH the stack (the cards
                 // carry the fill). Light tint + a small blur (not the heavy 18px frost, which washed the
                 // cake out to white). Scroll/maxHeight kept so a long element list still works.
-                ? { ...s.editPopup,
-                    width: stackHasExpandedCard ? STACK_W_MOBILE_OPEN : STACK_W_MOBILE,
-                    right: STACK_RIGHT_MOBILE,
-                    /* An open editor needs to be READ, so it takes a solid-enough surface. The
-                       see-through treatment is for the list, where the point is that the cake shows
-                       through the cards. */
-                    background: stackHasExpandedCard ? 'rgba(255,255,255,0.93)' : 'rgba(255,255,255,0.12)',
-                    backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
+                  : { ...s.editPopup,
+                      width: stackHasExpandedCard ? STACK_W_MOBILE_OPEN : STACK_W_MOBILE,
+                      right: STACK_RIGHT_MOBILE,
+                      /* An open editor needs to be READ, so it takes a solid-enough surface. The
+                         see-through treatment is for the list, where the point is that the cake shows
+                         through the cards. */
+                      background: stackHasExpandedCard ? 'rgba(255,255,255,0.93)' : 'rgba(255,255,255,0.12)',
+                      backdropFilter: 'blur(6px)', WebkitBackdropFilter: 'blur(6px)' }
                 : s.editPopup}>
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
+
+              {/* ⚠️ THE TICK CLEARS TWO THINGS, and one of them is why "it isnot closing".
+                  clearAllSelections() is selectExclusive(null) — it clears selectedEl and the sticker
+                  set, and does NOT touch expandedPipingId. A piping card's expansion is tracked
+                  separately, so a tick wired to the selection alone would dismiss a decoration and do
+                  nothing whatsoever for piping. Every other dismissal in this file already pairs the
+                  two (focusEditor, the age and writing handlers); this is that pattern, not a new one.
+
+                  Docked only: on the right-hand list there is nothing to finish — you are scanning
+                  what is on the cake, and the handle closes it. */}
+              {stackSingleCard && (
+                <div style={s.dockedSheetHeader}>
+                  <span style={s.dockedSheetGrip} aria-hidden="true" />
+                  <button style={s.iconBtn} aria-label="Done editing"
+                          onClick={() => { clearAllSelections(); setExpandedPipingId(null); }}>✓</button>
+                </div>
+              )}
 
               {/* Decoration cards (sticker / topper / text) — expanded one pinned to the top
                   of this group. Clicking the expanded card collapses it; clicking a collapsed
@@ -12470,6 +12518,18 @@ const s = {
     // Above the stack itself (20), so the handle stays pressable when the panel is out.
     zIndex: 21,
     pointerEvents: 'auto',
+  },
+  /* The docked editor's own header: a grip that says "this is a sheet" and the tick that finishes.
+     Sticky so the tick stays reachable while a long card scrolls under it — the card being tall is
+     exactly the situation the tick exists for. */
+  dockedSheetHeader: {
+    position: 'sticky', top: 0, zIndex: 1, flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    padding: '2px 2px 8px', background: 'rgba(255,255,255,0.96)',
+  },
+  dockedSheetGrip: {
+    width: 36, height: 4, borderRadius: 2, background: '#ddd',
+    position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 2,
   },
   editPopup: {
     position: 'absolute',
