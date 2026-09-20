@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useMemo, Suspense } from 'react';
 import CakeCanvas, { CakeThumbnailCanvas } from '../designer/canvas/CakeCanvas.jsx';
 import { TIER_RADII, FROSTING_TYPES } from '../designer/hooks/useCakeDesign.js';
+import { DANGER, INK } from '../shared/tokens.js';
 
 const API_BASE = typeof import.meta !== 'undefined' ? (import.meta.env?.VITE_API_URL ?? '') : '';
 
@@ -40,7 +41,7 @@ const s = {
     flex: 1, position: 'relative', background: '#FAFAF8',
   },
   label: {
-    display: 'block', fontSize: 11, fontWeight: 700, color: '#1a1a1a',
+    display: 'block', fontSize: 11, fontWeight: 700, color: INK,
     letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6,
   },
   input: {
@@ -63,7 +64,7 @@ const s = {
     marginBottom: 10,
   },
   tierLabel: {
-    fontSize: 11, fontWeight: 700, color: '#1a1a1a',
+    fontSize: 11, fontWeight: 700, color: INK,
     letterSpacing: 1, textTransform: 'uppercase',
   },
   row: { display: 'flex', gap: 8, alignItems: 'center', marginBottom: 8 },
@@ -73,7 +74,7 @@ const s = {
   },
   tierCountBtn: (active) => ({
     flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
-    border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
+    border: `1.5px solid ${active ? INK : '#999999'}`,
     background: active ? '#FAFAF8' : '#fff',
     color: active ? '#6b2d42' : '#b07a8a',
     fontSize: 13, fontWeight: 700,
@@ -98,8 +99,8 @@ const s = {
     width: '100%', padding: '10px 0', borderRadius: 10, cursor: 'pointer',
     border: 'none', fontSize: 13, fontWeight: 700,
     fontFamily: "'Quicksand', sans-serif",
-    background: variant === 'primary' ? '#1a1a1a' : '#f3f4f6',
-    color: variant === 'primary' ? '#fff' : '#1a1a1a',
+    background: variant === 'primary' ? INK : '#f3f4f6',
+    color: variant === 'primary' ? '#fff' : INK,
   }),
   // Element panel
   typeScrollRow: {
@@ -108,7 +109,7 @@ const s = {
   },
   typePill: (active) => ({
     flexShrink: 0, padding: '4px 10px', borderRadius: 20, cursor: 'pointer',
-    border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
+    border: `1.5px solid ${active ? INK : '#999999'}`,
     background: active ? '#FAFAF8' : '#fff',
     color: active ? '#6b2d42' : '#b07a8a',
     fontSize: 11, fontWeight: 700,
@@ -129,7 +130,7 @@ const s = {
     borderRadius: 6, background: '#fff',
   },
   elName: {
-    fontSize: 9, color: '#1a1a1a', fontWeight: 600, marginTop: 4,
+    fontSize: 9, color: INK, fontWeight: 600, marginTop: 4,
     textAlign: 'center', lineHeight: 1.2, wordBreak: 'break-word',
   },
   // Group bar overlay
@@ -684,7 +685,7 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
             <div style={{
               position: 'fixed', left: dragGhost.x - 28, top: dragGhost.y - 28,
               width: 56, height: 56, borderRadius: 12, overflow: 'hidden',
-              background: 'rgba(255,255,255,0.9)', border: '2px solid #1a1a1a',
+              background: 'rgba(255,255,255,0.9)', border: `2px solid ${INK}`,
               boxShadow: '0 4px 16px rgba(0,0,0,0.2)', pointerEvents: 'none',
               display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999,
             }}>
@@ -709,37 +710,37 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
               </span>
 
               {/* Height */}
-              <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700 }}>Height</span>
+              <span style={{ fontSize: 10, color: INK, fontWeight: 700 }}>Height</span>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { yOffset: +(((selectedSticker.yOffset ?? 0) - 0.05).toFixed(3)) })}>−</button>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { yOffset: +(((selectedSticker.yOffset ?? 0) + 0.05).toFixed(3)) })}>+</button>
 
               {/* Scale */}
-              <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Size</span>
+              <span style={{ fontSize: 10, color: INK, fontWeight: 700, marginLeft: 4 }}>Size</span>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: Math.max(0.3, +((selectedSticker.scale - 0.2).toFixed(2))) })}>−</button>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { scale: +((selectedSticker.scale + 0.2).toFixed(2)) })}>+</button>
 
               {/* Tilt */}
-              <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Tilt</span>
+              <span style={{ fontSize: 10, color: INK, fontWeight: 700, marginLeft: 4 }}>Tilt</span>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.max(-1.2, +((selectedSticker.tiltAngle ?? 0) - 0.1).toFixed(3)) })}>−</button>
-              <span style={{ fontSize: 10, color: '#1a1a1a', minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
+              <span style={{ fontSize: 10, color: INK, minWidth: 28, textAlign: 'center' }}>{Math.round(((selectedSticker.tiltAngle ?? 0) * 180) / Math.PI)}°</span>
               <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { tiltAngle: Math.min(1.2, +((selectedSticker.tiltAngle ?? 0) + 0.1).toFixed(3)) })}>+</button>
 
               {/* Spin (top surface stand stickers only) */}
               {selectedSticker.zone === 'top_surface' && selectedSticker.placementMode === 'stand' && <>
-                <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Spin</span>
+                <span style={{ fontSize: 10, color: INK, fontWeight: 700, marginLeft: 4 }}>Spin</span>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { rotation: +((selectedSticker.rotation ?? 0) - 0.2).toFixed(3) })}>↺</button>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { rotation: +((selectedSticker.rotation ?? 0) + 0.2).toFixed(3) })}>↻</button>
               </>}
 
               {/* Depth (side stickers only) */}
               {selectedSticker.zone === 'side' && <>
-                <span style={{ fontSize: 10, color: '#1a1a1a', fontWeight: 700, marginLeft: 4 }}>Depth</span>
+                <span style={{ fontSize: 10, color: INK, fontWeight: 700, marginLeft: 4 }}>Depth</span>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { radialOffset: Math.max(0, +((selectedSticker.radialOffset ?? 0) - 0.05).toFixed(3)) })}>−</button>
                 <button style={s.groupBarBtn} onClick={() => updateStickerPos(selectedId, { radialOffset: Math.min(0.6, +((selectedSticker.radialOffset ?? 0) + 0.05).toFixed(3)) })}>+</button>
               </>}
 
               <button
-                style={{ ...s.groupBarBtn, color: '#e53935', borderColor: '#fcc', marginLeft: 4 }}
+                style={{ ...s.groupBarBtn, color: DANGER, borderColor: '#fcc', marginLeft: 4 }}
                 onClick={() => removeStickerById(selectedId)}>
                 Delete
               </button>
@@ -762,17 +763,17 @@ export default function CreateTemplate({ supabase, thumbnailBucket = 'cake-thumb
                   {ids.length === 0 ? 'Tap to select' : ids.length === 1 ? '1 selected — tap more' : `${ids.length} selected`}
                 </span>
                 {ids.length > 1 && !allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }} onClick={groupSelected}>
+                  <button style={{ ...s.groupBarBtn, color: INK, borderColor: '#999999' }} onClick={groupSelected}>
                     Group
                   </button>
                 )}
                 {ids.length > 1 && allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }} onClick={ungroupSelected}>
+                  <button style={{ ...s.groupBarBtn, color: INK, borderColor: '#999999' }} onClick={ungroupSelected}>
                     Ungroup
                   </button>
                 )}
                 {ids.length > 1 && (
-                  <button style={{ ...s.groupBarBtn, color: '#e53935', borderColor: '#fcc' }} onClick={deleteSelected}>
+                  <button style={{ ...s.groupBarBtn, color: DANGER, borderColor: '#fcc' }} onClick={deleteSelected}>
                     Delete all
                   </button>
                 )}

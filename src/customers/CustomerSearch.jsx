@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from 'react';
+import { DANGER, INK } from '../shared/tokens.js';
 
 // Reusable "find an existing customer of this baker" search — same behaviour as the
 // order-placement search (OrderModal): load the baker's customer list once, filter by
 // phone digits or name substring, render tappable results. Baker scoping comes from
 // apiClient.fetchCustomers (authed → that baker's customers only). onSelect(customer) fires
 // when one is picked.
-export default function CustomerSearch({ apiClient, primaryColor = '#1a1a1a', isMobile = false, onSelect, autoFocus = false }) {
+export default function CustomerSearch({ apiClient, primaryColor = INK, isMobile = false, onSelect, autoFocus = false }) {
   const [customers, setCustomers] = useState(null);   // null = not loaded yet
   const [loading,   setLoading]   = useState(false);
   const [fetchErr,  setFetchErr]  = useState(null);
@@ -49,7 +50,7 @@ export default function CustomerSearch({ apiClient, primaryColor = '#1a1a1a', is
         onChange={e => setQuery(e.target.value)}
       />
       {loading && <span style={{ fontSize: 11, color: '#aaa' }}>Loading customer list…</span>}
-      {!loading && fetchErr && <span style={{ fontSize: 11, color: '#e53935' }}>Could not load customers: {fetchErr}</span>}
+      {!loading && fetchErr && <span style={{ fontSize: 11, color: DANGER }}>Could not load customers: {fetchErr}</span>}
       {noMatch && <span style={{ fontSize: 12, color: '#999' }}>No matching customers.</span>}
       {results.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
@@ -64,7 +65,7 @@ export default function CustomerSearch({ apiClient, primaryColor = '#1a1a1a', is
                 {(c.first_name?.[0] ?? '').toUpperCase()}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 12, color: '#1a1a1a' }}>{c.first_name} {c.last_name ?? ''}</div>
+                <div style={{ fontWeight: 600, fontSize: isMobile ? 13 : 12, color: INK }}>{c.first_name} {c.last_name ?? ''}</div>
                 {c.phone && <div style={{ fontSize: isMobile ? 12 : 10, color: '#888' }}>{c.phone}</div>}
               </div>
             </button>
