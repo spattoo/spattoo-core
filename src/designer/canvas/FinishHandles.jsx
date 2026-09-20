@@ -29,6 +29,18 @@ const BOARD_Y = 0.1;   // the board's top — the tier stack starts here (see Ca
 export default function FinishHandles({
   tierData = [], getPoints, selected = null, onMove, onSelect,
   catcherFlag = 'isFinishCatcher', handleFlag = 'isFinishHandle',
+  /* ⚠️ CATCHERS ARE FOR DRAGGING; HANDLES ARE FOR TAPPING. Conflating them is why a placed finish
+   * became unreachable the moment its card was closed: the whole component was mounted only while
+   * editing, so after "Done" a flake had no hit target at all and tapping it did nothing.
+   *
+   * They cannot simply be left mounted, either. A catcher is an invisible cylinder around each
+   * wall plus a disc over the lid — it wraps the entire cake, so it would swallow taps meant for
+   * decorations underneath and suspend orbit anywhere over a tier. A handle is a 0.1 sphere
+   * sitting exactly on its shard, and is the thing that makes the shard tappable.
+   *
+   * So the two are separable: a CLOSED card keeps the spheres and drops the catchers (tap a flake,
+   * reopen the card); an OPEN one has both (tap, and drag against the surface). */
+  catchers = true,
   // NOTE — default is NO visible marker. A particle finish (dust, foil, and any
   // FUTURE finish) is grabbed via the invisible sphere at its origin; we do NOT
   // draw a coloured dot on the cake, because that dot reads as part of the design
@@ -134,19 +146,23 @@ export default function FinishHandles({
         const hasTop = points.some(p => (p.surface ?? 'side') === 'top_surface');
         return (
           <group key={ti}>
-            {/* invisible open-cylinder wall catcher — raycast target for side drags */}
-            <mesh position={[0, cy + t.height / 2, 0]} userData={{ [catcherFlag]: true, surface: 'side', tierIndex: ti }}>
-              <cylinderGeometry args={[R * 1.012, R * 1.012, t.height, 96, 1, true]} />
-              <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-            </mesh>
-            {/* invisible flat-disk catcher at the lid — raycast target for top-surface drags. Only when
-                this tier has top flakes (a disk over every tier would block the wall catcher otherwise). */}
-            {hasTop && (
-              <mesh position={[0, topY + 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}
-                userData={{ [catcherFlag]: true, surface: 'top_surface', tierIndex: ti, radius: R, innerFrac: t.topInnerFrac ?? 0 }}>
-                <circleGeometry args={[R * 1.012, 64]} />
-                <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-              </mesh>
+            {catchers && (
+              <>
+                {/* invisible open-cylinder wall catcher — raycast target for side drags */}
+                <mesh position={[0, cy + t.height / 2, 0]} userData={{ [catcherFlag]: true, surface: 'side', tierIndex: ti }}>
+                  <cylinderGeometry args={[R * 1.012, R * 1.012, t.height, 96, 1, true]} />
+                  <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+                </mesh>
+                {/* invisible flat-disk catcher at the lid — raycast target for top-surface drags. Only when
+                    this tier has top flakes (a disk over every tier would block the wall catcher otherwise). */}
+                {hasTop && (
+                  <mesh position={[0, topY + 0.03, 0]} rotation={[-Math.PI / 2, 0, 0]}
+                    userData={{ [catcherFlag]: true, surface: 'top_surface', tierIndex: ti, radius: R, innerFrac: t.topInnerFrac ?? 0 }}>
+                    <circleGeometry args={[R * 1.012, 64]} />
+                    <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+                  </mesh>
+                )}
+              </>
             )}
             {points.map((p, si) => {
               const surface = p.surface ?? 'side';
@@ -198,11 +214,13 @@ export default function FinishHandles({
           would give two answers to one question. */}
       {board && boardPoints?.length > 0 && (
         <group>
-          <mesh position={[0, BOARD_Y + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}
-            userData={{ [catcherFlag]: true, surface: 'board', tierIndex: BOARD_TIER, radius: board.radius }}>
-            <circleGeometry args={[board.radius * 1.01, 64]} />
-            <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-          </mesh>
+          {catchers && (
+            <mesh position={[0, BOARD_Y + 0.02, 0]} rotation={[-Math.PI / 2, 0, 0]}
+              userData={{ [catcherFlag]: true, surface: 'board', tierIndex: BOARD_TIER, radius: board.radius }}>
+              <circleGeometry args={[board.radius * 1.01, 64]} />
+              <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+            </mesh>
+          )}
           {boardPoints.map((p, si) => {
             const ang = p.u * TAU;
             const isSel = selected && selected.tier === BOARD_TIER && selected.idx === si;

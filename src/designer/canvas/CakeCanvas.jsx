@@ -2484,9 +2484,22 @@ function CakeScene({
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
+      /* A FINISH HANDLE OWNS ITS GESTURE TOO, and leaving it out is why tapping a gold-leaf shard
+       * appeared to do nothing. Measured, not reasoned: the tap DID hit the sphere — onFoilSelect
+       * ran and moved the finish's own index from flake 2 to flake 0 — and then the leaked r3f
+       * click reached the tier underneath and selectExclusive({type:'tier'}) overwrote the foil
+       * selection in the same gesture. From the DOM that is indistinguishable from a tap that
+       * missed, which is exactly how an earlier attempt at this bug was misdiagnosed.
+       * This is the same leak the note above describes for decorations; finish handles were never
+       * added to the list. isFoilTap is the closed-card sphere, isFoilHandle the editing one — a
+       * tap inside the card must not close the card either.
+       * ⚠️ ORBIT IS DELIBERATELY NOT WIDENED. `overDust` below still excludes isFoilTap, so a drag
+       * that begins on a shard with the card shut still rotates the cake. Owning the click and
+       * suspending rotation are different questions, and only the first one is this bug. */
+      const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle);
       // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
-      gestureOnStickerRef.current = overSticker || overGrip;
+      gestureOnStickerRef.current = overSticker || overGrip || overFinish;
       if (orbitRef.current) {
         orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip && !overPiping;
         orbitRef.current.enableRotate = !overCream;
@@ -2494,6 +2507,46 @@ function CakeScene({
     }
     canvas.addEventListener('pointerdown', onCaptureDown, { capture: true });
     return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
+  }, [gl, camera, scene]);
+
+  /* ── DEV-ONLY: where a foil flake actually IS, in screen pixels ────────────────────────────────
+   * The tap-to-reopen fix above was written once before and REVERTED, because it could not be
+   * demonstrated: taps were aimed at the cake by eye, all of them missed, and a miss is
+   * indistinguishable from a fix that does not work. Those are opposite conclusions and nothing
+   * on screen separates them.
+   * A handle's world position projected through the LIVE camera does separate them: an empty list
+   * means the handles are not mounted (the fix is wrong), a populated one means the coordinates
+   * are known and a miss is the test's fault. Same projection as ResizeHandles.beginResize.
+   * Dev-gated like CakeDesigner's window.__* block — it never reaches a baker. */
+  useEffect(() => {
+    if (!import.meta.env?.DEV || typeof window === 'undefined') return;
+    window.__foilTapTargets = () => {
+      const rect = gl.domElement.getBoundingClientRect();
+      const wp = new THREE.Vector3(), ndc = new THREE.Vector3();
+      const out = [];
+      scene.traverse((o) => {
+        const tap = !!o.userData?.isFoilTap, handle = !!o.userData?.isFoilHandle;
+        if (!tap && !handle) return;
+        o.getWorldPosition(wp);
+        ndc.copy(wp).project(camera);
+        out.push({
+          // Which flag it carries says WHICH state the cake is in, so a test can assert the swap.
+          flag: tap ? 'isFoilTap' : 'isFoilHandle',
+          x: (ndc.x + 1) / 2 * rect.width + rect.left,
+          y: (-ndc.y + 1) / 2 * rect.height + rect.top,
+          // Behind the camera or off the viewport: a real coordinate that is still unhittable.
+          onScreen: ndc.z < 1 && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1,
+        });
+      });
+      return out;
+    };
+    // Counts the catchers too, so "did the catchers really come off?" is a question with an answer.
+    window.__foilCatcherCount = () => {
+      let n = 0;
+      scene.traverse((o) => { if (o.userData?.isFoilCatcher) n++; });
+      return n;
+    };
+    return () => { delete window.__foilTapTargets; delete window.__foilCatcherCount; };
   }, [gl, camera, scene]);
 
   // Where the cake stands, resolved ONCE and handed to CakeContent — so the board this scene draws is
@@ -2645,9 +2698,24 @@ function CakeScene({
 
       {dustMode && <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustSelected}
         onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}
-      {foilMode && <FinishHandles tierData={tierData} getPoints={t => t.foil?.flakes} selected={foilSelected}
-        onMove={onFoilMove} onSelect={onFoilSelect} catcherFlag="isFoilCatcher" handleFlag="isFoilHandle"
-        color="#f0d878" selColor="#3D5A44" />}{/* no marker dot — default; grab the shard directly */}
+      {/* ⚠️ MOUNTED WHENEVER THE CAKE CARRIES FOIL, NOT ONLY WHILE ITS CARD IS OPEN. Sandeep: "when
+          you say done, control closes, but then clicking on any flake on the cake does not open the
+          control back." It could not: the handles lived and died with `foilMode`, so after Done the
+          shards had no hit target of any kind. The foil CARD already survives a closed selection
+          (CakeDesigner builds it whenever any tier has flakes, so it returns after a reload) — the
+          thing that was missing is the way back to it from the cake.
+          ⚠️ `catchers` is what makes this safe. See FinishHandles: with the card closed only the
+          0.1 grab spheres mount, never the cake-wrapping catchers.
+          ⚠️ AND THE HANDLE FLAG CHANGES WITH IT. `overDust` above suspends orbit for anything
+          tagged isFoilHandle. Keeping that tag on a closed card would freeze rotation wherever a
+          flake happens to sit — on a gesture that cannot drag anything, because its catcher is
+          gone — so a closed card tags its spheres isFoilTap: still tappable, invisible to orbit. */}
+      {(foilMode || tierData.some(t => t.foil?.flakes?.length)) && (
+        <FinishHandles tierData={tierData} getPoints={t => t.foil?.flakes} selected={foilMode ? foilSelected : null}
+          onMove={onFoilMove} onSelect={onFoilSelect} catcherFlag="isFoilCatcher"
+          handleFlag={foilMode ? 'isFoilHandle' : 'isFoilTap'} catchers={foilMode}
+          color="#f0d878" selColor="#3D5A44" />
+      )}{/* no marker dot — default; grab the shard directly */}
 
       {pipingTarget && (
         <CreamStylePicker styles={pipingStyles} onSelect={onPipingStyleSelect} onCancel={onPipingCancel} />

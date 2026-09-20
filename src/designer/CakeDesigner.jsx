@@ -5822,6 +5822,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
     window.__getSelection = () => [...selectedStickerIds];
+    /* What is selected, as a fact rather than an inference from what is on screen. Added while
+     * proving the foil tap-to-reopen fix: a tap that MISSED a flake and a tap that HIT it but
+     * failed to open the card look identical from the DOM, and they are opposite bugs. A tap that
+     * lands on the cake wall selects a tier, so reading this after the tap says which happened. */
+    window.__getSelectedEl = () => selectedEl;
+    /* Which flake the FINISH thinks is selected. This is the discriminator between "the tap missed
+     * the shard" and "the tap hit it and something else stole the selection afterwards": onFoilSelect
+     * sets these two indices, so they move if and only if the grab sphere was actually hit. From the
+     * DOM those two cases look the same, and they need opposite fixes. */
+    window.__getFoilSel = () => ({ tier: foilTier, idx: foilSel });
+    // Foil flakes with their surface, so a test can confirm WHERE the shards were put before
+    // aiming at them — a top-surface flake hides behind the tier above and is not tappable.
+    window.__getFoil = () => design.tiers.map((t, i) => ({ tier: i, flakes: (t.foil?.flakes ?? []).map(f => ({ u: f.u, v: f.v, surface: f.surface ?? 'side' })) })).filter(t => t.flakes.length);
     // Piping lives on the tiers, not in `stickers` — expose it so a test can assert what a piping
     // element actually put on the cake (and that Remove took it off), not just what the popup shows.
     window.__getPiping = () => design.tiers.flatMap((t, i) => [
@@ -10521,7 +10534,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               foilMode={selectedEl?.type === 'foil'}
               foilSelected={{ tier: foilTier, idx: foilSel }}
               onFoilMove={(tier, idx, u, v) => updateFoilFlake(tier, idx, { u, v })}
-              onFoilSelect={(tier, idx) => { setFoilTier(tier); setFoilSel(idx); }}
+              /* ⚠️ SELECTING A FLAKE MUST ALSO OPEN ITS CARD. Setting the two indices is enough
+                 while the card is already open, and was the whole handler — which is why tapping a
+                 flake after "Done" did nothing visible: the right flake was selected behind a card
+                 nobody had reopened. The card itself already exists whenever a tier carries flakes.
+                 Paired exactly as tapPlaceElement and handleElementDrop pair it: the elements
+                 sheet closes and the decoration editor takes focus, or on a phone the selection
+                 would land behind whatever is already on screen. */
+              onFoilSelect={(tier, idx) => {
+                setFoilTier(tier); setFoilSel(idx);
+                if (selectedEl?.type !== 'foil') {
+                  setElementsOpen(false);
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'foil', elementId: foilElement?.id ?? null });
+                }
+              }}
               selectedStickerIds={selectedStickerIds}
               onStickerSelect={handleStickerSelect}
               onStickerLongPress={handleStickerLongPress}

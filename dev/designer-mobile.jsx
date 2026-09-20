@@ -76,7 +76,9 @@ const CAT_TYPES = [
 const CAT_ELEMENTS = [
   ['e1', 'Fiitball',      'et-topper', '#c9d6c4', 'football sport'],
   ['e2', 'Crown',         'et-topper', '#e8d7a8', 'gold crown'],
-  ['e3', 'Gold Leaf',     'et-foil',   '#e6c86a', 'edible foil'],
+  /* e3 (Gold Leaf) is NOT here — it is pushed below with a real `kind: 'tier_finish'` config.
+     Every row in this table shares one placement_config through the .map(), which makes it a
+     sticker, so a foil row could sit here looking right and never open a foil card at all. */
   ['e4', 'Blue Wing',     'et-fly',    '#a8c4e8', 'butterfly wing'],
   ['e5', 'baby shorts',   'et-image',  '#7fc3d6', 'baby clothes'],
   ['e6', 'baby romper',   'et-image',  '#8fd6cf', 'baby clothes'],
@@ -95,6 +97,37 @@ const CAT_ELEMENTS = [
   placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand' },
   default_color: '#F0DEB8', sort_order: i,
 }));
+
+/* ⚠️ THE FOOD FOIL ROW, and it could not live in the table above. A tier finish paints shards into
+ * the tier's material instead of placing a sticker, and it is routed by `placement_config.kind ===
+ * 'tier_finish'` — but every row in that table shares ONE placement_config through the .map(), so
+ * `e3 Gold Leaf` sat there with `et-foil` on it and the config of a topper. It opened an ordinary
+ * sticker card. That is the same trap this file already names for `top_drip`: a fixture that looks
+ * like the thing it is meant to test, produces the wrong card, and hands back a false pass. The
+ * foil card's tap-to-reopen bug was "investigated" against exactly this, which is part of why an
+ * earlier fix could not be demonstrated — there was no foil on the cake to tap.
+ *
+ *   · allowed_zones decides the SURFACE chooser. Both zones → the two-button Surface+Size row;
+ *     one zone → the computed-label path where the row is just "Size". Both is the richer case.
+ *   · `colors` is deliberately ABSENT so the card falls back to GOLD_LEAF_COLORS (gold + silver),
+ *     which is what a real element without an override does. Restating those two hexes here would
+ *     be a second copy of a value that already has a home.
+ *   · `finish` carries only what is live: GOLD_LEAF_DEFAULTS documents env/crinkle/glow as dead or
+ *     inert, so a fixture that set them would be describing behaviour that does not exist. */
+CAT_ELEMENTS.push({
+  id: 'e3', name: 'Gold Leaf', description: 'edible foil',
+  element_type_id: 'et-foil', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e6c86a'), thumbnail_url: CAT_THUMB('#e6c86a'), thumb_key: null,
+  allowed_zones: ['side', 'top_surface'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: false },
+  placement_config: {
+    kind: 'tier_finish',
+    r: 0.5,                                    // a new shard's default size, inside the range below
+    scale: { min: 0.1, max: 1.5, step: 0.05 },
+    finish: { metalness: 0.9, roughness: 0.16, sizeScale: 1.0, raggedness: 0.55 },
+  },
+  default_color: '#e6be4a', sort_order: 3,
+});
 
 /* ⚠️ THE CARD TOPPER STUDIO, which nothing here could reach. It is a PROCEDURAL row — tapping it
  * opens a studio instead of dropping a picture on the cake — so it carries `placement_config.
