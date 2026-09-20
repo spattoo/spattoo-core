@@ -6855,7 +6855,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         </div>
         <div style={{ display: 'flex', gap: 14 }}>
           <button onClick={() => { ungroupStickers(card.groupId); clearAllSelections(); }}
-            style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Ungroup</button>
+            style={s.neutralBtn}>Ungroup</button>
           {/* s.deleteBtn, like every other element-level remove — this was bare red text. */}
           <button onClick={handleDelete} style={s.deleteBtn}>Remove group from cake</button>
         </div>
@@ -7856,14 +7856,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const actions = [];
     if (c.duplicate && el.type === 'text') {
       actions.push(
-        <button key="dup" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Duplicate</button>
+        <button key="dup" style={s.neutralBtn} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Duplicate</button>
       );
     }
     if (c.duplicate && el.type === 'sticker') {
       const sticker = design.stickers.find(s => s.id === el.id);
       if (!sticker?.groupId) {
         actions.push(
-          <button key="dup-sticker" style={{ ...s.tbIconBtn, fontSize: 11 }} onClick={() => { duplicateSticker(el.id); clearAllSelections(); }}>Duplicate</button>
+          <button key="dup-sticker" style={s.neutralBtn} onClick={() => { duplicateSticker(el.id); clearAllSelections(); }}>Duplicate</button>
         );
       }
     }
@@ -10555,7 +10555,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
-                  <button onClick={() => duplicateAge(selectedAge.id)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #ddd', background: '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>Duplicate</button>
+                  <button onClick={() => duplicateAge(selectedAge.id)} style={{ ...s.neutralBtn, flex: 1 }}>Duplicate</button>
                   <button onClick={() => { removeAge(selectedAge.id); setSelectedEl(null); }} style={{ ...s.deleteBtn, flex: 1 }}>Remove from cake</button>
                 </div>
               </div>
@@ -12875,17 +12875,45 @@ const s = {
    * doneBtn is filled rather than tinted. It was #6c47ff on #f0f0ff, and a pale control is exactly
    * what Sandeep reported on the tick — rule 7 is judged AT REST on a phone, with no hover to
    * rescue it. #1a1a1a is what "active" already means across this app. */
-  deleteBtn: {
-    padding: '8px 14px', borderRadius: 10,
-    background: '#fff0f0', border: '1.5px solid #f5c0c0',
-    fontSize: 11, fontWeight: 700, color: '#e53935', cursor: 'pointer',
-    fontFamily: "'Quicksand',sans-serif",
-  },
-  doneBtn: {
-    minHeight: 34, padding: '0 18px', borderRadius: 10, border: 'none',
-    background: '#1a1a1a', color: '#fff', cursor: 'pointer',
-    fontSize: 13, fontWeight: 700, fontFamily: "'Quicksand',sans-serif",
+  /* ── ONE CARD BUTTON, THREE TONES ──────────────────────────────────────────────────────────────
+   * Sandeep: "'Done' button is a black button, 'remove from cake' is a red one. and duplicate is not
+   * a button at all. lets make it a standard to have buttons as 'Done' button pls."
+   *
+   * Those were three unrelated systems on one footer row: doneBtn (minHeight 34, 18px sides, 13px),
+   * deleteBtn (no min-height, 8/14 padding, 11px — visibly shorter), and Duplicate riding
+   * s.tbIconBtn, which is a TRANSPARENT TOOLBAR ICON style. That last one is why it did not read as
+   * a control at all: it was never a button, it was an icon slot with a word in it.
+   *
+   * So the GEOMETRY is Done's, for all three, and only the tone changes.
+   *
+   * ⚠️ TONE STILL CARRIES MEANING — it is not "everything black". A remove that looks exactly like a
+   * confirm loses the one at-rest signal that it is destructive, and CLAUDE.md rule 7 is judged AT
+   * REST on a phone where there is no hover to rescue it. Same size, same weight, same target;
+   * different field.
+   *
+   * ⚠️ NO LAYOUT IN THESE. Call sites pass flex:1, width:'100%', alignSelf, marginTop — that is the
+   * rule already learned here once, when `flex: 1` lived in the base and every other placement had
+   * to hand-roll around it. These say what a control MEANS, never where it sits. */
+  cardBtnBase: {
+    minHeight: 34, padding: '0 18px', borderRadius: 10,
+    fontSize: 13, fontWeight: 700, fontFamily: "'Quicksand',sans-serif", cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  /* ⚠️ THE THREE TONES SPREAD THE BASE — they do not restate it. Written out in full first, which
+     made cardBtnBase a style that CLAIMED to be the shape while nothing derived from it: the worst
+     kind of dead code, because the next person edits the base and sees nothing change. One geometry,
+     in one place; a tone says only what the control MEANS. */
+  // Destructive: the field is the signal. Keeps the name — 18 call sites already say deleteBtn.
+  get deleteBtn() {
+    return { ...this.cardBtnBase, background: '#fff0f0', border: '1.5px solid #f5c0c0', color: '#e53935' };
+  },
+  // Neutral: a real button for the actions that were bare words (Duplicate, Ungroup).
+  get neutralBtn() {
+    return { ...this.cardBtnBase, background: '#fff', border: '1.5px solid #ddd', color: '#1a1a1a' };
+  },
+  // Primary: the confirm. #1a1a1a is what "active" already means across this app.
+  get doneBtn() {
+    return { ...this.cardBtnBase, background: '#1a1a1a', border: 'none', color: '#fff' };
   },
   iconBtn: {
     background:'#f3f4f6', border:'none', width:28, height:28, borderRadius:'50%',
