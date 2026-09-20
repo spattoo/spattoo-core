@@ -89,6 +89,7 @@ import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
+import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
@@ -7156,10 +7157,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 { k: 'Lift',   v: band.lift,          min: 0,    max: 0.12, step: 0.005, fmt: v => v.toFixed(3), set: v => up(x => ({ ...x, lift: v })) },
                 { k: 'Torn',   v: band.noise,         min: 0,    max: 0.18, step: 0.005, fmt: v => v.toFixed(3), set: v => up(x => ({ ...x, noise: v })) },
               ].map(d => (
-                <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
-                  <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
-                </div>
+                <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
             </div>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -8167,7 +8165,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           placeholder={'Type a message…\n(Enter for a new line)'}
           rows={4}
           style={{ width: '100%', boxSizing: 'border-box', padding: '10px 11px', fontSize: 15, fontWeight: 700, color: '#444',
-            border: '1.5px solid #999999', borderRadius: 10, outline: 'none', background: '#ffffff', fontFamily: "'Quicksand', sans-serif",
+            border: `1.5px solid ${LINE}`, borderRadius: 10, outline: 'none', background: '#ffffff', fontFamily: "'Quicksand', sans-serif",
             flexShrink: 0, resize: 'vertical', lineHeight: 1.4, minHeight: 80,
             textTransform: w.uppercase ? 'uppercase' : 'none' }}
         />
@@ -8306,9 +8304,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {[['Draw', false], ['Move', true]].map(([label, val]) => (
             <button key={label} onClick={() => setPenMove(val)}
               style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
-                       border: `1.5px solid ${penMove === val ? '#2C4433' : '#999999'}`,
-                       background: penMove === val ? '#2C4433' : '#fff',
-                       color: penMove === val ? '#fff' : INK,
+                       /* Black, like every other pressed state in this app. This was the last green
+                          toggle on a card — and `penMove` is the PEN's mode (declared once, read by
+                          the canvas as penDrawMode/penMoveMode), surfaced here, so it should not
+                          have carried a tone of its own in the first place. */
+                       border: `1.5px solid ${penMove === val ? INK : LINE}`,
+                       background: penMove === val ? INK : SURFACE,
+                       color: penMove === val ? SURFACE : INK,
                        fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
               {label}
             </button>
@@ -8328,49 +8330,67 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             in ACRYLIC_DEFAULTS and overlaid by an admin — not something a customer should be able to
             drag. It also wrote `thickness` while the acrylic builder reads `sheet`, so it moved a
             number nothing consumed. */}
-        {w.style !== 'acrylic' && (
-          <PenSlider label="Thickness" value={w.thickness ?? 0.03} min={0.008} max={0.07} step={0.002} onChange={v => setWriting({ thickness: v })} fmt={v => v.toFixed(3)} />
-        )}
-        {/* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the control
-            this app already means by "how big". */}
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 22, padding: '2px 0' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-            <SizeDial size={w.fit ?? writingFit(w.style)} min={0.3} max={0.95} step={0.05}
-              onChange={v => setWriting({ fit: v })} />
-            <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Size</span>
-          </div>
-          {/* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake — so it is an OffsetDial, not
-              a SizeDial. Its zero mark is the value a baker most wants to get back to. */}
-          {surface !== 'side' && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-              <OffsetDial value={w.yaw ?? 0} min={-180} max={180} step={1} label="Rotate"
-                onChange={v => setWriting({ yaw: v })} />
-              <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Rotate</span>
-            </div>
-          )}
+        {/* ⚠️ ONE ROW, FOUR GATES. This card's controls appear on different conditions — Thickness
+            and Spacing are cream-only, Curve needs cream AND a surface that is not the side, Line
+            gap needs cream AND a multi-line message, Rotate is hidden on the side, Size is always
+            there — so the row is built from a FILTERED LIST, the same shape the grass card uses for
+            its conditional Ring width and Band width. Each gate is kept exactly as it was: every
+            one of them encodes a real fact about the material, written down beside it.
+            ⚠️ SIZE AND ROTATE JOIN THE ROW. They were already dials, but in their own hand-rolled
+            flex with their own 8.5px caption — a SECOND dial presentation on the same card, which
+            is the drift this sweep exists to remove.
+            ⚠️ CURVE IS AN OffsetDial. It runs -1..+1 about a meaningful zero (flat), and SizeDial's
+            band tapers thin→thick to mean small→large; on a signed bend that taper is a lie.
+            ⚠️ EVERY FORMATTER SURVIVES. Curve says "flat" at 0, Spacing "normal", Line gap "1.40×",
+            Thickness three decimals — at SizeDial's default one decimal, Thickness (0.008–0.07)
+            would read "0.0" across its whole travel and Spacing "0.0" to "0.6". */}
+        <div style={s.previewRow}>
+          {[
+            /* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the
+               control this app already means by "how big". */
+            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style), min: 0.3, max: 0.95, step: 0.05,
+              fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
+            /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
+               a baker most wants to get back to. */
+            ...(surface !== 'side' ? [
+              { k: 'Rotate', dial: 'offset', v: w.yaw ?? 0, min: -180, max: 180, step: 1,
+                fmt: v => `${v > 0 ? '+' : ''}${Math.round(v)}°`, set: v => setWriting({ yaw: v }) },
+            ] : []),
+            /* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic
+               it is the SHEET, seeded in ACRYLIC_DEFAULTS and overlaid by an admin — not something a
+               customer should drag. It also wrote `thickness` while the acrylic builder reads
+               `sheet`, so it moved a number nothing consumed. */
+            ...(w.style !== 'acrylic' ? [
+              { k: 'Thickness', dial: 'size', v: w.thickness ?? 0.03, min: 0.008, max: 0.07, step: 0.002,
+                fmt: v => v.toFixed(3), set: v => setWriting({ thickness: v }) },
+              /* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at
+                 `tracking`. On acrylic the equivalent number is negative by design: the letters have
+                 to overlap so the word cuts as one piece. It is calibrated PER FACE, by eye, and
+                 topperFaces.js records what happens when it is not — chasing zero bridges gave a
+                 Parisienne topper reading "Bithday", correct by every measure and unreadable. That
+                 is a legibility-and-cuttability value, not a taste. */
+              { k: 'Spacing', dial: 'size', v: w.letterSpacing ?? 0, min: 0, max: 0.6, step: 0.02,
+                fmt: v => (v === 0 ? 'normal' : `+${Math.round(v * 100)}%`),
+                set: v => setWriting({ letterSpacing: v }) },
+            ] : []),
+            /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
+               from a sheet; bending the baseline is a piped-writing idea. */
+            ...(surface !== 'side' && w.style !== 'acrylic' ? [
+              { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
+                fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
+            ] : []),
+            /* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the
+               rows nest until they meet rather than sitting on a baseline — bounded by the shapes,
+               not by taste. Cream only until someone decides what a customer may do to it. */
+            ...(isMultiline && w.style !== 'acrylic' ? [
+              { k: 'Line gap', dial: 'size', v: w.lineSpacing ?? 1.4, min: 1, max: 2.2, step: 0.05,
+                fmt: v => `${v.toFixed(2)}×`, set: v => setWriting({ lineSpacing: v }) },
+            ] : []),
+          ].map(d => (
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
+              fmt={d.fmt} onChange={d.set} dial={d.dial} />
+          ))}
         </div>
-        {/* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at `tracking`.
-            On acrylic the equivalent number is negative by design: the letters have to overlap so the
-            word cuts as one piece. It is calibrated PER FACE, by eye, and topperFaces.js records what
-            happens when it is not — chasing zero bridges gave a Parisienne topper reading "Bithday",
-            correct by every measure and unreadable, and the same ratio applied unseen to the
-            centreline faces gave a tangle. That is a legibility-and-cuttability value, not a taste.
-            If it is ever wanted in front of a customer, the safe shape is a narrow nudge either side
-            of the face's own default, checked on each face — not this raw slider. */}
-        {w.style !== 'acrylic' && (
-          <PenSlider label="Spacing"   value={w.letterSpacing ?? 0} min={0}     max={0.6}  step={0.02}  onChange={v => setWriting({ letterSpacing: v })} fmt={v => v === 0 ? 'normal' : `+${Math.round(v * 100)}%`} />
-        )}
-        {/* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
-            from a sheet; bending the baseline is a piped-writing idea. */}
-        {surface !== 'side' && w.style !== 'acrylic' && (
-          <PenSlider label="Curve"   value={w.curve ?? 0}        min={-1}    max={1}    step={0.05}  onChange={v => setWriting({ curve: v })}     fmt={v => v === 0 ? 'flat' : `${Math.round(v * 100)}%`} />
-        )}
-        {/* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the rows
-            nest until they meet rather than sitting on a baseline — so it is bounded by the shapes,
-            not by taste. Cream only until someone decides what a customer should be able to do to it. */}
-        {isMultiline && w.style !== 'acrylic' && (
-          <PenSlider label="Line gap" value={w.lineSpacing ?? 1.4} min={1}   max={2.2}  step={0.05}  onChange={v => setWriting({ lineSpacing: v })} fmt={v => `${v.toFixed(2)}×`} />
-        )}
 
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
           {surface === 'side' ? 'Drag the writing around and up the cake side.'
@@ -8382,7 +8402,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
               : surface === 'board' ? { boardX: undefined, boardZ: undefined }
               : { offsetX: 0, offsetZ: 0 })}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff',
+            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: `1.5px solid ${LINE}`, background: SURFACE,
               color: INK, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
             Recentre
           </button>
@@ -8829,10 +8849,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   fmt: v => v.toFixed(2), set: v => setPenStyle(ps => ({ ...ps, softness: v })) },
               ]
           ).map(d => (
-            <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-              <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
-              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
-            </div>
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
           ))}
           {/* ── Lean ────────────────────────────────────────────────────────────────────────────
               A calibrated ring rotation carries a big outward TILT — the shipped shell border is
@@ -8840,15 +8857,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               flat top it simply lays the piece down, so hand-piping stands the piece up and starts
               this at zero. A control rather than a constant because the decomposition behind it is
               read off the renderer, not proven. */}
+          {/* Degrees, with the sign — "-24°", not "-24.00". A lean is an angle either side of
+              upright, and a decimal readout describes a measurement it is not.
+              ⚠️ This comment sits OUTSIDE the `&&` below deliberately: a {/* … *​/} comment is only
+              valid where JSX children are expected, and inside a parenthesised single-element
+              expression it is a syntax error. It was legal before only because it sat inside the
+              wrapper <div> that DialCell replaced. */}
           {penStyle.stampUrl && (
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-              {/* Degrees, with the sign — "-24°", not "-24.00". A lean is an angle either side of
-                  upright, and a decimal readout describes a measurement it is not. */}
-              <OffsetDial value={penStyle.stampLean ?? 0} min={-80} max={80} step={2} label="Lean"
-                fmt={v => `${v > 0 ? '+' : ''}${Math.round(v)}°`}
-                onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} />
-              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Lean</span>
-            </div>
+            <DialCell label="Lean" dial="offset" value={penStyle.stampLean ?? 0} min={-80} max={80} step={2}
+              fmt={v => `${v > 0 ? '+' : ''}${Math.round(v)}°`}
+              onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} />
           )}
         </div>
 
@@ -9326,10 +9344,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   fmt: () => `${Math.round((0.2 - (bg.spacing ?? 0.075)) / 0.16 * 100)}%`,
                   set: v => updateBoardGrass({ spacing: +(0.24 - v).toFixed(3) }) },
               ].map(d => (
-                <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
-                  <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
-                </div>
+                <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
             </div>
           </div>
@@ -9438,10 +9453,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             { k: 'Over the edge', v: g.overhang ?? 0, min: 0, max: 1, step: 0.05,
               fmt: v => (v === 0 ? 'none' : `${Math.round(v * 100)}%`), set: v => updateGrass(i, { overhang: v }) },
           ].map(d => (
-            <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-              <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
-              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
-            </div>
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
           ))}
         </div>
         </>)}
@@ -9523,10 +9535,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 { k: 'Fleck size', v: design.tiers[dustTier]?.dusting?.fleckSize ?? 4, min: 1.5, max: 9, step: 0.5, fmt: v => v.toFixed(1), set: v => updateDusting(dustTier, { fleckSize: v }) },
                 { k: 'Glow',       v: design.tiers[dustTier]?.dusting?.glow ?? 0, min: 0, max: 0.6, step: 0.05, fmt: v => v.toFixed(2), set: v => updateDusting(dustTier, { glow: v }) },
               ].map(d => (
-                <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
-                  <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
-                </div>
+                <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
             </div>
 

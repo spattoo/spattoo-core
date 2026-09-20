@@ -306,6 +306,30 @@ CAT_ELEMENTS.push({
   default_color: '#D94F6E', sort_order: 9,
 });
 
+/* ⚠️ A PIPED-CREAM MESSAGE — the fifth card this harness could not reach, and the acrylic row below
+ * is exactly why it looked reachable. `addWritingFromRow` branches on `placement_config.acrylic`:
+ * with that block a row becomes `style: 'acrylic'`, and FOUR of the writing card's controls
+ * (Thickness, Spacing, Curve, Line gap) are gated `w.style !== 'acrylic'` — so e10 opens the card
+ * with every slider hidden. A `writing` block takes the other branch and lands on DEFAULT_WRITING's
+ * `style: 'cream'`.
+ *
+ * ⚠️ THE NEWLINE IS LOAD-BEARING. `isMultiline` is `(w.text ?? '').includes('\n')`, and Line gap
+ * renders only when it is true — so without a two-line message that control cannot be reached from
+ * a fixture at all. `surface` defaults to 'top', which is what keeps Curve and Rotate visible
+ * (both are hidden on 'side').
+ *
+ * Nothing else is authored: font, size, thickness and curve come from DEFAULT_WRITING, which is
+ * what is worth looking at. */
+CAT_ELEMENTS.push({
+  id: 'e22', name: 'Piped message', description: 'a message piped in cream',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f6e7d8'), thumbnail_url: CAT_THUMB('#f6e7d8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'writing', writing: { text: 'Happy\nBirthday' } },
+  default_color: '#ffffff', sort_order: 22,
+});
+
 /* An ACRYLIC TOPPER row — `procedural: 'writing'` plus the `placement_config.acrylic` the Acrylic
  * Topper Studio writes. Without one, the only way to reach the acrylic writing card here was to add a
  * cream message and switch Look, which is a DIFFERENT path: a row-seeded message carries `lockLook`,
