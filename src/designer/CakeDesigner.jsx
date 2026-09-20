@@ -684,8 +684,9 @@ function collectElementColors(design) {
 const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
 const TMPL_CATS = ['occasion', 'style', 'color', 'age_group', 'gender'];
 
-function FunnelIcon({ size = 15, active }) {
-  const c = active ? '#1a1a1a' : '#888';
+// `light` = drawn on the dark filled button the funnel becomes while the drawer is open.
+function FunnelIcon({ size = 15, active, light }) {
+  const c = light ? '#ffffff' : active ? '#1a1a1a' : '#888';
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1.5 2.5L14.5 2.5L9.5 8.5L9.5 13.5L6.5 13.5L6.5 8.5Z" />
@@ -2097,6 +2098,46 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // The filter drawer, opened from the funnel BESIDE the search box — so the state lives out here
   // with the thing it filters rather than inside the drawer that draws it.
   const [tmplFiltersOpen, setTmplFiltersOpen] = useState(false);
+
+  /* slug → display name, for the search box. The tag list is loaded anyway for the chips. */
+  const tagNameBySlug = useMemo(
+    () => new Map((filterTags ?? []).map(t => [t.slug, t.name])), [filterTags]);
+
+  /* ── ONE answer, used three times ──────────────────────────────────────────────────────────────
+   * The grid renders it, the count beside the funnel reports it, and (below) the chips are narrowed
+   * by what the unfiltered set can match. Computing it in the JSX meant the only way to know how
+   * many results a chip produced was to scroll past the whole filter form and count them.
+   */
+  const shownTemplates = useMemo(() => {
+    const q = tmplSearch.trim().toLowerCase();
+    return (templates ?? []).filter((t) => {
+      if (!matchesTemplateSearch(t, q, tagNameBySlug)) return false;
+      if (!matchesFilters(t, templateFilters)) return false;
+      if (filterWeight) {
+        const w = parseFloat(filterWeight);
+        if (!isNaN(w) && t.attrs?.min_weight_kg != null && t.attrs.min_weight_kg > w) return false;
+      }
+      if (filterAge) {
+        const age = parseInt(filterAge, 10);
+        if (!isNaN(age)) {
+          if (t.attrs?.min_age != null && t.attrs.min_age > age) return false;
+          if (t.attrs?.max_age != null && t.attrs.max_age < age) return false;
+        }
+      }
+      return true;
+    });
+  }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+
+  /* ⚠️ ONLY TAGS SOMETHING CARRIES. Derived from every loaded template, NOT from `shownTemplates` —
+     narrowing by the current selection would make the other chips vanish as soon as one was picked,
+     which is a filter that dismantles itself. See the note on FilterPanel for why this exists. */
+  // How many chips are on. The badge on the funnel, and the test for "is anything narrowing this".
+  const tmplActiveFilters = Object.values(templateFilters).filter(Boolean).length;
+
+  const offeredTags = useMemo(() => {
+    const present = new Set((templates ?? []).flatMap(t => t.tag_slugs ?? []));
+    return (filterTags ?? []).filter(t => present.has(t.slug));
+  }, [templates, filterTags]);
   const [elemSearch,      setElemSearch]      = useState('');
 
   // The decoration-grid filter: honour the search box, and hide pattern_only building blocks (a
@@ -9772,21 +9813,63 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <button style={s.iconBtn} onClick={() => setTemplatesOpen(false)}>✕</button>
             </div>
 
-            {/* Search */}
-            <input
-              value={tmplSearch}
-              onChange={e => setTmplSearch(e.target.value)}
-              placeholder="Search templates…"
-              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff', flexShrink: 0 }}
-            />
+            {/* ── Search, and the funnel BESIDE it ──────────────────────────────────────────────
+                The funnel used to sit under the input, where it read as the first row of results.
+                Sandeep: "make the filter icon next to the seach box, not below."
+                The count beside it is what replaces an Apply button. Filters already applied
+                instantly — the reason it felt inert is INVARIANTS #11: the chips and the grid they
+                change are never on screen together on a phone, so tapping one appeared to do
+                nothing. A number that moves, next to the control, is the effect made visible; an
+                Apply button would only add a press to a thing that had already happened. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <input
+                value={tmplSearch}
+                onChange={e => setTmplSearch(e.target.value)}
+                placeholder="Search templates…"
+                style={{ flex: 1, minWidth: 0, padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff' }}
+              />
+              <button
+                type="button"
+                onClick={() => setTmplFiltersOpen(o => !o)}
+                aria-expanded={tmplFiltersOpen}
+                aria-label={tmplFiltersOpen ? 'Hide filters' : 'Show filters'}
+                style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer',
+                         padding: '6px 9px', borderRadius: 8, background: tmplFiltersOpen ? '#1a1a1a' : '#fff',
+                         border: `1.5px solid ${tmplFiltersOpen ? '#1a1a1a' : '#999999'}` }}
+              >
+                <FunnelIcon active={!tmplFiltersOpen && tmplActiveFilters > 0} light={tmplFiltersOpen} />
+                {tmplActiveFilters > 0 && (
+                  <span style={{ fontSize: 9, fontWeight: 800, fontFamily: "'Quicksand', sans-serif",
+                                 color: tmplFiltersOpen ? '#fff' : '#1a1a1a' }}>{tmplActiveFilters}</span>
+                )}
+              </button>
+            </div>
+
+            {/* The effect, next to the cause. Only while something is narrowing the list — on an
+                unfiltered catalogue the total is just noise above the grid that shows it. */}
+            {(tmplActiveFilters > 0 || tmplSearch.trim() || filterWeight || filterAge) && (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexShrink: 0, padding: '4px 1px 0' }}>
+                <span style={{ fontSize: 10, fontWeight: 700, color: shownTemplates.length ? '#666' : '#C0392B', fontFamily: "'Quicksand', sans-serif" }}>
+                  {shownTemplates.length === 0
+                    ? 'No templates match'
+                    : `${shownTemplates.length} of ${templates.length} template${templates.length === 1 ? '' : 's'}`}
+                </span>
+                <button type="button"
+                  onClick={() => { setTemplateFilters({}); setTmplSearch(''); setFilterWeight(''); setFilterAge(''); }}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: '#1a1a1a', fontWeight: 700, fontFamily: "'Quicksand', sans-serif", padding: 0 }}>
+                  clear
+                </button>
+              </div>
+            )}
 
             <div style={s.flyoutScroll}>
             {/* Filter panel — inside scroll, avoids outer flex/overflow conflicts */}
             <FilterPanel
-              allTags={filterTags}
+              allTags={offeredTags}
               active={templateFilters}
               onChange={setTemplateFilters}
               categories={TMPL_CATS}
+              open={tmplFiltersOpen}
             >
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -9815,24 +9898,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
             <div style={s.templateGrid}>
-            {templates
-              .filter(t => {
-                const q = tmplSearch.trim().toLowerCase();
-                if (q && !t.name?.toLowerCase().includes(q)) return false;
-                if (!matchesFilters(t, templateFilters)) return false;
-                if (filterWeight) {
-                  const w = parseFloat(filterWeight);
-                  if (!isNaN(w) && t.attrs?.min_weight_kg != null && t.attrs.min_weight_kg > w) return false;
-                }
-                if (filterAge) {
-                  const age = parseInt(filterAge);
-                  if (!isNaN(age)) {
-                    if (t.attrs?.min_age != null && t.attrs.min_age > age) return false;
-                    if (t.attrs?.max_age != null && t.attrs.max_age < age) return false;
-                  }
-                }
-                return true;
-              })
+            {shownTemplates
               .map(t => (
               /* `position: relative` on both now: it anchors the enlarged preview, and that is not a
                  phone-only need. The width came off — a grid track decides it. */
