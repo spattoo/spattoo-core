@@ -10780,8 +10780,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
                     {/* The preview tile lives in the row above — one per candidate ring, however
                         many there are. Nothing is drawn here: one derivation, one render. */}
-                    {/* Color + Size */}
-                    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
+                    {/* ── Every control for this ring, on one row ─────────────────────────────
+                        Colour, Size, and what used to be a separate ADJUST section below with its
+                        own header, hairline and full-width label-left/stepper-right rows. That
+                        section spent a lot of a phone's scarce axis to hold one or two controls.
+
+                        ⚠️ Scrolls sideways when it overflows, exactly like the ring tiles above —
+                        a drip ring carries Length + Gloss + Flood, a y-adjustable board ring carries
+                        Radial + Flip + Height, and height is what we are protecting.
+
+                        The inner track has `margin: 0 auto` so a short row still CENTRES; centring
+                        the scroller itself would clip the first item out of reach once it overflows. */}
+                    <div style={{ overflowX: 'auto', scrollbarWidth: 'none', marginTop: 8 }}>
+                    <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 22, margin: '0 auto', width: 'fit-content' }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                         <div role="button" title="Choose colour"
                           onClick={e => {
@@ -10810,7 +10821,77 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           <span style={cap}>Size</span>
                         </div>
                       )}
+
+                      {/* Radial / Inset — every ring except a wrap band, which auto-hugs the wall.
+                          ⚠️ "Radial" on a round tier, "Inset" on any other footprint: a heart's
+                          offset is measured perpendicular to each edge, not from a centre. */}
+                      {!isDrip && !p.wrap && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                          <div style={s.ringNudge}>
+                            <button title="Move inward" style={s.ringNudgeBtn}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial - 0.05).toFixed(2)); }}>−</button>
+                            <span style={s.ringNudgeVal}>{radial > 0 ? `+${radial.toFixed(2)}` : radial.toFixed(2)}</span>
+                            <button title="Move outward" style={s.ringNudgeBtn}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial + 0.05).toFixed(2)); }}>+</button>
+                          </div>
+                          <span style={cap}>{isNonRoundTier ? 'Inset' : 'Radial'}</span>
+                        </div>
+                      )}
+
+                      {/* Flip — board rings whose element allows it. */}
+                      {!isDrip && flipAdj && (() => {
+                        const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
+                        const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                            <button
+                              onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
+                              style={{ ...s.ringNudgeBtn, width: 'auto', padding: '0 11px', height: 26,
+                                       border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
+                                       background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a', fontWeight: 700 }}>
+                              {active ? '↕ On' : '↕ Off'}
+                            </button>
+                            <span style={cap}>Flip</span>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Height — y-adjustable side borders. The on-cake drag is the primary way;
+                          see the note under the row. */}
+                      {!isDrip && yAdj && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                          <div style={s.ringNudge}>
+                            <button style={s.ringNudgeBtn}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY - 0.05).toFixed(2)); }}>−</button>
+                            <span style={s.ringNudgeVal}>{boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}</span>
+                            <button style={s.ringNudgeBtn}
+                              onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY + 0.05).toFixed(2)); }}>+</button>
+                          </div>
+                          <span style={cap}>Height</span>
+                        </div>
+                      )}
                     </div>
+                    </div>
+
+                    {/* ⚠️ Reset lives BELOW the row, not in it. It appears only when a value is off
+                        zero, and an item that appears and disappears inside a horizontal scroller
+                        shifts everything beside it under the baker's thumb. */}
+                    {!isDrip && (radial !== 0 || boardY !== 0) && (
+                      <div style={{ display: 'flex', justifyContent: 'center', gap: 14, marginTop: 6 }}>
+                        {radial !== 0 && (
+                          <button style={s.ringResetBtn}
+                            onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, 0); }}>
+                            Reset {isNonRoundTier ? 'inset' : 'radial'}
+                          </button>
+                        )}
+                        {boardY !== 0 && (
+                          <button style={s.ringResetBtn}
+                            onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, 0); }}>
+                            Reset height
+                          </button>
+                        )}
+                      </div>
+                    )}
 
                     {/* Drip: flood the whole tier top with chocolate (vs. just the rim + drips). */}
                     {isDrip && (
@@ -10946,81 +11027,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </>
                     )}
 
-                    {/* ── Adjust: radial distance + flip + height on one row ── (not for drip rings) */}
-                    {!isDrip && (<>
-                        <div style={secRow}><span style={secTitle}>Adjust</span><div style={hair} /></div>
-                        {/* Each control is its OWN full-width row (label left, stepper right) and
-                            wraps internally, so nothing — including Reset — can clip off the edge. */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 7, marginTop: 8 }}>
-                          {/* Radial/inset — every ring except a wrap band, which auto-hugs the wall. */}
-                          {!p.wrap && (
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
-                            <span style={{ ...lbl, flex: 1, minWidth: 0 }}>{isNonRoundTier ? 'Inset' : 'Radial'}</span>
-                            <button
-                              title="Move inward"
-                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial - 0.05).toFixed(2)); }}>−</button>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
-                              {radial > 0 ? `+${radial.toFixed(2)}` : radial.toFixed(2)}
-                            </span>
-                            <button
-                              title="Move outward"
-                              style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial + 0.05).toFixed(2)); }}>+</button>
-                            {radial !== 0 && (
-                              <button
-                                style={{ fontSize: 9, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: "'Quicksand',sans-serif" }}
-                                onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, 0); }}>Reset</button>
-                            )}
-                          </div>
-                          )}
-                          {flipAdj && (() => {
-                            const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
-                            const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;
-                            return (
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
-                                <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Flip</span>
-                                <button
-                                  onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
-                                  style={{ fontSize: 11, padding: '3px 11px', borderRadius: 6, border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`, background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif" }}>
-                                  {active ? '↕ On' : '↕ Off'}
-                                </button>
-                              </div>
-                            );
-                          })()}
-                          {yAdj && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 5, width: '100%', flexWrap: 'wrap' }}>
-                              <span style={{ ...lbl, flex: 1, minWidth: 0 }}>Height</span>
-                              <button
-                                style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY - 0.05).toFixed(2)); }}>−</button>
-                              <span style={{ fontSize: 11, fontWeight: 700, color: '#444', minWidth: 32, textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
-                                {boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}
-                              </span>
-                              <button
-                                style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid #999999', background: '#fff', cursor: 'pointer', fontSize: 14, color: '#1a1a1a', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                                onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY + 0.05).toFixed(2)); }}>+</button>
-                              {boardY !== 0 && (
-                                <button
-                                  style={{ fontSize: 9, color: '#bbb', background: 'none', border: 'none', cursor: 'pointer', padding: '0 2px', fontFamily: "'Quicksand',sans-serif" }}
-                                  onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, 0); }}>Reset</button>
-                              )}
-                            </div>
-                          )}
-                          {/* ⚠️ THE CONTROL IS NOW THE SECOND WAY, NOT THE ONLY ONE. The ± beside a
-                              number is a poor way to say "a bit lower" — the baker is looking at the
-                              cake, and the answer they want is where their finger is. The border now
-                              drags up and down the wall itself (see `useLayerHeightDrag`), and this
-                              says so, because an affordance nobody is told about is one nobody finds.
-                              The stepper stays: it is also the READOUT, and it is how you place a
-                              border at the same height as one on another tier. */}
-                          {yAdj && (
-                            <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, width: '100%' }}>
-                              Or drag it up and down the cake.
-                            </div>
-                          )}
-                        </div>
-                      </>)}
+                    {/* ⚠️ Radial, Flip and Height moved UP into the control row above — the ADJUST
+                        header, its hairline and its full-width rows are gone with them. This note
+                        stays because the hint below is the only thing that survived, and it had to.
+
+                        THE CONTROL IS THE SECOND WAY, NOT THE ONLY ONE. The ± beside a number is a
+                        poor way to say "a bit lower" — the baker is looking at the cake, and the
+                        answer they want is where their finger is. The border drags up and down the
+                        wall itself (useLayerHeightDrag), and this says so, because an affordance
+                        nobody is told about is one nobody finds. */}
+                    {!isDrip && yAdj && (
+                      <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, width: '100%', marginTop: 6, textAlign: 'center' }}>
+                        Or drag it up and down the cake.
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -12640,6 +12660,32 @@ const s = {
   /* The candidate rings, side by side. Scrolls sideways rather than growing taller: a three-tier
      cake with a y-adjustable style yields six or more candidates, and height is the scarce axis on a
      phone — the whole reason this moved out of the vertical card. */
+  /* ── A ring's nudge control, sized to stand in a row ────────────────────────────────────────────
+     Radial and Height were full-width rows: label left, −/value/+ right, Reset trailing. As row
+     items beside Colour and Size they have to be compact and the same HEIGHT as a 46px dial, so the
+     caption underneath lines up across every item.
+     ⚠️ Not a dial yet, deliberately. A dial needs a real min and max; rimRadialTravel now supplies
+     them for a RIM ring, but board and side rings have no bounds at all (see
+     handlePipingRadialOffsetChange's early return). A dial there would either invent limits or turn
+     and do nothing, which is worse than the stepper it replaced. */
+  ringNudge: {
+    display: 'flex', alignItems: 'center', gap: 3, height: 46,
+  },
+  ringNudgeBtn: {
+    width: 26, height: 26, borderRadius: 7, border: '1.5px solid #999999', background: '#fff',
+    cursor: 'pointer', fontSize: 14, color: '#1a1a1a', flexShrink: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    fontFamily: "'Quicksand',sans-serif", padding: 0,
+  },
+  ringNudgeVal: {
+    fontSize: 11, fontWeight: 700, color: '#444', minWidth: 34, textAlign: 'center',
+    fontFamily: "'Quicksand',sans-serif",
+  },
+  // Below the row, not in it — see the note at the call site. Appears only off zero.
+  ringResetBtn: {
+    fontSize: 9.5, color: '#b29aa2', background: 'none', border: 'none', cursor: 'pointer',
+    padding: '0 2px', fontFamily: "'Quicksand',sans-serif", fontWeight: 700,
+  },
   pipingRingRow: {
     display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none',
     paddingBottom: 4, marginBottom: 2,
