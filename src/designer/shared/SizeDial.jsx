@@ -16,7 +16,14 @@ import { INK } from '../../shared/tokens.js';
 // large), so it reads like a piping nozzle widening. Drag or tap anywhere on the arc;
 // the filled portion shows the current value and the centre shows the number. Replaces
 // the full-width linear slider so Color + Size fit a short row and the popup stays tight.
-export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }) {
+/* ⚠️ `fmt` EXISTS BECAUSE toFixed(1) IS A LIE FOR MOST RANGES, and it defaults to exactly what this
+ * printed before, so every existing caller is unchanged. A dial is only as honest as its readout:
+ * dust's Glow tops out at 0.6, Fleck size steps by 0.5, grass Density steps by 0.002 and pen
+ * Thickness runs 0.008–0.07 — at one decimal those read "0.0" across most or all of their travel.
+ * A control whose number never moves is worse than the slider it replaced, which is the same
+ * mistake as the dropped captions on the photo frame: it looks tidier and says less. PenSlider
+ * already took a `fmt` for this reason; matching its name keeps one idea with one spelling. */
+export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange, fmt = v => v.toFixed(1) }) {
   const CX = 24, CY = 24, R_IN = 12, W_MIN = 2, W_MAX = 8;
   const A_START = -140 * Math.PI / 180;   // lower-left (thin end)
   const A_SWEEP =  280 * Math.PI / 180;   // sweeps up over the top to lower-right (gap at bottom)
@@ -56,7 +63,7 @@ export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }
         <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke={INK} strokeWidth={2} />
       </svg>
       <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
-        {size.toFixed(1)}
+        {fmt(size)}
       </span>
     </div>
   );

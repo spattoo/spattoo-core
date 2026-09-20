@@ -9358,87 +9358,105 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   // Luster Dust editor body — inline expanded body of its stack card (like the cream pen above).
   function renderDustBody() {
+    /* The same chip the cream and foil cards use — black, not green. Local like theirs rather than
+       shared, because the three cards' chips have drifted apart before and a shared one would have
+       to win an argument about padding; what matters is that none of them is green. */
+    const dustChip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
+      border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE, color: active ? SURFACE : INK });
+    /* ⚠️ A FLEX COLUMN WITH A GAP, not a bare fragment. The card wrapper is only `padding: 0 9px 9px`
+       — it supplies no spacing at all — so this body used to space itself with a marginTop on nearly
+       every block. Replacing seven stacked sliders with one dial row removed most of those anchors,
+       and the pieces would have closed up against each other. One gap here is what the cream card
+       already does, and it cannot drift the way eight separate margins did. */
     return (
-      <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
           Add a flick, then drag its dot on the cake to position it. Use Direction &amp; Spread to aim.
         </div>
 
-        {design.tiers.length > 1 && (
-          <>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Tier</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-              {design.tiers.map((t, i) => (
-                <button key={i} onClick={() => { setDustTier(i); setDustSel(0); }}
-                  style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                    border: dustTier === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
-                    background: dustTier === i ? '#3D5A44' : '#fff', color: dustTier === i ? '#fff' : '#3D5A44' }}>
-                  Tier {i + 1}
-                </button>
-              ))}
-            </div>
-          </>
-        )}
+        {/* The same picker the foil and cream cards use — not a third hand-rolled tier row. */}
+        <FinishTierPicker tiers={design.tiers} tier={dustTier} onPick={i => { setDustTier(i); setDustSel(0); }} />
 
-        <button onClick={() => addDustToTier(dustTier)}
-          style={{ width: '100%', marginTop: 10, padding: '10px 0', borderRadius: 8, border: 'none', background: '#3D5A44', color: '#fff', fontWeight: 800, fontSize: 13, cursor: 'pointer', fontFamily: 'inherit' }}>
-          + Add dust flick
-        </button>
+        <button style={{ ...s.doneBtn, width: '100%' }}
+          onClick={() => addDustToTier(dustTier)}>+ Add dust flick</button>
 
         {dustSplashes.length > 0 && (
           <>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Flicks</div>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {/* One scrolling row of pills, exactly as the foil flakes do — a wrapping grid grew a
+                row every few flicks and pushed the controls below the fold. */}
+            <div style={s.previewRow}>
               {dustSplashes.map((sp, i) => (
-                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 16, overflow: 'hidden',
-                  border: dustSel === i ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
-                  background: dustSel === i ? '#3D5A44' : '#fff', color: dustSel === i ? '#fff' : '#3D5A44' }}>
-                  <button onClick={() => setDustSel(i)} style={{ padding: '5px 6px 5px 11px', border: 'none', background: 'transparent', color: 'inherit', fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' }}>Flick {i + 1}</button>
-                  <button onClick={() => { removeDustSplash(dustTier, i); setDustSel(s => Math.max(0, s - (i <= s ? 1 : 0))); }} style={{ padding: '5px 9px', border: 'none', background: 'transparent', color: 'inherit', fontSize: 14, cursor: 'pointer', fontFamily: 'inherit' }}>×</button>
+                <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
+                  border: dustSel === i ? `1.5px solid ${INK}` : `1.5px solid ${LINE}`, background: dustSel === i ? INK_TINT : SURFACE }}>
+                  <button onClick={() => setDustSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: INK, cursor: 'pointer' }}>Flick {i + 1}</button>
+                  <button title="Remove" onClick={() => { removeDustSplash(dustTier, i); setDustSel(s => Math.max(0, s - (i <= s ? 1 : 0))); }}
+                    style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
                 </span>
               ))}
             </div>
 
+            {/* ⚠️ DIALS IN ONE SCROLLING ROW, the cream card's pattern. Seven full-bleed range inputs
+                cost seven rows of a phone; as 46px dials they are one row you push sideways.
+                ⚠️ NOT EVERY SLIDER BECAME A DIAL, and the two that did not are the point:
+                  · Direction is an ANGLE whose neutral is 90° ("dir 90° = straight-up flick",
+                    LUSTER_DUST_NEW_SPLASH). SizeDial's band tapers small→large and OffsetDial fills
+                    from zero — both would describe a quantity this is not. It keeps its slider.
+                  · Density is 1..8 in whole steps. A dial printing "3.0" for a count of flecks reads
+                    like a measurement; chips say how many there are and how many there could be.
+                Each dial keeps its caption: unlabelled dials are indistinguishable (the photo frame
+                taught this), and `fmt` is what stops Glow (max 0.6) reading "0.0" across its travel. */}
+            <div style={s.previewRow}>
+              {[
+                ...(dustSplashes[dustSel] ? [
+                  { k: 'Position', v: dustSplashes[dustSel].u, min: 0, max: 1, step: 0.01, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { u: v }) },
+                  { k: 'Height',   v: dustSplashes[dustSel].v, min: 0, max: 1, step: 0.01, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { v }) },
+                  { k: 'Spread',   v: dustSplashes[dustSel].spread, min: 0.15, max: 2, step: 0.05, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { spread: v }) },
+                ] : []),
+                // These three are the whole dusting on this tier, not one flick.
+                { k: 'Fleck size', v: design.tiers[dustTier]?.dusting?.fleckSize ?? 4, min: 1.5, max: 9, step: 0.5, fmt: v => v.toFixed(1), set: v => updateDusting(dustTier, { fleckSize: v }) },
+                { k: 'Glow',       v: design.tiers[dustTier]?.dusting?.glow ?? 0, min: 0, max: 0.6, step: 0.05, fmt: v => v.toFixed(2), set: v => updateDusting(dustTier, { glow: v }) },
+              ].map(d => (
+                <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
+                  <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
+                </div>
+              ))}
+            </div>
+
             {dustSplashes[dustSel] && (
-              <div style={{ marginTop: 8 }}>
-                <PenSlider label="Position"  value={dustSplashes[dustSel].u}      min={0}    max={1}   step={0.01} onChange={v => updateDustSplash(dustTier, dustSel, { u: v })}      fmt={v => v.toFixed(2)} />
-                <PenSlider label="Height"    value={dustSplashes[dustSel].v}      min={0}    max={1}   step={0.01} onChange={v => updateDustSplash(dustTier, dustSel, { v })}         fmt={v => v.toFixed(2)} />
-                <PenSlider label="Direction" value={dustSplashes[dustSel].dir}    min={0}    max={360} step={5}    onChange={v => updateDustSplash(dustTier, dustSel, { dir: v })}    fmt={v => `${Math.round(v)}°`} />
-                <PenSlider label="Spread"    value={dustSplashes[dustSel].spread} min={0.15} max={2}   step={0.05} onChange={v => updateDustSplash(dustTier, dustSel, { spread: v })} fmt={v => v.toFixed(2)} />
-              </div>
+              <PenSlider label="Direction" value={dustSplashes[dustSel].dir} min={0} max={360} step={5}
+                onChange={v => updateDustSplash(dustTier, dustSel, { dir: v })} fmt={v => `${Math.round(v)}°`} />
             )}
 
-            {/* Density / Fleck size / Glow apply to the whole dusting on this tier, not one flick. */}
-            <div style={{ marginTop: 8 }}>
-              <PenSlider label="Density"    value={design.tiers[dustTier]?.dusting?.density   ?? 2} min={1}   max={8} step={1}   onChange={v => updateDusting(dustTier, { density: v })}   fmt={v => `${Math.round(v)}`} />
-              <PenSlider label="Fleck size" value={design.tiers[dustTier]?.dusting?.fleckSize ?? 4} min={1.5} max={9} step={0.5} onChange={v => updateDusting(dustTier, { fleckSize: v })} fmt={v => v.toFixed(1)} />
-              <PenSlider label="Glow"       value={design.tiers[dustTier]?.dusting?.glow      ?? 0} min={0}   max={0.6} step={0.05} onChange={v => updateDusting(dustTier, { glow: v })}      fmt={v => v.toFixed(2)} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={s.editPanelLabel}>Density</span>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
+                  <button key={n} style={dustChip((design.tiers[dustTier]?.dusting?.density ?? 2) === n)}
+                    onClick={() => updateDusting(dustTier, { density: n })}>{n}</button>
+                ))}
+              </div>
             </div>
           </>
         )}
 
-        <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Dust colour</div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <span style={s.editPanelLabel}>Colour</span>
           <input type="color" value={dustColor} onChange={e => setAllDustColor(e.target.value)}
-            style={{ width: 40, height: 32, padding: 0, border: '1.5px solid #C5D4C8', borderRadius: 8, background: '#fff', cursor: 'pointer', flexShrink: 0 }} />
+            style={{ width: 40, height: 32, padding: 0, border: `1.5px solid ${LINE}`, borderRadius: 8, background: SURFACE, cursor: 'pointer', flexShrink: 0 }} />
           {DUST_COLORS.map(d => (
-            <button key={d.color} onClick={() => setAllDustColor(d.color)}
-              style={{ padding: '5px 11px', borderRadius: 16, fontSize: 12, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-                border: dustColor.toLowerCase() === d.color.toLowerCase() ? '1.5px solid #3D5A44' : '1.5px solid #C5D4C8',
-                background: dustColor.toLowerCase() === d.color.toLowerCase() ? '#3D5A44' : '#fff',
-                color: dustColor.toLowerCase() === d.color.toLowerCase() ? '#fff' : '#3D5A44' }}>
-              {d.label}
-            </button>
+            <button key={d.color} style={dustChip(dustColor.toLowerCase() === d.color.toLowerCase())}
+              onClick={() => setAllDustColor(d.color)}>{d.label}</button>
           ))}
         </div>
 
         {dustSplashCount > 0 && (
-          <button onClick={() => design.tiers.forEach((t, i) => t.dusting && clearDusting(i))}
-            style={{ width: '100%', marginTop: 10, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button style={{ ...s.deleteBtn, width: '100%' }}
+            onClick={() => design.tiers.forEach((t, i) => t.dusting && clearDusting(i))}>
             Clear all dust
           </button>
         )}
-      </>
+      </div>
     );
   }
 
