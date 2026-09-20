@@ -4,6 +4,7 @@ import { statusLabel, DEFAULT_STATUS_INDEX } from './statuses.js';
 import AnchoredPopup from '../shared/AnchoredPopup.jsx';
 import { Panel } from '../shared/Panel.jsx';
 import DayBoard from './DayBoard.jsx';
+import { INK } from '../shared/tokens.js';
 
 // ── Orders → Calendar: the delivery month at a glance ─────────────────────────
 // A month grid of how many cakes are due each day, from GET /api/orders/calendar.
@@ -65,7 +66,7 @@ export default function OrdersCalendar({
   apiClient,
   statusIndex = DEFAULT_STATUS_INDEX,
   isMobile = false,
-  primaryColor = '#1a1a1a',
+  primaryColor = INK,
   timezone = null,
   onPickDate,
   onCreateForDate = null,
@@ -196,7 +197,7 @@ export default function OrdersCalendar({
         </button>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
           <span style={{
-            fontSize: isMobile ? 15 : 17, fontWeight: 800, color: '#1a1a1a',
+            fontSize: isMobile ? 15 : 17, fontWeight: 800, color: INK,
             whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
           }}>
             {MONTH_NAMES[month - 1]} {year}

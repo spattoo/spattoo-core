@@ -1,4 +1,5 @@
 import React from 'react';
+import { INK } from '../../shared/tokens.js';
 
 /* ── THE offset dial ─────────────────────────────────────────────────────────────────────────────
  *
@@ -81,13 +82,13 @@ export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, o
       <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
         <path d={band(0, 1)} fill="#e6e0e3" />
         {/* Filled FROM zero toward the value, in whichever direction that is. */}
-        {Math.abs(t - zero) > 0.004 && <path d={band(zero, t)} fill="#1a1a1a" />}
+        {Math.abs(t - zero) > 0.004 && <path d={band(zero, t)} fill={INK} />}
         {/* The zero mark, so "back to neutral" is a place you can see and aim at. */}
         <circle cx={pt(zero, R_IN + W / 2)[0]} cy={pt(zero, R_IN + W / 2)[1]} r={1.6} fill="#b29aa2" />
-        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke="#1a1a1a" strokeWidth={2} />
+        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke={INK} strokeWidth={2} />
       </svg>
       <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                     fontSize: 9, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
+                     fontSize: 9, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
         {/* ⚠️ The SIGN is kept. It is the whole difference between in and out, up and down. */}
         {value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2)}
       </span>

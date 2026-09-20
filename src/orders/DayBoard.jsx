@@ -1,4 +1,5 @@
 import { batchTotals, stickyFor, formatKg, EGG_LABEL } from './dayBoard.js';
+import { INK } from '../shared/tokens.js';
 
 /* ── A day, pinned up ────────────────────────────────────────────────────────────────────────────
  *
@@ -54,7 +55,7 @@ function Sticky({ s }) {
     }}>
       <EggPill egg={s.egg} />
       <span style={{
-        fontSize: 13, fontWeight: 800, color: '#1a1a1a', lineHeight: 1.25,
+        fontSize: 13, fontWeight: 800, color: INK, lineHeight: 1.25,
         overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
       }}>{s.name}</span>
       <span style={{ fontSize: 11.5, color: '#6b6b6b', lineHeight: 1.35 }}>
@@ -74,7 +75,7 @@ export default function DayBoard({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-      <div style={{ fontSize: 12, fontWeight: 800, color: '#1a1a1a' }}>{dateLabel}</div>
+      <div style={{ fontSize: 12, fontWeight: 800, color: INK }}>{dateLabel}</div>
 
       {loading && <div style={{ fontSize: 12, color: '#8a8a8a' }}>Loading the day…</div>}
       {error && <div style={{ fontSize: 12, color: '#991B1B' }}>{error}</div>}
@@ -146,7 +147,7 @@ export default function DayBoard({
         onClick={onViewOrders}
         style={{
           width: '100%', padding: '9px 12px', borderRadius: 9, cursor: 'pointer',
-          border: 'none', background: '#1a1a1a', color: '#fff',
+          border: 'none', background: INK, color: '#fff',
           fontSize: 13, fontWeight: 800, fontFamily: 'inherit',
         }}>
         View orders

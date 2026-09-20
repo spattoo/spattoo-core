@@ -19,6 +19,7 @@ import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../sha
 import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { Panel, Takeover, Z } from '../shared/Panel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { DANGER, INK } from '../shared/tokens.js';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -478,7 +479,7 @@ function InfoRow({ label, value }) {
 // read-only. A quote pins to the current design version — if the design changed
 // after the quote (stale), the baker can re-affirm the price (re-pin) or set a new
 // one. The suggested-price algorithm (plan §2) is not here yet — this is manual entry.
-function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '#1a1a1a', onConfirm, confirming }) {
+function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = INK, onConfirm, confirming }) {
   const phase = statusIndex.byKey[order.status]?.phase;
   const hasQuote = order.quoted_price != null;
   // Advance defaults to 50% of the price (rounded) and auto-tracks the price field
@@ -568,7 +569,7 @@ const NEXT_ACTIONS = {
   in_production: [{ to: 'ready', label: 'Mark as ready' }],
   ready:         [{ to: 'completed', label: 'Mark as completed' }],
 };
-function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = '#1a1a1a' }) {
+function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = INK }) {
   const actions = (NEXT_ACTIONS[order.status] ?? []).filter(a => statusIndex.byKey[a.to]);
   if (!actions.length) return null;
   return (
@@ -603,7 +604,7 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
 // transition). This sheet uploads each pick to R2 (orders/photos) as it's added and
 // hands the resulting keys back on confirm; the caller persists them then advances.
 // Photos are never required — "Mark as ready" works with zero.
-function MarkReadySheet({ order, apiClient, bakerName, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
+function MarkReadySheet({ order, apiClient, bakerName, primaryColor = INK, busy, error, onConfirm, onCancel }) {
   const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
   const [pickError, setPickError] = useState(null);   // why a chosen file was refused
   /* ⚠️ CHOSEN FILES QUEUE HERE INSTEAD OF UPLOADING. The editor has to run BEFORE anything leaves,
@@ -732,7 +733,7 @@ function MarkReadySheet({ order, apiClient, bakerName, primaryColor = '#1a1a1a',
               {!busy && (
                 <button onClick={() => remove(p.id)} aria-label="Remove photo" style={{
                   position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%',
-                  border: 'none', background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+                  border: 'none', background: INK, color: '#fff', fontSize: 13, fontWeight: 700,
                   cursor: 'pointer', lineHeight: '22px', textAlign: 'center', padding: 0,
                 }}>×</button>
               )}
@@ -924,7 +925,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
                 flex: 1, padding: '9px', borderRadius: 10, cursor: 'pointer',
                 fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
                 border: `1.5px solid ${active ? '#555' : '#E0DDD8'}`,
-                background: active ? '#1a1a1a' : '#fff',
+                background: active ? INK : '#fff',
                 color: active ? '#fff' : '#888',
               }}>{label}</button>
             );
@@ -935,7 +936,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
       {form.delivery_mode === 'home_delivery' && (
         <Field label="Address *" error={errors.delivery_address}>
           <textarea
-            style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.delivery_address ? '#e53935' : inp.borderColor }}
+            style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.delivery_address ? DANGER : inp.borderColor }}
             value={form.delivery_address} onChange={e => set('delivery_address', e.target.value)} />
         </Field>
       )}
@@ -947,7 +948,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
 
       <Field label="Comment *" hint="Explain what you changed and why" error={errors.comment}>
         <textarea
-          style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.comment ? '#e53935' : '#f59e0b' }}
+          style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.comment ? DANGER : '#f59e0b' }}
           placeholder="e.g. Customer called and changed delivery date to Friday"
           value={form.comment} onChange={e => set('comment', e.target.value)} />
       </Field>
@@ -961,7 +962,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={handleSave} disabled={saving} style={{
           flex: 1, padding: '12px', borderRadius: 12, border: 'none',
-          background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+          background: INK, color: '#fff', fontSize: 13, fontWeight: 700,
           cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
           opacity: saving ? 0.6 : 1,
         }}>
@@ -980,9 +981,9 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
 function Field({ label, hint, error, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: error ? '#e53935' : '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color: error ? DANGER : '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
       {hint && !error && <span style={{ fontSize: 11, color: '#bbb', marginTop: -2 }}>{hint}</span>}
-      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600, marginTop: -2 }}>{error}</span>}
+      {error && <span style={{ fontSize: 11, color: DANGER, fontWeight: 600, marginTop: -2 }}>{error}</span>}
       {children}
     </div>
   );
@@ -1552,7 +1553,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
       {/* List */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {loading && <Empty>Loading…</Empty>}
-        {!loading && error && <Empty color="#e53935">{error}</Empty>}
+        {!loading && error && <Empty color={DANGER}>{error}</Empty>}
         {!loading && !error && visible.length === 0 && <Empty>No orders yet.</Empty>}
 
         {!loading && visible.map(order => {
@@ -1584,7 +1585,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
                   <StatusBadge status={order.status} statusIndex={statusIndex} />
                 </div>
                 <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1614,7 +1615,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null,
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = INK, externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null,
   /* Opens Top-ups → Message credits. Only the no-email notice uses it, and it is optional: a host
      that cannot go there (the harness, admin) simply renders the notice without the way through
      rather than a button that does nothing. */
@@ -1719,7 +1720,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           {isMobile
             ? <PanelBackArrow onClick={selected ? () => setSelected(null) : (onBack ?? onClose)} />
             : onBack && <PanelBackCrumb label="Dashboard" onClick={onBack} />}
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{topBarTitle}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: INK }}>{topBarTitle}</span>
 
           {/* List | Calendar — the calendar is a view of the same orders, so it lives
               here rather than being a separate destination. */}
@@ -1848,7 +1849,9 @@ function Empty({ children, color = '#bbb' }) {
 
 // Reached steps render ink-black, unreached stay white/grey — a clean monochrome
 // stepper (no per-status colours, no red).
-const INK = '#1a1a1a';
+// ⚠️ The local `const INK` that lived here is GONE — it held the same value the shared token does,
+// and two definitions of one colour is the drift this sweep exists to end. INK now comes from
+// shared/tokens.js (imported at the top); the intent above is unchanged.
 
 // "Cancel order" text link — shared by the mobile action area and the status
 // stepper so they stay identical.

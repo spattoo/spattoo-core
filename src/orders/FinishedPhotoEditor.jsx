@@ -3,6 +3,7 @@ import { Panel } from '../shared/Panel.jsx';
 import Segmented from '../shared/Segmented.jsx';
 import { useNarrow } from '../shared/useNarrow.js';
 import { autoFix, relight, brighten } from './photoEdit.js';
+import { INK } from '../shared/tokens.js';
 
 /* ── Tidying a finished-cake photo on its way to the customer ────────────────────────────────────
  *
@@ -114,7 +115,7 @@ export function applyTools(imageData, tools) {
   return out;
 }
 
-export default function FinishedPhotoEditor({ file, bakerName, primaryColor = '#1a1a1a', onCancel, onDone }) {
+export default function FinishedPhotoEditor({ file, bakerName, primaryColor = INK, onCancel, onDone }) {
   const canvasRef = useRef(null);
   const sourceRef = useRef(null);         // the decoded preview-size ImageData, computed once
   const bitmapRef = useRef(null);         // the decoded image, kept for the full-size export

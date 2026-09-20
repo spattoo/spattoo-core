@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { INK } from './tokens.js';
 
 // ── Pick one of a few, to change what is shown ──────────────────────────────────────────────────
 //
@@ -30,7 +31,7 @@ const IDLE   = '#8a8a8a';
  * tone     the selected label's colour; the brand/primary colour where there is one.
  */
 export default function Segmented({
-  items, value, onChange, isMobile = false, equal = false, tone = '#1a1a1a', label = null,
+  items, value, onChange, isMobile = false, equal = false, tone = INK, label = null,
   scroll = false,
 }) {
   const refs = useRef([]);

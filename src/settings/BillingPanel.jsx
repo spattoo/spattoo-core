@@ -7,13 +7,14 @@ import { creditsChanged } from '../billing/creditsBus.js';
 import { Panel, ConfirmPanel } from '../shared/Panel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { INK } from '../shared/tokens.js';
 
 // GSTIN format (client-side, immediate feedback). The server does the authoritative checksum validation;
 // here we only gate the obviously-malformed so the button can enable/disable as the baker types.
 const GSTIN_FORMAT_RE = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/;
 
 const STATUS_META = {
-  trial:     { label: 'Trial',     color: '#1a1a1a', bg: '#FDF5F7' },
+  trial:     { label: 'Trial',     color: INK, bg: '#FDF5F7' },
   pending:   { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
   active:    { label: 'Active',    color: '#065F46', bg: '#D1FAE5' },
   expired:   { label: 'Expired',   color: '#991B1B', bg: '#FEE2E2' },
@@ -91,7 +92,7 @@ function CheckoutReview({ open, planLabel, periodLabel, breakup, timingNote, cur
   const formatBad  = normalized !== '' && !GSTIN_FORMAT_RE.test(normalized);
   const row = (label, value, strong) => (
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
-      fontSize: strong ? 15 : 13, fontWeight: strong ? 800 : 600, color: strong ? '#1a1a1a' : '#6B7280' }}>
+      fontSize: strong ? 15 : 13, fontWeight: strong ? 800 : 600, color: strong ? INK : '#6B7280' }}>
       <span>{label}</span><span>{value}</span>
     </div>
   );
@@ -137,7 +138,7 @@ function CheckoutReview({ open, planLabel, periodLabel, breakup, timingNote, cur
             placeholder="e.g. 36ABCDE1234F1Z5"
             maxLength={15}
             style={{ padding: '10px 12px', borderRadius: 10, border: `1.5px solid ${formatBad ? '#FCA5A5' : '#E5E7EB'}`,
-              fontFamily: 'inherit', fontSize: 14, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: '#1a1a1a' }}
+              fontFamily: 'inherit', fontSize: 14, fontWeight: 600, letterSpacing: 0.5, textTransform: 'uppercase', color: INK }}
           />
           {formatBad && <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>That doesn’t look like a valid GSTIN (15 characters).</div>}
           {error && <div style={{ fontSize: 11, color: '#DC2626', fontWeight: 600 }}>{error}</div>}
@@ -185,7 +186,7 @@ function PaymentRow({ p, divider }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderTop: divider ? '1px solid #F0F4F1' : 'none' }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>{formatMoney(p.amount, p.currency)}</div>
+        <div style={{ fontSize: 14, fontWeight: 800, color: INK }}>{formatMoney(p.amount, p.currency)}</div>
         <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
           {new Date(p.charged_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
           {/* WHAT it bought, but only when that is not obvious. A plan charge is the expected
@@ -453,7 +454,7 @@ function SmartToolsCard({ apiClient, primaryColor, onBuyCredits }) {
 // without it a baker who paid from that gate was dropped straight back onto the expired screen,
 // because bakerData is fetched once at mount and this panel only ever reloaded its OWN state.
 // NOT fired on open/refresh — only on a real change, so the host isn't refetched for nothing.
-export default function BillingPanel({ open, onClose, onBuyCredits, onSubscriptionChange, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+export default function BillingPanel({ open, onClose, onBuyCredits, onSubscriptionChange, apiClient, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useNarrow(768);
   const [billing,        setBilling]        = useState(null);
   const [history,        setHistory]        = useState([]);
@@ -839,7 +840,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
                   <div style={{ flex: 1 }}>
                     <div style={{ fontSize: 11, fontWeight: 800, color: '#9BB5A2', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Current Plan</div>
-                    <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a' }}>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: INK }}>
                       {labelOf(billing.tier)}
                     </div>
                     {endDate && isActive && !isDowngradeScheduled && !isIntervalScheduled && (
@@ -854,13 +855,13 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                     {endDate && isActive && isDowngradeScheduled && (
                       <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: '#6B7280' }}>
                         Until {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        {' · then '}<span style={{ fontWeight: 800, color: '#1a1a1a' }}>{labelOf(scheduledTo)}</span>
+                        {' · then '}<span style={{ fontWeight: 800, color: INK }}>{labelOf(scheduledTo)}</span>
                       </div>
                     )}
                     {endDate && isActive && isIntervalScheduled && (
                       <div style={{ fontSize: 12, fontWeight: 600, marginTop: 4, color: '#6B7280' }}>
                         {PERIOD_SHORT[currentPeriodType]} until {endDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}
-                        {' · then '}<span style={{ fontWeight: 800, color: '#1a1a1a' }}>{PERIOD_SHORT[scheduledPeriod]} billing</span>
+                        {' · then '}<span style={{ fontWeight: 800, color: INK }}>{PERIOD_SHORT[scheduledPeriod]} billing</span>
                       </div>
                     )}
                     {billing.status === 'expired' && (
@@ -1084,7 +1085,7 @@ export default function BillingPanel({ open, onClose, onBuyCredits, onSubscripti
                               {i < history.length - 1 && <div style={{ width: 2, flex: 1, background: '#E8EFE9', marginTop: 3 }} />}
                             </div>
                             <div style={{ flex: 1 }}>
-                              <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{historyLabel(ev)}</div>
+                              <div style={{ fontSize: 13, fontWeight: 700, color: INK }}>{historyLabel(ev)}</div>
                               {ev.note && <div style={{ fontSize: 11, color: '#888', marginTop: 3, fontStyle: 'italic' }}>"{ev.note}"</div>}
                               <div style={{ fontSize: 10, color: '#bbb', marginTop: 4 }}>
                                 {new Date(ev.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}

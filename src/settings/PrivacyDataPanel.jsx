@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, Fragment } from 'react';
 import { Section, Field, Toggle } from './controls.jsx';
+import { INK } from '../shared/tokens.js';
 
 // Privacy & Data — the DPDP rights surface (Layer 3). Three blocks, all config-driven:
 //   1. Your agreements   — the consent trail (accept/withdraw) + a downloadable copy.
@@ -175,7 +176,7 @@ export function PrivacyDataSection({ apiClient }) {
           <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, max-content) max-content 1fr', columnGap: 12, rowGap: 10, alignItems: 'center', fontSize: 13 }}>
             {history.map((e, i) => (
               <Fragment key={i}>
-                <span style={{ fontWeight: 700, color: '#1a1a1a', textTransform: 'uppercase', minWidth: 0 }}>
+                <span style={{ fontWeight: 700, color: INK, textTransform: 'uppercase', minWidth: 0 }}>
                   {e.docKey}{' '}
                   {/* The version IS the download. A baker looking at "v1.0" and wanting to read
                       v1.0 should not have to find a separate control, and this keeps the row the

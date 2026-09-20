@@ -17,6 +17,7 @@ import { pointInRing } from '../geometry/regions.js';
 import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
 import { findRegions } from '../geometry/regions.js';
+import { INK } from '../../shared/tokens.js';
 
 // ── Piping a chocolate garnish, off the cake ─────────────────────────────────────────────────────
 //
@@ -1034,8 +1035,8 @@ export default function GarnishStudio({
                     : 'One pull of a spatula through coloured white chocolate. Each drag is its own piece.'}
                 style={{ width: 44, padding: '5px 0', borderRadius: 8, cursor: 'pointer',
                          fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
-                         border: `1.5px solid ${kind === o.id ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,
-                         background: kind === o.id ? '#1a1a1a' : 'rgba(255,255,255,0.92)',
+                         border: `1.5px solid ${kind === o.id ? INK : 'rgba(0,0,0,0.10)'}`,
+                         background: kind === o.id ? INK : 'rgba(255,255,255,0.92)',
                          color: kind === o.id ? '#fff' : '#666' }}>{o.label}</button>
             ))}
           </div>
@@ -1049,7 +1050,7 @@ export default function GarnishStudio({
               style={{ width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
                        display: 'grid', placeItems: 'center', fontFamily: 'serif',
                        fontSize: 19, fontWeight: 700, color: '#4A4A4A',
-                       border: `1.5px solid ${textOpen ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,
+                       border: `1.5px solid ${textOpen ? INK : 'rgba(0,0,0,0.10)'}`,
                        background: 'rgba(255,255,255,0.92)' }}>A</button>
             {textOpen && (
               <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 6, width: 240, padding: 10,
@@ -1385,7 +1386,7 @@ export default function GarnishStudio({
 
 const miniBtn = { padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
                   fontSize: 11.5, fontWeight: 800, border: '1.5px solid #DDD8D0', background: '#fff',
-                  color: '#1a1a1a' };
+                  color: INK };
 
 /* A control that sits ON the drawing: small, quiet, and out of the way of the piece being made. The
  * label is the accessible name — an icon with no name is a button nobody can describe. */
@@ -1535,5 +1536,5 @@ const btn = (primary, disabled = false) => ({
   fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
   border: primary ? 'none' : '1.5px solid #DDD8D0',
   background: primary ? (disabled ? '#B9C6BC' : '#2C4433') : '#fff',
-  color: primary ? '#fff' : (disabled ? '#BBB' : '#1a1a1a'),
+  color: primary ? '#fff' : (disabled ? '#BBB' : INK),
 });

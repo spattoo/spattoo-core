@@ -1,4 +1,5 @@
 import React from 'react';
+import { INK } from '../../shared/tokens.js';
 
 /* ── THE size control ────────────────────────────────────────────────────────────────────────────
  *
@@ -51,10 +52,10 @@ export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange }
       onPointerCancel={e => e.currentTarget.releasePointerCapture(e.pointerId)}>
       <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
         <path d={band(0, 1)} fill="#e6e0e3" />
-        {t > 0.001 && <path d={band(0, t)} fill="#1a1a1a" />}
-        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke="#1a1a1a" strokeWidth={2} />
+        {t > 0.001 && <path d={band(0, t)} fill={INK} />}
+        <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke={INK} strokeWidth={2} />
       </svg>
-      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
+      <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
         {size.toFixed(1)}
       </span>
     </div>

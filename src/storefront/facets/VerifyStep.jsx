@@ -4,6 +4,7 @@ import { useOtp } from '../useOtp.js';
 import { FONT, SERIF, alpha, darken, lum, mix, onColor } from '../storefrontKit.js';
 import { useTrimmedLogo } from '../../shared/useTrimmedLogo.js';
 import { Steps } from '../../shared/Steps.jsx';
+import { INK } from '../../shared/tokens.js';
 
 // ── Proving the number, at the last possible moment ─────────────────────────────────────────────
 // The baker's next action on every enquiry is to phone the customer. That makes the number the one
@@ -516,7 +517,7 @@ function makeStyles(primary, standalone) {
     },
     card: {
       width: '100%', maxWidth: 380, boxSizing: 'border-box', background: '#FFFFFF',
-      borderRadius: 22, padding: '26px 22px 18px', color: '#1a1a1a',
+      borderRadius: 22, padding: '26px 22px 18px', color: INK,
       display: 'flex', flexDirection: 'column', gap: 10,
       boxShadow: `0 18px 44px ${alpha(primary, 0.14)}, 0 2px 6px rgba(28,20,24,0.06)`,
     },
@@ -524,7 +525,7 @@ function makeStyles(primary, standalone) {
        tinted panel, and the previous unconditional `background:#FFF; minHeight:100vh` covered that
        panel over and made one step of a four-step flow scroll on its own. */
     wrap: {
-      display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px', color: '#1a1a1a',
+      display: 'flex', flexDirection: 'column', gap: 10, padding: '8px 2px 4px', color: INK,
       '--gate-ink': brand, '--gate-ink-soft': alpha(brand, 0.2),
     },
 

@@ -19,6 +19,7 @@ import Chip from '../shared/Chip.jsx';
 // it, because a rule about what we will not appear to take an order for cannot depend on which
 // screen somebody happens to be on.
 import { RECIPIENTS, occasionsByRelevance, occasionAllowedFor, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
+import { DANGER, INK } from '../shared/tokens.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -164,7 +165,7 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
       </div>
 
       {submitError && (
-        <div style={{ fontSize: isMobile ? 13 : 12, color: '#e53935', fontWeight: 600, lineHeight: 1.4 }}>
+        <div style={{ fontSize: isMobile ? 13 : 12, color: DANGER, fontWeight: 600, lineHeight: 1.4 }}>
           {submitError}
         </div>
       )}
@@ -238,7 +239,7 @@ function ReferenceUploader({ apiClient, keys, setKeys, maxImageBytes, isMobile, 
           </label>
         )}
       </div>
-      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>{error}</span>}
+      {error && <span style={{ fontSize: 11, color: DANGER, fontWeight: 600 }}>{error}</span>}
       <span style={{ fontSize: isMobile ? 12 : 10, color: '#9CA3AF' }}>
         The first photo becomes the order's thumbnail. Leave empty for an order with no image.
       </span>
@@ -262,7 +263,7 @@ export default function OrderModal({
   bakerName = null,   // named in the flavour-conflict warning ("check with Sweet Crumb")
   homeDeliveryEnabled = false,
   storeHours = null,
-  brandBtn, primaryColor = '#1a1a1a',
+  brandBtn, primaryColor = INK,
   editingOrder = null,
   onViewOrder = null,
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
@@ -798,7 +799,7 @@ export default function OrderModal({
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <div style={{ fontSize: isMobile ? 20 : 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>
+            <div style={{ fontSize: isMobile ? 20 : 16, fontWeight: 700, color: INK, marginBottom: 8 }}>
               {editingOrder ? 'Design Updated!' : mode === 'customer' ? 'Quote Requested!' : 'Order Placed!'}
             </div>
             <div style={{ fontSize: isMobile ? 14 : 12, color: '#666', lineHeight: 1.6 }}>
@@ -991,7 +992,7 @@ export default function OrderModal({
                       <span style={{ fontSize: 11, color: '#aaa' }}>Loading customer list…</span>
                     )}
                     {!customersLoading && customersFetchErr && (
-                      <span style={{ fontSize: 11, color: '#e53935' }}>Could not load customers: {customersFetchErr}</span>
+                      <span style={{ fontSize: 11, color: DANGER }}>Could not load customers: {customersFetchErr}</span>
                     )}
                     {searchResults.length > 0 && (
                       <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:4 }}>
@@ -1006,7 +1007,7 @@ export default function OrderModal({
                               {(c.first_name?.[0] ?? '').toUpperCase()}
                             </div>
                             <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontWeight:600, fontSize:isMobile?13:12, color:'#1a1a1a' }}>{c.first_name} {c.last_name ?? ''}</div>
+                              <div style={{ fontWeight:600, fontSize:isMobile?13:12, color:INK }}>{c.first_name} {c.last_name ?? ''}</div>
                               {c.phone && <div style={{ fontSize:isMobile?12:10, color:'#888' }}>{c.phone}</div>}
                             </div>
                           </button>
@@ -1038,7 +1039,7 @@ export default function OrderModal({
                         {(foundCustomer.first_name?.[0] ?? '').toUpperCase()}
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontWeight:700, fontSize: isMobile?15:13, color:'#1a1a1a' }}>
+                        <div style={{ fontWeight:700, fontSize: isMobile?15:13, color:INK }}>
                           {foundCustomer.first_name} {foundCustomer.last_name ?? ''}
                         </div>
                         {foundCustomer.phone && <div style={{ fontSize: isMobile?13:11, color:'#666', marginTop:1 }}>{foundCustomer.phone}</div>}
@@ -1084,7 +1085,7 @@ export default function OrderModal({
                         onChange={e => setCustomer(c => ({ ...c, email: e.target.value }))}
                         onKeyDown={e => e.key === 'Enter' && canGoNext0 && setStep(1)} />
                       {customer.email.trim() && !emailOk && (
-                        <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>Enter a valid email address.</span>
+                        <span style={{ fontSize: 11, color: DANGER, fontWeight: 600 }}>Enter a valid email address.</span>
                       )}
                     </label>
                   </>
@@ -1480,7 +1481,7 @@ export default function OrderModal({
                 )}
 
                 {submitError && (
-                  <div style={{ fontSize: isMobile?13:12, color:'#e53935', fontWeight:600, lineHeight:1.4 }}>
+                  <div style={{ fontSize: isMobile?13:12, color:DANGER, fontWeight:600, lineHeight:1.4 }}>
                     {submitError}
                   </div>
                 )}
@@ -1504,7 +1505,7 @@ function btn(isMobile) {
     borderRadius:14, border:'none',
     fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer',
     fontFamily:"'Quicksand',sans-serif",
-    background:'linear-gradient(135deg,#1a1a1a,#333333)',
+    background:`linear-gradient(135deg,${INK},#333333)`,
     color:'#fff', transition:'opacity 0.15s',
   };
 }

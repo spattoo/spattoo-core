@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { INK } from '../shared/tokens.js';
 
 // Templates — a top-level settings destination (peer of Flavours), reached from the Settings gear.
 //
@@ -13,7 +14,7 @@ import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 // The API owns the schema and resolution (GET /api/baker/templates → [{ id, name, thumbnail_url,
 // tier_count, offering, excluded }]; the save replaces the baker's exclusion set). Core only ever
 // sees flags — this is the same shape as FlavoursPanel, just with a thumbnail per row.
-export default function TemplatesPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+export default function TemplatesPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [templates, setTemplates] = useState(null);
   const [excluded,  setExcluded]  = useState(() => new Set());

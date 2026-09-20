@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { garnishGuide } from '../../designer/geometry/garnishGuide.js';
 import { useNarrow } from '../../shared/useNarrow.js';
+import { INK } from '../../shared/tokens.js';
 
 // ── The build guide for a chocolate garnish ──────────────────────────────────────────────────────
 //
@@ -243,7 +244,7 @@ function Facts({ guide }) {
         <div key={k}>
           <div style={{ fontSize: 10, fontWeight: 800, color: '#999', letterSpacing: 0.4,
                         textTransform: 'uppercase' }}>{k}</div>
-          <div style={{ fontSize: 14, fontWeight: 700, color: '#1a1a1a' }}>{v}</div>
+          <div style={{ fontSize: 14, fontWeight: 700, color: INK }}>{v}</div>
         </div>
       ))}
     </div>

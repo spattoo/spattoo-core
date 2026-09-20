@@ -8,6 +8,7 @@ import { TEMPLATES } from './templates.js';
 import RightsAttestation from '../legal/RightsAttestation.jsx';
 import { Panel, ConfirmPanel, Takeover } from '../shared/Panel.jsx';
 import { ShareIcon } from '../shared/icons.jsx';
+import { INK } from '../shared/tokens.js';
 
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
@@ -39,7 +40,7 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   onUpgrade   () => void — open billing. Called instead of publishing when the baker is LOOKING
 //               at a premium theme their plan cannot publish.
 //   onClose     () => void
-export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = '#1a1a1a', appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onUpgrade, onShareStore, onClose }) {
+export default function ThemePreview({ open, apiClient, themes = [], value, baker = {}, logoUrl = null, appPrimary = INK, appAccent = '#333333', onPublish, onUnpublish, onReviewFlavours, onUpgrade, onShareStore, onClose }) {
   // Defaults come from the baker's saved branding (value.*); the literals are only a last
   // resort if a baker has no colour on file, and match the storefront's own defaults.
   // A baker with no colour on file falls back to the SELECTED template's designed defaults (not a

@@ -11,6 +11,7 @@ import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
 import XrayEdiblePrints from './XrayEdiblePrints.jsx';
+import { INK } from '../../shared/tokens.js';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -352,15 +353,15 @@ export default function XrayReport({ order, apiClient, onClose }) {
             should stop a baker mid-scan, and it must not depend on a colour surviving. */}
         {conflicts.length > 0 && (
           <div style={{
-            border: '2.5px solid #1a1a1a', borderRadius: 12, background: '#fff',
+            border: `2.5px solid ${INK}`, borderRadius: 12, background: '#fff',
             padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6,
           }}>
-            <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, color: '#1a1a1a' }}>
+            <span style={{ fontSize: 11, fontWeight: 900, letterSpacing: 1, color: INK }}>
               CHECK BEFORE BAKING
             </span>
             {conflicts.map((c, i) => (
               <span key={`${c.flavourId}-${c.requirement.key}-${i}`}
-                style={{ fontSize: 14, fontWeight: 800, color: '#1a1a1a' }}>
+                style={{ fontSize: 14, fontWeight: 800, color: INK }}>
                 {conflictBenchLine(c, { tierCount: order?.flavours?.length ?? 1 })}
               </span>
             ))}
@@ -636,7 +637,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
                             flex: '0 0 auto', display: 'flex', flexDirection: 'column', alignItems: 'center',
                             gap: 6, padding: '10px 10px 8px', borderRadius: 12, cursor: 'pointer',
                             background: on ? '#F7F4EE' : '#fff', fontFamily: 'inherit',
-                            border: on ? '2px solid #1a1a1a' : '1.5px solid #EFEAE3',
+                            border: on ? `2px solid ${INK}` : '1.5px solid #EFEAE3',
                           }}>
                           {/* Bottom-aligned and sharing one ruler, so the row reads as one cake
                               photographed in different tins rather than several cakes. */}

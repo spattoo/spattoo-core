@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { WAVES, WAVE_VIEWBOX } from './waves.js';
 import { chromeGradient } from './chrome.js';
+import { INK } from './tokens.js';
 
 // ── The one panel shell ─────────────────────────────────────────────────────────────────────────
 // Twelve files each defined their own overlay, and they had nothing in common. Five different
@@ -334,7 +335,7 @@ export function ConfirmPanel({
             onClick={onConfirm}
             style={{
               ...confirmBtn, flex: 1,
-              background: danger ? '#DC2626' : '#1a1a1a',
+              background: danger ? '#DC2626' : INK,
               opacity: off ? 0.5 : 1,
               cursor: off ? 'not-allowed' : 'pointer',
               ...confirmStyle,

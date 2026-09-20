@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Toggle } from './controls.jsx';
 import { Disclosure } from '../shared/Disclosure.jsx';
+import { INK } from '../shared/tokens.js';
 
 // ── Settings → Customer updates ──────────────────────────────────────────────────────────────────
 //
@@ -304,7 +305,7 @@ const s = {
   /* The number and its unit on ONE baseline. Stacked they took three lines for two words and pushed
      the tiles down; "0 messages left" is one fact and should read as one. */
   balanceBlock: { display: 'flex', alignItems: 'baseline', flexWrap: 'wrap', gap: 7 },
-  balanceNum: { fontSize: 30, fontWeight: 800, color: '#1a1a1a', lineHeight: 1 },
+  balanceNum: { fontSize: 30, fontWeight: 800, color: INK, lineHeight: 1 },
   balanceLbl: { fontSize: 13, color: '#888' },
   usage:      { fontSize: 11, color: '#9BB5A2', width: '100%' },
   /* A GRID, not a wrapping flex row. Four tiles in two even columns whatever the width — the flex
@@ -332,12 +333,12 @@ const s = {
   packSub:    { fontSize: 9.5, color: '#7C8B82', textTransform: 'uppercase', letterSpacing: 0.5 },
   /* The price is the number a baker actually decides on, and it was the faintest thing in the tile. */
   packPrice:  { fontSize: 13, fontWeight: 700, color: '#3A4740', marginTop: 5 },
-  listHead:   { fontSize: 13.5, fontWeight: 800, color: '#1a1a1a', margin: '18px 0 0' },
+  listHead:   { fontSize: 13.5, fontWeight: 800, color: INK, margin: '18px 0 0' },
   perOrder:   { margin: 0, fontSize: 12, color: '#555' },
   list:       { display: 'flex', flexDirection: 'column', gap: 2 },
   row:        { padding: '12px 0', borderBottom: '1px solid #F3F4F6' },
   rowMain:    { display: 'flex', alignItems: 'flex-start', gap: 12 },
-  rowTitle:   { fontSize: 13, fontWeight: 700, color: '#1a1a1a', display: 'flex',
+  rowTitle:   { fontSize: 13, fontWeight: 700, color: INK, display: 'flex',
                 alignItems: 'center', gap: 6, flexWrap: 'wrap' },
   rowWhen:    { fontSize: 11, color: '#888', marginTop: 2 },
   badge:      { fontSize: 9, fontWeight: 700, letterSpacing: 0.3, textTransform: 'uppercase',

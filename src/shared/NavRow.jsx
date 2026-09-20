@@ -1,4 +1,5 @@
 import { ChevronRightIcon } from './icons.jsx';
+import { INK } from './tokens.js';
 
 /* ── THE row that opens something ────────────────────────────────────────────────────────────────
  *
@@ -69,7 +70,7 @@ export function NavRow({ label, hint, value, accent = '#2C4433', onClick, disabl
     <button type="button" className="spattoo-navrow" onClick={onClick} disabled={disabled}
             aria-label={ariaLabel}>
       <span style={{ flex: 1, minWidth: 0 }}>
-        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: '#1a1a1a' }}>{label}</span>
+        <span style={{ display: 'block', fontSize: 13.5, fontWeight: 700, color: INK }}>{label}</span>
         {hint && (
           <span style={{ display: 'block', fontSize: 11.5, color: '#7C8B82', marginTop: 2, lineHeight: 1.45 }}>
             {hint}
