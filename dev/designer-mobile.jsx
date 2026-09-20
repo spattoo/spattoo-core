@@ -248,6 +248,29 @@ CAT_ELEMENTS.push({
   default_color: '#d9b85c', sort_order: 19,
 });
 
+/* ⚠️ A CREAM PEN ROW — the fourth card this harness could not open. Same routing as the dust and
+ * grass rows: `procedural: 'cream_pen'` is the VALUE of `procedural`, and only tapPlaceElement
+ * consults PROCEDURAL_TOOLS, so it must be driven through __tapElementById.
+ *
+ * ⚠️ NO NESTED TUNING, DELIBERATELY. addPenFromRow merges `MEDIA[medium].defaults` and then the
+ * row's own `cfg[cfg.procedural] ?? cfg.cream_pen` over it, so an empty config is what exercises
+ * the shipped cream defaults (star5 nozzle, softness 0.7). A row that restated them would hide a
+ * change to them.
+ *
+ * ⚠️ THIS ONLY REACHES THE CREAM ARM. The pen card shows different controls per mode — cream has
+ * Thickness + Softness, a STAMP has Size + Spacing + Lean — and `stampUrl` is set nowhere but the
+ * "I'll pipe it myself" path off a piping card. No fixture can produce it, which is why the dev
+ * block gained __setPenStyle: three of the five controls are otherwise unverifiable. */
+CAT_ELEMENTS.push({
+  id: 'e21', name: 'Cream pen', description: 'pipe cream freehand onto the cake',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f3e9dd'), thumbnail_url: CAT_THUMB('#f3e9dd'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'cream_pen' },
+  default_color: '#ffffff', sort_order: 21,
+});
+
 CAT_ELEMENTS.push({
   id: 'e13', name: 'Circle photo frame', description: 'a photo set into a round frame',
   element_type_id: 'et-image', category_id: 'cat-1',

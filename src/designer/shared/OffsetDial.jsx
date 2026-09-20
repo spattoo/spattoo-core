@@ -26,7 +26,14 @@ import { INK } from '../../shared/tokens.js';
  * Bounds come from the CALLER and are recomputed per ring — see rimRadialTravel / ringHeightTravel
  * in CakeDesigner.jsx. This component decides nothing about range, only how it is dragged.
  */
-export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, onChange }) {
+/* ⚠️ `fmt` FOR THE SAME REASON SizeDial HAS ONE — and this dial needed it the moment a DEGREE
+ * arrived. The pen's Lean runs -80..+80 in whole steps and used to read "0°"; through toFixed(2)
+ * it became "-24.00", which reads as a decimal measurement rather than a tilt. The default keeps
+ * the old string exactly (sign preserved, two decimals), so every existing caller is unchanged.
+ * A formatter must still keep the SIGN — that is the whole difference between in and out, up and
+ * down, and the note below says so. */
+export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, onChange,
+                             fmt = v => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2)) }) {
   const CX = 24, CY = 24, R_IN = 12, W = 5;
   const A_START = -140 * Math.PI / 180;   // lower-left
   const A_SWEEP =  280 * Math.PI / 180;   // over the top to lower-right (gap at the bottom)
@@ -89,8 +96,9 @@ export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, o
       </svg>
       <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
                      fontSize: 9, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
-        {/* ⚠️ The SIGN is kept. It is the whole difference between in and out, up and down. */}
-        {value > 0 ? `+${value.toFixed(2)}` : value.toFixed(2)}
+        {/* ⚠️ The SIGN is kept. It is the whole difference between in and out, up and down —
+            which is why the default `fmt` above carries it, and why a caller's own must too. */}
+        {fmt(value)}
       </span>
     </div>
   );

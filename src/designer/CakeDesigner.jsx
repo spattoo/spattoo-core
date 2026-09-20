@@ -5864,6 +5864,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * `tier_finish` is handled there too.
      * This is the route a baker actually takes for those rows: Decorations → tap. */
     window.__tapElementById = (id) => { const e = elementById.get(id); if (!e) return false; tapPlaceElement(e); return true; };
+    /* ⚠️ THE PEN'S STAMP MODE HAS NO OTHER DOOR. penStyle.stampUrl is set in exactly one place —
+     * the "I'll pipe it myself" path off a piping card — so no catalogue row can reach it, and the
+     * pen card shows DIFFERENT controls per mode: cream has Thickness + Softness, a stamp has Size
+     * + Spacing + Lean. Without this, three of that card's five controls could only ever be
+     * reasoned about, which is how the foil fix got written twice.
+     * A patch, not a replacement, so a test sets one field without restating the whole style. */
+    window.__setPenStyle = (patch) => { setPenStyle(ps => ({ ...ps, ...(patch ?? {}) })); return true; };
+    window.__getPenStyle = () => penStyle;
     window.__placeTestPatternWith = (id) => {   // place a pattern using a chosen element id (mirrored 2nd part)
       const partEl = elementById.get(id); if (!partEl) return false;
       const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
@@ -8736,14 +8744,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {stampSourceCard && (
                 <button onClick={backToPipingCard}
                   style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
-                           border: '1.5px solid #999999', background: '#fff', color: INK, cursor: 'pointer',
+                           border: `1.5px solid ${LINE}`, background: SURFACE, color: INK, cursor: 'pointer',
                            fontFamily: "'Quicksand',sans-serif" }}>
                   ‹ Back to {stampSourceCard.name}
                 </button>
               )}
               <button onClick={pipeWithCreamAgain}
                 style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
-                         border: '1.5px solid #999999', background: '#fff', color: INK, cursor: 'pointer',
+                         border: `1.5px solid ${LINE}`, background: SURFACE, color: INK, cursor: 'pointer',
                          fontFamily: "'Quicksand',sans-serif" }}>
                 Cream instead
               </button>
@@ -8787,35 +8795,62 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             The range second: the rope's 0.16 ceiling is barely above where a piped shell STARTS
             (0.144), so there was no room to make a border bigger and plenty to make it far too
             small. A stamp gets 0.04–0.34 — roughly a quarter to a little over double a ring's. */}
-        {penStyle.stampUrl ? (
-          <PenSlider label="Size" value={penStyle.thickness} min={0.04} max={0.34} step={0.005}
-            onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
-        ) : (
-          <PenSlider label="Thickness" value={penStyle.thickness} min={0.008} max={0.16} step={0.004} onChange={v => setPenStyle(ps => ({ ...ps, thickness: v }))} fmt={v => v.toFixed(3)} />
-        )}
-        {/* Softness shapes the swept ROPE and does nothing to a stamped shape — the stamp path never
-            reads it. Shown for cream, hidden for a stamp, because a slider that moves and changes
-            nothing is worse than one that is missing.
-
-            Spacing replaces it, and it is the control piping actually turns on: how tightly the
-            repeats sit. 0.55 is shells crowding each other, 1.4 is a dotted run. It has lived in
-            penStyle since the pen was built with nothing to set it. */}
-        {penStyle.stampUrl ? (<>
-          <PenSlider label="Spacing" value={penStyle.spacing ?? 0.85} min={0.5} max={1.6} step={0.05}
-            onChange={v => setPenStyle(ps => ({ ...ps, spacing: v }))} fmt={v => v.toFixed(2)} />
-          {/* ── Lean ──────────────────────────────────────────────────────────────────────────────
+        {/* ⚠️ ONE ROW WHOSE CONTENTS SWITCH BY MODE, not five dials. A stamp and a rope are piped by
+            different machinery and the card has always shown different controls for each: cream
+            gets Thickness + Softness, a stamp gets Size + Spacing + Lean. That exclusivity is kept
+            exactly — a control that would do nothing in a mode stays ABSENT, because a dial that
+            moves and changes nothing is worse than one that is missing.
+            ⚠️ LEAN IS AN OffsetDial, NOT A SizeDial. It runs -80..+80 about a meaningful zero, and
+            SizeDial's band tapers thin→thick to mean small→large: on a signed tilt that taper is a
+            lie, and OffsetDial's own header says so. It fills from zero in whichever direction the
+            value went, and keeps the sign — which is the entire content of "lean".
+            ⚠️ Size/Thickness are ONE FIELD behind the ternary (both write penStyle.thickness with
+            different names and ranges), so only one is ever in the row. */}
+        <div style={s.previewRow}>
+          {(penStyle.stampUrl
+            ? [
+                /* The word first: on the pen this IS a thickness — how fat the rope is — but on a
+                   stamp it is how big the whole shape comes out, and calling that thickness invites
+                   a customer to look for the shape to get chunkier. The range second: the rope's
+                   0.16 ceiling is barely above where a piped shell STARTS (0.144), so there was no
+                   room to make a border bigger and plenty to make it far too small. */
+                { k: 'Size', v: penStyle.thickness, min: 0.04, max: 0.34, step: 0.005,
+                  fmt: v => v.toFixed(3), set: v => setPenStyle(ps => ({ ...ps, thickness: v })) },
+                /* How tightly the repeats sit: 0.55 is shells crowding each other, 1.4 a dotted run. */
+                { k: 'Spacing', v: penStyle.spacing ?? 0.85, min: 0.5, max: 1.6, step: 0.05,
+                  fmt: v => v.toFixed(2), set: v => setPenStyle(ps => ({ ...ps, spacing: v })) },
+              ]
+            : [
+                { k: 'Thickness', v: penStyle.thickness, min: 0.008, max: 0.16, step: 0.004,
+                  fmt: v => v.toFixed(3), set: v => setPenStyle(ps => ({ ...ps, thickness: v })) },
+                /* Softness shapes the swept ROPE and does nothing to a stamped shape — the stamp
+                   path never reads it, so it is absent there rather than present-and-dead. */
+                { k: 'Softness', v: penStyle.softness, min: 0, max: 1, step: 0.05,
+                  fmt: v => v.toFixed(2), set: v => setPenStyle(ps => ({ ...ps, softness: v })) },
+              ]
+          ).map(d => (
+            <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
+              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
+            </div>
+          ))}
+          {/* ── Lean ────────────────────────────────────────────────────────────────────────────
               A calibrated ring rotation carries a big outward TILT — the shipped shell border is
               -68° — because a rim shell hangs over the cake's edge. Reproduced in the middle of a
               flat top it simply lays the piece down, so hand-piping stands the piece up and starts
-              this at zero.
-              It is a control rather than a constant because the decomposition behind it is read off
-              the renderer, not proven: local X is tangential so a rotation about it is the lean, and
-              if a particular model wants some of that back, this is how it gets it. */}
-          <PenSlider label="Lean" value={penStyle.stampLean ?? 0} min={-80} max={80} step={2}
-            onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} fmt={v => `${v}°`} />
-        </>) : (
-          <PenSlider label="Softness"  value={penStyle.softness}  min={0}     max={1}    step={0.05}  onChange={v => setPenStyle(ps => ({ ...ps, softness: v }))}  fmt={v => v.toFixed(2)} />
-        )}
+              this at zero. A control rather than a constant because the decomposition behind it is
+              read off the renderer, not proven. */}
+          {penStyle.stampUrl && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              {/* Degrees, with the sign — "-24°", not "-24.00". A lean is an angle either side of
+                  upright, and a decimal readout describes a measurement it is not. */}
+              <OffsetDial value={penStyle.stampLean ?? 0} min={-80} max={80} step={2} label="Lean"
+                fmt={v => `${v > 0 ? '+' : ''}${Math.round(v)}°`}
+                onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} />
+              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Lean</span>
+            </div>
+          )}
+        </div>
 
         {/* ── Auto-correct shape ───────────────────────────────────────────────────────────────
             Nobody draws a clean border with a mouse. A run round the rim comes out wobbling, and the
@@ -8829,7 +8864,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
           <input type="checkbox" checked={penStyle.autoShape ?? false}
             onChange={e => setPenStyle(ps => ({ ...ps, autoShape: e.target.checked }))}
-            style={{ width: 15, height: 15, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
+            style={{ width: 15, height: 15, accentColor: INK, cursor: 'pointer', flexShrink: 0 }} />
           <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: INK }}>Auto-correct shape</span>
             <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.35 }}>
@@ -8855,8 +8890,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {[['↺', -1], ['↻', 1]].map(([glyph, dir]) => (
             <button key={dir} onClick={() => turnCameraRef.current?.(dir * Math.PI / 3)}
               title={dir < 0 ? 'Turn left' : 'Turn right'}
-              style={{ width: 34, height: 30, borderRadius: 8, border: '1.5px solid #999999',
-                       background: '#fff', color: INK, fontSize: 15, cursor: 'pointer',
+              style={{ width: 34, height: 30, borderRadius: 8, border: `1.5px solid ${LINE}`,
+                       background: SURFACE, color: INK, fontSize: 15, cursor: 'pointer',
                        fontFamily: "'Quicksand',sans-serif", lineHeight: 1 }}>
               {glyph}
             </button>
@@ -8871,21 +8906,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
             It doubles as the answer to "how do I get out of this": with a nozzle for a cursor and
             drags landing cream instead of rotating the cake, a visible way out is not a nicety. */}
-        <button onClick={() => selectExclusive(null)}
-          style={{ width: '100%', marginTop: 8, padding: '9px 0', borderRadius: 8, border: 'none',
-                   background: '#2C4433', color: '#fff', fontWeight: 800, fontSize: 12,
-                   cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>
+        {/* s.doneBtn — the app's primary. This was the last GREEN button on a procedural card, which
+            is where Sandeep's original question started: "can you cheeck if any buttons for any
+            elements are green?" */}
+        <button onClick={() => selectExclusive(null)} style={{ ...s.doneBtn, width: '100%', marginTop: 8 }}>
           Done piping
         </button>
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <button onClick={removeStroke} disabled={!design.piping.length}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
-              color: design.piping.length ? INK : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+            style={{ ...s.neutralBtn, flex: 1, ...(design.piping.length ? {} : { color: INK_MUTED, cursor: 'not-allowed' }) }}>
             ↶ Undo
           </button>
+          {/* Destructive, so the FIELD carries it — but only while there is something to clear.
+              Disabled it stays neutral: a red field on a dead button is a warning about nothing. */}
           <button onClick={clearPiping} disabled={!design.piping.length}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
-              color: design.piping.length ? '#b56' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+            style={design.piping.length
+              ? { ...s.deleteBtn, flex: 1 }
+              : { ...s.neutralBtn, flex: 1, color: INK_MUTED, cursor: 'not-allowed' }}>
             Clear all
           </button>
         </div>
