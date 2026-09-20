@@ -9217,7 +9217,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {[['On top', !!g, toggleTopGrass], ['On the board', !!bg, toggleBoardGrass]].map(([label, on, fn]) => (
               <button key={label} onClick={fn}
                 style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                  border: '1.5px solid #999999', background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
+                  border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK }}>
                 {label}
               </button>
             ))}
@@ -9238,40 +9238,63 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <button key={label}
                     onClick={() => { if (!on) updateBoardGrass({ patches: wantPatches ? [{ u: 0, v: 0.86, r: GRASS_PATCH_R }] : null }); }}
                     style={{ flex: 1, padding: '6px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                      border: '1.5px solid #999999', background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
+                      border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK }}>
                     {label}
                   </button>
                 );
               })}
             </div>
 
-            {bg.patches?.length > 0 ? (
+            {bg.patches?.length > 0 && (
               <div style={{ marginBottom: 8 }}>
+                {/* Per-CLUMP controls, one row each with its own remove — a list, not card settings,
+                    so these stay as they are. Folding them into the dial row below would merge one
+                    clump's size with the whole ring's. */}
                 {bg.patches.map((p, k) => (
                   <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 10, color: '#aaa', width: 12 }}>{k + 1}</span>
+                    <span style={{ fontSize: 10, color: INK_MUTED, width: 12 }}>{k + 1}</span>
                     <input type="range" min={0.15} max={0.9} step={0.02} value={p.r ?? GRASS_PATCH_R}
                       onChange={e => setGrassPatchSize(BOARD_TIER, k, +e.target.value)}
                       onPointerDown={() => setGrassSelected({ tier: BOARD_TIER, idx: k })}
-                      style={{ flex: 1 }} />
+                      style={{ flex: 1, accentColor: INK }} />
                     <button onClick={() => removeGrassPatch(BOARD_TIER, k)} title="Remove"
-                      style={{ border: 'none', background: 'none', color: '#b56', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                      style={{ border: 'none', background: 'none', color: DANGER, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
                   </div>
                 ))}
                 <button onClick={() => addGrassPatch(true)}
                   style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
-                    border: `1.5px solid ${INK}`, background: INK, color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+                    border: `1.5px solid ${INK}`, background: INK, color: SURFACE, fontWeight: 700, fontFamily: 'inherit' }}>
                   + Add clump
                 </button>
               </div>
-            ) : (
-            <PenSlider label="Ring width" value={bg.ringWidth ?? 0.75} min={0.15} max={1} step={0.05}
-              onChange={v => updateBoardGrass({ ringWidth: v })} fmt={v => `${Math.round(v * 100)}%`} />)}
-            <PenSlider label="Height" value={bg.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
-              onChange={v => updateBoardGrass({ height: v })} fmt={v => v.toFixed(2)} />
-            <PenSlider label="Density" value={0.24 - (bg.spacing ?? GRASS_DEFAULTS.spacing)} min={0.04} max={0.2} step={0.002}
-              onChange={v => updateBoardGrass({ spacing: +(0.24 - v).toFixed(3) })}
-              fmt={() => `${Math.round((0.2 - (bg.spacing ?? 0.075)) / 0.16 * 100)}%`} />
+            )}
+            {/* ⚠️ THE BOARD RING'S OWN DIAL ROW. Ring width is INSIDE the row but conditional: it
+                only exists in Ring mode, where Clumps replaces it with the per-clump list above.
+                Hoisting it out unconditionally would show a width for something that has none.
+                ⚠️ DENSITY IS INVERTED AND DERIVED, and is carried across exactly: the value is
+                `0.24 − spacing`, the setter writes `spacing` back, and the formatter reads the
+                STORED spacing rather than its own argument. Density is what a person adjusts;
+                spacing is what the geometry wants. Re-deriving it here would have quietly changed
+                the feel of the control. At step 0.002 it also needs `fmt`, or a dial would read a
+                flat "0.1" across its whole travel. */}
+            <div style={s.previewRow}>
+              {[
+                ...(bg.patches?.length ? [] : [
+                  { k: 'Ring width', v: bg.ringWidth ?? 0.75, min: 0.15, max: 1, step: 0.05,
+                    fmt: v => `${Math.round(v * 100)}%`, set: v => updateBoardGrass({ ringWidth: v }) },
+                ]),
+                { k: 'Height', v: bg.height ?? GRASS_DEFAULTS.height, min: 0.06, max: 0.4, step: 0.005,
+                  fmt: v => v.toFixed(2), set: v => updateBoardGrass({ height: v }) },
+                { k: 'Density', v: 0.24 - (bg.spacing ?? GRASS_DEFAULTS.spacing), min: 0.04, max: 0.2, step: 0.002,
+                  fmt: () => `${Math.round((0.2 - (bg.spacing ?? 0.075)) / 0.16 * 100)}%`,
+                  set: v => updateBoardGrass({ spacing: +(0.24 - v).toFixed(3) }) },
+              ].map(d => (
+                <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+                  <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
+                  <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -9285,7 +9308,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {design.tiers.map((_, ti) => (
                 <button key={ti} onClick={() => moveGrassToTier(ti)}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                    border: '1.5px solid #999999', background: ti === i ? INK : '#fff', color: ti === i ? '#fff' : INK }}>
+                    border: `1.5px solid ${LINE}`, background: ti === i ? INK : SURFACE, color: ti === i ? SURFACE : INK }}>
                   {ti + 1}
                 </button>
               ))}
@@ -9313,7 +9336,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               return (
                 <button key={label} onClick={() => { if (!on) updateGrass(i, patch); }}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                    border: '1.5px solid #999999', background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
+                    border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK }}>
                   {label}
                 </button>
               );
@@ -9325,15 +9348,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 6 }}>
                 Drag a clump on the cake to move it.
               </div>
+              {/* Per-CLUMP controls, the twin of the board list above — a list with its own remove,
+                  not card settings, so it stays a row each rather than joining the dial row. */}
               {g.patches.map((p, k) => (
                 <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 10, color: '#aaa', width: 12 }}>{k + 1}</span>
+                  <span style={{ fontSize: 10, color: INK_MUTED, width: 12 }}>{k + 1}</span>
                   <input type="range" min={0.15} max={0.9} step={0.02} value={p.r ?? GRASS_PATCH_R}
                     onChange={e => setGrassPatchSize(i, k, +e.target.value)}
                     onPointerDown={() => setGrassSelected({ tier: i, idx: k })}
-                    style={{ flex: 1 }} />
+                    style={{ flex: 1, accentColor: INK }} />
                   <button onClick={() => removeGrassPatch(i, k)} title="Remove"
-                    style={{ border: 'none', background: 'none', color: '#b56', cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
+                    style={{ border: 'none', background: 'none', color: DANGER, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
                 </div>
               ))}
               <button onClick={() => addGrassPatch(false)}
@@ -9345,29 +9370,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           )}
         </div>
 
-        {g.bandInner != null && (
-          <div style={{ marginTop: 8 }}>
-            <PenSlider label="Band width" value={1 - g.bandInner} min={0.12} max={0.9} step={0.02}
-              onChange={v => updateGrass(i, { bandInner: +(1 - v).toFixed(2) })}
-              fmt={v => `${Math.round(v * 100)}%`} />
-          </div>
-        )}
-
-        <div style={{ marginTop: 8 }}>
-          {/* Density reads as "more grass to the right", so the slider is inverted over spacing —
-              spacing is the number the geometry wants, density is the thing a person adjusts. */}
-          <PenSlider label="Density" value={0.24 - (g.spacing ?? GRASS_DEFAULTS.spacing)} min={0.04} max={0.2} step={0.002}
-            onChange={v => updateGrass(i, { spacing: +(0.24 - v).toFixed(3) })} fmt={() => `${Math.round((0.2 - (g.spacing ?? 0.075)) / 0.16 * 100)}%`} />
-          <PenSlider label="Height" value={g.height ?? GRASS_DEFAULTS.height} min={0.06} max={0.4} step={0.005}
-            onChange={v => updateGrass(i, { height: v })} fmt={v => v.toFixed(2)} />
-          {/* Grass at the rim spilling down the side. A TOP-surface control only: the board ring's
-              edge is the board's edge, and tipping tufts over THAT would hang grass off the cake
-              board into mid-air. Applies to all three top modes — a clump dragged to the rim drapes
-              for the same reason a full lawn does. Defaults to 0, so no existing cake changes and
-              the drape is something a baker turns on. */}
-          <PenSlider label="Over the edge" value={g.overhang ?? 0} min={0} max={1} step={0.05}
-            onChange={v => updateGrass(i, { overhang: v })}
-            fmt={v => (v === 0 ? 'none' : `${Math.round(v * 100)}%`)} />
+        {/* ⚠️ THE TIER GRASS KEEPS ITS OWN ROW, separate from the board's above. The two placements
+            are independent and can both be on — the football cake has a pitch on top AND tufts
+            round the base — so one merged strip would put two different objects' Height and Density
+            side by side with no way to tell which is which.
+            Band width is conditional in the same way Ring width is: it exists only in Rim band
+            mode, where a width is a thing the band actually has.
+            ⚠️ Band width and Density are both DERIVED — `1 − bandInner` and `0.24 − spacing`, with
+            setters that write the stored field back. Carried across verbatim: the geometry wants
+            the inner edge and the spacing, a person adjusts a width and a density, and re-deriving
+            either here would quietly change how the control feels.
+            Over the edge keeps its formatter so 0 still reads "none" rather than "0.00" — an off
+            state a baker turns on, not a measurement. */}
+        <div style={s.previewRow}>
+          {[
+            ...(g.bandInner != null ? [
+              { k: 'Band width', v: 1 - g.bandInner, min: 0.12, max: 0.9, step: 0.02,
+                fmt: v => `${Math.round(v * 100)}%`, set: v => updateGrass(i, { bandInner: +(1 - v).toFixed(2) }) },
+            ] : []),
+            { k: 'Density', v: 0.24 - (g.spacing ?? GRASS_DEFAULTS.spacing), min: 0.04, max: 0.2, step: 0.002,
+              fmt: () => `${Math.round((0.2 - (g.spacing ?? 0.075)) / 0.16 * 100)}%`,
+              set: v => updateGrass(i, { spacing: +(0.24 - v).toFixed(3) }) },
+            { k: 'Height', v: g.height ?? GRASS_DEFAULTS.height, min: 0.06, max: 0.4, step: 0.005,
+              fmt: v => v.toFixed(2), set: v => updateGrass(i, { height: v }) },
+            /* Grass at the rim spilling down the side. A TOP-surface control only: the board ring's
+               edge is the board's edge, and tipping tufts over THAT would hang grass off the cake
+               board into mid-air. Applies to all three top modes — a clump dragged to the rim
+               drapes for the same reason a full lawn does. Defaults to 0, so no existing cake
+               changes and the drape is something a baker turns on. */
+            { k: 'Over the edge', v: g.overhang ?? 0, min: 0, max: 1, step: 0.05,
+              fmt: v => (v === 0 ? 'none' : `${Math.round(v * 100)}%`), set: v => updateGrass(i, { overhang: v }) },
+          ].map(d => (
+            <div key={d.k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              <SizeDial size={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
+              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{d.k}</span>
+            </div>
+          ))}
         </div>
         </>)}
 
@@ -9379,9 +9417,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <ColorWheel color={grassColor} onChange={setGrassColor} width={152}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
 
-        <button onClick={removeGrass}
-          style={{ marginTop: 12, width: '100%', padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
-            background: '#fff', fontWeight: 700, fontSize: 12, color: '#b56', cursor: 'pointer' }}>
+        {/* s.deleteBtn — the destructive tone, where the FIELD is the signal. It was a white button
+            with pink text and a grey border, which at rest on a phone reads as an ordinary action. */}
+        <button onClick={removeGrass} style={{ ...s.deleteBtn, width: '100%', marginTop: 12 }}>
           Remove grass
         </button>
       </>
