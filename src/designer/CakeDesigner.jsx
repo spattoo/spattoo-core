@@ -6834,8 +6834,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ display: 'flex', gap: 14 }}>
           <button onClick={() => { ungroupStickers(card.groupId); clearAllSelections(); }}
             style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Ungroup</button>
-          <button onClick={handleDelete}
-            style={{ fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove group</button>
+          {/* s.deleteBtn, like every other element-level remove — this was bare red text. */}
+          <button onClick={handleDelete} style={s.deleteBtn}>Remove group from cake</button>
         </div>
       </div>
     );
@@ -6947,8 +6947,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onChange={v => updateFoilFlake(foilTier, foilSel, { size: v })} fmt={v => v.toFixed(2)} />
           );
         })()}
+        {/* ⚠️ This had rebuilt s.deleteBtn inline — same #fff0f0, same #f5c0c0, same red — on top of
+            s.iconBtn. Exactly what rule 1 describes: nobody copies a component on purpose, they
+            rewrite it because they never looked. The WORDS stay tier-scoped, because that is what the
+            button does; only element-level removes say "from cake". */}
         {flakes.length > 0 && (
-          <button style={{ ...s.iconBtn, width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, color: '#e53935', background: '#fff0f0', border: '1.5px solid #f5c0c0' }}
+          <button style={{ ...s.deleteBtn, width: '100%' }}
             onClick={() => { clearFoil(foilTier); setFoilSel(0); }}>Remove all on this tier</button>
         )}
       </div>
@@ -7115,16 +7119,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {surfaces.length > 0 && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <span style={s.editPanelLabel}>Surface</span>
+            {/* ⚠️ SIDE BY SIDE, the same row the piping rings and the placement tiles use (s.previewRow
+                / s.previewTile). This stacked two 96px tiles vertically, so Top + Side cost ~230px of a
+                phone to show two small cakes with grey either side — the identical waste Sandeep named
+                twice: "we are not really using space here", then "make them look side by side, just the
+                way we did for piping elements". Third instance of one shape, so it reuses the style
+                rather than growing a third copy.
+                ⚠️ No active-tile border here: unlike piping and placement, NOTHING below follows a
+                selection — Count is listed per active surface and Size/Colour are shared. A selected
+                look would promise a focus this card does not have. */}
+            <div style={s.previewRow}>
             {surfaces.map(su => {
               const on = all.some(s => scatterGroupOf(s) === su.group);
               return (
-                <PreviewTile key={su.zone} checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={96}
+                <div key={su.zone} style={{ ...s.previewTile, cursor: 'default' }}>
+                <PreviewTile checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
                   locked={false}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
                   <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
                 </PreviewTile>
+                </div>
               );
             })}
+            </div>
           </div>
         )}
         {/* Count is per active surface (denser top than side if you like); Size + Colour are shared. */}
@@ -7192,7 +7209,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             customer cannot take off their own cake is not a capability, it is a trap. */}
         {true && (
           <button onClick={() => { all.forEach(s => removeSticker(s.id)); clearAllSelections(); }}
-            style={{ alignSelf: 'flex-start', fontSize: 11, fontWeight: 700, color: '#e53935', background: 'none', border: 'none', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", padding: 0 }}>Remove all</button>
+            style={{ ...s.deleteBtn, alignSelf: 'flex-start' }}>Remove all from cake</button>
         )}
       </div>
     );
@@ -10501,7 +10518,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
                   <button onClick={() => duplicateAge(selectedAge.id)} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #ddd', background: '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>Duplicate</button>
-                  <button onClick={() => { removeAge(selectedAge.id); setSelectedEl(null); }} style={{ flex: 1, padding: '8px', borderRadius: 8, border: '1.5px solid #fcc', background: '#fff', fontSize: 11, fontWeight: 700, color: '#e53935', cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>Delete</button>
+                  <button onClick={() => { removeAge(selectedAge.id); setSelectedEl(null); }} style={{ ...s.deleteBtn, flex: 1 }}>Remove from cake</button>
                 </div>
               </div>
             </div>

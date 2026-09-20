@@ -109,6 +109,22 @@ CAT_ELEMENTS.push({
   default_color: '#C86B8A', sort_order: 10,
 });
 
+/* ⚠️ A NUMBER TOPPER ROW, so `design.ages` can be non-empty and the AGE CARD exists at all.
+ * Without one, addAge is never called here, design.ages stays [], and the age card — its Duplicate,
+ * its finish chooser and its remove button — could not be looked at in this harness. Same gap this
+ * file already names for the catalogue, the GLB, the edge seat and the two-button footer: a state
+ * that cannot be reached hides every bug in it. `number_topper` is the procedural key the row uses
+ * (see addAgeFromRow in CakeDesigner). */
+CAT_ELEMENTS.push({
+  id: 'e12', name: 'Number topper', description: 'a number cut from card',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#cbb7e0'), thumbnail_url: CAT_THUMB('#cbb7e0'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, delete: true, resize: true },
+  placement_config: { number_topper: { digits: '5' } },
+  default_color: '#B08CD9', sort_order: 12,
+});
+
 CAT_ELEMENTS.push({
   id: 'e8', name: 'Card topper studio', description: 'numbers and names cut from card',
   element_type_id: 'et-topper', category_id: 'cat-1',
