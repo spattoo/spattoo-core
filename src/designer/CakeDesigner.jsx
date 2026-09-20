@@ -3578,6 +3578,50 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     return arr?.find(p => p.cardId === pipingPopupEl?.cardId) ?? null;
   }
 
+  /* ── What a candidate ring LOOKS LIKE, derived once ─────────────────────────────────────────────
+   *
+   * The piping card shows each ring twice: as a tile in the row at the top, and as the controls
+   * below for whichever ring is selected. Those were two copies of the same forty lines, which is a
+   * bug waiting to be written — a preview that quietly disagrees with the controls beneath it, with
+   * nothing to report it. `check:one-preview` now fails the build if a second <PipingPreview>
+   * appears, and this is the function it points at.
+   *
+   * ⚠️ THE PLACEMENT IS BUILT FRESH ON EVERY CALL, and must be. It is MUTATED after construction —
+   * flipBottom, extraRadialOffset, the festoon yOffset, altGlbUrl — so returning a shared object
+   * (or memoising it) would draw every tile in the row with the last ring's placement.
+   *
+   * Returns only what BOTH surfaces need. The controls also want pc / isDrip / allowedArr /
+   * maxInstances and their row styling, and those stay at the call site: they are controls-only, and
+   * pulling them in here would compute the lot once per tile just to render a thumbnail.
+   */
+  function ringView(tierIndex, zone) {
+    const isTopZone = zone === 'rim';
+    const applied   = ringPiping(tierIndex, zone);
+    // Unapplied rim rings preview at the inward offset they'd nest to once added.
+    const nestRO    = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
+    const p         = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
+    // Config-derived placement, with this ring's own board flip override applied so the preview
+    // matches what is on the cake.
+    const placement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
+    if (!isTopZone && p.userFlipBottom != null) placement.flipBottom = p.userFlipBottom;
+    // Reflect the manual radial nudge so the preview matches the cake.
+    placement.extraRadialOffset = (placement.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0);
+    // Festoon swags anchor at a fraction of the tier wall (dynamic), not the absolute
+    // bottom_y_offset — mirror the cake renderer so the preview matches the placement.
+    if (!isTopZone && placement.bend) placement.yOffset = boardAnchorBase(p, tierIndex) + (p.userYOffset ?? 0);
+    // A "piping pattern" element carries no image_url of its own — its A/B GLBs live in the
+    // cream_piping blocks it references. Resolved the way the real cake-apply path does it.
+    const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
+    if (altGlbUrl) placement.altGlbUrl = altGlbUrl;
+    return {
+      isTopZone, applied, p, placement, glbUrl,
+      color:       p.color ?? '#f5e6c8',
+      size:        p.size  ?? 1,
+      arrangement: p.arrangement ?? pipingDefaultArrangement(pipingPopupEl.placement_config ?? {}, isTopZone),
+      instances:   p.instances ?? [],
+    };
+  }
+
   // ── Layer stacking / overlap avoidance ─────────────────────────────────────
   // Shell height shares ONE constant with the renderer (SHELL_HEIGHT_FRAC). This nominal,
   // upright height is used only where an approximation is fine (initial stacking offsets).
@@ -10644,32 +10688,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   ⚠️ Each tile builds its OWN previewPlacement. The object is mutated after
                   construction (flipBottom, extraRadialOffset, yOffset, altGlbUrl), so a shared one
                   would render every tile with the last ring's placement. */}
-              {candidates.length > 1 && (
+              {/* ⚠️ Rendered for ONE candidate too, not just several. There was a `length > 1`
+                  guard here with an inline tile as the single-candidate fallback — two renders of
+                  the same thing for a cosmetic reason, which check:one-preview correctly failed.
+                  A row with one tile is a row with one tile; the special case bought nothing and
+                  cost the one property worth having, that a ring is derived and drawn in one place. */}
+              {candidates.length > 0 && (
                 <div style={s.pipingRingRow}>
                   {candidates.map(({ tierIndex, zone, label }) => {
-                    const isTopZone = zone === 'rim';
-                    const applied   = ringPiping(tierIndex, zone);
-                    const nestRO    = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
-                    const p         = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
-                    const placement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
-                    if (!isTopZone && p.userFlipBottom != null) placement.flipBottom = p.userFlipBottom;
-                    placement.extraRadialOffset = (placement.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0);
-                    if (!isTopZone && placement.bend) placement.yOffset = boardAnchorBase(p, tierIndex) + (p.userYOffset ?? 0);
-                    const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
-                    if (altGlbUrl) placement.altGlbUrl = altGlbUrl;
+                    const v  = ringView(tierIndex, zone);
                     const on = activeRing.tierIndex === tierIndex && activeRing.zone === zone;
                     return (
                       <div key={`tile-${zone}-${tierIndex}`}
                            onClick={() => setActivePipingRing({ tierIndex, zone })}
                            style={{ ...s.pipingRingTile, ...(on ? s.pipingRingTileOn : {}) }}>
-                        <PreviewTile checked={!!applied} label={label} height={74}
+                        <PreviewTile checked={!!v.applied} label={label} height={74}
                           locked={!pipingDeletable}
-                          onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
-                          <PipingPreview zone={zone} glbUrl={glbUrl} color={p.color ?? '#f5e6c8'}
-                            size={p.size ?? 1} tiers={canvasConfig.tiers} tierIndex={tierIndex}
-                            placement={placement}
-                            arrangement={p.arrangement ?? pipingDefaultArrangement(pipingPopupEl.placement_config ?? {}, isTopZone)}
-                            instances={p.instances ?? []} />
+                          onToggle={() => togglePipingZone(tierIndex, zone, !!v.applied)}>
+                          <PipingPreview zone={zone} glbUrl={v.glbUrl} color={v.color}
+                            size={v.size} tiers={canvasConfig.tiers} tierIndex={tierIndex}
+                            placement={v.placement} arrangement={v.arrangement} instances={v.instances} />
                         </PreviewTile>
                       </div>
                     );
@@ -10683,37 +10721,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {[candidates.find(c => c.tierIndex === activeRing.tierIndex && c.zone === activeRing.zone) ?? candidates[0]]
                 .filter(Boolean)
                 .map(({ tierIndex, zone, label }) => {
-                const isTopZone     = zone === 'rim';
-                const applied       = ringPiping(tierIndex, zone);
-                // Unapplied rim rings preview at the inward offset they'd nest to once added.
-                const nestRO        = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
-                const p             = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
-                const color         = p.color ?? '#f5e6c8';
-                const size          = p.size  ?? 1;
+                // ⚠️ The SAME derivation the tile row uses — see ringView. Two copies of this is how a
+                // preview and the controls under it end up describing different rings, which nothing
+                // would report. check:one-preview keeps it that way.
+                const { isTopZone, applied, p, color, size, arrangement, instances: zoneInstances,
+                        placement: previewPlacement, glbUrl: previewGlb } = ringView(tierIndex, zone);
                 const pc            = pipingPopupEl.placement_config ?? {};
                 const isDrip        = !!pc.top_drip;   // chocolate-drip ring → Length + Gloss, not Size
                 const allowedArr    = pipingAllowedArrangements(pc, isTopZone);
                 const arrAdjustable = allowedArr.length > 1;   // user can switch only when both allowed
-                const arrangement   = p.arrangement ?? pipingDefaultArrangement(pc, isTopZone);
                 const maxInstances  = (isTopZone ? pc.top_single_max : pc.bottom_single_max) ?? 12;
-                const zoneInstances = p.instances ?? [];
-                // Config-derived placement for the live preview, with this ring's own board
-                // flip override applied so the preview matches what's on the cake.
-                const previewPlacement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
-                if (!isTopZone && p.userFlipBottom != null) previewPlacement.flipBottom = p.userFlipBottom;
-                // Reflect the manual radial nudge in the popup preview so it matches the cake.
-                previewPlacement.extraRadialOffset = (previewPlacement.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0);
-                // Festoon swags anchor at a fraction of the tier wall (dynamic), not the absolute
-                // bottom_y_offset — mirror the cake renderer so the preview matches the placement.
-                if (!isTopZone && previewPlacement.bend) {
-                  const th = canvasConfig.tiers[tierIndex]?.height ?? BOTTOM_H;
-                  previewPlacement.yOffset = boardAnchorBase(p, tierIndex) + (p.userYOffset ?? 0);
-                }
-                // A "piping pattern" element carries no image_url of its own — its A/B GLBs
-                // live in the cream_piping blocks it references. Resolve them the same way
-                // the real cake-apply path does (resolvePipingGlbs) so the preview matches.
-                const { glbUrl: previewGlb, altGlbUrl: previewAltGlb } = resolvePipingGlbs(pipingPopupEl);
-                if (previewAltGlb) previewPlacement.altGlbUrl = previewAltGlb;
                 // Shared row styling so every control lines up; section headers add hairlines.
                 const lbl     = { fontSize: 10, color: '#888', fontFamily: "'Quicksand',sans-serif", fontWeight: 600, flexShrink: 0 };
                 const cap     = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
@@ -10733,18 +10750,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const isNonRoundTier = !!canvasConfig.tiers[tierIndex]?.shape;
                 return (
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
-                    {/* The preview tile lives in the row above now — one per candidate ring, side
-                        by side. A single-candidate element has no row (nothing to choose), so it
-                        keeps its tile here rather than losing the picture altogether. */}
-                    {candidates.length === 1 && (
-                      <PreviewTile checked={!!applied} label={label}
-                        locked={!pipingDeletable}
-                        onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
-                        <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
-                          tiers={canvasConfig.tiers} tierIndex={tierIndex}
-                          placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
-                      </PreviewTile>
-                    )}
+                    {/* The preview tile lives in the row above — one per candidate ring, however
+                        many there are. Nothing is drawn here: one derivation, one render. */}
                     {/* Color + Size */}
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
