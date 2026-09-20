@@ -2108,6 +2108,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [stackFlyoutOpen,    setStackFlyoutOpen]    = useState(false);
   // Which ring's color picker popup is open, keyed `${cardId}-${zone}-${tierIndex}` (null = none),
   // plus the screen-space anchor (the tapped Color dot) the floating popup positions against.
+  /* Which candidate ring the piping controls are editing, as { tierIndex, zone }.
+     Null until a tile is tapped, and never authoritative on its own — the render falls back to the
+     first APPLIED ring and then to the first candidate, so switching to a different piping element
+     (whose candidates are different rings entirely) cannot leave the controls pointed at a ring that
+     is not on the list. That fallback is why this needs no effect to reset it. */
+  const [activePipingRing,   setActivePipingRing]   = useState(null);
   const [pipingColorKey,     setPipingColorKey]     = useState(null);
   const [pipingColorAnchor,  setPipingColorAnchor]  = useState(null);
   // The expanded card (element + cardId) — drives the card body + edit handlers.
@@ -10599,6 +10605,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 if (allowsBoard && yAdjustable && i > 0) candidates.push({ tierIndex: i, zone: 'board', label: `${TIER_LABELS[i]} Side` });
               }
               if (allowsBoard) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
+              const activeRing =
+                candidates.find(c => activePipingRing
+                  && c.tierIndex === activePipingRing.tierIndex && c.zone === activePipingRing.zone)
+                ?? candidates.find(c => ringPiping(c.tierIndex, c.zone))
+                ?? candidates[0]
+                ?? { tierIndex: -1, zone: null };
               return (<>
               {rimFull && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
@@ -10610,7 +10622,67 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   Board is on the bottom tier only — upper tiers rest on the rim of the tier below.
                 </div>
               )}
-              {candidates.map(({ tierIndex, zone, label }) => {
+              {/* ⚠️ RESOLVED here, not read from state directly. `activePipingRing` is null until a
+                  tile is tapped, and it survives switching to a DIFFERENT piping element whose
+                  candidates are entirely different rings. So the order is: what was tapped (if it is
+                  still a candidate) → the first ring actually ON the cake → the first candidate.
+                  That last fallback is what lets this need no effect to reset it. */}
+              {/* ── The rings, side by side ────────────────────────────────────────────────
+                  Sandeep: "instead of vertical like this lets make this horizontal. we are not
+                  really using space here. if you see the grey space of the cake preview its too
+                  wide and we only have used very little."
+
+                  He is right: the tile was full-width while the cake inside it occupied the middle
+                  ~40%, so two rings cost ~360px of a phone to show two small cakes and a lot of
+                  grey. Side by side they cost ~120px and each cake is the same size it always was.
+
+                  ⚠️ TICKING AND SELECTING ARE DIFFERENT GESTURES, and they have to stay that way.
+                  The checkbox (PreviewTile's own, top-left) adds or removes the ring; tapping the
+                  tile BODY makes it the ring the controls below are editing. One gesture doing both
+                  would switch a ring off when you meant to recolour it.
+
+                  ⚠️ Each tile builds its OWN previewPlacement. The object is mutated after
+                  construction (flipBottom, extraRadialOffset, yOffset, altGlbUrl), so a shared one
+                  would render every tile with the last ring's placement. */}
+              {candidates.length > 1 && (
+                <div style={s.pipingRingRow}>
+                  {candidates.map(({ tierIndex, zone, label }) => {
+                    const isTopZone = zone === 'rim';
+                    const applied   = ringPiping(tierIndex, zone);
+                    const nestRO    = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
+                    const p         = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
+                    const placement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
+                    if (!isTopZone && p.userFlipBottom != null) placement.flipBottom = p.userFlipBottom;
+                    placement.extraRadialOffset = (placement.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0);
+                    if (!isTopZone && placement.bend) placement.yOffset = boardAnchorBase(p, tierIndex) + (p.userYOffset ?? 0);
+                    const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
+                    if (altGlbUrl) placement.altGlbUrl = altGlbUrl;
+                    const on = activeRing.tierIndex === tierIndex && activeRing.zone === zone;
+                    return (
+                      <div key={`tile-${zone}-${tierIndex}`}
+                           onClick={() => setActivePipingRing({ tierIndex, zone })}
+                           style={{ ...s.pipingRingTile, ...(on ? s.pipingRingTileOn : {}) }}>
+                        <PreviewTile checked={!!applied} label={label} height={74}
+                          locked={!pipingDeletable}
+                          onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
+                          <PipingPreview zone={zone} glbUrl={glbUrl} color={p.color ?? '#f5e6c8'}
+                            size={p.size ?? 1} tiers={canvasConfig.tiers} tierIndex={tierIndex}
+                            placement={placement}
+                            arrangement={p.arrangement ?? pipingDefaultArrangement(pipingPopupEl.placement_config ?? {}, isTopZone)}
+                            instances={p.instances ?? []} />
+                        </PreviewTile>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Controls for the SELECTED ring only. With the tiles side by side the old vertical
+                  order no longer says which ring a colour belongs to, so one ring at a time is not a
+                  reduction — it is what makes the row legible. */}
+              {[candidates.find(c => c.tierIndex === activeRing.tierIndex && c.zone === activeRing.zone) ?? candidates[0]]
+                .filter(Boolean)
+                .map(({ tierIndex, zone, label }) => {
                 const isTopZone     = zone === 'rim';
                 const applied       = ringPiping(tierIndex, zone);
                 // Unapplied rim rings preview at the inward offset they'd nest to once added.
@@ -10661,14 +10733,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 const isNonRoundTier = !!canvasConfig.tiers[tierIndex]?.shape;
                 return (
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
-                    {/* Shared preview tile (same component as the placement chooser). */}
-                    <PreviewTile checked={!!applied} label={label}
-                      locked={!pipingDeletable}
-                      onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
-                      <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
-                        tiers={canvasConfig.tiers} tierIndex={tierIndex}
-                        placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
-                    </PreviewTile>
+                    {/* The preview tile lives in the row above now — one per candidate ring, side
+                        by side. A single-candidate element has no row (nothing to choose), so it
+                        keeps its tile here rather than losing the picture altogether. */}
+                    {candidates.length === 1 && (
+                      <PreviewTile checked={!!applied} label={label}
+                        locked={!pipingDeletable}
+                        onToggle={() => togglePipingZone(tierIndex, zone, !!applied)}>
+                        <PipingPreview zone={zone} glbUrl={previewGlb} color={color} size={size}
+                          tiers={canvasConfig.tiers} tierIndex={tierIndex}
+                          placement={previewPlacement} arrangement={arrangement} instances={zoneInstances} />
+                      </PreviewTile>
+                    )}
                     {/* Color + Size */}
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: 22, marginTop: 8 }}>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
@@ -12522,9 +12598,29 @@ const s = {
   /* The docked editor's own header: a grip that says "this is a sheet" and the tick that finishes.
      Sticky so the tick stays reachable while a long card scrolls under it — the card being tall is
      exactly the situation the tick exists for. */
+  /* ⚠️ flex-END, not space-between. The grip is position:absolute so it is OUT OF FLOW — leaving the
+     tick as the only in-flow child, which space-between then pushed to the START. It shipped on the
+     left in 0.1.557 and Sandeep caught it in a screenshot. It is also deliberately STICKY: the tick
+     must not scroll away, because a long card is exactly the situation it exists for. */
+  /* The candidate rings, side by side. Scrolls sideways rather than growing taller: a three-tier
+     cake with a y-adjustable style yields six or more candidates, and height is the scarce axis on a
+     phone — the whole reason this moved out of the vertical card. */
+  pipingRingRow: {
+    display: 'flex', gap: 8, overflowX: 'auto', scrollbarWidth: 'none',
+    paddingBottom: 4, marginBottom: 2,
+  },
+  /* 104 keeps the cake inside the tile at roughly the size it had at full width — the grey around it
+     was the waste, not the render. flexShrink:0 so tiles scroll instead of squeezing. */
+  pipingRingTile: {
+    width: 104, flexShrink: 0, cursor: 'pointer',
+    borderRadius: 12, padding: 3, border: '1.5px solid transparent',
+  },
+  // Which ring the controls below are editing. Bordered rather than tinted: the tile is mostly a
+  // photograph of a cake, and a wash over it would change the colour being judged.
+  pipingRingTileOn: { border: '1.5px solid #1a1a1a', background: 'rgba(0,0,0,0.04)' },
   dockedSheetHeader: {
     position: 'sticky', top: 0, zIndex: 1, flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+    display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
     padding: '2px 2px 8px', background: 'rgba(255,255,255,0.96)',
   },
   dockedSheetGrip: {
