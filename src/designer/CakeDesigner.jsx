@@ -2384,7 +2384,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [capabilities, setCapabilities] = useState(null);
   const [role, setRole] = useState(null);  // principal role from /me (e.g. 'customer'); null = unknown
   const [windowWidth, setWindowWidth] = useState(() => (typeof window !== 'undefined' ? window.innerWidth : 1280));
-  const [mobilePanelHeight, setMobilePanelHeight] = useState(260);
+  /* The flyouts' dragged height, and NULL until a baker actually drags — the same shape as
+     `editDragH` above, and for the same reason: the default belongs to the view (s.flyoutMobile's
+     calc), so a drag is an override of what is in front of them rather than a setting to undo. */
+  const [mobilePanelHeight, setMobilePanelHeight] = useState(null);
   // ── The edit sheet sizes itself to ONE section ────────────────────────────────────────────────
   // It opened at 552px — 65% of an 852px phone, the cake's centre 200px behind it. Shortening it to
   // a fixed 152 fixed that and introduced a worse problem: the colour picker was sliced in half by
@@ -5787,7 +5790,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     document.addEventListener('pointermove', onMove);
     document.addEventListener('pointerup', onUp);
   }
-  const handlePanelDrag = (e) => startPanelDrag(e, mobilePanelHeight, setMobilePanelHeight);
+  /* ⚠️ The start height is MEASURED, not read from state: state is null until the first drag, and
+     `null + delta` is a panel that jumps to a few pixels tall. The grip is a child of the flyout,
+     so the flyout is its parent element.
+
+     ⚠️ And the ceiling is passed rather than left at startPanelDrag's 560. 560 is about two-thirds
+     of a phone, so with the sheet now opening taller than that, one touch of the grip would have
+     yanked it back down — a "resize" that only ever shrinks. Raising the shared default instead
+     would have quietly re-sized the colour sheet, which has its own reason for stopping at 0.88. */
+  const handlePanelDrag = (e) => {
+    const flyout = e.currentTarget.parentElement;
+    const startH = Math.round(flyout?.getBoundingClientRect().height ?? 260);
+    startPanelDrag(e, startH, setMobilePanelHeight, 80, Math.round(window.innerHeight - MOBILE_BAR_H));
+  };
 
   function handleOrder() {
     setOrderModalOpen(true);
@@ -9293,7 +9308,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : {}) }}>
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -9574,7 +9589,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            *
            * Overridden here rather than in s.flyout because Elements shares that style and does not
            * want the width. */
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, height: mobilePanelHeight } : { width: 560 }) }}>
+          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -12499,6 +12514,19 @@ const s = {
     margin: 0, borderRadius: '20px 20px 0 0',
     zIndex: 1, order: 0,
     boxShadow: '0 -2px 16px rgba(0,0,0,0.10)',
+    /* ⚠️ Opens NEARLY FULL, down to the nav bar — a browsing surface, like the app a baker already
+       knows. It was a flat 260px, about a third of a phone, which is a letterbox to shop through:
+       two rows of template thumbnails and a scroll for everything else.
+
+       In CSS rather than seeded from window.innerHeight, for two reasons. A useState initialiser
+       that reads `window` throws under renderToStaticMarkup — how every component here is tested,
+       the trap useNarrow.js and INVARIANTS #9 both name — and a pixel height captured at mount is
+       wrong the moment the phone is rotated. calc() is re-evaluated by the browser; a number is not.
+
+       MOBILE_BAR_H and the safe-area inset, not a fraction: the bar is flexShrink:0 in the same
+       100vh column, so anything that does not subtract it either overlaps or clips. Same expression
+       as the two sheets at mobileSheet/mobileMore below. */
+    height: `calc(100vh - ${MOBILE_BAR_H}px - env(safe-area-inset-bottom, 0px))`,
   },
   // Tabs, not a scrolling stack. 44 minimum so the strip is not a row of targets the bar below it
   // would be criticised for.
