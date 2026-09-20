@@ -10620,20 +10620,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     : selectedEl?.type === 'decorEl' ? (activeGroupLabel ?? '')
                     : ''}
                   </span>
-                  {/* ⚠️ A TICK on a phone, a ✕ on the desktop, and the difference is not cosmetic.
+                  {/* ⚠️ "Done" on a phone, a ✕ on the desktop, and the difference is not cosmetic.
                       On a phone this sheet REPLACES the nav strip, so dismissing it is "I am done
-                      with this element, give me the menu back" — which is a tick. On the desktop it
-                      is a card floating beside a cake that never went anywhere, and a tick there
-                      would claim a finished state that does not exist. Same handler either way: the
-                      close semantics were already right, only the glyph was wrong.
-                      A plain ✓, not an icon — INVARIANTS #279 blesses typographic glyphs as
-                      functional controls, and seven other screens already close this way. */}
-                  <button style={s.iconBtn}
+                      with this element, give me the menu back". On the desktop it is a card floating
+                      beside a cake that never went anywhere, and "Done" there would claim a finished
+                      state that does not exist. Same handler either way — the close semantics were
+                      always right, only the mobile label was wrong.
+
+                      ⚠️ IT WAS A BARE ✓ AND SANDEEP REJECTED THAT TWICE, on two different cards:
+                      "tick mark is not obvious here", then "'Done' word is better", then — pointing
+                      at THIS header — "we should make card tick marks to Done button". ✕ survives as
+                      a glyph because "close" is universal; ✓ meaning "I have finished with this
+                      element" is not, and a faint grey circle reads as a status badge rather than a
+                      button. CLAUDE.md rule 7, judged AT REST on a phone with no hover to rescue it.
+
+                      ⚠️ THE COMMENT THAT USED TO SIT HERE CITED "INVARIANTS #279". No such invariant
+                      exists — that file numbers eighteen, and #279 appears nowhere else in the repo.
+                      An invented rule number is worse than no comment: it reads as settled law and
+                      wins arguments it was never entitled to. This one defended the tick for a
+                      hundred lines against a decision already recorded below, on doneBtn.
+
+                      s.doneBtn, not a hand-rolled button: it already carries the filled #1a1a1a that
+                      means "active" across this app, and it is THE control for this job. */}
+                  <button style={isMobile ? s.doneBtn : s.iconBtn}
                           aria-label={isMobile ? 'Done editing' : 'Close'}
                           onClick={() => {
                     if (tierPanelVisible) setSelectedEl(null);
                     else { setColorOpen(false); }
-                  }}>{isMobile ? '✓' : '✕'}</button>
+                  }}>{isMobile ? 'Done' : '✕'}</button>
                 </div>
 
                 {showTabs && (
