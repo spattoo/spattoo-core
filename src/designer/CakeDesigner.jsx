@@ -4572,6 +4572,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) setPenMove(false);
   }, [selectedEl]);
 
+  /* ⚠️ The More sheet must not survive a selection, now that the strip can leave.
+   *
+   * `mobileSheet` and `mobileSheetScrim` are both positioned `bottom: MOBILE_BAR_H + safe-area` —
+   * they SIT ON the strip. With the strip hidden for an element edit, an open More sheet would hang
+   * 56px above nothing, its scrim stopping short of the bottom of the screen.
+   *
+   * This is reachable TODAY, before that change: nothing in the ~18 setSelectedEl call sites closes
+   * More, and `leaveOpenPanels` deliberately handles docked panels and rail menus, not this sheet.
+   * Tapping the cake through an open More already leaves both on screen; it simply looked fine
+   * because the strip stayed put underneath.
+   *
+   * Keyed on the selection rather than patched into every call site, because eighteen copies of a
+   * rule is eighteen chances for the next one to forget it. Its own effect rather than a line added
+   * to the pen effect above: that one means "the pen was deselected", and overloading it would read
+   * as unrelated to anyone who found it later. */
+  useEffect(() => {
+    if (selectedEl) setMobileMoreOpen(false);
+  }, [selectedEl]);
+
   function pipeWithCreamAgain() {
     setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
                            stampName: null, stampCardId: null, stampRotation: null, stampLean: 0,
@@ -6179,6 +6198,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     || ((caps?.color || caps?.gradient) && colorOpen)
     // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
     || (hasActiveGroup && colorOpen);
+
+  /* Is a phone showing an element's properties INSTEAD of the nav strip?
+   *
+   * Named once because it decides three separate things — whether the strip renders, whether the
+   * close control is a tick or a ✕, and (below) whether the More sheet may stay open — and three
+   * copies of the same condition is how two of them end up disagreeing.
+   *
+   * ⚠️ BOTH phone sheets, not just the cap-driven one. `s.wheelPanelMobile` has exactly two
+   * consumers: this panel and the number-topper editor, which keys off `selectedAge` instead. They
+   * look identical to a baker, so hiding the strip for one and not the other would read as a bug.
+   * They cannot both be true — `selectedEl.type` is 'tier' or 'age', never both — so this is a
+   * plain union with no interaction to reason about. */
+  const editingOnPhone = isMobile && (showRightPanel || !!selectedAge);
 
   // Measured rather than assumed: the height can come from the content, from a drag, or from the
   // 60% cap, and the canvas has to inset by whichever it actually was.
@@ -10062,7 +10094,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={isMobile ? s.wheelPanelMobile : s.wheelPanel}>
               <div style={s.wheelHeader}>
                 <span style={s.wheelTitle}>Number topper</span>
-                <button style={s.iconBtn} onClick={() => setSelectedEl(null)}>✕</button>
+                <button style={s.iconBtn}
+                        aria-label={isMobile ? 'Done editing' : 'Close'}
+                        onClick={() => setSelectedEl(null)}>{isMobile ? '✓' : '✕'}</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '2px' }}>
                 <div>
@@ -10292,10 +10326,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     : selectedEl?.type === 'decorEl' ? (activeGroupLabel ?? '')
                     : ''}
                   </span>
-                  <button style={s.iconBtn} onClick={() => {
+                  {/* ⚠️ A TICK on a phone, a ✕ on the desktop, and the difference is not cosmetic.
+                      On a phone this sheet REPLACES the nav strip, so dismissing it is "I am done
+                      with this element, give me the menu back" — which is a tick. On the desktop it
+                      is a card floating beside a cake that never went anywhere, and a tick there
+                      would claim a finished state that does not exist. Same handler either way: the
+                      close semantics were already right, only the glyph was wrong.
+                      A plain ✓, not an icon — INVARIANTS #279 blesses typographic glyphs as
+                      functional controls, and seven other screens already close this way. */}
+                  <button style={s.iconBtn}
+                          aria-label={isMobile ? 'Done editing' : 'Close'}
+                          onClick={() => {
                     if (tierPanelVisible) setSelectedEl(null);
                     else { setColorOpen(false); }
-                  }}>✕</button>
+                  }}>{isMobile ? '✓' : '✕'}</button>
                 </div>
 
                 {showTabs && (
@@ -11051,6 +11095,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </div>
           )}
 
+          {/* ⚠️ The strip STANDS DOWN while an element is being edited — the properties take its
+              place, and the tick in the sheet's header brings it back. That is the whole point of
+              the change: a phone has one row of space at the bottom, and a baker mid-edit wants the
+              element's controls there, not a menu they are not using.
+
+              Guarded HERE and not on the `isMobile` block above, which also carries the More scrim
+              and the More sheet. Those must keep rendering — More is dismissed on selection by its
+              own effect (see the note beside the pen effect), and widening this condition would
+              make one flag govern three things that leave at different moments.
+
+              The sheet does not need moving to fill the gap: it is absolutely positioned inside
+              canvasArea, which is flex:1, so the 56px the strip gives up is absorbed there and the
+              sheet's `bottom: 0` follows it down. editSheetH still measures the sheet itself, so
+              the canvas inset and the rotate hint keep working unchanged. */}
+          {!editingOnPhone && (
           <div style={s.mobileBottomNav}>
             {mobilePrimary.map(({ id, icon, label, short, menu }) => {
               const active = railItemActive(id, menu);
@@ -11098,6 +11157,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
             )}
           </div>
+          )}
         </>
       )}
 
@@ -12535,9 +12595,21 @@ const s = {
   },
   // Tabs, not a scrolling stack. 44 minimum so the strip is not a row of targets the bar below it
   // would be criticised for.
-  editTabs: { display: 'flex', gap: 4, padding: '0 0 10px', flexShrink: 0, width: '100%' },
+  /* ⚠️ Scrolls WHEN IT OVERFLOWS, not always. The comment below used to read "Tabs, not a scrolling
+     stack", and that decision still holds at the sizes we actually have: five section kinds exist in
+     the whole app (colour, gradient, shape, frosting, size) and at most about four appear at once,
+     which fit across a phone with room to spare. An always-scrolling row would hide options behind a
+     swipe for no gain — the reference app scrolls because a text element there carries ten-plus
+     properties, not because scrolling is better.
+     So: the tabs still divide the width, and `minWidth` on each is what turns the row into a
+     scroller the moment there are more than it can seat. Nothing changes today; it degrades
+     gracefully the day a sixth section appears. */
+  editTabs: {
+    display: 'flex', gap: 4, padding: '0 0 10px', flexShrink: 0, width: '100%',
+    overflowX: 'auto', scrollbarWidth: 'none',
+  },
   editTab: {
-    flex: '1 1 0', minWidth: 0, minHeight: 44, padding: '9px 6px', borderRadius: 9, border: 'none',
+    flex: '1 1 0', minWidth: 72, minHeight: 44, padding: '9px 6px', borderRadius: 9, border: 'none',
     background: 'rgba(0,0,0,0.05)', color: '#6b6b6b', fontSize: 12, fontWeight: 700,
     fontFamily: "'Quicksand',sans-serif", cursor: 'pointer',
   },
