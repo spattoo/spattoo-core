@@ -74,7 +74,13 @@ const CAT_ELEMENTS = [
   id, name, description, element_type_id: typeId, category_id: 'cat-1',
   image_url: CAT_THUMB(colour), thumbnail_url: CAT_THUMB(colour), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
-  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  /* ⚠️ duplicate TRUE on the first row only, so the two-button FOOTER exists here at all.
+   * Every stub had `duplicate: false`, so "Duplicate" never rendered and the footer could only ever
+   * be shown with one button — which is how the widest row on the card (Duplicate + "Remove from
+   * cake" side by side at 390px) stayed unreachable in the harness. Same gap this file already
+   * names for the catalogue, the GLB and the edge seat: a state that cannot be reached hides every
+   * bug in it. Index 0 is Fiitball; the rest stay false so the one-button footer is still testable. */
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: i === 0 },
   placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand' },
   default_color: '#F0DEB8', sort_order: i,
 }));

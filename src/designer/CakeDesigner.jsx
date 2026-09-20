@@ -7636,9 +7636,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // bounds (config range, hero-hug hugMul, photo-frame cake cap) come from the ONE helper the
       // canvas resize grips also read, so the dial and a drag can never disagree.
       const ctl = sizeControlOf(sticker);
+      /* ⚠️ SPIN RIDES IN THE SIZE ROW. Sandeep: "spin control should be next to size control. why
+       * wasting a line?" He is right: the panel gives every group its own row, and a 46px dial plus
+       * a 34px label left most of a phone's width empty while Spin took a second full line to show
+       * two arrows. The row already wraps (flexWrap on the panel's control box), so a narrow phone
+       * degrades to the old two lines instead of clipping — INVARIANTS #12, lay a surface out by how
+       * often each control is used, not by the order the features were built.
+       *
+       * ⚠️ Spin stays CONDITIONAL inside the row (top surface only — see the note below), so a side
+       * decoration gets the Size row alone rather than a caption with nothing under it. */
+      const spinCtls = sticker?.zone === 'top_surface' ? (() => {
+        const rot = sticker?.rotation ?? 0;
+        return [
+          <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, marginLeft: 10 }}>Spin</span>,
+          <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
+          <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
+        ];
+      })() : [];
       groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
         <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
           onChange={v => resizeSticker(sticker, v)} />,
+        ...spinCtls,
       ] });
       /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
        * There was a `Height` ↓/↑ pair here for a top-surface GLB (added with the faux balls,
@@ -7699,14 +7717,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // surface and stand spins its facing; both read `sticker.rotation`, so gating this on `stand`
       // (as it was) left a hugging element rotatable by the renderer and unrotatable by the customer —
       // which only became visible once a pose could be flipped.
-      if (sticker?.zone === 'top_surface') {
-        const rot = sticker?.rotation ?? 0;
-        groups.push({ key: 'sp', divider: true, controls: [
-          <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Spin</span>,
-          <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
-          <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
-        ] });
-      }
+      /* Spin is now pushed INTO the Size group above (same row) — see the note there. The gate is
+         unchanged: top surface only, because that is where a spin is meaningful. */
       // Ungroup lives on the group card (renderGroupBody), not here — a grouped member only
       // reaches buildToolbar via drill-in, where the group-level action would be out of place.
     }
@@ -7824,9 +7836,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * without this exclusion put TWO Remove buttons on the single-per-slot card — a real regression,
      * caught by looking at the panel rather than by the build or the suite. */
     if (!groupedMember && el.type !== 'decorEl') {
-      const label = selectedStickerIds.size > 1 ? 'Remove all' : 'Remove';
+      /* ⚠️ "Remove from cake", and in s.deleteBtn — BOTH halves are the standard. Sandeep, twice:
+       * "below 'Remove' to 'Remove from cake'. otherwise it might mean just remove the popup", then
+       * "make this a standard pls". A bare "Remove" beside a card that can itself be dismissed is
+       * genuinely ambiguous — the popup or the decoration?
+       *
+       * The style matters as much as the word: this was s.tbIconBtn with a red colour poured over
+       * it, while s.deleteBtn is THE remove control (tinted field, red border) that renderPatternBody
+       * and the cluster card already use. Same words in a different-looking button is still two
+       * standards.
+       *
+       * ⚠️ ONLY ELEMENT-LEVEL REMOVES SAY THIS. A foil flake, a cream layer, a grass patch and
+       * GarnishStudio's picked shape each delete a PART INSIDE an element; "from cake" there would
+       * promise something the button does not do. They keep "Remove". */
+      const label = selectedStickerIds.size > 1 ? 'Remove all from cake' : 'Remove from cake';
       actions.push(
-        <button key="del" style={{ ...s.tbIconBtn, color: '#e53935', fontSize: 11 }} onClick={handleDelete}>{label}</button>
+        <button key="del" style={s.deleteBtn} onClick={handleDelete}>{label}</button>
       );
     }
     if (actions.length) groups.push({ key: 'actions', divider: false, footer: true, controls: actions });
