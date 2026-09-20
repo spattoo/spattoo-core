@@ -117,6 +117,31 @@ export default function PhotoDoor({ draft, patch, bakerName, slug, onBack }) {
         {' '}will not copy it exactly.
       </p>
 
+      {/* ── Someone else may be in the picture ───────────────────────────────────────────────────
+          The obligation already exists and is already accepted: ToS §5 forbids uploading "any
+          photograph or likeness of an identifiable person without that person's consent (or, for a
+          minor, the consent of a parent or lawful guardian)", ToS 6.3.1 warrants it was obtained
+          BEFORE uploading, and Privacy §10 states plainly that "a photograph of a child is a child's
+          personal data". A customer accepts all of it at quote submission, recorded server-side by
+          recordConsent(source: 'quote') so a client cannot skip it.
+
+          ⚠️ WHAT WAS MISSING IS NOT CONSENT, IT IS KNOWING. Those three clauses live in a document
+          nobody reads, which is legally sufficient and practically invisible — and this is the one
+          second where the fact could change what somebody picks.
+
+          ⚠️ AND IT SITS HERE, NOT UNDER THE SUBMIT BUTTON. The IP warning that used to hang off the
+          quote screen's consent line was removed on 2026-09-19 for exactly that reason: it arrived
+          after every decision had been made, in the place reserved for "you agree to", where a
+          caution reads as a threat. Sandeep: "your baker may not be able to use them, is not creating
+          a good vibe." At the point of CHOOSING a photo the same fact is just helpful.
+
+          A nudge, not a gate: nothing is blocked and nothing is ticked. We cannot see the photo and
+          would not want to — the only useful thing we can do is say it at the right moment. */}
+      <p style={s.consent}>
+        If your cake reference photo shows any person, please make sure they&rsquo;re happy for you
+        {' '}to share it — and for a child, their parent or guardian.
+      </p>
+
       {photos.length > 0 && (
         <div style={s.grid}>
           {photos.map(p => (
@@ -161,6 +186,9 @@ const s = {
   hint:  { fontSize: 11.5, fontWeight: 700, color: '#A2968A' },
   title: { fontSize: 14, fontWeight: 800, color: '#2A241F' },
   body:  { fontSize: 12.5, color: '#7A6C60', lineHeight: 1.5, margin: 0 },
+  // Quieter than the body copy above it: this is a courtesy, not an instruction, and a
+  // caution set louder than the thing it qualifies reads as a warning about the feature.
+  consent: { fontSize: 11.5, color: '#A2968A', lineHeight: 1.5, margin: 0 },
 
   grid:  { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(92px, 1fr))', gap: 8 },
   thumb: { position: 'relative', aspectRatio: '1', borderRadius: 12, overflow: 'hidden',
