@@ -85,6 +85,7 @@ import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
+import { OffsetDial } from './shared/OffsetDial.jsx';
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
@@ -3930,6 +3931,29 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const d = +(yo - boardAnchorBase(cur, tierIndex)).toFixed(4);
     updatePipingLayer(tierIndex, 'board', cur.layerId,
       p => ({ ...p, userYOffset: cur.bend ? d : Math.max(0, d) }));
+  }
+
+  /* ── HOW FAR CAN THIS SIDE BORDER RIDE? ────────────────────────────────────────────────────────
+   *
+   * The same move rimRadialTravel made, for height. boardYoBounds already computes the real limits —
+   * this layer's measured band against the wall and against every neighbour on it — but it answers
+   * in ANCHOR space, and the control speaks DELTAS from the config height. setBoardAnchor converts
+   * one to the other (`d = yo - boardAnchorBase`), so this does the same conversion on the bounds.
+   *
+   * ⚠️ The `Math.max(0, d)` floor in setBoardAnchor is part of the contract, not a rounding guard: a
+   * non-bend border never sits BELOW its configured height. Applied here too, or the dial would
+   * offer travel downward that the setter silently refuses.
+   *
+   * ⚠️ A BEND (festoon) has its own branch there — clamped to the wall rather than to neighbours,
+   * and allowed to go below its config height — so it gets its own branch here. Mirroring the setter
+   * is the point: a dial that disagrees with the clamp is a control that moves and does nothing.
+   */
+  function ringHeightTravel(tierIndex, cur) {
+    const tierHeight = canvasConfig.tiers[tierIndex]?.height ?? 0;
+    const base = boardAnchorBase(cur, tierIndex);
+    if (cur.bend) return { min: -base, max: tierHeight - base };
+    const { yoMin, yoMax } = boardYoBounds(cur, tierIndex);
+    return { min: Math.max(0, yoMin - base), max: Math.max(0, yoMax - base) };
   }
 
   function handlePipingBoardYOffsetChange(tierIndex, v) {
@@ -10825,28 +10849,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       {/* Radial / Inset — every ring except a wrap band, which auto-hugs the wall.
                           ⚠️ "Radial" on a round tier, "Inset" on any other footprint: a heart's
                           offset is measured perpendicular to each edge, not from a centre. */}
-                      {!isDrip && !p.wrap && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                          <div style={s.ringNudge}>
-                            <button title="Move inward" style={s.ringNudgeBtn}
-                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial - 0.05).toFixed(2)); }}>−</button>
-                            <span style={s.ringNudgeVal}>{radial > 0 ? `+${radial.toFixed(2)}` : radial.toFixed(2)}</span>
-                            <button title="Move outward" style={s.ringNudgeBtn}
-                              onPointerDown={e => { e.stopPropagation(); handlePipingRadialOffsetChange(tierIndex, zone, +(radial + 0.05).toFixed(2)); }}>+</button>
+                      {!isDrip && !p.wrap && (() => {
+                        /* ⚠️ RIM RINGS HAVE REAL BOUNDS; BOARD AND SIDE RINGS HAVE NONE.
+                         * rimRadialTravel returns the true gap for a rim ring — its neighbours, the
+                         * rim edge, the cylinder above. handlePipingRadialOffsetChange returns early
+                         * for every other zone and always has: nothing nests on a wall the way rim
+                         * rings nest inside one another, so there is no band to compute.
+                         *
+                         * A dial still needs two numbers. This span is DERIVED FROM THE CAKE rather
+                         * than picked — a ring cannot sensibly travel further than the tier it sits
+                         * on — and it is floored at the CURRENT value so that every position
+                         * reachable before this dial existed stays reachable. A control that
+                         * arrives and quietly narrows what a baker may do is worse than the stepper
+                         * it replaced. Sandeep left the choice to me; this is it, written down. */
+                        const tierR = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
+                        const bounds = applied && zone === 'rim'
+                          ? rimRadialTravel(tierIndex, applied)
+                          : (sp => ({ min: -sp, max: sp }))(Math.max(tierR, Math.abs(radial) + 0.1));
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                            <OffsetDial value={radial} min={bounds.min} max={bounds.max}
+                              label={isNonRoundTier ? 'Inset' : 'Radial'}
+                              onChange={v => handlePipingRadialOffsetChange(tierIndex, zone, v)} />
+                            <span style={cap}>{isNonRoundTier ? 'Inset' : 'Radial'}</span>
                           </div>
-                          <span style={cap}>{isNonRoundTier ? 'Inset' : 'Radial'}</span>
-                        </div>
-                      )}
+                        );
+                      })()}
 
                       {/* Flip — board rings whose element allows it. */}
                       {!isDrip && flipAdj && (() => {
                         const defaultFlip = pipingPopupEl.placement_config?.bottom_flip ?? true;
                         const active = p.userFlipBottom != null ? p.userFlipBottom : defaultFlip;
                         return (
-                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
                             <button
                               onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
-                              style={{ ...s.ringNudgeBtn, width: 'auto', padding: '0 11px', height: 26,
+                              style={{ ...s.ringRowBtn, width: 'auto', padding: '0 11px', height: 26,
                                        border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
                                        background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a', fontWeight: 700 }}>
                               {active ? '↕ On' : '↕ Off'}
@@ -10858,18 +10896,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
                       {/* Height — y-adjustable side borders. The on-cake drag is the primary way;
                           see the note under the row. */}
-                      {!isDrip && yAdj && (
-                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
-                          <div style={s.ringNudge}>
-                            <button style={s.ringNudgeBtn}
-                              onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY - 0.05).toFixed(2)); }}>−</button>
-                            <span style={s.ringNudgeVal}>{boardY > 0 ? `+${boardY.toFixed(2)}` : boardY.toFixed(2)}</span>
-                            <button style={s.ringNudgeBtn}
-                              onPointerDown={e => { e.stopPropagation(); handlePipingBoardYOffsetChange(tierIndex, +(boardY + 0.05).toFixed(2)); }}>+</button>
+                      {!isDrip && yAdj && (() => {
+                        // Bounds the SETTER already enforces (boardYoBounds via setBoardAnchor),
+                        // converted to the delta space this control speaks — see ringHeightTravel.
+                        const hb = applied ? ringHeightTravel(tierIndex, applied) : { min: 0, max: 0 };
+                        return (
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
+                            <OffsetDial value={boardY} min={hb.min} max={hb.max} label="Height"
+                              onChange={v => handlePipingBoardYOffsetChange(tierIndex, v)} />
+                            <span style={cap}>Height</span>
                           </div>
-                          <span style={cap}>Height</span>
-                        </div>
-                      )}
+                        );
+                      })()}
                     </div>
                     </div>
 
@@ -12660,26 +12698,16 @@ const s = {
   /* The candidate rings, side by side. Scrolls sideways rather than growing taller: a three-tier
      cake with a y-adjustable style yields six or more candidates, and height is the scarce axis on a
      phone — the whole reason this moved out of the vertical card. */
-  /* ── A ring's nudge control, sized to stand in a row ────────────────────────────────────────────
-     Radial and Height were full-width rows: label left, −/value/+ right, Reset trailing. As row
-     items beside Colour and Size they have to be compact and the same HEIGHT as a 46px dial, so the
-     caption underneath lines up across every item.
-     ⚠️ Not a dial yet, deliberately. A dial needs a real min and max; rimRadialTravel now supplies
-     them for a RIM ring, but board and side rings have no bounds at all (see
-     handlePipingRadialOffsetChange's early return). A dial there would either invent limits or turn
-     and do nothing, which is worse than the stepper it replaced. */
-  ringNudge: {
-    display: 'flex', alignItems: 'center', gap: 3, height: 46,
-  },
-  ringNudgeBtn: {
+  /* A small square control that stands in the ring row beside a 46px dial — today only Flip, which
+     is a toggle rather than a value and so has no dial to be.
+     ⚠️ Named for what it IS, not what it was. This began as `ringNudgeBtn`, the ± of the Radial and
+     Height steppers; both became OffsetDials and the steppers went, leaving the name describing
+     something that no longer exists. `ringNudge` and `ringNudgeVal` were deleted outright. */
+  ringRowBtn: {
     width: 26, height: 26, borderRadius: 7, border: '1.5px solid #999999', background: '#fff',
     cursor: 'pointer', fontSize: 14, color: '#1a1a1a', flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: "'Quicksand',sans-serif", padding: 0,
-  },
-  ringNudgeVal: {
-    fontSize: 11, fontWeight: 700, color: '#444', minWidth: 34, textAlign: 'center',
-    fontFamily: "'Quicksand',sans-serif",
   },
   // Below the row, not in it — see the note at the call site. Appears only off zero.
   ringResetBtn: {
