@@ -39,7 +39,8 @@
     "check:env-map": "node scripts/check-env-map.mjs",
     "check:one-chevron": "node scripts/check-one-chevron.mjs",
     "check:one-preview": "node scripts/check-one-preview.mjs",
-    "check:priced-copy": "node scripts/check-priced-copy.mjs"
+    "check:priced-copy": "node scripts/check-priced-copy.mjs",
+    "check:tokens": "node scripts/check-tokens.mjs"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",

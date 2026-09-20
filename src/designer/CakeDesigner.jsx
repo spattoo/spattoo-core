@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav, strandedMenus } from './mobileNav.js';
+import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
 import { HexColorPicker } from 'react-colorful';
@@ -585,7 +586,7 @@ function FinishTierPicker({ tiers, tier, onPick }) {
      ABOVE the foil/cream buttons, so leaving it green would have left every finish card arguing
      with its own first row — the "two standards on one screen" problem, in miniature. */
   const btn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-    border: active ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a' });
+    border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE, color: active ? SURFACE : INK });
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <span style={s.editPanelLabel}>Tier</span>
@@ -6924,7 +6925,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const effSurface = surfOpts.includes(foilSurface) ? foilSurface : surfOpts[0];
     const SURF_LABEL = { side: 'Side', top_surface: 'Top' };
     const tierBtn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-      border: active ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a' });
+      border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE, color: active ? SURFACE : INK });
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Torn shards of edible foil pressed onto the cake. Add a few, then drag each dot to move it.</div>
@@ -7028,9 +7029,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        means everywhere else in this app (doneBtn, the toolbar's pressed state, editTabOn), so the
        finish cards now agree with every other card instead of carrying their own tone. */
     const chip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-      border: active ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a' });
+      border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE, color: active ? SURFACE : INK });
     const action = { width: '100%', borderRadius: 8, fontSize: 11, fontWeight: 700, cursor: 'pointer',
-      border: '1.5px solid #ddd', background: '#fff', color: '#1a1a1a', padding: '8px' };
+      border: `1.5px solid ${LINE}`, background: SURFACE, color: INK, padding: '8px' };
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>A raised second buttercream band with a torn edge. Add a band, then scrape its edge on the cake (turn on Auto-rotate to go around).</div>
@@ -13038,17 +13039,21 @@ const s = {
      made cardBtnBase a style that CLAIMED to be the shape while nothing derived from it: the worst
      kind of dead code, because the next person edits the base and sees nothing change. One geometry,
      in one place; a tone says only what the control MEANS. */
+  /* ⚠️ THE TONES READ shared/tokens.js — they no longer hold their own hexes. Sandeep: "i am worried
+     button color is not coming from one source. it should be." It was not: #1a1a1a appeared 108
+     times in this file alone. Changing a tone now means editing ONE value, and check:tokens fails
+     the build if a raw hex duplicates one of them, so this cannot quietly drift back. */
   // Destructive: the field is the signal. Keeps the name — 18 call sites already say deleteBtn.
   get deleteBtn() {
-    return { ...this.cardBtnBase, background: '#fff0f0', border: '1.5px solid #f5c0c0', color: '#e53935' };
+    return { ...this.cardBtnBase, background: DANGER_FIELD, border: `1.5px solid ${DANGER_LINE}`, color: DANGER };
   },
   // Neutral: a real button for the actions that were bare words (Duplicate, Ungroup).
   get neutralBtn() {
-    return { ...this.cardBtnBase, background: '#fff', border: '1.5px solid #ddd', color: '#1a1a1a' };
+    return { ...this.cardBtnBase, background: SURFACE, border: `1.5px solid ${LINE}`, color: INK };
   },
-  // Primary: the confirm. #1a1a1a is what "active" already means across this app.
+  // Primary: the confirm. INK is what "active" already means across this app.
   get doneBtn() {
-    return { ...this.cardBtnBase, background: '#1a1a1a', border: 'none', color: '#fff' };
+    return { ...this.cardBtnBase, background: INK, border: 'none', color: SURFACE };
   },
   iconBtn: {
     background:'#f3f4f6', border:'none', width:28, height:28, borderRadius:'50%',
