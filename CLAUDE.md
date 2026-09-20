@@ -88,6 +88,7 @@ Already built, app-wide, in `src/shared/`:
 | `panelTopBar.jsx` | Back arrow, breadcrumb and dismiss for panel headers. |
 | `Disclosure.jsx` | **The** "question you can open" — a labelled toggle with the shared chevron, and an answer folded under it. For the explanation a new baker needs and a returning one has read fifty times. |
 | `canvas/envMap.js` | **The** answer to "which HDRI lights this scene". A host mounting anything that draws a cake must call `configureEnvMap(assetsBase)`; without it the scene silently falls back to a 1.4MB drei preset from GitHub raw. Gated by `check:env-map`. |
+| `Slider.jsx` | **The** bounded number chosen by dragging — label, live value, optional units. `value={null}` is "not set": a range input always has a position, so a FILTER built on a bare one starts life filtering. Five files hand-rolled `<input type="range">` before this. Not a substitute for `SizeDial` or `ColorWheel`. |
 | `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
 Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,

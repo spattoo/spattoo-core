@@ -19,6 +19,7 @@ import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
@@ -682,7 +683,23 @@ function collectElementColors(design) {
 
 // ── Filter ────────────────────────────────────────────────────────────────────
 const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
-const TMPL_CATS = ['occasion', 'style', 'color', 'age_group', 'gender'];
+/* ⚠️ NO `age_group`. Who a design suits is captured as NUMBERS at template creation
+   (cake_template_attrs.min_age/max_age — set on all 28 templates on dev) and as five age_group tags
+   that NOTHING carries and nothing can set: POST /templates only accepts `occasion_tag_ids`, so
+   there is no path that writes one. Two fields for one fact, and only the numbers are populated.
+   The slider below reads the numbers, so the chips are gone rather than wired up — tagging every
+   template by hand would also have invited the drift, a template tagged "Kids (4–12)" whose max_age
+   is 3 being a contradiction nobody would ever see.
+   `gender` stays a chip because it has no numeric equivalent; it is also unassigned today, so
+   `offeredTags` hides it until somebody tags one. */
+const TMPL_CATS = ['occasion', 'style', 'color', 'gender'];
+
+/* Where the "Suits age" slider stops, and therefore where its readout turns into "18+".
+   ⚠️ READ OFF THE CATALOGUE, not chosen. Counted on dev: the number of matching templates is flat at
+   11 from age 16 through 60, so past 18 a longer track moves a thumb and changes nothing. If the
+   catalogue ever grows designs that discriminate above this, raise it — the constant is here so that
+   is one edit and the label, the track and the predicate cannot disagree about it. */
+const AGE_FILTER_MAX = 18;
 
 // `light` = drawn on the dark filled button the funnel becomes while the drawer is open.
 function FunnelIcon({ size = 15, active, light }) {
@@ -2117,11 +2134,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         const w = parseFloat(filterWeight);
         if (!isNaN(w) && t.attrs?.min_weight_kg != null && t.attrs.min_weight_kg > w) return false;
       }
-      if (filterAge) {
+      if (filterAge !== '') {
         const age = parseInt(filterAge, 10);
         if (!isNaN(age)) {
-          if (t.attrs?.min_age != null && t.attrs.min_age > age) return false;
-          if (t.attrs?.max_age != null && t.attrs.max_age < age) return false;
+          /* ⚠️ THE TOP OF THE TRACK MEANS "18 OR OLDER", NOT "EXACTLY 18", because that is what the
+             readout says. Testing 18 exactly would drop every template whose `min_age` is 20 — and
+             there are such rows — so the label would have promised adults and quietly excluded some
+             of them. At the ceiling the only question is whether a design reaches adulthood at all.
+             Below it, the ordinary overlap: this age must fall inside [min_age, max_age]. */
+          if (age >= AGE_FILTER_MAX) {
+            if (t.attrs?.max_age != null && t.attrs.max_age < AGE_FILTER_MAX) return false;
+          } else {
+            if (t.attrs?.min_age != null && t.attrs.min_age > age) return false;
+            if (t.attrs?.max_age != null && t.attrs.max_age < age) return false;
+          }
         }
       }
       return true;
@@ -9878,16 +9904,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #999999', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
                   <span style={{ fontSize: 10, color: '#aaa' }}>kg+</span>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {/* "Suits age", not "Age" — this filters the CATALOGUE by who a design suits
-                      (cake_template_attrs.min_age/max_age), and stores nothing about anybody. Bare
-                      "Age" read as though the baker were being asked for the child's, which is the
-                      same thing the order form's label did and the number topper's before it. */}
-                  <span style={{ fontSize: 9, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', minWidth: 46 }}>Suits age</span>
-                  <input type="number" min="0" max="120" step="1" placeholder="e.g. 8" value={filterAge} onChange={e => setFilterAge(e.target.value)}
-                    style={{ flex: 1, padding: '3px 6px', border: '1.5px solid #999999', borderRadius: 6, fontSize: 11, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box' }} />
-                  <span style={{ fontSize: 10, color: '#aaa' }}>yrs</span>
-                </div>
+                {/* ── Who the cake is for ───────────────────────────────────────────────────────
+                    "Suits age", not "Age" — this filters the CATALOGUE by who a design suits
+                    (cake_template_attrs.min_age/max_age) and stores nothing about anybody. Bare
+                    "Age" read as though the baker were being asked for the child's, which is the
+                    same thing the order form's label did and the number topper's before it.
+
+                    ⚠️ A SLIDER, AND IT REPLACED BOTH THE NUMBER BOX AND FIVE CHIPS. The box worked
+                    but asked somebody to type a number to browse; the AGE GROUP chips could never
+                    match anything, because no template carries an age_group tag and nothing can
+                    write one. One control now, reading the numbers that are actually populated.
+
+                    ⚠️ TOPS OUT AT 18, AND THAT IS FROM THE DATA, NOT A GUESS. Counted on dev: the
+                    answer is flat at 11 templates from 16 through 60, so on a 0–100 track four
+                    fifths of the travel would change nothing. 18 is where it stops discriminating,
+                    so 18 is the end and it reads "18+".
+
+                    ⚠️ AND IT STARTS UNSET. `min_age` across the catalogue is 1,2,3,4,5,10,12,13,20
+                    — not one template says 0 — so a slider parked at its floor would have answered
+                    "no templates match" before anybody touched it. `null` is "any age"; only a drag
+                    filters, and "any" puts it back. */}
+                <Slider
+                  label="Suits age"
+                  value={filterAge === '' ? null : Number(filterAge)}
+                  min={0} max={AGE_FILTER_MAX} step={1}
+                  placeholder="any age"
+                  accent="#1a1a1a"
+                  fmt={(v) => (v >= AGE_FILTER_MAX ? `${AGE_FILTER_MAX}+` : `${v} yr${v === 1 ? '' : 's'}`)}
+                  onChange={(v) => setFilterAge(String(v))}
+                  onClear={() => setFilterAge('')}
+                />
               </div>
             </FilterPanel>
 
