@@ -7482,6 +7482,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const hasColourControl = (c.color || c.gradient) && !hueRegionsReplacesWheel;
     if (hasColourControl) colourCtls = [colourControl];
 
+    /* ⚠️ GENERAL RULE, not a photo-frame special case. Sandeep, on the faux ball: "same controls
+     * alignment issue" — Colour sat alone on a row above Size+Spin there too. It was merged for the
+     * frame first; a rule that applies to one card is a special case waiting to be asked for again,
+     * which is exactly what happened.
+     *
+     * So: a STICKER card that has both a colour swatch and a Size row puts them on one line. It is
+     * gated on `c.resize` because that is what decides whether the Size row exists at all — merging
+     * into a row that is never pushed would silently drop the colour control, which is the bug I
+     * already made once by putting the standalone push inside that branch.
+     *
+     * ⚠️ Still NOT for the multi-swatch group ("Customise colours" / recolor-groups). That is its own
+     * labelled block of named swatches, and folding it into a control row would be unreadable. */
+    if (hasColourControl && c.resize && el.type === 'sticker') mergeIntoSizeRow = true;
+
     /* ⚠️ DEFERRED, not pushed here. On a photo frame this swatch joins the Size row instead (see
        mergeIntoSizeRow below); on every other card it is still its own row, emitted further down
        once the photo block has had its say. Pushing it here as well would give a frame TWO colour
@@ -7656,8 +7670,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <SizeDial key="bw-dial" size={bw} min={0} max={0.4} step={0.02} onChange={v => updateSticker(el.id, { borderWidth: v })} />,
           ];
         }
-        // A photo frame's Colour IS the border colour — a companion to Size, not a control of its own.
-        mergeIntoSizeRow = true;
+        // (The general rule below already merges Colour; a frame additionally contributes Border.)
       }
 
       // Editable text placeholders — one field per slot the artwork declares. Gated on the instance
@@ -11129,7 +11142,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   the same thing for a cosmetic reason, which check:one-preview correctly failed.
                   A row with one tile is a row with one tile; the special case bought nothing and
                   cost the one property worth having, that a ring is derived and drawn in one place. */}
-              {candidates.length > 0 && (
+              {/* ⚠️ HIDDEN ON A PHONE WHEN THERE IS ONLY ONE CANDIDATE. Sandeep, on the drip: "in
+                  mobile view, we can skip the preview. there nothing to select that needs a
+                  preview." A chocolate drip offers exactly one ring (the rim), so the tile is a
+                  74px picture of a choice that does not exist.
+                  ⚠️ The condition is `isMobile && length === 1`, NOT `isMobile`. Piping cards share
+                  this row and genuinely offer several rings to pick between; stripping the chooser
+                  from those on a phone would remove the only way to select one.
+                  ⚠️ And it suppresses the whole ROW rather than adding a single-candidate fallback.
+                  The note above records that such a fallback existed once and check:one-preview
+                  correctly failed it — a ring must stay derived and drawn in exactly one place. */}
+              {candidates.length > 0 && !(isMobile && candidates.length === 1) && (
                 <div style={s.previewRow}>
                   {candidates.map(({ tierIndex, zone, label }) => {
                     const v  = ringView(tierIndex, zone);
@@ -11201,6 +11224,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         the scroller itself would clip the first item out of reach once it overflows. */}
                     <div style={{ overflowX: 'auto', scrollbarWidth: 'none', marginTop: 8 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 22, margin: '0 auto', width: 'fit-content' }}>
+                      {/* ⚠️ FLOOD TOP LEADS THE ROW. Sandeep: "'flood top' should be first control in
+                          the row. next is color etc. all in one row." It used to sit BELOW as a
+                          centred label of its own, which is a whole line of a phone for one
+                          checkbox — and it is the most consequential control here: it decides
+                          whether this is a rim drip or a flooded top, which every other control
+                          then describes. First in the row, in the same column shape as its
+                          neighbours (control above, caption below) so it reads as one of them
+                          rather than something pasted in front. */}
+                      {isDrip && (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
+                          <input type="checkbox" checked={p.dripFlood ?? false}
+                            title="Flood the whole tier top with chocolate"
+                            onChange={e => handleDripFloodChange(tierIndex, zone, e.target.checked)}
+                            style={{ accentColor: '#1a1a1a', width: 22, height: 22, margin: 0, cursor: 'pointer' }} />
+                          <span style={cap}>Flood top</span>
+                        </div>
+                      )}
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
                         <div role="button" title="Choose colour"
                           onClick={e => {
@@ -11315,15 +11355,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </div>
                     )}
 
-                    {/* Drip: flood the whole tier top with chocolate (vs. just the rim + drips). */}
-                    {isDrip && (
-                      <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 8, cursor: 'pointer', fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', fontFamily: "'Quicksand',sans-serif" }}>
-                        <input type="checkbox" checked={p.dripFlood ?? false}
-                          onChange={e => handleDripFloodChange(tierIndex, zone, e.target.checked)}
-                          style={{ accentColor: '#1a1a1a', width: 16, height: 16 }} />
-                        Flood top
-                      </label>
-                    )}
+                    {/* Flood top now LEADS the control row above — see the note there. */}
 
                     {/* Colour picker — the same wheel as tiers, floated as a popup. Portaled to
                         <body> so it escapes the card's narrow, backdrop-blurred scroll container
