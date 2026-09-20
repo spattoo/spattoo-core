@@ -238,7 +238,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
   const PRESETS = [
     '#ffffff','#f5e6c8','#f5b8c8','#e8a0b0','#c8b5e8',
     '#b5c8e8','#b5e8d5','#f0c040','#e87040','#5c3d2e',
-    '#3e2010','#1a1a1a','#d4af37','#8b1a1a','#2e5c3e',
+    '#3e2010',INK,'#d4af37','#8b1a1a','#2e5c3e',
   ];
   // ── What you SEE and what you can TAP are different sizes ───────────────────────────────────
   // These were 22px, half the touch floor, in four wrapped rows. Making the whole circle 44 fixed the
@@ -253,7 +253,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
     const circle = (
       <div style={{
         width: dot, height: dot, borderRadius: '50%', background: c,
-        border: color.toLowerCase() === c.toLowerCase() ? '2.5px solid #1a1a1a' : '1.5px solid #999999',
+        border: color.toLowerCase() === c.toLowerCase() ? `2.5px solid ${INK}` : '1.5px solid #999999',
         boxSizing: 'border-box', flexShrink: 0,
         boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
       }} />
@@ -309,7 +309,7 @@ function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = f
         <div style={{ width }}>
           <div style={{
             fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
-            color: '#1a1a1a', textTransform: 'uppercase', marginBottom: 7, textAlign: 'center',
+            color: INK, textTransform: 'uppercase', marginBottom: 7, textAlign: 'center',
           }}>Colors from cake</div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
             {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
@@ -351,8 +351,8 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
                   ...(isPlaceholder
                     ? { background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', opacity: 0.55,
                         borderStyle: 'dashed', borderWidth: i === activeStop ? 2.5 : 2,
-                        borderColor: i === activeStop ? '#1a1a1a' : '#999999' }
-                    : { background: c, border: i === activeStop ? '2.5px solid #1a1a1a' : '1.5px solid #999999' }) }} />
+                        borderColor: i === activeStop ? INK : '#999999' }
+                    : { background: c, border: i === activeStop ? `2.5px solid ${INK}` : '1.5px solid #999999' }) }} />
               {!isPlaceholder && stops.length > 1 && (
                 <button style={s.gradientStopRemove} title="Remove color"
                   onClick={() => onRemoveStop(i)}>×</button>
@@ -384,7 +384,7 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
           <div style={s.gradientLabel}>Balance</div>
           <input type="range" min={0.2} max={0.8} step={0.01} value={balance}
             onChange={e => onBalanceChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+            style={{ width: '100%', accentColor: INK }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888' }}>
             <span>Primary</span><span>Secondary</span>
           </div>
@@ -453,7 +453,7 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
           </div>
           <input type="range" min={2} max={MAX_STRIPES} step={1} value={count}
             onChange={e => onCountChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+            style={{ width: '100%', accentColor: INK }} />
           <div style={s.stripeHint}>
             {count === colours ? 'One stripe per colour.' : `Your ${colours} colours repeat.`}
             {' '}An odd number matches top and bottom.
@@ -462,7 +462,7 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
           <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Softness</div>
           <input type="range" min={0} max={1} step={0.01} value={softness}
             onChange={e => onSoftnessChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+            style={{ width: '100%', accentColor: INK }} />
           <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888', width: '100%' }}>
             <span>Crisp</span><span>Blended</span>
           </div>
@@ -470,7 +470,7 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
           <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Hand-scraped</div>
           <input type="range" min={0} max={1} step={0.01} value={wobble}
             onChange={e => onWobbleChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: '#1a1a1a' }} />
+            style={{ width: '100%', accentColor: INK }} />
           <div style={s.stripeHint}>A little of this reads as iced by hand.</div>
         </div>
       )}
@@ -570,8 +570,8 @@ function PenSlider({ label, value, min, max, step, onChange, onCommit, fmt = v =
           onPointerUp: e => onCommit(Number(e.currentTarget.value)),
           onKeyUp:     e => onCommit(Number(e.currentTarget.value)),
         } : {})}
-        style={{ flex: 1, minWidth: 0, accentColor: '#1a1a1a' }} />
-      <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a', minWidth: 32, flexShrink: 0, textAlign: 'right' }}>{fmt(value)}</span>
+        style={{ flex: 1, minWidth: 0, accentColor: INK }} />
+      <span style={{ fontSize: 11, fontWeight: 700, color: INK, minWidth: 32, flexShrink: 0, textAlign: 'right' }}>{fmt(value)}</span>
     </div>
   );
 }
@@ -656,7 +656,7 @@ const TMPL_CATS = ['occasion', 'style', 'color', 'gender'];
 
 // `light` = drawn on the dark filled button the funnel becomes while the drawer is open.
 function FunnelIcon({ size = 15, active, light }) {
-  const c = light ? '#ffffff' : active ? '#1a1a1a' : '#888';
+  const c = light ? '#ffffff' : active ? INK : '#888';
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke={c} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M1.5 2.5L14.5 2.5L9.5 8.5L9.5 13.5L6.5 13.5L6.5 8.5Z" />
@@ -709,7 +709,7 @@ function FilterPanel({ allTags, active, onChange, categories, open, onApply, onC
                             // Toggles within the list: a second occasion ADDS rather than replaces.
                             [cat]: on ? picked.filter(x => x !== tag.slug) : [...picked, tag.slug],
                           })}
-                          style={{ padding: '3px 8px', borderRadius: 20, border: `1.5px solid ${on ? '#1a1a1a' : '#999999'}`, background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#666', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", lineHeight: 1.4 }}
+                          style={{ padding: '3px 8px', borderRadius: 20, border: `1.5px solid ${on ? INK : '#999999'}`, background: on ? INK : '#fff', color: on ? '#fff' : '#666', fontSize: 10, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand', sans-serif", lineHeight: 1.4 }}
                         >
                           {tag.name}
                         </button>
@@ -737,7 +737,7 @@ function FilterPanel({ allTags, active, onChange, categories, open, onApply, onC
             </button>
             <button type="button" onClick={onApply}
               style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
-                       background: '#1a1a1a', color: '#fff', fontSize: 11.5, fontWeight: 800,
+                       background: INK, color: '#fff', fontSize: 11.5, fontWeight: 800,
                        fontFamily: "'Quicksand', sans-serif" }}>
               {/* ⚠️ NO COUNT ON THE BUTTON. It carried "Apply · 12 templates" — a preview of the
                   result, which sounds useful and is a number nobody needs: pressing it puts the
@@ -1015,7 +1015,7 @@ function ElementGrid({ groups = [], onElementTap, onDragStartSticker }) {
               {studio && (
                 <span aria-hidden="true" style={{
                   position: 'absolute', right: 0, bottom: 0, minWidth: 16, height: 16,
-                  padding: '0 3px', borderTopLeftRadius: 8, background: '#1a1a1a', color: '#fff',
+                  padding: '0 3px', borderTopLeftRadius: 8, background: INK, color: '#fff',
                   fontSize: 10, fontWeight: 800, lineHeight: '16px', textAlign: 'center',
                 }}>→</span>
               )}
@@ -1239,7 +1239,7 @@ function ReelIcon({ size = 18 }) {
 
 // One shared upward popover for the mobile baker action bar (so the item styling / overlay live in ONE
 // place). align 'left' | 'right' | 'center' positions it against its anchor and keeps it on-screen.
-const SHEET_ITEM = { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px', fontSize: 14, color: '#1a1a1a', cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap' };
+const SHEET_ITEM = { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px', fontSize: 14, color: INK, cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap' };
 function ActionSheet({ open, onClose, align = 'left', children }) {
   if (!open) return null;
   const pos = align === 'center' ? { left: '50%', transform: 'translateX(-50%)' } : { [align]: 0 };
@@ -1583,13 +1583,13 @@ function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
             onChange={e => setField('confirmPassword', e.target.value)} disabled={loading}
             onKeyDown={e => e.key === 'Enter' && canSubmit && handleSubmit()} />
           {mismatch && (
-            <span style={{ fontSize: 11.5, fontWeight: 700, color: '#e53935', fontFamily: "'Quicksand',sans-serif" }}>
+            <span style={{ fontSize: 11.5, fontWeight: 700, color: DANGER, fontFamily: "'Quicksand',sans-serif" }}>
               Passwords do not match.
             </span>
           )}
         </label>
         {msg && (
-          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : DANGER }}>
             {msg.text}
           </div>
         )}
@@ -1666,7 +1666,7 @@ function AddUserModal({ onClose, brandBtn, apiClient }) {
               <input style={s.modalInput} type="tel" value={form.phone} onChange={e => setField('phone', e.target.value)} disabled={loading} placeholder="+91 98765 43210" />
             </label>
             {msg && (
-              <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : '#e53935' }}>{msg.text}</div>
+              <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : DANGER }}>{msg.text}</div>
             )}
             <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
               disabled={!canSubmit} onClick={handleSubmit}>
@@ -1692,7 +1692,7 @@ function OrderDesignViewer({ order, onClose }) {
     <div style={{ position: 'fixed', inset: 0, zIndex: 400, background: '#F7F5F0', display: 'flex', flexDirection: 'column' }}>
       <div style={{ height: 56, padding: '0 20px', background: '#fff', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
         <button onClick={onClose} style={{ width: 34, height: 34, borderRadius: 9, border: '1.5px solid #E8E4DC', background: '#fff', color: '#666', fontSize: 14, cursor: 'pointer' }}>✕</button>
-        <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>Cake design · view only</span>
+        <span style={{ fontSize: 16, fontWeight: 800, color: INK, flex: 1 }}>Cake design · view only</span>
       </div>
       <div style={{ flex: 1, minHeight: 0 }}>
         {design
@@ -2561,7 +2561,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // chosen for: the storefront, which is the surface a baker's customers actually see. The
   // storefront is unaffected by this; CustomerStorefront and ThemePreview read the profile's
   // primary_color/accent_color directly and never went through here.
-  const primaryColor = '#1a1a1a';
+  const primaryColor = INK;
   const accentColor  = '#333333';
 
   // ── Reel recording — catalogue authors only ───────────────────────────────────────────────────
@@ -5708,7 +5708,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <span key="fin-m" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Metallic</span>,
       <input key="fin-r" type="range" min={0} max={1} step={0.01} value={t}
         onChange={e => onPick(finishToMaterial(parseFloat(e.target.value)))}
-        style={{ flex: 1, minWidth: 60, accentColor: '#1a1a1a' }} />,
+        style={{ flex: 1, minWidth: 60, accentColor: INK }} />,
       <span key="fin-x" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Matte</span>,
     ];
   }
@@ -5721,7 +5721,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Desktop keeps solid white. Stays a right-side panel (INVARIANTS §3a) — no relocation.
   const stackCardStyle = (expanded) => ({
     flexShrink: 0,
-    border: `1.5px solid ${expanded ? '#1a1a1a' : '#eadde2'}`,
+    border: `1.5px solid ${expanded ? INK : '#eadde2'}`,
     borderRadius: 10, overflow: 'hidden',
     background: isMobile ? (expanded ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.28)') : '#fff',
   });
@@ -6191,11 +6191,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div key={el.id} onClick={() => openPipingPopup(el)}
                 style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, cursor: 'pointer', userSelect: 'none' }}>
                 <div style={{ width: 64, height: 64, borderRadius: 10, overflow: 'hidden', background: '#fff',
-                  border: `1.5px solid ${isActive ? '#1a1a1a' : '#999999'}`,
+                  border: `1.5px solid ${isActive ? INK : '#999999'}`,
                   boxShadow: isActive ? '0 0 0 2px rgba(26,26,26,0.18)' : 'none' }}>
                   {thumbSrc(el) && <img src={thumbSrc(el)} alt={el.name} width={64} height={64} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: '100%', objectFit: 'cover', pointerEvents: 'none' }} />}
                 </div>
-                <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? '#1a1a1a' : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: isActive ? INK : '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
               </div>
             );
           })}
@@ -6693,7 +6693,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     <button style={{ ...s.doneBtn, minHeight: 28, padding: '0 14px', fontSize: 12 }}
             onClick={e => { e.stopPropagation(); clearAllSelections(); setExpandedPipingId(null); }}>Done</button>
   ) : (
-    <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0,
+    <span style={{ fontSize: 9, color: INK, flexShrink: 0,
                    transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
   ));
 
@@ -6793,10 +6793,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           const active = card.currentZone === t.zone || (t.zone === ZONES.SIDE && card.currentZone === ZONES.MIDDLE_TIER);
           return (
             <div key={t.zone} role="button" onClick={() => { if (!active) changePatternZone(card, t.zone, t.tierIndex); }} style={{ cursor: active ? 'default' : 'pointer' }}>
-              <div style={{ width: '100%', height: 110, borderRadius: 10, overflow: 'hidden', border: `2px solid ${active ? '#1a1a1a' : '#cdccd3'}`, background: '#cfcdd6' }}>
+              <div style={{ width: '100%', height: 110, borderRadius: 10, overflow: 'hidden', border: `2px solid ${active ? INK : '#cdccd3'}`, background: '#cfcdd6' }}>
                 <TopperPreview parts={parts} placement={t.placement} tiers={canvasConfig.tiers} tierIndex={t.tierIndex} />
               </div>
-              <span style={{ display: 'block', marginTop: 4, fontSize: 10, fontWeight: 700, color: active ? '#1a1a1a' : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: "'Quicksand',sans-serif" }}>{t.label}{active ? ' ✓' : ''}</span>
+              <span style={{ display: 'block', marginTop: 4, fontSize: 10, fontWeight: 700, color: active ? INK : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: "'Quicksand',sans-serif" }}>{t.label}{active ? ' ✓' : ''}</span>
             </div>
           );
         })}
@@ -6936,7 +6936,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {Object.entries(colors).map(([name, hex]) => (
               <button key={name} onClick={() => setAllFoilColor(hex)} title={name}
                 style={{ padding: '5px 12px', borderRadius: 14, fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize',
-                  border: foilColor.toLowerCase() === hex.toLowerCase() ? '2px solid #1a1a1a' : '1.5px solid #ddd',
+                  border: foilColor.toLowerCase() === hex.toLowerCase() ? `2px solid ${INK}` : '1.5px solid #ddd',
                   background: hex, color: '#3d2f12' }}>{name}</button>
             ))}
           </div>
@@ -6987,10 +6987,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={s.previewRow}>
             {flakes.map((_, i) => (
               <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
-                border: foilSel === i ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: foilSel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
-                <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#1a1a1a', cursor: 'pointer' }}>Flake {i + 1}</button>
+                border: foilSel === i ? `1.5px solid ${INK}` : '1.5px solid #ddd', background: foilSel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
+                <button onClick={() => setFoilSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: INK, cursor: 'pointer' }}>Flake {i + 1}</button>
                 <button title="Remove" onClick={() => { if (foilSel >= i) setFoilSel(v => Math.max(0, v - 1)); removeFoilFlake(foilTier, i); }}
-                  style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: '#e53935', cursor: 'pointer' }}>×</button>
+                  style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
               </span>
             ))}
           </div>
@@ -7038,7 +7038,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <FinishTierPicker tiers={design.tiers} tier={creamTier} onPick={i => { setCreamTier(i); setCreamSel(0); }} />
         <button style={{ ...s.doneBtn, width: '100%' }}
           onClick={() => addCreamToTier(creamTier)}>+ Add band</button>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#1a1a1a' }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: INK }}>
           <input type="checkbox" checked={creamAutoRotate} onChange={e => setCreamAutoRotate(e.target.checked)} />
           Auto-rotate (spin to paint)
         </label>
@@ -7046,10 +7046,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
             {layers.map((l, i) => (
               <span key={l.layerId} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
-                border: sel === i ? '1.5px solid #1a1a1a' : '1.5px solid #ddd', background: sel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
-                <button onClick={() => setCreamSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: '#1a1a1a', cursor: 'pointer' }}>Band {i + 1}</button>
+                border: sel === i ? `1.5px solid ${INK}` : '1.5px solid #ddd', background: sel === i ? 'rgba(26,26,26,0.06)' : '#fff' }}>
+                <button onClick={() => setCreamSel(i)} style={{ padding: '4px 6px 4px 10px', border: 'none', background: 'transparent', fontSize: 11, fontWeight: 700, color: INK, cursor: 'pointer' }}>Band {i + 1}</button>
                 <button title="Remove" onClick={() => { if (creamPaint?.layerId === l.layerId) setCreamPaint(null); if (sel >= i) setCreamSel(v => Math.max(0, v - 1)); removeCreamLayer(creamTier, l.layerId); }}
-                  style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: '#e53935', cursor: 'pointer' }}>×</button>
+                  style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
               </span>
             ))}
           </div>
@@ -7091,13 +7091,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button key={name} style={chip(false)} onClick={() => up(x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name}</button>
               ))}
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: '#1a1a1a' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, fontWeight: 700, color: INK }}>
               <input type="checkbox" checked={!!band.gold?.on} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), on: e.target.checked } }))} />
               Gold edge
               {band.gold?.on && <input type="color" value={band.gold?.color ?? '#c89b3c'} onChange={e => up(x => ({ ...x, gold: { ...(x.gold ?? {}), color: e.target.value } }))}
                 style={{ width: 30, height: 22, border: '1.5px solid #ddd', borderRadius: 6, cursor: 'pointer', padding: 0 }} />}
             </label>
-            <button style={{ ...action, ...(painting ? { background: '#1a1a1a', color: '#fff', borderColor: '#1a1a1a' } : {}) }}
+            <button style={{ ...action, ...(painting ? { background: INK, color: '#fff', borderColor: INK } : {}) }}
               onClick={() => setCreamPaint(painting ? null : { tierIndex: creamTier, layerId: band.layerId })}>
               {painting ? 'Painting edge — drag on the cake' : 'Paint edge'}
             </button>
@@ -7130,7 +7130,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span style={s.editPanelLabel}>Size</span>
           <input type="range" min={min} max={max} step={1} value={count}
             onChange={e => setClusterSize(card.clusterId, parseInt(e.target.value, 10))}
-            style={{ flex: 1, accentColor: '#1a1a1a' }} />
+            style={{ flex: 1, accentColor: INK }} />
           <span style={{ fontSize: 11, fontWeight: 700, color: '#333', minWidth: 24, textAlign: 'right' }}>{count}</span>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
@@ -7142,7 +7142,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   onChange={e => { const next = [...palette]; next[i] = e.target.value; setClusterPalette(card.clusterId, next); }} />
                 {palette.length > 1 && (
                   <button title="Remove colour" onClick={() => setClusterPalette(card.clusterId, palette.filter((_, j) => j !== i))}
-                    style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: '#e53935', cursor: 'pointer', padding: 0 }}>×</button>
+                    style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
                 )}
               </span>
             ))}
@@ -7264,7 +7264,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, next); }} />
                     {pal.length > 1 && (
                       <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, pal.filter((_, j) => j !== i))}
-                        style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: '#e53935', cursor: 'pointer', padding: 0 }}>×</button>
+                        style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
                     )}
                   </span>
                 ))}
@@ -7585,7 +7585,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onClick={() => { const opening = !on; closeAllPopups(); if (opening) { setActiveGroupKey(g.key); setColorOpen(true); } }}>
                     <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: cur }} />
                   </button>
-                  {g.label && <span style={{ fontSize: 9, fontWeight: 700, color: on ? '#1a1a1a' : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label}</span>}
+                  {g.label && <span style={{ fontSize: 9, fontWeight: 700, color: on ? INK : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label}</span>}
                 </div>
               );
             })}
@@ -7866,7 +7866,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ...poses.map(m => (
             <button key={`pose-${m}`}
               style={{ ...s.tbIconBtn, width: 'auto', padding: '0 8px', fontSize: 10, fontWeight: 800,
-                background: sticker.placementMode === m ? '#1a1a1a' : undefined,
+                background: sticker.placementMode === m ? INK : undefined,
                 color: sticker.placementMode === m ? '#fff' : undefined }}
               onClick={() => setStickerPose(sticker, m)}>
               {POSE_LABEL[m] ?? m}
@@ -7952,7 +7952,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         groups.push({ key: 'finish', divider: true, panelLabel: 'Finish', controls:
           finishSliderControls(sticker.metalness, mat => updateSticker(sticker.id, mat)) });
         groups.push({ key: 'cluster-toggle', divider: true, controls: [
-          <button key="cl-on" style={{ ...s.toolbarBtn, width: '100%', background: '#1a1a1a', color: '#fff', padding: '8px 10px', fontSize: 12 }} onClick={() => makeCluster(sticker)}>Create cluster</button>,
+          <button key="cl-on" style={{ ...s.toolbarBtn, width: '100%', background: INK, color: '#fff', padding: '8px 10px', fontSize: 12 }} onClick={() => makeCluster(sticker)}>Create cluster</button>,
         ] });
       }
     }
@@ -8084,7 +8084,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {SURFACES.map(sf => (
             <button key={sf.k} onClick={() => setWriting({ surface: sf.k })}
               style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                background: surface === sf.k ? '#1a1a1a' : 'transparent', color: surface === sf.k ? '#fff' : '#1a1a1a' }}>
+                background: surface === sf.k ? INK : 'transparent', color: surface === sf.k ? '#fff' : INK }}>
               {sf.label}
             </button>
           ))}
@@ -8105,7 +8105,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <button type="button" role="switch" aria-checked={!!w.uppercase}
             onClick={() => setWriting({ uppercase: !w.uppercase })}
             style={{ width: 38, height: 22, borderRadius: 11, border: 'none', cursor: 'pointer', padding: 0, position: 'relative',
-              background: w.uppercase ? '#1a1a1a' : '#e3d4da', transition: 'background .15s' }}>
+              background: w.uppercase ? INK : '#e3d4da', transition: 'background .15s' }}>
             <span style={{ position: 'absolute', top: 2, left: w.uppercase ? 18 : 2, width: 18, height: 18, borderRadius: '50%',
               background: '#fff', transition: 'left .15s', boxShadow: '0 1px 2px rgba(0,0,0,0.2)' }} />
           </button>
@@ -8128,8 +8128,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <button key={st.k}
               onClick={() => setWriting(writingStyleSwitch(w, st.k))}
               style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-                background: (w.style ?? 'cream') === st.k ? '#1a1a1a' : 'transparent',
-                color: (w.style ?? 'cream') === st.k ? '#fff' : '#1a1a1a' }}>
+                background: (w.style ?? 'cream') === st.k ? INK : 'transparent',
+                color: (w.style ?? 'cream') === st.k ? '#fff' : INK }}>
               {st.label}
             </button>
           ))}
@@ -8177,7 +8177,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <button key={k} onClick={() => setWriting({ acrylicFinish: k })}
                 style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 9px', borderRadius: 8, cursor: 'pointer',
                   fontFamily: 'inherit', fontSize: 11.5, fontWeight: 700, background: '#fff',
-                  border: `2px solid ${(w.acrylicFinish ?? 'gold') === k ? '#1a1a1a' : '#e2ddd6'}` }}>
+                  border: `2px solid ${(w.acrylicFinish ?? 'gold') === k ? INK : '#e2ddd6'}` }}>
                 <span style={{ width: 14, height: 14, borderRadius: 4, background: f.color, border: '1px solid #00000022' }} />
                 {f.label}
               </button>
@@ -8207,9 +8207,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <button key={c.k} onClick={c.onClick} title={c.label}
               style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
               <span style={{ width: 36, height: 36, borderRadius: '50%', background: c.swatch,
-                border: c.ring ? '3px solid #1a1a1a' : '2px solid #e7d6dc',
+                border: c.ring ? `3px solid ${INK}` : '2px solid #e7d6dc',
                 boxShadow: c.ring ? '0 0 0 2px #fff inset, 0 1px 3px rgba(0,0,0,0.18)' : '0 1px 2px rgba(0,0,0,0.12)' }} />
-              <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? '#1a1a1a' : '#999' }}>{c.label}</span>
+              <span style={{ fontSize: 11, fontWeight: 800, color: c.ring ? INK : '#999' }}>{c.label}</span>
             </button>
           ))}
         </div>
@@ -8237,7 +8237,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
                        border: `1.5px solid ${penMove === val ? '#2C4433' : '#999999'}`,
                        background: penMove === val ? '#2C4433' : '#fff',
-                       color: penMove === val ? '#fff' : '#1a1a1a',
+                       color: penMove === val ? '#fff' : INK,
                        fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
               {label}
             </button>
@@ -8312,7 +8312,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               : surface === 'board' ? { boardX: undefined, boardZ: undefined }
               : { offsetX: 0, offsetZ: 0 })}
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff',
-              color: '#1a1a1a', fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
+              color: INK, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
             Recentre
           </button>
           <button onClick={() => { clearWriting(); clearAllSelections(); }}
@@ -8662,7 +8662,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* The name on its OWN line and allowed to wrap. Sharing a row with the buttons squeezed
                 it to "Piping …", which told the customer nothing — the one thing this strip exists
                 to say is WHAT is on the nozzle. */}
-            <div style={{ fontSize: 10.5, fontWeight: 800, color: '#1a1a1a', lineHeight: 1.35, marginBottom: 7 }}>
+            <div style={{ fontSize: 10.5, fontWeight: 800, color: INK, lineHeight: 1.35, marginBottom: 7 }}>
               Piping {penStyle.stampName ?? 'a shape'}
             </div>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -8673,14 +8673,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {stampSourceCard && (
                 <button onClick={backToPipingCard}
                   style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
-                           border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                           border: '1.5px solid #999999', background: '#fff', color: INK, cursor: 'pointer',
                            fontFamily: "'Quicksand',sans-serif" }}>
                   ‹ Back to {stampSourceCard.name}
                 </button>
               )}
               <button onClick={pipeWithCreamAgain}
                 style={{ fontSize: 10, fontWeight: 700, padding: '5px 9px', borderRadius: 7,
-                         border: '1.5px solid #999999', background: '#fff', color: '#1a1a1a', cursor: 'pointer',
+                         border: '1.5px solid #999999', background: '#fff', color: INK, cursor: 'pointer',
                          fontFamily: "'Quicksand',sans-serif" }}>
                 Cream instead
               </button>
@@ -8768,7 +8768,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onChange={e => setPenStyle(ps => ({ ...ps, autoShape: e.target.checked }))}
             style={{ width: 15, height: 15, accentColor: '#2C4433', cursor: 'pointer', flexShrink: 0 }} />
           <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
-            <span style={{ fontSize: 11, fontWeight: 800, color: '#1a1a1a' }}>Auto-correct shape</span>
+            <span style={{ fontSize: 11, fontWeight: 800, color: INK }}>Auto-correct shape</span>
             <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.35 }}>
               Tidies a rim border into a true circle, and a near-straight run into a straight one.
             </span>
@@ -8793,7 +8793,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <button key={dir} onClick={() => turnCameraRef.current?.(dir * Math.PI / 3)}
               title={dir < 0 ? 'Turn left' : 'Turn right'}
               style={{ width: 34, height: 30, borderRadius: 8, border: '1.5px solid #999999',
-                       background: '#fff', color: '#1a1a1a', fontSize: 15, cursor: 'pointer',
+                       background: '#fff', color: INK, fontSize: 15, cursor: 'pointer',
                        fontFamily: "'Quicksand',sans-serif", lineHeight: 1 }}>
               {glyph}
             </button>
@@ -8817,7 +8817,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
           <button onClick={removeStroke} disabled={!design.piping.length}
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999', background: '#fff', fontWeight: 700, fontSize: 12,
-              color: design.piping.length ? '#1a1a1a' : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
+              color: design.piping.length ? INK : '#ccc', cursor: design.piping.length ? 'pointer' : 'not-allowed' }}>
             ↶ Undo
           </button>
           <button onClick={clearPiping} disabled={!design.piping.length}
@@ -8859,7 +8859,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {[['On the board', 'board'], ['On top', 'top']].map(([label, z]) => (
               <button key={z} onClick={() => { if (nb.zone !== z) setBlocksZone(z); }}
                 style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                  border: '1.5px solid #999999', background: nb.zone === z ? '#1a1a1a' : '#fff', color: nb.zone === z ? '#fff' : '#1a1a1a' }}>
+                  border: '1.5px solid #999999', background: nb.zone === z ? INK : '#fff', color: nb.zone === z ? '#fff' : INK }}>
                 {label}
               </button>
             ))}
@@ -8893,7 +8893,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* The way back from an arrangement gone wrong — without retyping the name. */}
           <button onClick={realignBlocks}
             style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
-              background: '#fff', fontWeight: 700, fontSize: 12, color: '#1a1a1a', cursor: 'pointer' }}>
+              background: '#fff', fontWeight: 700, fontSize: 12, color: INK, cursor: 'pointer' }}>
             Line them up
           </button>
           <button onClick={removeNameBlocks}
@@ -8941,8 +8941,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {items.map(it => (
             <button key={it.key} onClick={() => onPick(it)}
               style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                border: '1.5px solid #999999', background: isOn(it) ? '#1a1a1a' : '#fff',
-                color: isOn(it) ? '#fff' : '#1a1a1a' }}>
+                border: '1.5px solid #999999', background: isOn(it) ? INK : '#fff',
+                color: isOn(it) ? '#fff' : INK }}>
               {it.label}
             </button>
           ))}
@@ -9154,7 +9154,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {[['On top', !!g, toggleTopGrass], ['On the board', !!bg, toggleBoardGrass]].map(([label, on, fn]) => (
               <button key={label} onClick={fn}
                 style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                  border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
+                  border: '1.5px solid #999999', background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
                 {label}
               </button>
             ))}
@@ -9175,7 +9175,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <button key={label}
                     onClick={() => { if (!on) updateBoardGrass({ patches: wantPatches ? [{ u: 0, v: 0.86, r: GRASS_PATCH_R }] : null }); }}
                     style={{ flex: 1, padding: '6px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                      border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
+                      border: '1.5px solid #999999', background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
                     {label}
                   </button>
                 );
@@ -9197,7 +9197,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ))}
                 <button onClick={() => addGrassPatch(true)}
                   style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
-                    border: '1.5px solid #1a1a1a', background: '#1a1a1a', color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+                    border: `1.5px solid ${INK}`, background: INK, color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
                   + Add clump
                 </button>
               </div>
@@ -9222,7 +9222,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {design.tiers.map((_, ti) => (
                 <button key={ti} onClick={() => moveGrassToTier(ti)}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                    border: '1.5px solid #999999', background: ti === i ? '#1a1a1a' : '#fff', color: ti === i ? '#fff' : '#1a1a1a' }}>
+                    border: '1.5px solid #999999', background: ti === i ? INK : '#fff', color: ti === i ? '#fff' : INK }}>
                   {ti + 1}
                 </button>
               ))}
@@ -9250,7 +9250,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               return (
                 <button key={label} onClick={() => { if (!on) updateGrass(i, patch); }}
                   style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
-                    border: '1.5px solid #999999', background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a' }}>
+                    border: '1.5px solid #999999', background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
                   {label}
                 </button>
               );
@@ -9275,7 +9275,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ))}
               <button onClick={() => addGrassPatch(false)}
                 style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
-                  border: '1.5px solid #1a1a1a', background: '#1a1a1a', color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+                  border: `1.5px solid ${INK}`, background: INK, color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
                 + Add clump
               </button>
             </div>
@@ -9436,7 +9436,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ color: '#9BB5A2', marginBottom: 16, display: 'flex', justifyContent: 'center' }}>
             <LockIcon />
           </div>
-          <div style={{ fontSize: 22, fontWeight: 800, color: '#1a1a1a', marginBottom: 8 }}>
+          <div style={{ fontSize: 22, fontWeight: 800, color: INK, marginBottom: 8 }}>
             {LAPSED_GATE_COPY[lapsedGateState(bakerData)].title}
           </div>
           <div style={{ fontSize: 14, color: '#6B7280', lineHeight: 1.6, marginBottom: 28 }}>
@@ -9668,7 +9668,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               display: 'flex', alignItems: 'center', gap: 8, padding: '6px 14px', borderRadius: 999,
               border: 'none', cursor: 'pointer', background: 'rgba(255,255,255,0.92)',
               boxShadow: '0 4px 18px rgba(0,0,0,0.12)', fontFamily: "'Quicksand',sans-serif",
-              fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>
+              fontSize: 13, fontWeight: 700, color: INK }}>
             <span style={{ width: 8, height: 8, borderRadius: '50%', background: codesign.connected ? '#2ecc71' : '#f1c40f' }} />
             Live · {codesign.participants.length} here
           </button>
@@ -10148,13 +10148,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 aria-expanded={tmplFiltersOpen}
                 aria-label={tmplFiltersOpen ? 'Hide filters' : 'Show filters'}
                 style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0, cursor: 'pointer',
-                         padding: '6px 9px', borderRadius: 8, background: tmplFiltersOpen ? '#1a1a1a' : '#fff',
-                         border: `1.5px solid ${tmplFiltersOpen ? '#1a1a1a' : '#999999'}` }}
+                         padding: '6px 9px', borderRadius: 8, background: tmplFiltersOpen ? INK : '#fff',
+                         border: `1.5px solid ${tmplFiltersOpen ? INK : '#999999'}` }}
               >
                 <FunnelIcon active={!tmplFiltersOpen && tmplActiveFilters > 0} light={tmplFiltersOpen} />
                 {tmplActiveFilters > 0 && (
                   <span style={{ fontSize: 9, fontWeight: 800, fontFamily: "'Quicksand', sans-serif",
-                                 color: tmplFiltersOpen ? '#fff' : '#1a1a1a' }}>{tmplActiveFilters}</span>
+                                 color: tmplFiltersOpen ? '#fff' : INK }}>{tmplActiveFilters}</span>
                 )}
               </button>
             </div>
@@ -10175,7 +10175,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     setTemplateFilters({}); setTmplSearch(''); setFilterWeight(''); setFilterAge('');
                     setDraftFilters({});    setDraftWeight(''); setDraftAge('');
                   }}
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: '#1a1a1a', fontWeight: 700, fontFamily: "'Quicksand', sans-serif", padding: 0 }}>
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 10, color: INK, fontWeight: 700, fontFamily: "'Quicksand', sans-serif", padding: 0 }}>
                   clear
                 </button>
               </div>
@@ -10230,7 +10230,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   value={draftAge === '' ? null : Number(draftAge)}
                   min={0} max={AGE_FILTER_MAX} step={1}
                   placeholder="any age"
-                  accent="#1a1a1a"
+                  accent={INK}
                   fmt={(v) => (v >= AGE_FILTER_MAX ? `${AGE_FILTER_MAX}+` : `${v} yr${v === 1 ? '' : 's'}`)}
                   onChange={(v) => setDraftAge(String(v))}
                   onClear={() => setDraftAge('')}
@@ -10593,7 +10593,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {ids.length === 0 ? 'Tap to select' : ids.length === 1 ? '1 selected — tap more' : `${ids.length} selected`}
                 </span>
                 {ids.length > 1 && !allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }}
+                  <button style={{ ...s.groupBarBtn, color: INK, borderColor: '#999999' }}
                     onClick={() => {
                       // Group, then open the new group's card so size/ungroup/remove are right there.
                       const gid = groupStickers(ids);
@@ -10606,7 +10606,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </button>
                 )}
                 {ids.length > 1 && allGrouped && (
-                  <button style={{ ...s.groupBarBtn, color: '#1a1a1a', borderColor: '#999999' }}
+                  <button style={{ ...s.groupBarBtn, color: INK, borderColor: '#999999' }}
                     onClick={() => {
                       const gid = design.stickers.find(x => x.id === ids[0])?.groupId;
                       if (gid) ungroupStickers(gid);
@@ -10616,7 +10616,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </button>
                 )}
                 {ids.length > 1 && (
-                  <button style={{ ...s.groupBarBtn, color: '#e53935', borderColor: '#fcc' }}
+                  <button style={{ ...s.groupBarBtn, color: DANGER, borderColor: '#fcc' }}
                     onClick={handleDelete}>
                     Delete all
                   </button>
@@ -11020,7 +11020,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             ? <img src={card.thumb} alt={card.name} width={26} height={26} decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                             : <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>{card.glyph ?? card.name?.[0]?.toUpperCase() ?? '•'}</span>}
                         </div>
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: INK, flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
                         {foldMark(expanded)}
                       </div>
                       {expanded && (
@@ -11064,7 +11064,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                         <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>T</span>
                       </div>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: INK, flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
                       {foldMark(expanded)}
                     </div>
                     {expanded && (
@@ -11104,7 +11104,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ width: 26, height: 26, borderRadius: 6, overflow: 'hidden', border: '1.5px solid #999999', background: '#fff', flexShrink: 0 }}>
                       {thumbSrc(card) && <img src={thumbSrc(card)} alt={card.name} width={26} height={26} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
-                    <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
+                    <span style={{ fontSize: 10.5, fontWeight: 700, color: INK, flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
                     {foldMark(expanded)}
                   </div>
                   {expanded && (
@@ -11284,7 +11284,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           <input type="checkbox" checked={p.dripFlood ?? false}
                             title="Flood the whole tier top with chocolate"
                             onChange={e => handleDripFloodChange(tierIndex, zone, e.target.checked)}
-                            style={{ accentColor: '#1a1a1a', width: 22, height: 22, margin: 0, cursor: 'pointer' }} />
+                            style={{ accentColor: INK, width: 22, height: 22, margin: 0, cursor: 'pointer' }} />
                           <span style={cap}>Flood top</span>
                         </div>
                       )}
@@ -11356,8 +11356,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             <button
                               onPointerDown={e => { e.stopPropagation(); handlePipingBoardFlipChange(tierIndex); }}
                               style={{ ...s.ringRowBtn, width: 'auto', padding: '0 11px', height: 26,
-                                       border: `1.5px solid ${active ? '#1a1a1a' : '#999999'}`,
-                                       background: active ? '#1a1a1a' : '#fff', color: active ? '#fff' : '#1a1a1a', fontWeight: 700 }}>
+                                       border: `1.5px solid ${active ? INK : '#999999'}`,
+                                       background: active ? INK : '#fff', color: active ? '#fff' : INK, fontWeight: 700 }}>
                               {active ? '↕ On' : '↕ Off'}
                             </button>
                             <span style={cap}>Flip</span>
@@ -11440,7 +11440,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             style={{ zIndex: 4000, background: '#fff', borderRadius: 16, padding: PAD,
                                      boxShadow: '0 12px 44px rgba(0,0,0,0.24)', border: '1px solid #eadde2' }}>
                             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: '#1a1a1a', textTransform: 'uppercase' }}>{label}</span>
+                              <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.06em', color: INK, textTransform: 'uppercase' }}>{label}</span>
                               <button style={s.iconBtn} onClick={() => setPipingColorKey(null)}>✕</button>
                             </div>
                             <ColorWheel
@@ -11472,7 +11472,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           return (
                             <button key={mode}
                               onPointerDown={e => { e.stopPropagation(); handlePipingArrangementChange(tierIndex, zone, mode); }}
-                              style={{ flex: 1, fontSize: 11, padding: '5px 0', borderRadius: 6, border: `1.5px solid ${on ? '#1a1a1a' : '#999999'}`, background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#1a1a1a', cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textTransform: 'capitalize' }}>
+                              style={{ flex: 1, fontSize: 11, padding: '5px 0', borderRadius: 6, border: `1.5px solid ${on ? INK : '#999999'}`, background: on ? INK : '#fff', color: on ? '#fff' : INK, cursor: 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textTransform: 'capitalize' }}>
                               {mode}
                             </button>
                           );
@@ -11489,7 +11489,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           <button
                             disabled={zoneInstances.length >= maxInstances}
                             onPointerDown={e => { e.stopPropagation(); if (zoneInstances.length < maxInstances) handlePipingAddInstance(tierIndex, zone); }}
-                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: '1.5px solid #1a1a1a', background: zoneInstances.length >= maxInstances ? '#f0e0e5' : '#1a1a1a', color: zoneInstances.length >= maxInstances ? '#c9a9b3' : '#fff', cursor: zoneInstances.length >= maxInstances ? 'default' : 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", flexShrink: 0 }}>
+                            style={{ fontSize: 11, padding: '3px 10px', borderRadius: 6, border: `1.5px solid ${INK}`, background: zoneInstances.length >= maxInstances ? '#f0e0e5' : INK, color: zoneInstances.length >= maxInstances ? '#c9a9b3' : '#fff', cursor: zoneInstances.length >= maxInstances ? 'default' : 'pointer', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", flexShrink: 0 }}>
                             + Duplicate
                           </button>
                         </div>
@@ -11514,9 +11514,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
                               >
                                 <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-                                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${rotPct}%`, background: '#1a1a1a', borderRadius: 2 }} />
+                                  <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${rotPct}%`, background: INK, borderRadius: 2 }} />
                                 </div>
-                                <div style={{ position: 'absolute', left: `${rotPct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: '#1a1a1a', pointerEvents: 'none' }} />
+                                <div style={{ position: 'absolute', left: `${rotPct}%`, transform: 'translateX(-50%)', width: 14, height: 14, borderRadius: '50%', background: INK, pointerEvents: 'none' }} />
                               </div>
                               <span style={{ fontSize: 10, fontWeight: 700, color: '#444', minWidth: 30, textAlign: 'right', fontFamily: "'Quicksand',sans-serif" }}>{angleDeg}°</span>
                               <button
@@ -11588,7 +11588,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       ))}
                     </svg>
                     <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#1a1a1a' }}>I'll pipe it myself</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>I'll pipe it myself</span>
                       <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
                         Draw anywhere on the cake and this shape repeats along your line.
                       </span>
@@ -11928,7 +11928,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             )}
 
             {saveMsg && (
-              <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : '#e53935', marginTop: 8 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : DANGER, marginTop: 8 }}>
                 {saveMsg.text}
               </div>
             )}
@@ -12437,7 +12437,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           width: 56, height: 56,
           borderRadius: 12,
           background: 'transparent',
-          border: dragGhost.canDrop ? '2.5px solid #22c55e' : '2px solid #1a1a1a',
+          border: dragGhost.canDrop ? '2.5px solid #22c55e' : `2px solid ${INK}`,
           overflow: 'hidden',
           pointerEvents: 'none',
           zIndex: 9999,
@@ -12488,8 +12488,8 @@ const MENU_TONES = {
   light: {
     surface: { background: '#fff', border: '1px solid #999999',
                boxShadow: '0 4px 20px rgba(107,45,66,0.14)' },
-    section: '#888', item: '#1a1a1a', itemWeight: 500,
-    name: '#1a1a1a', email: '#666', divider: '#999999',
+    section: '#888', item: INK, itemWeight: 500,
+    name: INK, email: '#666', divider: '#999999',
   },
   rail: {
     surface: { background: 'linear-gradient(168deg, #1b1b1f, #0e0e11 70%)',
@@ -12821,10 +12821,10 @@ const s = {
     flex: 1, padding: '7px 4px', borderRadius: 8, border: '1.5px solid #d8d8d8', background: '#fff',
     cursor: 'pointer', fontFamily: "'Quicksand',sans-serif", fontSize: 12, fontWeight: 700, color: '#666',
   },
-  treatBtnOn: { border: '1.5px solid #1a1a1a', background: '#1a1a1a', color: '#fff' },
+  treatBtnOn: { border: `1.5px solid ${INK}`, background: INK, color: '#fff' },
   gradientLabel: {
     fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
-    color: '#1a1a1a', textTransform: 'uppercase',
+    color: INK, textTransform: 'uppercase',
   },
   gradientStops: {
     display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', justifyContent: 'center',
@@ -12849,7 +12849,7 @@ const s = {
     borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#444',
     cursor: 'pointer', textTransform: 'uppercase',
   },
-  gradientModeOn: { background: '#1a1a1a', color: '#fff', borderColor: '#1a1a1a' },
+  gradientModeOn: { background: INK, color: '#fff', borderColor: INK },
   elementCard: {
     display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6,
     background: '#fff', border: '1.5px solid #999999', borderRadius: 12,
@@ -12889,7 +12889,7 @@ const s = {
     borderRadius: 10, background: '#FAFAF8', display: 'block',
   },
   templatePreviewCaption: {
-    fontSize: 12, fontWeight: 700, color: '#1a1a1a',
+    fontSize: 12, fontWeight: 700, color: INK,
     textAlign: 'center', padding: '8px 4px 2px',
   },
   templatePreviewBackdrop: {
@@ -12925,7 +12925,7 @@ const s = {
     padding: '4px 8px 0',
   },
   templateCardName: {
-    fontSize: 11, fontWeight: 700, color: '#1a1a1a',
+    fontSize: 11, fontWeight: 700, color: INK,
   },
   templateBadge: {
     fontSize: 9, color: '#333', fontWeight: 700,
@@ -13116,7 +13116,7 @@ const s = {
   },
   orderBtn: {
     width:'100%', padding:'13px',
-    background:'linear-gradient(135deg,#1a1a1a,#333333)',
+    background:`linear-gradient(135deg,${INK},#333333)`,
     color:'#fff', border:'none', borderRadius:12,
     fontSize:14, fontWeight:700, cursor:'pointer', letterSpacing:0.5,
     boxShadow:'0 4px 16px rgba(0,0,0,0.2)',
@@ -13146,8 +13146,8 @@ const s = {
   },
   zoneToggleOn: {
     background: 'rgba(26,26,26,0.12)',
-    border: '1.5px solid #1a1a1a',
-    color: '#1a1a1a',
+    border: `1.5px solid ${INK}`,
+    color: INK,
   },
 
   // Narrow vertical strip docked to the right — same on desktop and mobile, so it never
@@ -13215,7 +13215,7 @@ const s = {
      something that no longer exists. `ringNudge` and `ringNudgeVal` were deleted outright. */
   ringRowBtn: {
     width: 26, height: 26, borderRadius: 7, border: '1.5px solid #999999', background: '#fff',
-    cursor: 'pointer', fontSize: 14, color: '#1a1a1a', flexShrink: 0,
+    cursor: 'pointer', fontSize: 14, color: INK, flexShrink: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     fontFamily: "'Quicksand',sans-serif", padding: 0,
   },
@@ -13241,7 +13241,7 @@ const s = {
   },
   // Which tile the controls below are editing. Bordered rather than tinted: the tile is mostly a
   // photograph of a cake, and a wash over it would change the colour being judged.
-  previewTileOn: { border: '1.5px solid #1a1a1a', background: 'rgba(0,0,0,0.04)' },
+  previewTileOn: { border: `1.5px solid ${INK}`, background: 'rgba(0,0,0,0.04)' },
   editPopup: {
     position: 'absolute',
     right: 10, top: 12,
@@ -13396,7 +13396,7 @@ const s = {
   // slider, and `gradientModeOn`, which is the control sitting inside the very next tab. The brand
   // green belongs to the storefront and the marketing site; using it here made the tab strip the one
   // green thing in a black chrome.
-  editTabOn: { background: '#1a1a1a', color: '#fff' },
+  editTabOn: { background: INK, color: '#fff' },
   sheetBody: {
     flex: '1 1 auto', minHeight: 0, width: '100%', overflowY: 'auto',
     display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',
