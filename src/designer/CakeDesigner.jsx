@@ -6666,7 +6666,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * Declared HERE, immediately below stackSingleCard, because it reads it. Three headers drew this
    * span by hand; one of them would have been missed. */
-  const foldMark = (expanded) => (stackSingleCard ? null : (
+  /* ⚠️ ONE SLOT AT THE END OF THE HEADER, holding whichever control that state needs. Sandeep:
+   * "can we bring the 'Done' button complete right side on the line where 'elephant' header name is
+   * present. we are using a lot of space about just to have 'Done' button. previously this was the
+   * place where down arrow was present. since that is hidden how, we will use that place pls. every
+   * small palce is important."
+   *
+   * He is right, and it is the consequence of the last change rather than a new idea: hiding the ▼
+   * in single-card mode left this slot EMPTY while a whole sticky strip (~44px of a 844px phone)
+   * existed above the card to hold one button. The two controls are never on screen together — ▼
+   * folds a card back into the list, Done dismisses the only card there is — so they share the slot.
+   *
+   * ⚠️ stopPropagation IS LOAD-BEARING. The header is a <div role="button"> with its own onClick
+   * (expanded ? clearAllSelections() : select…). A button nested inside it bubbles, so BOTH handlers
+   * would run. Today they happen to agree — both end at clearAllSelections — so it would look
+   * correct while doing the work twice, and would break silently the moment either one changes.
+   *
+   * ⚠️ It still clears expandedPipingId as well as the selection: clearAllSelections() is
+   * selectExclusive(null) and does NOT touch a piping card's expansion, so a Done wired to the
+   * selection alone would dismiss a decoration and do nothing at all for piping. */
+  const foldMark = (expanded) => (stackSingleCard ? (
+    <button style={{ ...s.doneBtn, minHeight: 28, padding: '0 14px', fontSize: 12 }}
+            onClick={e => { e.stopPropagation(); clearAllSelections(); setExpandedPipingId(null); }}>Done</button>
+  ) : (
     <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0,
                    transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
   ));
@@ -10831,31 +10853,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {/* WebKit scrollbar can't be hidden via inline style — inject the rule once. */}
               <style>{`.piping-popup-scroll::-webkit-scrollbar{width:0;height:0;display:none}`}</style>
 
-              {/* ⚠️ THE TICK CLEARS TWO THINGS, and one of them is why "it isnot closing".
-                  clearAllSelections() is selectExclusive(null) — it clears selectedEl and the sticker
-                  set, and does NOT touch expandedPipingId. A piping card's expansion is tracked
-                  separately, so a tick wired to the selection alone would dismiss a decoration and do
-                  nothing whatsoever for piping. Every other dismissal in this file already pairs the
-                  two (focusEditor, the age and writing handlers); this is that pattern, not a new one.
+              {/* ⚠️ THE DOCKED HEADER IS GONE — Done moved INTO the card header's end slot (see
+                  foldMark). It was a sticky strip whose entire job was to hold one button, ~44px of
+                  an 844px phone, sitting above a card whose own header had an empty slot at the end
+                  since the ▼ was hidden there. Sandeep: "every small palce is important."
 
-                  Docked only: on the right-hand list there is nothing to finish — you are scanning
-                  what is on the cake, and the handle closes it. */}
-              {stackSingleCard && (
-                <div style={s.dockedSheetHeader}>
-                  <span style={s.dockedSheetGrip} aria-hidden="true" />
-                  {/* ⚠️ A WORD, NOT A TICK, and filled rather than faint. Sandeep, on the tick:
-                      "tick mark is not obvious here. should be a better way for the normal user to
-                      say a way for Done". He is right, and CLAUDE.md rule 7 is the rule it broke —
-                      "if it does something, it must look like it does something", JUDGED AT REST on
-                      a phone, where there is no hover to rescue a faint control.
-                      ✕ survives as a bare glyph because "close" is universal. ✓ meaning "I have
-                      finished with this element, give me the menu back" is not — and a pale grey
-                      circle reads as a status badge, not a button. #1a1a1a is what "active" already
-                      means across this app (the toolbar's pressed button, editTabOn). */}
-                  <button style={s.doneBtn}
-                          onClick={() => { clearAllSelections(); setExpandedPipingId(null); }}>Done</button>
-                </div>
-              )}
+                  Its decorative grip went with it. That span was aria-hidden, absolutely positioned
+                  and carried NO handler — the sheet is not dragged by it — so nothing functional was
+                  lost, but it was the one "this is a sheet" cue at the top and it is worth knowing it
+                  is no longer drawn.
+
+                  ⚠️ A WORD, NOT A TICK, still: "tick mark is not obvious here. should be a better way
+                  for the normal user to say a way for Done". That decision moves with the button.
+                  ⚠️ And it still clears BOTH the selection and expandedPipingId — clearAllSelections
+                  is selectExclusive(null) and does not touch a piping card's expansion, so a Done
+                  wired to the selection alone would do nothing whatsoever for piping. */}
 
               {/* Decoration cards (sticker / topper / text) — expanded one pinned to the top
                   of this group. Clicking the expanded card collapses it; clicking a collapsed
@@ -13046,15 +13058,6 @@ const s = {
   // Which tile the controls below are editing. Bordered rather than tinted: the tile is mostly a
   // photograph of a cake, and a wash over it would change the colour being judged.
   previewTileOn: { border: '1.5px solid #1a1a1a', background: 'rgba(0,0,0,0.04)' },
-  dockedSheetHeader: {
-    position: 'sticky', top: 0, zIndex: 1, flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'flex-end',
-    padding: '2px 2px 8px', background: 'rgba(255,255,255,0.96)',
-  },
-  dockedSheetGrip: {
-    width: 36, height: 4, borderRadius: 2, background: '#ddd',
-    position: 'absolute', left: '50%', transform: 'translateX(-50%)', top: 2,
-  },
   editPopup: {
     position: 'absolute',
     right: 10, top: 12,
