@@ -7455,15 +7455,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // returned empty (CORS taint, greyscale image) there are no swatches either, so keep the wheel rather
     // than leave the element with no colour control at all. GLB tint / opaque / saturated keep the wheel.
     const hueRegionsReplacesWheel = !!hueRegionsCfg && hueRegions.length > 0;
-    if ((c.color || c.gradient) && !hueRegionsReplacesWheel) {
-      groups.push({ key: 'color', divider: true, panelLabel: 'Colour', controls: [
+
+    /* ⚠️ COLOUR AND BORDER RIDE THE SIZE ROW ON A PHOTO FRAME. Sandeep: "photo frame control - pls
+     * make border, size and spin controls in one line", then "color control also in same line".
+     *
+     * They are COMPUTED here and further down (each inside its own `el.type === 'sticker'` block,
+     * where `inst` is in scope) but RENDERED in the Size row, which is pushed later. So they are
+     * carried in these two `let`s — declared above BOTH blocks, never read before they are filled.
+     * Reaching down for them from the Size row instead would be the temporal dead zone, which this
+     * file has now paid for four times (selectedEl, stackSingleCard, templates, isSide).
+     *
+     * ⚠️ MERGED ONLY WHEN THERE IS A BORDER TO MERGE — i.e. a photo frame. Every other card keeps
+     * its own Colour row, because for them Colour is not a companion to Size, it is the control.
+     * `mergeIntoSizeRow` is decided in the photo block and read at the Size push. */
+    let colourCtls = [];
+    let borderCtls = [];
+    let mergeIntoSizeRow = false;
+
+    const colourControl = (
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !hasActiveGroup) ? '2.5px solid #6c47ff' : 'none' }}
           onClick={() => { const opening = !(colorOpen && !hasActiveGroup); closeAllPopups(); if (opening) setColorOpen(true); }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>
-      ] });
-    }
+    );
+    const hasColourControl = (c.color || c.gradient) && !hueRegionsReplacesWheel;
+    if (hasColourControl) colourCtls = [colourControl];
+
+    /* ⚠️ DEFERRED, not pushed here. On a photo frame this swatch joins the Size row instead (see
+       mergeIntoSizeRow below); on every other card it is still its own row, emitted further down
+       once the photo block has had its say. Pushing it here as well would give a frame TWO colour
+       controls — the bug the single flag prevents. */
 
     // GLB Recompose — per-group colour pickers. Self-explaining: each editable part-group gets a
     // named, filled swatch ("Shoes", "Eyes", …) so the customer sees exactly which parts recolour.
@@ -7620,12 +7642,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         groups.push({ key: 'photo', divider: true, panelLabel: 'Photo', controls });
         // Border width — procedural ring around the photo (0 = no border). Hidden when the frame uses
         // a decorative overlay (that art IS the border). Colour comes from the shared ColorWheel group.
+        /* ⚠️ Border no longer takes a row of its own — it rides the Size row with Colour and Spin.
+           Still hidden when the frame uses a decorative overlay: that art IS the border. */
         if (!inst.photoOverlay) {
           const bw = inst.borderWidth ?? 0.06;
-          groups.push({ key: 'border', divider: true, panelLabel: 'Border', controls: [
+          /* ⚠️ CAPTIONED, BUT WITHOUT THE 10px INDENT. Four labelled controls measured ~332px in a
+             ~340px row and the last Spin arrow wrapped; dropping the captions fixed the width and
+             produced TWO ANONYMOUS DIALS — a baker cannot tell border from size, which is worse than
+             the wrap. So the width comes out of SPACING, not meaning: each caption loses its
+             marginLeft:10 (~30px across the row) and the row's own gap:6 does the separating. */
+          borderCtls = [
+            <span key="bw-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Border</span>,
             <SizeDial key="bw-dial" size={bw} min={0} max={0.4} step={0.02} onChange={v => updateSticker(el.id, { borderWidth: v })} />,
-          ] });
+          ];
         }
+        // A photo frame's Colour IS the border colour — a companion to Size, not a control of its own.
+        mergeIntoSizeRow = true;
       }
 
       // Editable text placeholders — one field per slot the artwork declares. Gated on the instance
@@ -7704,7 +7736,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         sticker?.zone === 'top_surface' ? (() => {
           const rot = sticker?.rotation ?? 0;
           return [
-            <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, marginLeft: 10 }}>Spin</span>,
+            <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, ...(mergeIntoSizeRow ? {} : { marginLeft: 10 }) }}>Spin</span>,
             <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
             <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
           ];
@@ -7712,17 +7744,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         : isSide ? (() => {
           const ro = sticker?.radialOffset ?? 0;
           return [
-            <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, marginLeft: 10 }}>Depth</span>,
+            <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, ...(mergeIntoSizeRow ? {} : { marginLeft: 10 }) }}>Depth</span>,
             <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
             <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
           ];
         })()
         : [];
-      groups.push({ key: 'sc', divider: true, panelLabel: 'Size', controls: [
+      /* ⚠️ On a photo frame this one row carries Colour · Border · Size · Spin. The panelLabel names
+         the FIRST control present, and the rest carry inline captions — a row labelled "Size" that
+         opens with a colour swatch would be a lying label. */
+      const sizeRowLead = mergeIntoSizeRow && colourCtls.length ? 'Colour'
+                        : mergeIntoSizeRow && borderCtls.length ? 'Border'
+                        : 'Size';
+      /* On the merged row the panelLabel says "Colour", so Size needs its own caption — see the
+         note on borderCtls for why these are captioned but not indented. */
+      const sizeOwnLabel = sizeRowLead === 'Size' ? [] : [
+        <span key="sc-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Size</span>,
+      ];
+      groups.push({ key: 'sc', divider: true, panelLabel: sizeRowLead, controls: [
+        ...(mergeIntoSizeRow ? colourCtls : []),
+        ...(mergeIntoSizeRow ? borderCtls : []),
+        ...sizeOwnLabel,
         <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
           onChange={v => resizeSticker(sticker, v)} />,
         ...companionCtls,
       ] });
+
       /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
        * There was a `Height` ↓/↑ pair here for a top-surface GLB (added with the faux balls,
        * d60aeb63), and it is gone because it could only ever do the one thing the cake does not do:
@@ -7852,6 +7899,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
 
     // Trailing actions (duplicate / remove / done) — no dividers between them in
+    /* ⚠️ THE STANDALONE COLOUR ROW, and it belongs HERE — not in the resize branch, where I first
+     * put it. Inside `if (c.resize && el.type === 'sticker')` it never ran for a card that is not
+     * resizable, so a colourable non-resizable element rendered NO colour control at all. Worse than
+     * the layout it was meant to fix, and invisible to every gate: the swatch simply was not there.
+     * This point is reached by every card, and the only condition left is the real one — did the
+     * photo frame already take it into the Size row. */
+    if (hasColourControl && !mergeIntoSizeRow) {
+      groups.unshift({ key: 'color', divider: true, panelLabel: 'Colour', controls: colourCtls });
+    }
+
     // the strip; rendered as a footer row in the panel.
     const actions = [];
     if (c.duplicate && el.type === 'text') {

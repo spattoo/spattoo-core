@@ -115,6 +115,29 @@ CAT_ELEMENTS.push({
  * file already names for the catalogue, the GLB, the edge seat and the two-button footer: a state
  * that cannot be reached hides every bug in it. `number_topper` is the procedural key the row uses
  * (see addAgeFromRow in CakeDesigner). */
+/* ⚠️ A PHOTO FRAME (`photoMask`), so the Photo / Border card exists in this harness at all.
+ * Nothing here carried one, so "Select image", the Border dial and the whole photo-frame branch of
+ * buildToolbar could only ever be looked at against a real database. Fifth state this file has had
+ * to be taught (catalogue, GLB, edge seat, two-button footer, number topper) — a state that cannot
+ * be reached hides every bug in it.
+ *
+ * `photoMask` is what routes the instance down the photo branch; no overlay, so the procedural
+ * BORDER control renders (an overlay IS the border, and hides it). */
+CAT_ELEMENTS.push({
+  id: 'e13', name: 'Circle photo frame', description: 'a photo set into a round frame',
+  element_type_id: 'et-image', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e9e2ef'), thumbnail_url: CAT_THUMB('#e9e2ef'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, duplicate: true },
+  /* ⚠️ `photo.mask` IS A MASK IMAGE URL, not a keyword. frameMaskOf() feeds it straight to
+     loadImage(), and BorderBacking / PhotoBacking take it as maskUrl — so 'circle' produced eight
+     "Could not load circle?cors=1" page errors and a frame with no backing. A data URI keeps the
+     harness self-contained (no network, no CORS): white disc = keep, transparent = cut away. */
+  placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand',
+                      photo: { mask: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="#fff"/></svg>')}` } },
+  default_color: '#1a1a1a', sort_order: 13,
+});
+
 CAT_ELEMENTS.push({
   id: 'e12', name: 'Number topper', description: 'a number cut from card',
   element_type_id: 'et-topper', category_id: 'cat-1',
