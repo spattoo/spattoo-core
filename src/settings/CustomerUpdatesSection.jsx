@@ -6,7 +6,19 @@ import { INK } from '../shared/tokens.js';
 // ── Settings → Customer updates ──────────────────────────────────────────────────────────────────
 //
 // What a baker's customers are told, on which channel, and what it costs. Email and push are free and
-// always on; SMS and WhatsApp are bought in packs and chosen per message.
+// always on; WhatsApp is bought in packs and chosen per message.
+//
+// ⚠️ WHATSAPP, NOT "SMS AND WHATSAPP" — this screen said both until 2026-09-21, and SMS was never
+// true of a customer. The ledger's `channel` column allows 'sms', `message_packs` is priced on the
+// SMS rate, and the API's own comments say "SMS/WhatsApp" throughout — three reasons to write it
+// here, and all three are about our plumbing rather than about what a customer can receive. Checked
+// against the database: `notification_channels` holds NO sms row for any customer type. The only
+// three exist for trial_ending, trial_ended and subscription_renewing, they are baker-facing, and
+// all three are OFF pending DLT template approval.
+//
+// It matters more here than anywhere else it was wrong: this is the screen where a baker decides
+// whether to BUY, and the channels are half of what they are deciding about. When SMS goes live for
+// customers, this copy is the first thing to change — deliberately.
 //
 // ⚠️ THE PREVIEW IS THE POINT OF THIS SCREEN, not decoration. Charging a baker for a message their
 // customer sees branded "Spattoo" is only fair if they saw that before they paid
@@ -133,7 +145,7 @@ export function CustomerUpdatesSection({ apiClient, primaryColor = '#2C4433' }) 
           the whole screen rests on would go with it. */}
       <p style={s.lede}><strong>Email updates are always free.</strong></p>
       <Disclosure label="How are these credits used?" accent={primaryColor}>
-        SMS and WhatsApp are optional — Spattoo sends them to your customers for you, and they see{' '}
+        WhatsApp updates are optional — Spattoo sends them to your customers for you, and they see{' '}
         <strong>{sender}</strong> as the sender with your bakery&rsquo;s name in the message. One
         message spends one credit. Add your customer&rsquo;s email when you take an order and their
         updates cost you nothing.
