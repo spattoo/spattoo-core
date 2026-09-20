@@ -306,6 +306,24 @@ CAT_ELEMENTS.push({
   default_color: '#D94F6E', sort_order: 9,
 });
 
+/* ⚠️ A LETTER-BLOCKS ROW — the last card this harness could not open. Routed by `letter_blocks` as
+ * the VALUE of `procedural`, like the dust, grass and pen rows, and driven through
+ * __tapElementById because handleElementDrop never consults PROCEDURAL_TOOLS.
+ *
+ * The nested tuning object is deliberately absent: addNameBlocks spreads NAME_BLOCK_DEFAULTS and
+ * then the row's own `letter_blocks` over it, so an empty config is what exercises the shipped
+ * defaults (0.30 cube, 0.035 gap, chamfered corners — fondant is never sharp). It seeds the word
+ * 'NAME' on the board, which is what makes the card's Block size dial mean anything. */
+CAT_ELEMENTS.push({
+  id: 'e23', name: 'Letter blocks', description: 'fondant cubes with a name on them',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f7f5f2'), thumbnail_url: CAT_THUMB('#f7f5f2'), thumb_key: null,
+  allowed_zones: ['top_surface', 'board'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'letter_blocks' },
+  default_color: '#f7f5f2', sort_order: 23,
+});
+
 /* ⚠️ A PIPED-CREAM MESSAGE — the fifth card this harness could not reach, and the acrylic row below
  * is exactly why it looked reachable. `addWritingFromRow` branches on `placement_config.acrylic`:
  * with that block a row becomes `style: 'acrylic'`, and FOUR of the writing card's controls

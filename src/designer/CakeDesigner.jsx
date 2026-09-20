@@ -5865,6 +5865,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * `tier_finish` is handled there too.
      * This is the route a baker actually takes for those rows: Decorations → tap. */
     window.__tapElementById = (id) => { const e = elementById.get(id); if (!e) return false; tapPlaceElement(e); return true; };
+    /* ⚠️ THE TWO STUDIO CARDS HAVE NO CATALOGUE DOOR. `chocolate_garnish` and `card_topper` are
+     * opensStudio entries — tapping the row opens the Garnish Studio or the Topper Composer, and a
+     * PLACED piece (which is what renderGarnishBody / renderTopperBody edit) only exists after that
+     * studio's onSave runs addGarnish/addTopper. So no fixture can reach either card, and without
+     * these their controls could only be reasoned about. Same reason __setPenStyle exists for the
+     * pen's stamp arm: a control that cannot be driven cannot be verified, and that is how the foil
+     * fix came to be written twice.
+     * Both merge over the real defaults, so a caller supplies only what it wants to vary. */
+    /* ⚠️ ADDING IS NOT OPENING, and getting that wrong made both cards look broken when they were
+     * not. isCardSelected falls through to `selectedEl?.id === card.id` for these two, so a piece on
+     * the cake with no SELECTION renders a collapsed card and no controls at all. The studios say so
+     * themselves — "Saving drops the piece straight onto the cake and selects it" — so these mirror
+     * the save path rather than just the add. Same lesson as onFoilSelect and onDustSelect. */
+    window.__addGarnish = (piece = {}) => {
+      const id = crypto.randomUUID();
+      addGarnish({ ...piece, id });
+      setSelectedGarnishId(id);
+      focusEditor('decoration');
+      selectExclusive({ type: 'garnish', id });
+      return id;
+    };
+    window.__addTopper = (piece = {}) => {
+      const id = crypto.randomUUID();
+      addTopper({ ...piece, id });
+      focusEditor('decoration');
+      selectExclusive({ type: 'topper', id });
+      return id;
+    };
     /* ⚠️ THE PEN'S STAMP MODE HAS NO OTHER DOOR. penStyle.stampUrl is set in exactly one place —
      * the "I'll pipe it myself" path off a piping card — so no catalogue row can reach it, and the
      * pen card shows DIFFERENT controls per mode: cream has Thickness + Softness, a stamp has Size
@@ -8456,9 +8484,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             setEditTopper(t);
             setTopperStudio(true);
           }}
-            style={{ width: '100%', padding: '10px 14px', borderRadius: 10, cursor: 'pointer',
-                     border: '1.5px solid #C5D4C8', background: '#fff', color: '#3D5A44',
-                     fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800 }}>
+            /* Another green control, found by sweeping rather than reported: a green border AND
+               green text on the one button that leaves this card for the studio. s.neutralBtn is
+               what a secondary action looks like everywhere else. */
+            style={{ ...s.neutralBtn, width: '100%', padding: '10px 14px', borderRadius: 10, fontSize: 12.5, fontWeight: 800 }}>
             Open in studio
           </button>
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
@@ -8506,10 +8535,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
 
-        <PenSlider label="Size" value={t.scale ?? 1} min={0.4} max={2} step={0.05}
-          onChange={v => updateTopper(t.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
-        <PenSlider label="Turn" value={t.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
-          onChange={v => updateTopper(t.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
+        {/* Turn is the same signed radian value the garnish card carries, and keeps the same degree
+            formatter for the same reason. */}
+        <div style={s.previewRow}>
+          {[
+            { k: 'Size', dial: 'size',   v: t.scale ?? 1, min: 0.4, max: 2, step: 0.05,
+              fmt: v => `${Math.round(v * 100)}%`, set: v => updateTopper(t.id, { scale: v }) },
+            { k: 'Turn', dial: 'offset', v: t.yaw ?? 0,   min: -Math.PI, max: Math.PI, step: 0.05,
+              fmt: v => `${Math.round(v * 180 / Math.PI)}°`, set: v => updateTopper(t.id, { yaw: v }) },
+          ].map(d => (
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
+              fmt={d.fmt} onChange={d.set} dial={d.dial} />
+          ))}
+        </div>
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
           Drag it on the cake to move it round.
@@ -8625,12 +8663,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           />
         </div>
 
-        <PenSlider label="Size" value={g.scale ?? 1} min={0.4} max={2} step={0.05}
-          onChange={v => updateGarnish(g.id, { scale: v })} fmt={v => `${Math.round(v * 100)}%`} />
-        <PenSlider label="Turn" value={g.yaw ?? 0} min={-Math.PI} max={Math.PI} step={0.05}
-          onChange={v => updateGarnish(g.id, { yaw: v })} fmt={v => `${Math.round(v * 180 / Math.PI)}°`} />
-        <PenSlider label="Shine" value={g.gloss ?? 0.45} min={0} max={1} step={0.05}
-          onChange={v => updateGarnish(g.id, { gloss: v })} fmt={v => v.toFixed(2)} />
+        {/* ⚠️ TURN IS RADIANS AND SIGNED, so it is an OffsetDial and it KEEPS its degree formatter.
+            −π…+π about a zero that means "as the studio drew it"; through a dial's default readout
+            it would say "-3.14", which is a number no baker is thinking in. */}
+        <div style={s.previewRow}>
+          {[
+            { k: 'Size',  dial: 'size',   v: g.scale ?? 1,    min: 0.4, max: 2, step: 0.05,
+              fmt: v => `${Math.round(v * 100)}%`, set: v => updateGarnish(g.id, { scale: v }) },
+            { k: 'Turn',  dial: 'offset', v: g.yaw ?? 0,      min: -Math.PI, max: Math.PI, step: 0.05,
+              fmt: v => `${Math.round(v * 180 / Math.PI)}°`, set: v => updateGarnish(g.id, { yaw: v }) },
+            { k: 'Shine', dial: 'size',   v: g.gloss ?? 0.45, min: 0, max: 1, step: 0.05,
+              fmt: v => v.toFixed(2), set: v => updateGarnish(g.id, { gloss: v }) },
+          ].map(d => (
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
+              fmt={d.fmt} onChange={d.set} dial={d.dial} />
+          ))}
+        </div>
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
           {g.zone === 'side' ? 'Drag it round and up the side of the tier.' : 'Drag it on the cake to move it round.'}
@@ -8968,7 +9016,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <input value={nb.text ?? ''} onChange={e => setBlocksText(e.target.value.slice(0, 12))}
             placeholder="EMILY"
             style={{ width: '100%', padding: '8px 10px', fontSize: 14, fontWeight: 700, textTransform: 'uppercase',
-              border: '1.5px solid #999999', borderRadius: 8, fontFamily: "'Quicksand',sans-serif", boxSizing: 'border-box' }} />
+              border: `1.5px solid ${LINE}`, borderRadius: 8, fontFamily: "'Quicksand',sans-serif", boxSizing: 'border-box' }} />
         </div>
 
         <div style={{ marginTop: 8 }}>
@@ -8977,7 +9025,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {[['On the board', 'board'], ['On top', 'top']].map(([label, z]) => (
               <button key={z} onClick={() => { if (nb.zone !== z) setBlocksZone(z); }}
                 style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 12, cursor: 'pointer',
-                  border: '1.5px solid #999999', background: nb.zone === z ? INK : '#fff', color: nb.zone === z ? '#fff' : INK }}>
+                  border: `1.5px solid ${LINE}`, background: nb.zone === z ? INK : SURFACE, color: nb.zone === z ? SURFACE : INK }}>
                 {label}
               </button>
             ))}
@@ -8987,9 +9035,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ marginTop: 8 }}>
           {/* Size re-lays the run: bigger cubes need more room, and leaving them at the old spacing
               would overlap them. A baker who has arranged blocks by hand should set size first. */}
-          <PenSlider label="Block size" value={nb.size ?? NAME_BLOCK_DEFAULTS.size} min={0.16} max={0.5} step={0.01}
-            onChange={v => updateNameBlocks(cur => ({ size: v, blocks: layoutBlocks(cur.text, cur.zone, { ...cur, size: v }) }))}
-            fmt={v => v.toFixed(2)} />
+          {/* One dial, still in the row — a lone control does not need a scroller, but using the same
+              shape as every other card is what stops the next one being hand-rolled again. `fmt`
+              keeps two decimals: 0.16–0.5 at the dial's default one decimal reads "0.2" flat. */}
+          <div style={s.previewRow}>
+            <DialCell label="Block size" value={nb.size ?? NAME_BLOCK_DEFAULTS.size} min={0.16} max={0.5} step={0.01}
+              fmt={v => v.toFixed(2)}
+              onChange={v => updateNameBlocks(cur => ({ size: v, blocks: layoutBlocks(cur.text, cur.zone, { ...cur, size: v }) }))} />
+          </div>
         </div>
 
         {/* ColorWheel, like every other colour on the cake — INVARIANTS #3. The first version of
@@ -9010,8 +9063,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           {/* The way back from an arrangement gone wrong — without retyping the name. */}
           <button onClick={realignBlocks}
-            style={{ flex: 1, padding: '9px 0', borderRadius: 8, border: '1.5px solid #999999',
-              background: '#fff', fontWeight: 700, fontSize: 12, color: INK, cursor: 'pointer' }}>
+            style={{ ...s.neutralBtn, flex: 1, fontSize: 12 }}>
             Line them up
           </button>
           <button onClick={removeNameBlocks}
