@@ -2496,7 +2496,8 @@ function CakeScene({
        * ⚠️ ORBIT IS DELIBERATELY NOT WIDENED. `overDust` below still excludes isFoilTap, so a drag
        * that begins on a shard with the card shut still rotates the cake. Owning the click and
        * suspending rotation are different questions, and only the first one is this bug. */
-      const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle);
+      const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle
+        || h.object.userData.isDustTap || h.object.userData.isDustHandle);
       // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
       gestureOnStickerRef.current = overSticker || overGrip || overFinish;
@@ -2520,18 +2521,22 @@ function CakeScene({
    * Dev-gated like CakeDesigner's window.__* block — it never reaches a baker. */
   useEffect(() => {
     if (!import.meta.env?.DEV || typeof window === 'undefined') return;
-    window.__foilTapTargets = () => {
+    /* Takes the finish's name ('Foil' | 'Dust') so both read the same way. Gold leaf and luster dust
+     * have the same three moving parts and had the same bug; one probe for both means a future
+     * finish gets tested by adding a word, not by copying a function. */
+    const tapTargets = (Finish) => () => {
+      const tapFlag = `is${Finish}Tap`, handleFlag = `is${Finish}Handle`;
       const rect = gl.domElement.getBoundingClientRect();
       const wp = new THREE.Vector3(), ndc = new THREE.Vector3();
       const out = [];
       scene.traverse((o) => {
-        const tap = !!o.userData?.isFoilTap, handle = !!o.userData?.isFoilHandle;
+        const tap = !!o.userData?.[tapFlag], handle = !!o.userData?.[handleFlag];
         if (!tap && !handle) return;
         o.getWorldPosition(wp);
         ndc.copy(wp).project(camera);
         out.push({
           // Which flag it carries says WHICH state the cake is in, so a test can assert the swap.
-          flag: tap ? 'isFoilTap' : 'isFoilHandle',
+          flag: tap ? tapFlag : handleFlag,
           x: (ndc.x + 1) / 2 * rect.width + rect.left,
           y: (-ndc.y + 1) / 2 * rect.height + rect.top,
           // Behind the camera or off the viewport: a real coordinate that is still unhittable.
@@ -2541,12 +2546,19 @@ function CakeScene({
       return out;
     };
     // Counts the catchers too, so "did the catchers really come off?" is a question with an answer.
-    window.__foilCatcherCount = () => {
+    const catcherCount = (Finish) => () => {
       let n = 0;
-      scene.traverse((o) => { if (o.userData?.isFoilCatcher) n++; });
+      scene.traverse((o) => { if (o.userData?.[`is${Finish}Catcher`]) n++; });
       return n;
     };
-    return () => { delete window.__foilTapTargets; delete window.__foilCatcherCount; };
+    window.__foilTapTargets = tapTargets('Foil');
+    window.__foilCatcherCount = catcherCount('Foil');
+    window.__dustTapTargets = tapTargets('Dust');
+    window.__dustCatcherCount = catcherCount('Dust');
+    return () => {
+      delete window.__foilTapTargets; delete window.__foilCatcherCount;
+      delete window.__dustTapTargets; delete window.__dustCatcherCount;
+    };
   }, [gl, camera, scene]);
 
   // Where the cake stands, resolved ONCE and handed to CakeContent — so the board this scene draws is
@@ -2696,8 +2708,16 @@ function CakeScene({
         // which would be the one colour invisible against the thing it marks.
         color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker />}
 
-      {dustMode && <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustSelected}
-        onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}
+      {/* Mounted whenever the cake carries dust, for the same reason foil is below — after Done a
+          placed dusting had no hit target at all, so tapping a flick did nothing. Same three parts:
+          catchers gated off while the card is shut, the handle flag swapped so orbit ignores a tap
+          that cannot drag anything, and gesture ownership above so the leaked click cannot select
+          the tier out from under the selection. */}
+      {(dustMode || tierData.some(t => t.dusting?.splashes?.length)) && (
+        <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustMode ? dustSelected : null}
+          onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher"
+          handleFlag={dustMode ? 'isDustHandle' : 'isDustTap'} catchers={dustMode} />
+      )}
       {/* ⚠️ MOUNTED WHENEVER THE CAKE CARRIES FOIL, NOT ONLY WHILE ITS CARD IS OPEN. Sandeep: "when
           you say done, control closes, but then clicking on any flake on the cake does not open the
           control back." It could not: the handles lived and died with `foilMode`, so after Done the

@@ -226,6 +226,28 @@ CAT_ELEMENTS.push({
   default_color: '#C9A227', sort_order: 15,
 });
 
+/* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
+ * made the foil tap-to-reopen bug unverifiable, found the same way.
+ *
+ * ⚠️ `procedural: 'luster_dust'` — the VALUE of `procedural`, not a nested key. PROCEDURAL_TOOLS is
+ * keyed by `placement_config.procedural` (CakeDesigner: isStudioElement / the proc lookup), and
+ * `luster_dust` is an entry in that map. Writing `{ luster_dust: {...} }` instead would produce an
+ * ordinary sticker card — exactly the `top_drip` trap this file already names twice.
+ *
+ * The nested `luster_dust` object is OPTIONAL: applyDustLook merges it over LUSTER_DUST_DEFAULTS,
+ * so omitting it exercises the shipped defaults rather than pinning the harness to a second copy
+ * of them. Dust is a LOOK, not an object: the row carries sparkle/metalness, and tapping it seeds
+ * the tier and opens the card. */
+CAT_ELEMENTS.push({
+  id: 'e19', name: 'Gold dust', description: 'a luster dust flicked onto the tier',
+  element_type_id: 'et-foil', category_id: 'cat-1',
+  image_url: CAT_THUMB('#d9b85c'), thumbnail_url: CAT_THUMB('#d9b85c'), thumb_key: null,
+  allowed_zones: ['side', 'top_surface'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'luster_dust' },
+  default_color: '#d9b85c', sort_order: 19,
+});
+
 CAT_ELEMENTS.push({
   id: 'e13', name: 'Circle photo frame', description: 'a photo set into a round frame',
   element_type_id: 'et-image', category_id: 'cat-1',

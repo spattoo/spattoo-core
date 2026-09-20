@@ -5835,6 +5835,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Foil flakes with their surface, so a test can confirm WHERE the shards were put before
     // aiming at them — a top-surface flake hides behind the tier above and is not tappable.
     window.__getFoil = () => design.tiers.map((t, i) => ({ tier: i, flakes: (t.foil?.flakes ?? []).map(f => ({ u: f.u, v: f.v, surface: f.surface ?? 'side' })) })).filter(t => t.flakes.length);
+    // The dust twins. ⚠️ A splash carries NO surface — addDustSplash stores {u, v} only, so every
+    // one falls through to FinishHandles' 'side' default. Reporting a surface here would be
+    // inventing a field, and a test that asserted on it would be asserting on this hook's fiction.
+    window.__getDustSel = () => ({ tier: dustTier, idx: dustSel });
+    window.__getDust = () => design.tiers.map((t, i) => ({ tier: i, splashes: (t.dusting?.splashes ?? []).map(sp => ({ u: sp.u, v: sp.v })) })).filter(t => t.splashes.length);
     // Piping lives on the tiers, not in `stickers` — expose it so a test can assert what a piping
     // element actually put on the cake (and that Remove took it off), not just what the popup shows.
     window.__getPiping = () => design.tiers.flatMap((t, i) => [
@@ -5850,6 +5855,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__findPatterns = () => [...elementById.values()].filter(e => Array.isArray(e.placement_config?.parts)).map(e => ({ id: e.id, name: e.name, parts: e.placement_config.parts, pc: e.placement_config }));
     window.__placeElementById = (id) => { const e = elementById.get(id); if (!e) return false; const zones = e.allowed_zones ?? ['top_surface']; const zone = zones.includes('top_surface') ? 'top_surface' : zones[0]; handleElementDrop(e, { zone, tierIndex: design.tiers.length - 1, x: 0, z: 0 }); return true; };
     window.__placeElementByIdZone = (id, zone) => { const e = elementById.get(id); if (!e) return false; handleElementDrop(e, { zone, tierIndex: 0, x: 0, z: 0 }); return true; };
+    /* ⚠️ THE TAP PATH, WHICH IS A DIFFERENT DOOR. Both hooks above go through handleElementDrop —
+     * the DRAG path — and that function never consults PROCEDURAL_TOOLS. Only tapPlaceElement does
+     * (the `proc` lookup). So a procedural row (luster dust, cream pen, grass, letter blocks)
+     * driven through __placeElementById falls through to the ordinary sticker path and puts a
+     * PICTURE on the cake instead of opening its tool — a test written on it would report the
+     * wrong card and read as a broken feature. Foil only worked through the drop path because
+     * `tier_finish` is handled there too.
+     * This is the route a baker actually takes for those rows: Decorations → tap. */
+    window.__tapElementById = (id) => { const e = elementById.get(id); if (!e) return false; tapPlaceElement(e); return true; };
     window.__placeTestPatternWith = (id) => {   // place a pattern using a chosen element id (mirrored 2nd part)
       const partEl = elementById.get(id); if (!partEl) return false;
       const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
@@ -6553,8 +6567,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // MODE), but the applied result is a persistent finish just like foil/cream. So they get a persistent
   // card here that reappears whenever the cake carries the finish; clicking it reopens the composer
   // (selectDecorationCard → type 'tool'). This is the always-present re-entry the composer's ✕ collapses
-  // back to — so closing the composer is never a dead-end. type 'tool' never expands inline (isCardSelected
-  // is false for it), it only launches the composer.
+  // back to — so closing the composer is never a dead-end.
+  // ⚠️ THE LINE THAT USED TO SIT HERE SAID a tool card "never expands inline (isCardSelected is false
+  // for it), it only launches the composer". That is no longer true and it is actively misleading:
+  // isCardSelected returns `selectedEl.tool === card.tool` for a tool card, and the card body renders
+  // renderDustBody() / renderPenBody() inline. Believing the old comment sends you building a
+  // composer-reopening fix for a card that simply expands.
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust') || design.tiers.some(t => t.dusting?.splashes?.length)) {
     decorationCards.unshift({ key: 'luster-dust', type: 'tool', tool: 'luster-dust', name: 'Luster Dust', thumb: null });
   }
@@ -10530,7 +10548,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}
               dustSelected={{ tier: dustTier, idx: dustSel }}
               onDustMove={(tier, idx, u, v) => updateDustSplash(tier, idx, { u, v })}
-              onDustSelect={(tier, idx) => { setDustTier(tier); setDustSel(idx); }}
+              /* Opens the card as well as moving the indices — the foil bug, for dust. Modelled on
+                 the TOOL path rather than foil's: addDustFromRow selects `{type:'tool',
+                 tool:'luster-dust'}`, and selectDecorationCard closes the tool list for a tool
+                 card, which is what re-entry from the cake needs too. */
+              onDustSelect={(tier, idx) => {
+                setDustTier(tier); setDustSel(idx);
+                if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust')) {
+                  setElementsOpen(false);
+                  setToolsOpen(false);
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'tool', tool: 'luster-dust' });
+                }
+              }}
               foilMode={selectedEl?.type === 'foil'}
               foilSelected={{ tier: foilTier, idx: foilSel }}
               onFoilMove={(tier, idx, u, v) => updateFoilFlake(tier, idx, { u, v })}
