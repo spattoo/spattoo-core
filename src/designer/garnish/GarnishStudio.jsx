@@ -36,7 +36,13 @@ import { INK } from '../../shared/tokens.js';
 // decide for the baker; the same rule the photo editor settled on.
 
 export const PLATE = 420;          // the studio's own square, in its own units
-const INK = '#4A2C1B';
+/* ⚠️ NOT the app's INK, and that collision broke the build once (0.1.571, unbuildable on dev).
+ * This is the studio's DRAWN colour — piped chocolate brown, a colour with a meaning in the cake.
+ * The token sweep imported `INK` for this file's five chrome sites and landed on top of a local
+ * const of the same name holding a different value, which is the one shape a "same hex" scan can
+ * never see. tokens.js says it plainly: a colour that describes something a baker is looking at
+ * belongs with the thing it describes. So it keeps its value and gives up the name. */
+const GARNISH_INK = '#4A2C1B';
 const SURFACE = '#F6F4F0';
 
 /* ── Ready-made shapes ───────────────────────────────────────────────────────────────────────────
@@ -67,7 +73,7 @@ const polygon = (n, r, rot = -Math.PI / 2) =>
  * shape button purple because one triangle is purple says the buttons are a preview when they are a
  * menu. */
 const ShapeIcon = ({ kind }) => {
-  const st = { fill: 'none', stroke: INK, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const st = { fill: 'none', stroke: GARNISH_INK, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
       {/* The icon is the shape it makes — a spike, not an equilateral triangle. An icon that
@@ -126,7 +132,7 @@ export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
  * chocolate swatches would be a second answer to a settled question, which is exactly the mistake
  * the letter-blocks card made and was caught on within the hour. */
 export default function GarnishStudio({
-  initialName = '', color = INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
+  initialName = '', color = GARNISH_INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
   apiClient = null, openWith = null, onSave, onCancel,
   /* Where a piece may go and how it may sit there, from the garnish element's `placement_config`
      (see garnishPlacementOptions). Absent — an older host, or a row without the block — keeps the
@@ -1144,7 +1150,7 @@ export default function GarnishStudio({
                         stub squash into the same blob — five buttons showing one shape, which is
                         worse than no preview because it says the choices are identical. */}
                     <svg viewBox="0 0 100 100" width="100%" height="100%">
-                      {pr.ds.map((d, i) => <path key={i} d={d} fill={INK} />)}
+                      {pr.ds.map((d, i) => <path key={i} d={d} fill={GARNISH_INK} />)}
                     </svg>
                   </button>
                 ))}
@@ -1216,7 +1222,7 @@ export default function GarnishStudio({
                       aria-pressed={on} title={label} aria-label={label}
                       style={{ width: 52, height: 52, padding: 3, borderRadius: 10, cursor: 'pointer',
                                background: '#fff',
-                               border: `2px solid ${on ? INK : '#E3DFD8'}` }}>
+                               border: `2px solid ${on ? GARNISH_INK : '#E3DFD8'}` }}>
                       <svg viewBox="0 0 100 100" width="100%" height="100%">
                         <rect x="6" y="6" width="88" height="88" rx="7" fill="#F7F4EF" />
                         {paths.map((d, i) => (
