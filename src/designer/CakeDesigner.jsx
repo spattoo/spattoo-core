@@ -2794,12 +2794,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // 'new' is in the list so the desktop rail can draw it first; the mobile bar filters it out and
   // draws its own circled +, which is a different SHAPE, not a different item.
   const railItems = useMemo(() => [
-    // `short` is for the phone's strip, where a slot is ~70px and a label is 9.5px. Only the items
-    // that can appear THERE need one; the More sheet is three-across and fits the full name.
+    // `short` is for the phone's strip, where a label is 9.5px. Only the items that can appear THERE
+    // need one; the More sheet is three-across and fits the full name.
+    //
+    // ⚠️ The slot was ~70px when that was written and is ~62px at 375 now the strip carries six
+    // (MOBILE_PRIMARY). "Decorations" is eleven characters and was the one already closest to the
+    // edge, so it takes a short form rather than an ellipsis — a truncated label is worse than a
+    // shorter honest one, and "Decor" is what a baker says out loud anyway.
     { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create', short: 'New' },
     { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
     { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create' },
-    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create' },
+    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
     // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
     // burying it three taps deep inside another panel made no sense.

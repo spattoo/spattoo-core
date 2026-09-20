@@ -36,7 +36,7 @@ describe('splitMobileNav', () => {
     // order:view withheld — Dashboard and Orders never reach railItems at all.
     const limited = RAIL.filter(i => i.id !== 'dashboard' && i.id !== 'orders');
     const { primary } = splitMobileNav(limited);
-    expect(primary.map(i => i.id)).toEqual(['new', 'elements']);
+    expect(primary.map(i => i.id)).toEqual(['new', 'elements', 'templates']);
     expect(primary.every(Boolean)).toBe(true);
   });
 
