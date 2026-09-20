@@ -81,9 +81,8 @@ import { applyTextStyleConfig } from './textStyles.js';
 import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
-import { CREAM_FONTS, DEFAULT_CREAM_FONT, creamFontPreview } from './geometry/creamText.js';
-import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit, loadTopperFace } from './geometry/topperFaces.js';
-import { topperShapes } from './geometry/topperShape.js';
+import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
+import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
@@ -596,68 +595,21 @@ function FinishTierPicker({ tiers, tier, onPick }) {
   );
 }
 
-// Cream-pen font swatch — renders the font's own single-stroke shapes (not a system face)
-// so bakers pick by the real piped look. The centerline path is stroked with round caps.
-/* ── A font button that shows the face it names ──────────────────────────────────────────────────
+/* ⚠️ THE FONT SWATCHES WERE DELETED HERE (2026-09-20), and what they knew is worth keeping.
  *
- * ⚠️ `creamFontPreview` only knows the CREAM faces. Pointed at an acrylic key it falls back, so all
- * eight acrylic buttons drew the same script and the picker was decoration — you could not tell
- * Great Vibes from Pinyon without choosing one and looking at the cake.
+ * AcrylicFontButton and CreamFontButton drew each face as a specimen. The acrylic one built its
+ * preview from `topperShapes` — the SAME geometry the topper is cut from — after an earlier version
+ * previewed with `creamFontPreview`, which only knows the CREAM faces and silently falls back: all
+ * eight acrylic buttons drew the same script, so the picker looked complete and told you nothing.
+ * That bug is what `geometry/topperFaces.test.js` still guards.
  *
- * So the preview is built from the SAME geometry the cake is cut from: topperShapes on "Abc",
- * flattened to one SVG path. It cannot disagree with what you get, because it is what you get.
- * Async because an outline face is fetched on demand; until it arrives the button shows its name,
- * which is still more use than the wrong picture.
- */
-function AcrylicFontButton({ fontKey, label, selected, onClick }) {
-  const [prev, setPrev] = useState(null);
-  useEffect(() => {
-    let live = true;
-    loadTopperFace(fontKey).then(font => {
-      const t = topperShapes(font, 'Abc', { height: 1, lines: 1, stroke: 0.12, tracking: faceFit(fontKey) });
-      if (!live || !t.parts?.length) return;
-      const ring = (r) => r.map((q, i) => `${i ? 'L' : 'M'}${q.x.toFixed(3)} ${(-q.y).toFixed(3)}`).join('') + 'Z';
-      setPrev({
-        d: t.parts.map(p => ring(p.outer) + (p.holes ?? []).map(ring).join('')).join(' '),
-        w: t.width, h: t.height,
-      });
-    }).catch(() => {});
-    return () => { live = false; };
-  }, [fontKey]);
-
-  const active = selected ? '#1a1a1a' : '#999999';
-  return (
-    <button onClick={onClick} title={label}
-      style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
-        border: `1.5px solid ${active}`, background: selected ? '#F2F1EE' : '#fff',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 34 }}>
-      {prev
-        ? <svg width={54} height={22} viewBox={`${-prev.w / 2} ${-prev.h / 2} ${prev.w} ${prev.h}`}
-               style={{ display: 'block', overflow: 'visible' }}>
-            <path d={prev.d} fill={active} fillRule="evenodd" />
-          </svg>
-        : <span style={{ fontSize: 9, fontWeight: 800, color: active }}>{label}</span>}
-    </button>
-  );
-}
-
-function CreamFontButton({ fontKey, label, selected, onClick }) {
-  const { d, width, height } = useMemo(() => creamFontPreview(fontKey, 'Abc'), [fontKey]);
-  const sw = Math.max(width, height) * 0.05;   // bead ≈ 5% of glyph extent
-  const active = selected ? '#1a1a1a' : '#999999';
-  return (
-    <button key={fontKey} onClick={onClick} title={label}
-      style={{ padding: '6px 8px', borderRadius: 8, cursor: 'pointer',
-        border: `1.5px solid ${active}`, background: selected ? '#F2F1EE' : '#fff',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: 64, height: 34 }}>
-      <svg viewBox={`${-sw} ${-sw} ${width + sw * 2} ${height + sw * 2}`} height={22}
-        style={{ display: 'block', maxWidth: 96 }} preserveAspectRatio="xMidYMid meet">
-        <path d={d} fill="none" stroke={selected ? '#1a1a1a' : '#777'}
-          strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </button>
-  );
-}
+ * They are gone because eleven specimen tiles cost three rows on a phone and the CAKE is the real
+ * preview — it is live above the sheet, so tapping along the name strip answers "what does it look
+ * like" with the actual thing rather than a 54px drawing of it (INVARIANTS #11). Sandeep: "user can
+ * see that on the cake and keep the best one."
+ *
+ * ⚠️ If a specimen is ever wanted again, build it from `topperShapes`, never `creamFontPreview` —
+ * that is the trap, and it fails SILENTLY by drawing something plausible and wrong. */
 
 // "Colors from cake" reuse rows are split by material so a reused hue renders EXACTLY.
 // Tiers use a plain matte material; pipings/elements use a sheened (glossy) one — the same
