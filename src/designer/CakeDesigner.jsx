@@ -735,7 +735,13 @@ function FilterPanel({ allTags, active, onChange, categories, open, onApply, onC
               style={{ flex: 1, padding: '8px 0', borderRadius: 8, border: 'none', cursor: 'pointer',
                        background: '#1a1a1a', color: '#fff', fontSize: 11.5, fontWeight: 800,
                        fontFamily: "'Quicksand', sans-serif" }}>
-              {count === 0 ? 'Apply — nothing matches' : `Apply · ${count} template${count === 1 ? '' : 's'}`}
+              {/* ⚠️ NO COUNT ON THE BUTTON. It carried "Apply · 12 templates" — a preview of the
+                  result, which sounds useful and is a number nobody needs: pressing it puts the
+                  cakes themselves on screen a moment later, and counting what you are about to be
+                  shown is work done twice. Sandeep, 2026-09-20: "just appy is enough."
+                  The one case still worth a word is NOTHING matching, because then the grid is
+                  empty and an empty grid explains nothing by itself. */}
+              {count === 0 ? 'Apply — nothing matches' : 'Apply'}
             </button>
           </div>
         </div>
@@ -9897,14 +9903,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </button>
             </div>
 
-            {/* The effect, next to the cause. Only while something is narrowing the list — on an
-                unfiltered catalogue the total is just noise above the grid that shows it. */}
+            {/* ⚠️ THE COUNT WENT, THE REFUSAL STAYED. "12 of 28 templates" existed because the chips
+                and the grid are never on screen together on a phone, so a tap appeared to do
+                nothing — but Apply closes the drawer now, which lands a baker ON the grid, and a
+                number above the cakes it is counting is work done twice.
+                Nothing matching is the exception: the grid is then empty, and an empty grid says
+                the same thing as a catalogue with no templates in it. That one still needs words. */}
             {(tmplActiveFilters > 0 || tmplSearch.trim() || filterWeight || filterAge) && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, flexShrink: 0, padding: '4px 1px 0' }}>
-                <span style={{ fontSize: 10, fontWeight: 700, color: shownTemplates.length ? '#666' : '#C0392B', fontFamily: "'Quicksand', sans-serif" }}>
-                  {shownTemplates.length === 0
-                    ? 'No templates match'
-                    : `${shownTemplates.length} of ${templates.length} template${templates.length === 1 ? '' : 's'}`}
+                <span style={{ fontSize: 10, fontWeight: 700, color: '#C0392B', fontFamily: "'Quicksand', sans-serif" }}>
+                  {shownTemplates.length === 0 ? 'No templates match' : ''}
                 </span>
                 <button type="button"
                   onClick={() => {
