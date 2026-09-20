@@ -9,6 +9,7 @@ import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { CameraIcon, UploadsIcon, CopyIcon } from '../shared/icons.jsx';
+import { DANGER, INK } from '../shared/tokens.js';
 
 // ── Color conversion utils ─────────────────────────────────────────────────────
 
@@ -145,7 +146,7 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore }) {
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -450,7 +451,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   <input
                     style={{
                       ...inp, marginTop: 4,
-                      borderColor: urlError ? '#E53935' : '#C5D4C8',
+                      borderColor: urlError ? DANGER : '#C5D4C8',
                     }}
                     type="text"
                     placeholder="https://yourbakery.com"
@@ -468,7 +469,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                     }}
                   />
                   {urlError && (
-                    <span style={{ fontSize: 11, color: '#E53935', fontWeight: 600, marginTop: 4 }}>
+                    <span style={{ fontSize: 11, color: DANGER, fontWeight: 600, marginTop: 4 }}>
                       {urlError}
                     </span>
                   )}

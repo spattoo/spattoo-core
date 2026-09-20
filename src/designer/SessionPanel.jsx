@@ -1,4 +1,5 @@
 import React from 'react';
+import { INK } from '../shared/tokens.js';
 
 // ── SessionPanel ────────────────────────────────────────────────────────────────
 // "Design Together" — the live co-design hub (right-side panel). Opened from the
@@ -17,7 +18,7 @@ const S = {
     position: 'absolute', top: 12, right: 12, zIndex: 45, width: 300, maxWidth: 'calc(100% - 24px)',
     background: '#fff', borderRadius: 16, border: '1px solid #eee',
     boxShadow: '0 10px 34px rgba(0,0,0,0.16)',
-    fontFamily: "'Quicksand',sans-serif", color: '#1a1a1a',
+    fontFamily: "'Quicksand',sans-serif", color: INK,
     display: 'flex', flexDirection: 'column', overflow: 'hidden',
   },
   header: {
@@ -33,11 +34,11 @@ const S = {
   status: { fontSize: 13, fontWeight: 600 },
   muted: { fontSize: 12, color: '#999' },
   btn: {
-    border: '1px solid #d9d9d9', background: '#fff', color: '#1a1a1a',
+    border: '1px solid #d9d9d9', background: '#fff', color: INK,
     borderRadius: 9, padding: '8px 12px', fontSize: 12.5, fontWeight: 700,
     fontFamily: "'Quicksand',sans-serif", cursor: 'pointer', whiteSpace: 'nowrap',
   },
-  primary: { border: 'none', background: '#1a1a1a', color: '#fff', width: '100%', padding: '10px 12px' },
+  primary: { border: 'none', background: INK, color: '#fff', width: '100%', padding: '10px 12px' },
   danger: { borderColor: '#e7c3c3', color: '#b23b3b' },
   divider: { height: 1, background: '#f2f2f2', margin: '2px 0' },
 };

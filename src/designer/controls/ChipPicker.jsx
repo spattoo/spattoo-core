@@ -1,5 +1,6 @@
 import Chip from '../../shared/Chip.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
+import { INK } from '../../shared/tokens.js';
 
 // Labeled chip-row picker — the shared presentational control behind the per-tier Frosting (type) and
 // Style pickers (and any future single-select chip row). `options` = [{ value, label }]; the chip whose
@@ -37,7 +38,7 @@ const styles = {
     display: 'block',
     fontSize: 13,
     fontWeight: 600,
-    color: '#1a1a1a',
+    color: INK,
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 10,

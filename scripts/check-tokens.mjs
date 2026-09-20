@@ -33,6 +33,11 @@ const ACCEPTED = {
   'src/shared/tokens.js': 'the source itself',
   'src/designer/canvas/FinishHandles.jsx': 'selColor is a 3D handle marker ON the cake, not chrome',
   'src/designer/canvas/CakeCanvas.jsx': 'marker tints passed to the scene, not UI',
+  /* ⚠️ A REAL GEL COLOUR, not ink. gelLibrary is a catalogue of what a baker can BUY — Americolor
+     "Super Black" happens to be #1A1A1A, and forcing it through INK would tie a product's measured
+     colour to the app's text colour. Change the token and the gel would silently change too. This
+     is the exact case the token module's header describes. */
+  'src/orders/xray/gelLibrary.js': 'a purchasable gel colour, measured — not UI ink',
 };
 
 // Values the module defines, read FROM the module so the gate can never disagree with it.

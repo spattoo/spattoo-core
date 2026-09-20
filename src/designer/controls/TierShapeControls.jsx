@@ -2,6 +2,7 @@ import React from 'react';
 import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
 import { GLYPH_FAMILIES, isGlyphFamily } from '../geometry/glyphShape.js';
 import { tierGeometry } from '../cakeShapes.js';
+import { INK } from '../../shared/tokens.js';
 
 // A glyph family's per-tier edit field — the label, the config key it writes and the input charset all
 // come from the family, so number and letter share ONE field.
@@ -84,9 +85,9 @@ function CornerRadius({ tier, index, onCornerR }) {
         onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); }}
       >
         <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
+          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: INK, borderRadius: 2 }} />
         </div>
-        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
+        <div style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', width: 16, height: 16, borderRadius: '50%', background: INK, boxShadow: '0 1px 4px rgba(0,0,0,0.2)', pointerEvents: 'none' }} />
       </div>
     </div>
   );

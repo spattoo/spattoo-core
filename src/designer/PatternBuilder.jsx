@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo, useEffect, useRef } from 'react';
 import PatternBuilderCanvas, { getOverlappingIds, placementPosition, ALL_TIER_GEOM } from './canvas/PatternBuilderCanvas.jsx';
 import * as THREE from 'three';
+import { INK } from '../shared/tokens.js';
 
 const DEFAULT_TIER_COUNT = 4;
 
@@ -20,7 +21,7 @@ const s = {
     padding: '18px 20px 14px', borderBottom: '1px solid #e8e8e8', flexShrink: 0,
   },
   title: {
-    fontSize: 15, fontWeight: 800, color: '#1a1a1a', margin: 0,
+    fontSize: 15, fontWeight: 800, color: INK, margin: 0,
   },
   sidebarBody: { flex: 1, overflowY: 'auto', padding: '16px 20px' },
   sidebarFooter: {
@@ -29,25 +30,25 @@ const s = {
   },
   canvasWrap: { flex: 1, position: 'relative' },
   label: {
-    display: 'block', fontSize: 11, fontWeight: 700, color: '#1a1a1a',
+    display: 'block', fontSize: 11, fontWeight: 700, color: INK,
     letterSpacing: 0.8, textTransform: 'uppercase', marginBottom: 5,
   },
   input: {
     width: '100%', padding: '8px 12px', border: '1.5px solid #e0e0e0',
     borderRadius: 8, fontSize: 13, fontFamily: "'Quicksand', sans-serif",
-    color: '#1a1a1a', outline: 'none', boxSizing: 'border-box',
+    color: INK, outline: 'none', boxSizing: 'border-box',
   },
   select: {
     width: '100%', padding: '8px 10px', border: '1.5px solid #e0e0e0',
     borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif",
-    color: '#1a1a1a', background: '#fff', outline: 'none', boxSizing: 'border-box',
+    color: INK, background: '#fff', outline: 'none', boxSizing: 'border-box',
   },
   btn: {
     padding: '9px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
     fontFamily: "'Quicksand', sans-serif", fontWeight: 700, fontSize: 12,
   },
-  btnPrimary:   { background: '#1a1a1a', color: '#fff' },
-  btnSecondary: { background: '#fff', color: '#1a1a1a', border: '1.5px solid #e0e0e0' },
+  btnPrimary:   { background: INK, color: '#fff' },
+  btnSecondary: { background: '#fff', color: INK, border: '1.5px solid #e0e0e0' },
   btnDanger:    { background: '#fff', color: '#c0392b', border: '1.5px solid #f5c6c6' },
   section: { marginBottom: 20 },
   sectionTitle: {
@@ -59,7 +60,7 @@ const s = {
     padding: '7px 10px', borderRadius: 8, cursor: 'pointer',
     marginBottom: 4, border: '1.5px solid transparent',
   },
-  placementRowSelected: { border: '1.5px solid #1a1a1a', background: '#f5f5f5' },
+  placementRowSelected: { border: `1.5px solid ${INK}`, background: '#f5f5f5' },
   placementRowOverlap:  { border: '1.5px solid #e74c3c', background: '#fff5f5' },
   overlapBadge: {
     background: '#ffeaea', color: '#c0392b', borderRadius: 6,
@@ -83,7 +84,7 @@ const s = {
   },
   popupDivider: { height: 1, background: '#e8e8e8', margin: '0 -16px' },
   popupTitle: {
-    fontSize: 10, fontWeight: 700, color: '#1a1a1a',
+    fontSize: 10, fontWeight: 700, color: INK,
     letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 8,
   },
   sliderRow: { marginBottom: 10 },
@@ -91,9 +92,9 @@ const s = {
     display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     marginBottom: 3,
   },
-  sliderLabelText: { fontSize: 11, fontWeight: 700, color: '#1a1a1a', letterSpacing: 0.3 },
+  sliderLabelText: { fontSize: 11, fontWeight: 700, color: INK, letterSpacing: 0.3 },
   sliderValue: { fontSize: 11, color: '#555', fontVariantNumeric: 'tabular-nums' },
-  slider: { width: '100%', accentColor: '#1a1a1a' },
+  slider: { width: '100%', accentColor: INK },
   tierBtn: {
     flex: 1, padding: '6px 4px', borderRadius: 7, border: 'none',
     cursor: 'pointer', fontFamily: "'Quicksand', sans-serif",
@@ -165,13 +166,13 @@ function SliderControl({ label, value, min, max, step = 0.001, onChange, display
       >
         {/* track */}
         <div style={{ width: '100%', height: 4, borderRadius: 2, background: '#e0e0e0', position: 'relative' }}>
-          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: '#1a1a1a', borderRadius: 2 }} />
+          <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`, background: INK, borderRadius: 2 }} />
         </div>
         {/* thumb */}
         <div style={{
           position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)',
           width: 16, height: 16, borderRadius: '50%',
-          background: '#1a1a1a', boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
+          background: INK, boxShadow: '0 1px 4px rgba(0,0,0,0.25)',
           pointerEvents: 'none',
         }} />
       </div>

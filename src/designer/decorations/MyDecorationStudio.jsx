@@ -6,6 +6,7 @@ import RightsAttestation from '../../legal/RightsAttestation.jsx';
 import { Panel } from '../../shared/Panel.jsx';
 import { PUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 import { ZONE_LABELS, ZONES, DEFAULT_DECOR_R } from '../constants.js';
+import { DANGER_FIELD, INK } from '../../shared/tokens.js';
 
 // ── My Decoration Studio — TWO STEPS, ONE SCREEN ─────────────────────────────────────────────────
 //
@@ -319,12 +320,12 @@ const S = {
 
   label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginTop: 18, marginBottom: 6 },
   hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginBottom: 8, lineHeight: 1.45 },
-  input: { width: '100%', padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#1a1a1a', boxSizing: 'border-box' },
-  range: { width: '100%', margin: '2px 0 4px', accentColor: '#1a1a1a', cursor: 'pointer' },
+  input: { width: '100%', padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 700, color: INK, boxSizing: 'border-box' },
+  range: { width: '100%', margin: '2px 0 4px', accentColor: INK, cursor: 'pointer' },
   check: { display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, fontSize: 12.5, fontWeight: 700, color: '#444', cursor: 'pointer' },
 
   kinds: { display: 'flex', flexWrap: 'wrap', gap: 8 },
-  kind:  (on) => ({ padding: '9px 14px', borderRadius: 9, border: `1.5px solid ${on ? '#1a1a1a' : '#ddd'}`, background: on ? '#1a1a1a' : '#fff', color: on ? '#fff' : '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }),
+  kind:  (on) => ({ padding: '9px 14px', borderRadius: 9, border: `1.5px solid ${on ? INK : '#ddd'}`, background: on ? INK : '#fff', color: on ? '#fff' : '#444', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }),
 
   zones: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(120px, 1fr))', gap: 12 },
 
@@ -335,6 +336,6 @@ const S = {
 
   note:  { fontSize: 12, fontWeight: 700, color: '#6B8C74', marginTop: 10 },
   warn:  { marginTop: 12, padding: '10px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: '#FFF8E6', color: '#8A6D1A' },
-  err:   { marginTop: 12, padding: '10px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: '#FFF0F0', color: '#C0392B', lineHeight: 1.4 },
-  save:  (d) => ({ width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: d ? '#c9c7cf' : '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14.5, fontWeight: 800, cursor: d ? 'not-allowed' : 'pointer' }),
+  err:   { marginTop: 12, padding: '10px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: DANGER_FIELD, color: '#C0392B', lineHeight: 1.4 },
+  save:  (d) => ({ width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: d ? '#c9c7cf' : INK, color: '#fff', fontFamily: 'inherit', fontSize: 14.5, fontWeight: 800, cursor: d ? 'not-allowed' : 'pointer' }),
 };

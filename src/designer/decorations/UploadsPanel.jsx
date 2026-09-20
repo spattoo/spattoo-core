@@ -4,6 +4,7 @@ import { useUploadLimits } from '../../shared/useUploadLimits.js';
 import { PUBLISH_LABEL, UNPUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
 import { DEFAULT_DECOR_R } from '../constants.js';
 import { Panel } from '../../shared/Panel.jsx';
+import { DANGER_FIELD, INK } from '../../shared/tokens.js';
 
 // An upload is a picture whose USE is not yet decided — it may be placed as a decoration, or chosen as
 // a photo-cake frame photo, which the customer can pinch-zoom into on the cake. So the ceiling sits
@@ -428,7 +429,7 @@ const S = {
   menu:  { position: 'absolute', top: 38, left: 0, right: 0, zIndex: 2, background: '#fff', borderRadius: 11, border: '1px solid #e8e6ec', boxShadow: '0 8px 24px rgba(20,20,24,0.16)', overflow: 'hidden', display: 'flex', flexDirection: 'column' },
   menuItem: { padding: '10px 11px', border: 'none', borderBottom: '1px solid #f4f2f6', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 12, fontWeight: 700, textAlign: 'left', lineHeight: 1.3, cursor: 'pointer' },
   menuDanger: { color: '#C0392B', borderBottom: 'none' },
-  name:  { fontSize: 11.5, fontWeight: 700, color: '#1a1a1a', textAlign: 'center', lineHeight: 1.3 },
+  name:  { fontSize: 11.5, fontWeight: 700, color: INK, textAlign: 'center', lineHeight: 1.3 },
   badge: { alignSelf: 'center', padding: '2px 8px', borderRadius: 20, background: '#EEF6EE', color: '#2E7D32', fontSize: 9.5, fontWeight: 800 },
 
   // Stacks: the consequences are a sentence the button acts on, not a sibling of it. The padding, the
@@ -438,7 +439,7 @@ const S = {
   editArt: { display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 200, borderRadius: 12, background: '#faf9fb', border: '1.5px solid #eeecf1', marginBottom: 14, overflow: 'hidden' },
   editImg: { maxWidth: '100%', maxHeight: 260, objectFit: 'contain' },
   editAct: { width: '100%', padding: '12px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#333', fontFamily: 'inherit', fontSize: 13, fontWeight: 800, cursor: 'pointer' },
-  primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
+  primary: { width: '100%', padding: '13px 0', borderRadius: 10, border: 'none', background: INK, color: '#fff', fontFamily: 'inherit', fontSize: 14, fontWeight: 800, cursor: 'pointer' },
   secondary: { width: '100%', padding: '13px 0', borderRadius: 10, border: '1.5px solid #ddd', background: '#fff', color: '#444', fontFamily: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer' },
   hint:  { fontSize: 11, color: '#9a939a', fontWeight: 600, marginTop: 8, lineHeight: 1.45 },
   pubLabel: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
@@ -446,8 +447,8 @@ const S = {
   pubNoteItem: { fontSize: 11.5, color: '#6f6a72', fontWeight: 600, lineHeight: 1.45 },
   label: { fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 },
   renameRow: { display: 'flex', gap: 8 },
-  input: { flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#1a1a1a', boxSizing: 'border-box' },
-  renameBtn: (d) => ({ padding: '0 16px', borderRadius: 9, border: 'none', background: d ? '#e6e4ea' : '#1a1a1a', color: d ? '#a9a5b0' : '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: d ? 'default' : 'pointer' }),
+  input: { flex: 1, minWidth: 0, padding: '10px 12px', borderRadius: 9, border: '1.5px solid #ddd', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: INK, boxSizing: 'border-box' },
+  renameBtn: (d) => ({ padding: '0 16px', borderRadius: 9, border: 'none', background: d ? '#e6e4ea' : INK, color: d ? '#a9a5b0' : '#fff', fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800, cursor: d ? 'default' : 'pointer' }),
 
   confirm: { padding: 14, borderBottom: '1px solid #eee', background: '#FFF7F6' },
   confirmText: { fontSize: 12.5, fontWeight: 600, color: '#4a4a4a', lineHeight: 1.5 },
@@ -457,5 +458,5 @@ const S = {
 
   note:  { fontSize: 12.5, fontWeight: 700, color: '#8a7a80' },
   empty: { fontSize: 12.5, fontWeight: 600, color: '#8a7a80', lineHeight: 1.5, textAlign: 'center', padding: '28px 12px' },
-  err:   { marginTop: 12, padding: '10px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: '#FFF0F0', color: '#C0392B', lineHeight: 1.4 },
+  err:   { marginTop: 12, padding: '10px 12px', borderRadius: 9, fontSize: 12, fontWeight: 700, background: DANGER_FIELD, color: '#C0392B', lineHeight: 1.4 },
 };
