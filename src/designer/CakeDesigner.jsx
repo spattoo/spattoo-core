@@ -6647,6 +6647,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // what asks for the list, and it still does.
   const stackSingleCard = isMobile && !stackFlyoutOpen && stackHasExpandedCard;
 
+  /* ⚠️ THE FOLD MARK IS HIDDEN WHENEVER "Done" IS ON SCREEN. Sandeep: "there is down arrow button
+   * and 'Done' button. both doing the samething. shall we remove the downarrow?"
+   *
+   * In the DOCKED state they really are the same: stackSingleCard filters the list to the one
+   * expanded card, so folding it (clearAllSelections) and Done land in the same place. Two controls
+   * for one outcome, side by side, is the worse kind of duplication — it makes a baker wonder what
+   * the difference is.
+   *
+   * ⚠️ BUT IT IS NOT DELETED, because with the flyout OPEN there is no Done at all (the docked
+   * header renders under stackSingleCard, which stackFlyoutOpen makes false) and every card is
+   * listed. There, folding is the ONLY way back to the other decorations, and collapsing is not
+   * dismissing — you want the list, not an empty selection.
+   *
+   * ⚠️ And it is not a button: the whole header row is the click target. This span is the MARK that
+   * says the row folds, so deleting it outright would leave the flyout's cards with no affordance at
+   * all — rule 7 in reverse.
+   *
+   * Declared HERE, immediately below stackSingleCard, because it reads it. Three headers drew this
+   * span by hand; one of them would have been missed. */
+  const foldMark = (expanded) => (stackSingleCard ? null : (
+    <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0,
+                   transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+  ));
+
   /* ⚠️ DECLARED HERE, NOT BESIDE showRightPanel, AND THE REASON IS A CRASH.
    * It reads stackSingleCard, which is defined on the line above — 213 lines BELOW where this used
    * to sit. `const` is hoisted but unreadable until its initialiser runs, so reading it earlier is
@@ -10810,7 +10834,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             : <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>{card.glyph ?? card.name?.[0]?.toUpperCase() ?? '•'}</span>}
                         </div>
                         <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
-                        <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                        {foldMark(expanded)}
                       </div>
                       {expanded && (
                         <div style={{ padding: '0 9px 9px' }}>
@@ -10854,7 +10878,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>T</span>
                       </div>
                       <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</span>
-                      <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                      {foldMark(expanded)}
                     </div>
                     {expanded && (
                       <div style={{ padding: '0 9px 9px', display: 'flex', flexDirection: 'column', gap: 7 }}>
@@ -10894,7 +10918,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       {thumbSrc(card) && <img src={thumbSrc(card)} alt={card.name} width={26} height={26} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
                     </div>
                     <span style={{ fontSize: 10.5, fontWeight: 700, color: '#1a1a1a', flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</span>
-                    <span style={{ fontSize: 9, color: '#1a1a1a', flexShrink: 0, transform: expanded ? 'none' : 'rotate(-90deg)', transition: 'transform 0.15s' }}>▼</span>
+                    {foldMark(expanded)}
                   </div>
                   {expanded && (
                   <div style={{ padding: '0 9px 9px' }}>
