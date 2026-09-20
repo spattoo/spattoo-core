@@ -1966,13 +1966,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
      saved appears without a refresh — the shelf is the place a baker goes to check it worked. */
   const [savedGarnishes, setSavedGarnishes] = useState([]);
+  /* ⚠️ WHY THE KEPT PIECES USED TO ARRIVE FIRST, AND WHY THAT WAS NOT A CACHE. Both shelves fetched
+     on MOUNT — two requests every designer load, for a shelf most sessions never open — so by the
+     time anybody pressed Decor they were long since in memory, while the catalogue had not been
+     asked for yet. Nothing about them is local or faster; they were simply started minutes earlier.
+     That is the whole of "how are my decorations loading faster than others?".
+     Now they wait for the shelf, like everything else waits for its category: "nothing is fetched
+     until the customer picks one" is what the category comment already promised.
+     ⚠️ STICKY ONCE WANTED, so the reload-on-studio-close rule survives — a piece just saved has to
+     appear without a refresh, and that is the whole reason this re-runs on `garnishStudio`. */
+  const [myShelfWanted, setMyShelfWanted] = useState(false);
   useEffect(() => {
+    if (!myShelfWanted) return undefined;
     let alive = true;
     apiClient?.fetchGarnishes?.()
       .then(rows => { if (alive) setSavedGarnishes(rows ?? []); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [apiClient, garnishStudio]);
+  }, [apiClient, garnishStudio, myShelfWanted]);
 
   /* Kept card toppers, same shelf and same reload rule as the garnishes above.
    *
@@ -1993,13 +2004,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * for a child turning 7, but only if the 10 can be changed; without this the only move is to
    * delete the topper and compose another from nothing, which throws the placement away too. */
   const [editTopper, setEditTopper] = useState(null);
+  // Same rule as the garnishes above: waits for the shelf, reloads when the studio closes.
   useEffect(() => {
+    if (!myShelfWanted) return undefined;
     let alive = true;
     apiClient?.fetchCardToppers?.()
       .then(rows => { if (alive) setSavedToppers(rows ?? []); })
       .catch(() => {});
     return () => { alive = false; };
-  }, [apiClient, topperStudio]);
+  }, [apiClient, topperStudio, myShelfWanted]);
   // Kept on the DESIGNER, not inside the studio, so closing and reopening does not lose the chocolate
   // a baker just chose — the same reason penStyle lives out here.
   const [garnishColor, setGarnishColor] = useState('#4A2C1B');
@@ -2225,6 +2238,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // fetched again. `allElementsLoaded` is the separate question "do we hold the whole catalogue",
   // which search and saved designs need and no number of category loads can answer.
   const [categories, setCategories]           = useState([]);
+  /* ⚠️ `[]` MEANT TWO THINGS, AND ONE OF THEM PUT THE WRONG SCREEN ON DISPLAY. Both the element grid
+     and the "My decorations" shelf fall back to the pre-065 layout when there are no categories —
+     correct for a deployment that never ran that migration, and wrong for the second and a half
+     while the fetch is in flight. `openElements` opens the flyout FIRST and awaits the categories
+     after, so every open began in that window: the legacy layout rendered, and because the kept
+     pieces were already in memory (see the note on `myShelfWanted`), what a baker saw first was
+     their own decorations. Sandeep, 2026-09-20: "when i click on decor - flyout first shows the
+     elements from My decorations. This should not be the case."
+     Three states, not two: null = not asked yet, false = asked and none exist, true = have them. */
+  const [categoriesLoaded, setCategoriesLoaded] = useState(null);
   const [activeCategory, setActiveCategory]   = useState(null);
   const [loadedCategories, setLoadedCategories] = useState(() => new Set());
   const [allElementsLoaded, setAllElementsLoaded] = useState(false);
@@ -3565,6 +3588,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // because loadElementsIfNeeded short-circuits on `loadedCategories`.
   async function openCategory(cat) {
     setActiveCategory(cat);
+    if (cat.id === MY_DECORATIONS.id) setMyShelfWanted(true);
     // Mine has no category_id to filter on — the rows are identified by carrying a baker_id — so it
     // is the one card that needs the whole catalogue. Fine: it is opened rarely and by someone who
     // has uploaded something, not by every customer on arrival.
@@ -3592,12 +3616,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         const cats = apiClient
           ? await apiClient.fetchElementCategories?.()
           : (await supabase.from('element_categories').select('id, slug, name, sort_order').eq('is_active', true).order('sort_order')).data;
-        if (cats?.length) setCategories(cats);
+        if (cats?.length) { setCategories(cats); setCategoriesLoaded(true); }
         // No categories configured (or the call failed) → fall back to loading everything, which is
         // exactly how this panel behaved before. An environment that has not run migration 065 gets
         // the old experience rather than an empty panel.
-        else await loadElementsIfNeeded();
+        // No categories: the shelf is part of the landing view in that layout, so it is wanted now.
+        else { setCategoriesLoaded(false); setMyShelfWanted(true); await loadElementsIfNeeded(); }
       } catch {
+        setCategoriesLoaded(false);
+        setMyShelfWanted(true);
         await loadElementsIfNeeded();
       }
     }
@@ -9638,7 +9665,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* Everything below is the element picker as it was. It is now gated: with categories
                 configured it appears only once one is chosen, or while searching. Without them it
                 renders immediately, exactly as before. */}
-            {(!categories.length || (activeCategory && activeCategory.id !== MY_DECORATIONS.id) || elemSearch.trim()) && <>
+            {/* The categories are in flight. Previously this second rendered the pre-065 layout —
+                every element plus the kept pieces — and then replaced it with the tile grid. */}
+            {categoriesLoaded === null && !elemSearch.trim() && (
+              <div style={{ display: 'flex', justifyContent: 'center', padding: '22px 0' }}>
+                <CakeSpinner size={20} />
+              </div>
+            )}
+
+            {(categoriesLoaded === false || (activeCategory && activeCategory.id !== MY_DECORATIONS.id) || elemSearch.trim()) && <>
 
             {/* Ring-popup elements — own groups, tap a style to open the popup. */}
             {renderRingPickerCard('Cream Piping', pipingPickerEls)}
@@ -9707,14 +9742,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 element type — an uploaded topper must stay a topper or it loses its placement rules.
                 Also still shown when no categories exist, which is the pre-065 layout unchanged. */}
             {!elemSearch.trim() && hasCap('element:manage')
-              && (activeCategory?.id === MY_DECORATIONS.id || (!categories.length && !activeCategory)) && (
+              && (activeCategory?.id === MY_DECORATIONS.id || (categoriesLoaded === false && !activeCategory)) && (
               <>
                 {/* The heading is for the LEGACY layout only. Reached through its own card, the
                     flyout's own title already says "My decorations" in full — printing it again
                     directly underneath said the same words twice in one small panel. Without
                     categories there is no such title (the flyout says "Decorations"), so the
                     section still needs to name itself. */}
-                {!categories.length && (
+                {categoriesLoaded === false && (
                   <div style={{ fontSize: 10, fontWeight: 800, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', margin: '14px 0 8px' }}>
                     My decorations
                   </div>
