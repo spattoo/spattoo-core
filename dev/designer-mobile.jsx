@@ -301,6 +301,34 @@ CAT_ELEMENTS.push({
   sort_order: 8,
 });
 
+/* ⚠️ A PIPED GRASS ROW, and without it renderGrassBody was unreachable — the same gap that made the
+ * foil and dust bugs unverifiable, found the same way and for the third time.
+ *
+ * ⚠️ `procedural: 'grass'` is the VALUE of `procedural`, not a nested key, and it is what routes the
+ * row — PROCEDURAL_TOOLS is keyed off `placement_config.procedural`, so the ELEMENT TYPE is
+ * irrelevant here (there is no et-grass, and there does not need to be). Writing `{ grass: {...} }`
+ * instead would produce an ordinary sticker card, which is the `top_drip` trap this file already
+ * names twice.
+ *
+ * ⚠️ It must be driven through __tapElementById. handleElementDrop never consults PROCEDURAL_TOOLS;
+ * only tapPlaceElement does.
+ *
+ * The nested `grass` tuning object is deliberately ABSENT: addGrass spreads GRASS_DEFAULTS first and
+ * a row's tuning over it, so omitting it exercises the shipped defaults rather than pinning the
+ * harness to a second copy of them. `default_color` is real, though — without one addGrass falls
+ * back to a hardcoded '#4caf3d', and a fixture should not be the thing that hides that.
+ * Grass lands on the TOP tier (grassTierIndex), and the board ring seeds its own shorter, denser
+ * values in toggleBoardGrass — a hedge at the cake's foot, not a field. */
+CAT_ELEMENTS.push({
+  id: 'e20', name: 'Piped grass', description: 'grass piped with a multi-hole nozzle',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: CAT_THUMB('#6fae4a'), thumbnail_url: CAT_THUMB('#6fae4a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'board'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'grass' },
+  default_color: '#5aa83c', sort_order: 20,
+});
+
 /* ⚠️ AN EDGE-SEATED FIGURE, which nothing here could make. Every row above seats on the top surface
  * or hugs a wall, so the `perch`/`verge` modes — and with them `edgeSeatSeed`, the shared front-edge
  * seed both the add path and the chooser's move path call — were unreachable without a database.
