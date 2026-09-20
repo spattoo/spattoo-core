@@ -6205,12 +6205,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * close control is a tick or a ✕, and (below) whether the More sheet may stay open — and three
    * copies of the same condition is how two of them end up disagreeing.
    *
-   * ⚠️ BOTH phone sheets, not just the cap-driven one. `s.wheelPanelMobile` has exactly two
-   * consumers: this panel and the number-topper editor, which keys off `selectedAge` instead. They
-   * look identical to a baker, so hiding the strip for one and not the other would read as a bug.
-   * They cannot both be true — `selectedEl.type` is 'tier' or 'age', never both — so this is a
-   * plain union with no interaction to reason about. */
-  const editingOnPhone = isMobile && (showRightPanel || !!selectedAge);
+   * ⚠️ PROPERTIES TAKE THE BAR; FORMS STAY SHEETS. `s.wheelPanelMobile` has two consumers and they
+   * are not the same kind of thing. This panel holds CONTROLS — ColorWheel, SizeDial — that you drag
+   * while watching the cake, which is what a bar is for. The number-topper editor holds an INPUT and
+   * a Delete button: you type a value. It keeps the strip and stays a sheet.
+   *
+   * Not a stylistic split. Focusing a text input on a phone raises the keyboard, and a keyboard
+   * covers a 56px bar completely — so a form rendered as a bar is a form you cannot see while
+   * typing into it. A sheet survives that. Sandeep drew the line and this is why it holds.
+   *
+   * ⚠️ `age` is the only form today, so this reads as a type branch and is one. If a second arrives,
+   * the rule to name is "does this editor collect a value or adjust a thing", not a list of ids. */
+  const editingOnPhone = isMobile && showRightPanel;
 
   // Measured rather than assumed: the height can come from the content, from a drag, or from the
   // 60% cap, and the canvas has to inset by whichever it actually was.
@@ -10094,9 +10100,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={isMobile ? s.wheelPanelMobile : s.wheelPanel}>
               <div style={s.wheelHeader}>
                 <span style={s.wheelTitle}>Number topper</span>
-                <button style={s.iconBtn}
-                        aria-label={isMobile ? 'Done editing' : 'Close'}
-                        onClick={() => setSelectedEl(null)}>{isMobile ? '✓' : '✕'}</button>
+                {/* ⚠️ A ✕, not a tick, and on purpose. This sheet does not take the nav bar — it is
+                    a form, and it sits above the strip like any other sheet. A tick would promise
+                    "the menu is coming back", which is only true of the properties bar. */}
+                <button style={s.iconBtn} aria-label="Close"
+                        onClick={() => setSelectedEl(null)}>✕</button>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '2px' }}>
                 <div>
