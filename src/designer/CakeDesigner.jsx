@@ -23,7 +23,7 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import { Slider } from '../shared/Slider.jsx';
-import { CHROME_STOPS } from '../shared/chrome.js';
+import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
@@ -2591,6 +2591,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
   // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
   // one of the two places that read it.
+  /* ── A CUSTOMER GETS A PLAIN BAR, NOT THE SPATULA ────────────────────────────────────────────
+   * Sandeep, on a signed-in customer's storefront: "this looks ugly. lets have a normal rectangular
+   * menu bar pls".
+   *
+   * The spatula is the BAKER APP's furniture. A customer is inside a bakery's own storefront, in
+   * that bakery's brand, and the silhouette reads as ours rather than theirs. It also cannot carry
+   * five items: Chef's Desk and Settings are capability-gated away, so the blade has no lower group
+   * and sits empty however the nav above it is spaced — which is why 0.1.588's pitch fix improved
+   * the rhythm and still left one long hole.
+   *
+   * ⚠️ orderMode, NOT role. `role` arrives from /me and is null until it resolves, so the rail would
+   * paint as a spatula and then become a bar on every load. orderMode is a prop, known at first
+   * paint, and is already the switch for the customer-facing primary action ("Request a Quote").
+   */
+  const plainRail = orderMode === 'customer';
+
   const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
     || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
 
@@ -10323,9 +10339,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {!isMobile && <div style={dockedPageOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
-        <div style={s.sidebar}>
-          <SpatulaFrame lifted={dockedPageOpen} />
-          <div style={s.sidebarInner}>
+        <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
+          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
+          <div style={plainRail ? { ...s.sidebarInner, ...s.sidebarInnerPlain } : s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
             {railItems.map(({ id, label, icon, menu }) => {
               const active = railItemActive(id, menu);
@@ -10450,7 +10466,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
+          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + RAIL.width : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -10739,7 +10755,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            *
            * Overridden here rather than in s.flyout because Elements shares that style and does not
            * want the width. */
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
+          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + RAIL.width : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -13445,6 +13461,22 @@ const s = {
     padding: '48px 0 30px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
+  /* ── The plain bar a CUSTOMER gets ──────────────────────────────────────────────────────────
+   * Same 64px column, same items, same pitch — only the silhouette goes. The surface is
+   * chromeGradient() rather than a hand-picked near-black, because "match the spatula" is the
+   * requirement and shared/chrome.js is where that colour lives; its own header says an
+   * approximation would be wrong by definition.
+   *
+   * Rounded on the RIGHT only: the bar runs off the left edge of the window exactly as the
+   * spatula's handle did, so a radius there would float it away from the frame. */
+  sidebarPlain: {
+    background: chromeGradient(180),
+    borderRadius: '0 18px 18px 0',
+    boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
+  },
+  /* 48px of top padding bought clearance for the spatula's CAP (see sidebarInner). A plain bar has
+     no cap, so that space is simply lost — a whole menu item's worth, per the note there. */
+  sidebarInnerPlain: { padding: '14px 0 22px' },
   sidebarDivider: {
     height: 1, width: 32,
     background: 'rgba(255,255,255,0.10)',
@@ -13540,7 +13572,7 @@ const s = {
   // Main + flyout panels
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
   flyout: {
-    position: 'absolute', left: RAIL_FLYOUT_LEFT, top: 0, bottom: 0, zIndex: 20,
+    position: 'absolute', top: 0, bottom: 0, zIndex: 20,
     width: 200,
     // Frosted/see-through so the cake shows through (esp. on mobile, where it overlays the cake). The
     // low alpha is what actually reveals the cake — 0.97 reads as solid white even with the blur.
