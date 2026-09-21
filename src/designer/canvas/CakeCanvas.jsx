@@ -3377,7 +3377,11 @@ const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
  * on a 120Hz phone as on a 60Hz one. Slightly longer than the 180ms the container used to animate
  * over: the sheet now moves in one step and this is the only animation left, so it carries the
  * whole gesture rather than racing a CSS transition. */
-const FIT_EASE_S = 0.22;
+/* ⚠️ 0.45s, NOT 0.22 — a deliberate slowness. Sandeep, having watched the first version: "can we
+ * slow down the coming back? it looks beatiful to watch it coming back with little slow." The
+ * faster glide read as a correction; at this length it reads as the view opening out, which is the
+ * one moment in the editor where the whole cake comes back into frame and is worth seeing. */
+const FIT_EASE_S = 0.45;
 function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
