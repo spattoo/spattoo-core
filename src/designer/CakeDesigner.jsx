@@ -7876,29 +7876,71 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {inst.photoUrl ? 'Change image' : 'Select image'}
           </button>,
         ];
-        if (inst.photoUrl) {
-          controls.push(
-            <div key="zoom" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, width: '100%' }}>
-              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Zoom</span>
-              <SizeDial size={t.zoom ?? 1} min={0.5} max={4} step={0.1} onChange={v => setT({ zoom: v })} />
-            </div>,
-            <div key="pan" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4, marginTop: 6, width: '100%' }}>
-              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Position</span>
-              <button style={s.tbIconBtn} onClick={() => setT({ y: clampPan((t.y ?? 0) - PAN) })}>↑</button>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button style={s.tbIconBtn} onClick={() => setT({ x: clampPan((t.x ?? 0) + PAN) })}>←</button>
-                <button style={s.tbIconBtn} onClick={() => setT({ x: clampPan((t.x ?? 0) - PAN) })}>→</button>
-              </div>
-              <button style={s.tbIconBtn} onClick={() => setT({ y: clampPan((t.y ?? 0) + PAN) })}>↓</button>
-            </div>,
-            <div key="rot" style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 6, width: '100%' }}>
-              <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888' }}>Rotate</span>
-              <button style={s.tbIconBtn} onClick={() => setT({ rot: (t.rot ?? 0) - 5 })}>↺</button>
-              <button style={s.tbIconBtn} onClick={() => setT({ rot: (t.rot ?? 0) + 5 })}>↻</button>
-            </div>,
-          );
-        }
         groups.push({ key: 'photo', divider: true, panelLabel: 'Photo', controls });
+        /* ── The photo's own controls: ONE scrolling row of 46px cells ──────────────────────────
+         * Sandeep: "photo frame control. taking a lot of place on screen… i think the photo
+         * position control is taking too much space. pls see an alternative way to represent this
+         * control."
+         *
+         * ⚠️ MEASURED BEFORE IT WAS TOUCHED, because "a lot of space" is a height claim. At 375px
+         * with a photo in the frame the card was 523px of an 844px phone, and THIS GROUP WAS 243px
+         * of it — more than Placement (141) and the whole Colour/Size row (63) put together. The
+         * cause was not the label: every block was `width: '100%'`, so the row's flex container
+         * stacked them, and Position stacked four more children inside itself (caption, ↑, a ←→
+         * row, ↓). Five rows for a two-axis nudge.
+         *
+         * ⚠️ THE BUTTON KEEPS ITS OWN ROW, ABOVE. "Change image" is an ACTION, not a control, and
+         * an action that scrolls out of sight is worse than one that costs a line. That is why
+         * this is a second group rather than one row holding both shapes.
+         *
+         * ⚠️ POSITION STAYS FOUR ARROWS, compressed into one 46px cell rather than becoming two
+         * dials. It is a 2-axis nudge: arrows say that directly, where an X dial and a Y dial make
+         * the reader map axes onto a picture in their head. The cell matches SizeDial's 46×46 and
+         * DialCell's caption exactly, so all three sit on one baseline.
+         *
+         * ⚠️ `padBtn` IS LOCAL, and deliberately not s.tbIconBtn: that style is minWidth 28 with
+         * 4px×8px padding — two of them plus a gap overflow a 46px box. Widening the SHARED style
+         * to fit here would have quietly re-spaced every other card that uses it. */
+        if (inst.photoUrl) {
+          const padBtn = { background: 'transparent', border: 'none', borderRadius: 5, padding: 0,
+            width: 15, height: 14, lineHeight: '14px', fontSize: 11, cursor: 'pointer',
+            color: '#333', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textAlign: 'center' };
+          const cell = (label, node) => (
+            <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+              {node}
+              <span style={{ fontSize: 9, fontWeight: 700, color: '#888', minWidth: 26, textAlign: 'center', letterSpacing: 0.3 }}>
+                {label}
+              </span>
+            </div>
+          );
+          groups.push({ key: 'photo-fit', divider: false, scroll: true, controls: [
+            cell('Zoom', <SizeDial key="z" size={t.zoom ?? 1} min={0.5} max={4} step={0.1} onChange={v => setT({ zoom: v })} />),
+            /* The pad: ↑ over ←→ over ↓, in the same 46×46 a dial occupies. Same handlers, same
+               PAN step and clamp as the five-row version — only the arrangement changed. */
+            cell('Position', (
+              <div key="p" style={{ width: 46, height: 46, flexShrink: 0, display: 'flex', flexDirection: 'column',
+                alignItems: 'center', justifyContent: 'center', gap: 1,
+                borderRadius: 10, background: '#f6f3f4' }}>
+                <button style={padBtn} title="Up"    onClick={() => setT({ y: clampPan((t.y ?? 0) - PAN) })}>↑</button>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  <button style={padBtn} title="Left"  onClick={() => setT({ x: clampPan((t.x ?? 0) + PAN) })}>←</button>
+                  <button style={padBtn} title="Right" onClick={() => setT({ x: clampPan((t.x ?? 0) - PAN) })}>→</button>
+                </div>
+                <button style={padBtn} title="Down"  onClick={() => setT({ y: clampPan((t.y ?? 0) + PAN) })}>↓</button>
+              </div>
+            )),
+            cell('Rotate', (
+              <div key="r" style={{ width: 46, height: 46, flexShrink: 0, display: 'flex',
+                alignItems: 'center', justifyContent: 'center', gap: 2,
+                borderRadius: 10, background: '#f6f3f4' }}>
+                <button style={{ ...padBtn, width: 18, height: 18, lineHeight: '18px', fontSize: 14 }}
+                  title="Rotate left"  onClick={() => setT({ rot: (t.rot ?? 0) - 5 })}>↺</button>
+                <button style={{ ...padBtn, width: 18, height: 18, lineHeight: '18px', fontSize: 14 }}
+                  title="Rotate right" onClick={() => setT({ rot: (t.rot ?? 0) + 5 })}>↻</button>
+              </div>
+            )),
+          ] });
+        }
         // Border width — procedural ring around the photo (0 = no border). Hidden when the frame uses
         // a decorative overlay (that art IS the border). Colour comes from the shared ColorWheel group.
         /* ⚠️ Border no longer takes a row of its own — it rides the Size row with Colour and Spin.
