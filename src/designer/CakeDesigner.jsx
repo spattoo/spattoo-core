@@ -228,7 +228,11 @@ const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
  * ⚠️ `read` returns the PREVIOUS object when nothing changed. Without that, every scroll event sets
  * fresh state and re-renders the row — 21 of these now exist, several carrying live 3D previews.
  */
-function ScrollFadeRow({ children, style, fade = '255,253,249' }) {
+/* ⚠️ `wrapStyle` EXISTS BECAUSE THE WRAPPER IS NOT ALWAYS A BLOCK. The default `width: '100%'` is
+ * right for a row that owns its line, but buildToolbar's panel rows are FLEX CHILDREN sitting beside
+ * a label span (s.editPanelRow) — a 100%-wide wrapper there pushes the label out and overflows the
+ * card. Those pass `{ flex: 1, minWidth: 0 }` instead, which is what the bare div they replaced had. */
+function ScrollFadeRow({ children, style, fade = '255,253,249', wrapStyle = null }) {
   const ref = useRef(null);
   const [edges, setEdges] = useState({ left: false, right: false });
   useLayoutEffect(() => {
@@ -267,6 +271,9 @@ function ScrollFadeRow({ children, style, fade = '255,253,249' }) {
    *
    * ⚠️ The step follows the storefront carousel: first child's width plus the gap, smooth. A fixed
    * pixel step would over- or under-shoot depending on whether a row holds 46px dials or 68px tiles.
+   * But a row whose only child is ONE full-width track — the piping ring controls, which centre
+   * themselves with `margin: 0 auto` — would measure that track and jump straight to the far end,
+   * so the step is capped at most of a screenful.
    */
   const step = (dir) => (e) => {
     e.stopPropagation();
@@ -274,7 +281,8 @@ function ScrollFadeRow({ children, style, fade = '255,253,249' }) {
     if (!el) return;
     const first = el.firstElementChild;
     const gap = parseFloat(getComputedStyle(el).gap) || 8;
-    const by = first ? first.getBoundingClientRect().width + gap : el.clientWidth * 0.6;
+    const cell = first ? first.getBoundingClientRect().width + gap : el.clientWidth * 0.6;
+    const by = Math.min(cell, el.clientWidth * 0.8);
     el.scrollBy({ left: dir * by, behavior: 'smooth' });
   };
   // `to left` / `to right` point AWAY from the edge, so each gradient is opaque at its own side.
@@ -294,7 +302,7 @@ function ScrollFadeRow({ children, style, fade = '255,253,249' }) {
     ...(side === 'left' ? { transform: 'translateY(-50%) rotate(180deg)' } : null),
   });
   return (
-    <div style={{ position: 'relative', width: '100%' }}>
+    <div style={{ position: 'relative', ...(wrapStyle ?? { width: '100%' }) }}>
       <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
       {edges.left && <div aria-hidden="true" style={edgeStyle('left')} />}
       {edges.right && <div aria-hidden="true" style={edgeStyle('right')} />}
@@ -8492,10 +8500,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   one line tall and the cake behind it stays visible. Wrapping is still the default —
                   a row of two buttons that scrolled would hide the second one behind an invisible
                   scrollbar, which is worse than the wrap it replaced. */}
-              <div style={{ display:'flex', alignItems:'center', gap:4, flex:1, minWidth: 0,
-                ...(g.scroll
-                  ? { flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }
-                  : { flexWrap: 'wrap' }) }}>{g.controls}</div>
+              {/* ⚠️ A SCROLLING ROW HERE GETS THE SAME FADE AND ARROW AS EVERY OTHER ONE. It did not,
+                  and Sandeep caught it on the faux ball: the row scrolled with nothing to say so —
+                  "Colour · Size · Spin · Tilt ↑ ↓ ←" cut dead at the card edge.
+                  ⚠️ WHY IT WAS MISSED, so the next sweep is not fooled the same way: the rewrite that
+                  wrapped 21 rows matched on `style={s.previewRow}`, and these two rows set their
+                  scroll styles INLINE here instead. They were never counted — the sweep that reported
+                  "22 rows, 0 wrong" had checked 22 of 24, and the two it never saw were the two with
+                  no affordance. Only `sc` (faux ball: Colour · Size · Spin · Tilt · Finish) and
+                  `photo-fit` (photo frame: Zoom · Position · Rotate) come through here.
+                  ⚠️ `wrapStyle` IS REQUIRED, NOT DECORATION. This row is a FLEX CHILD beside a label
+                  span in s.editPanelRow; ScrollFadeRow's default `width: '100%'` wrapper would push
+                  the label out and overflow the card, so it takes the `flex: 1, minWidth: 0` the bare
+                  div it replaces already carried.
+                  minWidth:0 also lets a wide child (a <canvas> is 300px intrinsic) shrink to the
+                  column rather than overflow. Wrapping stays the default: a row of two buttons that
+                  scrolled would hide the second behind an invisible scrollbar. */}
+              {g.scroll ? (
+                <ScrollFadeRow
+                  fade="255,255,255"
+                  wrapStyle={{ flex: 1, minWidth: 0 }}
+                  style={{ display:'flex', alignItems:'center', gap:4,
+                    flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }}>
+                  {g.controls}
+                </ScrollFadeRow>
+              ) : (
+                <div style={{ display:'flex', alignItems:'center', gap:4, flex:1, minWidth: 0,
+                  flexWrap: 'wrap' }}>{g.controls}</div>
+              )}
             </div>
           ))}
         </div>
@@ -11989,13 +12021,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         own header, hairline and full-width label-left/stepper-right rows. That
                         section spent a lot of a phone's scarce axis to hold one or two controls.
 
-                        ⚠️ Scrolls sideways when it overflows, exactly like the ring tiles above —
-                        a drip ring carries Length + Gloss + Flood, a y-adjustable board ring carries
-                        Radial + Flip + Height, and height is what we are protecting.
+                        ⚠️ Scrolls sideways when it overflows, exactly like the ring tiles above — and
+                        says so the same way, through ScrollFadeRow. A drip ring carries Length + Gloss
+                        + Flood, a y-adjustable board ring carries Radial + Flip + Height, and height is
+                        what we are protecting.
 
                         The inner track has `margin: 0 auto` so a short row still CENTRES; centring
                         the scroller itself would clip the first item out of reach once it overflows. */}
-                    <div style={{ overflowX: 'auto', scrollbarWidth: 'none', marginTop: 8 }}>
+                    <ScrollFadeRow fade="255,255,255" wrapStyle={{ width: '100%', marginTop: 8 }}
+                      style={{ overflowX: 'auto', scrollbarWidth: 'none' }}>
                     <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'flex-start', gap: 22, margin: '0 auto', width: 'fit-content' }}>
                       {/* ⚠️ FLOOD TOP LEADS THE ROW. Sandeep: "'flood top' should be first control in
                           the row. next is color etc. all in one row." It used to sit BELOW as a
@@ -12106,7 +12140,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         );
                       })()}
                     </div>
-                    </div>
+                    </ScrollFadeRow>
 
                     {/* ⚠️ Reset lives BELOW the row, not in it. It appears only when a value is off
                         zero, and an item that appears and disappears inside a horizontal scroller
