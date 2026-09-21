@@ -381,14 +381,19 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
         </div>
       )}
       {realCount >= 2 && balance != null && (
-        <div style={{ marginTop: 10 }}>
-          <div style={s.gradientLabel}>Balance</div>
-          <input type="range" min={0.2} max={0.8} step={0.01} value={balance}
-            onChange={e => onBalanceChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: INK }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888' }}>
-            <span>Primary</span><span>Secondary</span>
-          </div>
+        /* ⚠️ AN OffsetDial, NOT A SizeDial, and the choice is not cosmetic. Balance is a POSITION
+           BETWEEN TWO ENDS (primary ↔ secondary), not a magnitude: SizeDial's band tapers thin→thick
+           to mean small→large, which would claim this quantity grows. OffsetDial fills from a marked
+           middle in whichever direction the value went, which is what this actually is.
+           ⚠️ THE END-LABELS ARE GONE, and that is a real loss, chosen deliberately. "Primary" and
+           "Secondary" said which direction the slider ran; a caption cannot. Sandeep picked
+           captions-only for the whole tier picker so it matches the element cards — the readout is
+           what carries the meaning now, which is why fmt prints two decimals rather than a bare
+           number that could be read as either end. */
+        <div style={s.previewRow}>
+          <DialCell label="Balance" dial="offset" value={balance}
+            min={0.2} max={0.8} step={0.01} fmt={v => v.toFixed(2)}
+            onChange={v => onBalanceChange(v)} />
         </div>
       )}
     </div>
@@ -448,31 +453,29 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
         <div style={s.gradientBlock}>
           {/* ⚠️ width 100%: gradientBlock is a centred column, so a row without it shrinks to its
               content and the label sits glued to its value — "HOW MANY STRIPES6". */}
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', width: '100%' }}>
-            <div style={s.gradientLabel}>How many stripes</div>
-            <span style={s.stripeValue}>{count}</span>
+          {/* ⚠️ THREE DIALS IN ONE SCROLLING ROW. Three full-width sliders each carried a label, a
+              value and a hint — nine stacked blocks for three numbers, on a picker that also holds a
+              palette. Sandeep chose one scrolling row here as on the element cards.
+              ⚠️ Stripes is a COUNT and prints as an integer; Softness and Hand-scraped are 0–1
+              stepping 0.01, so two decimals or they read as a number that barely moves.
+              ⚠️ THE HINTS MOVED BENEATH THE ROW, they did not go. A dial has nowhere to put a
+              sentence, and these three say things the control cannot: whether the palette repeats,
+              that an odd count matches top and bottom, and what a little wobble is FOR. Losing them
+              would leave three unexplained numbers. Same reason the rainbow's board hint moved out
+              of its map rather than being deleted.
+              ⚠️ The Crisp/Blended pair is gone with the end-labels — see the note on Balance. */}
+          <div style={s.previewRow}>
+            <DialCell label="Stripes" value={count} min={2} max={MAX_STRIPES} step={1}
+              fmt={v => String(Math.round(v))} onChange={v => onCountChange(Math.round(v))} />
+            <DialCell label="Softness" value={softness} min={0} max={1} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => onSoftnessChange(v)} />
+            <DialCell label="Hand-scraped" value={wobble} min={0} max={1} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => onWobbleChange(v)} />
           </div>
-          <input type="range" min={2} max={MAX_STRIPES} step={1} value={count}
-            onChange={e => onCountChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: INK }} />
           <div style={s.stripeHint}>
             {count === colours ? 'One stripe per colour.' : `Your ${colours} colours repeat.`}
-            {' '}An odd number matches top and bottom.
+            {' '}An odd number matches top and bottom. A little hand-scrape reads as iced by hand.
           </div>
-
-          <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Softness</div>
-          <input type="range" min={0} max={1} step={0.01} value={softness}
-            onChange={e => onSoftnessChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: INK }} />
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 10, fontWeight: 700, color: '#888', width: '100%' }}>
-            <span>Crisp</span><span>Blended</span>
-          </div>
-
-          <div style={{ ...s.gradientLabel, marginTop: 12, width: '100%' }}>Hand-scraped</div>
-          <input type="range" min={0} max={1} step={0.01} value={wobble}
-            onChange={e => onWobbleChange(Number(e.target.value))}
-            style={{ width: '100%', accentColor: INK }} />
-          <div style={s.stripeHint}>A little of this reads as iced by hand.</div>
         </div>
       )}
     </div>
@@ -4986,6 +4989,44 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const [grassSelected, setGrassSelected] = useState(null);   // { tier, idx } — BOARD_TIER for the board
   const GRASS_PATCH_R = 0.42;
 
+  /* ── One clump, as a cell in a scrolling row ───────────────────────────────────────────────────
+   * Sandeep chose one scrolling row for the clumps over keeping them as a list. The board list and
+   * the tier list are twins — they differed only in BOARD_TIER vs the tier index — so this is ONE
+   * helper called twice rather than the same markup pasted in both places. That is not tidiness:
+   * `check:dup` sits at 0.75% against a 0.79 threshold, so a second copy of a ~10-line block is
+   * roughly what trips it, and the gate would be right.
+   *
+   * ⚠️ THE REMOVE HAD TO GO SOMEWHERE, and that was the open question in the choice. Each cell
+   * carries its own ×, copying the dust flick pill exactly (select button + × in DANGER, the
+   * selected one bordered INK and tinted INK_TINT) — so a clump is still removed individually and
+   * the row still says which one is selected. Tapping the caption selects; the dial sizes it.
+   *
+   * ⚠️ The size dial keeps 0.15–0.9 step 0.02 and prints two decimals: at SizeDial's default one
+   * decimal a clump reads "0.2…0.9" in eight jumps across its whole travel. */
+  const grassClumpCells = (patches, tier, onSize, onRemove) => (
+    <div style={s.previewRow}>
+      {patches.map((p, k) => {
+        const on = grassSelected?.tier === tier && grassSelected?.idx === k;
+        return (
+          <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+            <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
+              fmt={v => v.toFixed(2)}
+              onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
+            <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
+              border: `1.5px solid ${on ? INK : LINE}`, background: on ? INK_TINT : SURFACE }}>
+              <button onClick={() => setGrassSelected({ tier, idx: k })}
+                style={{ padding: '2px 4px 2px 8px', border: 'none', background: 'transparent', fontSize: 9,
+                  fontWeight: 700, color: INK, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>{k + 1}</button>
+              <button title="Remove" onClick={() => onRemove(k)}
+                style={{ padding: '2px 6px', border: 'none', background: 'transparent', fontSize: 11,
+                  color: DANGER, cursor: 'pointer' }}>×</button>
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
   // one at the same (u, v), so the second landed on top of the first and "+ Add clump" looked
   // broken — the list grew and the cake did not change.
@@ -5859,6 +5900,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * failed to open the card look identical from the DOM, and they are opposite bugs. A tap that
      * lands on the cake wall selects a tier, so reading this after the tap says which happened. */
     window.__getSelectedEl = () => selectedEl;
+    /* ⚠️ SELECTING A TIER HAD NO DOOR, and that is how a whole card stayed untested. The tier's
+     * colour panel — Balance, and the three stripe controls — mounts only behind
+     * `selectedEl?.type === 'tier'`, and the single path to that is handleTierClick, a CANVAS
+     * handler. So the card could not be opened from a test at all, and its controls were the last
+     * ones converted to dials with nothing to verify them against.
+     * This is the same gap that hid the cloud and rainbow cards: no fixture, no hook, no way to
+     * look. Two guessed element ids later, the lesson is that "it builds" is not evidence about a
+     * screen nobody can open. Routed through handleTierClick rather than selectExclusive so the
+     * hook exercises the real guard (the pen owns the cake while drawing) instead of side-stepping
+     * it — a test door that skips the thing it is testing is worse than none. */
+    window.__selectTier = (i) => { handleTierClick(i); return true; };
     /* Which flake the FINISH thinks is selected. This is the discriminator between "the tap missed
      * the shard" and "the tap hit it and something else stole the selection afterwards": onFoilSelect
      * sets these two indices, so they move if and only if the grab sphere was actually hit. From the
@@ -7334,12 +7386,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             on (uncheck → single ball)
           </label>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={s.editPanelLabel}>Size</span>
-          <input type="range" min={min} max={max} step={1} value={count}
-            onChange={e => setClusterSize(card.clusterId, parseInt(e.target.value, 10))}
-            style={{ flex: 1, accentColor: INK }} />
-          <span style={{ fontSize: 11, fontWeight: 700, color: '#333', minWidth: 24, textAlign: 'right' }}>{count}</span>
+        {/* A COUNT of balls in the clump, so the dial prints an integer and rounds on write — the
+            same rule dust's Density and the rainbow's Ropes follow. The separate right-hand readout
+            is gone because the dial carries the number itself. */}
+        <div style={s.previewRow}>
+          <DialCell label="Size" value={count} min={min} max={max} step={1}
+            fmt={v => String(Math.round(v))}
+            onChange={v => setClusterSize(card.clusterId, Math.round(v))} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={s.editPanelLabel}>Colours</span>
@@ -7430,13 +7483,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the slider.
               const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el));
               return (
-                <div key={su.group} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  {onSurfaces.length > 1 && <span style={{ fontSize: 10, fontWeight: 700, color: '#8a7a80', minWidth: 30 }}>{su.label}</span>}
-                  <input type="range" min={1} max={maxCount} step={1} value={Math.min(c, maxCount)}
-                    onChange={e => setScatterDensity(card.elementId, su.zone, parseInt(e.target.value, 10))}
-                    style={{ flex: 1, accentColor: '#6c47ff', minWidth: 0 }} />
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#333', minWidth: 22, textAlign: 'right' }}>{c}</span>
-                </div>
+                /* One cell per ACTIVE SURFACE, captioned with the surface when there is more than
+                   one — count is per surface (a denser top than side is a real choice), while Size
+                   and Colour are shared. A count, so integer fmt and rounded on write. */
+                <DialCell key={su.group}
+                  label={onSurfaces.length > 1 ? su.label : 'Count'}
+                  value={Math.min(c, maxCount)} min={1} max={maxCount} step={1}
+                  fmt={v => String(Math.round(v))}
+                  onChange={v => setScatterDensity(card.elementId, su.zone, Math.round(v))} />
               );
             })}
           </div>
@@ -9594,20 +9648,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
             {bg.patches?.length > 0 && (
               <div style={{ marginBottom: 8 }}>
-                {/* Per-CLUMP controls, one row each with its own remove — a list, not card settings,
-                    so these stay as they are. Folding them into the dial row below would merge one
-                    clump's size with the whole ring's. */}
-                {bg.patches.map((p, k) => (
-                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                    <span style={{ fontSize: 10, color: INK_MUTED, width: 12 }}>{k + 1}</span>
-                    <input type="range" min={0.15} max={0.9} step={0.02} value={p.r ?? GRASS_PATCH_R}
-                      onChange={e => setGrassPatchSize(BOARD_TIER, k, +e.target.value)}
-                      onPointerDown={() => setGrassSelected({ tier: BOARD_TIER, idx: k })}
-                      style={{ flex: 1, accentColor: INK }} />
-                    <button onClick={() => removeGrassPatch(BOARD_TIER, k)} title="Remove"
-                      style={{ border: 'none', background: 'none', color: DANGER, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
-                  </div>
-                ))}
+                {/* One scrolling row of clump cells — see grassClumpCells. The note that used to
+                    stand here argued these should stay a list ("a list, not card settings");
+                    Sandeep chose the row, and the per-clump × moved into each cell so nothing the
+                    list did was lost. */}
+                {grassClumpCells(bg.patches, BOARD_TIER,
+                  (k, v) => setGrassPatchSize(BOARD_TIER, k, v),
+                  (k) => removeGrassPatch(BOARD_TIER, k))}
                 <button onClick={() => addGrassPatch(true)}
                   style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
                     border: `1.5px solid ${INK}`, background: INK, color: SURFACE, fontWeight: 700, fontFamily: 'inherit' }}>
@@ -9692,19 +9739,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ fontSize: 11, color: '#999', fontWeight: 600, marginBottom: 6 }}>
                 Drag a clump on the cake to move it.
               </div>
-              {/* Per-CLUMP controls, the twin of the board list above — a list with its own remove,
-                  not card settings, so it stays a row each rather than joining the dial row. */}
-              {g.patches.map((p, k) => (
-                <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                  <span style={{ fontSize: 10, color: INK_MUTED, width: 12 }}>{k + 1}</span>
-                  <input type="range" min={0.15} max={0.9} step={0.02} value={p.r ?? GRASS_PATCH_R}
-                    onChange={e => setGrassPatchSize(i, k, +e.target.value)}
-                    onPointerDown={() => setGrassSelected({ tier: i, idx: k })}
-                    style={{ flex: 1, accentColor: INK }} />
-                  <button onClick={() => removeGrassPatch(i, k)} title="Remove"
-                    style={{ border: 'none', background: 'none', color: DANGER, cursor: 'pointer', fontSize: 14, lineHeight: 1 }}>×</button>
-                </div>
-              ))}
+              {/* The twin of the board row above, through the same helper — one definition, so the
+                  two cannot drift the way two pasted lists would. */}
+              {grassClumpCells(g.patches, i,
+                (k, v) => setGrassPatchSize(i, k, v),
+                (k) => removeGrassPatch(i, k))}
               <button onClick={() => addGrassPatch(false)}
                 style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
                   border: `1.5px solid ${INK}`, background: INK, color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
