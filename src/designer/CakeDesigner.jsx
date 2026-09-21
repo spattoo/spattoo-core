@@ -6786,6 +6786,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * piece of context the collapsed strip can still carry. */
   const cakeFocus = creamPaint
     ? { label: `Painting the ${(TIER_LABELS[creamPaint.tierIndex] ?? 'tier').toLowerCase()} edge — drag on the cake`,
+        /* The word says what ENDS, not what the control is. "Painted" closes the mode and brings
+           the card back; "Done" would promise the dismissal the card header's Done performs. */
+        doneWord: 'Painted',
+        doneLabel: 'Finish painting and return to the cream layer card',
         onDone: () => setCreamPaint(null) }
     : null;
 
@@ -11303,18 +11307,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   state would be a second answer to one question, and the two would drift the first
                   time painting was ended from anywhere but this button.
 
-                  ⚠️ A WORD, NOT A TICK — the same decision the header's Done carries, recorded
-                  above: "tick mark is not obvious here… a better way for the normal user to say
-                  Done". This button ends the mode and brings the card back, which is exactly what
-                  Done means everywhere else in this app. */}
+                  ⚠️ A TICK HERE, A WORD ON THE CARD — AND THE DIFFERENCE IS WHAT EACH ONE DOES.
+                  The header's Done DISMISSES the card. This one RETURNS you to it. Sandeep: "i said
+                  no tick for the first card, for subsequent layouts we can have tick. reason is,
+                  same 'Done' might confuse the user that the first card will collapse."
+
+                  The two are never on screen together — this strip REPLACES the card and its
+                  header — so the confusion is across TIME, not space: a baker who has learned that
+                  Done makes things go away would press this expecting the card to go away too, and
+                  get the opposite. That is a real difference in meaning, so it gets a different
+                  mark. It does NOT reopen the old argument: the tick was rejected twice for meaning
+                  "I have finished with this element", which is a dismissal; this one means "put the
+                  controls back".
+
+                  ⚠️ A TICK WITH A VERB, not a bare ✓. The reason that bare tick lost still stands —
+                  "tick mark is not obvious here", judged at rest on a phone with no hover (rule 7) —
+                  and a lone glyph in a grey circle read as a status badge rather than a button. The
+                  word carries the meaning; the tick carries the distinction.
+
+                  ⚠️ AND NOT ON s.iconBtn, which is what the rejected one wore. This stays s.doneBtn:
+                  the same black pill as every other primary, because it is still the one action this
+                  strip offers.
+
+                  ⚠️ The precedent once cited for a bare glyph — "INVARIANTS #279 blesses typographic
+                  glyphs" — is a rule I invented and that file numbers eighteen. It is not load-bearing
+                  here: this tick stands on the meaning above, not on that citation. */}
               {cakeFocus ? (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 2px 4px' }}>
                   <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: INK,
                                  fontFamily: "'Quicksand',sans-serif", lineHeight: 1.3 }}>
                     {cakeFocus.label}
                   </span>
-                  <button style={{ ...s.doneBtn, minHeight: 30, padding: '0 16px', fontSize: 12 }}
-                    onClick={cakeFocus.onDone}>Done</button>
+                  <button style={{ ...s.doneBtn, minHeight: 30, padding: '0 16px', fontSize: 12, gap: 6 }}
+                    aria-label={cakeFocus.doneLabel} onClick={cakeFocus.onDone}>
+                    <span aria-hidden="true">✓</span>{cakeFocus.doneWord}
+                  </button>
                 </div>
               ) : (
               <>
