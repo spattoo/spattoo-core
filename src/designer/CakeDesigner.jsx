@@ -63,6 +63,9 @@ const RAIL_MIN_GAP = 2;
    20 is what space-evenly already resolved to for a baker on a 900px window, so the baker's rail is
    unchanged at that height and only the sparse case tightens. */
 const RAIL_NAV_GAP = 20;
+/* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
+   numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
+const PLAIN_RAIL_W = 52;
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -3066,7 +3069,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     { id: 'orders',     label: 'Orders',      icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
     { id: 'customers',  label: 'Customers',   icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
     ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
-    { id: 'share',      label: 'Share',       icon: <ShareIcon size={20} />,     requires: 'design:create' },
+    /* ⚠️ NOT FOR A CUSTOMER. Sandeep: "for customer login - 'share' option is not needed."
+       Sharing a design is a BAKER's move — handing a cake to someone else to look at. A customer
+       already has the thing they came to do on screen as a full-width button ("Request a Quote"), and
+       Share sat beside it sounding like a similar job while meaning a different one.
+
+       ⚠️ orderMode, NOT `role`, for the same reason the plain rail uses it: `role` comes from /me and
+       is null until it resolves, so Share would render and then vanish on every customer load.
+       orderMode is a prop and is right at first paint. It is already a dependency of this memo.
+
+       Leaves a customer FOUR items, which still fits the phone strip's six slots, so More stays
+       absent there — see splitMobileNav. */
+    ...(orderMode === 'customer'
+      ? []
+      : [{ id: 'share', label: 'Share', icon: <ShareIcon size={20} />, requires: 'design:create' }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
     // ── "Take a tour" is not a rail item ──────────────────────────────────────────────────────
@@ -10343,11 +10359,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
           <div style={plainRail ? { ...s.sidebarInner, ...s.sidebarInnerPlain } : s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
-            {railItems.map(({ id, label, icon, menu }) => {
+            {railItems.map(({ id, label, short, icon, menu }) => {
               const active = railItemActive(id, menu);
               const isNew  = id === 'new';
               const button = (
-                <button key={id} style={s.navItem} data-tour={id}
+                <button key={id} style={plainRail ? { ...s.navItem, ...s.navItemPlain } : s.navItem} data-tour={id}
                   onClick={() => openRailItem(id, menu)}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
@@ -10356,7 +10372,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </svg>
                       : icon}
                   </span>
-                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>{label}</span>
+                  {/* ⚠️ THE SHORT LABEL ON A THIN BAR. Measured at the rail's own 9px/700/0.2:
+                      "Decorations" is 54.2px against a 48px navItem, so it ran past both edges of the
+                      52px customer bar — visible in a screenshot, invisible to the width assertion,
+                      which reported 52 and was perfectly true. New Cake (44.1) and Templates (45.7)
+                      fit; Uploads is 36.9. Decorations is the only offender a CUSTOMER can see
+                      (Dashboard 48.8 and Customers 48.8 are baker-only, on the 64px spatula).
+                      `short` already exists for exactly this — the phone strip added it, and the note
+                      there says a shorter honest label beats a truncated one. Reused, not reinvented. */}
+                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>
+                    {plainRail ? (short ?? label) : label}
+                  </span>
                 </button>
               );
               if (!menu) return button;
@@ -10466,7 +10492,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + RAIL.width : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
+          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + PLAIN_RAIL_W : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -10755,7 +10781,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            *
            * Overridden here rather than in s.flyout because Elements shares that style and does not
            * want the width. */
-          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + RAIL.width : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
+          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + PLAIN_RAIL_W : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -13469,11 +13495,24 @@ const s = {
    *
    * Rounded on the RIGHT only: the bar runs off the left edge of the window exactly as the
    * spatula's handle did, so a radius there would float it away from the frame. */
+  /* ⚠️ THINNER THAN THE BAKER'S 64. Sandeep: "should be a rectangular thin menu bar."
+     52 is not a taste number: sidebarBtn is a 34px icon box, so 52 leaves 9px either side and the 9px
+     labels still fit ("Decorations" is the long one). Much below 48 the label wraps and the icon box
+     starts touching the edges.
+
+     ⚠️ RAIL.width IS NOT EDITED. That constant feeds RAIL_CENTRE, RAIL_RIGHT and the eight panels that
+     dock past the baker's spatula (shared/rail.js); narrowing it would move all of them, for everyone.
+     The plain bar overrides its own width here and leaves that geometry alone. */
   sidebarPlain: {
+    width: PLAIN_RAIL_W, minWidth: PLAIN_RAIL_W,
     background: chromeGradient(180),
-    borderRadius: '0 18px 18px 0',
+    borderRadius: '0 16px 16px 0',
     boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
   },
+  // navItem is 60 wide for the 64px rail, so on a 52px bar it has to come in with it.
+  /* nowrap is a GUARD, not the fix — `short` is. Without it a label longer than the box wraps under
+     the icon and pushes the next item down, which is worse than a clip and harder to notice. */
+  navItemPlain: { width: 48, whiteSpace: 'nowrap' },
   /* 48px of top padding bought clearance for the spatula's CAP (see sidebarInner). A plain bar has
      no cap, so that space is simply lost — a whole menu item's worth, per the note there. */
   sidebarInnerPlain: { padding: '14px 0 22px' },
