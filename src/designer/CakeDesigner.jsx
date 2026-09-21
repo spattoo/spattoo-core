@@ -9347,20 +9347,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             picking the wall picks the kind with it rather than leaving an impossible pair. */}
         {group('Where it goes', WHERE, it => (cl.surface ?? 'top') === it.key, it => set(it.p))}
 
-        {[
-          ['Size',         'scale',  0.4, 2.0, 0.05, true],
-          ['Balls across', 'lobes',  2,   6,   1,    true],
-          ['Width',        'width',  0.2, 0.9, 0.02, true],
-          ['Height',       'height', 0.1, 0.5, 0.02, true],
-        ].map(([label, key, min, max, step]) => (
-          <div key={key} style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
-            <input type="range" min={min} max={max} step={step}
-              value={cl[key] ?? CLOUD_DEFAULTS[key]}
-              onChange={e => set({ [key]: parseFloat(e.target.value) })}
-              style={{ width: '100%' }} />
-          </div>
-        ))}
+        {/* ⚠️ FOUR DIALS IN ONE SCROLLING ROW, not four stacked full-width sliders. Sandeep, for the
+            fourth time: "why are we still seeing sliders? i have been asking to convert them to
+            dialers multiple times… and not all controls are in same scrollable row." Cloud and
+            rainbow were never in any earlier sweep because those swept the PROCEDURAL cards, and a
+            cloud is not one — which is why the same request kept coming back.
+            ⚠️ `fmt` IS NOT DECORATION HERE. Width and Height step by 0.02 and Balls across is a
+            COUNT; at SizeDial's default one decimal, Height (0.1–0.5) reads "0.1…0.5" in five jumps
+            and a count reads "3.0". A dial whose number is wrong about what it measures is worse
+            than the slider it replaced — DialCell's own header argues this at length.
+            ⚠️ `lobes` IS ROUNDED ON WRITE. cloud.js already does Math.round(p.lobes) when it builds
+            the geometry, so a float could not corrupt the render — but it WOULD be stored, and the
+            saved design would then disagree with the number the customer saw. Round here so the
+            value and the readout are the same thing. */}
+        <div style={s.previewRow}>
+          {[
+            ['Size',         'scale',  0.4, 2.0, 0.05, v => v.toFixed(2)],
+            ['Balls across', 'lobes',  2,   6,   1,    v => String(Math.round(v))],
+            ['Width',        'width',  0.2, 0.9, 0.02, v => v.toFixed(2)],
+            ['Height',       'height', 0.1, 0.5, 0.02, v => v.toFixed(2)],
+          ].map(([label, key, min, max, step, fmt]) => (
+            <DialCell key={key} label={label} value={cl[key] ?? CLOUD_DEFAULTS[key]}
+              min={min} max={max} step={step} fmt={fmt}
+              onChange={v => set({ [key]: key === 'lobes' ? Math.round(v) : v })} />
+          ))}
+        </div>
 
         <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Colour</div>
@@ -9460,26 +9471,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
 
-        {[
-          ['Size',       'scale',     0.4,  1.8,  0.05, true],
-          ['Ropes',      'bands',     3,    9,    1,    true],
-          ['Thickness',  'thickness', 0.04, 0.18, 0.005, true],
-          ['Press flat', 'flatten',   0,    0.9,  0.05, true],
-          ['Up the wall', 'spring',   0,    1,    0.02, (rb.surface ?? 'top') === 'side'],
-        ].filter(([, , , , , show]) => show).map(([label, key, min, max, step]) => (
-          <div key={key} style={{ marginTop: 10 }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>{label}</div>
-            <input type="range" min={min} max={max} step={step}
-              value={rb[key] ?? RAINBOW_DEFAULTS[key]}
-              onChange={e => set({ [key]: parseFloat(e.target.value) })}
-              style={{ width: '100%' }} />
-            {key === 'scale' && boardCapped && (
-              <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>
-                As big as the board allows — its foot has to land on the board.
-              </div>
-            )}
+        {/* ⚠️ FIVE DIALS IN ONE SCROLLING ROW. Same change as the cloud card above, and the two are
+            deliberately identical in shape — they were the same five stacked full-width sliders, and
+            a reader who fixes one should not have to work out whether the other is different.
+            ⚠️ THICKNESS IS WHY `fmt` EXISTS. It runs 0.04–0.18 stepping 0.005; at SizeDial's default
+            one decimal it reads "0.0" for the first two thirds of its travel and "0.1" for the rest
+            — thirty steps showing two numbers. Three decimals is the honest readout. Ropes is a
+            COUNT and prints as one.
+            ⚠️ `bands` ROUNDS ON WRITE, for the reason lobes does on the cloud: the stored design
+            must agree with the number the customer saw.
+            ⚠️ THE BOARD HINT MOVED OUT OF THE MAP. It used to render inside the `scale` row
+            (`key === 'scale' && boardCapped`); a dial has nowhere to put a sentence, so it now sits
+            under the whole row. It still says exactly what it said — that Size has stopped
+            responding because the board, not the control, is the limit — which is the one thing
+            that must not be lost, since a control that silently stops responding is the bug the
+            line was written to prevent. */}
+        <div style={s.previewRow}>
+          {[
+            ['Size',        'scale',     0.4,  1.8,  0.05,  v => v.toFixed(2),           true],
+            ['Ropes',       'bands',     3,    9,    1,     v => String(Math.round(v)),  true],
+            ['Thickness',   'thickness', 0.04, 0.18, 0.005, v => v.toFixed(3),           true],
+            ['Press flat',  'flatten',   0,    0.9,  0.05,  v => v.toFixed(2),           true],
+            ['Up the wall', 'spring',    0,    1,    0.02,  v => v.toFixed(2),           (rb.surface ?? 'top') === 'side'],
+          ].filter(([, , , , , , show]) => show).map(([label, key, min, max, step, fmt]) => (
+            <DialCell key={key} label={label} value={rb[key] ?? RAINBOW_DEFAULTS[key]}
+              min={min} max={max} step={step} fmt={fmt}
+              onChange={v => set({ [key]: key === 'bands' ? Math.round(v) : v })} />
+          ))}
+        </div>
+        {boardCapped && (
+          <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
+            As big as the board allows — its foot has to land on the board.
           </div>
-        ))}
+        )}
 
         <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Colours</div>

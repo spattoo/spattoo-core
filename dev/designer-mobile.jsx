@@ -226,6 +226,41 @@ CAT_ELEMENTS.push({
   default_color: '#C9A227', sort_order: 15,
 });
 
+/* ⚠️ A CLOUD ROW and a RAINBOW ROW — the cards this harness could not open, and the comment on the
+ * letter-blocks row calling that one "the last" was wrong: these two were still missing. Found by
+ * converting their sliders to dials and discovering there was no way to LOOK at either card; two
+ * guessed ids (e16/e17) turned out to be a shell border and a cream band, and a clean measurement
+ * of the wrong card is worse than no measurement.
+ *
+ * ⚠️ `procedural: 'cloud'` / `'rainbow'` are the VALUE of `procedural`, not nested keys — the same
+ * trap the dust and grass rows name. PROCEDURAL_TOOLS is keyed by placement_config.procedural, and
+ * only tapPlaceElement consults it, so these must be driven through __tapElementById.
+ *
+ * ⚠️ THE NESTED TUNING IS DELIBERATELY ABSENT, and for the rainbow that is load-bearing rather than
+ * tidy. addRainbow's own note: RAINBOW_DEFAULTS "is not a neutral base — its feet and its
+ * offsetX: 0.71 are the FALLING RIGHT shape", so a row authoring PART of a shape inherits the rest
+ * from a different one and arrives as a shape none of the six tiles can produce. Authoring nothing
+ * lets the arrangement logic decide, which is what a real row should do too. */
+CAT_ELEMENTS.push({
+  id: 'e24', name: 'Fondant cloud', description: 'a cloud of pressed fondant balls',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#dfe8f2'), thumbnail_url: CAT_THUMB('#dfe8f2'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'board'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'cloud' },
+  default_color: '#ffffff', sort_order: 24,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e25', name: 'Fondant rainbow', description: 'a stack of fondant ropes arched over the cake',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f5a3b8'), thumbnail_url: CAT_THUMB('#f5a3b8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'rainbow' },
+  default_color: '#f5a3b8', sort_order: 25,
+});
+
 /* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
  * made the foil tap-to-reopen bug unverifiable, found the same way.
  *
