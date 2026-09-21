@@ -1913,6 +1913,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
+  /* ⚠️ THE STACK'S OWN HEIGHT, NOT mobilePanelHeight. That one is shared by the Templates and
+   * Decorations flyouts (two call sites, one handlePanelDrag), so reusing it would mean dragging a
+   * decoration card quietly resized the template browser as well. Same helper, separate state. */
+  const [stackDragH, setStackDragH] = useState(null);
   const handleCreamPaint = (tierIndex, layerId, theta01, frac) =>
     updateCreamLayer(tierIndex, layerId, l => ({ ...l, edge: paintProfile(l.edge, theta01, frac) }));
   // A new flick lands on the front of the wall (default camera view); the customer then aims it.
@@ -5886,6 +5890,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       selectExclusive({ type: 'garnish', id });
       return id;
     };
+    // Which cream band is being scraped, if any — so a test can assert the card collapsed for the
+    // right reason rather than inferring it from what is missing on screen.
+    window.__getCreamPaint = () => creamPaint;
     window.__addTopper = (piece = {}) => {
       const id = crypto.randomUUID();
       addTopper({ ...piece, id });
@@ -6111,6 +6118,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const flyout = e.currentTarget.parentElement;
     const startH = Math.round(flyout?.getBoundingClientRect().height ?? 260);
     startPanelDrag(e, startH, setMobilePanelHeight, 80, Math.round(window.innerHeight - MOBILE_BAR_H));
+  };
+  /* The same drag for the decoration stack, writing its OWN height — see stackDragH. Sandeep:
+     "some of the cards have height that covers the cake". The stack opened at a fixed 62vh with no
+     way to shrink it, which is the general half of that complaint; the collapse-while-painting
+     strip below is the specific half. */
+  const handleStackDrag = (e) => {
+    const sheet = e.currentTarget.parentElement;
+    const startH = Math.round(sheet?.getBoundingClientRect().height ?? 320);
+    startPanelDrag(e, startH, setStackDragH, EDIT_PANEL_MIN, Math.round(window.innerHeight - MOBILE_BAR_H));
   };
 
   function handleOrder() {
@@ -6757,6 +6773,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * ⚠️ It still clears expandedPipingId as well as the selection: clearAllSelections() is
    * selectExclusive(null) and does NOT touch a piping card's expansion, so a Done wired to the
    * selection alone would dismiss a decoration and do nothing at all for piping. */
+  /* ⚠️ MODES WHERE THE CAKE IS THE INPUT SURFACE, and the card must stand aside for them.
+   *
+   * Only a mode a baker ENTERS AND LEAVES belongs here. Cream's Paint edge is exactly that: press
+   * it, scrape the edge on the cake, press Done. The other "drag on the cake" controls are NOT the
+   * same shape and must not be added blindly — penDrawMode is derived from the selection, so it is
+   * on for as long as the pen card is open, and collapsing it would permanently hide the controls
+   * you draw with; foil, dust, grass and writing are dragged whenever their card is open, with no
+   * enter or leave at all. For those the answer is the grip, not the strip.
+   *
+   * `label` says WHAT is being painted rather than just that something is — a tier name is the one
+   * piece of context the collapsed strip can still carry. */
+  const cakeFocus = creamPaint
+    ? { label: `Painting the ${(TIER_LABELS[creamPaint.tierIndex] ?? 'tier').toLowerCase()} edge — drag on the cake`,
+        onDone: () => setCreamPaint(null) }
+    : null;
+
   const foldMark = (expanded) => (stackSingleCard ? (
     <button style={{ ...s.doneBtn, minHeight: 28, padding: '0 14px', fontSize: 12 }}
             onClick={e => { e.stopPropagation(); clearAllSelections(); setExpandedPipingId(null); }}>Done</button>
@@ -11207,7 +11239,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ? stackSingleCard
                   ? { ...s.editPopup,
                       left: 0, right: 0, top: 'auto', bottom: 0, width: 'auto',
-                      maxHeight: '62vh',
+                      /* Dragged height wins over the cap, so the grip can make this SHORTER than
+                         62vh as well as taller — a resize that only ever grows is not a resize. */
+                      ...(stackDragH ? { height: stackDragH, maxHeight: 'none' } : { maxHeight: '62vh' }),
                       borderRadius: '16px 16px 0 0',
                       /* Solid enough to read against a cake of any colour. The see-through treatment
                          below is for the list, where seeing the cake through it is the point. */
@@ -11245,6 +11279,45 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   is selectExclusive(null) and does not touch a piping card's expansion, so a Done
                   wired to the selection alone would do nothing whatsoever for piping. */}
 
+              {/* ⚠️ THE GRIP THIS SHEET NEVER HAD. The note above records that the old one "carried
+                  NO handler — the sheet is not dragged by it", so this is not undoing that removal:
+                  it is supplying the function that span only ever looked like it had. Sandeep:
+                  "some of the cards have height that covers the cake". */}
+              {isMobile && stackSingleCard && !cakeFocus && (
+                <div style={s.panelHandle} onPointerDown={handleStackDrag}>
+                  <div style={s.panelHandlePill} />
+                </div>
+              )}
+
+              {/* ⚠️ WHEN THE CAKE IS THE INPUT, THE CARD GETS OUT OF THE WAY. Sandeep: "there is an
+                  option to paint (paint edge) — but this card is covering the cake and not able to
+                  paint it." Pressing Paint edge enters a mode whose whole gesture happens ON the
+                  cake, and until now the UI did not react at all: a 62vh sheet stayed sitting over
+                  the thing you were being asked to drag on.
+
+                  ⚠️ IT IS SAFE TO COLLAPSE because painting does not read the card. CreamPaintTarget
+                  mounts off `creamPaint` alone (CakeCanvas) — an invisible cylinder round the tier —
+                  so the gesture, the auto-rotate and the live edge all work with the card gone.
+
+                  ⚠️ DERIVED FROM creamPaint, NOT A SECOND FLAG. A separate "is the strip showing"
+                  state would be a second answer to one question, and the two would drift the first
+                  time painting was ended from anywhere but this button.
+
+                  ⚠️ A WORD, NOT A TICK — the same decision the header's Done carries, recorded
+                  above: "tick mark is not obvious here… a better way for the normal user to say
+                  Done". This button ends the mode and brings the card back, which is exactly what
+                  Done means everywhere else in this app. */}
+              {cakeFocus ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '2px 2px 4px' }}>
+                  <span style={{ flex: 1, minWidth: 0, fontSize: 11.5, fontWeight: 700, color: INK,
+                                 fontFamily: "'Quicksand',sans-serif", lineHeight: 1.3 }}>
+                    {cakeFocus.label}
+                  </span>
+                  <button style={{ ...s.doneBtn, minHeight: 30, padding: '0 16px', fontSize: 12 }}
+                    onClick={cakeFocus.onDone}>Done</button>
+                </div>
+              ) : (
+              <>
               {/* Decoration cards (sticker / topper / text) — expanded one pinned to the top
                   of this group. Clicking the expanded card collapses it; clicking a collapsed
                   card opens it (and collapses any open piping card). */}
@@ -11288,6 +11361,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     </div>
                   );
                 })}
+              </>
+              )}
 
               {/* Writing cards (typed cream "Texts") — ONE PER MESSAGE, since each carries its own
                   surface. Its expanded body is the full composer. Like the others each stays until
