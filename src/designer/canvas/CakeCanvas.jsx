@@ -2243,6 +2243,29 @@ function CreamStylePicker({ styles = [], onSelect, onCancel }) {
   );
 }
 
+/* ⚠️ DEV-ONLY: where the camera actually is, so a GLIDE can be measured rather than admired.
+ * The fit eases to a new framing when the frame changes (a sheet opening, a card closing) and snaps
+ * when the cake changes. Those two are indistinguishable by eye at 220ms — and "it looks smoother"
+ * is the kind of claim that has been wrong before in this session. Sampling the camera's distance
+ * from its target across a close separates them: one value means it teleported, a decaying run of
+ * them means it glided. Dev-gated like CakeDesigner's window.__* block; never reaches a baker. */
+function CameraProbe({ orbitRef }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (!import.meta.env?.DEV || typeof window === 'undefined') return undefined;
+    window.__cameraState = () => {
+      const t = orbitRef?.current?.target;
+      return {
+        x: +camera.position.x.toFixed(3), y: +camera.position.y.toFixed(3), z: +camera.position.z.toFixed(3),
+        aimY: t ? +t.y.toFixed(3) : null,
+        dist: t ? +camera.position.distanceTo(t).toFixed(3) : null,
+      };
+    };
+    return () => { delete window.__cameraState; };
+  }, [camera, orbitRef]);
+  return null;
+}
+
 function CameraCapture({ cameraRef }) {
   const { camera } = useThree();
   cameraRef.current = camera;
@@ -3349,6 +3372,12 @@ const _fitDir = new THREE.Vector3();
 //   means the view holds still during a drag.
 const FIT_STRIDE = 12;          // frames between measurements — 5/sec at 60fps, invisible for an edit
 const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
+/* How long the view takes to glide to a new framing after the FRAME changed (a sheet opening, a
+ * card closing) rather than the cake. Time-based, not frame-counted, so it runs at the same speed
+ * on a 120Hz phone as on a 60Hz one. Slightly longer than the 180ms the container used to animate
+ * over: the sheet now moves in one step and this is the only animation left, so it carries the
+ * whole gesture rather than racing a CSS transition. */
+const FIT_EASE_S = 0.22;
 function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
@@ -3359,14 +3388,54 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
   const controls = useThree(s => s.controls);
   const applied = useRef(null);
   const tick = useRef(0);
+  /* An in-flight glide: { fromPos, toPos, fromAim, toAim, t }. Non-null only while the view is
+     easing to a new framing after a RESIZE — see the note on FIT_EASE_S below. */
+  const ease = useRef(null);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (!enabled) return;
+
+    /* ⚠️ THE GLIDE RUNS EVERY FRAME, ABOVE THE STRIDE. Sandeep: "when i am done, there is a
+       flickering to come back to normal, needs to be smooth." Two animations were fighting — the
+       container's CSS transition moving the sheet, and this fit TELEPORTING the camera whenever the
+       resulting aspect change tripped the deadband. One eased, the other jumped, and they were not
+       synchronised. Now the CSS moves in one step and the camera owns the only animation.
+       Sampling a glide on a 12-frame stride would BE the stutter, so it is advanced here, before
+       the throttle, and no measurement happens while it runs. */
+    if (ease.current) {
+      const e = ease.current;
+      e.t = Math.min(1, e.t + delta / FIT_EASE_S);
+      // easeOutCubic: quick off the mark, settles softly — a view catching up, not a slide.
+      const k = 1 - Math.pow(1 - e.t, 3);
+      const ctlE = controls ?? orbitRef?.current;
+      const aimNow = e.fromAim + (e.toAim - e.fromAim) * k;
+      // Aim and position together: easing one and snapping the other swings the cake through an arc.
+      if (ctlE?.target) ctlE.target.set(0, aimNow, 0);
+      camera.position.lerpVectors(e.fromPos, e.toPos, k);
+      camera.updateProjectionMatrix();
+      // OrbitControls also writes the camera each frame (autoRotate is live while painting), so the
+      // glide has to hand it the result exactly as the snap below does, rather than race it.
+      ctlE?.update();
+      if (e.t >= 1) ease.current = null;
+      return;
+    }
+
     // Every frame until the cake has been framed once, on a stride after that. The first fit must
     // not wait: until it lands the camera is wherever it was left, and a stride's delay is a visible
     // jump from the wrong framing to the right one. Once settled, the deadband makes most ticks
     // free — but the MEASUREMENT is not, so it is the measurement that gets throttled.
-    if (++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
+    /* ⚠️ A RESIZE SKIPS THE THROTTLE, and this is where the PAUSE lived. Measured on a card close:
+       React committed and R3F resized the canvas at 95ms, but the camera did not move until 290ms —
+       and FIT_STRIDE at 12 frames is ~200ms at 60fps, which is the whole of that gap. The fit was
+       smooth once it started; it simply was not LOOKING yet. So the glide began a third of a second
+       after the press, which reads as a pause followed by a glide rather than a response.
+       ⚠️ IT DOES NOT COST WHAT THE STRIDE PROTECTS. The throttle exists because measuring is
+       expensive — "setFromObject walks every mesh, and a grass cake has thousands of instances".
+       This comparison walks nothing: `size` is already in hand from useThree, above the bbox walk,
+       so noticing that the FRAME changed is free. The cake's own bounds stay on the stride. */
+    const liveAspect = size.width / Math.max(size.height, 1);
+    const frameChanged = applied.current && Math.abs(applied.current.aspect - liveAspect) >= 0.01;
+    if (!frameChanged && ++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
     const g = groupRef.current;
     // Nothing recorded until the controls exist, so the first real fit is not swallowed by the
     // deadband as "already applied".
@@ -3396,8 +3465,17 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
     // the frame it has to fit inside is different.
-    if (prev && Math.abs(prev.halfW - halfW) < FIT_DEADBAND && Math.abs(prev.halfH - halfH) < FIT_DEADBAND
-             && Math.abs(prev.cy - cy) < FIT_DEADBAND && Math.abs(prev.aspect - aspect) < 0.01) return;
+    const cakeMoved = !prev || Math.abs(prev.halfW - halfW) >= FIT_DEADBAND
+                           || Math.abs(prev.halfH - halfH) >= FIT_DEADBAND
+                           || Math.abs(prev.cy - cy) >= FIT_DEADBAND;
+    const aspectMoved = !!prev && Math.abs(prev.aspect - aspect) >= 0.01;
+    if (!cakeMoved && !aspectMoved) return;
+    /* ⚠️ A RESIZE GLIDES; AN EDIT SNAPS. These are different events wearing the same numbers.
+       The cake CHANGING — a tier added, a topper stood up — should land immediately: the view is
+       catching up with something the baker just did, and easing it would read as lag. The FRAME
+       changing (a sheet opening, the card closing, a rotation) is not an edit at all; the cake has
+       not moved, only the window onto it, and teleporting there is the flicker being fixed. */
+    const glide = aspectMoved && !cakeMoved;
     applied.current = { halfW, halfH, cy, aspect };
 
     const ctl = controls ?? orbitRef?.current;
@@ -3419,6 +3497,21 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
     // The sit takes a share of the air the margin bought, and nothing else — so it can never push
     // the cake past the edge it was standing back from.
     const aimY = cy + sitFromSlack(tight, dist, camera.fov);
+
+    /* ⚠️ CLONES, NOT THE SCRATCH VECTORS. _fitDir and _fitBox are module-level singletons reused by
+       every call of this function — handing one to the ease would leave the glide chasing a vector
+       that changes underneath it on the next measurement. The ease owns its own copies. */
+    if (glide) {
+      const toPos = new THREE.Vector3(0, aimY, 0).addScaledVector(_fitDir, dist);
+      ease.current = {
+        fromPos: camera.position.clone(),
+        toPos,
+        fromAim: target ? target.y : aimY,
+        toAim: aimY,
+        t: 0,
+      };
+      return;   // the glide branch above drives it from here
+    }
 
     if (target) target.set(0, aimY, 0);
     camera.position.set(0, aimY, 0).addScaledVector(_fitDir, dist);
@@ -3685,6 +3778,7 @@ export default function CakeCanvas({
       }}
     >
       <CameraCapture cameraRef={cameraRef} />
+      <CameraProbe orbitRef={orbitRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} turnCameraRef={turnCameraRef} orbitRef={orbitRef} />
       {/* Fills takeRef with the recorder, the same way CameraSnapper fills snapCameraRef — the

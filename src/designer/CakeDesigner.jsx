@@ -10694,7 +10694,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             position: 'absolute', inset: 0,
             right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0),
             bottom: bottomSheetH,
-            transition: 'right 0.18s ease, bottom 0.18s ease',
+            /* ⚠️ `bottom` NO LONGER ANIMATES, and that is the fix rather than a regression. While it
+               did, two animations ran against each other: this transition slid the sheet while
+               FitCakeToView teleported the camera the moment the resulting aspect change tripped its
+               deadband — one eased, one jumped, neither synchronised. The sheet now moves in a single
+               step and the camera glides (FIT_EASE_S), so there is one animation and it is the one
+               you are actually watching. `right` keeps its transition: that is the desktop tools
+               panel, which does not resize the canvas the same way. */
+            transition: 'right 0.18s ease',
           }}>
           {/* Darkens everything outside the 9:16 crop so the frame you are about to record is
               obvious without a word of explanation. Behind the canvas box, never over it. */}
