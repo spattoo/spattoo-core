@@ -42,7 +42,21 @@ const overrides = status ? {
 // `?settings` seeds the store data SettingsPanel reads, so Store Settings opened from the real rail
 // shows real sections rather than an error — the frame beside the rail is what is being judged.
 const withSettings = new URLSearchParams(location.search).has('settings');
-const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides } : overrides, {
+/* `?caps=customer` answers /me with a CUSTOMER's capability set, so the rail renders the five items a
+   signed-in customer actually gets — New Cake, Templates, Decorations, Share (design:create) and
+   Uploads (element:manage) — instead of a baker's eleven.
+
+   ⚠️ WITHOUT THIS THERE IS NO WAY TO LOOK AT THE CUSTOMER'S RAIL. `capabilities` stays null when /me
+   is not stubbed and hasCap reads null as "everything allowed", so every item renders. That is the
+   right default for inspecting the full rail and exactly wrong for judging the customer's, where the
+   complaint is that five items spread down a blade sized for twelve. `?customer` does NOT do this —
+   it only sets orderMode, which gates nothing in the rail. */
+const CUSTOMER_CAPS = ['design:create', 'element:manage'];
+const capsOverride = new URLSearchParams(location.search).get('caps') === 'customer'
+  ? { fetchMe: async () => ({ id: 'u1', role: 'customer', capabilities: CUSTOMER_CAPS }) }
+  : {};
+
+const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides, ...capsOverride } : { ...overrides, ...capsOverride }, {
   // Unstubbed methods still answer null: the designer reads some as arrays, so an empty OBJECT crashes it.
   get: (target, k) => target[k] ?? (async () => null),
 });

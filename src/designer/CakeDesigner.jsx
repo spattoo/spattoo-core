@@ -56,6 +56,13 @@ const BOARD_TOP_Y = 0.1;
 // the measured tools gap below the divider — one number, because the two groups sit in one column
 // and any disagreement shows up as the bottom pair being crammed together on a short window.
 const RAIL_MIN_GAP = 2;
+/* The rail's PITCH, fixed rather than spread. space-evenly was tuned when the rail always held a
+   baker's items; a signed-in CUSTOMER passes only five (design:create + element:manage), and the same
+   rule spread those five down a blade sized for twelve — measured at 119px between items against the
+   baker's 65px. Sandeep: "so much gap between them and they dont look good."
+   20 is what space-evenly already resolved to for a baker on a 900px window, so the baker's rail is
+   unchanged at that height and only the sparse case tightens. */
+const RAIL_NAV_GAP = 20;
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -13459,10 +13466,15 @@ const s = {
   sidebarNav: {
     flex: 1, width: '100%', minHeight: 0,
     display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'space-evenly',
-    // gap = floor spacing; space-evenly spreads items down the blade. Shared with the tools group
-    // below the divider, which matches this rail's pitch and must bottom out on the same number.
-    padding: '4px 0', gap: RAIL_MIN_GAP,
+    alignItems: 'center', justifyContent: 'flex-start',
+    // A FIXED pitch, not a spread. The items keep one rhythm whatever the viewport and whatever the
+    // principal can do, so five items read as a menu rather than as a column with holes in it. The
+    // tools group below the divider still matches, because toolGap MEASURES the rendered pitch rather
+    // than assuming it — see the note above that effect.
+    //
+    // ⚠️ This also retires the scroll-origin trap the old note warned about: centred/spread content in
+    // a scroller can strand its first item above the origin, and flex-start cannot.
+    padding: '4px 0', gap: RAIL_NAV_GAP,
     overflowY: 'auto', scrollbarWidth: 'none',   // a scrollbar in a 64px rail is worse than none
   },
   // Stacked nav item: icon box on top, label below.
