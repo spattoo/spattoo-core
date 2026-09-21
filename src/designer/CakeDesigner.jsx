@@ -5714,17 +5714,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     design.stickers.filter(s => s.clusterId === clusterId)
       .forEach(s => updateSticker(s.id, mat));
   }
-  // ONE Finish slider — metallic (left, the default) ↔ matte (right). Shared by the cluster card and
-  // a single ball so the metallic↔matte mapping (finish.js) renders identically in both. Reads the
-  // slider position from the stored metalness; onPick gets the derived { roughness, metalness }.
+  /* ── ONE Finish control — metallic (the default) ↔ matte ────────────────────────────────────────
+   * Shared by the cluster card and a single ball so the metallic↔matte mapping (finish.js) renders
+   * identically in both. Reads its position from the stored metalness; onPick gets the derived
+   * { roughness, metalness }.
+   *
+   * ⚠️ IT IS A DIAL, AND THAT IS NOT A COSMETIC CHOICE. It now rides in the faux ball's single
+   * scrolling control row, and a horizontal <input type="range"> inside an overflowX scroller fights
+   * the scroll: on a phone a drag that starts on the track is ambiguous — move the value, or move the
+   * row? One of the two always loses, and which one is a browser detail. A dial turns; the row
+   * scrolls; the gestures no longer collide.
+   *
+   * ⚠️ THIS IS THE SLIDER THE PROCEDURAL SWEEP MISSED. That sweep walked the render*Body functions
+   * and reported "36 → 2 deliberate"; this one lives in buildToolbar, so it was never counted. The
+   * tally was wrong, not the sweep's intent.
+   *
+   * fmt is semantic at the ends because that is what the control MEANS: "Metallic" and "Matte" are
+   * the only two names a customer has for it, and a bare "0.00" names neither. The percentage in
+   * between exists so the number still moves across the travel — DialCell's header explains why a
+   * dial whose readout never changes is worse than the slider it replaced.
+   *
+   * No caption of its own: merged into the Size row it gets an inline label beside it, and pushed as
+   * its own row the group's panelLabel says "Finish". Returning one here would double it in both. */
   function finishSliderControls(metalness, onPick) {
     const t = finishOf(metalness);
     return [
-      <span key="fin-m" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Metallic</span>,
-      <input key="fin-r" type="range" min={0} max={1} step={0.01} value={t}
-        onChange={e => onPick(finishToMaterial(parseFloat(e.target.value)))}
-        style={{ flex: 1, minWidth: 60, accentColor: INK }} />,
-      <span key="fin-x" style={{ fontSize: 10, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Matte</span>,
+      <SizeDial key="fin-dial" size={t} min={0} max={1} step={0.05}
+        fmt={v => (v <= 0.001 ? 'Metallic' : v >= 0.999 ? 'Matte' : `${Math.round(v * 100)}% matte`)}
+        onChange={v => onPick(finishToMaterial(v))} />,
     ];
   }
 
@@ -7693,6 +7710,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     let colourCtls = [];
     let borderCtls = [];
     let mergeIntoSizeRow = false;
+    /* Tilt and Finish are built early and pushed LATE, in one of two places — see the note above the
+       Size block. These four carry them across that gap. */
+    let tiltCtls = [];
+    let finishDial = [];
+    let tiltInSizeRow = false;
+    let finishInSizeRow = false;
 
     const colourControl = (
         <button key="color"
@@ -7936,6 +7959,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       }
     }
 
+    /* ── TILT AND FINISH ARE BUILT HERE, PUSHED FURTHER DOWN ────────────────────────────────────
+     * Sandeep, on the faux ball: "tilt control can be on the same line as others like color. all
+     * should be on a scrollable row". The card was four stacked rows — Colour+Size, Tilt, Finish,
+     * Create cluster — on a phone where the cake is what he is trying to look at.
+     *
+     * ⚠️ THE SAME COMPLAINT, ON THE SAME CARD, FOR THE THIRD TIME. The note at mergeIntoSizeRow
+     * records it for Colour ("same controls alignment issue"), and answers it with a general rule
+     * rather than a faux-ball branch. This is that rule extended: the Size row is the row that
+     * already absorbs companions — Spin/Depth always, Colour/Border on a frame — so Tilt and Finish
+     * join it too.
+     *
+     * ⚠️ BUILT EARLY BECAUSE THE PUSH ORDER IS FIXED, NOT TO HOIST FOR ITS OWN SAKE. The Size push
+     * runs BEFORE the old Tilt and Finish pushes, so it cannot absorb controls that do not exist
+     * yet. Building them here and setting a flag AT the Size push, read at the old sites, is exactly
+     * the shape mergeIntoSizeRow already uses — one flag, decided where the row is known to exist.
+     *
+     * ⚠️ THEY STILL GET THEIR OWN ROW WHEN THERE IS NO SIZE ROW. `c.resize` is what decides whether
+     * the Size row is pushed at all; a card with tilt but no resize must still show Tilt. Folding
+     * unconditionally would silently drop it — the bug the standalone-colour note describes making
+     * once already, in this same function. */
+    if (c.tilt && el.type === 'sticker') {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const ta = sticker?.tiltAngle ?? 0, ra = sticker?.rollAngle ?? 0;
+      // Steppers, not dials: four discrete nudges on two axes. They are also the one control here
+      // that a horizontal scroller cannot fight — a tap is not a drag.
+      tiltCtls = [
+        <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
+        <button key="ta-up"    style={s.tbIconBtn} title="Lean back"    onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta, -0.1) })}>↑</button>,
+        <button key="ta-down"  style={s.tbIconBtn} title="Lean forward" onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta,  0.1) })}>↓</button>,
+        <button key="ta-left"  style={s.tbIconBtn} title="Lean left"    onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra, -0.1) })}>←</button>,
+        <button key="ta-right" style={s.tbIconBtn} title="Lean right"   onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra,  0.1) })}>→</button>,
+        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 46 }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
+      ];
+    }
+    if (el.type === 'sticker') {
+      const fSticker = design.stickers.find(stkr => stkr.id === el.id);
+      const fSrcEl = fSticker && elementById.get(fSticker.elementId);
+      if (fSticker && !fSticker.clusterId && fSrcEl?.placement_config?.cluster) {
+        finishDial = finishSliderControls(fSticker.metalness, mat => updateSticker(fSticker.id, mat));
+      }
+    }
+
     if (c.resize && el.type === 'sticker') {
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       // Same SizeDial as piping + the hero chooser — one Size control everywhere. Field, value and
@@ -7996,13 +8061,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sizeOwnLabel = sizeRowLead === 'Size' ? [] : [
         <span key="sc-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Size</span>,
       ];
-      groups.push({ key: 'sc', divider: true, panelLabel: sizeRowLead, controls: [
+      /* Decided HERE, read at the old Tilt/Finish push sites below — the same one-flag shape as
+         mergeIntoSizeRow, and for the same reason: this is the only point that knows the row exists. */
+      tiltInSizeRow = tiltCtls.length > 0;
+      finishInSizeRow = finishDial.length > 0;
+      /* Finish needs an inline caption for the same reason Size does on a merged row: the panelLabel
+         names the FIRST control, and everything after it has to say what it is. */
+      const finishOwnLabel = finishInSizeRow ? [
+        <span key="fin-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Finish</span>,
+      ] : [];
+      groups.push({ key: 'sc', divider: true, panelLabel: sizeRowLead, scroll: true, controls: [
         ...(mergeIntoSizeRow ? colourCtls : []),
         ...(mergeIntoSizeRow ? borderCtls : []),
         ...sizeOwnLabel,
         <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
           onChange={v => resizeSticker(sticker, v)} />,
         ...companionCtls,
+        ...tiltCtls,
+        ...finishOwnLabel,
+        ...finishDial,
       ] });
 
       /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
@@ -8066,17 +8143,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Tilt (lean) — BOTH axes, gated by the one `tilt` capability. Front/back and left/right are one
     // capability on purpose: they are the same gesture to a customer, and asking an admin to permit
     // them separately would be a distinction nobody placing a cake decoration perceives.
-    if (c.tilt && el.type === 'sticker') {
-      const sticker = design.stickers.find(stkr => stkr.id === el.id);
-      const ta = sticker?.tiltAngle ?? 0, ra = sticker?.rollAngle ?? 0;
-      groups.push({ key: 'ta', divider: true, controls: [
-        <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
-        <button key="ta-up"    style={s.tbIconBtn} title="Lean back"    onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta, -0.1) })}>↑</button>,
-        <button key="ta-down"  style={s.tbIconBtn} title="Lean forward" onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta,  0.1) })}>↓</button>,
-        <button key="ta-left"  style={s.tbIconBtn} title="Lean left"    onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra, -0.1) })}>←</button>,
-        <button key="ta-right" style={s.tbIconBtn} title="Lean right"   onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra,  0.1) })}>→</button>,
-        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 46 }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
-      ] });
+    // The controls are built above; this is only the fallback row for a card with tilt but no Size
+    // row to ride in. When the Size row took them, pushing here would show Tilt twice.
+    if (tiltCtls.length && !tiltInSizeRow) {
+      groups.push({ key: 'ta', divider: true, controls: tiltCtls });
     }
 
     // Bury (insert depth) — how far an INSERTED element's base sinks INTO the cake. Config-gated on
@@ -8122,10 +8192,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       const srcEl = sticker && elementById.get(sticker.elementId);
       if (sticker && !sticker.clusterId && srcEl?.placement_config?.cluster) {
-        // Finish: same metallic→matte slider as the cluster card, on the single ball (config-gated on
-        // cluster capability, never element type). Writes the derived material straight to the instance.
-        groups.push({ key: 'finish', divider: true, panelLabel: 'Finish', controls:
-          finishSliderControls(sticker.metalness, mat => updateSticker(sticker.id, mat)) });
+        // Finish: same metallic→matte dial as the cluster card, on the single ball (config-gated on
+        // cluster capability, never element type). Writes the derived material straight to the
+        // instance. Built above; this is the fallback row for a ball with no Size row to ride in.
+        if (finishDial.length && !finishInSizeRow) {
+          groups.push({ key: 'finish', divider: true, panelLabel: 'Finish', controls: finishDial });
+        }
         groups.push({ key: 'cluster-toggle', divider: true, controls: [
           <button key="cl-on" style={{ ...s.toolbarBtn, width: '100%', background: INK, color: '#fff', padding: '8px 10px', fontSize: 12 }} onClick={() => makeCluster(sticker)}>Create cluster</button>,
         ] });
@@ -8223,8 +8295,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div key={g.key} style={g.footer ? s.editPanelFooter : s.editPanelRow}>
               {g.panelLabel && <span style={s.editPanelLabel}>{g.panelLabel}</span>}
               {/* minWidth:0 lets wide children (e.g. a <canvas>, whose intrinsic width is
-                  300px) shrink to the column instead of overflowing the popup. */}
-              <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap', flex:1, minWidth: 0 }}>{g.controls}</div>
+                  300px) shrink to the column instead of overflowing the popup.
+                  `scroll` is the control row that carries everything (Colour · Size · Spin · Tilt ·
+                  Finish): it scrolls sideways instead of wrapping, so a card with many controls stays
+                  one line tall and the cake behind it stays visible. Wrapping is still the default —
+                  a row of two buttons that scrolled would hide the second one behind an invisible
+                  scrollbar, which is worse than the wrap it replaced. */}
+              <div style={{ display:'flex', alignItems:'center', gap:4, flex:1, minWidth: 0,
+                ...(g.scroll
+                  ? { flexWrap: 'nowrap', overflowX: 'auto', scrollbarWidth: 'none', paddingBottom: 2 }
+                  : { flexWrap: 'wrap' }) }}>{g.controls}</div>
             </div>
           ))}
         </div>
@@ -9646,12 +9726,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
             {/* ⚠️ DIALS IN ONE SCROLLING ROW, the cream card's pattern. Seven full-bleed range inputs
                 cost seven rows of a phone; as 46px dials they are one row you push sideways.
-                ⚠️ NOT EVERY SLIDER BECAME A DIAL, and the two that did not are the point:
-                  · Direction is an ANGLE whose neutral is 90° ("dir 90° = straight-up flick",
-                    LUSTER_DUST_NEW_SPLASH). SizeDial's band tapers small→large and OffsetDial fills
-                    from zero — both would describe a quantity this is not. It keeps its slider.
-                  · Density is 1..8 in whole steps. A dial printing "3.0" for a count of flecks reads
-                    like a measurement; chips say how many there are and how many there could be.
+                ⚠️ EVERY CONTROL IS IN THIS ROW NOW, INCLUDING THE TWO I ARGUED OUT OF IT. This
+                comment used to explain why Direction stayed a slider (an ANGLE whose neutral is 90°
+                — "dir 90° = straight-up flick", LUSTER_DUST_NEW_SPLASH — and a tapering band
+                describes a quantity an angle is not) and why Density stayed chips (1..8 whole steps,
+                and a dial printing "3.0" for a count of flecks reads like a measurement). Sandeep
+                overruled both: "direction should be a dialer. density should be a dialer… all
+                controls should be on a scrollable row." He also asked "how did we miss this?" — we
+                did not, it was decided and written down here, which is the only reason the decision
+                could be found and reversed.
+                ⚠️ AND HALF MY OBJECTION WAS NEVER REAL. `fmt` decides what a dial's number says, so
+                Density prints "8" and Direction prints "210°" — neither ever prints "3.0". What
+                survives is cosmetic and worth knowing before someone "fixes" it: SizeDial's band
+                grows left→right under a value that WRAPS, so 355° reads nearly full and 5° nearly
+                empty while they are ten degrees apart. The number is honest; the band is not. A
+                wrapping dial would fix it and does not exist yet.
                 Each dial keeps its caption: unlabelled dials are indistinguishable (the photo frame
                 taught this), and `fmt` is what stops Glow (max 0.6) reading "0.0" across its travel. */}
             <div style={s.previewRow}>
@@ -9660,29 +9749,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   { k: 'Position', v: dustSplashes[dustSel].u, min: 0, max: 1, step: 0.01, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { u: v }) },
                   { k: 'Height',   v: dustSplashes[dustSel].v, min: 0, max: 1, step: 0.01, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { v }) },
                   { k: 'Spread',   v: dustSplashes[dustSel].spread, min: 0.15, max: 2, step: 0.05, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { spread: v }) },
+                  // Per-flick, like the three above it — Direction aims THIS flick, not the tier.
+                  { k: 'Direction', v: dustSplashes[dustSel].dir, min: 0, max: 360, step: 5, fmt: v => `${Math.round(v)}°`, set: v => updateDustSplash(dustTier, dustSel, { dir: v }) },
                 ] : []),
                 // These three are the whole dusting on this tier, not one flick.
                 { k: 'Fleck size', v: design.tiers[dustTier]?.dusting?.fleckSize ?? 4, min: 1.5, max: 9, step: 0.5, fmt: v => v.toFixed(1), set: v => updateDusting(dustTier, { fleckSize: v }) },
                 { k: 'Glow',       v: design.tiers[dustTier]?.dusting?.glow ?? 0, min: 0, max: 0.6, step: 0.05, fmt: v => v.toFixed(2), set: v => updateDusting(dustTier, { glow: v }) },
+                /* Whole flecks only: the dial's step is 1, and `set` rounds anyway because a dial
+                   reports a float and a count of flecks that arrives as 6.999 is a render bug. */
+                { k: 'Density',    v: design.tiers[dustTier]?.dusting?.density ?? 2, min: 1, max: 8, step: 1, fmt: v => String(Math.round(v)), set: v => updateDusting(dustTier, { density: Math.round(v) }) },
               ].map(d => (
                 <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
             </div>
 
-            {dustSplashes[dustSel] && (
-              <PenSlider label="Direction" value={dustSplashes[dustSel].dir} min={0} max={360} step={5}
-                onChange={v => updateDustSplash(dustTier, dustSel, { dir: v })} fmt={v => `${Math.round(v)}°`} />
-            )}
-
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-              <span style={s.editPanelLabel}>Density</span>
-              <div style={{ display: 'flex', gap: 5 }}>
-                {[1, 2, 3, 4, 5, 6, 7, 8].map(n => (
-                  <button key={n} style={dustChip((design.tiers[dustTier]?.dusting?.density ?? 2) === n)}
-                    onClick={() => updateDusting(dustTier, { density: n })}>{n}</button>
-                ))}
-              </div>
-            </div>
           </>
         )}
 
@@ -11298,6 +11378,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                          62vh as well as taller — a resize that only ever grows is not a resize. */
                       ...(stackDragH ? { height: stackDragH, maxHeight: 'none' } : { maxHeight: '62vh' }),
                       borderRadius: '16px 16px 0 0',
+                      /* ⚠️ NO TOP PADDING HERE, BECAUSE THE GRIP IS THE TOP CHROME. Measured on a
+                         375px phone the band above the card header was 35px — editPopup's 8px top
+                         padding, the grip's 20px block, and this 7px gap — and exactly 4px of it
+                         drew anything (the pill). The sheet was paying for breathing room twice.
+                         ⚠️ THE GAP IS SAFE TO TIGHTEN *IN THIS BRANCH ONLY*. `stackSingleCard` is
+                         true only when the stack was opened by tapping something on the cake, so it
+                         holds exactly ONE card: this gap is the space above that card, not the
+                         spacing between a list of them. Changing s.editPopup's gap instead would
+                         have squeezed the element LIST, which is a different surface with a
+                         different job. */
+                      paddingTop: 0, gap: 5,
                       /* Solid enough to read against a cake of any colour. The see-through treatment
                          below is for the list, where seeing the cake through it is the point. */
                       background: 'rgba(255,255,255,0.96)',
@@ -13822,9 +13913,16 @@ const s = {
     color: '#8a7c70',
     background: 'linear-gradient(to bottom, rgba(255,253,249,0), rgba(255,253,249,0.92))',
   },
+  /* ⚠️ THE PADDING IS THE AFFORDANCE — trim it, never delete it. The pill is 4px tall; everything
+     you can actually grab is this padding, so it is the drag target for all four sheets (Elements,
+     Tools, the colour wheel and the element stack).
+     Was '6px 0 10px' — a 20px block above a card, of which 4px drew anything. Sandeep: "see the
+     white space above the done button. remove it… should be for all other cards as well", and one
+     shared style is what makes that one change rather than four. 14px stays grabbable while giving
+     back 6px of a 844px phone. */
   panelHandle: {
     width: '100%', display: 'flex', justifyContent: 'center',
-    padding: '6px 0 10px', cursor: 'ns-resize', touchAction: 'none', flexShrink: 0,
+    padding: '5px 0 5px', cursor: 'ns-resize', touchAction: 'none', flexShrink: 0,
   },
   panelHandlePill: {
     width: 36, height: 4, borderRadius: 2, background: '#ddd',
