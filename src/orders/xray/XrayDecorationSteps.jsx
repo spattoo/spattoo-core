@@ -31,9 +31,11 @@ import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
 export default function XrayDecorationSteps({
   design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
-  garnishes = [], s,
+  garnishes = [], unidentified = [], s,
 }) {
-  const rows = fromPhoto ? photoRows(design, storedSteps, decorationMeta) : elementRows(design, guides);
+  const rows = fromPhoto
+    ? [...photoRows(design, storedSteps, decorationMeta), ...unmatchedRows(unidentified, storedSteps)]
+    : elementRows(design, guides);
   if (!rows.length && !garnishes.length) return null;
 
   return (
@@ -143,6 +145,47 @@ function photoRows(design, storedSteps, meta) {
   return out;
 }
 
+/* ── The decorations the catalogue did not recognise ─────────────────────────────────────────────
+ *
+ * ⚠️ THESE ARE THE ONES MOST WORTH A GUIDE, AND THEY WERE THE ONLY ONES THAT COULD NOT HAVE ONE.
+ * A decoration becomes a sticker only when it MATCHES a library element; one that matches nothing
+ * was recorded as "seen but not identified", listed higher up the report as a gap, and left there.
+ * So a baker was offered instructions for the things we already stock — and could describe — while
+ * the unfamiliar thing on their customer's photo, the reason they opened X-Ray, had nothing.
+ *
+ * Measured on a real order: a wafer-paper flower read at 0.762 confidence, matched the catalogue at
+ * 0.428, and was dropped. Nothing in 134 elements looks like one.
+ *
+ * The generation never needed a library element — `suggestBuildGuide` reads ONE decoration out of
+ * the whole-cake photo using its label. Only the lookup did.
+ *
+ * ⚠️ `u.key` COMES FROM THE API and is derived from position, so a regenerate produces the same key
+ * and a stored guide is not orphaned. Entries from before that field existed have no key and are
+ * skipped rather than given one here — a key invented in the browser would not match the one the
+ * server stores the result under, and the guide would vanish on reload. */
+function unmatchedRows(unidentified, storedSteps) {
+  const out = [];
+  for (const u of unidentified ?? []) {
+    if (!u?.key) continue;
+    const label = String(u.what ?? 'decoration').trim() || 'decoration';
+    out.push({
+      key:     u.key,
+      title:   label,
+      label,
+      // Said on the row itself, because this decoration is NOT in the checklist above and a baker
+      // who has read that far needs to know this is the same thing, now with a guide.
+      unmatched: true,
+      bbox:    u.bbox ?? null,
+      widthMm: null,
+      stagesUrl:    storedSteps?.[u.key]?.stages_url ?? null,
+      stagesFailed: storedSteps?.[u.key]?.stages_failed === true,
+      guide:   storedSteps?.[u.key]?.guide ?? null,
+      status:  'draft',
+    });
+  }
+  return out;
+}
+
 function elementRows(design, guides) {
   const out = [];
   const seen = new Set();
@@ -240,6 +283,16 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
         <span style={{ fontSize: 14, fontWeight: 800, color: '#2C2A26', flex: 1, minWidth: 140 }}>
           {row.title}
         </span>
+
+        {/* ⚠️ SAID ON THE ROW, because this decoration is deliberately absent from the checklist
+            above and the report has already told the baker so ("could not be identified"). Without
+            this the same thing appears as a gap in one section and a buildable item in another,
+            which reads as the sheet contradicting itself. It is not a warning about the guide —
+            that is the AI-draft tag beside it — it is about the CATALOGUE not knowing the object,
+            which is why there is no picture of it to show. */}
+        {row.unmatched && (
+          <span style={{ ...s.tag, background: '#F3F0E8', color: '#6B5E3C' }}>not in our catalogue</span>
+        )}
 
         {guide ? (
           <>

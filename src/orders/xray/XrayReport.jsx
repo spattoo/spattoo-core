@@ -504,6 +504,12 @@ export default function XrayReport({ order, apiClient, onClose }) {
           decorationMeta={decorationMeta}
           // Derived from the pieces' own paths — see GarnishGuides. Nothing is fetched for these.
           garnishes={report.garnishes ?? []}
+          /* ⚠️ THE DECORATIONS THE CATALOGUE DID NOT RECOGNISE, which are the ones a baker is most
+             likely to need told. They are already NAMED higher up this report as gaps ("1 thing on
+             the photo could not be identified") — this is the same list, now with a way to act on
+             it. Passed from `coverage` rather than from the design, because a decoration that
+             matched no element never became a sticker and is not in the snapshot at all. */
+          unidentified={coverage?.unidentified ?? []}
           onGenerated={(key, steps) => {
             setGuideRefresh(n => n + 1);                       // element guides, for designed orders
             if (key && steps) setFreshSteps(p => ({ ...p, [key]: steps }));
