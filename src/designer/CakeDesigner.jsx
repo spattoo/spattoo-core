@@ -28,7 +28,7 @@ import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '..
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon, ChevronRightIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -245,16 +245,69 @@ function ScrollFadeRow({ children, style, fade = '255,253,249' }) {
     ro.observe(el);
     return () => { el.removeEventListener('scroll', read); ro.disconnect(); };
   }, [children]);
+  /* ⚠️ THE FADE ALONE WAS NOT ENOUGH, AND THAT IS THE WHOLE REASON FOR THE ARROW. Shipped in
+   * 0.1.584 as a gradient only; Sandeep, looking at it on a phone: "if you did the right side
+   * shaded part, thats not very impactful. and not looking obvious. may be a right arrow something
+   * like that would help?" He was right — 30px of white-to-transparent over a near-white card on a
+   * translucent surface is a whisper, and the clipped tile was still doing the work.
+   *
+   * ⚠️ IT IS A REAL BUTTON, NOT A MARKER. Rule 7 cuts both ways: a thing that looks pressable must
+   * be pressable. Tapping scrolls the row one step, which on a phone is the difference between a
+   * hint and a control you can actually use.
+   *
+   * ⚠️ IT SCROLLS THIS ROW AND NOTHING ELSE. `scrollBy` is called on `ref.current` alone, and the
+   * handler stops propagation — these rows sit inside a scrolling card body inside a docked sheet,
+   * and a click that bubbled could move either of them out from under the thing being tapped.
+   *
+   * ⚠️ ChevronRightIcon, ROTATED — not a second glyph. `check:one-chevron` scans for `›`, its
+   * entities, and a hand-drawn `M9 6l6 6-6 6` path; drawing one here would fail it, and rightly,
+   * since a text glyph takes whatever font is loaded and changes shape between screens. Disclosure
+   * already rotates this same icon rather than drawing a twin. The gate's ACCEPTED list carves out
+   * carousel arrows, but this does not need the carve-out: reusing the shared icon keeps it green.
+   *
+   * ⚠️ The step follows the storefront carousel: first child's width plus the gap, smooth. A fixed
+   * pixel step would over- or under-shoot depending on whether a row holds 46px dials or 68px tiles.
+   */
+  const step = (dir) => (e) => {
+    e.stopPropagation();
+    const el = ref.current;
+    if (!el) return;
+    const first = el.firstElementChild;
+    const gap = parseFloat(getComputedStyle(el).gap) || 8;
+    const by = first ? first.getBoundingClientRect().width + gap : el.clientWidth * 0.6;
+    el.scrollBy({ left: dir * by, behavior: 'smooth' });
+  };
   // `to left` / `to right` point AWAY from the edge, so each gradient is opaque at its own side.
   const edgeStyle = (side) => ({
-    position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 30, pointerEvents: 'none',
+    position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 38, pointerEvents: 'none',
     background: `linear-gradient(to ${side}, rgba(${fade},0), rgba(${fade},0.95))`,
+  });
+  /* 26px, not the storefront's 38: that circle sits over a full-width gallery, while these rows are
+     ~354px inside a phone card, where 38 would cover half a tile. Same white / hairline / shadow
+     language, scaled to the surface it sits on. */
+  const arrowStyle = (side) => ({
+    position: 'absolute', top: '50%', [side]: 0, transform: 'translateY(-50%)',
+    width: 26, height: 26, borderRadius: '50%', padding: 0, zIndex: 2,
+    border: `1px solid ${LINE}`, background: SURFACE, color: INK,
+    boxShadow: '0 1px 4px rgba(0,0,0,0.14)', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    ...(side === 'left' ? { transform: 'translateY(-50%) rotate(180deg)' } : null),
   });
   return (
     <div style={{ position: 'relative', width: '100%' }}>
       <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
       {edges.left && <div aria-hidden="true" style={edgeStyle('left')} />}
       {edges.right && <div aria-hidden="true" style={edgeStyle('right')} />}
+      {edges.left && (
+        <button type="button" aria-label="Scroll left" style={arrowStyle('left')} onClick={step(-1)}>
+          <ChevronRightIcon size={15} />
+        </button>
+      )}
+      {edges.right && (
+        <button type="button" aria-label="Scroll right" style={arrowStyle('right')} onClick={step(1)}>
+          <ChevronRightIcon size={15} />
+        </button>
+      )}
     </div>
   );
 }
