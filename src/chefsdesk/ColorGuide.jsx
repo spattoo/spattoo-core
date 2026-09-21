@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { Panel, Z } from '../shared/Panel.jsx';
+import { INK } from '../shared/tokens.js';
 
 // ── RGB → CMYK recipe ─────────────────────────────────────────────────────────
 function computeRgbRecipe(r, g, b) {
@@ -302,7 +303,7 @@ function PortionGroup({ label, portions, circleColor }) {
       </div>
       {/* Label */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-        <span style={{ fontSize: 11, fontWeight: 700, color: '#1a1a1a' }}>{label}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: INK }}>{label}</span>
         <span style={{ fontSize: 9, color: '#aaa', fontWeight: 600 }}>
           {portions} {portions === 1 ? 'part' : 'parts'}
         </span>
@@ -322,7 +323,7 @@ function UploadIcon() {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function ColorGuide({ onClose, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+export default function ColorGuide({ onClose, primaryColor = INK, accentColor = '#333333' }) {
   const [imageUrl,    setImageUrl]    = useState(null);
   const [picked,      setPicked]      = useState(null);
   const [medium,      setMedium]      = useState('fondant');
@@ -578,7 +579,7 @@ export default function ColorGuide({ onClose, primaryColor = '#1a1a1a', accentCo
             flexShrink: 0,
           }} />
           <div>
-            <div style={{ fontSize: 11, fontWeight: 800, color: '#1a1a1a', letterSpacing: 0.5 }}>
+            <div style={{ fontSize: 11, fontWeight: 800, color: INK, letterSpacing: 0.5 }}>
               {hoverColor.hex.toUpperCase()}
             </div>
             <div style={{ fontSize: 9, color: '#aaa', fontWeight: 500 }}>
@@ -611,7 +612,7 @@ const s = {
   dropZoneHover:    { border: '2px dashed #888', background: '#f5f5f5' },
   dropZoneHasImage: { border: '1.5px solid #d0d0d0', cursor: 'crosshair', background: '#000', minHeight: 'auto' },
   uploadPrompt: { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 },
-  uploadText:   { fontSize: 13, fontWeight: 700, color: '#1a1a1a' },
+  uploadText:   { fontSize: 13, fontWeight: 700, color: INK },
   uploadSub:    { fontSize: 11, color: '#aaa' },
   canvas:       { display: 'block', maxWidth: '100%' },
 
@@ -642,7 +643,7 @@ const s = {
     width: 44, height: 44, borderRadius: 10, flexShrink: 0,
     border: '1.5px solid rgba(0,0,0,0.1)', boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
   },
-  hexVal: { fontSize: 17, fontWeight: 800, color: '#1a1a1a', letterSpacing: 0.8 },
+  hexVal: { fontSize: 17, fontWeight: 800, color: INK, letterSpacing: 0.8 },
   rgbVal: { fontSize: 10, color: '#aaa', fontWeight: 500, marginTop: 2 },
 
   // Controls (medium + recipe type)
@@ -680,13 +681,13 @@ const s = {
     transition: 'color 0.15s',
   },
   recipeTabActive: {
-    color: '#1a1a1a', borderBottom: '2px solid #1a1a1a',
+    color: INK, borderBottom: `2px solid ${INK}`,
   },
 
   // Recipe card (highlighted)
   recipeCard: {
     background: '#fff',
-    border: '2px solid #1a1a1a',
+    border: `2px solid ${INK}`,
     borderRadius: 14,
     padding: '16px',
     boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
@@ -696,7 +697,7 @@ const s = {
     display: 'flex', alignItems: 'baseline', gap: 8,
   },
   recipeCardTitle: {
-    fontSize: 13, fontWeight: 800, color: '#1a1a1a', letterSpacing: 0.2,
+    fontSize: 13, fontWeight: 800, color: INK, letterSpacing: 0.2,
   },
   recipeCardSub: {
     fontSize: 10, color: '#aaa', fontWeight: 500,

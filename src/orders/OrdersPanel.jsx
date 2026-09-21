@@ -19,6 +19,7 @@ import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../sha
 import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { Panel, Takeover, Z } from '../shared/Panel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { DANGER, INK } from '../shared/tokens.js';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -478,7 +479,7 @@ function InfoRow({ label, value }) {
 // read-only. A quote pins to the current design version — if the design changed
 // after the quote (stale), the baker can re-affirm the price (re-pin) or set a new
 // one. The suggested-price algorithm (plan §2) is not here yet — this is manual entry.
-function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = '#1a1a1a', onConfirm, confirming }) {
+function QuotePanel({ order, statusIndex, onIssue, busy, error, primaryColor = INK, onConfirm, confirming }) {
   const phase = statusIndex.byKey[order.status]?.phase;
   const hasQuote = order.quoted_price != null;
   // Advance defaults to 50% of the price (rounded) and auto-tracks the price field
@@ -568,7 +569,7 @@ const NEXT_ACTIONS = {
   in_production: [{ to: 'ready', label: 'Mark as ready' }],
   ready:         [{ to: 'completed', label: 'Mark as completed' }],
 };
-function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = '#1a1a1a' }) {
+function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = INK }) {
   const actions = (NEXT_ACTIONS[order.status] ?? []).filter(a => statusIndex.byKey[a.to]);
   if (!actions.length) return null;
   return (
@@ -603,7 +604,7 @@ function NextStatusAction({ order, statusIndex, onAdvance, busy, primaryColor = 
 // transition). This sheet uploads each pick to R2 (orders/photos) as it's added and
 // hands the resulting keys back on confirm; the caller persists them then advances.
 // Photos are never required — "Mark as ready" works with zero.
-function MarkReadySheet({ order, apiClient, bakerName, primaryColor = '#1a1a1a', busy, error, onConfirm, onCancel }) {
+function MarkReadySheet({ order, apiClient, bakerName, primaryColor = INK, busy, error, onConfirm, onCancel }) {
   const [photos, setPhotos] = useState([]);   // { id, previewUrl, key|null, uploading, failed }
   const [pickError, setPickError] = useState(null);   // why a chosen file was refused
   /* ⚠️ CHOSEN FILES QUEUE HERE INSTEAD OF UPLOADING. The editor has to run BEFORE anything leaves,
@@ -732,7 +733,7 @@ function MarkReadySheet({ order, apiClient, bakerName, primaryColor = '#1a1a1a',
               {!busy && (
                 <button onClick={() => remove(p.id)} aria-label="Remove photo" style={{
                   position: 'absolute', top: -8, right: -8, width: 22, height: 22, borderRadius: '50%',
-                  border: 'none', background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+                  border: 'none', background: INK, color: '#fff', fontSize: 13, fontWeight: 700,
                   cursor: 'pointer', lineHeight: '22px', textAlign: 'center', padding: 0,
                 }}>×</button>
               )}
@@ -924,7 +925,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
                 flex: 1, padding: '9px', borderRadius: 10, cursor: 'pointer',
                 fontFamily: 'inherit', fontSize: 13, fontWeight: 700,
                 border: `1.5px solid ${active ? '#555' : '#E0DDD8'}`,
-                background: active ? '#1a1a1a' : '#fff',
+                background: active ? INK : '#fff',
                 color: active ? '#fff' : '#888',
               }}>{label}</button>
             );
@@ -935,7 +936,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
       {form.delivery_mode === 'home_delivery' && (
         <Field label="Address *" error={errors.delivery_address}>
           <textarea
-            style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.delivery_address ? '#e53935' : inp.borderColor }}
+            style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.delivery_address ? DANGER : inp.borderColor }}
             value={form.delivery_address} onChange={e => set('delivery_address', e.target.value)} />
         </Field>
       )}
@@ -947,7 +948,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
 
       <Field label="Comment *" hint="Explain what you changed and why" error={errors.comment}>
         <textarea
-          style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.comment ? '#e53935' : '#f59e0b' }}
+          style={{ ...inp, minHeight: 72, resize: 'vertical', borderColor: errors.comment ? DANGER : '#f59e0b' }}
           placeholder="e.g. Customer called and changed delivery date to Friday"
           value={form.comment} onChange={e => set('comment', e.target.value)} />
       </Field>
@@ -961,7 +962,7 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={handleSave} disabled={saving} style={{
           flex: 1, padding: '12px', borderRadius: 12, border: 'none',
-          background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+          background: INK, color: '#fff', fontSize: 13, fontWeight: 700,
           cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
           opacity: saving ? 0.6 : 1,
         }}>
@@ -980,9 +981,9 @@ function EditForm({ order, onSave, onCancel, saving, serverError, homeDeliveryEn
 function Field({ label, hint, error, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 5, flex: 1 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: error ? '#e53935' : '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
+      <span style={{ fontSize: 10, fontWeight: 700, color: error ? DANGER : '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
       {hint && !error && <span style={{ fontSize: 11, color: '#bbb', marginTop: -2 }}>{hint}</span>}
-      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600, marginTop: -2 }}>{error}</span>}
+      {error && <span style={{ fontSize: 11, color: DANGER, fontWeight: 600, marginTop: -2 }}>{error}</span>}
       {children}
     </div>
   );
@@ -1089,7 +1090,7 @@ function AuditTrail({ orderId, apiClient, refresh }) {
 
 // ── Detail pane ───────────────────────────────────────────────────────────────
 
-function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, bakerName = null, statusIndex = DEFAULT_STATUS_INDEX }) {
+function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiClient, primaryColor, isMobile, homeDeliveryEnabled = false, bakerSlug = null, bakerName = null, statusIndex = DEFAULT_STATUS_INDEX, onOpenMessageCredits = null }) {
   const [changingStatus, setChangingStatus] = useState(false);
   const [editing, setEditing]               = useState(false);
   const [saving, setSaving]                 = useState(false);
@@ -1265,7 +1266,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               <CustomPhotosSection order={order} />
               <ReferencePhotosSection order={order} apiClient={apiClient} />
               <FinishedPhotosSection order={order} apiClient={apiClient} refresh={auditRefresh} />
-              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
+              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate}
+                              apiClient={apiClient} onOpenMessageCredits={onOpenMessageCredits} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
@@ -1315,7 +1317,8 @@ function OrderDetail({ order, onEditDesign, onStatusChange, onOrderEdited, apiCl
               <StatusProgress status={order.status} onChange={advance} disabled={changingStatus} statusIndex={statusIndex} />
               <QuotePanel order={order} statusIndex={statusIndex} onIssue={handleIssueQuote} busy={quoting} error={quoteErr} primaryColor={primaryColor} onConfirm={() => handleStatus('confirmed')} confirming={changingStatus} />
               <NextStatusAction order={order} statusIndex={statusIndex} onAdvance={advance} busy={changingStatus} primaryColor={primaryColor} />
-              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate} />
+              <DetailSections order={order} name={name} flavours={flavours} delivDate={delivDate}
+                              apiClient={apiClient} onOpenMessageCredits={onOpenMessageCredits} />
               <Section title="History">
                 <AuditTrail orderId={order.id} apiClient={apiClient} refresh={auditRefresh} />
               </Section>
@@ -1354,7 +1357,115 @@ function DietChips({ reqs, small = false }) {
   );
 }
 
-function DetailSections({ order, name, flavours, delivDate }) {
+/* ── Can this customer actually be told anything? ────────────────────────────────────────────────
+ *
+ * `InfoRow` renders NOTHING when a value is empty, so a customer who has not given us an email has
+ * always looked exactly like one whose address was not worth a line — and the baker had no way to
+ * know that every update on this order then depends on a paid channel they may not have running.
+ *
+ * ── THE TWO CHANNELS ARE DIFFERENT THINGS, AND THE COPY HAS TO SAY SO ───────────────────────────
+ * Email is free and needs nothing switched on. WhatsApp costs a message credit per send and only
+ * goes when the baker has switched that update on AND has a balance. An earlier draft ran "no email
+ * address" straight into "no message credits" and read as though email cost money too.
+ * Sandeep: "its not saying that email and watsapp messages are different."
+ *
+ * ⚠️ AND ADDING AN EMAIL DOES NOT MAKE ANYTHING FREE. A draft promised "add their email and updates
+ * become free" — it is not true. Every enabled channel sends once each; the only suppression is
+ * `fallback_for`, and migration 095 does not accept 'email' as a value, so a WhatsApp send is
+ * unaffected by an address existing. An email is INSURANCE, not a saving: it is what reaches them
+ * when credits run out. Sandeep caught this: "even with email, it ll cost them."
+ *
+ * ── TWO WEIGHTS, BECAUSE THEY ARE NOT THE SAME NEWS ─────────────────────────────────────────────
+ * ALERT — the customer will receive NOTHING. No email, and either no credits or no paid update
+ *   switched on. Something is broken and an order may quietly die.
+ * QUIET — they have an email, so they ARE being reached, free. Nothing is wrong; this only mentions
+ *   that WhatsApp exists. Putting that in the same amber box teaches a baker the box means "FYI",
+ *   after which the one that costs them an order gets skimmed past too.
+ *
+ * Nothing at all when the balance has not loaded: `null` is "not known", never zero — TopUpsSection
+ * wrote that lesson down first, and warning on a number we have not read is worse than silence.
+ */
+function CustomerReachNotice({ customer, apiClient, onOpenMessageCredits }) {
+  const [msg, setMsg] = useState(null);   // { balance, enabledTypes } — null until read
+
+  useEffect(() => {
+    if (typeof apiClient?.fetchMessageBalance !== 'function') return undefined;
+    let alive = true;
+    apiClient.fetchMessageBalance()
+      .then(d => { if (alive && typeof d?.balance === 'number') setMsg(d); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [apiClient]);
+
+  if (!customer || !msg) return null;
+
+  const hasEmail = !!customer.email;
+  /* Empty means the baker has switched every paid customer update OFF, and `maySpendMessage`
+     refuses on exactly that ("The bakery has not switched this update on") — so nothing paid can
+     send, whatever the balance says. A non-empty list only means a send is POSSIBLE; whether the
+     WhatsApp channel row is enabled in admin is not visible from here, which is why the wording
+     below never promises delivery, only names what is missing. */
+  const whatsappOff = !(msg.enabledTypes?.length > 0);
+  const noCredits   = msg.balance <= 0;
+
+  // Reached for free. The only thing left to say is that another channel exists.
+  if (hasEmail) {
+    if (!whatsappOff && !noCredits) return null;           // nothing missing — say nothing
+    return (
+      <div style={{ fontSize: 11.5, lineHeight: 1.5, color: '#8A8078' }}>
+        {/* ⚠️ NAMES THE STATE, like the alert does. A generic "set up message credits" is advice to
+            BUY something a baker sitting on 240 of them already has — the quiet line is quiet, not
+            vague, and wrong advice is what makes a nudge get ignored. */}
+        Updates go by email.{' '}
+        {whatsappOff ? 'Switch on WhatsApp updates in ' : 'Top up '}
+        {onOpenMessageCredits
+          ? <button type="button" onClick={onOpenMessageCredits}
+                    style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                             fontWeight: 700, color: '#8A8078', textDecoration: 'underline',
+                             textUnderlineOffset: 2, cursor: 'pointer' }}>
+              message credits
+            </button>
+          : 'message credits'}
+        {whatsappOff ? ' to send them there too.' : ' to send them on WhatsApp too.'}
+      </div>
+    );
+  }
+
+  // No email, and WhatsApp can reach them: they ARE told, on the paid channel. Nothing is broken and
+  // nothing here is actionable, so nothing is said.
+  if (!whatsappOff && !noCredits) return null;
+
+  /* ⚠️ SWITCHED-OFF IS NAMED BEFORE NO-CREDITS, and the order is the order of the fix: switching an
+     update on is free and has to happen first, and sending a baker to BUY credits they will not
+     spend is the kind of wrong advice that gets a notice ignored. Once updates are on, the
+     no-credits variant is what they see next. */
+  const fix = whatsappOff
+    ? { because: 'WhatsApp updates are switched off', action: 'switch them on' }
+    : { because: 'you have no message credits left',  action: 'top up credits so we can reach them on WhatsApp' };
+
+  return (
+    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: '#8A5A1E', background: '#FDF3E3',
+                  border: '1px solid #F0DCB8', borderRadius: 9, padding: '9px 11px' }}>
+      {/* ⚠️ A FACT ABOUT OUR RECORDS, NOT ABOUT THE PERSON. "No email address for this customer" reads
+          as though they do not have one — almost everybody does; they have simply not given it to us,
+          and that is a thing the baker can still ask for. */}
+      <strong style={{ fontWeight: 800 }}>
+        This customer has not provided an email address, and {fix.because}
+      </strong>
+      {' '}— so they will not receive any updates for this order. Add their email, or{' '}
+      {onOpenMessageCredits
+        ? <button type="button" onClick={onOpenMessageCredits}
+                  style={{ background: 'none', border: 'none', padding: 0, font: 'inherit',
+                           fontWeight: 800, color: '#8A5A1E', textDecoration: 'underline',
+                           textUnderlineOffset: 2, cursor: 'pointer' }}>
+            {fix.action}
+          </button>
+        : fix.action}.
+    </div>
+  );
+}
+
+function DetailSections({ order, name, flavours, delivDate, apiClient, onOpenMessageCredits }) {
   const customer = order.customers;
   return (
     <>
@@ -1362,6 +1473,10 @@ function DetailSections({ order, name, flavours, delivDate }) {
         <InfoRow label="Name"  value={name} />
         <InfoRow label="Phone" value={customer?.phone} />
         <InfoRow label="Email" value={customer?.email} />
+        {/* Under the Email row, where the absence is: the row itself renders nothing, so this is the
+            only thing on the screen that says the address is missing rather than merely unshown. */}
+        <CustomerReachNotice customer={customer} apiClient={apiClient}
+                             onOpenMessageCredits={onOpenMessageCredits} />
       </Section>
 
       <Section title="Order">
@@ -1438,7 +1553,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
       {/* List */}
       <div style={{ flex: 1, overflowY: 'auto' }}>
         {loading && <Empty>Loading…</Empty>}
-        {!loading && error && <Empty color="#e53935">{error}</Empty>}
+        {!loading && error && <Empty color={DANGER}>{error}</Empty>}
         {!loading && !error && visible.length === 0 && <Empty>No orders yet.</Empty>}
 
         {!loading && visible.map(order => {
@@ -1470,7 +1585,7 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 6, marginBottom: 4 }}>
-                  <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</span>
                   <StatusBadge status={order.status} statusIndex={statusIndex} />
                 </div>
                 <div style={{ fontSize: 11, color: '#aaa', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
@@ -1500,7 +1615,11 @@ function OrderList({ orders, loading, error, filter, onFilter, onSelect, selecte
 
 // ── Root ──────────────────────────────────────────────────────────────────────
 
-export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = '#1a1a1a', externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null }) {
+export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNewOrder = null, apiClient, primaryColor = INK, externalFilter = null, homeDeliveryEnabled = false, initialOrderId = null, bakerSlug = null, bakerName = null, initialView = 'list', bakerTimezone = null, onNewOrderForDate = null,
+  /* Opens Top-ups → Message credits. Only the no-email notice uses it, and it is optional: a host
+     that cannot go there (the harness, admin) simply renders the notice without the way through
+     rather than a button that does nothing. */
+  onOpenMessageCredits = null }) {
   const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1601,7 +1720,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
           {isMobile
             ? <PanelBackArrow onClick={selected ? () => setSelected(null) : (onBack ?? onClose)} />
             : onBack && <PanelBackCrumb label="Dashboard" onClick={onBack} />}
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a' }}>{topBarTitle}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: INK }}>{topBarTitle}</span>
 
           {/* List | Calendar — the calendar is a view of the same orders, so it lives
               here rather than being a separate destination. */}
@@ -1617,17 +1736,43 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
 
           <span style={{ flex: 1 }} />
 
+          {/* ⚠️ "New", not "New Order", and it may NOT wrap. Sandeep: "list/calender alignment
+              issue. lets change the 'New Order' to 'New'. then i can we can accomodate
+              list/calendar?" Measured at 375px the bar wanted ~455px: back 32 + title 53 +
+              Segmented 124 + this button + the count, with four 14px gaps and 40px of padding.
+              Segmented is flexShrink:0 by design (a segmented control that compresses is one
+              whose labels start lying), so all the pressure landed here — and with no
+              `whiteSpace` this button simply broke onto two lines inside a 56px bar, which is the
+              misalignment in the screenshot rather than a spacing bug.
+              ⚠️ nowrap + flexShrink:0 are the real fix; the shorter word alone bought ~40px of an
+              ~80px overflow. Both, or it comes back at the next width.
+              ⚠️ The ACCESSIBLE NAME STAYS FULL. "New" beside a + is clear to someone looking at
+              it and says nothing to someone who is not; aria-label keeps the whole phrase, and
+              the visible word is contained in it (WCAG 2.5.3). The rail's submenu entry stays
+              "New Order" on purpose — there it sits under Orders/Calendar with no + and no
+              context, where "New" would be a guess. Divergence, decided, not drift.
+              ⚠️ AND IT LIVES OUT HERE, ABOVE THE CONDITIONAL. Put inside `{cond && ( … )}` the
+              parenthesised body holds a comment node AND the button — two children, no fragment —
+              and esbuild fails with "Expected ) but found onClick" pointing at the button rather
+              than at the comment. Which is how it failed once already. */}
           {onNewOrder && (!isMobile || !selected) && (
-            <button onClick={onNewOrder} style={{
+            <button onClick={onNewOrder} aria-label="New Order" title="New Order" style={{
               display: 'flex', alignItems: 'center', gap: 5,
               background: primaryColor, color: '#fff', border: 'none',
               borderRadius: 10, padding: '8px 14px', cursor: 'pointer',
               fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+              whiteSpace: 'nowrap', flexShrink: 0,
             }}>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New Order
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New
             </button>
           )}
-          {view === 'list' && (!isMobile || !selected) && (
+          {/* ⚠️ DESKTOP ONLY, because on a phone it is a SECOND COPY of a number already on screen.
+              The filter row directly below opens with "All (21)" — the same count, larger, and
+              attached to the control that uses it. Measured at 375px this span was clipped off the
+              right edge anyway (x 378 of a 375px viewport), so the choice was never "keep it or
+              lose it": it was "lose it, or lose the List/Calendar toggle's room to sit straight".
+              It stays in full on desktop, where the bar has width to spare. */}
+          {view === 'list' && !isMobile && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
           )}
           {/* Always present on desktop: closing is always possible, and this is where every
@@ -1710,6 +1855,7 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
                     bakerSlug={bakerSlug}
                     bakerName={bakerName}
                     statusIndex={statusIndex}
+                    onOpenMessageCredits={onOpenMessageCredits}
                   />
                 : <Empty>Select an order to view details.</Empty>
               }
@@ -1729,7 +1875,9 @@ function Empty({ children, color = '#bbb' }) {
 
 // Reached steps render ink-black, unreached stay white/grey — a clean monochrome
 // stepper (no per-status colours, no red).
-const INK = '#1a1a1a';
+// ⚠️ The local `const INK` that lived here is GONE — it held the same value the shared token does,
+// and two definitions of one colour is the drift this sweep exists to end. INK now comes from
+// shared/tokens.js (imported at the top); the intent above is unchanged.
 
 // "Cancel order" text link — shared by the mobile action area and the status
 // stepper so they stay identical.

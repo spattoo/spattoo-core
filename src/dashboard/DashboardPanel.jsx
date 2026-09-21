@@ -3,6 +3,7 @@ import { useNarrow } from '../shared/useNarrow.js';
 import { RefreshIcon } from '../shared/icons.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { INK } from '../shared/tokens.js';
 
 const STATUS_META = {
   pending:     { label: 'Pending',   color: '#92400E', bg: '#FEF9C3' },
@@ -187,7 +188,7 @@ function Card({ title, icon, accent = '#4f46e5', children, flex, headerRight }) 
           background: `${accent}18`,
           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0,
         }}>{icon}</div>
-        <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', flex: 1 }}>{title}</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: INK, flex: 1 }}>{title}</span>
         {headerRight}
       </div>
       <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12, flex: 1 }}>
@@ -214,7 +215,7 @@ function DeliveryRow({ order }) {
         {fmtDate(order.delivery_date)}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: INK, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11, color: '#aaa', marginTop: 1 }}>
           {order.delivery_mode === 'home_delivery' ? <Icon.Truck /> : <Icon.Store />}
           {order.delivery_mode === 'home_delivery' ? 'Delivery' : 'Pickup'}
@@ -228,7 +229,7 @@ function DeliveryRow({ order }) {
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrders, onNavigateCustomers, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrders, onNavigateCustomers, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useNarrow(768);
   const [data,            setData]            = useState(null);
   const [loading,         setLoading]         = useState(false);
@@ -438,7 +439,7 @@ export default function DashboardPanel({ open, onClose, apiClient, onNavigateOrd
                           <span style={{ fontSize: 12, fontWeight: 800, color: isToday ? '#dc2626' : '#ea580c', minWidth: 56 }}>
                             {isToday ? 'Today' : 'Tomorrow'}
                           </span>
-                          <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{name}</span>
+                          <span style={{ flex: 1, fontSize: 13, fontWeight: 700, color: INK }}>{name}</span>
                           <span style={{ fontSize: 10, fontWeight: 700, background: m.bg, color: m.color, borderRadius: 20, padding: '3px 10px' }}>{m.label}</span>
                           <span style={{ color: '#aaa' }}>{o.delivery_mode === 'home_delivery' ? <Icon.Truck /> : <Icon.Store />}</span>
                         </div>

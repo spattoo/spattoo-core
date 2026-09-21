@@ -17,6 +17,7 @@ import { pointInRing } from '../geometry/regions.js';
 import { panelsFrom } from '../geometry/garnishPanel.js';
 import { fillShape, FILL_PATTERNS } from '../geometry/pipingFill.js';
 import { findRegions } from '../geometry/regions.js';
+import { INK } from '../../shared/tokens.js';
 
 // ── Piping a chocolate garnish, off the cake ─────────────────────────────────────────────────────
 //
@@ -35,7 +36,13 @@ import { findRegions } from '../geometry/regions.js';
 // decide for the baker; the same rule the photo editor settled on.
 
 export const PLATE = 420;          // the studio's own square, in its own units
-const INK = '#4A2C1B';
+/* ⚠️ NOT the app's INK, and that collision broke the build once (0.1.571, unbuildable on dev).
+ * This is the studio's DRAWN colour — piped chocolate brown, a colour with a meaning in the cake.
+ * The token sweep imported `INK` for this file's five chrome sites and landed on top of a local
+ * const of the same name holding a different value, which is the one shape a "same hex" scan can
+ * never see. tokens.js says it plainly: a colour that describes something a baker is looking at
+ * belongs with the thing it describes. So it keeps its value and gives up the name. */
+const GARNISH_INK = '#4A2C1B';
 const SURFACE = '#F6F4F0';
 
 /* ── Ready-made shapes ───────────────────────────────────────────────────────────────────────────
@@ -66,7 +73,7 @@ const polygon = (n, r, rot = -Math.PI / 2) =>
  * shape button purple because one triangle is purple says the buttons are a preview when they are a
  * menu. */
 const ShapeIcon = ({ kind }) => {
-  const st = { fill: 'none', stroke: INK, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
+  const st = { fill: 'none', stroke: GARNISH_INK, strokeWidth: 3.4, strokeLinecap: 'round', strokeLinejoin: 'round' };
   return (
     <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
       {/* The icon is the shape it makes — a spike, not an equilateral triangle. An icon that
@@ -125,7 +132,7 @@ export const piecePaths = strokes => strokes.flatMap(s => [s.path, ...s.fills]);
  * chocolate swatches would be a second answer to a settled question, which is exactly the mistake
  * the letter-blocks card made and was caught on within the hour. */
 export default function GarnishStudio({
-  initialName = '', color = INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
+  initialName = '', color = GARNISH_INK, rope: ropeProp = 6, onRopeChange, colorControl = null,
   apiClient = null, openWith = null, onSave, onCancel,
   /* Where a piece may go and how it may sit there, from the garnish element's `placement_config`
      (see garnishPlacementOptions). Absent — an older host, or a row without the block — keeps the
@@ -1034,8 +1041,8 @@ export default function GarnishStudio({
                     : 'One pull of a spatula through coloured white chocolate. Each drag is its own piece.'}
                 style={{ width: 44, padding: '5px 0', borderRadius: 8, cursor: 'pointer',
                          fontFamily: 'inherit', fontSize: 10.5, fontWeight: 800,
-                         border: `1.5px solid ${kind === o.id ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,
-                         background: kind === o.id ? '#1a1a1a' : 'rgba(255,255,255,0.92)',
+                         border: `1.5px solid ${kind === o.id ? INK : 'rgba(0,0,0,0.10)'}`,
+                         background: kind === o.id ? INK : 'rgba(255,255,255,0.92)',
                          color: kind === o.id ? '#fff' : '#666' }}>{o.label}</button>
             ))}
           </div>
@@ -1049,7 +1056,7 @@ export default function GarnishStudio({
               style={{ width: 38, height: 38, borderRadius: 10, cursor: 'pointer',
                        display: 'grid', placeItems: 'center', fontFamily: 'serif',
                        fontSize: 19, fontWeight: 700, color: '#4A4A4A',
-                       border: `1.5px solid ${textOpen ? '#1a1a1a' : 'rgba(0,0,0,0.10)'}`,
+                       border: `1.5px solid ${textOpen ? INK : 'rgba(0,0,0,0.10)'}`,
                        background: 'rgba(255,255,255,0.92)' }}>A</button>
             {textOpen && (
               <div style={{ position: 'absolute', top: 44, left: 0, zIndex: 6, width: 240, padding: 10,
@@ -1143,7 +1150,7 @@ export default function GarnishStudio({
                         stub squash into the same blob — five buttons showing one shape, which is
                         worse than no preview because it says the choices are identical. */}
                     <svg viewBox="0 0 100 100" width="100%" height="100%">
-                      {pr.ds.map((d, i) => <path key={i} d={d} fill={INK} />)}
+                      {pr.ds.map((d, i) => <path key={i} d={d} fill={GARNISH_INK} />)}
                     </svg>
                   </button>
                 ))}
@@ -1215,7 +1222,7 @@ export default function GarnishStudio({
                       aria-pressed={on} title={label} aria-label={label}
                       style={{ width: 52, height: 52, padding: 3, borderRadius: 10, cursor: 'pointer',
                                background: '#fff',
-                               border: `2px solid ${on ? INK : '#E3DFD8'}` }}>
+                               border: `2px solid ${on ? GARNISH_INK : '#E3DFD8'}` }}>
                       <svg viewBox="0 0 100 100" width="100%" height="100%">
                         <rect x="6" y="6" width="88" height="88" rx="7" fill="#F7F4EF" />
                         {paths.map((d, i) => (
@@ -1385,7 +1392,7 @@ export default function GarnishStudio({
 
 const miniBtn = { padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontFamily: 'inherit',
                   fontSize: 11.5, fontWeight: 800, border: '1.5px solid #DDD8D0', background: '#fff',
-                  color: '#1a1a1a' };
+                  color: INK };
 
 /* A control that sits ON the drawing: small, quiet, and out of the way of the piece being made. The
  * label is the accessible name — an icon with no name is a button nobody can describe. */
@@ -1535,5 +1542,5 @@ const btn = (primary, disabled = false) => ({
   fontFamily: 'inherit', fontSize: 12.5, fontWeight: 800,
   border: primary ? 'none' : '1.5px solid #DDD8D0',
   background: primary ? (disabled ? '#B9C6BC' : '#2C4433') : '#fff',
-  color: primary ? '#fff' : (disabled ? '#BBB' : '#1a1a1a'),
+  color: primary ? '#fff' : (disabled ? '#BBB' : INK),
 });

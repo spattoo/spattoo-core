@@ -1,4 +1,5 @@
 import { useRef } from 'react';
+import { INK } from './tokens.js';
 
 // ── Pick one of a few, to change what is shown ──────────────────────────────────────────────────
 //
@@ -30,7 +31,8 @@ const IDLE   = '#8a8a8a';
  * tone     the selected label's colour; the brand/primary colour where there is one.
  */
 export default function Segmented({
-  items, value, onChange, isMobile = false, equal = false, tone = '#1a1a1a', label = null,
+  items, value, onChange, isMobile = false, equal = false, tone = INK, label = null,
+  scroll = false,
 }) {
   const refs = useRef([]);
 
@@ -59,7 +61,15 @@ export default function Segmented({
         display: equal ? 'grid' : 'flex',
         gridTemplateColumns: equal ? `repeat(${items.length}, 1fr)` : undefined,
         // Hugging strips WRAP rather than compress; equal ones are a grid and cannot wrap at all.
-        flexWrap: equal ? undefined : 'wrap',
+        /* ⚠️ `scroll` is the THIRD shape, for a strip too long to wrap sensibly. Eleven font names
+           are ~880px of labels: wrapped, that is three rows inside a tinted track on a phone, which
+           is no smaller than the grid it replaced. Scrolled, it is one row.
+           It does NOT breach the rule below. That rule forbids SHRINKING or CLIPPING a label —
+           "Nor", "Hatc", "Cros s-hatc h" — and scrolling keeps every label at full size; only the
+           track moves. Reach for it when wrapping would cost more rows than the list is worth, not
+           to avoid thinking about label length. */
+        flexWrap: equal || scroll ? undefined : 'wrap',
+        ...(scroll ? { overflowX: 'auto', scrollbarWidth: 'none' } : null),
         gap: 3, padding: 3, borderRadius: 12, flexShrink: 0,
         background: TRACK, border: `1.5px solid ${HAIR}`,
       }}

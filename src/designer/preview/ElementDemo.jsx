@@ -11,6 +11,7 @@ import { useCakeDesign } from '../hooks/useCakeDesign.js';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { demoTimeline, demoActions, DEMO_POSE_MS, DEMO_SIZE_MS } from '../elementDemo.js';
 import { ZONES } from '../constants.js';
+import { INK } from '../../shared/tokens.js';
 
 /* ─────────────────────────────────────────────────────────────────────────────────────────────────
  * "Show me what this does" — the element performing its own capabilities.
@@ -202,7 +203,7 @@ const s = {
   },
   dots:  { display: 'flex', gap: 6 },
   dot:   { width: 6, height: 6, borderRadius: 999, background: '#d9d4cb', transition: 'background 200ms, transform 200ms' },
-  dotOn: { background: '#1a1a1a', transform: 'scale(1.25)' },
+  dotOn: { background: INK, transform: 'scale(1.25)' },
   chips: { display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' },
   chip: {
     padding: '4px 10px', borderRadius: 999, fontSize: 11.5, fontWeight: 700,

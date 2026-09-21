@@ -1,4 +1,5 @@
 import React from 'react';
+import { INK } from '../../shared/tokens.js';
 
 // The ONE text input for glyph cakes (numbers AND letters). Every place a customer types the characters
 // their cake is shaped like — the New-cake prompt (ShapePicker) and the tier popup's field
@@ -26,7 +27,7 @@ export default function GlyphInput({
       style={{
         width: '100%', boxSizing: 'border-box', padding: '10px 12px', borderRadius: 10,
         border: '1.5px solid #d9d9e0', background: '#fff', fontSize: 20, fontWeight: 800,
-        fontFamily: 'inherit', color: '#1a1a1a', textAlign: 'center', letterSpacing: 3, ...style,
+        fontFamily: 'inherit', color: INK, textAlign: 'center', letterSpacing: 3, ...style,
       }}
     />
   );

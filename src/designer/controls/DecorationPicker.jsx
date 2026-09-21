@@ -1,4 +1,5 @@
 import { DRIP_COLORS, FLOWER_COLORS } from '../hooks/useCakeDesign';
+import { INK } from '../../shared/tokens.js';
 
 function SwatchRow({ options, selected, onSelect }) {
   return (
@@ -12,7 +13,7 @@ function SwatchRow({ options, selected, onSelect }) {
             ...styles.swatch,
             background: opt.value ?? '#f0e8eb',
             border: selected === opt.value
-              ? '3px solid #1a1a1a'
+              ? `3px solid ${INK}`
               : '2px solid #999999',
             transform: selected === opt.value ? 'scale(1.2)' : 'scale(1)',
             position: 'relative',
@@ -62,7 +63,7 @@ const styles = {
     display: 'block',
     fontSize: 13,
     fontWeight: 600,
-    color: '#1a1a1a',
+    color: INK,
     letterSpacing: 1,
     textTransform: 'uppercase',
     marginBottom: 10,

@@ -77,7 +77,7 @@ export function TopUpsSection({ apiClient, primaryColor = '#2C4433', onOpenSmart
       {hasMessages && (
         <NavRow
           label="Message credits"
-          hint="SMS and WhatsApp updates to your customers. Email is always free."
+          hint="WhatsApp updates to your customers. Email is always free."
           value={left(messages)}
           accent={primaryColor}
           onClick={onOpenMessages}

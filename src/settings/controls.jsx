@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
+import { INK } from '../shared/tokens.js';
 
 // Shared presentational controls for the settings-area slide-in panels
 // (SettingsPanel, FlavoursPanel, …). Keep these dumb and reusable — one Toggle, one
@@ -32,7 +33,7 @@ export function Toggle({ checked, onChange }) {
 export function Field({ label, hint, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{label}</span>
+      <span style={{ fontSize: 13, fontWeight: 700, color: INK }}>{label}</span>
       {hint && <span style={{ fontSize: 11, color: '#888' }}>{hint}</span>}
       {children}
     </div>

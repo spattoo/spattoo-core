@@ -9,24 +9,46 @@
 // So the two surfaces share one list, and this decides only WHERE each item goes.
 
 /**
- * The four rail items that get a permanent slot in the strip. Ids only — the items themselves come
+ * The five rail items that get a permanent slot in the strip. Ids only — the items themselves come
  * from railItems, so capabilities and feature flags still decide what exists at all.
  *
  * NOT the desktop rail's priorities in a smaller box. A phone and a desk are used for different
  * halves of this job: designing a 3D cake is a DESK act — big canvas, precise dragging, time — and
  * the phone is where a baker checks what is due and answers an enquiry. So the strip leans toward
- * running the bakery, and the design tools stay one tap away rather than zero.
+ * running the bakery, and the rest of the design tools stay one tap away rather than zero.
  *
- * Templates is the notable omission. It is a STARTING move, used once at the top of a design, where
- * Dashboard is a recurring check — and a slot in a five-wide bar is worth more to the thing you
- * return to than the thing you begin with.
+ * ⚠️ TEMPLATES WAS THE NOTABLE OMISSION, AND IS NOT ANY MORE (2026-09-20). The argument for leaving
+ * it out was that it is a STARTING move, used once at the top of a design, where Dashboard is a
+ * recurring check — and that a slot in a FIVE-wide bar is worth more to the thing you return to.
+ * The second half of that is what changed: the bar is six wide now, so the slot costs less than it
+ * did. Sandeep asked for it directly, against the apps bakers already use, where browsing designs
+ * is a first-class destination rather than something behind a More button.
+ *
+ * ⚠️ SIX IS THE CEILING, AND IT IS ARITHMETIC RATHER THAN TASTE. This whole bar exists because the
+ * old one put every target under the 44px floor (see features/mobile-navigation.md). Full-bleed
+ * slots divide the width: at five that is 64px on a 320 phone, 75 at 375, 79 at 393. At six it is
+ * 53 / 62 / 65 — still clear. At SEVEN it is 46 / 54 / 56, and 46 is within a rounding error of the
+ * floor the redesign was built to escape. Canva runs seven only because its strip SCROLLS
+ * sideways — its last item is visibly clipped — and it has no More button to fit. Do not read a
+ * seventh slot off a screenshot without also taking the mechanism that pays for it.
+ *
+ * Uploads stays in the More sheet, deliberately. It was the natural second candidate, but at six
+ * something has to give, and Templates is the one a baker reaches for at the start of every cake.
  *
  * ⚠️ Anything carrying a `menu` must be listed here. The strip renders submenus (RailSubmenu,
  * anchored upward); the More sheet has no surface for one, so a menu item in the sheet would open
  * nothing at all. Only Orders carries a menu today and it is primary. `strandedMenus` below exists
  * to make it loud rather than silent if that ever stops being true.
  */
-export const MOBILE_PRIMARY = ['new', 'dashboard', 'elements', 'orders'];
+/* ⚠️ THE ORDER IS THE JOB, NOT THE HISTORY (INVARIANTS #12). Sandeep set it directly:
+ *
+ *     New · Templates · Decor · Orders · Dashboard
+ *
+ * It reads left to right as the work actually goes: START a cake (New, or from a Template — the two
+ * beginnings, now adjacent), DECORATE it, then run the bakery (Orders, Dashboard). Templates arrived
+ * last and was simply appended to the end, which put a starting move after two management ones.
+ * Dashboard moves to the far end: it is the thing you glance at, not the thing you are doing. */
+export const MOBILE_PRIMARY = ['new', 'templates', 'elements', 'orders', 'dashboard'];
 
 /**
  * Divide the rail into the strip and the More sheet.

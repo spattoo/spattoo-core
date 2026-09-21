@@ -4,6 +4,7 @@ import CustomerSearch from './CustomerSearch.jsx';
 import { isValidEmail } from '../shared/validators.js';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { DANGER_FIELD, DANGER_LINE, INK } from '../shared/tokens.js';
 
 // InvitePanel — baker tool to invite a customer to a design session. Right-side
 // slide-in panel matching CustomersPanel/OrdersPanel. Calls apiClient.inviteCustomer
@@ -17,7 +18,7 @@ import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 // `liveSessionId` (optional): when set, this invite joins the customer into a LIVE co-design
 // session — the id is passed to the API, which binds the customer to the session and carries
 // `&session=<id>` in the storefront link so they land straight in the live room after OTP.
-export default function InvitePanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', attachedDesign = null, liveSessionId = null }) {
+export default function InvitePanel({ open, onClose, apiClient, primaryColor = INK, attachedDesign = null, liveSessionId = null }) {
   const empty = { firstName: '', lastName: '', email: '', phone: '', note: '' };
   const [form, setForm]     = useState(empty);
   const [mode, setMode]     = useState('search'); // 'search' (existing) | 'new'
@@ -117,7 +118,7 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
             are, from shared/panelTopBar.jsx: the arrow on a phone, a ✕ at the far right on desktop. */}
         <div style={{ height: 56, padding: '0 20px', ...dockedBleed(isMobile, 20), background: '#fff', borderBottom: '1.5px solid #E8E4DC', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14 }}>
           {isMobile && <PanelBackArrow onClick={onClose} />}
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{liveSessionId ? 'Invite to design together' : 'Invite for design'}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: INK, flex: 1 }}>{liveSessionId ? 'Invite to design together' : 'Invite for design'}</span>
           {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
 
@@ -153,7 +154,7 @@ export default function InvitePanel({ open, onClose, apiClient, primaryColor = '
                           {(selected.first_name?.[0] ?? '').toUpperCase()}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontWeight: 700, fontSize: 14, color: '#1a1a1a' }}>{selected.first_name} {selected.last_name ?? ''}</div>
+                          <div style={{ fontWeight: 700, fontSize: 14, color: INK }}>{selected.first_name} {selected.last_name ?? ''}</div>
                           {selected.phone && <div style={{ fontSize: 12, color: '#666', marginTop: 1 }}>{selected.phone}</div>}
                           {selected.email && <div style={{ fontSize: 11, color: '#999', marginTop: 1 }}>{selected.email}</div>}
                         </div>
@@ -223,7 +224,7 @@ const st = {
   lead:     { fontSize: 13, fontWeight: 600, color: '#6B8C74', margin: '0 0 4px', lineHeight: 1.5 },
   inp:      { padding: '9px 12px', borderRadius: 10, border: '1.5px solid #E0DDD8', fontSize: 13, fontFamily: 'inherit', color: '#222', outline: 'none', width: '100%', boxSizing: 'border-box', background: '#fff' },
   hint:     { fontSize: 11, fontWeight: 600, color: '#aaa', margin: 0 },
-  err:      { background: '#FFF0F0', border: '1.5px solid #F5C0C0', borderRadius: 8, padding: '9px 12px', color: '#C0392B', fontSize: 12, fontWeight: 600 },
+  err:      { background: DANGER_FIELD, border: `1.5px solid ${DANGER_LINE}`, borderRadius: 8, padding: '9px 12px', color: '#C0392B', fontSize: 12, fontWeight: 600 },
   primary:  { padding: '12px', borderRadius: 11, border: 'none', color: '#fff', fontSize: 14, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit', marginTop: 4 },
   secondary:{ padding: '0 16px', borderRadius: 10, border: '1.5px solid #E0DDD8', background: '#fff', color: '#444', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', flexShrink: 0 },
   linkBtn:  { padding: '8px', background: 'none', border: 'none', color: '#9BB5A2', fontSize: 13, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },

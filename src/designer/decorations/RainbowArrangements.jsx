@@ -1,3 +1,4 @@
+import { INK } from '../../shared/tokens.js';
 // ── The rainbow arrangements, and the tiles that choose them ─────────────────────────────────────
 // THE source of truth for what arrangements exist, shared by the customer's edit card and the admin
 // studio (INVARIANTS #3). It was written in the studio first and belongs here now that a customer
@@ -195,7 +196,7 @@ export function ArrangementTile({ item, on, onPick, tiers = 1, tierIndex = 0, si
   const floor = tierIndex === 0 ? BOARD_Y : boxes[tierIndex - 1].top;
   return (
     <button type="button" onClick={onPick} title={item.label} aria-pressed={on}
-      style={{ border: `1.5px solid ${on ? '#1a1a1a' : '#E3E0DA'}`, background: on ? '#F4F7F4' : '#fff',
+      style={{ border: `1.5px solid ${on ? INK : '#E3E0DA'}`, background: on ? '#F4F7F4' : '#fff',
         borderRadius: 10, padding: '5px 3px 3px', cursor: 'pointer', width: size + 28,
         display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, fontFamily: 'inherit' }}>
       <svg viewBox="0 0 40 46" style={{ width: size, height: size * 1.13 }}>
@@ -205,7 +206,7 @@ export function ArrangementTile({ item, on, onPick, tiers = 1, tierIndex = 0, si
                 fill={i === tierIndex ? '#FFFFFF' : '#F7F5F1'}
                 stroke={i === tierIndex ? '#C9C1B4' : '#DDD8CF'} />
         ))}
-        <g fill="none" stroke={on ? '#1a1a1a' : '#B7AEA1'} strokeWidth="2.6" strokeLinecap="round">
+        <g fill="none" stroke={on ? INK : '#B7AEA1'} strokeWidth="2.6" strokeLinecap="round">
           {item.draw(t, floor)}
         </g>
       </svg>

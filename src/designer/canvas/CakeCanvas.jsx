@@ -2243,6 +2243,29 @@ function CreamStylePicker({ styles = [], onSelect, onCancel }) {
   );
 }
 
+/* ⚠️ DEV-ONLY: where the camera actually is, so a GLIDE can be measured rather than admired.
+ * The fit eases to a new framing when the frame changes (a sheet opening, a card closing) and snaps
+ * when the cake changes. Those two are indistinguishable by eye at 220ms — and "it looks smoother"
+ * is the kind of claim that has been wrong before in this session. Sampling the camera's distance
+ * from its target across a close separates them: one value means it teleported, a decaying run of
+ * them means it glided. Dev-gated like CakeDesigner's window.__* block; never reaches a baker. */
+function CameraProbe({ orbitRef }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if (!import.meta.env?.DEV || typeof window === 'undefined') return undefined;
+    window.__cameraState = () => {
+      const t = orbitRef?.current?.target;
+      return {
+        x: +camera.position.x.toFixed(3), y: +camera.position.y.toFixed(3), z: +camera.position.z.toFixed(3),
+        aimY: t ? +t.y.toFixed(3) : null,
+        dist: t ? +camera.position.distanceTo(t).toFixed(3) : null,
+      };
+    };
+    return () => { delete window.__cameraState; };
+  }, [camera, orbitRef]);
+  return null;
+}
+
 function CameraCapture({ cameraRef }) {
   const { camera } = useThree();
   cameraRef.current = camera;
@@ -2484,9 +2507,30 @@ function CakeScene({
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
+      /* A FINISH HANDLE OWNS ITS GESTURE TOO, and leaving it out is why tapping a gold-leaf shard
+       * appeared to do nothing. Measured, not reasoned: the tap DID hit the sphere — onFoilSelect
+       * ran and moved the finish's own index from flake 2 to flake 0 — and then the leaked r3f
+       * click reached the tier underneath and selectExclusive({type:'tier'}) overwrote the foil
+       * selection in the same gesture. From the DOM that is indistinguishable from a tap that
+       * missed, which is exactly how an earlier attempt at this bug was misdiagnosed.
+       * This is the same leak the note above describes for decorations; finish handles were never
+       * added to the list. isFoilTap is the closed-card sphere, isFoilHandle the editing one — a
+       * tap inside the card must not close the card either.
+       * ⚠️ ORBIT IS DELIBERATELY NOT WIDENED. `overDust` below still excludes isFoilTap, so a drag
+       * that begins on a shard with the card shut still rotates the cake. Owning the click and
+       * suspending rotation are different questions, and only the first one is this bug. */
+      /* ⚠️ EVERY closed-card tap flag belongs here, and grass/blocks joined the moment their handles
+         started outliving their cards. Miss one and the symptom is not "the tap does nothing" — it
+         is the tap WORKING and the leaked r3f click then selecting the tier on top of it, which
+         looks identical from the DOM and is the half of the original foil bug that got misdiagnosed
+         first time round. */
+      const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle
+        || h.object.userData.isDustTap || h.object.userData.isDustHandle
+        || h.object.userData.isGrassTap || h.object.userData.isGrassHandle
+        || h.object.userData.isBlockTap || h.object.userData.isBlockHandle);
       // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
-      gestureOnStickerRef.current = overSticker || overGrip;
+      gestureOnStickerRef.current = overSticker || overGrip || overFinish;
       if (orbitRef.current) {
         orbitRef.current.enabled = !overSticker && !overPen && !overDust && !overGrip && !overPiping;
         orbitRef.current.enableRotate = !overCream;
@@ -2494,6 +2538,67 @@ function CakeScene({
     }
     canvas.addEventListener('pointerdown', onCaptureDown, { capture: true });
     return () => canvas.removeEventListener('pointerdown', onCaptureDown, { capture: true });
+  }, [gl, camera, scene]);
+
+  /* ── DEV-ONLY: where a foil flake actually IS, in screen pixels ────────────────────────────────
+   * The tap-to-reopen fix above was written once before and REVERTED, because it could not be
+   * demonstrated: taps were aimed at the cake by eye, all of them missed, and a miss is
+   * indistinguishable from a fix that does not work. Those are opposite conclusions and nothing
+   * on screen separates them.
+   * A handle's world position projected through the LIVE camera does separate them: an empty list
+   * means the handles are not mounted (the fix is wrong), a populated one means the coordinates
+   * are known and a miss is the test's fault. Same projection as ResizeHandles.beginResize.
+   * Dev-gated like CakeDesigner's window.__* block — it never reaches a baker. */
+  useEffect(() => {
+    if (!import.meta.env?.DEV || typeof window === 'undefined') return;
+    /* Takes the finish's name ('Foil' | 'Dust') so both read the same way. Gold leaf and luster dust
+     * have the same three moving parts and had the same bug; one probe for both means a future
+     * finish gets tested by adding a word, not by copying a function. */
+    const tapTargets = (Finish) => () => {
+      const tapFlag = `is${Finish}Tap`, handleFlag = `is${Finish}Handle`;
+      const rect = gl.domElement.getBoundingClientRect();
+      const wp = new THREE.Vector3(), ndc = new THREE.Vector3();
+      const out = [];
+      scene.traverse((o) => {
+        const tap = !!o.userData?.[tapFlag], handle = !!o.userData?.[handleFlag];
+        if (!tap && !handle) return;
+        o.getWorldPosition(wp);
+        ndc.copy(wp).project(camera);
+        out.push({
+          // Which flag it carries says WHICH state the cake is in, so a test can assert the swap.
+          flag: tap ? tapFlag : handleFlag,
+          x: (ndc.x + 1) / 2 * rect.width + rect.left,
+          y: (-ndc.y + 1) / 2 * rect.height + rect.top,
+          // Behind the camera or off the viewport: a real coordinate that is still unhittable.
+          onScreen: ndc.z < 1 && Math.abs(ndc.x) <= 1 && Math.abs(ndc.y) <= 1,
+        });
+      });
+      return out;
+    };
+    // Counts the catchers too, so "did the catchers really come off?" is a question with an answer.
+    const catcherCount = (Finish) => () => {
+      let n = 0;
+      scene.traverse((o) => { if (o.userData?.[`is${Finish}Catcher`]) n++; });
+      return n;
+    };
+    window.__foilTapTargets = tapTargets('Foil');
+    window.__foilCatcherCount = catcherCount('Foil');
+    window.__dustTapTargets = tapTargets('Dust');
+    window.__dustCatcherCount = catcherCount('Dust');
+    /* Grass and letter blocks now outlive their cards too, so they get the same probe — which is the
+       thing the helper above promised: a word, not a copied function. The flags they were given
+       (isGrassTap/isGrassHandle/isGrassCatcher, isBlockTap/…) are spelled to match `is${Finish}…`
+       exactly so this stays true. */
+    window.__grassTapTargets = tapTargets('Grass');
+    window.__grassCatcherCount = catcherCount('Grass');
+    window.__blockTapTargets = tapTargets('Block');
+    window.__blockCatcherCount = catcherCount('Block');
+    return () => {
+      delete window.__foilTapTargets; delete window.__foilCatcherCount;
+      delete window.__dustTapTargets; delete window.__dustCatcherCount;
+      delete window.__grassTapTargets; delete window.__grassCatcherCount;
+      delete window.__blockTapTargets; delete window.__blockCatcherCount;
+    };
   }, [gl, camera, scene]);
 
   // Where the cake stands, resolved ONCE and handed to CakeContent — so the board this scene draws is
@@ -2609,7 +2714,11 @@ function CakeScene({
       {/* …and are dragged by the very same handles as grass clumps: a point on a surface, grabbed
           across its whole body. `r` is half a block, so you grab the cube itself rather than hunting
           a dot; `lift` clears the block's height so the marker is never inside what it marks. */}
-      {blocksMode && nameBlocks?.blocks?.length > 0 && (
+      {/* ⚠️ Mounted whenever blocks are ON the cake, not only while the card is open — same fix and
+          same three parts as grass above. Blocks were the OTHER case named as the reason the phone
+          flyout had to stay: a run of letters had no hit target once its card closed, so it could be
+          added and then never edited or removed without going back through Decorations. */}
+      {nameBlocks?.blocks?.length > 0 && (
         <FinishHandles
           tierData={tierData}
           getPoints={t => (nameBlocks.zone === 'top' && t === tierData[tierData.length - 1]
@@ -2619,10 +2728,11 @@ function CakeScene({
           boardPoints={nameBlocks.zone === 'board'
             ? nameBlocks.blocks.map(b => ({ ...b, r: (nameBlocks.size ?? 0.3) * 0.6 }))
             : null}
-          selected={blocksSelected} onMove={onBlockMove} onSelect={onBlockSelect}
-          catcherFlag="isBlockCatcher" handleFlag="isBlockHandle"
+          selected={blocksMode ? blocksSelected : null} onMove={onBlockMove} onSelect={onBlockSelect}
+          catchers={blocksMode}
+          catcherFlag="isBlockCatcher" handleFlag={blocksMode ? 'isBlockHandle' : 'isBlockTap'}
           lift={(nameBlocks.size ?? 0.3) + 0.06}
-          color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
+          color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker={blocksMode} />
       )}
 
 
@@ -2630,24 +2740,62 @@ function CakeScene({
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
           surface, moved by its handle. showMarker is on because a clump the size of a thumbnail is
           easy to lose against a field of grass, and the dot is only present while the card is open. */}
-      {grassMode && <FinishHandles tierData={tierData}
+      {/* ⚠️ MOUNTED WHENEVER THE CAKE CARRIES GRASS, not only while its card is open — the foil and
+          dust fix, for the two cases that still had the bug. The comment above `stackShown` named
+          grass and letter blocks as the reason the phone's element flyout could not be dropped:
+          "their drag handles only exist inside their own mode, and their card is what opens that
+          mode. Take the stack away and a baker can add grass and then never edit or remove it."
+          That is now false for grass, which is what lets the flyout go.
+          ⚠️ THREE PARTS, ALL REQUIRED, exactly as dust and foil needed them: catchers gated off
+          while the card is shut (they wrap the whole cake and would swallow taps meant for anything
+          underneath), the handle flag swapped so orbit ignores a sphere that cannot drag anything,
+          and `isGrassTap` added to gesture ownership above or the leaked click selects the tier out
+          from under the selection the tap just made.
+          ⚠️ AND THE MARKER GOES WITH THE MODE. This dot is drawn (showMarker), and its own note says
+          it is "only present while the card is open" — a white dot left sitting on a closed design
+          reads as part of the cake and bakes into the order thumbnail. */}
+      {(grassMode || tierData.some(t => t.grass?.patches?.length) || boardGrass?.patches?.length > 0) && <FinishHandles tierData={tierData}
         getPoints={t => (t.grass?.patches?.length ? t.grass.patches.map(p => ({ ...p, surface: 'top_surface' })) : null)}
         board={board} boardPoints={boardGrass?.patches ?? null}
-        selected={grassSelected} onMove={onGrassMove} onSelect={onGrassSelect}
-        catcherFlag="isGrassCatcher" handleFlag="isGrassHandle"
+        selected={grassMode ? grassSelected : null} onMove={onGrassMove} onSelect={onGrassSelect}
+        catchers={grassMode}
+        catcherFlag="isGrassCatcher" handleFlag={grassMode ? 'isGrassHandle' : 'isGrassTap'}
         // Float the handles clear of the tallest grass on the cake, so a marker is never buried
         // inside the clump it marks. One number for both surfaces — a handle floating slightly high
         // over the shorter one is unnoticeable; a handle inside a mound is the whole bug.
         lift={grassHandleLift(tierData, boardGrass)}
         // White and near-black: both read against green. The usual selColor is a dark GREEN,
         // which would be the one colour invisible against the thing it marks.
-        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker />}
+        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker={grassMode} />}
 
-      {dustMode && <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustSelected}
-        onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher" handleFlag="isDustHandle" />}
-      {foilMode && <FinishHandles tierData={tierData} getPoints={t => t.foil?.flakes} selected={foilSelected}
-        onMove={onFoilMove} onSelect={onFoilSelect} catcherFlag="isFoilCatcher" handleFlag="isFoilHandle"
-        color="#f0d878" selColor="#3D5A44" />}{/* no marker dot — default; grab the shard directly */}
+      {/* Mounted whenever the cake carries dust, for the same reason foil is below — after Done a
+          placed dusting had no hit target at all, so tapping a flick did nothing. Same three parts:
+          catchers gated off while the card is shut, the handle flag swapped so orbit ignores a tap
+          that cannot drag anything, and gesture ownership above so the leaked click cannot select
+          the tier out from under the selection. */}
+      {(dustMode || tierData.some(t => t.dusting?.splashes?.length)) && (
+        <FinishHandles tierData={tierData} getPoints={t => t.dusting?.splashes} selected={dustMode ? dustSelected : null}
+          onMove={onDustMove} onSelect={onDustSelect} catcherFlag="isDustCatcher"
+          handleFlag={dustMode ? 'isDustHandle' : 'isDustTap'} catchers={dustMode} />
+      )}
+      {/* ⚠️ MOUNTED WHENEVER THE CAKE CARRIES FOIL, NOT ONLY WHILE ITS CARD IS OPEN. Sandeep: "when
+          you say done, control closes, but then clicking on any flake on the cake does not open the
+          control back." It could not: the handles lived and died with `foilMode`, so after Done the
+          shards had no hit target of any kind. The foil CARD already survives a closed selection
+          (CakeDesigner builds it whenever any tier has flakes, so it returns after a reload) — the
+          thing that was missing is the way back to it from the cake.
+          ⚠️ `catchers` is what makes this safe. See FinishHandles: with the card closed only the
+          0.1 grab spheres mount, never the cake-wrapping catchers.
+          ⚠️ AND THE HANDLE FLAG CHANGES WITH IT. `overDust` above suspends orbit for anything
+          tagged isFoilHandle. Keeping that tag on a closed card would freeze rotation wherever a
+          flake happens to sit — on a gesture that cannot drag anything, because its catcher is
+          gone — so a closed card tags its spheres isFoilTap: still tappable, invisible to orbit. */}
+      {(foilMode || tierData.some(t => t.foil?.flakes?.length)) && (
+        <FinishHandles tierData={tierData} getPoints={t => t.foil?.flakes} selected={foilMode ? foilSelected : null}
+          onMove={onFoilMove} onSelect={onFoilSelect} catcherFlag="isFoilCatcher"
+          handleFlag={foilMode ? 'isFoilHandle' : 'isFoilTap'} catchers={foilMode}
+          color="#f0d878" selColor="#3D5A44" />
+      )}{/* no marker dot — default; grab the shard directly */}
 
       {pipingTarget && (
         <CreamStylePicker styles={pipingStyles} onSelect={onPipingStyleSelect} onCancel={onPipingCancel} />
@@ -3261,6 +3409,16 @@ const _fitDir = new THREE.Vector3();
 //   means the view holds still during a drag.
 const FIT_STRIDE = 12;          // frames between measurements — 5/sec at 60fps, invisible for an edit
 const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
+/* How long the view takes to glide to a new framing after the FRAME changed (a sheet opening, a
+ * card closing) rather than the cake. Time-based, not frame-counted, so it runs at the same speed
+ * on a 120Hz phone as on a 60Hz one. Slightly longer than the 180ms the container used to animate
+ * over: the sheet now moves in one step and this is the only animation left, so it carries the
+ * whole gesture rather than racing a CSS transition. */
+/* ⚠️ 0.45s, NOT 0.22 — a deliberate slowness. Sandeep, having watched the first version: "can we
+ * slow down the coming back? it looks beatiful to watch it coming back with little slow." The
+ * faster glide read as a correction; at this length it reads as the view opening out, which is the
+ * one moment in the editor where the whole cake comes back into frame and is worth seeing. */
+const FIT_EASE_S = 1.2;
 function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
@@ -3271,14 +3429,54 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
   const controls = useThree(s => s.controls);
   const applied = useRef(null);
   const tick = useRef(0);
+  /* An in-flight glide: { fromPos, toPos, fromAim, toAim, t }. Non-null only while the view is
+     easing to a new framing after a RESIZE — see the note on FIT_EASE_S below. */
+  const ease = useRef(null);
 
-  useFrame(() => {
+  useFrame((_, delta) => {
     if (!enabled) return;
+
+    /* ⚠️ THE GLIDE RUNS EVERY FRAME, ABOVE THE STRIDE. Sandeep: "when i am done, there is a
+       flickering to come back to normal, needs to be smooth." Two animations were fighting — the
+       container's CSS transition moving the sheet, and this fit TELEPORTING the camera whenever the
+       resulting aspect change tripped the deadband. One eased, the other jumped, and they were not
+       synchronised. Now the CSS moves in one step and the camera owns the only animation.
+       Sampling a glide on a 12-frame stride would BE the stutter, so it is advanced here, before
+       the throttle, and no measurement happens while it runs. */
+    if (ease.current) {
+      const e = ease.current;
+      e.t = Math.min(1, e.t + delta / FIT_EASE_S);
+      // easeOutCubic: quick off the mark, settles softly — a view catching up, not a slide.
+      const k = 1 - Math.pow(1 - e.t, 3);
+      const ctlE = controls ?? orbitRef?.current;
+      const aimNow = e.fromAim + (e.toAim - e.fromAim) * k;
+      // Aim and position together: easing one and snapping the other swings the cake through an arc.
+      if (ctlE?.target) ctlE.target.set(0, aimNow, 0);
+      camera.position.lerpVectors(e.fromPos, e.toPos, k);
+      camera.updateProjectionMatrix();
+      // OrbitControls also writes the camera each frame (autoRotate is live while painting), so the
+      // glide has to hand it the result exactly as the snap below does, rather than race it.
+      ctlE?.update();
+      if (e.t >= 1) ease.current = null;
+      return;
+    }
+
     // Every frame until the cake has been framed once, on a stride after that. The first fit must
     // not wait: until it lands the camera is wherever it was left, and a stride's delay is a visible
     // jump from the wrong framing to the right one. Once settled, the deadband makes most ticks
     // free — but the MEASUREMENT is not, so it is the measurement that gets throttled.
-    if (++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
+    /* ⚠️ A RESIZE SKIPS THE THROTTLE, and this is where the PAUSE lived. Measured on a card close:
+       React committed and R3F resized the canvas at 95ms, but the camera did not move until 290ms —
+       and FIT_STRIDE at 12 frames is ~200ms at 60fps, which is the whole of that gap. The fit was
+       smooth once it started; it simply was not LOOKING yet. So the glide began a third of a second
+       after the press, which reads as a pause followed by a glide rather than a response.
+       ⚠️ IT DOES NOT COST WHAT THE STRIDE PROTECTS. The throttle exists because measuring is
+       expensive — "setFromObject walks every mesh, and a grass cake has thousands of instances".
+       This comparison walks nothing: `size` is already in hand from useThree, above the bbox walk,
+       so noticing that the FRAME changed is free. The cake's own bounds stay on the stride. */
+    const liveAspect = size.width / Math.max(size.height, 1);
+    const frameChanged = applied.current && Math.abs(applied.current.aspect - liveAspect) >= 0.01;
+    if (!frameChanged && ++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
     const g = groupRef.current;
     // Nothing recorded until the controls exist, so the first real fit is not swallowed by the
     // deadband as "already applied".
@@ -3308,8 +3506,17 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
     // the frame it has to fit inside is different.
-    if (prev && Math.abs(prev.halfW - halfW) < FIT_DEADBAND && Math.abs(prev.halfH - halfH) < FIT_DEADBAND
-             && Math.abs(prev.cy - cy) < FIT_DEADBAND && Math.abs(prev.aspect - aspect) < 0.01) return;
+    const cakeMoved = !prev || Math.abs(prev.halfW - halfW) >= FIT_DEADBAND
+                           || Math.abs(prev.halfH - halfH) >= FIT_DEADBAND
+                           || Math.abs(prev.cy - cy) >= FIT_DEADBAND;
+    const aspectMoved = !!prev && Math.abs(prev.aspect - aspect) >= 0.01;
+    if (!cakeMoved && !aspectMoved) return;
+    /* ⚠️ A RESIZE GLIDES; AN EDIT SNAPS. These are different events wearing the same numbers.
+       The cake CHANGING — a tier added, a topper stood up — should land immediately: the view is
+       catching up with something the baker just did, and easing it would read as lag. The FRAME
+       changing (a sheet opening, the card closing, a rotation) is not an edit at all; the cake has
+       not moved, only the window onto it, and teleporting there is the flicker being fixed. */
+    const glide = aspectMoved && !cakeMoved;
     applied.current = { halfW, halfH, cy, aspect };
 
     const ctl = controls ?? orbitRef?.current;
@@ -3331,6 +3538,21 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
     // The sit takes a share of the air the margin bought, and nothing else — so it can never push
     // the cake past the edge it was standing back from.
     const aimY = cy + sitFromSlack(tight, dist, camera.fov);
+
+    /* ⚠️ CLONES, NOT THE SCRATCH VECTORS. _fitDir and _fitBox are module-level singletons reused by
+       every call of this function — handing one to the ease would leave the glide chasing a vector
+       that changes underneath it on the next measurement. The ease owns its own copies. */
+    if (glide) {
+      const toPos = new THREE.Vector3(0, aimY, 0).addScaledVector(_fitDir, dist);
+      ease.current = {
+        fromPos: camera.position.clone(),
+        toPos,
+        fromAim: target ? target.y : aimY,
+        toAim: aimY,
+        t: 0,
+      };
+      return;   // the glide branch above drives it from here
+    }
 
     if (target) target.set(0, aimY, 0);
     camera.position.set(0, aimY, 0).addScaledVector(_fitDir, dist);
@@ -3597,6 +3819,7 @@ export default function CakeCanvas({
       }}
     >
       <CameraCapture cameraRef={cameraRef} />
+      <CameraProbe orbitRef={orbitRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} turnCameraRef={turnCameraRef} orbitRef={orbitRef} />
       {/* Fills takeRef with the recorder, the same way CameraSnapper fills snapCameraRef — the

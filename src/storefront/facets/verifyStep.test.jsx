@@ -14,6 +14,19 @@ import { readFileSync } from 'node:fs';
  */
 const src = readFileSync(new URL('./VerifyStep.jsx', import.meta.url), 'utf8');
 
+/* ⚠️ COMMENTS DO NOT COUNT — three gates in this project have passed on a word that only ever
+   appeared in prose explaining it. Every file here documents itself at length, so a match anywhere
+   in the text proves nothing about what renders. */
+/* ⚠️ BLOCK COMMENTS FIRST, THEN THE BRACES. Stripping `{/* … *​/}` as one unit BEFORE plain block
+   comments looks tidier and is wrong: the lazy match runs from the first `{/*` to the first later
+   `*​/}`, and every plain `/* … *​/` in between is inside that span — so one JSX comment near the top
+   of a file silently deletes half of it. Measured here: the whole of VerifyStep from its first JSX
+   comment onwards vanished, and an assertion about real code passed as "not present".
+   Doing it the other way round leaves bare `{}` fragments, which match nothing and matter to nobody. */
+const code = (f) => f
+  .replace(/\/\*[\s\S]*?\*\//g, '')                             // block comments, JSX ones included
+  .split('\n').filter(l => !/^\s*(\/\/|\*)/.test(l)).join('\n');   // line comments
+
 describe('the name it says seven times', () => {
   /* It comes from /storefront/:slug/settings and both callers deliberately swallow a failed read.
      Undefined then reads "Who shall undefined ask for?" on a page reached from WhatsApp. */
@@ -89,14 +102,39 @@ describe('the words are true in the doorway they are used in', () => {
 
 describe('it is legible wherever it is mounted', () => {
   /* Standalone on the app, its parent is globals.css's `body { background: #111111 }`. Without its
-     own ground it rendered dark grey on black — a gate nobody could read, so nobody could pass. */
+     own ground it rendered dark grey on black — a gate nobody could read, so nobody could pass.
+     The ground moved from `wrap` to `page` when the standalone chrome was added: `wrap` is now the
+     shape it takes INSIDE FacetShell, where the sheet paints underneath it. */
   it('paints its own background rather than borrowing the host page', () => {
-    const at = src.search(/^\s*wrap:\s*\{/m);
-    const wrap = src.slice(at, at + 400);
-    expect(wrap).toMatch(/background: '#FFFFFF'/);
-    expect(wrap).toMatch(/color: '#1a1a1a'/);
+    const at = src.search(/^\s*page:\s*\{/m);
+    const page = src.slice(at, at + 500);
+    expect(page).toMatch(/background: ground/);
     // 100vh, not 100%: as a standalone gate the parent has no height, so a percentage collapsed to
     // the content and left a band of the app's black underneath it.
-    expect(wrap).toMatch(/minHeight: '100vh'/);
+    expect(page).toMatch(/minHeight: '100vh'/);
+    // The ground is derived from the baker's own colour, not a fixed white.
+    expect(src).toMatch(/const ground = mix\(primary,/);
+  });
+
+  /* ⚠️ AND THE GROUND IS NOW OPT-IN, which is how the black-page bug could come back. `page` is only
+     reached when the caller says `standalone` — a door that forgets it renders `wrap`, which has no
+     ground and no height, on a body that is #111111. The two doors that ARE the whole page have to
+     say so, and this is the only thing standing between that and a repeat of 2026-09-18. */
+  it('is told it owns the page at both doors that are one', () => {
+    const design = readFileSync(new URL('../../../../spattoo-web/apps/app/app/[slug]/design/DesignerClient.tsx', import.meta.url), 'utf8');
+    const order  = readFileSync(new URL('../../../../spattoo-web/apps/app/app/[slug]/orders/[id]/OrderDetailClient.tsx', import.meta.url), 'utf8');
+    for (const f of [design, order]) expect(code(f)).toMatch(/standalone\b/);
+  });
+});
+
+describe('the channel the server chooses', () => {
+  /* The order gate learns which contact the customer has from an endpoint, so `channels` is the
+     baker's list on the first render and one channel a moment later. `channel` is seeded in a
+     useState initialiser, which never re-reads — so the live dev gate asked for an email while
+     `order-channel/... → {"channels":["sms"]}` sat in the network tab. */
+  it('adopts a channel that arrives after the first render', () => {
+    expect(code(src)).toMatch(/if \(!channels\.length \|\| channels\.includes\(channel\)\) return;/);
+    // And only then: a tab the customer pressed themselves must not be overruled.
+    expect(code(src)).toMatch(/const offered = channels\.join\('\|'\);/);
   });
 });

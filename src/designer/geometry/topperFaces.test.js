@@ -9,9 +9,19 @@ import { topperShapes } from './topperShape.js';
  * picker looked complete and told you nothing; you could not tell Great Vibes from Pinyon without
  * choosing one and looking at the cake.
  *
- * The preview is now built from `topperShapes` — the same geometry the thing is cut from — so it
- * cannot disagree with what you get. What this pins is the property underneath: each registered key
- * really does load a distinct face.
+ * That preview was then rebuilt from `topperShapes` — the same geometry the thing is cut from — so
+ * it could not disagree with what you get.
+ *
+ * ⚠️ AND THE PREVIEW IS NOW GONE ALTOGETHER (2026-09-20): the picker is a scrolling strip of font
+ * NAMES, because eleven specimen tiles cost three rows on a phone and the cake itself is the live
+ * preview, sitting above the sheet while you tap along the strip. See the note where
+ * AcrylicFontButton used to live in CakeDesigner.jsx.
+ *
+ * ⚠️ THIS TEST IS NOT OBSOLETE BECAUSE OF THAT, and it would be easy to think so. What it pins is
+ * the property UNDERNEATH the picker, not the picker: each registered key really does load a
+ * distinct face. That has to hold whether or not anything draws a swatch — a key that silently
+ * falls back gives every topper the same lettering on the cake, which is the same bug one layer
+ * down and with no picture to reveal it.
  */
 describe('the face registry', () => {
   /* The default is a DEFAULT, not the head of the list — it is what an unauthored row and an

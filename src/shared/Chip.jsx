@@ -1,3 +1,4 @@
+import { INK } from './tokens.js';
 // ── Toggleable chip ───────────────────────────────────────────────────────────
 // A pill you tap to turn on or off. Extracted the moment it was needed twice — the
 // dietary picker on the order form and the flavour declarations in settings — rather
@@ -18,7 +19,7 @@ export default function Chip({
   label, active, onClick, isMobile = false, disabled = false,
   tone = null, variant = 'solid', title = null,
 }) {
-  const fg     = tone?.fg     ?? '#1a1a1a';
+  const fg     = tone?.fg     ?? INK;
   const bg     = tone?.bg     ?? 'rgba(26,26,26,0.06)';
   const border = tone?.border ?? '#999999';
 

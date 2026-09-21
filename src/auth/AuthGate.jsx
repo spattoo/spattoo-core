@@ -1,8 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
 import { Captcha } from './Captcha.jsx';
 import { UI_FONT } from '../shared/fonts.js';
+import { INK } from '../shared/tokens.js';
 
-const BRAND = '#1a1a1a';
+const BRAND = INK;
 const BRAND_LIGHT = '#f5e6ec';
 const FONT = UI_FONT;
 

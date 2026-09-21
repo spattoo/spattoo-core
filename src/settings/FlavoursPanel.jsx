@@ -5,6 +5,7 @@ import { dietTone, restrictions } from '../orders/dietary.js';
 import DietaryOptionsSection from './DietaryOptionsSection.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { INK } from '../shared/tokens.js';
 
 // Flavours — a top-level settings destination (peer of Store Settings), not a section
 // inside it, so the catalogue can grow without bloating the store-config screen.
@@ -13,7 +14,7 @@ import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 // doesn't offer it → hidden from their customers. The API owns the schema and resolution
 // (GET /api/baker/flavours → [{ id, name, description, excluded }]; the save replaces the
 // baker's exclusion set). Core only ever sees flags.
-export default function FlavoursPanel({ open, onClose, apiClient, primaryColor = '#1a1a1a', accentColor = '#333333' }) {
+export default function FlavoursPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [flavours, setFlavours]                 = useState(null);
   const [excluded, setExcluded]                 = useState(() => new Set());

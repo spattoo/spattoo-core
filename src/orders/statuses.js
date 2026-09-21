@@ -1,3 +1,4 @@
+import { INK } from '../shared/tokens.js';
 // ── Order lifecycle: the ONE place core derives status behaviour ──────────────
 // The lifecycle is owned by the DB (order_statuses table) and served via
 // GET /api/order-statuses. Core keeps ONE fallback copy (used until the host wires
@@ -51,7 +52,7 @@ export const isDesignLocked = (idx, key) => {
 // Monochrome badge tone derived from lifecycle position — no per-status hues.
 // Completed = solid ink; closed off-ramps = muted outline; in-flight = soft grey.
 export function statusTone(idx, key) {
-  if (key === 'completed') return { bg: '#1a1a1a', color: '#fff',    border: 'transparent' };
+  if (key === 'completed') return { bg: INK, color: '#fff',    border: 'transparent' };
   if (isClosed(idx, key))  return { bg: '#fff',    color: '#999',    border: '#E0DDD8' };
   return                          { bg: '#ECEBE6', color: '#5e5e5e', border: 'transparent' };
 }

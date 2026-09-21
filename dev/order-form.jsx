@@ -54,6 +54,12 @@ function App() {
       { id: 'f3', name: 'Hazelnut Praline', conflicts_with: [{ key: 'nut_free', declared_by: 'spattoo' }] },
     ]),
     fetchCustomers: async () => [],
+    /* ⚠️ The case that MATTERS is hasEmail:false — a customer who came through the phone-first door
+       and has no address on file. `?hasEmail=1` renders the other one: the field must not appear at
+       all for somebody who has already given it, because being asked twice for something you have
+       already handed over reads as not being listened to. */
+    fetchCustomerProfile: async () => ({ firstName: 'Asha', hasPhone: true,
+                                         hasEmail: params.get('hasEmail') === '1' }),
     fetchUploadLimits: async () => ({ maxImageBytes: 5 * 1024 * 1024 }),
   };
 

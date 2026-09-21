@@ -88,7 +88,13 @@ const stepsFor = (mode) => (mode === 'customer'
       // step for shape could not be anchored — the cake is a WebGL canvas with no addressable parts.
       { target: 'canvas',   title: 'Start with the cake',  body: 'Tap a tier to set its shape, size and colour. Drag to turn the cake around.' },
       { target: 'elements', title: 'Add decorations',      body: 'Toppers, piping, flowers — browse and place them on your cake.' },
-      { target: 'quote',    title: 'Then ask for a price', body: 'Happy with it? Send it to the bakery and they will come back with a quote.' },
+      /* ⚠️ NAMED FOR THE BUTTON, not for the idea. OrderModal's customer-mode submit says
+         "Request quote" (OrderModal.jsx:697) and this said "Then ask for a price" — one
+         action with two names, on two screens a minute apart. The control is the authority:
+         a tour that renames what it is pointing at is worse than no tour. Same reasoning
+         Sandeep gave for the step labels: "i deliberatly want the word decorations so the
+         user after logging in can easily map the menu item decorations." */
+      { target: 'quote',    title: 'Request quote',       body: 'Happy with it? Send it to the bakery and they will come back with a price.' },
     ]
   : [
       { target: 'canvas',   title: 'Turn it around',         body: 'Drag to spin the cake. Tap a tier to change its shape, size or colour.' },

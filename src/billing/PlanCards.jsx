@@ -1,4 +1,5 @@
 import { formatPlanPrice, periodPrice, fullPeriodPrice, discountLabel, PERIOD_SUFFIX } from './planPricing.js';
+import { INK } from '../shared/tokens.js';
 
 // ── PlanCards ─────────────────────────────────────────────────────────────────────────────────
 // The ONE plan picker, shared by the billing screen (Settings → Billing) and the signup
@@ -10,17 +11,17 @@ import { formatPlanPrice, periodPrice, fullPeriodPrice, discountLabel, PERIOD_SU
 // dark onboarding screen.
 
 const LIGHT_THEME = {
-  text:          '#1a1a1a',
+  text:          INK,
   textMuted:     '#9CA3AF',
-  accent:        '#1a1a1a',   // selection colour; also used at low alpha for the active card bg
+  accent:        INK,   // selection colour; also used at low alpha for the active card bg
   cardBg:        '#ffffff',
   border:        '#E8EFE9',
-  popularBg:     '#1a1a1a',
+  popularBg:     INK,
   popularText:   '#ffffff',
   currentBg:     '#F0F4F1',
   currentText:   '#6B7280',
   currentBorder: '#D4E0D7',
-  check:         '#1a1a1a',
+  check:         INK,
   chevron:       '#cbd5e1',
   divider:       'rgba(0,0,0,0.07)',
 };

@@ -23,9 +23,16 @@ import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
  * rather than reimplementing either. They live here so the host needs one piece of state instead of
  * three, and so closing one returns to this menu rather than to whatever was behind it.
  */
-export default function TopUpsPanel({ open, onClose, apiClient, primaryColor = '#2C4433', isMobile = false }) {
-  const [creditsOpen,  setCreditsOpen]  = useState(false);
-  const [messagesOpen, setMessagesOpen] = useState(false);
+/* `initialView` lands the panel straight on one of its two screens instead of the menu. Same prop
+   name and shape as OrdersPanel's, deliberately — a second word for "open it here" is a second thing
+   to learn. Used by the no-email notice on an order, which asks a question ("am I covered?") that is
+   answered on the Message credits screen and nowhere else.
+   ⚠️ Seeded, not controlled: pressing Back inside the panel must return to the Top-ups menu rather
+   than snapping to wherever it was opened at. */
+export default function TopUpsPanel({ open, onClose, apiClient, primaryColor = '#2C4433', isMobile = false,
+                                      initialView = null }) {
+  const [creditsOpen,  setCreditsOpen]  = useState(initialView === 'smart-tools');
+  const [messagesOpen, setMessagesOpen] = useState(initialView === 'messages');
 
   return (
     <>

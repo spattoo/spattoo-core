@@ -5,6 +5,7 @@ import { tierGeometry } from '../cakeShapes.js';
 import { isGlyphFamily, glyphTierDims, GLYPH_FAMILIES } from '../geometry/glyphShape.js';
 import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
 import { Panel } from '../../shared/Panel.jsx';
+import { INK } from '../../shared/tokens.js';
 
 // Prompt copy per glyph family — the only per-family wording the picker carries.
 const GLYPH_COPY = {
@@ -145,12 +146,12 @@ const styles = {
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
   card:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: 10, border: '1.5px solid #e2e0e6', borderRadius: 12, background: '#faf9fb', cursor: 'pointer', fontFamily: 'inherit' },
   art:   { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 96, height: 96 },
-  name:  { fontSize: 12, fontWeight: 700, color: '#1a1a1a', textAlign: 'center', lineHeight: 1.3 },
+  name:  { fontSize: 12, fontWeight: 700, color: INK, textAlign: 'center', lineHeight: 1.3 },
 
   numStep:   { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '8px 4px' },
   numArt:    { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 128, height: 128 },
   numLabel:  { fontSize: 13, fontWeight: 700, color: '#3a3a44', textAlign: 'center', lineHeight: 1.35 },
   numRow:    { display: 'flex', alignItems: 'center', gap: 10, width: '100%', marginTop: 2 },
   backBtn:   { flex: '0 0 auto', padding: '10px 14px', borderRadius: 10, border: '1.5px solid #d9d9e0', background: '#fff', color: '#555', fontSize: 12.5, fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit' },
-  createBtn: { flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
+  createBtn: { flex: 1, padding: '10px 14px', borderRadius: 10, border: 'none', background: INK, color: '#fff', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: 'inherit' },
 };

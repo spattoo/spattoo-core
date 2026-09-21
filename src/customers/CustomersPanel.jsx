@@ -3,6 +3,7 @@ import { ChevronRightIcon } from '../shared/icons.jsx';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { DANGER, INK } from '../shared/tokens.js';
 
 function fmt(iso) {
   if (!iso) return null;
@@ -51,8 +52,8 @@ const inp = {
 function Field({ label, error, children }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-      <span style={{ fontSize: 10, fontWeight: 700, color: error ? '#e53935' : '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
-      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>{error}</span>}
+      <span style={{ fontSize: 10, fontWeight: 700, color: error ? DANGER : '#aaa', textTransform: 'uppercase', letterSpacing: 0.8 }}>{label}</span>
+      {error && <span style={{ fontSize: 11, color: DANGER, fontWeight: 600 }}>{error}</span>}
       {children}
     </div>
   );
@@ -82,7 +83,7 @@ function CustomerForm({ initial = {}, onSave, onCancel, saving, serverError }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       <div style={{ display: 'flex', gap: 10 }}>
         <Field label="First name *" error={errors.firstName} style={{ flex: 1 }}>
-          <input style={{ ...inp, borderColor: errors.firstName ? '#e53935' : '#E0DDD8' }}
+          <input style={{ ...inp, borderColor: errors.firstName ? DANGER : '#E0DDD8' }}
             value={form.firstName} autoFocus onChange={e => set('firstName', e.target.value)} />
         </Field>
         <Field label="Last name" style={{ flex: 1 }}>
@@ -90,7 +91,7 @@ function CustomerForm({ initial = {}, onSave, onCancel, saving, serverError }) {
         </Field>
       </div>
       <Field label="Phone *" error={errors.phone}>
-        <input style={{ ...inp, borderColor: errors.phone ? '#e53935' : '#E0DDD8' }}
+        <input style={{ ...inp, borderColor: errors.phone ? DANGER : '#E0DDD8' }}
           type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} />
       </Field>
       <Field label="Email">
@@ -104,7 +105,7 @@ function CustomerForm({ initial = {}, onSave, onCancel, saving, serverError }) {
       <div style={{ display: 'flex', gap: 10 }}>
         <button onClick={() => validate() && onSave(form)} disabled={saving} style={{
           flex: 1, padding: '11px', borderRadius: 12, border: 'none',
-          background: '#1a1a1a', color: '#fff', fontSize: 13, fontWeight: 700,
+          background: INK, color: '#fff', fontSize: 13, fontWeight: 700,
           cursor: saving ? 'not-allowed' : 'pointer', fontFamily: 'inherit', opacity: saving ? 0.6 : 1,
         }}>{saving ? 'Saving…' : 'Save'}</button>
         <button onClick={onCancel} style={{
@@ -138,7 +139,7 @@ function OrderHistoryRow({ order, onViewOrder }) {
           : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>🎂</div>}
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: '#1a1a1a' }}>{date}</div>
+        <div style={{ fontSize: 13, fontWeight: 700, color: INK }}>{date}</div>
         <div style={{ fontSize: 11, color: '#aaa', marginTop: 2 }}>
           {[order.weight_kg ? `${order.weight_kg} kg` : null, order.flavours?.length ? order.flavours.map(f => f.name ?? f.flavour ?? f).join(', ') : null].filter(Boolean).join(' · ') || '—'}
         </div>
@@ -215,12 +216,12 @@ function CustomerDetail({ customer, onUpdated, apiClient, isMobile, onViewOrder 
       <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 24 }}>
         <div style={{
           width: 52, height: 52, borderRadius: '50%', flexShrink: 0,
-          background: customer.is_active ? '#1a1a1a' : '#d1d5db',
+          background: customer.is_active ? INK : '#d1d5db',
           color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
           fontSize: 18, fontWeight: 700,
         }}>{initials(customer)}</div>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 800, color: customer.is_active ? '#1a1a1a' : '#999' }}>{name}</div>
+          <div style={{ fontSize: 18, fontWeight: 800, color: customer.is_active ? INK : '#999' }}>{name}</div>
           <div style={{ fontSize: 12, color: '#bbb', marginTop: 2 }}>
             {customer.is_active ? `Customer since ${fmt(customer.created_at)}` : 'Deactivated'}
           </div>
@@ -273,7 +274,7 @@ function CustomerDetail({ customer, onUpdated, apiClient, isMobile, onViewOrder 
           <div style={{ marginTop: 28 }}>
             <button onClick={toggleHistory} style={{
               width: '100%', padding: '10px 14px', borderRadius: 10,
-              border: '1.5px solid #E0DDD8', background: historyOpen ? '#1a1a1a' : '#fff',
+              border: '1.5px solid #E0DDD8', background: historyOpen ? INK : '#fff',
               color: historyOpen ? '#fff' : '#444', fontSize: 13, fontWeight: 700,
               cursor: 'pointer', fontFamily: 'inherit',
               display: 'flex', alignItems: 'center', justifyContent: 'space-between',
@@ -345,12 +346,12 @@ function CustomerList({ customers, selected, onSelect, onToggle, togglingIds, is
           }}>
             <div style={{
               width: 38, height: 38, borderRadius: '50%', flexShrink: 0,
-              background: c.is_active ? (isSelected ? primaryColor : '#1a1a1a') : '#d1d5db',
+              background: c.is_active ? (isSelected ? primaryColor : INK) : '#d1d5db',
               color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 13, fontWeight: 700,
             }}>{initials(c)}</div>
             <div style={{ flex: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 14, fontWeight: 700, color: c.is_active ? '#1a1a1a' : '#999', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: c.is_active ? INK : '#999', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {name}
               </div>
               <div style={{ fontSize: 12, color: '#aaa', marginTop: 1 }}>{c.phone || c.email || '—'}</div>
@@ -370,7 +371,7 @@ function CustomerList({ customers, selected, onSelect, onToggle, togglingIds, is
 }
 
 // ── Main panel ────────────────────────────────────────────────────────────────
-export default function CustomersPanel({ open, onClose, onBack, apiClient, primaryColor = '#1a1a1a', externalFilter = null, onViewOrder }) {
+export default function CustomersPanel({ open, onClose, onBack, apiClient, primaryColor = INK, externalFilter = null, onViewOrder }) {
   const isMobile = useNarrow(768);
   const [customers,  setCustomers]  = useState([]);
   const [loading,    setLoading]    = useState(false);
@@ -477,14 +478,14 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
                 ? () => { setSelected(null); setAdding(false); }
                 : (onBack ?? onClose)} />
             : onBack && <PanelBackCrumb label="Dashboard" onClick={onBack} />}
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', flex: 1 }}>{topBarTitle}</span>
+          <span style={{ fontSize: 16, fontWeight: 800, color: INK, flex: 1 }}>{topBarTitle}</span>
           {(!isMobile || (!selected && !adding)) && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{customers.length} total</span>
           )}
           {(!isMobile || (!selected && !adding)) && (
             <button onClick={() => { setAdding(true); setSelected(null); }} style={{
               display: 'flex', alignItems: 'center', gap: 6,
-              background: '#1a1a1a', color: '#fff', border: 'none', borderRadius: 10,
+              background: INK, color: '#fff', border: 'none', borderRadius: 10,
               padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit',
               fontSize: 13, fontWeight: 700,
             }}>+ Add</button>
@@ -535,8 +536,8 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
                     <button key={key} onClick={() => setShowAll(val)} style={{
                       flex: 1, padding: '6px', borderRadius: 8, fontSize: 12, fontWeight: 700,
                       cursor: 'pointer', fontFamily: 'inherit',
-                      border: `1.5px solid ${showAll === val ? '#1a1a1a' : '#E0DDD8'}`,
-                      background: showAll === val ? '#1a1a1a' : '#fff',
+                      border: `1.5px solid ${showAll === val ? INK : '#E0DDD8'}`,
+                      background: showAll === val ? INK : '#fff',
                       color: showAll === val ? '#fff' : '#888',
                     }}>{label}</button>
                   ))}
@@ -546,7 +547,7 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
               {/* List */}
               <div style={{ flex: 1, overflowY: 'auto' }}>
                 {loading && <div style={{ padding: 24, fontSize: 13, color: '#bbb', textAlign: 'center' }}>Loading…</div>}
-                {error   && <div style={{ padding: 24, fontSize: 13, color: '#e53935' }}>{error}</div>}
+                {error   && <div style={{ padding: 24, fontSize: 13, color: DANGER }}>{error}</div>}
                 {!loading && !error && (
                   <CustomerList
                     customers={filtered}
@@ -567,7 +568,7 @@ export default function CustomersPanel({ open, onClose, onBack, apiClient, prima
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#F7F5F0' }}>
               {adding ? (
                 <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? 16 : 28 }}>
-                  <div style={{ fontSize: 16, fontWeight: 800, color: '#1a1a1a', marginBottom: 20 }}>New Customer</div>
+                  <div style={{ fontSize: 16, fontWeight: 800, color: INK, marginBottom: 20 }}>New Customer</div>
                   <CustomerForm
                     onSave={handleAdd}
                     onCancel={() => setAdding(false)}

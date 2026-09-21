@@ -19,6 +19,7 @@ import Chip from '../shared/Chip.jsx';
 // it, because a rule about what we will not appear to take an order for cannot depend on which
 // screen somebody happens to be on.
 import { RECIPIENTS, occasionsByRelevance, occasionAllowedFor, loadDraft, clearDraft } from '../storefront/facets/cakeDraft.js';
+import { DANGER, INK } from '../shared/tokens.js';
 
 // Max reference photos on a manual order — mirrors the API's MAX_ORDER_PHOTOS.
 const MAX_REFERENCE_PHOTOS = 3;
@@ -164,7 +165,7 @@ function UpdateDesignForm({ isMobile, primaryColor, submitting, submitError, onS
       </div>
 
       {submitError && (
-        <div style={{ fontSize: isMobile ? 13 : 12, color: '#e53935', fontWeight: 600, lineHeight: 1.4 }}>
+        <div style={{ fontSize: isMobile ? 13 : 12, color: DANGER, fontWeight: 600, lineHeight: 1.4 }}>
           {submitError}
         </div>
       )}
@@ -238,7 +239,7 @@ function ReferenceUploader({ apiClient, keys, setKeys, maxImageBytes, isMobile, 
           </label>
         )}
       </div>
-      {error && <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>{error}</span>}
+      {error && <span style={{ fontSize: 11, color: DANGER, fontWeight: 600 }}>{error}</span>}
       <span style={{ fontSize: isMobile ? 12 : 10, color: '#9CA3AF' }}>
         The first photo becomes the order's thumbnail. Leave empty for an order with no image.
       </span>
@@ -262,7 +263,7 @@ export default function OrderModal({
   bakerName = null,   // named in the flavour-conflict warning ("check with Sweet Crumb")
   homeDeliveryEnabled = false,
   storeHours = null,
-  brandBtn, primaryColor = '#1a1a1a',
+  brandBtn, primaryColor = INK,
   editingOrder = null,
   onViewOrder = null,
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
@@ -272,6 +273,34 @@ export default function OrderModal({
 }) {
   const isMobile = useNarrow(600);
   const { maxImageBytes } = useUploadLimits(apiClient);
+
+  /* ── The email we did NOT ask for at the door ──────────────────────────────────────────────────
+   *
+   * The storefront door asks for a phone and nothing else, because in India that is the contact
+   * people actually use — an Android owner has a Gmail address and does not read it. So a customer
+   * arrives at this form verified, reachable, and with no email on file.
+   *
+   * This is the right moment to ask. They are requesting a price, they want it in writing, and the
+   * field costs nothing here — where at the door it costs a visitor who has not decided to stay.
+   *
+   * ⚠️ ASKED ONLY WHEN WE HAVE NONE. `hasEmail` comes from the server, scoped to this bakery, so
+   * somebody who gave it on their last order is never asked twice — being asked again for something
+   * you have already given reads as not being listened to.
+   *
+   * ⚠️ AND NEVER REQUIRED. It stays out of `missing`, so it can never be the reason the button will
+   * not press. A customer with a working phone stopped at the last step of a quote by an optional
+   * field is the exact person the phone-first door was built for, and the baker can ring them.
+   *
+   * ⚠️ AND THE HELP TEXT NAMES THE CONSEQUENCE, which is not a sales line — it is what the code does.
+   * `messageBalance.js`: "the notification still goes by email, which is free and always on", while
+   * SMS and WhatsApp are bought in packs and stay OFF until a baker switches them on. So for somebody
+   * who gives us no address, `quote_issued_customer` may genuinely never arrive and the cake quietly
+   * dies waiting. "So we can send your quote in writing" described a nicety; this describes the real
+   * reason, which is the only kind of ask worth making of anybody.
+   * Sandeep, 2026-09-19: "explain the real need of email".
+   */
+  const [askEmail, setAskEmail] = useState(false);
+  const [quoteEmail, setQuoteEmail] = useState('');
 
   // Reference photos (manual orders only) — [{ key, preview }]; only `key` is sent.
   const [referenceKeys, setReferenceKeys] = useState([]);
@@ -450,6 +479,18 @@ export default function OrderModal({
   const [submitting,   setSubmitting]   = useState(false);
   const [submitError,  setSubmitError]  = useState(null);
   const [orderId,      setOrderId]      = useState(null);
+
+  /* Customer mode only, and silent on failure: a read that decides whether to show one optional
+     field must never be the thing that stops a quote. A failed read simply does not ask. */
+  useEffect(() => {
+    if (mode !== 'customer' || !bakerSlug) return undefined;
+    if (typeof apiClient?.fetchCustomerProfile !== 'function') return undefined;
+    let alive = true;
+    apiClient.fetchCustomerProfile(bakerSlug)
+      .then(p => { if (alive) setAskEmail(p?.hasEmail === false); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [mode, bakerSlug, apiClient]);
 
   // Load customers on mount — baker mode only (a customer never lists the baker's
   // customers; their own identity comes from the session).
@@ -689,6 +730,10 @@ export default function OrderModal({
         deliveryTime:        deliveryTime  || undefined,
         deliveryMode,
         deliveryAddress:     deliveryMode === 'home_delivery' ? deliveryAddress : undefined,
+        /* Only when we asked and they typed something usable. The server fills it in ONLY where the
+           row has none and never overwrites, so a stray value here cannot redirect anybody's mail —
+           but sending an obviously broken one would still store a dead address as if it were good. */
+        email: askEmail && quoteEmail.trim() && isValidEmail(quoteEmail) ? quoteEmail.trim() : undefined,
       });
       setOrderId(result?.orderId ?? 'ok');
       // It is theirs now — the same rule the storefront's own submit follows. On SUCCESS only, so a
@@ -754,7 +799,7 @@ export default function OrderModal({
                 <polyline points="20 6 9 17 4 12" />
               </svg>
             </div>
-            <div style={{ fontSize: isMobile ? 20 : 16, fontWeight: 700, color: '#1a1a1a', marginBottom: 8 }}>
+            <div style={{ fontSize: isMobile ? 20 : 16, fontWeight: 700, color: INK, marginBottom: 8 }}>
               {editingOrder ? 'Design Updated!' : mode === 'customer' ? 'Quote Requested!' : 'Order Placed!'}
             </div>
             <div style={{ fontSize: isMobile ? 14 : 12, color: '#666', lineHeight: 1.6 }}>
@@ -862,13 +907,40 @@ export default function OrderModal({
                 written server-side by POST /api/customer/orders (source 'quote'), so it cannot be
                 skipped by the client. Customer mode only — a baker placing an order already accepted
                 at signup/gate. Sits directly above the submit button so it is unmissable. */}
+            {/* ⚠️ ABOVE the consent line and the button, not below them. INVARIANTS #11 — a field
+                placed under the thing that submits it is a field people post past. And it says WHY
+                it is wanted: "so we can send it to you" is the difference between one more box and a
+                reason to fill one in. */}
+            {mode === 'customer' && isLastStep && askEmail && (
+              <div style={{ marginBottom: 12 }}>
+                <label htmlFor="quote-email"
+                       style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: '#2A241F',
+                                marginBottom: 5, fontFamily: "'Quicksand',sans-serif" }}>
+                  Your email <span style={{ fontWeight: 600, color: '#8A8078' }}>(optional)</span>
+                </label>
+                <input
+                  id="quote-email" type="email" inputMode="email" value={quoteEmail}
+                  onChange={e => setQuoteEmail(e.target.value)}
+                  placeholder="you@example.com"
+                  style={{ width: '100%', boxSizing: 'border-box', padding: '11px 12px', borderRadius: 10,
+                           border: `1.5px solid ${quoteEmail.trim() && !isValidEmail(quoteEmail) ? '#C0392B' : '#E7DFD5'}`,
+                           fontSize: 14.5, color: '#2A241F', fontFamily: "'Quicksand',sans-serif" }}
+                />
+                <div style={{ fontSize: 11.5, lineHeight: 1.45, marginTop: 5, fontFamily: "'Quicksand',sans-serif",
+                              color: quoteEmail.trim() && !isValidEmail(quoteEmail) ? '#C0392B' : '#8A8078' }}>
+                  {quoteEmail.trim() && !isValidEmail(quoteEmail)
+                    ? 'That does not look like an email address.'
+                    : 'Your baker will send a price for this cake. Add your email so we can send you '
+                      + 'the quote, and any updates to your order.'}
+                </div>
+              </div>
+            )}
             {mode === 'customer' && isLastStep && (
               <div style={{ fontSize: 11, lineHeight: 1.45, color: '#888', textAlign: 'center', fontFamily: "'Quicksand',sans-serif" }}>
                 By requesting a quote you agree to the{' '}
                 <a href={`${legalBase}/terms`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Terms of Service</a>
                 {' '}and{' '}
                 <a href={`${legalBase}/privacy`} target="_blank" rel="noopener noreferrer" style={{ color: primaryColor, fontWeight: 700 }}>Privacy Policy</a>.
-                {' '}Cartoon characters and brand themes are usually protected — your baker may not be able to use them.
               </div>
             )}
             {/* Why the button will not press. Named fields, in the order they appear on the step —
@@ -920,7 +992,7 @@ export default function OrderModal({
                       <span style={{ fontSize: 11, color: '#aaa' }}>Loading customer list…</span>
                     )}
                     {!customersLoading && customersFetchErr && (
-                      <span style={{ fontSize: 11, color: '#e53935' }}>Could not load customers: {customersFetchErr}</span>
+                      <span style={{ fontSize: 11, color: DANGER }}>Could not load customers: {customersFetchErr}</span>
                     )}
                     {searchResults.length > 0 && (
                       <div style={{ display:'flex', flexDirection:'column', gap:4, marginTop:4 }}>
@@ -935,7 +1007,7 @@ export default function OrderModal({
                               {(c.first_name?.[0] ?? '').toUpperCase()}
                             </div>
                             <div style={{ flex:1, minWidth:0 }}>
-                              <div style={{ fontWeight:600, fontSize:isMobile?13:12, color:'#1a1a1a' }}>{c.first_name} {c.last_name ?? ''}</div>
+                              <div style={{ fontWeight:600, fontSize:isMobile?13:12, color:INK }}>{c.first_name} {c.last_name ?? ''}</div>
                               {c.phone && <div style={{ fontSize:isMobile?12:10, color:'#888' }}>{c.phone}</div>}
                             </div>
                           </button>
@@ -967,7 +1039,7 @@ export default function OrderModal({
                         {(foundCustomer.first_name?.[0] ?? '').toUpperCase()}
                       </div>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ fontWeight:700, fontSize: isMobile?15:13, color:'#1a1a1a' }}>
+                        <div style={{ fontWeight:700, fontSize: isMobile?15:13, color:INK }}>
                           {foundCustomer.first_name} {foundCustomer.last_name ?? ''}
                         </div>
                         {foundCustomer.phone && <div style={{ fontSize: isMobile?13:11, color:'#666', marginTop:1 }}>{foundCustomer.phone}</div>}
@@ -1013,7 +1085,7 @@ export default function OrderModal({
                         onChange={e => setCustomer(c => ({ ...c, email: e.target.value }))}
                         onKeyDown={e => e.key === 'Enter' && canGoNext0 && setStep(1)} />
                       {customer.email.trim() && !emailOk && (
-                        <span style={{ fontSize: 11, color: '#e53935', fontWeight: 600 }}>Enter a valid email address.</span>
+                        <span style={{ fontSize: 11, color: DANGER, fontWeight: 600 }}>Enter a valid email address.</span>
                       )}
                     </label>
                   </>
@@ -1409,7 +1481,7 @@ export default function OrderModal({
                 )}
 
                 {submitError && (
-                  <div style={{ fontSize: isMobile?13:12, color:'#e53935', fontWeight:600, lineHeight:1.4 }}>
+                  <div style={{ fontSize: isMobile?13:12, color:DANGER, fontWeight:600, lineHeight:1.4 }}>
                     {submitError}
                   </div>
                 )}
@@ -1433,7 +1505,7 @@ function btn(isMobile) {
     borderRadius:14, border:'none',
     fontSize: isMobile?15:13, fontWeight:700, cursor:'pointer',
     fontFamily:"'Quicksand',sans-serif",
-    background:'linear-gradient(135deg,#1a1a1a,#333333)',
+    background:`linear-gradient(135deg,${INK},#333333)`,
     color:'#fff', transition:'opacity 0.15s',
   };
 }

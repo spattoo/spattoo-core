@@ -216,7 +216,19 @@ export default function CustomerStorefront({
         setOtpRequired(r?.otp_required !== false);
         // An older API sends nothing here; keep the previous single-channel behaviour rather than
         // rendering an empty toggle.
-        if (Array.isArray(r?.otp_channels) && r.otp_channels.length) setOtpChannels(r.otp_channels);
+        /* ⚠️ PHONE ALONE WHERE THE SERVER CAN SEND ONE. India runs on phone numbers: an Android
+           owner has a Gmail address and does not read it. Offering both made email the default —
+           the server lists it first — and the cost is measurable in `customers`: of 6 storefront
+           enquiries, 4 have NO PHONE, so the baker's next action on two thirds of them, which is to
+           telephone, is impossible. VerifyStep's own header has said why since it was written: "an
+           unverified one makes the whole record worthless, a beautiful enquiry nobody can answer."
+           Still the SERVER's list that decides what is possible — a deployment without SMS falls
+           back to whatever it can deliver, because offering a channel it will refuse is how somebody
+           waits for a code that was never sent. The email is not dropped, it is deferred to the
+           quote, where the customer wants it in writing and we only ask if we have none. */
+        if (Array.isArray(r?.otp_channels) && r.otp_channels.length) {
+          setOtpChannels(r.otp_channels.includes('sms') ? ['sms'] : r.otp_channels);
+        }
       })
       .catch(() => {});
   }, [bakerSlug, apiBaseUrl]);

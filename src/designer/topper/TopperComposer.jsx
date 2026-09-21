@@ -15,6 +15,7 @@ import { TOPPER_FINISHES, finishesOf } from '../geometry/topperFinishes.js';
 import SelectionBox from '../canvas/SelectionBox.jsx';
 import { DESIGNER_GROUND, SELECTION_COLOR } from '../constants.js';
 import { Panel } from '../../shared/Panel.jsx';
+import { Slider } from '../../shared/Slider.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { TOPPER_PRESETS, presetPaths } from './topperPresets.js';
 
@@ -442,19 +443,14 @@ function Row({ label, children }) {
   );
 }
 
+/* Was the only hand-rolled range shaped as a general control, so it became `shared/Slider.jsx` when
+   the template filter needed a sixth. Kept as a thin wrapper rather than rewritten at every call
+   site: the spacing below belongs to this column, not to the control. */
 function Slide({ label, value, min, max, step, onChange, fmt }) {
   return (
-    <label style={{ display: 'block', marginBottom: 12 }}>
-      <span style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-        <span style={{ fontSize: 11.5, fontWeight: 700, color: '#3D5A44' }}>{label}</span>
-        <span style={{ fontSize: 11.5, color: '#6B7C70', fontVariantNumeric: 'tabular-nums' }}>
-          {fmt ? fmt(value) : value}
-        </span>
-      </span>
-      <input type="range" min={min} max={max} step={step} value={value}
-        onChange={e => onChange(Number(e.target.value))}
-        style={{ width: '100%', accentColor: '#3D5A44' }} />
-    </label>
+    <div style={{ marginBottom: 12 }}>
+      <Slider label={label} value={value} min={min} max={max} step={step} onChange={onChange} fmt={fmt} />
+    </div>
   );
 }
 

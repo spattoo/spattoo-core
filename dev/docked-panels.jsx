@@ -50,7 +50,11 @@ const ORDERS = [
     flavours: [{ tier: 0, name: 'Blueberry' }],
     // The egg answer must NOT reach this row — it is a choice, not a deviation.
     dietary_requirements: [{ key: 'egg', label: 'With egg', kind: 'diet' }],
-    customers: { first_name: 'asha', last_name: 'rao', phone: '9000000000' } },
+    /* ⚠️ THE ONE WITH AN EMAIL. Every fixture here was phone-only, so the harness could only ever
+       show the no-email notice and never its absence — and "it renders" would have been the
+       whole test. A fixture set that can only produce one branch is not a fixture set. */
+    customers: { first_name: 'asha', last_name: 'rao', phone: '9000000000',
+                 email: 'asha@example.com' } },
 ];
 
 const STATUSES = [
@@ -59,6 +63,28 @@ const STATUSES = [
 ];
 
 const apiClient = {
+  /* ⚠️ THREE STATES, AND THE THIRD IS THE TRAP. `?balance=` picks what the no-email notice reads:
+       (none)  the balance never resolves — the notice must NOT say "0", it must say nothing about a
+               number. TopUpsSection learned this first: an unknown balance rendered as zero tells a
+               baker they have run out when we simply do not know.
+       ?balance=0    empty — the loud case, "they will not be told anything".
+       ?balance=240  healthy — the number is the answer to "am I covered?". */
+  fetchMessageBalance: async () => {
+    // Read here, not from the component's `q`: this object is module-level and `q` is not in scope.
+    // The first version referenced it anyway, the call threw, the .catch swallowed it, and all three
+    // states rendered identically — a harness agreeing with itself about nothing.
+    const q = new URLSearchParams(location.search);
+    const b = q.get('balance');
+    if (b === null) return new Promise(() => {});      // never resolves: "not loaded"
+    /* ⚠️ `enabledTypes` MATTERS AS MUCH AS THE BALANCE, and leaving it out of this stub made three of
+       the notice's branches unreachable — an absent list reads as "WhatsApp switched off", so the
+       harness could only ever produce that one. `?types=0` is the switched-off case; anything else
+       is the baker's default two. */
+    const types = q.get('types') === '0'
+      ? []
+      : ['quote_issued_customer', 'order_ready_customer'];
+    return { balance: Number(b), enabledTypes: types };
+  },
   fetchOrders:        async () => ORDERS,
   /* Its PRESENCE is what switches the List/Calendar strip on (`hasCalendar` tests for the function,
      not for a flag), so without it the harness silently could not reach that control at all — which
@@ -116,6 +142,9 @@ function App() {
     // Non-null only when the panel was opened FROM somewhere, which is the only case a
     // back control is honest. Mirrors CakeDesigner, where it is set alongside a filter.
     onBack: fromDash ? () => setClosed('onBack — returned to Dashboard') : null,
+    // The way through from the no-email notice. Present here so the button is exercised; a host
+    // without it (admin) renders the notice with no link rather than a button that does nothing.
+    onOpenMessageCredits: () => setClosed('onOpenMessageCredits — opened Message credits'),
   };
 
   return (

@@ -7,6 +7,23 @@ The shared cake designer, baker app and storefront. It is **vendored** into `spa
 
 ---
 
+## Before you act — the five triggers
+
+⚠️ **This list exists because the prose below does not get recalled mid-task.** Everything here is
+stated at length further down, with the reasoning and the worked failures. This is the part phrased
+as *"when you are about to do X, do Y first"*, because that is the shape a rule has to be in to fire
+at the moment it is needed. If a rule cannot be written as a trigger, it belongs in a gate, not here.
+
+| When you are about to… | Do this first |
+|---|---|
+| build a component, a helper, a row, a panel | grep for the BEHAVIOUR (`:hover`, `focus-visible`, `›`), not the name. Say what came back. |
+| say "we should add / the problem is / that already works" | run the command that proves it, and show it in the same message. No command → say it is unchecked. |
+| write a number, a price, a count, a limit | find where it is defined. If it lives on another surface, state the dependency and quantify NOTHING. |
+| call a screen done | open it, drive it with real input, look at it. A green suite is not a working screen. |
+| diagnose anything outside this repo | read `spattoo-docs` and the vendor's own docs before proposing a remedy. Expensive cure → reproduce the fault first. |
+
+Everything below is the reasoning. These five are the part that has to fire without being re-read.
+
 ## The rules that apply to EVERY module
 
 These are project-wide: designer, storefront, orders, settings, admin, chef's desk. They are stated
@@ -30,6 +47,22 @@ a "we should add X" are all builds. Five in one day (2026-09-19): a shared row c
 broken; server-side captcha verification that would have broken the captcha, because Turnstile tokens
 are single-use; a support ticket chased over a PE–TM chain that was already Active; and a session
 helper for the admin smoke gate that `npm run smoke:session` already was.
+
+⚠️ **SHOW THE CHECK IN THE SAME MESSAGE AS THE CLAIM, OR SAY IT IS UNCHECKED.** This is the rule that
+makes the rest of rule 1 real, and it is the one that was missing. Every breach so far has been a
+sentence, not a commit — a gate at commit time cannot see a claim made in conversation, and by the
+time it could, the wrong thing has already been acted on. So: any statement about how this system
+behaves — a cost, a mechanism, a "we already have", a "that will happen" — ships beside the command
+that proved it. No command means the words are "I have not checked this."
+
+⚠️ **A NUMBER INSIDE A PROPOSAL IS A CLAIM TOO.** 2026-09-19, drafting a baker-facing notice: "updates
+go by WhatsApp and use a credit each". Nobody asked for a price; it was invented while writing the
+sentence. What the code does: `spendMessage` debits ONE PER PAID CHANNEL SEND, so a type with both SMS
+and WhatsApp on costs two for one update; only the types the baker switched on cost anything; and
+`order_placed_customer` is free when the customer placed it. Sandeep: *"why do you make these
+promises?"* **When the fact belongs to another surface — cost, balance, entitlement — state the
+dependency and quantify NOTHING**, so there is only ever one copy of the rule. `check-plan-copy.mjs`
+exists because two surfaces both stating a plan's claims is how one of them goes stale.
 
 **Do these before proposing, and say what came back** — "I looked" is not the same as having looked:
 - **Grep for the BEHAVIOUR, not the name.** `.spattoo-pack` is not findable by searching "NavRow"; it
@@ -55,6 +88,7 @@ Already built, app-wide, in `src/shared/`:
 | `panelTopBar.jsx` | Back arrow, breadcrumb and dismiss for panel headers. |
 | `Disclosure.jsx` | **The** "question you can open" — a labelled toggle with the shared chevron, and an answer folded under it. For the explanation a new baker needs and a returning one has read fifty times. |
 | `canvas/envMap.js` | **The** answer to "which HDRI lights this scene". A host mounting anything that draws a cake must call `configureEnvMap(assetsBase)`; without it the scene silently falls back to a 1.4MB drei preset from GitHub raw. Gated by `check:env-map`. |
+| `Slider.jsx` | **The** bounded number chosen by dragging — label, live value, optional units. `value={null}` is "not set": a range input always has a position, so a FILTER built on a bare one starts life filtering. Five files hand-rolled `<input type="range">` before this. Not a substitute for `SizeDial` or `ColorWheel`. |
 | `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
 Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,
@@ -175,7 +209,7 @@ them before writing a gesture, not after.
 ## Gates
 
 `npm run verify` runs them all: `bindings`, `paths`, `fonts`, `cors`, `hooks`, `movable`, `narrow`,
-`env-map`, `one-chevron`, `occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
+`env-map`, `one-chevron`, `priced-copy`, `occasions`, `dup`, then `test`. They encode the automatable subset of the rules above — the
 judgement calls in 1, 2, 3 and 6 are not checkable and are yours to keep.
 
 Git hooks need node and gitleaks on PATH; a login shell that has not sourced nvm will fail them:

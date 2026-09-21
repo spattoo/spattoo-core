@@ -58,6 +58,17 @@ const CAT_TYPES = [
   { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3 },
   // The type the scatterable GLB below needs — see its note.
   { id: 'et-scatter', slug: 'scattered_decor', name: 'Scattered',  sort_order: 4 },
+  /* ⚠️ RING TYPES, and the SLUGS are the contract. CakeDesigner resolves `drip` and `cream_piping`
+   * by slug (dripType / creamPipingType), and the element grid deliberately EXCLUDES both — they
+   * open a ring card through openPipingPopup instead of dropping a sticker. My first attempt put
+   * `top_drip` in a topper's placement_config, which produced an ordinary sticker card: no Flood
+   * top, no Length/Gloss, no rim tile. The type is what routes it, not the config key.
+   *   · drip        → ONE candidate (rim). The single-candidate case, where the preview tile is
+   *                   a picture of a choice that does not exist.
+   *   · cream_piping with rim+board → TWO candidates. The case that must KEEP its tiles on a
+   *                   phone, which is the half of the condition worth proving. */
+  { id: 'et-drip',   slug: 'drip',         name: 'Drip',         sort_order: 5 },
+  { id: 'et-piping', slug: 'cream_piping', name: 'Cream Piping', sort_order: 6 },
 ].map(t => ({ ...t,
   placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 4, top_tier_only: false, requires_frosting: false },
   default_allowed_actions: { move: true, color: false, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
@@ -65,7 +76,9 @@ const CAT_TYPES = [
 const CAT_ELEMENTS = [
   ['e1', 'Fiitball',      'et-topper', '#c9d6c4', 'football sport'],
   ['e2', 'Crown',         'et-topper', '#e8d7a8', 'gold crown'],
-  ['e3', 'Gold Leaf',     'et-foil',   '#e6c86a', 'edible foil'],
+  /* e3 (Gold Leaf) is NOT here — it is pushed below with a real `kind: 'tier_finish'` config.
+     Every row in this table shares one placement_config through the .map(), which makes it a
+     sticker, so a foil row could sit here looking right and never open a foil card at all. */
   ['e4', 'Blue Wing',     'et-fly',    '#a8c4e8', 'butterfly wing'],
   ['e5', 'baby shorts',   'et-image',  '#7fc3d6', 'baby clothes'],
   ['e6', 'baby romper',   'et-image',  '#8fd6cf', 'baby clothes'],
@@ -74,10 +87,47 @@ const CAT_ELEMENTS = [
   id, name, description, element_type_id: typeId, category_id: 'cat-1',
   image_url: CAT_THUMB(colour), thumbnail_url: CAT_THUMB(colour), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
-  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  /* ⚠️ duplicate TRUE on the first row only, so the two-button FOOTER exists here at all.
+   * Every stub had `duplicate: false`, so "Duplicate" never rendered and the footer could only ever
+   * be shown with one button — which is how the widest row on the card (Duplicate + "Remove from
+   * cake" side by side at 390px) stayed unreachable in the harness. Same gap this file already
+   * names for the catalogue, the GLB and the edge seat: a state that cannot be reached hides every
+   * bug in it. Index 0 is Fiitball; the rest stay false so the one-button footer is still testable. */
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: i === 0 },
   placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand' },
   default_color: '#F0DEB8', sort_order: i,
 }));
+
+/* ⚠️ THE FOOD FOIL ROW, and it could not live in the table above. A tier finish paints shards into
+ * the tier's material instead of placing a sticker, and it is routed by `placement_config.kind ===
+ * 'tier_finish'` — but every row in that table shares ONE placement_config through the .map(), so
+ * `e3 Gold Leaf` sat there with `et-foil` on it and the config of a topper. It opened an ordinary
+ * sticker card. That is the same trap this file already names for `top_drip`: a fixture that looks
+ * like the thing it is meant to test, produces the wrong card, and hands back a false pass. The
+ * foil card's tap-to-reopen bug was "investigated" against exactly this, which is part of why an
+ * earlier fix could not be demonstrated — there was no foil on the cake to tap.
+ *
+ *   · allowed_zones decides the SURFACE chooser. Both zones → the two-button Surface+Size row;
+ *     one zone → the computed-label path where the row is just "Size". Both is the richer case.
+ *   · `colors` is deliberately ABSENT so the card falls back to GOLD_LEAF_COLORS (gold + silver),
+ *     which is what a real element without an override does. Restating those two hexes here would
+ *     be a second copy of a value that already has a home.
+ *   · `finish` carries only what is live: GOLD_LEAF_DEFAULTS documents env/crinkle/glow as dead or
+ *     inert, so a fixture that set them would be describing behaviour that does not exist. */
+CAT_ELEMENTS.push({
+  id: 'e3', name: 'Gold Leaf', description: 'edible foil',
+  element_type_id: 'et-foil', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e6c86a'), thumbnail_url: CAT_THUMB('#e6c86a'), thumb_key: null,
+  allowed_zones: ['side', 'top_surface'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: false },
+  placement_config: {
+    kind: 'tier_finish',
+    r: 0.5,                                    // a new shard's default size, inside the range below
+    scale: { min: 0.1, max: 1.5, step: 0.05 },
+    finish: { metalness: 0.9, roughness: 0.16, sizeScale: 1.0, raggedness: 0.55 },
+  },
+  default_color: '#e6be4a', sort_order: 3,
+});
 
 /* ⚠️ THE CARD TOPPER STUDIO, which nothing here could reach. It is a PROCEDURAL row — tapping it
  * opens a studio instead of dropping a picture on the cake — so it carries `placement_config.
@@ -103,6 +153,184 @@ CAT_ELEMENTS.push({
   default_color: '#C86B8A', sort_order: 10,
 });
 
+/* ⚠️ A NUMBER TOPPER ROW, so `design.ages` can be non-empty and the AGE CARD exists at all.
+ * Without one, addAge is never called here, design.ages stays [], and the age card — its Duplicate,
+ * its finish chooser and its remove button — could not be looked at in this harness. Same gap this
+ * file already names for the catalogue, the GLB, the edge seat and the two-button footer: a state
+ * that cannot be reached hides every bug in it. `number_topper` is the procedural key the row uses
+ * (see addAgeFromRow in CakeDesigner). */
+/* ⚠️ A PHOTO FRAME (`photoMask`), so the Photo / Border card exists in this harness at all.
+ * Nothing here carried one, so "Select image", the Border dial and the whole photo-frame branch of
+ * buildToolbar could only ever be looked at against a real database. Fifth state this file has had
+ * to be taught (catalogue, GLB, edge seat, two-button footer, number topper) — a state that cannot
+ * be reached hides every bug in it.
+ *
+ * `photoMask` is what routes the instance down the photo branch; no overlay, so the procedural
+ * BORDER control renders (an overlay IS the border, and hides it). */
+/* ⚠️ A CHOCOLATE DRIP (`top_drip`) and a CLUSTER BALL, because neither card could be reached here.
+ * The drip card (Flood top / Color / Length / Gloss, and its single RIM tile) and the faux-ball card
+ * (Colour · Size · Spin, Finish, Create cluster) had to be judged from source alone — the sixth and
+ * seventh states this harness has had to be taught today, after the catalogue, the GLB, the edge
+ * seat, the two-button footer, the number topper and the photo frame.
+ *
+ * `top_drip` is the placement key that routes a ring down the drip branch (Length + Gloss + Flood
+ * instead of Size); `cluster` is what grows the ball into a cluster and gives the card its handle. */
+/* ⚠️ A SECOND-CREAM BAND, so the cream-layer card exists in this harness at all. Its Height/Lift/
+ * Torn controls, the band pills, the presets and Paint edge could only be judged from source —
+ * the EIGHTH state this file has had to be taught today (catalogue, GLB, edge seat, two-button
+ * footer, number topper, photo frame, drip/piping, and now this).
+ * `second_cream` is the placement key renderCreamBody reads for its height_range. */
+CAT_ELEMENTS.push({
+  id: 'e17', name: 'Cream band', description: 'a raised buttercream band with a torn edge',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f6e7ea'), thumbnail_url: CAT_THUMB('#f6e7ea'), thumb_key: null,
+  allowed_zones: ['side'],
+  allowed_actions: { color: true, delete: true, resize: true },
+  placement_config: { second_cream: { height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
+  default_color: '#E8A0B0', sort_order: 17,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e14', name: 'Chocolate drip', description: 'a rim drip with optional flooded top',
+  element_type_id: 'et-drip', category_id: 'cat-1',
+  image_url: CAT_THUMB('#6b4b34'), thumbnail_url: CAT_THUMB('#6b4b34'), thumb_key: null,
+  allowed_zones: ['rim'],
+  allowed_actions: { move: false, color: true, delete: true, resize: true },
+  placement_config: { top_drip: true, r: 1 },
+  default_color: '#4a2c17', sort_order: 14,
+});
+
+// Multi-zone piping: rim AND board → two candidates, so the tile row must survive on a phone.
+CAT_ELEMENTS.push({
+  id: 'e16', name: 'Shell border', description: 'a piped shell border, rim or board',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  /* ⚠️ image_url IS THE GLB for a piping ring — resolvePipingGlbs returns it as glbUrl, and the
+     swept section is built from that mesh. A CAT_THUMB data-URI here handed an SVG to the GLB
+     loader: four "Unexpected token '<'" errors per open. Same mistake shape as photo `mask`, which
+     is a mask IMAGE url. The THUMBNAIL is the picture; image_url is the geometry. */
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
+  allowed_zones: ['rim', 'board'],
+  allowed_actions: { color: true, delete: true, resize: true },
+  placement_config: { r: 1, bottom_y_adjustable: true },
+  default_color: '#F5E6C8', sort_order: 16,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e15', name: 'Faux ball', description: 'a metallic ball you can scatter into a cluster',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#c9a227'), thumbnail_url: CAT_THUMB('#c9a227'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { cluster: true, r: 0.5, scale: { max: 3, min: 0.3, step: 0.05 },
+                      top_surface: 'stand', side: 'hug' },
+  default_color: '#C9A227', sort_order: 15,
+});
+
+/* ⚠️ A CLOUD ROW and a RAINBOW ROW — the cards this harness could not open, and the comment on the
+ * letter-blocks row calling that one "the last" was wrong: these two were still missing. Found by
+ * converting their sliders to dials and discovering there was no way to LOOK at either card; two
+ * guessed ids (e16/e17) turned out to be a shell border and a cream band, and a clean measurement
+ * of the wrong card is worse than no measurement.
+ *
+ * ⚠️ `procedural: 'cloud'` / `'rainbow'` are the VALUE of `procedural`, not nested keys — the same
+ * trap the dust and grass rows name. PROCEDURAL_TOOLS is keyed by placement_config.procedural, and
+ * only tapPlaceElement consults it, so these must be driven through __tapElementById.
+ *
+ * ⚠️ THE NESTED TUNING IS DELIBERATELY ABSENT, and for the rainbow that is load-bearing rather than
+ * tidy. addRainbow's own note: RAINBOW_DEFAULTS "is not a neutral base — its feet and its
+ * offsetX: 0.71 are the FALLING RIGHT shape", so a row authoring PART of a shape inherits the rest
+ * from a different one and arrives as a shape none of the six tiles can produce. Authoring nothing
+ * lets the arrangement logic decide, which is what a real row should do too. */
+CAT_ELEMENTS.push({
+  id: 'e24', name: 'Fondant cloud', description: 'a cloud of pressed fondant balls',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#dfe8f2'), thumbnail_url: CAT_THUMB('#dfe8f2'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'board'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'cloud' },
+  default_color: '#ffffff', sort_order: 24,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e25', name: 'Fondant rainbow', description: 'a stack of fondant ropes arched over the cake',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f5a3b8'), thumbnail_url: CAT_THUMB('#f5a3b8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'rainbow' },
+  default_color: '#f5a3b8', sort_order: 25,
+});
+
+/* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
+ * made the foil tap-to-reopen bug unverifiable, found the same way.
+ *
+ * ⚠️ `procedural: 'luster_dust'` — the VALUE of `procedural`, not a nested key. PROCEDURAL_TOOLS is
+ * keyed by `placement_config.procedural` (CakeDesigner: isStudioElement / the proc lookup), and
+ * `luster_dust` is an entry in that map. Writing `{ luster_dust: {...} }` instead would produce an
+ * ordinary sticker card — exactly the `top_drip` trap this file already names twice.
+ *
+ * The nested `luster_dust` object is OPTIONAL: applyDustLook merges it over LUSTER_DUST_DEFAULTS,
+ * so omitting it exercises the shipped defaults rather than pinning the harness to a second copy
+ * of them. Dust is a LOOK, not an object: the row carries sparkle/metalness, and tapping it seeds
+ * the tier and opens the card. */
+CAT_ELEMENTS.push({
+  id: 'e19', name: 'Gold dust', description: 'a luster dust flicked onto the tier',
+  element_type_id: 'et-foil', category_id: 'cat-1',
+  image_url: CAT_THUMB('#d9b85c'), thumbnail_url: CAT_THUMB('#d9b85c'), thumb_key: null,
+  allowed_zones: ['side', 'top_surface'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'luster_dust' },
+  default_color: '#d9b85c', sort_order: 19,
+});
+
+/* ⚠️ A CREAM PEN ROW — the fourth card this harness could not open. Same routing as the dust and
+ * grass rows: `procedural: 'cream_pen'` is the VALUE of `procedural`, and only tapPlaceElement
+ * consults PROCEDURAL_TOOLS, so it must be driven through __tapElementById.
+ *
+ * ⚠️ NO NESTED TUNING, DELIBERATELY. addPenFromRow merges `MEDIA[medium].defaults` and then the
+ * row's own `cfg[cfg.procedural] ?? cfg.cream_pen` over it, so an empty config is what exercises
+ * the shipped cream defaults (star5 nozzle, softness 0.7). A row that restated them would hide a
+ * change to them.
+ *
+ * ⚠️ THIS ONLY REACHES THE CREAM ARM. The pen card shows different controls per mode — cream has
+ * Thickness + Softness, a STAMP has Size + Spacing + Lean — and `stampUrl` is set nowhere but the
+ * "I'll pipe it myself" path off a piping card. No fixture can produce it, which is why the dev
+ * block gained __setPenStyle: three of the five controls are otherwise unverifiable. */
+CAT_ELEMENTS.push({
+  id: 'e21', name: 'Cream pen', description: 'pipe cream freehand onto the cake',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f3e9dd'), thumbnail_url: CAT_THUMB('#f3e9dd'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'cream_pen' },
+  default_color: '#ffffff', sort_order: 21,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e13', name: 'Circle photo frame', description: 'a photo set into a round frame',
+  element_type_id: 'et-image', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e9e2ef'), thumbnail_url: CAT_THUMB('#e9e2ef'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, duplicate: true },
+  /* ⚠️ `photo.mask` IS A MASK IMAGE URL, not a keyword. frameMaskOf() feeds it straight to
+     loadImage(), and BorderBacking / PhotoBacking take it as maskUrl — so 'circle' produced eight
+     "Could not load circle?cors=1" page errors and a frame with no backing. A data URI keeps the
+     harness self-contained (no network, no CORS): white disc = keep, transparent = cut away. */
+  placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand',
+                      photo: { mask: `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><circle cx="64" cy="64" r="62" fill="#fff"/></svg>')}` } },
+  default_color: '#1a1a1a', sort_order: 13,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e12', name: 'Number topper', description: 'a number cut from card',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#cbb7e0'), thumbnail_url: CAT_THUMB('#cbb7e0'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, delete: true, resize: true },
+  placement_config: { number_topper: { digits: '5' } },
+  default_color: '#B08CD9', sort_order: 12,
+});
+
 CAT_ELEMENTS.push({
   id: 'e8', name: 'Card topper studio', description: 'numbers and names cut from card',
   element_type_id: 'et-topper', category_id: 'cat-1',
@@ -111,6 +339,48 @@ CAT_ELEMENTS.push({
   allowed_actions: { move: true, delete: true, resize: true },
   placement_config: { procedural: 'card_topper' },
   default_color: '#D94F6E', sort_order: 9,
+});
+
+/* ⚠️ A LETTER-BLOCKS ROW — the last card this harness could not open. Routed by `letter_blocks` as
+ * the VALUE of `procedural`, like the dust, grass and pen rows, and driven through
+ * __tapElementById because handleElementDrop never consults PROCEDURAL_TOOLS.
+ *
+ * The nested tuning object is deliberately absent: addNameBlocks spreads NAME_BLOCK_DEFAULTS and
+ * then the row's own `letter_blocks` over it, so an empty config is what exercises the shipped
+ * defaults (0.30 cube, 0.035 gap, chamfered corners — fondant is never sharp). It seeds the word
+ * 'NAME' on the board, which is what makes the card's Block size dial mean anything. */
+CAT_ELEMENTS.push({
+  id: 'e23', name: 'Letter blocks', description: 'fondant cubes with a name on them',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f7f5f2'), thumbnail_url: CAT_THUMB('#f7f5f2'), thumb_key: null,
+  allowed_zones: ['top_surface', 'board'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'letter_blocks' },
+  default_color: '#f7f5f2', sort_order: 23,
+});
+
+/* ⚠️ A PIPED-CREAM MESSAGE — the fifth card this harness could not reach, and the acrylic row below
+ * is exactly why it looked reachable. `addWritingFromRow` branches on `placement_config.acrylic`:
+ * with that block a row becomes `style: 'acrylic'`, and FOUR of the writing card's controls
+ * (Thickness, Spacing, Curve, Line gap) are gated `w.style !== 'acrylic'` — so e10 opens the card
+ * with every slider hidden. A `writing` block takes the other branch and lands on DEFAULT_WRITING's
+ * `style: 'cream'`.
+ *
+ * ⚠️ THE NEWLINE IS LOAD-BEARING. `isMultiline` is `(w.text ?? '').includes('\n')`, and Line gap
+ * renders only when it is true — so without a two-line message that control cannot be reached from
+ * a fixture at all. `surface` defaults to 'top', which is what keeps Curve and Rotate visible
+ * (both are hidden on 'side').
+ *
+ * Nothing else is authored: font, size, thickness and curve come from DEFAULT_WRITING, which is
+ * what is worth looking at. */
+CAT_ELEMENTS.push({
+  id: 'e22', name: 'Piped message', description: 'a message piped in cream',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f6e7d8'), thumbnail_url: CAT_THUMB('#f6e7d8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'writing', writing: { text: 'Happy\nBirthday' } },
+  default_color: '#ffffff', sort_order: 22,
 });
 
 /* An ACRYLIC TOPPER row — `procedural: 'writing'` plus the `placement_config.acrylic` the Acrylic
@@ -129,6 +399,34 @@ CAT_ELEMENTS.push({
   allowed_actions: { move: true, delete: true, resize: true },
   placement_config: { procedural: 'writing', acrylic: { text: { default: 'Happy Birthday' } } },
   sort_order: 8,
+});
+
+/* ⚠️ A PIPED GRASS ROW, and without it renderGrassBody was unreachable — the same gap that made the
+ * foil and dust bugs unverifiable, found the same way and for the third time.
+ *
+ * ⚠️ `procedural: 'grass'` is the VALUE of `procedural`, not a nested key, and it is what routes the
+ * row — PROCEDURAL_TOOLS is keyed off `placement_config.procedural`, so the ELEMENT TYPE is
+ * irrelevant here (there is no et-grass, and there does not need to be). Writing `{ grass: {...} }`
+ * instead would produce an ordinary sticker card, which is the `top_drip` trap this file already
+ * names twice.
+ *
+ * ⚠️ It must be driven through __tapElementById. handleElementDrop never consults PROCEDURAL_TOOLS;
+ * only tapPlaceElement does.
+ *
+ * The nested `grass` tuning object is deliberately ABSENT: addGrass spreads GRASS_DEFAULTS first and
+ * a row's tuning over it, so omitting it exercises the shipped defaults rather than pinning the
+ * harness to a second copy of them. `default_color` is real, though — without one addGrass falls
+ * back to a hardcoded '#4caf3d', and a fixture should not be the thing that hides that.
+ * Grass lands on the TOP tier (grassTierIndex), and the board ring seeds its own shorter, denser
+ * values in toggleBoardGrass — a hedge at the cake's foot, not a field. */
+CAT_ELEMENTS.push({
+  id: 'e20', name: 'Piped grass', description: 'grass piped with a multi-hole nozzle',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: CAT_THUMB('#6fae4a'), thumbnail_url: CAT_THUMB('#6fae4a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'board'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { procedural: 'grass' },
+  default_color: '#5aa83c', sort_order: 20,
 });
 
 /* ⚠️ AN EDGE-SEATED FIGURE, which nothing here could make. Every row above seats on the top surface

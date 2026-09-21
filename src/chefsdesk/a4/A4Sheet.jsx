@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { buildA4Pdf, downloadPdf } from '../../orders/pdf.js';
 import { sized, resized, moved } from './geometry.js';
 import { chrome, StudioHeader, StudioOverlay, useStudioNarrow } from '../studioChrome.jsx';
+import { DANGER } from '../../shared/tokens.js';
 
 // ── The A4 print sheet ────────────────────────────────────────────────────────────────────────────
 // A to-scale A4 page the baker lays images out on, then downloads as a print-ready PDF for an edible
@@ -437,5 +438,5 @@ const s = {
   stage: { flex: 1, minHeight: 0, overflow: 'auto', display: 'flex', alignItems: 'flex-start', justifyContent: 'center', padding: 24, background: '#EFEDE8' },
   sheet: { position: 'relative', height: 'min(calc(100vh - 130px), 980px)', aspectRatio: `${A4_ASPECT}`, background: '#fff', boxShadow: '0 6px 24px rgba(0,0,0,0.15)', borderRadius: 2 },
   resizeHandle: { position: 'absolute', right: -7, bottom: -7, width: 16, height: 16, borderRadius: 4, background: '#6c47ff', border: '2px solid #fff', cursor: 'nwse-resize', touchAction: 'none' },
-  removeBtn: { position: 'absolute', left: -10, top: -10, width: 22, height: 22, borderRadius: '50%', background: '#e53935', color: '#fff', border: '2px solid #fff', fontSize: 14, lineHeight: '18px', cursor: 'pointer', padding: 0 },
+  removeBtn: { position: 'absolute', left: -10, top: -10, width: 22, height: 22, borderRadius: '50%', background: DANGER, color: '#fff', border: '2px solid #fff', fontSize: 14, lineHeight: '18px', cursor: 'pointer', padding: 0 },
 };
