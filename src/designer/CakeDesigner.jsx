@@ -90,6 +90,7 @@ import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js'
 import { SizeDial } from './shared/SizeDial.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
+import { ControlCell } from './shared/ControlCell.jsx';   // the captioned cell a control row is built from
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
@@ -8062,14 +8063,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           const padBtn = { background: 'transparent', border: 'none', borderRadius: 5, padding: 0,
             width: 15, height: 14, lineHeight: '14px', fontSize: 11, cursor: 'pointer',
             color: '#333', fontWeight: 700, fontFamily: "'Quicksand',sans-serif", textAlign: 'center' };
-          const cell = (label, node) => (
-            <div key={label} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-              {node}
-              <span style={{ fontSize: 9, fontWeight: 700, color: '#888', minWidth: 26, textAlign: 'center', letterSpacing: 0.3 }}>
-                {label}
-              </span>
-            </div>
-          );
+          /* The captioned cell is SHARED now. This block had its own copy of the wrapper and
+             DialCell had a third wrapped around a dial — same markup, same baseline, and all three
+             invisible to check:dup at ~8 lines each. One definition, one baseline. */
+          const cell = (label, node) => <ControlCell key={label} label={label}>{node}</ControlCell>;
           groups.push({ key: 'photo-fit', divider: false, scroll: true, controls: [
             cell('Zoom', <SizeDial key="z" size={t.zoom ?? 1} min={0.5} max={4} step={0.1} onChange={v => setT({ zoom: v })} />),
             /* The pad: ↑ over ←→ over ↓, in the same 46×46 a dial occupies. Same handlers, same
@@ -8104,13 +8101,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            Still hidden when the frame uses a decorative overlay: that art IS the border. */
         if (!inst.photoOverlay) {
           const bw = inst.borderWidth ?? 0.06;
-          /* ⚠️ CAPTIONED, BUT WITHOUT THE 10px INDENT. Four labelled controls measured ~332px in a
-             ~340px row and the last Spin arrow wrapped; dropping the captions fixed the width and
-             produced TWO ANONYMOUS DIALS — a baker cannot tell border from size, which is worse than
-             the wrap. So the width comes out of SPACING, not meaning: each caption loses its
-             marginLeft:10 (~30px across the row) and the row's own gap:6 does the separating. */
+          /* ⚠️ NO INLINE CAPTION — ControlCell puts "Border" UNDER the dial now. It used to carry its
+             own label span here, and that span was the only thing telling this dial from Size; once
+             the cell captions it, keeping the span printed "Border" TWICE on the card. I stripped the
+             inline labels from companionCtls and tiltCtls and checked only that borderCtls was not
+             REUSED elsewhere — never that it carried a label of its own. The screenshot caught it.
+             The width argument this note used to make (four labelled controls measured ~332px in a
+             ~340px row and the last Spin arrow wrapped) is moot: a caption below costs no horizontal
+             room, and the row scrolls. */
           borderCtls = [
-            <span key="bw-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Border</span>,
             <SizeDial key="bw-dial" size={bw} min={0} max={0.4} step={0.02} onChange={v => updateSticker(el.id, { borderWidth: v })} />,
           ];
         }
@@ -8184,7 +8183,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Steppers, not dials: four discrete nudges on two axes. They are also the one control here
       // that a horizontal scroller cannot fight — a tap is not a drag.
       tiltCtls = [
-        <span key="ta-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Tilt</span>,
         <button key="ta-up"    style={s.tbIconBtn} title="Lean back"    onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta, -0.1) })}>↑</button>,
         <button key="ta-down"  style={s.tbIconBtn} title="Lean forward" onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta,  0.1) })}>↓</button>,
         <button key="ta-left"  style={s.tbIconBtn} title="Lean left"    onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra, -0.1) })}>←</button>,
@@ -8229,13 +8227,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * both), so a single companion slot serves both and no row is ever spent on one label plus two
        * small buttons.
        *
-       * marginLeft on the label is what separates the companion from the dial; Depth never had it
-       * because it used to start its own row. */
+       * The NAME is the cell's caption now, not a span inside the row, so it no longer needs the
+       * marginLeft that used to separate it from the dial. */
+      const companionLabel = sticker?.zone === 'top_surface' ? 'Spin' : isSide ? 'Depth' : null;
       const companionCtls =
         sticker?.zone === 'top_surface' ? (() => {
           const rot = sticker?.rotation ?? 0;
           return [
-            <span key="sp-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, ...(mergeIntoSizeRow ? {} : { marginLeft: 10 }) }}>Spin</span>,
             <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
             <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
           ];
@@ -8243,42 +8241,45 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         : isSide ? (() => {
           const ro = sticker?.radialOffset ?? 0;
           return [
-            <span key="ro-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3, ...(mergeIntoSizeRow ? {} : { marginLeft: 10 }) }}>Depth</span>,
             <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
             <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
           ];
         })()
         : [];
-      /* ⚠️ On a photo frame this one row carries Colour · Border · Size · Spin. The panelLabel names
-         the FIRST control present, and the rest carry inline captions — a row labelled "Size" that
-         opens with a colour swatch would be a lying label. */
-      const sizeRowLead = mergeIntoSizeRow && colourCtls.length ? 'Colour'
-                        : mergeIntoSizeRow && borderCtls.length ? 'Border'
-                        : 'Size';
-      /* On the merged row the panelLabel says "Colour", so Size needs its own caption — see the
-         note on borderCtls for why these are captioned but not indented. */
-      const sizeOwnLabel = sizeRowLead === 'Size' ? [] : [
-        <span key="sc-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Size</span>,
-      ];
+      /* ⚠️ NO LEAD LABEL ANY MORE. This row used to name its FIRST control in the panelLabel
+         ("Colour" on a photo frame, "Size" everywhere else) and give every control after it an
+         inline caption, because a row labelled "Size" that opens with a colour swatch would be a
+         lying label. Each control carries its own caption underneath now, so there is no first
+         control to name, no lead to compute, and no inline span to indent. */
       /* Decided HERE, read at the old Tilt/Finish push sites below — the same one-flag shape as
          mergeIntoSizeRow, and for the same reason: this is the only point that knows the row exists. */
       tiltInSizeRow = tiltCtls.length > 0;
       finishInSizeRow = finishDial.length > 0;
-      /* Finish needs an inline caption for the same reason Size does on a merged row: the panelLabel
-         names the FIRST control, and everything after it has to say what it is. */
-      const finishOwnLabel = finishInSizeRow ? [
-        <span key="fin-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Finish</span>,
-      ] : [];
-      groups.push({ key: 'sc', divider: true, panelLabel: sizeRowLead, scroll: true, controls: [
-        ...(mergeIntoSizeRow ? colourCtls : []),
-        ...(mergeIntoSizeRow ? borderCtls : []),
-        ...sizeOwnLabel,
-        <SizeDial key="sc-dial" size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
-          onChange={v => resizeSticker(sticker, v)} />,
-        ...companionCtls,
-        ...tiltCtls,
-        ...finishOwnLabel,
-        ...finishDial,
+      /* ⚠️ EVERY CONTROL IS A CAPTIONED CELL, AND THE CAPTION SCROLLS WITH IT. Sandeep: "name of
+         the control - lets add it below the control, so this below line also adds to the same
+         scroll panel." This row used to name its first control in the panelLabel, which renders
+         BESIDE the scroller and therefore stays pinned while the controls slide out from under it —
+         so a wide row read as "Colour" followed by whatever happened to be in view. The rest were
+         inline spans sitting BEFORE their control, which cost horizontal room on the one axis a
+         phone has least of.
+         ⚠️ NO panelLabel IS SET HERE ON PURPOSE. There is no longer a "first" control to name, and
+         setting one would print a label outside the scroller again.
+         This is the shape `photo-fit` has used since the photo-frame card was rebuilt. */
+      groups.push({ key: 'sc', divider: true, scroll: true, controls: [
+        ...(mergeIntoSizeRow && colourCtls.length
+          ? [<ControlCell key="sc-colour" label="Colour">{colourCtls}</ControlCell>] : []),
+        ...(mergeIntoSizeRow && borderCtls.length
+          ? [<ControlCell key="sc-border" label="Border">{borderCtls}</ControlCell>] : []),
+        <ControlCell key="sc-size" label="Size">
+          <SizeDial size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
+            onChange={v => resizeSticker(sticker, v)} />
+        </ControlCell>,
+        ...(companionCtls.length
+          ? [<ControlCell key="sc-companion" label={companionLabel}>{companionCtls}</ControlCell>] : []),
+        ...(tiltCtls.length
+          ? [<ControlCell key="sc-tilt" label="Tilt">{tiltCtls}</ControlCell>] : []),
+        ...(finishDial.length
+          ? [<ControlCell key="sc-finish" label="Finish">{finishDial}</ControlCell>] : []),
       ] });
 
       /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
@@ -8345,7 +8346,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // The controls are built above; this is only the fallback row for a card with tilt but no Size
     // row to ride in. When the Size row took them, pushing here would show Tilt twice.
     if (tiltCtls.length && !tiltInSizeRow) {
-      groups.push({ key: 'ta', divider: true, controls: tiltCtls });
+      groups.push({ key: 'ta', divider: true, panelLabel: 'Tilt', controls: tiltCtls });
     }
 
     // Bury (insert depth) — how far an INSERTED element's base sinks INTO the cake. Config-gated on

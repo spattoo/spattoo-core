@@ -1,5 +1,6 @@
 import { SizeDial } from './SizeDial.jsx';
 import { OffsetDial } from './OffsetDial.jsx';
+import { ControlCell } from './ControlCell.jsx';
 
 /* ── A captioned dial in a scrolling control row ─────────────────────────────────────────────────
  *
@@ -12,10 +13,12 @@ import { OffsetDial } from './OffsetDial.jsx';
  * "Reuse is enforced by looking before you build (CLAUDE.md rule 1), never by this number" — and a
  * gate catching copy-paste after the fact is the slower way to learn it.
  *
- * ⚠️ IT OWNS ITS LOOK, like PreviewTile beside it. CakeDesigner's `s` style object is a module-local
- * const and is not exported, and no shared component in this folder takes style props. Passing the
- * caption style in from each caller would have reproduced the duplication one level up, in prop
- * lists instead of markup.
+ * ⚠️ AND THEN THE WRAPPER ITSELF WAS THE CLONE. The column-plus-caption markup below used to live
+ * here in full, and the photo-frame block had its own copy of the same lines. Two ~8-line copies sit
+ * under `check:dup`'s minLines, so nothing ever flagged it; it surfaced only when the faux ball row
+ * needed the same cell around a colour swatch and a pair of nudge buttons — neither of which is a
+ * dial, so neither could reach this component. The wrapper is `ControlCell` now, and this file is
+ * what it always should have been: the DIAL-shaped caller of it.
  *
  * ⚠️ `dial` PICKS THE INSTRUMENT, AND THE CHOICE IS NOT COSMETIC. SizeDial's band tapers thin→thick
  * to mean small→large; OffsetDial fills from a marked zero in whichever direction the value went
@@ -31,13 +34,10 @@ import { OffsetDial } from './OffsetDial.jsx';
  */
 export function DialCell({ label, value, min, max, step, fmt, onChange, dial = 'size' }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
+    <ControlCell label={label}>
       {dial === 'offset'
         ? <OffsetDial value={value} min={min} max={max} step={step} label={label} fmt={fmt} onChange={onChange} />
         : <SizeDial size={value} min={min} max={max} step={step} fmt={fmt} onChange={onChange} />}
-      <span style={{ fontSize: 9, fontWeight: 700, color: '#888', minWidth: 26, textAlign: 'center', letterSpacing: 0.3 }}>
-        {label}
-      </span>
-    </div>
+    </ControlCell>
   );
 }
