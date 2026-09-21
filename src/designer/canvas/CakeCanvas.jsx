@@ -3381,7 +3381,7 @@ const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
  * slow down the coming back? it looks beatiful to watch it coming back with little slow." The
  * faster glide read as a correction; at this length it reads as the view opening out, which is the
  * one moment in the editor where the whole cake comes back into frame and is worth seeing. */
-const FIT_EASE_S = 0.75;
+const FIT_EASE_S = 1.2;
 function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
