@@ -2534,6 +2534,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // read from an effect declared above its definition.
   const [editSheetH, setEditSheetH] = useState(0);
   const editSheetRef = useRef(null);
+  /* ⚠️ THE DECORATION CARD'S REAL HEIGHT, for the same reason and by the same route. Sandeep: "if I
+   * dial the height dialer, i dont really see howmuch is changing, because cake view is blocked."
+   * That is INVARIANTS #11 — a control and what it changes must be visible at the same time — and
+   * the docked card is a sheet full of dials you drag WHILE WATCHING THE CAKE.
+   *
+   * The tier sheet has had this since it was built; the comment on the canvas even says "only the
+   * edit sheet needs this", which stopped being true the moment decoration cards became dial rows.
+   * Measured, never assumed: the height comes from the content, from the grip, or from the paint
+   * strip collapsing to ~54px, and the canvas must inset by whichever it actually is. */
+  const [stackSheetH, setStackSheetH] = useState(0);
   const settingsRef      = useRef(null);
   const profileRef       = useRef(null);
   const chefsDeskRef     = useRef(null);
@@ -6793,6 +6803,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         onDone: () => setCreamPaint(null) }
     : null;
 
+  /* ⚠️ DECLARED HERE, NOT BESIDE THE editSheetH EFFECT, AND THE REASON IS THE SAME CRASH the note
+   * below foldMark describes. These read stackSingleCard, stackShown and cakeFocus — all defined
+   * above this line and roughly 220 lines BELOW where the sibling editSheetH effect lives. That
+   * effect can sit up there because it only reads showRightPanel; this one cannot. A `const` read
+   * before its initialiser has run is the temporal dead zone: valid JavaScript, clean build, every
+   * test green, and a blank screen on first render. This file has been bitten by it twice.
+   *
+   * The same measurement for the DOCKED decoration card. Only that branch: the mobile list and the
+   * desktop column are overlays BESIDE the cake rather than under it, and insetting the canvas for
+   * them would squeeze the view for a panel that is not covering it.
+   * ⚠️ Keyed on cakeFocus too, so collapsing to the paint strip hands the cake back automatically —
+   * the observer sees ~54px instead of ~368px and the inset follows without a second mechanism. */
+  useLayoutEffect(() => {
+    const el = pipingPopupRef.current;
+    if (!el || !isMobile || !stackSingleCard) { setStackSheetH(0); return undefined; }
+    const read = () => setStackSheetH(Math.round(el.getBoundingClientRect().height));
+    read();
+    const ro = new ResizeObserver(read);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [isMobile, stackSingleCard, stackDragH, cakeFocus, elementStackOpen, stackShown]);
+
+  /* ⚠️ THE TALLER OF THE TWO, NOT WHICHEVER BRANCH IS WRITTEN LAST. Both are bottom sheets and both
+     can be up at once: showRightPanel includes `colorOpen`, and a decoration card's own colour
+     button opens it while that card is the single docked card — so stackSingleCard and
+     showRightPanel are true together. Insetting by one would put the cake straight back behind the
+     other, in exactly the case where two sheets are stacked. */
+  const bottomSheetH = Math.max(
+    isMobile && showRightPanel ? editSheetH : 0,
+    isMobile && stackSingleCard ? stackSheetH : 0,
+  );
+
   const foldMark = (expanded) => (stackSingleCard ? (
     <button style={{ ...s.doneBtn, minHeight: 28, padding: '0 14px', fontSize: 12 }}
             onClick={e => { e.stopPropagation(); clearAllSelections(); setExpandedPipingId(null); }}>Done</button>
@@ -10651,7 +10693,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{
             position: 'absolute', inset: 0,
             right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0),
-            bottom: isMobile && showRightPanel ? editSheetH : 0,
+            bottom: bottomSheetH,
             transition: 'right 0.18s ease, bottom 0.18s ease',
           }}>
           {/* Darkens everything outside the 9:16 crop so the frame you are about to record is
@@ -10912,7 +10954,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               area, it sat inside the sheet's box and showed through the frosting — legible enough to
               read, which is worse than either hiding it or moving it. It still applies while the
               sheet is open: you can rotate the cake to check the colour you just picked. */}
-          <div style={{ ...s.rotateHint, ...(isMobile && showRightPanel ? { bottom: editSheetH + 12 } : {}) }}>
+          {/* Lifts above whichever sheet is taller, for the same reason the canvas does — otherwise
+              "Drag to rotate" sits behind the decoration card it is telling you about. */}
+          <div style={{ ...s.rotateHint, ...(bottomSheetH ? { bottom: bottomSheetH + 12 } : {}) }}>
             Drag to rotate
           </div>
 
