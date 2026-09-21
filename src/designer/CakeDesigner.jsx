@@ -207,28 +207,54 @@ const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
  * vertically, rotated ninety degrees, so it gets the same answer: a fade at the edge that is there
  * while there is more and gone when there is not.
  */
-function ScrollFadeRow({ children, style }) {
+/* ⚠️ BOTH EDGES, AND ONLY WHERE THERE IS SOMETHING TO SEE. Sandeep, on the rainbow's tile row:
+ * "can we add something to show that there are still items to right and you need to scroll. how
+ * does the user know otherwise" — then "both edges and every row whereever needed. if the controls
+ * fit in row, not needed."
+ *
+ * That last sentence is the whole design: each fade is derived from the scroll position, so a row
+ * whose contents fit shows nothing at all. There is no flag to set and no way for a caller to
+ * declare "this one scrolls" and be wrong about it.
+ *
+ * The LEFT edge matters as much as the right. Once you have scrolled, the tiles you came from are
+ * off-screen behind you with nothing to say so, and a row that only ever hints forward reads as
+ * having a beginning wherever you happen to have stopped.
+ *
+ * ⚠️ `fade` IS THE SURFACE COLOUR, as an "r,g,b" triple, and it has to be passed. The gradient has
+ * to end in the colour BEHIND the row or the fade reads as a smear: the default 255,253,249 is the
+ * colour picker's sheet, and over a white card it would show as a faint cream wash. Callers on a
+ * white surface pass '255,255,255'.
+ *
+ * ⚠️ `read` returns the PREVIOUS object when nothing changed. Without that, every scroll event sets
+ * fresh state and re-renders the row — 21 of these now exist, several carrying live 3D previews.
+ */
+function ScrollFadeRow({ children, style, fade = '255,253,249' }) {
   const ref = useRef(null);
-  const [more, setMore] = useState(false);
+  const [edges, setEdges] = useState({ left: false, right: false });
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return undefined;
-    const read = () => setMore(el.scrollWidth - el.scrollLeft - el.clientWidth > 4);
+    const read = () => {
+      const left = el.scrollLeft > 4;
+      const right = el.scrollWidth - el.scrollLeft - el.clientWidth > 4;
+      setEdges(prev => (prev.left === left && prev.right === right ? prev : { left, right }));
+    };
     read();
     el.addEventListener('scroll', read, { passive: true });
     const ro = new ResizeObserver(read);
     ro.observe(el);
     return () => { el.removeEventListener('scroll', read); ro.disconnect(); };
   }, [children]);
+  // `to left` / `to right` point AWAY from the edge, so each gradient is opaque at its own side.
+  const edgeStyle = (side) => ({
+    position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 30, pointerEvents: 'none',
+    background: `linear-gradient(to ${side}, rgba(${fade},0), rgba(${fade},0.95))`,
+  });
   return (
     <div style={{ position: 'relative', width: '100%' }}>
       <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
-      {more && (
-        <div aria-hidden="true" style={{
-          position: 'absolute', top: 0, bottom: 0, right: 0, width: 30, pointerEvents: 'none',
-          background: 'linear-gradient(to right, rgba(255,253,249,0), rgba(255,253,249,0.95))',
-        }} />
-      )}
+      {edges.left && <div aria-hidden="true" style={edgeStyle('left')} />}
+      {edges.right && <div aria-hidden="true" style={edgeStyle('right')} />}
     </div>
   );
 }
@@ -390,11 +416,11 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
            captions-only for the whole tier picker so it matches the element cards — the readout is
            what carries the meaning now, which is why fmt prints two decimals rather than a bare
            number that could be read as either end. */
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           <DialCell label="Balance" dial="offset" value={balance}
             min={0.2} max={0.8} step={0.01} fmt={v => v.toFixed(2)}
             onChange={v => onBalanceChange(v)} />
-        </div>
+        </ScrollFadeRow>
       )}
     </div>
   );
@@ -464,14 +490,14 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
               would leave three unexplained numbers. Same reason the rainbow's board hint moved out
               of its map rather than being deleted.
               ⚠️ The Crisp/Blended pair is gone with the end-labels — see the note on Balance. */}
-          <div style={s.previewRow}>
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             <DialCell label="Stripes" value={count} min={2} max={MAX_STRIPES} step={1}
               fmt={v => String(Math.round(v))} onChange={v => onCountChange(Math.round(v))} />
             <DialCell label="Softness" value={softness} min={0} max={1} step={0.01}
               fmt={v => v.toFixed(2)} onChange={v => onSoftnessChange(v)} />
             <DialCell label="Hand-scraped" value={wobble} min={0} max={1} step={0.01}
               fmt={v => v.toFixed(2)} onChange={v => onWobbleChange(v)} />
-          </div>
+          </ScrollFadeRow>
           <div style={s.stripeHint}>
             {count === colours ? 'One stripe per colour.' : `Your ${colours} colours repeat.`}
             {' '}An odd number matches top and bottom. A little hand-scrape reads as iced by hand.
@@ -868,7 +894,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
           belongs to, so two placed slots would stack two identical control sets under one row — the
           exact illegibility the piping note warns about. One slot at a time is not a reduction here;
           it is what makes the row readable. */}
-      <div style={s.previewRow}>
+      <ScrollFadeRow style={s.previewRow} fade="255,255,255">
         {slots.map(slot => (
           <div key={slot.key}
                onClick={() => setActiveSlotKey(slot.key)}
@@ -878,7 +904,7 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
             </PreviewTile>
           </div>
         ))}
-      </div>
+      </ScrollFadeRow>
       {/* Controls for the SELECTED slot only — see the note above. */}
       {[activeSlot].filter(Boolean).map(slot => (
           <div key={`ctl-${slot.key}`}>
@@ -5004,7 +5030,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * ⚠️ The size dial keeps 0.15–0.9 step 0.02 and prints two decimals: at SizeDial's default one
    * decimal a clump reads "0.2…0.9" in eight jumps across its whole travel. */
   const grassClumpCells = (patches, tier, onSize, onRemove) => (
-    <div style={s.previewRow}>
+    <ScrollFadeRow style={s.previewRow} fade="255,255,255">
       {patches.map((p, k) => {
         const on = grassSelected?.tier === tier && grassSelected?.idx === k;
         return (
@@ -5024,7 +5050,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         );
       })}
-    </div>
+    </ScrollFadeRow>
   );
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
@@ -7215,7 +7241,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              tap. s.previewRow is the same scroller the ring tiles and placement tiles use (flex,
              overflowX auto, hidden scrollbar); flexShrink:0 on each pill is what makes them scroll
              instead of squeezing. */
-          <div style={s.previewRow}>
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {flakes.map((_, i) => (
               <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
                 border: foilSel === i ? `1.5px solid ${INK}` : `1.5px solid ${LINE}`, background: foilSel === i ? INK_TINT : SURFACE }}>
@@ -7224,7 +7250,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
               </span>
             ))}
-          </div>
+          </ScrollFadeRow>
         )}
         {/* Size now shares the Surface row above, as a dial — see the note there. */}
         {/* ⚠️ This had rebuilt s.deleteBtn inline — same #fff0f0, same #f5c0c0, same red — on top of
@@ -7301,7 +7327,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ⚠️ `fmt` ON LIFT AND TORN IS NOT COSMETIC. Lift is 0–0.12 and Torn 0–0.18, both
                 stepping 0.005; at SizeDial's default one decimal they read "0.0" and "0.1" for
                 almost their entire travel — visible in the card before this change. */}
-            <div style={s.previewRow}>
+            <ScrollFadeRow style={s.previewRow} fade="255,255,255">
               {/* Colour — the band's own, sized to sit level with the dials beside it. */}
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
                 <div style={{ height: 46, display: 'flex', alignItems: 'center' }}>
@@ -7350,7 +7376,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ].map(d => (
                 <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
-            </div>
+            </ScrollFadeRow>
             <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
               {Object.keys(SECOND_CREAM_PRESETS).map(name => (
                 <button key={name} style={chip(false)} onClick={() => up(x => ({ ...x, edge: SECOND_CREAM_PRESETS[name]() }))}>{name}</button>
@@ -7389,11 +7415,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* A COUNT of balls in the clump, so the dial prints an integer and rounds on write — the
             same rule dust's Density and the rainbow's Ropes follow. The separate right-hand readout
             is gone because the dial carries the number itself. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           <DialCell label="Size" value={count} min={min} max={max} step={1}
             fmt={v => String(Math.round(v))}
             onChange={v => setClusterSize(card.clusterId, Math.round(v))} />
-        </div>
+        </ScrollFadeRow>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
           <span style={s.editPanelLabel}>Colours</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -7458,7 +7484,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ⚠️ No active-tile border here: unlike piping and placement, NOTHING below follows a
                 selection — Count is listed per active surface and Size/Colour are shared. A selected
                 look would promise a focus this card does not have. */}
-            <div style={s.previewRow}>
+            <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {surfaces.map(su => {
               const on = all.some(s => scatterGroupOf(s) === su.group);
               return (
@@ -7471,7 +7497,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </div>
               );
             })}
-            </div>
+            </ScrollFadeRow>
           </div>
         )}
         {/* Count is per active surface (denser top than side if you like); Size + Colour are shared. */}
@@ -8642,7 +8668,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ⚠️ EVERY FORMATTER SURVIVES. Curve says "flat" at 0, Spacing "normal", Line gap "1.40×",
             Thickness three decimals — at SizeDial's default one decimal, Thickness (0.008–0.07)
             would read "0.0" across its whole travel and Spacing "0.0" to "0.6". */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             /* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the
                control this app already means by "how big". */
@@ -8688,7 +8714,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
               fmt={d.fmt} onChange={d.set} dial={d.dial} />
           ))}
-        </div>
+        </ScrollFadeRow>
 
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
           {surface === 'side' ? 'Drag the writing around and up the cake side.'
@@ -8807,7 +8833,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* Turn is the same signed radian value the garnish card carries, and keeps the same degree
             formatter for the same reason. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             { k: 'Size', dial: 'size',   v: t.scale ?? 1, min: 0.4, max: 2, step: 0.05,
               fmt: v => `${Math.round(v * 100)}%`, set: v => updateTopper(t.id, { scale: v }) },
@@ -8817,7 +8843,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
               fmt={d.fmt} onChange={d.set} dial={d.dial} />
           ))}
-        </div>
+        </ScrollFadeRow>
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
           Drag it on the cake to move it round.
@@ -8936,7 +8962,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ⚠️ TURN IS RADIANS AND SIGNED, so it is an OffsetDial and it KEEPS its degree formatter.
             −π…+π about a zero that means "as the studio drew it"; through a dial's default readout
             it would say "-3.14", which is a number no baker is thinking in. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             { k: 'Size',  dial: 'size',   v: g.scale ?? 1,    min: 0.4, max: 2, step: 0.05,
               fmt: v => `${Math.round(v * 100)}%`, set: v => updateGarnish(g.id, { scale: v }) },
@@ -8948,7 +8974,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
               fmt={d.fmt} onChange={d.set} dial={d.dial} />
           ))}
-        </div>
+        </ScrollFadeRow>
 
         <div style={{ fontSize: 10.5, color: '#999', lineHeight: 1.5 }}>
           {g.zone === 'side' ? 'Drag it round and up the side of the tier.' : 'Drag it on the cake to move it round.'}
@@ -9144,7 +9170,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             value went, and keeps the sign — which is the entire content of "lean".
             ⚠️ Size/Thickness are ONE FIELD behind the ternary (both write penStyle.thickness with
             different names and ranges), so only one is ever in the row. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {(penStyle.stampUrl
             ? [
                 /* The word first: on the pen this IS a thickness — how fat the rope is — but on a
@@ -9186,7 +9212,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               fmt={v => `${v > 0 ? '+' : ''}${Math.round(v)}°`}
               onChange={v => setPenStyle(ps => ({ ...ps, stampLean: v }))} />
           )}
-        </div>
+        </ScrollFadeRow>
 
         {/* ── Auto-correct shape ───────────────────────────────────────────────────────────────
             Nobody draws a clean border with a mouse. A run round the rim comes out wobbling, and the
@@ -9308,11 +9334,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* One dial, still in the row — a lone control does not need a scroller, but using the same
               shape as every other card is what stops the next one being hand-rolled again. `fmt`
               keeps two decimals: 0.16–0.5 at the dial's default one decimal reads "0.2" flat. */}
-          <div style={s.previewRow}>
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             <DialCell label="Block size" value={nb.size ?? NAME_BLOCK_DEFAULTS.size} min={0.16} max={0.5} step={0.01}
               fmt={v => v.toFixed(2)}
               onChange={v => updateNameBlocks(cur => ({ size: v, blocks: layoutBlocks(cur.text, cur.zone, { ...cur, size: v }) }))} />
-          </div>
+          </ScrollFadeRow>
         </div>
 
         {/* ColorWheel, like every other colour on the cake — INVARIANTS #3. The first version of
@@ -9414,7 +9440,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             the geometry, so a float could not corrupt the render — but it WOULD be stored, and the
             saved design would then disagree with the number the customer saw. Round here so the
             value and the readout are the same thing. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             ['Size',         'scale',  0.4, 2.0, 0.05, v => v.toFixed(2)],
             ['Balls across', 'lobes',  2,   6,   1,    v => String(Math.round(v))],
@@ -9425,7 +9451,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               min={min} max={max} step={step} fmt={fmt}
               onChange={v => set({ [key]: key === 'lobes' ? Math.round(v) : v })} />
           ))}
-        </div>
+        </ScrollFadeRow>
 
         <div style={{ marginTop: 10 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Colour</div>
@@ -9527,7 +9553,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               into a shared component is how a shared component ends up owning its callers'
               preferences. Inline styles cannot target children, so each tile gets a shrink-proof
               wrapper here. */}
-          <div style={s.previewRow}>
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {RAINBOW_ARRANGEMENTS.map(a => (
               <div key={a.key} style={{ flexShrink: 0 }}>
                 <ArrangementTile item={a} on={current?.key === a.key}
@@ -9538,7 +9564,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   }} />
               </div>
             ))}
-          </div>
+          </ScrollFadeRow>
         </div>
 
         {/* ⚠️ FIVE DIALS IN ONE SCROLLING ROW. Same change as the cloud card above, and the two are
@@ -9556,7 +9582,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             responding because the board, not the control, is the limit — which is the one thing
             that must not be lost, since a control that silently stops responding is the bug the
             line was written to prevent. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             ['Size',        'scale',     0.4,  1.8,  0.05,  v => v.toFixed(2),           true],
             ['Ropes',       'bands',     3,    9,    1,     v => String(Math.round(v)),  true],
@@ -9568,7 +9594,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               min={min} max={max} step={step} fmt={fmt}
               onChange={v => set({ [key]: key === 'bands' ? Math.round(v) : v })} />
           ))}
-        </div>
+        </ScrollFadeRow>
         {boardCapped && (
           <div style={{ fontSize: 10, color: '#999', marginTop: 4 }}>
             As big as the board allows — its foot has to land on the board.
@@ -9687,7 +9713,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 spacing is what the geometry wants. Re-deriving it here would have quietly changed
                 the feel of the control. At step 0.002 it also needs `fmt`, or a dial would read a
                 flat "0.1" across its whole travel. */}
-            <div style={s.previewRow}>
+            <ScrollFadeRow style={s.previewRow} fade="255,255,255">
               {[
                 ...(bg.patches?.length ? [] : [
                   { k: 'Ring width', v: bg.ringWidth ?? 0.75, min: 0.15, max: 1, step: 0.05,
@@ -9701,7 +9727,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ].map(d => (
                 <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
-            </div>
+            </ScrollFadeRow>
           </div>
         )}
 
@@ -9781,7 +9807,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             either here would quietly change how the control feels.
             Over the edge keeps its formatter so 0 still reads "none" rather than "0.00" — an off
             state a baker turns on, not a measurement. */}
-        <div style={s.previewRow}>
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             ...(g.bandInner != null ? [
               { k: 'Band width', v: 1 - g.bandInner, min: 0.12, max: 0.9, step: 0.02,
@@ -9802,7 +9828,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ].map(d => (
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
           ))}
-        </div>
+        </ScrollFadeRow>
         </>)}
 
         {/* ONE colour for both placements — it is one piping bag, and a lawn that does not match the
@@ -9850,7 +9876,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <>
             {/* One scrolling row of pills, exactly as the foil flakes do — a wrapping grid grew a
                 row every few flicks and pushed the controls below the fold. */}
-            <div style={s.previewRow}>
+            <ScrollFadeRow style={s.previewRow} fade="255,255,255">
               {dustSplashes.map((sp, i) => (
                 <span key={i} style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden', flexShrink: 0,
                   border: dustSel === i ? `1.5px solid ${INK}` : `1.5px solid ${LINE}`, background: dustSel === i ? INK_TINT : SURFACE }}>
@@ -9859,7 +9885,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     style={{ padding: '4px 8px', border: 'none', background: 'transparent', fontSize: 13, color: DANGER, cursor: 'pointer' }}>×</button>
                 </span>
               ))}
-            </div>
+            </ScrollFadeRow>
 
             {/* ⚠️ DIALS IN ONE SCROLLING ROW, the cream card's pattern. Seven full-bleed range inputs
                 cost seven rows of a phone; as 46px dials they are one row you push sideways.
@@ -9880,7 +9906,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 wrapping dial would fix it and does not exist yet.
                 Each dial keeps its caption: unlabelled dials are indistinguishable (the photo frame
                 taught this), and `fmt` is what stops Glow (max 0.6) reading "0.0" across its travel. */}
-            <div style={s.previewRow}>
+            <ScrollFadeRow style={s.previewRow} fade="255,255,255">
               {[
                 ...(dustSplashes[dustSel] ? [
                   { k: 'Position', v: dustSplashes[dustSel].u, min: 0, max: 1, step: 0.01, fmt: v => v.toFixed(2), set: v => updateDustSplash(dustTier, dustSel, { u: v }) },
@@ -9898,7 +9924,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ].map(d => (
                 <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
               ))}
-            </div>
+            </ScrollFadeRow>
 
           </>
         )}
@@ -11847,7 +11873,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   The note above records that such a fallback existed once and check:one-preview
                   correctly failed it — a ring must stay derived and drawn in exactly one place. */}
               {candidates.length > 0 && !(isMobile && candidates.length === 1) && (
-                <div style={s.previewRow}>
+                <ScrollFadeRow style={s.previewRow} fade="255,255,255">
                   {candidates.map(({ tierIndex, zone, label }) => {
                     const v  = ringView(tierIndex, zone);
                     const on = activeRing.tierIndex === tierIndex && activeRing.zone === zone;
@@ -11865,7 +11891,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </div>
                     );
                   })}
-                </div>
+                </ScrollFadeRow>
               )}
 
               {/* Controls for the SELECTED ring only. With the tiles side by side the old vertical
