@@ -1736,17 +1736,43 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
 
           <span style={{ flex: 1 }} />
 
+          {/* ⚠️ "New", not "New Order", and it may NOT wrap. Sandeep: "list/calender alignment
+              issue. lets change the 'New Order' to 'New'. then i can we can accomodate
+              list/calendar?" Measured at 375px the bar wanted ~455px: back 32 + title 53 +
+              Segmented 124 + this button + the count, with four 14px gaps and 40px of padding.
+              Segmented is flexShrink:0 by design (a segmented control that compresses is one
+              whose labels start lying), so all the pressure landed here — and with no
+              `whiteSpace` this button simply broke onto two lines inside a 56px bar, which is the
+              misalignment in the screenshot rather than a spacing bug.
+              ⚠️ nowrap + flexShrink:0 are the real fix; the shorter word alone bought ~40px of an
+              ~80px overflow. Both, or it comes back at the next width.
+              ⚠️ The ACCESSIBLE NAME STAYS FULL. "New" beside a + is clear to someone looking at
+              it and says nothing to someone who is not; aria-label keeps the whole phrase, and
+              the visible word is contained in it (WCAG 2.5.3). The rail's submenu entry stays
+              "New Order" on purpose — there it sits under Orders/Calendar with no + and no
+              context, where "New" would be a guess. Divergence, decided, not drift.
+              ⚠️ AND IT LIVES OUT HERE, ABOVE THE CONDITIONAL. Put inside `{cond && ( … )}` the
+              parenthesised body holds a comment node AND the button — two children, no fragment —
+              and esbuild fails with "Expected ) but found onClick" pointing at the button rather
+              than at the comment. Which is how it failed once already. */}
           {onNewOrder && (!isMobile || !selected) && (
-            <button onClick={onNewOrder} style={{
+            <button onClick={onNewOrder} aria-label="New Order" title="New Order" style={{
               display: 'flex', alignItems: 'center', gap: 5,
               background: primaryColor, color: '#fff', border: 'none',
               borderRadius: 10, padding: '8px 14px', cursor: 'pointer',
               fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
+              whiteSpace: 'nowrap', flexShrink: 0,
             }}>
-              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New Order
+              <span style={{ fontSize: 16, lineHeight: 1 }}>+</span> New
             </button>
           )}
-          {view === 'list' && (!isMobile || !selected) && (
+          {/* ⚠️ DESKTOP ONLY, because on a phone it is a SECOND COPY of a number already on screen.
+              The filter row directly below opens with "All (21)" — the same count, larger, and
+              attached to the control that uses it. Measured at 375px this span was clipped off the
+              right edge anyway (x 378 of a 375px viewport), so the choice was never "keep it or
+              lose it": it was "lose it, or lose the List/Calendar toggle's room to sit straight".
+              It stays in full on desktop, where the bar has width to spare. */}
+          {view === 'list' && !isMobile && (
             <span style={{ fontSize: 13, color: '#bbb' }}>{orders.length} total</span>
           )}
           {/* Always present on desktop: closing is always possible, and this is where every

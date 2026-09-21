@@ -12,6 +12,16 @@ import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
 import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 import { INK } from '../../shared/tokens.js';
+/* ⚠️ THE SHARED DISMISS, not a second X. Sandeep: "lets change the 'Close' button to 'X' button."
+   panelTopBar.jsx already owns that control — a 32px square carrying XIcon, title and aria-label
+   "Close" — and its own header states the rule: "every other panel dismisses with ✕ at top-right".
+   Nine panels already import it (Customers, Settings, Flavours, Billing, Templates, Dashboard,
+   Invite, Orders). Drawing an X here instead would have been the twenty-fifth hand-rolled control
+   CLAUDE.md rule 1 warns about, and the local `s.close` pill it replaces (8px 16px, its own border
+   and colour) is exactly the drift panelTopBar was extracted to stop.
+   ⚠️ The VISIBLE label goes; the ACCESSIBLE one does not. PanelDismiss keeps aria-label="Close",
+   so a screen reader still hears the word that left the screen. */
+import { PanelDismiss } from '../../shared/panelTopBar.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -29,7 +39,6 @@ const s = {
   overlay: { position: 'fixed', inset: 0, zIndex: Z.studio, background: '#FAFAF8', overflowY: 'auto', fontFamily: 'inherit' },
   header: { position: 'sticky', top: 0, zIndex: 2, background: '#fff', borderBottom: '1.5px solid #EFEAE3', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 15, fontWeight: 800, color: '#2C2A26' },
-  close: { padding: '8px 16px', borderRadius: 10, border: '1.5px solid #E0DDD8', background: '#fff', fontSize: 13, fontWeight: 700, color: '#555', cursor: 'pointer', fontFamily: 'inherit' },
   actions: { display: 'flex', alignItems: 'center', gap: 8 },
   dl: (busy) => ({ padding: '8px 16px', borderRadius: 10, border: 'none', background: busy ? '#C9C4BC' : '#2C2A26', fontSize: 13, fontWeight: 700, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }),
   err: { fontSize: 12, fontWeight: 700, color: '#C0392B', padding: '0 20px 10px' },
@@ -312,7 +321,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
           <button style={s.dl(pdfBusy || loading)} onClick={download} disabled={pdfBusy || loading}>
             {pdfBusy ? 'Making PDF…' : 'Download PDF'}
           </button>
-          <button style={s.close} onClick={onClose}>Close</button>
+          <PanelDismiss onClick={onClose} />
         </div>
       </div>
       {pdfErr && <div style={s.err}>{pdfErr}</div>}
