@@ -9513,14 +9513,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               left the arch in the middle and the choice looked broken. `scale` is deliberately NOT
               applied: it is the one thing on a tile the customer has already chosen for themselves
               below, and re-imposing it would undo their size every time they tried another shape. */}
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {/* ⚠️ ONE SCROLLING ROW, not a wrapping grid. Sandeep: "for procedural rainbow, can we make
+              all the tiles in one row. scrollable horizontally?" Six tiles wrapped four-then-two and
+              cost ~250px of card height on a phone — the same shape the dust flicks and foil flakes
+              already solved with s.previewRow.
+              ⚠️ flexShrink: 0 IS THE WHOLE FIX, not the overflow. s.previewRow is display:flex with
+              no flexWrap, so it is already nowrap — but a tile left to shrink would compress from
+              68px to fit the card and the row would sit there looking tidy and refusing to scroll.
+              Six tiles (size 40 + 28 = 68) plus five 8px gaps come to 448px inside roughly 340px, so
+              ~108px hangs past the edge, and that peek is what says the row moves.
+              ⚠️ THE WRAPPER CARRIES IT, NOT ArrangementTile. That component is exported from
+              src/index.js and the admin studio renders it too; pushing one card's layout decision
+              into a shared component is how a shared component ends up owning its callers'
+              preferences. Inline styles cannot target children, so each tile gets a shrink-proof
+              wrapper here. */}
+          <div style={s.previewRow}>
             {RAINBOW_ARRANGEMENTS.map(a => (
-              <ArrangementTile key={a.key} item={a} on={current?.key === a.key}
-                tiers={design.tiers.length} tierIndex={card.tierIndex} size={40}
-                onPick={() => {
-                  const { scale, ...shape } = arrangementShape(a);
-                  set(shape);
-                }} />
+              <div key={a.key} style={{ flexShrink: 0 }}>
+                <ArrangementTile item={a} on={current?.key === a.key}
+                  tiers={design.tiers.length} tierIndex={card.tierIndex} size={40}
+                  onPick={() => {
+                    const { scale, ...shape } = arrangementShape(a);
+                    set(shape);
+                  }} />
+              </div>
             ))}
           </div>
         </div>
