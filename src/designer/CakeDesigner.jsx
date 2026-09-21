@@ -5871,6 +5871,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // one falls through to FinishHandles' 'side' default. Reporting a surface here would be
     // inventing a field, and a test that asserted on it would be asserting on this hook's fiction.
     window.__getDustSel = () => ({ tier: dustTier, idx: dustSel });
+    /* Grass and letter blocks, for the same reopen gate. `sel` is the discriminator the gate leans
+       on: it moves if and only if the grab sphere was actually hit, which is what separates "the tap
+       missed" from "the tap landed and something else stole the selection afterwards". */
+    window.__getGrassSel = () => grassSelected;
+    /* ⚠️ PATCHES ONLY, so `[]` means "no CLUMPS", never "no grass". Default grass is a lawn
+       covering the top (GRASS_DEFAULTS carries no `patches`), and a lawn has no position — which is
+       what check:movable already registers for it. A reader who takes `[]` as "grass is missing"
+       will chase the wrong bug, which is why this says so here rather than in the one test that
+       happens to use it. */
+    window.__getGrass = () => [
+      ...design.tiers.map((t, i) => ({ tier: i, patches: (t.grass?.patches ?? []).map(p => ({ u: p.u, v: p.v })) })),
+      { tier: 'board', patches: (design.boardGrass?.patches ?? []).map(p => ({ u: p.u, v: p.v })) },
+    ].filter(t => t.patches.length);
+    window.__getBlocksSel = () => blocksSelected;
+    window.__getBlocks = () => ({ zone: design.nameBlocks?.zone ?? null,
+      blocks: (design.nameBlocks?.blocks ?? []).map(b => ({ u: b.u, v: b.v })) });
     window.__getDust = () => design.tiers.map((t, i) => ({ tier: i, splashes: (t.dusting?.splashes ?? []).map(sp => ({ u: sp.u, v: sp.v })) })).filter(t => t.splashes.length);
     // Piping lives on the tiers, not in `stickers` — expose it so a test can assert what a piping
     // element actually put on the cake (and that Remove took it off), not just what the popup shows.
@@ -10917,11 +10933,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               grassMode={selectedEl?.type === 'grass'}
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}
-              onGrassSelect={(tier, idx) => setGrassSelected({ tier, idx })}
+              /* ⚠️ SELECTING A CLUMP MUST ALSO OPEN ITS CARD — the other half of the fix, and the
+                 half that is easy to miss when copying the mount condition alone. Setting the index
+                 is enough while the card is already open, and was the whole handler; with the
+                 handles now outliving the card, a tap would otherwise highlight a clump behind a
+                 card nobody had reopened. Paired exactly as foil and dust pair it. */
+              onGrassSelect={(tier, idx) => {
+                setGrassSelected({ tier, idx });
+                if (selectedEl?.type !== 'grass') {
+                  setElementsOpen(false);
+                  setToolsOpen(false);
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'grass' });
+                }
+              }}
               blocksMode={selectedEl?.type === 'blocks'}
               blocksSelected={blocksSelected}
               onBlockMove={handleBlockMove}
-              onBlockSelect={(tier, idx) => setBlocksSelected({ tier, idx })}
+              /* Same as grass above: the tap sets which block is selected AND reopens the card it
+                 belongs to, now that the handles survive the card being closed. */
+              onBlockSelect={(tier, idx) => {
+                setBlocksSelected({ tier, idx });
+                if (selectedEl?.type !== 'blocks') {
+                  setElementsOpen(false);
+                  setToolsOpen(false);
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'blocks' });
+                }
+              }}
               selectedTextId={selectedTextId}
               onTextSelect={handleTextSelect}
               onTextMove={(id, pos) => updateText(id, pos)}

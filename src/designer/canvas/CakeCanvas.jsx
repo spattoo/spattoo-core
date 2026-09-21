@@ -2519,8 +2519,15 @@ function CakeScene({
        * ⚠️ ORBIT IS DELIBERATELY NOT WIDENED. `overDust` below still excludes isFoilTap, so a drag
        * that begins on a shard with the card shut still rotates the cake. Owning the click and
        * suspending rotation are different questions, and only the first one is this bug. */
+      /* ⚠️ EVERY closed-card tap flag belongs here, and grass/blocks joined the moment their handles
+         started outliving their cards. Miss one and the symptom is not "the tap does nothing" — it
+         is the tap WORKING and the leaked r3f click then selecting the tier on top of it, which
+         looks identical from the DOM and is the half of the original foil bug that got misdiagnosed
+         first time round. */
       const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle
-        || h.object.userData.isDustTap || h.object.userData.isDustHandle);
+        || h.object.userData.isDustTap || h.object.userData.isDustHandle
+        || h.object.userData.isGrassTap || h.object.userData.isGrassHandle
+        || h.object.userData.isBlockTap || h.object.userData.isBlockHandle);
       // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
       gestureOnStickerRef.current = overSticker || overGrip || overFinish;
@@ -2578,9 +2585,19 @@ function CakeScene({
     window.__foilCatcherCount = catcherCount('Foil');
     window.__dustTapTargets = tapTargets('Dust');
     window.__dustCatcherCount = catcherCount('Dust');
+    /* Grass and letter blocks now outlive their cards too, so they get the same probe — which is the
+       thing the helper above promised: a word, not a copied function. The flags they were given
+       (isGrassTap/isGrassHandle/isGrassCatcher, isBlockTap/…) are spelled to match `is${Finish}…`
+       exactly so this stays true. */
+    window.__grassTapTargets = tapTargets('Grass');
+    window.__grassCatcherCount = catcherCount('Grass');
+    window.__blockTapTargets = tapTargets('Block');
+    window.__blockCatcherCount = catcherCount('Block');
     return () => {
       delete window.__foilTapTargets; delete window.__foilCatcherCount;
       delete window.__dustTapTargets; delete window.__dustCatcherCount;
+      delete window.__grassTapTargets; delete window.__grassCatcherCount;
+      delete window.__blockTapTargets; delete window.__blockCatcherCount;
     };
   }, [gl, camera, scene]);
 
@@ -2697,7 +2714,11 @@ function CakeScene({
       {/* …and are dragged by the very same handles as grass clumps: a point on a surface, grabbed
           across its whole body. `r` is half a block, so you grab the cube itself rather than hunting
           a dot; `lift` clears the block's height so the marker is never inside what it marks. */}
-      {blocksMode && nameBlocks?.blocks?.length > 0 && (
+      {/* ⚠️ Mounted whenever blocks are ON the cake, not only while the card is open — same fix and
+          same three parts as grass above. Blocks were the OTHER case named as the reason the phone
+          flyout had to stay: a run of letters had no hit target once its card closed, so it could be
+          added and then never edited or removed without going back through Decorations. */}
+      {nameBlocks?.blocks?.length > 0 && (
         <FinishHandles
           tierData={tierData}
           getPoints={t => (nameBlocks.zone === 'top' && t === tierData[tierData.length - 1]
@@ -2707,10 +2728,11 @@ function CakeScene({
           boardPoints={nameBlocks.zone === 'board'
             ? nameBlocks.blocks.map(b => ({ ...b, r: (nameBlocks.size ?? 0.3) * 0.6 }))
             : null}
-          selected={blocksSelected} onMove={onBlockMove} onSelect={onBlockSelect}
-          catcherFlag="isBlockCatcher" handleFlag="isBlockHandle"
+          selected={blocksMode ? blocksSelected : null} onMove={onBlockMove} onSelect={onBlockSelect}
+          catchers={blocksMode}
+          catcherFlag="isBlockCatcher" handleFlag={blocksMode ? 'isBlockHandle' : 'isBlockTap'}
           lift={(nameBlocks.size ?? 0.3) + 0.06}
-          color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker />
+          color="#ffffff" selColor="#1a1a1a" dotScale={1.5} showMarker={blocksMode} />
       )}
 
 
@@ -2718,18 +2740,33 @@ function CakeScene({
       {/* Grass CLUMPS are dragged with the same machinery as dust and foil — a placed mark on a
           surface, moved by its handle. showMarker is on because a clump the size of a thumbnail is
           easy to lose against a field of grass, and the dot is only present while the card is open. */}
-      {grassMode && <FinishHandles tierData={tierData}
+      {/* ⚠️ MOUNTED WHENEVER THE CAKE CARRIES GRASS, not only while its card is open — the foil and
+          dust fix, for the two cases that still had the bug. The comment above `stackShown` named
+          grass and letter blocks as the reason the phone's element flyout could not be dropped:
+          "their drag handles only exist inside their own mode, and their card is what opens that
+          mode. Take the stack away and a baker can add grass and then never edit or remove it."
+          That is now false for grass, which is what lets the flyout go.
+          ⚠️ THREE PARTS, ALL REQUIRED, exactly as dust and foil needed them: catchers gated off
+          while the card is shut (they wrap the whole cake and would swallow taps meant for anything
+          underneath), the handle flag swapped so orbit ignores a sphere that cannot drag anything,
+          and `isGrassTap` added to gesture ownership above or the leaked click selects the tier out
+          from under the selection the tap just made.
+          ⚠️ AND THE MARKER GOES WITH THE MODE. This dot is drawn (showMarker), and its own note says
+          it is "only present while the card is open" — a white dot left sitting on a closed design
+          reads as part of the cake and bakes into the order thumbnail. */}
+      {(grassMode || tierData.some(t => t.grass?.patches?.length) || boardGrass?.patches?.length > 0) && <FinishHandles tierData={tierData}
         getPoints={t => (t.grass?.patches?.length ? t.grass.patches.map(p => ({ ...p, surface: 'top_surface' })) : null)}
         board={board} boardPoints={boardGrass?.patches ?? null}
-        selected={grassSelected} onMove={onGrassMove} onSelect={onGrassSelect}
-        catcherFlag="isGrassCatcher" handleFlag="isGrassHandle"
+        selected={grassMode ? grassSelected : null} onMove={onGrassMove} onSelect={onGrassSelect}
+        catchers={grassMode}
+        catcherFlag="isGrassCatcher" handleFlag={grassMode ? 'isGrassHandle' : 'isGrassTap'}
         // Float the handles clear of the tallest grass on the cake, so a marker is never buried
         // inside the clump it marks. One number for both surfaces — a handle floating slightly high
         // over the shorter one is unnoticeable; a handle inside a mound is the whole bug.
         lift={grassHandleLift(tierData, boardGrass)}
         // White and near-black: both read against green. The usual selColor is a dark GREEN,
         // which would be the one colour invisible against the thing it marks.
-        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker />}
+        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker={grassMode} />}
 
       {/* Mounted whenever the cake carries dust, for the same reason foil is below — after Done a
           placed dusting had no hit target at all, so tapping a flick did nothing. Same three parts:
