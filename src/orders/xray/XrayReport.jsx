@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNarrow } from '../../shared/useNarrow.js';
 import { Z, Takeover } from '../../shared/Panel.jsx';
 import { dietTone, hasAllergen, dietaryLine, restrictions, findFlavourConflicts, conflictBenchLine } from '../dietary.js';
 import { buildXrayReport } from './report.js';
@@ -22,7 +23,7 @@ import { INK } from '../../shared/tokens.js';
    and colour) is exactly the drift panelTopBar was extracted to stop.
    ⚠️ The VISIBLE label goes; the ACCESSIBLE one does not. PanelDismiss keeps aria-label="Close",
    so a screen reader still hears the word that left the screen. */
-import { PanelDismiss } from '../../shared/panelTopBar.jsx';
+import { PanelBackArrow, PanelDismiss } from '../../shared/panelTopBar.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -44,7 +45,12 @@ const s = {
      15 / 12 / 14, so a section heading was SMALLER and lighter than the card inside it and the
      whole page read as one undifferentiated list. See XraySection.jsx. */
   pageTitle: { fontSize: 21, fontWeight: 800, color: '#2C2A26', margin: '0 0 14px', lineHeight: 1.2 },
-  actions: { display: 'flex', alignItems: 'center', gap: 8 },
+  /* ⚠️ `marginLeft: auto`, NOT the header's `space-between`. The header lost its title, so on
+     desktop `actions` is the ONLY child — and space-between puts a lone child at flex-START, which
+     silently left-aligned the whole action bar. Pushing from the element means the actions sit
+     right whether or not a back arrow precedes them, which is the difference between the two
+     layouts now: phone has [← back  …  Download ], desktop has [ … Download ✕ ]. */
+  actions: { display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' },
   dl: (busy) => ({ padding: '8px 16px', borderRadius: 10, border: 'none', background: busy ? '#C9C4BC' : '#2C2A26', fontSize: 13, fontWeight: 700, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }),
   err: { fontSize: 12, fontWeight: 700, color: '#C0392B', padding: '0 20px 10px' },
   body: { maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px', display: 'flex', flexDirection: 'column', gap: 28 },
@@ -68,6 +74,12 @@ export default function XrayReport({ order, apiClient, onClose }) {
   /* Section numbering. Declared in the component body so it is recreated on every render and each
      paint counts from 1 — a counter that outlived a render would climb forever. See makeSeq. */
   const seq = makeSeq();
+  /* ⚠️ 768, THE SAME NUMBER OrdersPanel USES — and through the same hook, which is the one
+     definition of "is this a phone" (check:narrow). X-Ray opens FROM order details, so on a phone
+     it is a step in a journey and is left with a back arrow; on desktop it is a dialog over a
+     visible page and is dismissed with ✕. That rule is panelTopBar.jsx's, and every docked panel
+     already follows it — this sheet was the one surface that did not. */
+  const isMobile = useNarrow(768);
   // One resolution, shared with the launcher and the PDF (resolveXraySpec.js) — the sheet in the
   // kitchen and the screen in the office must be built from the same design.
   const { design, fromPhoto, edited, stale, coverage, decorations: specSteps } = resolveXraySpec(order);
@@ -326,13 +338,17 @@ export default function XrayReport({ order, apiClient, onClose }) {
           inside its own pill. The title is not an action and does not belong in an action bar — it
           is the heading for the sheet, and it reads as one below. The bar keeps what you press. */}
       <div style={s.header}>
+        {/* Leading, and mobile only: the arrow goes back to the order this was opened from. On
+            desktop there is a ✕ at the far right instead — an arrow there would point backward in
+            a stack that does not exist, which is the mistake panelTopBar.jsx was written to fix. */}
+        {isMobile && <PanelBackArrow onClick={onClose} />}
         <div style={s.actions}>
           {/* Disabled while the nozzle data is still loading: a sheet printed a second early would say
               "No nozzle tagged yet" against every piping, and the baker would believe it. */}
           <button style={s.dl(pdfBusy || loading)} onClick={download} disabled={pdfBusy || loading}>
             {pdfBusy ? 'Making PDF…' : 'Download PDF'}
           </button>
-          <PanelDismiss onClick={onClose} />
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
       </div>
       {pdfErr && <div style={s.err}>{pdfErr}</div>}
