@@ -51,6 +51,12 @@
 export const MOBILE_PRIMARY = ['new', 'templates', 'elements', 'orders', 'dashboard'];
 
 /**
+ * How many slots the strip has, More included. Six is the ceiling argued above: full-bleed slots
+ * divide the width, and at seven the narrowest lands on the 44px floor this bar exists to escape.
+ */
+export const MOBILE_SLOTS = 6;
+
+/**
  * Divide the rail into the strip and the More sheet.
  *
  * Primary follows MOBILE_PRIMARY's order rather than railItems', because the strip's order is a
@@ -59,12 +65,28 @@ export const MOBILE_PRIMARY = ['new', 'templates', 'elements', 'orders', 'dashbo
  * hole — `.filter(Boolean)` is doing real work, not defensive padding.
  *
  * Every item lands in exactly one half: the invariant the Uploads bug broke.
+ *
+ * ⚠️ NO "More" WHEN THERE IS NOTHING WORTH HIDING. Sandeep, on a signed-in customer:
+ * "specially on mobile 'More' option is not needed. instead add the uploads button in place of more."
+ *
+ * He is right, and it is arithmetic rather than a customer special case. A customer's railItems are
+ * five — New, Templates, Decorations, Uploads, Share — so More existed to hold TWO items that fit on
+ * the bar beside the other three. A tap to reach something that had room to be visible is a tap
+ * spent on nothing.
+ *
+ * So: when everything fits in `slots`, everything goes in the strip and `secondary` comes back
+ * empty. The render site needs no change — it already draws More only when `secondary` is non-empty
+ * — and a baker's eleven items still overflow exactly as before. `strandedMenus` stays correct too:
+ * nothing can be stranded in a sheet that is not drawn.
+ *
+ * The absorbed items keep MOBILE_PRIMARY's order first, then the rail's own for the remainder, so
+ * the strip still reads START → DECORATE → RUN THE BAKERY rather than in capability order.
  */
-export function splitMobileNav(railItems = []) {
-  return {
-    primary:   MOBILE_PRIMARY.map(id => railItems.find(i => i.id === id)).filter(Boolean),
-    secondary: railItems.filter(i => !MOBILE_PRIMARY.includes(i.id)),
-  };
+export function splitMobileNav(railItems = [], { slots = MOBILE_SLOTS } = {}) {
+  const primary   = MOBILE_PRIMARY.map(id => railItems.find(i => i.id === id)).filter(Boolean);
+  const secondary = railItems.filter(i => !MOBILE_PRIMARY.includes(i.id));
+  if (railItems.length <= slots) return { primary: [...primary, ...secondary], secondary: [] };
+  return { primary, secondary };
 }
 
 /**

@@ -42,7 +42,39 @@ const overrides = status ? {
 // `?settings` seeds the store data SettingsPanel reads, so Store Settings opened from the real rail
 // shows real sections rather than an error — the frame beside the rail is what is being judged.
 const withSettings = new URLSearchParams(location.search).has('settings');
-const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides } : overrides, {
+/* `?caps=customer` answers /me with a CUSTOMER's capability set, so the rail renders the five items a
+   signed-in customer actually gets — New Cake, Templates, Decorations, Share (design:create) and
+   Uploads (element:manage) — instead of a baker's eleven.
+
+   ⚠️ WITHOUT THIS THERE IS NO WAY TO LOOK AT THE CUSTOMER'S RAIL. `capabilities` stays null when /me
+   is not stubbed and hasCap reads null as "everything allowed", so every item renders. That is the
+   right default for inspecting the full rail and exactly wrong for judging the customer's, where the
+   complaint is that five items spread down a blade sized for twelve. `?customer` does NOT do this —
+   it only sets orderMode, which gates nothing in the rail. */
+const CUSTOMER_CAPS = ['design:create', 'element:manage'];
+const capsOverride = new URLSearchParams(location.search).get('caps') === 'customer'
+  ? { fetchMe: async () => ({ id: 'u1', role: 'customer', capabilities: CUSTOMER_CAPS }) }
+  : {};
+
+/* ⚠️ TEMPLATES, because the START CHOOSER hands off to them and the Proxy below answers `null` for
+   every unstubbed method — so the flyout opened on "No templates yet" and the handoff could only
+   ever be judged against an empty grid. The shape follows dev/customiser.jsx's stub; `design` is a
+   real one-tier snapshot (dev/docked-panels.jsx's shape) so tapping a card exercises loadDesign()
+   rather than falling through the `if (templateDesign)` guard and silently doing nothing. */
+const TPL_DESIGN = (color) => ({
+  tiers: [{ shape: 'round', radius: 1.2, height: 2.1, color,
+            frostingType: 'buttercream', frostingStyle: 'smooth',
+            topPipings: [], bottomPipings: [], creamLayers: [] }],
+  stickers: [], texts: [], garnishes: [],
+});
+const TEMPLATES_STUB = [
+  { id: 't1', name: 'Rose & Pistachio',  tier_count: 1, thumbnail_url: '/sample-cake-1.png', attrs: { min_weight_kg: 1 },   design: TPL_DESIGN('#F6DCE2') },
+  { id: 't2', name: 'Cocoa Drip',        tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: { min_weight_kg: 1.5 }, design: TPL_DESIGN('#C9A227') },
+  { id: 't3', name: 'Buttercream Bloom', tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,                  design: TPL_DESIGN('#EDE7DA') },
+];
+const templatesOverride = { fetchTemplates: async () => TEMPLATES_STUB };
+
+const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides, ...capsOverride, ...templatesOverride } : { ...overrides, ...capsOverride, ...templatesOverride }, {
   // Unstubbed methods still answer null: the designer reads some as arrays, so an empty OBJECT crashes it.
   get: (target, k) => target[k] ?? (async () => null),
 });

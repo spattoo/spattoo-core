@@ -72,6 +72,17 @@ export default function Segmented({
         ...(scroll ? { overflowX: 'auto', scrollbarWidth: 'none' } : null),
         gap: 3, padding: 3, borderRadius: 12, flexShrink: 0,
         background: TRACK, border: `1.5px solid ${HAIR}`,
+        /* ⚠️ THE 44px TOUCH TARGET IS THE TRACK'S, NOT EACH TAB'S PLUS THE TRACK'S CHROME. It used
+           to sit on the buttons, so the control came out at 44 + 3px padding + 1.5px border top and
+           bottom = 53px — against 32px neighbours in the orders header, which read as swollen next
+           to everything beside it. Reported as "looks bulgy".
+           Carried here, the control IS 44 and each tab stretches to fill it, so the tap area is the
+           full height of the control minus its own 9px of chrome. Same guarantee for the thing a
+           finger actually aims at; 9px less box around it. */
+        /* ⚠️ border-box, OR THE PADDING AND BORDER GO ON TOP AGAIN. `minHeight` is content-box by
+           default, so 44 here meant 44 + 6 + 3 = 53 and the control came out exactly as tall as
+           before — the change measured as no change. Caught by measuring rather than by reading. */
+        ...(isMobile ? { minHeight: 44, boxSizing: 'border-box', alignItems: 'stretch' } : null),
       }}
     >
       {/* The one place a focus ring can live: :focus-visible has no inline-style equivalent, and
@@ -101,9 +112,16 @@ export default function Segmented({
               flexShrink: 0,
               /* ⚠️ MEASURE THE TAP TARGET, do not assume it. This said "44px on a phone" while
                  padding alone produced 33 — the label's line box is smaller than it looks and the
-                 arithmetic is easy to get wrong in your head. `minHeight` states the guarantee
-                 instead of hoping padding adds up to it. */
-              minHeight: isMobile ? 44 : undefined,
+                 arithmetic is easy to get wrong in your head.
+                 ⚠️ THE NUMBER CHANGED AND SAYING SO IS THE POINT. The guarantee lives on the TRACK
+                 now (see above), so on a phone the control is 44px and each tab stretches to 36 —
+                 44 minus the track's own 3px padding and 1.5px border, top and bottom. 36 is below
+                 the 44 of WCAG 2.5.5 (Enhanced) and well above the 24 of 2.5.8 (Minimum), which is
+                 the level that is actually required; and the target is 36 × ~60px, so the short
+                 side is the only one near a limit. The 8px bought back is what stopped this
+                 reading as swollen beside 32px neighbours. If a strip ever needs the full 44 on
+                 the tab itself, raise the track — do not put minHeight back here, or the two add
+                 up again. */
               display: 'flex', flexDirection: 'column', justifyContent: 'center',
               padding: isMobile ? '6px 10px' : '6px 12px',
               fontSize: 12, fontWeight: 800,

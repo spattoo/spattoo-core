@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useNarrow } from '../../shared/useNarrow.js';
 import { Z, Takeover } from '../../shared/Panel.jsx';
 import { dietTone, hasAllergen, dietaryLine, restrictions, findFlavourConflicts, conflictBenchLine } from '../dietary.js';
 import { buildXrayReport } from './report.js';
@@ -10,6 +11,7 @@ import { tinOptions } from './tinHelper.js';
 import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps from './XrayDecorationSteps.jsx';
+import { makeSeq, SectionHead, sectionWrap } from './XraySection.jsx';
 import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 import { INK } from '../../shared/tokens.js';
 /* ⚠️ THE SHARED DISMISS, not a second X. Sandeep: "lets change the 'Close' button to 'X' button."
@@ -21,7 +23,7 @@ import { INK } from '../../shared/tokens.js';
    and colour) is exactly the drift panelTopBar was extracted to stop.
    ⚠️ The VISIBLE label goes; the ACCESSIBLE one does not. PanelDismiss keeps aria-label="Close",
    so a screen reader still hears the word that left the screen. */
-import { PanelDismiss } from '../../shared/panelTopBar.jsx';
+import { PanelBackArrow, PanelDismiss } from '../../shared/panelTopBar.jsx';
 
 // Full-screen "X-Ray" report — how to make a placed order's cake: an annotated
 // cake diagram (leader lines projected onto each piping), tin sizes, the
@@ -39,7 +41,16 @@ const s = {
   overlay: { position: 'fixed', inset: 0, zIndex: Z.studio, background: '#FAFAF8', overflowY: 'auto', fontFamily: 'inherit' },
   header: { position: 'sticky', top: 0, zIndex: 2, background: '#fff', borderBottom: '1.5px solid #EFEAE3', padding: '14px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' },
   title: { fontSize: 15, fontWeight: 800, color: '#2C2A26' },
-  actions: { display: 'flex', alignItems: 'center', gap: 8 },
+  /* ⚠️ ONE CLEAR STEP PER LEVEL: page 21 → section 16 → card 14 → label 10. The sheet used to run
+     15 / 12 / 14, so a section heading was SMALLER and lighter than the card inside it and the
+     whole page read as one undifferentiated list. See XraySection.jsx. */
+  pageTitle: { fontSize: 21, fontWeight: 800, color: '#2C2A26', margin: '0 0 14px', lineHeight: 1.2 },
+  /* ⚠️ `marginLeft: auto`, NOT the header's `space-between`. The header lost its title, so on
+     desktop `actions` is the ONLY child — and space-between puts a lone child at flex-START, which
+     silently left-aligned the whole action bar. Pushing from the element means the actions sit
+     right whether or not a back arrow precedes them, which is the difference between the two
+     layouts now: phone has [← back  …  Download ], desktop has [ … Download ✕ ]. */
+  actions: { display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' },
   dl: (busy) => ({ padding: '8px 16px', borderRadius: 10, border: 'none', background: busy ? '#C9C4BC' : '#2C2A26', fontSize: 13, fontWeight: 700, color: '#fff', cursor: busy ? 'default' : 'pointer', fontFamily: 'inherit' }),
   err: { fontSize: 12, fontWeight: 700, color: '#C0392B', padding: '0 20px 10px' },
   body: { maxWidth: 860, margin: '0 auto', padding: '24px 20px 80px', display: 'flex', flexDirection: 'column', gap: 28 },
@@ -60,6 +71,15 @@ const s = {
 };
 
 export default function XrayReport({ order, apiClient, onClose }) {
+  /* Section numbering. Declared in the component body so it is recreated on every render and each
+     paint counts from 1 — a counter that outlived a render would climb forever. See makeSeq. */
+  const seq = makeSeq();
+  /* ⚠️ 768, THE SAME NUMBER OrdersPanel USES — and through the same hook, which is the one
+     definition of "is this a phone" (check:narrow). X-Ray opens FROM order details, so on a phone
+     it is a step in a journey and is left with a back arrow; on desktop it is a dialog over a
+     visible page and is dismissed with ✕. That rule is panelTopBar.jsx's, and every docked panel
+     already follows it — this sheet was the one surface that did not. */
+  const isMobile = useNarrow(768);
   // One resolution, shared with the launcher and the PDF (resolveXraySpec.js) — the sheet in the
   // kitchen and the screen in the office must be built from the same design.
   const { design, fromPhoto, edited, stale, coverage, decorations: specSteps } = resolveXraySpec(order);
@@ -313,20 +333,29 @@ export default function XrayReport({ order, apiClient, onClose }) {
        over the report. See Takeover. */
     <Takeover>
     <div style={s.overlay}>
+      {/* ⚠️ NO TITLE IN THE HEADER. "X-Ray — how to make this cake" sat beside Download PDF and ✕,
+          and at 390px there was not room for all three: the button's label wrapped onto two lines
+          inside its own pill. The title is not an action and does not belong in an action bar — it
+          is the heading for the sheet, and it reads as one below. The bar keeps what you press. */}
       <div style={s.header}>
-        <div style={s.title}>X-Ray — how to make this cake</div>
+        {/* Leading, and mobile only: the arrow goes back to the order this was opened from. On
+            desktop there is a ✕ at the far right instead — an arrow there would point backward in
+            a stack that does not exist, which is the mistake panelTopBar.jsx was written to fix. */}
+        {isMobile && <PanelBackArrow onClick={onClose} />}
         <div style={s.actions}>
           {/* Disabled while the nozzle data is still loading: a sheet printed a second early would say
               "No nozzle tagged yet" against every piping, and the baker would believe it. */}
           <button style={s.dl(pdfBusy || loading)} onClick={download} disabled={pdfBusy || loading}>
             {pdfBusy ? 'Making PDF…' : 'Download PDF'}
           </button>
-          <PanelDismiss onClick={onClose} />
+          {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
       </div>
       {pdfErr && <div style={s.err}>{pdfErr}</div>}
 
       <div style={s.body}>
+        <h2 style={s.pageTitle}>How to make this cake</h2>
+
         {/* First thing on the sheet, before the cake itself: this is the one item that
             changes what goes in the bowl rather than how it is decorated, and it is the
             one that cannot be corrected later. Imperative wording — it is the
@@ -457,14 +486,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
             none because it gets trusted. So the screen reads the list out and the
             paper carries the ticks. */}
         {report.checklist?.length > 0 && (
-          <div>
-            <div style={s.sub}>
-              <span style={s.dot('#2C2A26')} />
-              CHECKLIST — {report.checklistTotal} item{report.checklistTotal === 1 ? '' : 's'}
-              <span style={{ ...s.muted, fontWeight: 600, marginLeft: 6 }}>
-                (tick them off on the printed sheet)
-              </span>
-            </div>
+          <div style={sectionWrap('#2C2A26')}>
+            <SectionHead n={seq.next()} color="#2C2A26"
+              meta={<span style={{ ...s.muted, fontWeight: 600 }}>(tick them off on the printed sheet)</span>}>
+              Checklist — {report.checklistTotal} item{report.checklistTotal === 1 ? '' : 's'}
+            </SectionHead>
             <div style={s.card}>
               {report.checklist.map(group => (
                 <div key={group.title} style={group.kind === 'instruction' ? {
@@ -513,6 +539,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
           decorationMeta={decorationMeta}
           // Derived from the pieces' own paths — see GarnishGuides. Nothing is fetched for these.
           garnishes={report.garnishes ?? []}
+          seq={seq}
           /* ⚠️ THE DECORATIONS THE CATALOGUE DID NOT RECOGNISE, which are the ones a baker is most
              likely to need told. They are already NAMED higher up this report as gaps ("1 thing on
              the photo could not be identified") — this is the same list, now with a way to act on
@@ -528,7 +555,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {/* Edible prints — the pieces that are PRINTED rather than made. After the how-to sections
             because it is a different job done on a different machine, and usually the first thing
             started: the sheet has to be printed and dry before anything is assembled. */}
-        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} s={s} />
+        {/* No `onClose`: a print that has just been made opens Print & cut-outs ABOVE this sheet,
+            so this one stays put and the baker comes back to it. */}
+        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} seq={seq} s={s} />
 
         {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.
 
@@ -550,8 +579,11 @@ export default function XrayReport({ order, apiClient, onClose }) {
 
         {/* Tins */}
         {tinPlan.tiers.length > 0 && (
-          <div>
-            <div style={s.sub}><span style={s.dot('#1B5FA8')} /> Tins &amp; weight {tinPlan.totalKg && <span style={s.tag}>{tinPlan.totalKg} kg · {tinPlan.tiers.length} tier{tinPlan.tiers.length > 1 ? 's' : ''}</span>}</div>
+          <div style={sectionWrap('#1B5FA8')}>
+            <SectionHead n={seq.next()} color="#1B5FA8"
+              meta={tinPlan.totalKg ? <span style={s.tag}>{tinPlan.totalKg} kg · {tinPlan.tiers.length} tier{tinPlan.tiers.length > 1 ? 's' : ''}</span> : null}>
+              Tins &amp; weight
+            </SectionHead>
             {/* ⚠️ BEFORE the numbers, never after — INVARIANTS #11. A caveat printed under a table
                 is read once the reader has already believed it.
 
@@ -692,8 +724,10 @@ export default function XrayReport({ order, apiClient, onClose }) {
 
         {/* Cream colours */}
         {colors.length > 0 && (
-          <div>
-            <div style={s.sub}><span style={s.dot('#C2569B')} /> Cream colours <span style={s.tag}>{colors.length}</span></div>
+          <div style={sectionWrap('#C2569B')}>
+            <SectionHead n={seq.next()} color="#C2569B" meta={<span style={s.tag}>{colors.length}</span>}>
+              Cream colours
+            </SectionHead>
             <div style={s.card}>
               {colors.map((c, i) => {
                 const rec = c.recipe;
@@ -718,8 +752,10 @@ export default function XrayReport({ order, apiClient, onClose }) {
 
         {/* Piping & nozzles */}
         {(withNozzle.length > 0 || freehand.length > 0) && (
-          <div>
-            <div style={s.sub}><span style={s.dot('#1E7A35')} /> Piping &amp; nozzles <span style={s.tag}>{withNozzle.length + freehand.length}</span></div>
+          <div style={sectionWrap('#1E7A35')}>
+            <SectionHead n={seq.next()} color="#1E7A35" meta={<span style={s.tag}>{withNozzle.length + freehand.length}</span>}>
+              Piping &amp; nozzles
+            </SectionHead>
             <div style={s.card}>
               {loading && <div style={{ ...s.muted, paddingBottom: 8 }}>Loading nozzle suggestions…</div>}
 

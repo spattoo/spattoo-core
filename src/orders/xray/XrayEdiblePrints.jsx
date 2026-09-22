@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
+import { ediblePrintsChanged, openPrintSheet } from '../ediblePrintsBus.js';
 import { cropStyle } from './XrayDecorationSteps.jsx';
+import { SectionHead } from './XraySection.jsx';
 
 /* ── The edible prints on this cake, generated and sent to the print sheet ───────────────────────
  *
@@ -19,7 +21,7 @@ import { cropStyle } from './XrayDecorationSteps.jsx';
  * Identify is free but not instant, and a report that fires an AI read on open would do it for every
  * order whether anyone wanted prints or not. The same reason the build guides sit behind a button.
  */
-export default function XrayEdiblePrints({ orderId, apiClient, s }) {
+export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
   const [prints, setPrints] = useState(null);   // null = never asked
   const [ticked, setTicked] = useState({});     // index → bool
   const [busy, setBusy]   = useState(false);
@@ -56,7 +58,16 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
       const res = await apiClient.generateEdiblePrint(orderId, {
         sourceKey, bbox: p.bbox, prompt: p.prompt, label: p.label,
       });
-      if (res?.upload) setMade(m => ({ ...m, [p.index]: res.upload }));
+      if (res?.upload) {
+        setMade(m => ({ ...m, [p.index]: res.upload }));
+        /* ⚠️ TELL THE ORDER, NOT JUST THIS PANEL. The print is linked to the order server-side the
+           moment it is made, but "Print & cut-outs" in order details fetched its list once, on
+           mount, and X-Ray is a takeover ABOVE that still-mounted component — so closing X-Ray
+           does not remount it and the button stayed hidden. A baker who has just paid credits and
+           been told "it is in your uploads" then cannot find anywhere to open it, which reads as
+           the print never having been made. See ediblePrintsBus.js. */
+        ediblePrintsChanged();
+      }
     } catch (e) {
       setErr(e?.code === 'INSUFFICIENT_CREDITS'
         ? "You've used this month's credits — open Billing for options."
@@ -71,9 +82,9 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
   return (
     <div style={s.card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ ...s.sub, marginBottom: 0 }}>
-          <span style={s.dot('#1B5FA8')} /> Edible prints
-        </div>
+        <SectionHead n={seq.next()} color="#1B5FA8" style={{ marginBottom: 0 }}>
+          Edible prints
+        </SectionHead>
         {prints === null && (
           <button type="button" onClick={find} disabled={busy}
                   title="Free — it re-reads the reference photo this order already has."
@@ -132,8 +143,35 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
                   <div style={{ ...s.muted, color: '#B26B00' }}>{p.ipWarning}</div>
                 )}
                 {made[p.index] && (
-                  <div style={{ ...s.muted, color: '#2C4433' }}>
-                    Made — it is in your uploads as “{made[p.index].name}”.
+                  /* ⚠️ NAMES THE PLACE ON THIS ORDER FIRST. It used to say only "it is in your
+                     uploads", which sends a baker to a picker full of every image they have ever
+                     added — the API's own note calls that "not where they are standing". They
+                     pressed Make it from inside an order, so the answer they need is where it is
+                     on THAT order. Uploads is still mentioned second, because the print is theirs
+                     to reuse on the next cake and that is worth knowing once. */
+                  <div style={{ ...s.muted, color: '#2C4433', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+                    <span>Made, and saved in your uploads as “{made[p.index].name}”.</span>
+                    {/* ⚠️ A BUTTON, NOT AN INSTRUCTION. This first said "Close this sheet and open
+                        Print & cut-outs", which asks a baker to remember a name, dismiss what they
+                        are looking at, and go find it — for something they just paid credits for
+                        and cannot see. Closing X-Ray and opening the sheet is two things WE can do,
+                        so we do them. A real <button>: keyboard focus, Enter and Space, and a
+                        screen reader that says it is pressable (root CLAUDE.md rule 7). */}
+                    <button
+                      type="button"
+                      /* ⚠️ DOES NOT CLOSE X-RAY. The sheet stacks ABOVE it (Z.overStudio), so
+                         dismissing the sheet lands the baker back here — in the section they
+                         pressed this in — rather than two steps away in order details. X-Ray is a
+                         long worksheet and this is section 6 of it; closing it would throw away
+                         their place in exchange for nothing. */
+                      onClick={() => openPrintSheet()}
+                      style={{
+                        border: '1.5px solid #2C4433', background: '#fff', color: '#2C4433',
+                        borderRadius: 9, padding: '7px 13px', fontFamily: 'inherit',
+                        fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                      }}>
+                      Open Print &amp; cut-outs
+                    </button>
                   </div>
                 )}
               </span>

@@ -3,6 +3,8 @@ import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
+import { SectionHead, sectionWrap } from './XraySection.jsx';
+import { decorationLabel } from './decorationLabel.js';
 import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
@@ -31,7 +33,7 @@ import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
 export default function XrayDecorationSteps({
   design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
-  garnishes = [], unidentified = [], s,
+  garnishes = [], unidentified = [], seq, s,
 }) {
   const rows = fromPhoto
     ? [...photoRows(design, storedSteps, decorationMeta), ...unmatchedRows(unidentified, storedSteps)]
@@ -44,11 +46,13 @@ export default function XrayDecorationSteps({
           derived from the piece's own stored paths — it is not written by anything and cannot be
           about a different garnish — so putting it under "check it before you build" would tell a
           baker to doubt the one guide here that is exact. Honesty runs in both directions. */}
-      {!!garnishes.length && <GarnishGuides garnishes={garnishes} s={s} />}
+      {!!garnishes.length && <GarnishGuides garnishes={garnishes} seq={seq} s={s} />}
 
       {!!rows.length && (
-      <>
-      <div style={s.sub}><span style={s.dot('#6A5A8C')} /> Decorations — how to make them</div>
+      <div style={sectionWrap('#6A5A8C')}>
+      <SectionHead n={seq.next()} color="#6A5A8C" meta={<span style={s.tag}>{rows.length}</span>}>
+        Decorations
+      </SectionHead>
       {/* Said once for the whole section, as well as per row. The row badge marks an individual
           guide as unreviewed; this says the FEATURE is AI, which is what a baker deciding whether
           to trust the sheet actually needs to know. The same line is on the printed PDF, because
@@ -64,7 +68,7 @@ export default function XrayDecorationSteps({
           />
         ))}
       </div>
-      </>
+      </div>
       )}
     </div>
   );
@@ -75,10 +79,12 @@ export default function XrayDecorationSteps({
  * The strokes were saved in the order they were piped, so the guide is a reading of the piece rather
  * than a description of it. Nothing is fetched, nothing is generated, and there is no "generate"
  * button because there is nothing to wait for. */
-function GarnishGuides({ garnishes, s }) {
+function GarnishGuides({ garnishes, seq, s }) {
   return (
-    <div style={{ marginBottom: 14 }}>
-      <div style={s.sub}><span style={s.dot('#4A2C1B')} /> Chocolate garnishes — how to pipe them</div>
+    <div style={{ marginBottom: 14, ...sectionWrap('#4A2C1B') }}>
+      <SectionHead n={seq.next()} color="#4A2C1B" meta={<span style={s.tag}>{garnishes.length}</span>}>
+        Chocolate garnishes
+      </SectionHead>
       <div style={{ ...s.muted, marginTop: -4, marginBottom: 8 }}>
         Taken from the drawing itself — the numbers are the order it was piped in.
       </div>
@@ -102,24 +108,15 @@ function GarnishGuides({ garnishes, s }) {
 
 // ── Row builders ────────────────────────────────────────────────────────────────────────────────
 
-const ZONE_WORDS = {
-  top_surface: 'top surface', side: 'side', rim: 'rim', base: 'base', board: 'board',
-};
-
-// A photo decoration, described the way the model reported it. `seen` is written by the backend
-// mapper alongside the match precisely so this never has to trust the match.
-function describe(sticker) {
-  const seen = sticker?.seen ?? {};
-  const what  = seen.what || sticker?.name || 'decoration';
-  const where = ZONE_WORDS[seen.placement] || ZONE_WORDS[sticker?.zone] || null;
-  return where ? `${what} on the ${where}` : what;
-}
+// A photo decoration, described the way the model reported it. Shared with the CHECKLIST — see
+// decorationLabel.js for why one function: the two surfaces called the same decoration different
+// things, and the checklist was the one that was wrong.
 
 function photoRows(design, storedSteps, meta) {
   const out = [];
   for (const d of [...(design?.stickers ?? []), ...(design?.decorations ?? [])]) {
     if (!d?.id) continue;                       // no stable key → nothing to store steps under
-    const label = describe(d);
+    const label = decorationLabel(d);
     out.push({
       key:     d.id,
       title:   label,

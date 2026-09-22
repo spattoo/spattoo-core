@@ -103,23 +103,29 @@ const stepsFor = (mode) => (mode === 'customer'
       { target: 'quote',    title: 'Turn it into an order',  body: 'Happy with it? Save it against a customer and it lands in your orders.' },
     ]);
 
-const seenCookie = () => {
-  try { return document.cookie.split('; ').some(c => c.startsWith(`${SEEN_KEY}=`)); } catch { return true; }
+/* ⚠️ EXPORTED, AND KEYED, because a second first-visit surface now exists. The customer's start
+   chooser (CakeDesigner) has its own flag and must not reimplement any of the above: the parent
+   domain derivation, the public-suffix refusal and the try/catch around a cookie jar that can throw
+   are the whole reason this is not two lines. One implementation, one key per surface.
+
+   Defaulting to SEEN_KEY keeps every existing call unchanged. */
+export const seenCookie = (key = SEEN_KEY) => {
+  try { return document.cookie.split('; ').some(c => c.startsWith(`${key}=`)); } catch { return true; }
 };
 
 // A year, and SameSite=Lax: this is read on a top-level page load and never cross-site, so Lax is
 // the tightest setting that still works. Secure only on https — set unconditionally it would be
 // dropped on http://localhost and the tour would repeat forever in local dev.
-const markSeenCookie = () => {
+export const markSeenCookie = (key = SEEN_KEY) => {
   try {
     const secure = window.location.protocol === 'https:' ? '; secure' : '';
-    const base = `${SEEN_KEY}=${Date.now()}; path=/; max-age=31536000; samesite=lax${secure}`;
+    const base = `${key}=${Date.now()}; path=/; max-age=31536000; samesite=lax${secure}`;
     document.cookie = base + cookieDomain(window.location.hostname);
     // Verify it stuck, and fall back to host-only if it did not. A browser SILENTLY REFUSES a cookie
     // whose Domain is a public suffix — `spattoo-app-dev.vercel.app` derives `.vercel.app`, which is
     // exactly that — and a refusal is indistinguishable from success at the point of writing. Left
     // alone, the tour would repeat on every load of a preview deployment with nothing to explain it.
-    if (!seenCookie()) document.cookie = base;
+    if (!seenCookie(key)) document.cookie = base;
   } catch { /* ignore */ }
 };
 

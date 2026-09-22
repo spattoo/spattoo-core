@@ -61,3 +61,33 @@ describe('the phone side-strip captions', () => {
     }
   });
 });
+
+// ── How X-Ray is LEFT ───────────────────────────────────────────────────────────────────────────
+//
+// panelTopBar.jsx states the rule for every docked surface: "mobile keeps the arrow; desktop gets a
+// ✕ at the far right". Every panel — Orders, Customers, Settings, Dashboard, Billing — follows it.
+// X-Ray did not: it showed ✕ on a phone, so a baker who had stepped INTO it from order details was
+// offered a dismiss where every other screen in the same journey offered a way back.
+//
+// Asserted as source because the alternative is mounting the whole report with an order, a design,
+// a client and a portal to prove which of two icons rendered.
+describe('X-Ray leaves the way every other surface does', () => {
+  const src = readFileSync(new URL('./xray/XrayReport.jsx', import.meta.url), 'utf8');
+
+  it('uses the shared narrow hook, not its own breakpoint', () => {
+    // check:narrow enforces one definition of "is this a phone"; this pins the number too, because
+    // a sheet opened from OrdersPanel must switch at the same width OrdersPanel does.
+    expect(src).toMatch(/useNarrow\(768\)/);
+  });
+
+  it('shows a back arrow on a phone and a dismiss on desktop', () => {
+    expect(src).toMatch(/\{isMobile && <PanelBackArrow/);
+    expect(src).toMatch(/\{!isMobile && <PanelDismiss/);
+  });
+
+  it('keeps the actions right-aligned now the header has no title', () => {
+    // ⚠️ The header is `space-between`, and a LONE child under space-between sits at flex-start —
+    // so removing the title silently left-aligned the whole action bar on desktop.
+    expect(src).toMatch(/actions: \{[^}]*marginLeft: 'auto'/);
+  });
+});

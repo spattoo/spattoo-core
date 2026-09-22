@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
+import { PhotoAddTile } from '../shared/PhotoAddTile.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 import { ACCEPT_IMAGE, validateImageFile, compressImage } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
@@ -231,12 +232,9 @@ function ReferenceUploader({ apiClient, keys, setKeys, maxImageBytes, isMobile, 
           </div>
         ))}
         {canAdd && (
-          <label style={{ width: 72, height: 72, borderRadius: 12, border: `1.5px dashed ${primaryColor}`, background: hexToRgba(primaryColor, 0.05), display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 3, cursor: 'pointer', color: primaryColor, fontSize: 11, fontWeight: 700 }}>
-            <span style={{ fontSize: 22, lineHeight: 1 }}>+</span>
-            {busy ? 'Adding…' : 'Add'}
-            <input type="file" accept={ACCEPT_IMAGE} multiple style={{ display: 'none' }}
-              onChange={e => { addFiles(e.target.files); e.target.value = ''; }} />
-          </label>
+          /* The shape this control has always had here — now shared, so the storefront and My
+             Decorations wear it too instead of each inventing a bar. See shared/PhotoAddTile.jsx. */
+          <PhotoAddTile color={primaryColor} busy={busy} accept={ACCEPT_IMAGE} onFiles={addFiles} />
         )}
       </div>
       {error && <span style={{ fontSize: 11, color: DANGER, fontWeight: 600 }}>{error}</span>}

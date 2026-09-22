@@ -23,7 +23,7 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import { Slider } from '../shared/Slider.jsx';
-import { CHROME_STOPS } from '../shared/chrome.js';
+import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
@@ -56,6 +56,39 @@ const BOARD_TOP_Y = 0.1;
 // the measured tools gap below the divider — one number, because the two groups sit in one column
 // and any disagreement shows up as the bottom pair being crammed together on a short window.
 const RAIL_MIN_GAP = 2;
+/* The rail's PITCH, fixed rather than spread. space-evenly was tuned when the rail always held a
+   baker's items; a signed-in CUSTOMER passes only five (design:create + element:manage), and the same
+   rule spread those five down a blade sized for twelve — measured at 119px between items against the
+   baker's 65px. Sandeep: "so much gap between them and they dont look good."
+   20 is what space-evenly already resolved to for a baker on a 900px window, so the baker's rail is
+   unchanged at that height and only the sparse case tightens. */
+/* ── What greets a customer on their first visit ─────────────────────────────────────────────────
+ * Two surfaces want that moment: the start chooser (template vs scratch) and DesignTour. They must
+ * not both fire, and which one does is a rule worth testing rather than a condition buried in JSX —
+ * vitest runs environment:'node' here, so a rule living in React state is a rule nothing can check.
+ *
+ * ⚠️ PICKING A TEMPLATE MEANS NO TOUR, EVER. Sandeep: "they dont need to get tour if they choose
+ * template." The tour's first step is "Start with the cake" — advice for somebody facing a blank
+ * one. A customer who took a template already HAS a cake, so the step is wrong for them, and an
+ * uninvited tour on a later visit is the thing this chooser was added to trim.
+ */
+export const START_CHOICE_KEY = 'spattoo.start.customer.v1';
+
+/** Does the chooser appear? Customers only, once, and never in place of a design already loaded. */
+export function showStartChoice({ isCustomer, alreadyChosen }) {
+  return isCustomer === true && alreadyChosen !== true;
+}
+
+/** May the tour run uninvited? Never once the chooser has taken the decision to templates. */
+export function tourMayRun({ isCustomer, tourSeen, choseScratch }) {
+  if (isCustomer) return choseScratch === true;
+  return tourSeen === false;
+}
+
+const RAIL_NAV_GAP = 20;
+/* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
+   numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
+const PLAIN_RAIL_W = 52;
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -109,7 +142,7 @@ import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { PrivacyDataSection } from '../settings/PrivacyDataPanel.jsx';
 import PastDueBanner, { PAST_DUE_BAR_H } from '../billing/PastDueBanner.jsx';
-import DesignTour from './tour/DesignTour.jsx';
+import DesignTour, { seenCookie, markSeenCookie } from './tour/DesignTour.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -2557,6 +2590,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [lapsedPrivacyOpen, setLapsedPrivacyOpen] = useState(false);
   // Bumped by the "Take a tour" rail item. A counter, not a flag: "asked again" is the event, and a
   // boolean cannot say it twice without the caller resetting it.
+  /* The start chooser. `null` until an effect decides — reading a cookie in a useState initialiser
+     is SSR-unsafe, which is the same trap DesignTour names and useNarrow.js was written for. */
+  const [startChoiceOpen, setStartChoiceOpen] = useState(false);
+  // Held for the fade: Panel returns null the moment `open` is false, so the exit is the caller's.
+  const [startChoiceLeaving, setStartChoiceLeaving] = useState(false);
+  const [choseScratch, setChoseScratch] = useState(false);
+
   const [tourNonce, setTourNonce] = useState(0);
   // Has THIS PERSON seen it — from /me, so it survives a new device. Customers are not identified
   // when the tour runs (DesignFacet opens the designer before any OTP), so theirs is a cookie
@@ -2566,6 +2606,35 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // at `false` means "never seen" for the ~200ms before /me returns, and DesignTour's start timer is
   // 400ms — so a baker who HAS seen it would be shown it again on every single load, in the gap.
   const [tourSeen, setTourSeen] = useState(null);
+
+  /* Decided in an effect, never in a useState initialiser: document.cookie is not available under
+     renderToStaticMarkup, which is how every component here is tested. */
+  useEffect(() => {
+    if (!showStartChoice({ isCustomer: orderMode === 'customer', alreadyChosen: seenCookie(START_CHOICE_KEY) })) return;
+    setStartChoiceOpen(true);
+    // Warm the list while the chooser is on screen, so tapping through lands on thumbnails rather
+    // than on a CakeSpinner. openTemplates() fetches on open; without this the handoff shows a gap.
+    prefetchTemplates();
+    // ⚠️ orderMode ALONE, and the disable is deliberate rather than a shrug. The cookie is read once,
+    // at mount: re-running on prefetchTemplates' identity would re-open a chooser the customer has
+    // already dismissed, because `startChoiceOpen` going false is not what closed the decision — the
+    // cookie is. This is the opposite failure to the memo at ~3200, where a missing dep meant a value
+    // arriving late never took effect; here an extra dep would make a settled decision un-settle.
+  }, [orderMode]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Panel has an entrance (spattooPanelIn) and NO exit — `open: false` returns null immediately. So
+     the leaving state is held here for one transition, then unmounted, and whatever comes next is
+     started in the same beat rather than after it. */
+  const startChoiceTimer = useRef(null);
+  useEffect(() => () => clearTimeout(startChoiceTimer.current), []);
+  function leaveStartChoice(then) {
+    setStartChoiceLeaving(true);
+    then?.();
+    // Held in a ref and cleared on unmount: a 200ms timer that outlives the designer would set
+    // state on a dead component, which surfaces as a console warning nobody traces back to here.
+    startChoiceTimer.current = setTimeout(
+      () => { setStartChoiceOpen(false); setStartChoiceLeaving(false); }, 200);
+  }
   // Separate from Billing on purpose: someone topping up wants credits, not a plan conversation.
   const [buyCreditsOpen,      setBuyCreditsOpen]      = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
@@ -2584,6 +2653,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
   // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
   // one of the two places that read it.
+  /* ── A CUSTOMER GETS A PLAIN BAR, NOT THE SPATULA ────────────────────────────────────────────
+   * Sandeep, on a signed-in customer's storefront: "this looks ugly. lets have a normal rectangular
+   * menu bar pls".
+   *
+   * The spatula is the BAKER APP's furniture. A customer is inside a bakery's own storefront, in
+   * that bakery's brand, and the silhouette reads as ours rather than theirs. It also cannot carry
+   * five items: Chef's Desk and Settings are capability-gated away, so the blade has no lower group
+   * and sits empty however the nav above it is spaced — which is why 0.1.588's pitch fix improved
+   * the rhythm and still left one long hole.
+   *
+   * ⚠️ orderMode, NOT role. `role` arrives from /me and is null until it resolves, so the rail would
+   * paint as a spatula and then become a bar on every load. orderMode is a prop, known at first
+   * paint, and is already the switch for the customer-facing primary action ("Request a Quote").
+   */
+  const plainRail = orderMode === 'customer';
+
   const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
     || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
 
@@ -3043,7 +3128,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     { id: 'orders',     label: 'Orders',      icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
     { id: 'customers',  label: 'Customers',   icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
     ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
-    { id: 'share',      label: 'Share',       icon: <ShareIcon size={20} />,     requires: 'design:create' },
+    /* ⚠️ NOT FOR A CUSTOMER. Sandeep: "for customer login - 'share' option is not needed."
+       Sharing a design is a BAKER's move — handing a cake to someone else to look at. A customer
+       already has the thing they came to do on screen as a full-width button ("Request a Quote"), and
+       Share sat beside it sounding like a similar job while meaning a different one.
+
+       ⚠️ orderMode, NOT `role`, for the same reason the plain rail uses it: `role` comes from /me and
+       is null until it resolves, so Share would render and then vanish on every customer load.
+       orderMode is a prop and is right at first paint. It is already a dependency of this memo.
+
+       Leaves a customer FOUR items, which still fits the phone strip's six slots, so More stays
+       absent there — see splitMobileNav. */
+    ...(orderMode === 'customer'
+      ? []
+      : [{ id: 'share', label: 'Share', icon: <ShareIcon size={20} />, requires: 'design:create' }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
     // ── "Take a tour" is not a rail item ──────────────────────────────────────────────────────
@@ -4351,31 +4449,56 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
   }
 
+  /* Fetch without opening. The chooser calls this so the flyout it hands off to is already
+     populated — openTemplates() fetches on open, which would put a spinner in the middle of the
+     one transition that is supposed to feel like a single movement. */
+  /* ── ONE fetch, whichever host is present ───────────────────────────────────────────────────
+   * Extracted because a SECOND caller appeared (the start chooser warms the list before handing
+   * off). The first version of that prefetch bailed on `!apiClient`, which left a supabase-only
+   * host with no warm-up and put back the CakeSpinner the prefetch exists to remove — then the
+   * "fix" for it called a helper I had invented rather than extracted, which the build could not
+   * catch because an unresolved name inside an async branch only throws once reached. */
+  async function loadTemplates() {
+    if (apiClient) {
+      const data = await apiClient.fetchTemplates().catch(() => []);
+      return data ?? [];
+    }
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('cake_templates')
+      .select('id, name, offering, tier_count, thumbnail_url, created_at, template_tags(tags(slug)), cake_template_attrs(min_weight_kg, min_age, max_age)')
+      .eq('is_active', true)
+      .order('sort_order')
+      .order('created_at', { ascending: false });
+    if (error) return [];
+    return (data ?? []).map(({ template_tags, cake_template_attrs, ...t }) => {
+      const rawAttrs = cake_template_attrs;
+      return {
+        ...t,
+        tag_slugs: (template_tags ?? []).map(r => r.tags?.slug).filter(Boolean),
+        attrs: Array.isArray(rawAttrs) ? (rawAttrs[0] ?? null) : (rawAttrs ?? null),
+      };
+    });
+  }
+
+  /* Fetch without opening, so the flyout the chooser hands off to is already populated. */
+  async function prefetchTemplates() {
+    if (templates.length || (!apiClient && !supabase)) return;
+    setTemplatesLoading(true);
+    setTemplates(await loadTemplates());
+    setTemplatesLoading(false);
+  }
+
   async function openTemplates() {
     const isOpening = !templatesOpen;
     setTemplatesOpen(isOpening);
     setElementsOpen(false);
     if (!isOpening) return;
+    // Already warm (the start chooser prefetched) — opening must not flash a spinner over a list
+    // that is sitting right there.
+    if (templates.length) return;
     setTemplatesLoading(true);
-    if (apiClient) {
-      const data = await apiClient.fetchTemplates().catch(() => []);
-      setTemplates(data ?? []);
-    } else {
-      const { data, error } = await supabase
-        .from('cake_templates')
-        .select('id, name, offering, tier_count, thumbnail_url, created_at, template_tags(tags(slug)), cake_template_attrs(min_weight_kg, min_age, max_age)')
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('created_at', { ascending: false });
-      setTemplates(error ? [] : (data ?? []).map(({ template_tags, cake_template_attrs, ...t }) => {
-        const rawAttrs = cake_template_attrs;
-        return {
-          ...t,
-          tag_slugs: (template_tags ?? []).map(r => r.tags?.slug).filter(Boolean),
-          attrs: Array.isArray(rawAttrs) ? (rawAttrs[0] ?? null) : (rawAttrs ?? null),
-        };
-      }));
-    }
+    setTemplates(await loadTemplates());
     setTemplatesLoading(false);
   }
   openTemplatesRef.current = openTemplates;   // for openNotificationLink — see the ref's note
@@ -4406,6 +4529,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return st?.color ?? '#ffffff';
     }
     if (selectedEl.type === 'scatter') return design.stickers.find(s => s.elementId === selectedEl.elementId)?.color ?? '#ffffff';
+    /* ⚠️ ONE STICKER READS ITS OWN COLOUR. This fell through to the `#f5b8c8` default below, so the
+       wheel opened on a pink nobody had chosen — harmless while no sticker could be recoloured at
+       all, and wrong the moment one could. Groups first, then the instance's own colour, matching
+       what handleColorChange writes back for the same selection. */
+    if (selectedEl.type === 'sticker') {
+      const st = design.stickers.find(s => s.id === selectedEl.id);
+      if (hasActiveGroup) return st?.groupColors?.[activeGroupKey] ?? activeGroupDefault ?? st?.color ?? '#ffffff';
+      return st?.color ?? '#ffffff';
+    }
     // Single-per-slot topper (decorEl card): read the recompose group colour off any instance.
     if (selectedEl.type === 'decorEl') {
       const st = design.stickers.find(s => s.elementId === selectedEl.elementId);
@@ -7928,6 +8060,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
             ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
             : []);
+      /* ── Whole-element colour, for anything the catalogue marks recolourable ──────────────────
+       *
+       * ⚠️ THIS LIVES IN THE SHARED sticker|decorEl BLOCK, AND IT USED TO BE decorEl ONLY. A single
+       * sticker with `allowed_actions.color: true` therefore had no way to be recoloured at all —
+       * the control did not exist on that path. Measured against the catalogue: 59 elements are
+       * marked colour-changeable with no part groups, 5 of them single_per_slot (which got the
+       * swatch) and **54 plain stickers that got nothing**. Reported on a fondant heart: the box is
+       * ticked in admin, the designer offers no way to use it.
+       *
+       * ⚠️ ONLY WHEN THERE ARE NO PART GROUPS. A segmented GLB's colours ARE its groups — offering a
+       * whole-model tint beside them would be two controls fighting over the same mesh, and the
+       * per-part one is the better answer wherever it exists. Nothing in the catalogue has both
+       * today (checked: zero), so this orders them rather than taking anything away.
+       *
+       * The wheel already understands both selections: handleColorChange writes `color` for a
+       * sticker and for every instance of a decorEl, and wheelColorOf reads each back. */
+      const colourElId = el.type === 'sticker' ? inst?.elementId : el.elementId;
+      if (!editGroups.length && elementById.get(colourElId)?.allowed_actions?.color === true) {
+        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
+          <button key="col"
+            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
+                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
+            onClick={() => {
+              const opening = !colorOpen;
+              closeAllPopups();
+              /* ⚠️ A STICKER KEEPS ITS OWN SELECTION. Re-selecting as decorEl here would recolour
+                 EVERY instance of that element on the cake, not the one the baker is looking at —
+                 which is right for a multi-slot card and wrong for one sticker among several. */
+              if (el.type !== 'sticker') setSelectedEl({ type: 'decorEl', elementId: colourElId });
+              if (opening) setColorOpen(true);
+            }}>
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
+                          background: inst?.color ?? '#ffffff' }} />
+          </button>,
+        ] });
+      }
+
       if (editGroups.length) {
         groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
           <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
@@ -7977,22 +8146,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        *
        * The wheel already understands a decorEl selection — wheelColorOf and handleColorChange both
        * have a branch for it — so this is the button that was missing, not a new colour path. */
-      if (elementById.get(elId)?.allowed_actions?.color === true) {
-        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
-          <button key="col"
-            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
-                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-            onClick={() => {
-              const opening = !colorOpen;
-              closeAllPopups();
-              setSelectedEl({ type: 'decorEl', elementId: elId });
-              if (opening) setColorOpen(true);
-            }}>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
-                          background: design.stickers.find(st => st.elementId === elId)?.color ?? '#ffffff' }} />
-          </button>,
-        ] });
-      }
       groups.push({ key: 'actions', divider: false, footer: true, controls: [
         <button key="del" style={s.deleteBtn}
           onClick={() => { design.stickers.filter(s => s.elementId === elId).forEach(s => removeSticker(s.id)); clearAllSelections(); }}>
@@ -10173,12 +10326,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           of the mode branching instead of being buried in a tour component.
 
           Renders null the rest of the time (seen, or not a customer), so it costs nothing. */}
+      {/* ── The first move, for a CUSTOMER only ──────────────────────────────────────────────────
+          They arrived by tapping "let me build it myself in 3D" and landed on a blank cake. That is
+          the problem DesignTour's own header describes — "not short of intent, short of a first
+          move" — and for many people a template they can tweak is a better first move than being
+          walked through building one.
+
+          ⚠️ It hands off to the EXISTING templates flyout rather than showing a gallery of its own.
+          That flyout carries search, tag/weight/age filters, the grid and hover previews; a second
+          copy inside a modal would drift from it the moment either changed. Sandeep: "are you saying
+          we will duplicate all that inside popup" — no. */}
+      {startChoiceOpen && (
+        <Panel
+          open={!startChoiceLeaving}
+          isMobile={isMobile}
+          title="How would you like to start?"
+          width={420}
+          showClose={false}
+          onClose={undefined}
+        >
+          <div style={{ display: 'grid', gap: 10 }}>
+            <button type="button" style={s.startChoiceTile}
+              onClick={() => { markSeenCookie(START_CHOICE_KEY); leaveStartChoice(() => openTemplates()); }}>
+              <span style={s.startChoiceTitle}>Start from a cake we make</span>
+              <span style={s.startChoiceBody}>Pick one you like and change what you want — colour, size, decorations.</span>
+            </button>
+            <button type="button" style={s.startChoiceTile}
+              onClick={() => { markSeenCookie(START_CHOICE_KEY); setChoseScratch(true); leaveStartChoice(); }}>
+              <span style={s.startChoiceTitle}>Start from scratch</span>
+              <span style={s.startChoiceBody}>Build it yourself, from a plain cake.</span>
+            </button>
+          </div>
+        </Panel>
+      )}
+
       <DesignTour
         mode={orderMode === 'customer' ? 'customer' : 'baker'}
-        // A customer always (their cookie decides inside); a baker only if they have never seen it.
-        // Bakers DO get it uninvited on a genuine first run — what they must not get is it again on
-        // a second laptop, which is the whole reason the flag moved to a column.
-        autoStart={orderMode === 'customer' || tourSeen === false}
+        // A customer only AFTER choosing "start from scratch" in the chooser above; a baker only if
+        // they have never seen it. Bakers DO get it uninvited on a genuine first run — what they
+        // must not get is it again on a second laptop, which is why their flag is a column.
+        // ⚠️ A customer only once they have CHOSEN to start from scratch — see tourMayRun. Picking a
+        // template means no tour at all: its first step is "Start with the cake", and they have one.
+        autoStart={tourMayRun({ isCustomer: orderMode === 'customer', tourSeen, choseScratch })}
         startNonce={tourNonce}
         // Fire-and-forget: the tour is already on screen, so a failed write must do nothing visible.
         // Worst case it is offered once more elsewhere — exactly the old localStorage behaviour.
@@ -10191,6 +10380,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes spattooFlyoutIn { from { opacity: 0; transform: translateX(-8px) } to { opacity: 1; transform: none } }
         .spattoo-rail-nav::-webkit-scrollbar { display: none; }
         .spattoo-noscrollbar::-webkit-scrollbar { display: none; }
         /* A :hover cannot be expressed inline, and inline styles win — hence !important. */
@@ -10316,15 +10506,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {!isMobile && <div style={dockedPageOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
-        <div style={s.sidebar}>
-          <SpatulaFrame lifted={dockedPageOpen} />
-          <div style={s.sidebarInner}>
+        <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
+          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
+          <div style={plainRail ? { ...s.sidebarInner, ...s.sidebarInnerPlain } : s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
-            {railItems.map(({ id, label, icon, menu }) => {
+            {railItems.map(({ id, label, short, icon, menu }) => {
               const active = railItemActive(id, menu);
               const isNew  = id === 'new';
               const button = (
-                <button key={id} style={s.navItem} data-tour={id}
+                <button key={id} style={plainRail ? { ...s.navItem, ...s.navItemPlain } : s.navItem} data-tour={id}
                   onClick={() => openRailItem(id, menu)}>
                   <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
                     {isNew
@@ -10333,7 +10523,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </svg>
                       : icon}
                   </span>
-                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>{label}</span>
+                  {/* ⚠️ THE SHORT LABEL ON A THIN BAR. Measured at the rail's own 9px/700/0.2:
+                      "Decorations" is 54.2px against a 48px navItem, so it ran past both edges of the
+                      52px customer bar — visible in a screenshot, invisible to the width assertion,
+                      which reported 52 and was perfectly true. New Cake (44.1) and Templates (45.7)
+                      fit; Uploads is 36.9. Decorations is the only offender a CUSTOMER can see
+                      (Dashboard 48.8 and Customers 48.8 are baker-only, on the 64px spatula).
+                      `short` already exists for exactly this — the phone strip added it, and the note
+                      there says a shorter honest label beats a truncated one. Reused, not reinvented. */}
+                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>
+                    {plainRail ? (short ?? label) : label}
+                  </span>
                 </button>
               );
               if (!menu) return button;
@@ -10443,7 +10643,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Elements flyout ── */}
         {elementsOpen && (
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
+          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + PLAIN_RAIL_W : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : {}) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -10732,7 +10932,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            *
            * Overridden here rather than in s.flyout because Elements shares that style and does not
            * want the width. */
-          <div style={{ ...s.flyout, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
+          <div style={{ ...s.flyout, left: plainRail ? RAIL.padLeft + PLAIN_RAIL_W : RAIL_FLYOUT_LEFT, ...(isMobile ? { ...s.flyoutMobile, ...(mobilePanelHeight ? { height: mobilePanelHeight } : {}) } : { width: 560 }) }}>
             {isMobile && (
               <div style={s.panelHandle} onPointerDown={handlePanelDrag}>
                 <div style={s.panelHandlePill} />
@@ -13438,6 +13638,46 @@ const s = {
     padding: '48px 0 30px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
+  /* ── The plain bar a CUSTOMER gets ──────────────────────────────────────────────────────────
+   * Same 64px column, same items, same pitch — only the silhouette goes. The surface is
+   * chromeGradient() rather than a hand-picked near-black, because "match the spatula" is the
+   * requirement and shared/chrome.js is where that colour lives; its own header says an
+   * approximation would be wrong by definition.
+   *
+   * Rounded on the RIGHT only: the bar runs off the left edge of the window exactly as the
+   * spatula's handle did, so a radius there would float it away from the frame. */
+  /* ⚠️ THINNER THAN THE BAKER'S 64. Sandeep: "should be a rectangular thin menu bar."
+     52 is not a taste number: sidebarBtn is a 34px icon box, so 52 leaves 9px either side and the 9px
+     labels still fit ("Decorations" is the long one). Much below 48 the label wraps and the icon box
+     starts touching the edges.
+
+     ⚠️ RAIL.width IS NOT EDITED. That constant feeds RAIL_CENTRE, RAIL_RIGHT and the eight panels that
+     dock past the baker's spatula (shared/rail.js); narrowing it would move all of them, for everyone.
+     The plain bar overrides its own width here and leaves that geometry alone. */
+  /* The two tiles in the start chooser. Big enough to read as a choice rather than a form. */
+  startChoiceTile: {
+    display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left',
+    padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
+    border: '1.5px solid #E8EFE9', background: '#FFFFFF',
+    fontFamily: "'Quicksand',sans-serif", width: '100%',
+    transition: 'border-color 0.15s, background 0.15s',
+  },
+  startChoiceTitle: { fontSize: 14, fontWeight: 800, color: '#2C4433' },
+  startChoiceBody:  { fontSize: 12, fontWeight: 600, color: '#4A5D51', lineHeight: 1.35 },
+
+  sidebarPlain: {
+    width: PLAIN_RAIL_W, minWidth: PLAIN_RAIL_W,
+    background: chromeGradient(180),
+    borderRadius: '0 16px 16px 0',
+    boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
+  },
+  // navItem is 60 wide for the 64px rail, so on a 52px bar it has to come in with it.
+  /* nowrap is a GUARD, not the fix — `short` is. Without it a label longer than the box wraps under
+     the icon and pushes the next item down, which is worse than a clip and harder to notice. */
+  navItemPlain: { width: 48, whiteSpace: 'nowrap' },
+  /* 48px of top padding bought clearance for the spatula's CAP (see sidebarInner). A plain bar has
+     no cap, so that space is simply lost — a whole menu item's worth, per the note there. */
+  sidebarInnerPlain: { padding: '14px 0 22px' },
   sidebarDivider: {
     height: 1, width: 32,
     background: 'rgba(255,255,255,0.10)',
@@ -13459,10 +13699,15 @@ const s = {
   sidebarNav: {
     flex: 1, width: '100%', minHeight: 0,
     display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'space-evenly',
-    // gap = floor spacing; space-evenly spreads items down the blade. Shared with the tools group
-    // below the divider, which matches this rail's pitch and must bottom out on the same number.
-    padding: '4px 0', gap: RAIL_MIN_GAP,
+    alignItems: 'center', justifyContent: 'flex-start',
+    // A FIXED pitch, not a spread. The items keep one rhythm whatever the viewport and whatever the
+    // principal can do, so five items read as a menu rather than as a column with holes in it. The
+    // tools group below the divider still matches, because toolGap MEASURES the rendered pitch rather
+    // than assuming it — see the note above that effect.
+    //
+    // ⚠️ This also retires the scroll-origin trap the old note warned about: centred/spread content in
+    // a scroller can strand its first item above the origin, and flex-start cannot.
+    padding: '4px 0', gap: RAIL_NAV_GAP,
     overflowY: 'auto', scrollbarWidth: 'none',   // a scrollbar in a 64px rail is worse than none
   },
   // Stacked nav item: icon box on top, label below.
@@ -13528,7 +13773,12 @@ const s = {
   // Main + flyout panels
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
   flyout: {
-    position: 'absolute', left: RAIL_FLYOUT_LEFT, top: 0, bottom: 0, zIndex: 20,
+    position: 'absolute', top: 0, bottom: 0, zIndex: 20,
+    /* ⚠️ SHARED WITH THE ELEMENTS FLYOUT, deliberately. Both snapped into place with no transition,
+       which reads as a jump rather than a drawer — most visible when the start chooser hands off to
+       templates, where two surfaces swap in one beat. Special-casing one caller is how two surfaces
+       start drifting, so it lives on the shared style. */
+    animation: 'spattooFlyoutIn 0.22s cubic-bezier(0.32,0.72,0,1)',
     width: 200,
     // Frosted/see-through so the cake shows through (esp. on mobile, where it overlays the cake). The
     // low alpha is what actually reveals the cake — 0.97 reads as solid white even with the blur.

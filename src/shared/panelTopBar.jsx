@@ -1,3 +1,4 @@
+import { useNarrow } from './useNarrow.js';
 // ── How a docked panel is left ──────────────────────────────────────────────────────────────────
 // Orders and Customers are full-height surfaces docked beside the spatula rail. Both had the same
 // top bar, and both got the same thing wrong on desktop: the leading control was `onBack ?? onClose`
@@ -21,6 +22,17 @@
 //
 // Lives here rather than in either panel because it was already two copies (jscpd reports these two
 // files as clones), and a rule about how to leave a panel kept in two files is a rule that drifts.
+
+/* ⚠️ 32 ON DESKTOP, 44 ON A PHONE — and the phone number is the one that is actually required.
+   A 32px square is a comfortable pointer target and a small finger target; WCAG 2.5.5 asks for 44.
+   It mattered here because the orders header puts this beside a Segmented control, which carries
+   its own 44px touch guarantee: at 32 the row read as one swollen control among small ones, and
+   the fix is not to shrink the control that was right. Raising these makes the bar consistent AND
+   every target comfortable, which is the same change twice over. */
+export const panelTopBtnAt = (isMobile) => ({
+  ...panelTopBtn,
+  ...(isMobile ? { width: 44, height: 44, borderRadius: 11 } : null),
+});
 
 export const panelTopBtn = {
   width: 32, height: 32, borderRadius: 8,
@@ -50,8 +62,12 @@ function XIcon() {
 /* The mobile leading control. Full-bleed, no rail — an arrow is the right shape, and it steps
    detail → list before it closes anything. */
 export function PanelBackArrow({ onClick }) {
+  /* Read here rather than threaded from every caller: eight panels render this and none of them
+     has any other use for the answer. `useNarrow` is the one definition of "is this a phone"
+     (check:narrow), so this cannot drift from the Segmented beside it. */
+  const isMobile = useNarrow(768);
   return (
-    <button onClick={onClick} style={panelTopBtn} title="Back" aria-label="Back">
+    <button onClick={onClick} style={panelTopBtnAt(isMobile)} title="Back" aria-label="Back">
       <ArrowLeftIcon />
     </button>
   );
@@ -65,7 +81,7 @@ export function PanelBackCrumb({ label, onClick }) {
   return (
     <button onClick={onClick} title={`Back to ${label}`} style={{
       display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0,
-      height: 32, padding: '0 12px 0 9px', borderRadius: 8,
+      height: 32, padding: '0 12px 0 9px', borderRadius: 8,   // desktop-only control; never on a phone
       border: '1.5px solid #E8E4DC', background: '#F7F5F0',
       cursor: 'pointer', fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: '#666',
     }}>
@@ -77,8 +93,9 @@ export function PanelBackCrumb({ label, onClick }) {
 /* Dismiss. Far right of the bar, matching every other panel in the app — this is the one control
    that is always present on desktop, because closing is always possible. */
 export function PanelDismiss({ onClick }) {
+  const isMobile = useNarrow(768);
   return (
-    <button onClick={onClick} style={panelTopBtn} title="Close" aria-label="Close">
+    <button onClick={onClick} style={panelTopBtnAt(isMobile)} title="Close" aria-label="Close">
       <XIcon />
     </button>
   );
