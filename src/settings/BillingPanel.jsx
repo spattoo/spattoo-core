@@ -193,6 +193,12 @@ function PaymentRow({ p, divider }) {
               monthly amount and needs no caption; a one-off ₹149 beside it does — that is the
               charge a baker squints at, and the one this list exists to explain. */}
           {p.credits > 0 && <span style={{ color: '#7C8B82', fontWeight: 700 }}> · +{p.credits} credits</span>}
+          {/* The other kind of top-up. "messages" is the unit every other screen counts in —
+              "messages left" on Customer updates, "Message credits" as the row that sells them —
+              and saying "credits" here would send a baker to check a balance that never moved.
+              Shipped as a bare amount until 2026-09-22: the first real message pack sold on
+              production showed up under a plan charge as an unexplained ₹59. */}
+          {p.messages > 0 && <span style={{ color: '#7C8B82', fontWeight: 700 }}> · +{p.messages} messages</span>}
         </div>
         {/* The Razorpay payment id, which is the ONLY handle a baker and we share when something
             has to be looked up — a refund, a charge they do not recognise, a payment the bank shows

@@ -21,6 +21,17 @@ const PLANS = [
   { id: 3, name: 'blaze', display_name: 'Blaze', tagline: 'For a bakery with a queue', sort_order: 2, is_popular: true, price_monthly: 249900, price_yearly: 2499900, feature_bullets: ['Edible Print Studio'] },
 ];
 
+/* The Activity card had NO stub at all, so the Payments tab rendered empty in this harness and the
+   one row that needed looking at could only be seen on production — which is how a message top-up
+   shipped for weeks as an unexplained amount. Three kinds on purpose: a plan charge carries no
+   caption, and the two top-ups each carry their own, so a list with one kind in it cannot pass.
+   Paise, newest first, exactly as GET /billing/payments returns them. */
+const PAYMENTS = [
+  { id: 'p1', razorpay_payment_id: 'pay_TejCaYCpqJhZHP', amount: 5900,   currency: 'INR', status: 'captured', charged_at: '2026-09-21T10:12:00Z', credits: null, messages: 110 },
+  { id: 'p2', razorpay_payment_id: 'pay_TbMj8t0ENB3cnA', amount: 294882, currency: 'INR', status: 'captured', charged_at: '2026-09-13T06:40:00Z', credits: null, messages: null },
+  { id: 'p3', razorpay_payment_id: 'pay_TaQ1bXcMbF9kLp', amount: 17582,  currency: 'INR', status: 'captured', charged_at: '2026-09-02T09:05:00Z', credits: 150,  messages: null },
+];
+
 const apiClient = new Proxy({
   fetchPlans:   async () => PLANS,
   /* MIRRORS THE billing_periods ROWS, `display_name` included — the picker renders that column and
@@ -36,6 +47,10 @@ const apiClient = new Proxy({
   fetchBillingStatus: async () => ({ tier, status: settleAfter && ++statusReads >= settleAfter ? 'active' : status, next_billing_at: null, cancel_at_period_end: false }),
   fetchSubscriptionHistory: async () => [],
   fetchEntitlements: async () => ({ ent: {} }),
+  // Both reads hit the SAME route in the real client (`/billing/payments?limit=1` and `?limit=24`),
+  // so the collapsed first look and the expanded list cannot disagree about a caption.
+  fetchLatestPayment: async () => ({ payments: [PAYMENTS[0]], total: PAYMENTS.length }),
+  fetchPayments:      async () => ({ payments: PAYMENTS, total: PAYMENTS.length }),
 }, { get: (t, k) => t[k] ?? (async () => null) });
 
 createRoot(document.getElementById('root')).render(
