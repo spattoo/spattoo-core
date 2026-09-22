@@ -62,6 +62,29 @@ const RAIL_MIN_GAP = 2;
    baker's 65px. Sandeep: "so much gap between them and they dont look good."
    20 is what space-evenly already resolved to for a baker on a 900px window, so the baker's rail is
    unchanged at that height and only the sparse case tightens. */
+/* ── What greets a customer on their first visit ─────────────────────────────────────────────────
+ * Two surfaces want that moment: the start chooser (template vs scratch) and DesignTour. They must
+ * not both fire, and which one does is a rule worth testing rather than a condition buried in JSX —
+ * vitest runs environment:'node' here, so a rule living in React state is a rule nothing can check.
+ *
+ * ⚠️ PICKING A TEMPLATE MEANS NO TOUR, EVER. Sandeep: "they dont need to get tour if they choose
+ * template." The tour's first step is "Start with the cake" — advice for somebody facing a blank
+ * one. A customer who took a template already HAS a cake, so the step is wrong for them, and an
+ * uninvited tour on a later visit is the thing this chooser was added to trim.
+ */
+export const START_CHOICE_KEY = 'spattoo.start.customer.v1';
+
+/** Does the chooser appear? Customers only, once, and never in place of a design already loaded. */
+export function showStartChoice({ isCustomer, alreadyChosen }) {
+  return isCustomer === true && alreadyChosen !== true;
+}
+
+/** May the tour run uninvited? Never once the chooser has taken the decision to templates. */
+export function tourMayRun({ isCustomer, tourSeen, choseScratch }) {
+  if (isCustomer) return choseScratch === true;
+  return tourSeen === false;
+}
+
 const RAIL_NAV_GAP = 20;
 /* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
    numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
@@ -119,7 +142,7 @@ import NotificationBell from '../notifications/NotificationBell.jsx';
 import BuyCreditsPanel from '../billing/BuyCreditsPanel.jsx';
 import { PrivacyDataSection } from '../settings/PrivacyDataPanel.jsx';
 import PastDueBanner, { PAST_DUE_BAR_H } from '../billing/PastDueBanner.jsx';
-import DesignTour from './tour/DesignTour.jsx';
+import DesignTour, { seenCookie, markSeenCookie } from './tour/DesignTour.jsx';
 import { DEFAULT_LEGAL_BASE } from '../legal/links.js';
 
 
@@ -2567,6 +2590,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [lapsedPrivacyOpen, setLapsedPrivacyOpen] = useState(false);
   // Bumped by the "Take a tour" rail item. A counter, not a flag: "asked again" is the event, and a
   // boolean cannot say it twice without the caller resetting it.
+  /* The start chooser. `null` until an effect decides — reading a cookie in a useState initialiser
+     is SSR-unsafe, which is the same trap DesignTour names and useNarrow.js was written for. */
+  const [startChoiceOpen, setStartChoiceOpen] = useState(false);
+  // Held for the fade: Panel returns null the moment `open` is false, so the exit is the caller's.
+  const [startChoiceLeaving, setStartChoiceLeaving] = useState(false);
+  const [choseScratch, setChoseScratch] = useState(false);
+
   const [tourNonce, setTourNonce] = useState(0);
   // Has THIS PERSON seen it — from /me, so it survives a new device. Customers are not identified
   // when the tour runs (DesignFacet opens the designer before any OTP), so theirs is a cookie
@@ -2576,6 +2606,35 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // at `false` means "never seen" for the ~200ms before /me returns, and DesignTour's start timer is
   // 400ms — so a baker who HAS seen it would be shown it again on every single load, in the gap.
   const [tourSeen, setTourSeen] = useState(null);
+
+  /* Decided in an effect, never in a useState initialiser: document.cookie is not available under
+     renderToStaticMarkup, which is how every component here is tested. */
+  useEffect(() => {
+    if (!showStartChoice({ isCustomer: orderMode === 'customer', alreadyChosen: seenCookie(START_CHOICE_KEY) })) return;
+    setStartChoiceOpen(true);
+    // Warm the list while the chooser is on screen, so tapping through lands on thumbnails rather
+    // than on a CakeSpinner. openTemplates() fetches on open; without this the handoff shows a gap.
+    prefetchTemplates();
+    // ⚠️ orderMode ALONE, and the disable is deliberate rather than a shrug. The cookie is read once,
+    // at mount: re-running on prefetchTemplates' identity would re-open a chooser the customer has
+    // already dismissed, because `startChoiceOpen` going false is not what closed the decision — the
+    // cookie is. This is the opposite failure to the memo at ~3200, where a missing dep meant a value
+    // arriving late never took effect; here an extra dep would make a settled decision un-settle.
+  }, [orderMode]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* Panel has an entrance (spattooPanelIn) and NO exit — `open: false` returns null immediately. So
+     the leaving state is held here for one transition, then unmounted, and whatever comes next is
+     started in the same beat rather than after it. */
+  const startChoiceTimer = useRef(null);
+  useEffect(() => () => clearTimeout(startChoiceTimer.current), []);
+  function leaveStartChoice(then) {
+    setStartChoiceLeaving(true);
+    then?.();
+    // Held in a ref and cleared on unmount: a 200ms timer that outlives the designer would set
+    // state on a dead component, which surfaces as a console warning nobody traces back to here.
+    startChoiceTimer.current = setTimeout(
+      () => { setStartChoiceOpen(false); setStartChoiceLeaving(false); }, 200);
+  }
   // Separate from Billing on purpose: someone topping up wants credits, not a plan conversation.
   const [buyCreditsOpen,      setBuyCreditsOpen]      = useState(false);
   const [ordersFilter,        setOrdersFilter]        = useState(null);
@@ -4390,31 +4449,56 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     }
   }
 
+  /* Fetch without opening. The chooser calls this so the flyout it hands off to is already
+     populated — openTemplates() fetches on open, which would put a spinner in the middle of the
+     one transition that is supposed to feel like a single movement. */
+  /* ── ONE fetch, whichever host is present ───────────────────────────────────────────────────
+   * Extracted because a SECOND caller appeared (the start chooser warms the list before handing
+   * off). The first version of that prefetch bailed on `!apiClient`, which left a supabase-only
+   * host with no warm-up and put back the CakeSpinner the prefetch exists to remove — then the
+   * "fix" for it called a helper I had invented rather than extracted, which the build could not
+   * catch because an unresolved name inside an async branch only throws once reached. */
+  async function loadTemplates() {
+    if (apiClient) {
+      const data = await apiClient.fetchTemplates().catch(() => []);
+      return data ?? [];
+    }
+    if (!supabase) return [];
+    const { data, error } = await supabase
+      .from('cake_templates')
+      .select('id, name, offering, tier_count, thumbnail_url, created_at, template_tags(tags(slug)), cake_template_attrs(min_weight_kg, min_age, max_age)')
+      .eq('is_active', true)
+      .order('sort_order')
+      .order('created_at', { ascending: false });
+    if (error) return [];
+    return (data ?? []).map(({ template_tags, cake_template_attrs, ...t }) => {
+      const rawAttrs = cake_template_attrs;
+      return {
+        ...t,
+        tag_slugs: (template_tags ?? []).map(r => r.tags?.slug).filter(Boolean),
+        attrs: Array.isArray(rawAttrs) ? (rawAttrs[0] ?? null) : (rawAttrs ?? null),
+      };
+    });
+  }
+
+  /* Fetch without opening, so the flyout the chooser hands off to is already populated. */
+  async function prefetchTemplates() {
+    if (templates.length || (!apiClient && !supabase)) return;
+    setTemplatesLoading(true);
+    setTemplates(await loadTemplates());
+    setTemplatesLoading(false);
+  }
+
   async function openTemplates() {
     const isOpening = !templatesOpen;
     setTemplatesOpen(isOpening);
     setElementsOpen(false);
     if (!isOpening) return;
+    // Already warm (the start chooser prefetched) — opening must not flash a spinner over a list
+    // that is sitting right there.
+    if (templates.length) return;
     setTemplatesLoading(true);
-    if (apiClient) {
-      const data = await apiClient.fetchTemplates().catch(() => []);
-      setTemplates(data ?? []);
-    } else {
-      const { data, error } = await supabase
-        .from('cake_templates')
-        .select('id, name, offering, tier_count, thumbnail_url, created_at, template_tags(tags(slug)), cake_template_attrs(min_weight_kg, min_age, max_age)')
-        .eq('is_active', true)
-        .order('sort_order')
-        .order('created_at', { ascending: false });
-      setTemplates(error ? [] : (data ?? []).map(({ template_tags, cake_template_attrs, ...t }) => {
-        const rawAttrs = cake_template_attrs;
-        return {
-          ...t,
-          tag_slugs: (template_tags ?? []).map(r => r.tags?.slug).filter(Boolean),
-          attrs: Array.isArray(rawAttrs) ? (rawAttrs[0] ?? null) : (rawAttrs ?? null),
-        };
-      }));
-    }
+    setTemplates(await loadTemplates());
     setTemplatesLoading(false);
   }
   openTemplatesRef.current = openTemplates;   // for openNotificationLink — see the ref's note
@@ -10212,12 +10296,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           of the mode branching instead of being buried in a tour component.
 
           Renders null the rest of the time (seen, or not a customer), so it costs nothing. */}
+      {/* ── The first move, for a CUSTOMER only ──────────────────────────────────────────────────
+          They arrived by tapping "let me build it myself in 3D" and landed on a blank cake. That is
+          the problem DesignTour's own header describes — "not short of intent, short of a first
+          move" — and for many people a template they can tweak is a better first move than being
+          walked through building one.
+
+          ⚠️ It hands off to the EXISTING templates flyout rather than showing a gallery of its own.
+          That flyout carries search, tag/weight/age filters, the grid and hover previews; a second
+          copy inside a modal would drift from it the moment either changed. Sandeep: "are you saying
+          we will duplicate all that inside popup" — no. */}
+      {startChoiceOpen && (
+        <Panel
+          open={!startChoiceLeaving}
+          isMobile={isMobile}
+          title="How would you like to start?"
+          width={420}
+          showClose={false}
+          onClose={undefined}
+        >
+          <div style={{ display: 'grid', gap: 10 }}>
+            <button type="button" style={s.startChoiceTile}
+              onClick={() => { markSeenCookie(START_CHOICE_KEY); leaveStartChoice(() => openTemplates()); }}>
+              <span style={s.startChoiceTitle}>Start from a cake we make</span>
+              <span style={s.startChoiceBody}>Pick one you like and change what you want — colour, size, decorations.</span>
+            </button>
+            <button type="button" style={s.startChoiceTile}
+              onClick={() => { markSeenCookie(START_CHOICE_KEY); setChoseScratch(true); leaveStartChoice(); }}>
+              <span style={s.startChoiceTitle}>Start from scratch</span>
+              <span style={s.startChoiceBody}>Build it yourself, from a plain cake.</span>
+            </button>
+          </div>
+        </Panel>
+      )}
+
       <DesignTour
         mode={orderMode === 'customer' ? 'customer' : 'baker'}
-        // A customer always (their cookie decides inside); a baker only if they have never seen it.
-        // Bakers DO get it uninvited on a genuine first run — what they must not get is it again on
-        // a second laptop, which is the whole reason the flag moved to a column.
-        autoStart={orderMode === 'customer' || tourSeen === false}
+        // A customer only AFTER choosing "start from scratch" in the chooser above; a baker only if
+        // they have never seen it. Bakers DO get it uninvited on a genuine first run — what they
+        // must not get is it again on a second laptop, which is why their flag is a column.
+        // ⚠️ A customer only once they have CHOSEN to start from scratch — see tourMayRun. Picking a
+        // template means no tour at all: its first step is "Start with the cake", and they have one.
+        autoStart={tourMayRun({ isCustomer: orderMode === 'customer', tourSeen, choseScratch })}
         startNonce={tourNonce}
         // Fire-and-forget: the tour is already on screen, so a failed write must do nothing visible.
         // Worst case it is offered once more elsewhere — exactly the old localStorage behaviour.
@@ -10230,6 +10350,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* scrollbarWidth:'none' covers Firefox; WebKit needs a real rule, which an inline style
           cannot express. The rail is 64px wide — a scrollbar in it is worse than none. */}
       <style>{`@keyframes spattooFadeIn { from { opacity: 0 } to { opacity: 1 } }
+        @keyframes spattooFlyoutIn { from { opacity: 0; transform: translateX(-8px) } to { opacity: 1; transform: none } }
         .spattoo-rail-nav::-webkit-scrollbar { display: none; }
         .spattoo-noscrollbar::-webkit-scrollbar { display: none; }
         /* A :hover cannot be expressed inline, and inline styles win — hence !important. */
@@ -13503,6 +13624,17 @@ const s = {
      ⚠️ RAIL.width IS NOT EDITED. That constant feeds RAIL_CENTRE, RAIL_RIGHT and the eight panels that
      dock past the baker's spatula (shared/rail.js); narrowing it would move all of them, for everyone.
      The plain bar overrides its own width here and leaves that geometry alone. */
+  /* The two tiles in the start chooser. Big enough to read as a choice rather than a form. */
+  startChoiceTile: {
+    display: 'flex', flexDirection: 'column', gap: 4, textAlign: 'left',
+    padding: '14px 16px', borderRadius: 14, cursor: 'pointer',
+    border: '1.5px solid #E8EFE9', background: '#FFFFFF',
+    fontFamily: "'Quicksand',sans-serif", width: '100%',
+    transition: 'border-color 0.15s, background 0.15s',
+  },
+  startChoiceTitle: { fontSize: 14, fontWeight: 800, color: '#2C4433' },
+  startChoiceBody:  { fontSize: 12, fontWeight: 600, color: '#4A5D51', lineHeight: 1.35 },
+
   sidebarPlain: {
     width: PLAIN_RAIL_W, minWidth: PLAIN_RAIL_W,
     background: chromeGradient(180),
@@ -13612,6 +13744,11 @@ const s = {
   main: { flex: 1, display: 'flex', minHeight: 0, position: 'relative' },
   flyout: {
     position: 'absolute', top: 0, bottom: 0, zIndex: 20,
+    /* ⚠️ SHARED WITH THE ELEMENTS FLYOUT, deliberately. Both snapped into place with no transition,
+       which reads as a jump rather than a drawer — most visible when the start chooser hands off to
+       templates, where two surfaces swap in one beat. Special-casing one caller is how two surfaces
+       start drifting, so it lives on the shared style. */
+    animation: 'spattooFlyoutIn 0.22s cubic-bezier(0.32,0.72,0,1)',
     width: 200,
     // Frosted/see-through so the cake shows through (esp. on mobile, where it overlays the cake). The
     // low alpha is what actually reveals the cake — 0.97 reads as solid white even with the blur.
