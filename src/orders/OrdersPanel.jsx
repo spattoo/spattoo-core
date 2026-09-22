@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen, restrictions } from './dietary.js';
+import { onEdiblePrintsChanged } from './ediblePrintsBus.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
 import FinishedPhotoEditor from './FinishedPhotoEditor.jsx';
 import Segmented from '../shared/Segmented.jsx';
@@ -212,10 +213,16 @@ function CutoutLauncher({ order, apiClient, variant }) {
    * Fetched here rather than inside the modal because it decides whether the button exists at all. */
   useEffect(() => {
     let alive = true;
-    Promise.resolve(apiClient?.fetchOrderEdiblePrints?.(order?.id))
+    const load = () => Promise.resolve(apiClient?.fetchOrderEdiblePrints?.(order?.id))
       .then(r => { if (alive) setPrints(r?.prints ?? []); })
       .catch(() => { if (alive) setPrints([]); });
-    return () => { alive = false; };
+    load();
+    /* ⚠️ AND AGAIN WHENEVER ONE IS MADE. The deps are `[order?.id, apiClient]` and neither changes
+       when a baker makes a print inside X-Ray — which is a takeover rendered ABOVE this component,
+       so it never remounts and this list stayed as it was before the print existed. The button
+       then did not appear, and the baker had nowhere to open the thing they had just paid for. */
+    const off = onEdiblePrintsChanged(load);
+    return () => { alive = false; off(); };
   }, [order?.id, apiClient]);
 
   if (!ids.length && !prints.length) return null;

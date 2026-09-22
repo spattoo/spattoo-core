@@ -1,0 +1,31 @@
+import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+
+const src = readFileSync(new URL('./OrdersPanel.jsx', import.meta.url), 'utf8');
+
+// ── The wiring, pinned as source ────────────────────────────────────────────────────────────────
+// The launcher's own gate was always right — `if (!ids.length && !prints.length) return null` — and
+// the API has linked the print to the order since migration 086. What was wrong is that `prints`
+// was read ONCE, in an effect keyed on `[order?.id, apiClient]`, and neither of those changes when
+// a baker makes a print inside a takeover rendered above this component.
+//
+// Asserted as text because the alternative is mounting OrdersPanel with a stubbed client, a design,
+// an order and a portal — a lot of scaffolding to prove one subscription exists.
+describe('Print & cut-outs refreshes when a print is made', () => {
+  it('subscribes to the edible prints bus', () => {
+    expect(src).toMatch(/onEdiblePrintsChanged\(/);
+  });
+
+  it('re-runs the SAME fetch on the event, not a different one', () => {
+    // A listener that set state without re-reading would trust a client-assembled row, and
+    // `image_url` is composed by the API from the storage key — it is not on the generate response.
+    expect(src).toMatch(/const load = \(\) => Promise\.resolve\(apiClient\?\.fetchOrderEdiblePrints/);
+    expect(src).toMatch(/onEdiblePrintsChanged\(load\)/);
+  });
+
+  it('detaches on unmount, and still cancels the in-flight fetch', () => {
+    // ⚠️ Both halves. An early version returned only the unsubscribe and dropped `alive = false`,
+    // which leaves a resolved fetch setting state on an unmounted component.
+    expect(src).toMatch(/return \(\) => \{ alive = false; off\(\); \};/);
+  });
+});

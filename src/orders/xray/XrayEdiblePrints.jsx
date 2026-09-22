@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
+import { ediblePrintsChanged } from '../ediblePrintsBus.js';
 import { cropStyle } from './XrayDecorationSteps.jsx';
 import { SectionHead } from './XraySection.jsx';
 
@@ -57,7 +58,16 @@ export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
       const res = await apiClient.generateEdiblePrint(orderId, {
         sourceKey, bbox: p.bbox, prompt: p.prompt, label: p.label,
       });
-      if (res?.upload) setMade(m => ({ ...m, [p.index]: res.upload }));
+      if (res?.upload) {
+        setMade(m => ({ ...m, [p.index]: res.upload }));
+        /* ⚠️ TELL THE ORDER, NOT JUST THIS PANEL. The print is linked to the order server-side the
+           moment it is made, but "Print & cut-outs" in order details fetched its list once, on
+           mount, and X-Ray is a takeover ABOVE that still-mounted component — so closing X-Ray
+           does not remount it and the button stayed hidden. A baker who has just paid credits and
+           been told "it is in your uploads" then cannot find anywhere to open it, which reads as
+           the print never having been made. See ediblePrintsBus.js. */
+        ediblePrintsChanged();
+      }
     } catch (e) {
       setErr(e?.code === 'INSUFFICIENT_CREDITS'
         ? "You've used this month's credits — open Billing for options."
@@ -133,8 +143,15 @@ export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
                   <div style={{ ...s.muted, color: '#B26B00' }}>{p.ipWarning}</div>
                 )}
                 {made[p.index] && (
+                  /* ⚠️ NAMES THE PLACE ON THIS ORDER FIRST. It used to say only "it is in your
+                     uploads", which sends a baker to a picker full of every image they have ever
+                     added — the API's own note calls that "not where they are standing". They
+                     pressed Make it from inside an order, so the answer they need is where it is
+                     on THAT order. Uploads is still mentioned second, because the print is theirs
+                     to reuse on the next cake and that is worth knowing once. */
                   <div style={{ ...s.muted, color: '#2C4433' }}>
-                    Made — it is in your uploads as “{made[p.index].name}”.
+                    Made. Close this sheet and open <strong>Print &amp; cut-outs</strong> on the
+                    order to print it. It is also saved in your uploads as “{made[p.index].name}”.
                   </div>
                 )}
               </span>
