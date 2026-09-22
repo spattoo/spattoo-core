@@ -43,9 +43,17 @@ import { useCallback, useRef, useState } from 'react';
  * CakeDesigner.
  */
 
-/** Where the captcha belongs on screen. Mounted either way — callers HIDE it, never unmount it. */
-export function captchaVisible(step, resendAsked) {
-  return step === 'start' || resendAsked === true;
+/**
+ * Where the captcha belongs on screen. Mounted either way — callers HIDE it, never unmount it.
+ *
+ * ⚠️ `contactReady` KEEPS THE CHALLENGE OUT OF THE FRONT DOOR. Sandeep: "only when the contact feild
+ * has something." The widget used to render the instant the page opened, so a customer met a security
+ * check before typing anything. It defaults TRUE because LoginModal has no contact field at all — an
+ * invite sends to a contact the server already knows, so gating it there would mean a captcha that
+ * never appears and a Send button that can never unblock.
+ */
+export function captchaVisible(step, resendAsked, contactReady = true) {
+  return step === 'start' ? contactReady === true : resendAsked === true;
 }
 
 /**
@@ -60,7 +68,7 @@ export function resendAction(configured, token) {
   return configured && !token ? 'reveal' : 'send';
 }
 
-export function useOtp({ send, verify, onVerified }) {
+export function useOtp({ send, verify, onVerified, contactReady = true }) {
   const [step, setStep] = useState('start');    // 'start' → 'code'
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
@@ -116,7 +124,7 @@ export function useOtp({ send, verify, onVerified }) {
     send: doSend, verify: doVerify, requestResend,
     /* Where the widget belongs on screen. It is MOUNTED either way — callers hide it rather than
        unmount it — so a solved token survives the move to the code step. */
-    captchaNeeded: captchaVisible(step, resendAsked),
+    captchaNeeded: captchaVisible(step, resendAsked, contactReady),
     // A send is blocked until the captcha is solved — but only when one is configured at all, or
     // every environment without a site key would have a permanently dead button.
     sendBlocked: (configured) => busy || (configured && !captchaToken),

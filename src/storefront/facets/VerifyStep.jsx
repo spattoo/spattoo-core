@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Captcha } from '../../auth/Captcha.jsx';
 import { useOtp } from '../useOtp.js';
 import { FONT, SERIF, alpha, darken, lum, mix, onColor } from '../storefrontKit.js';
@@ -181,7 +181,18 @@ export default function VerifyStep({
              { to: phone.trim(), channel, code, name: name.trim() || undefined })
   ), [apiBaseUrl, slug, phone, channel, name]);
 
-  const otp = useOtp({ send, verify, onVerified: (r) => onVerified?.(r.session, phone.trim(), name.trim(), channel) });
+  /* ⚠️ A LATCH, NOT A LIVE TEST. The captcha appears once the contact field has something in it —
+     but once it is up it STAYS up, because clearing the box would unmount the widget and destroy a
+     solved token. In Safari every challenge is interactive (tracking prevention denies Turnstile the
+     silent pass), so making someone re-solve it for editing a digit is a real cost. Monotonic, so a
+     double render cannot unset it. */
+  const contactSeen = useRef(false);
+  if (phone.trim()) contactSeen.current = true;
+
+  const otp = useOtp({
+    send, verify, contactReady: contactSeen.current,
+    onVerified: (r) => onVerified?.(r.session, phone.trim(), name.trim(), channel),
+  });
 
   /* ⚠️ `channels` ARRIVES AFTER THE FIRST RENDER, AND useState DOES NOT NOTICE. The order gate asks
      the server which contact THIS order's customer has, so `channels` starts as the baker's list and

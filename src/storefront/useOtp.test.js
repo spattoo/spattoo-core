@@ -23,8 +23,26 @@ describe('captchaVisible', () => {
     expect(captchaVisible('code', true)).toBe(true);
   });
 
-  it('stays visible on the start step regardless', () => {
+  it('stays visible on the start step regardless of the resend flag', () => {
     expect(captchaVisible('start', true)).toBe(true);
+  });
+
+  /* ⚠️ The third argument keeps the challenge out of the front door: the widget used to render the
+     instant the page opened, before the customer had typed anything. */
+  it('stays hidden on the start step until the contact field has something', () => {
+    expect(captchaVisible('start', false, false)).toBe(false);
+    expect(captchaVisible('start', false, true)).toBe(true);
+  });
+
+  /* ⚠️ Defaults TRUE on purpose. LoginModal has no contact field — an invite sends to a contact the
+     server already knows — so gating it there would mean a captcha that never shows and a Send
+     button that can never unblock. */
+  it('defaults to ready, for the door that has no contact field', () => {
+    expect(captchaVisible('start', false)).toBe(true);
+  });
+
+  it('does not let the contact gate override a resend on the code step', () => {
+    expect(captchaVisible('code', true, false)).toBe(true);
   });
 });
 
