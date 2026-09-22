@@ -1791,7 +1791,14 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
             <button onClick={onNewOrder} aria-label="New Order" title="New Order" style={{
               display: 'flex', alignItems: 'center', gap: 5,
               background: primaryColor, color: '#fff', border: 'none',
-              borderRadius: 10, padding: '8px 14px', cursor: 'pointer',
+              borderRadius: isMobile ? 11 : 10, cursor: 'pointer',
+              /* ⚠️ 44 ON A PHONE, to match the back arrow and the List/Calendar switch beside it.
+                 The bar used to run 32 · 52 · 32 — a swollen control among small ones — and the
+                 answer was not to shrink the one that already met the 44px touch guideline. With
+                 padding alone this came out at 32, so the height is STATED rather than hoped for;
+                 the vertical padding goes, or it would add on top of the minimum. */
+              minHeight: isMobile ? 44 : undefined,
+              padding: isMobile ? '0 16px' : '8px 14px',
               fontFamily: 'inherit', fontSize: 13, fontWeight: 800,
               whiteSpace: 'nowrap', flexShrink: 0,
             }}>
