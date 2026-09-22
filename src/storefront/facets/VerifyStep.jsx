@@ -331,7 +331,9 @@ export default function VerifyStep({
         </div>
       )}
 
-      {captchaEl}
+      {/* Hidden, NOT unmounted, on the code step — see useOtp's note. A remount would discard a
+          solved token the resend still needs, so visibility is CSS and the widget stays put. */}
+      <div style={otp.captchaNeeded ? undefined : { display: 'none' }}>{captchaEl}</div>
 
       {otp.step === 'start' ? (
         <>
@@ -378,9 +380,13 @@ export default function VerifyStep({
               explanation belongs where the eye already is rather than below three links. */}
           {otp.err && <div style={s.err}>{otp.err}</div>}
           <div style={s.links}>
-            <button type="button" style={s.link} disabled={otp.sendBlocked(captchaConfigured)}
-                    onClick={otp.send}>
-              Resend code
+            {/* Not gated on the token: with none held this REVEALS the captcha rather than sending,
+                which is the only way the button stays usable once the widget is hidden. */}
+            <button type="button" style={s.link} disabled={otp.busy}
+                    onClick={() => otp.requestResend(captchaConfigured)}>
+              {otp.captchaNeeded && captchaConfigured && !otp.captchaToken
+                ? 'Resend code — one quick check first'
+                : 'Resend code'}
             </button>
             {/* Back to the number, for the commonest failure of all: they typed it wrong. Without
                 this the only way out is to abandon the enquiry. */}

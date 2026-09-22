@@ -18,12 +18,55 @@ import { useCallback, useRef, useState } from 'react';
 // A Turnstile token is single-use. Without the reset a resend silently reuses a spent token, and the
 // failure surfaces as an unexplained error on the SECOND attempt — which is the attempt someone
 // makes precisely because the first one seemed not to work.
+//
+// ── AND WHY IT IS HIDDEN ON THE CODE STEP ───────────────────────────────────────────────────────
+// Sandeep: "capcha on the storefront appears two times - one as soon as user laods that page, once i
+// tick the checkbox, and enter mobile and send code, capcha checkbox appears again."
+//
+// It is ONE widget, not two. The reset above spends the solved token and Turnstile re-challenges;
+// the widget is rendered OUTSIDE the step branch (deliberately — remounting it would throw away a
+// token the resend needs), so the fresh challenge lands on the code screen. Two correct decisions
+// colliding: the captcha gates the SEND, and the only thing to do on the code screen is type six
+// digits.
+//
+// So the widget stays MOUNTED throughout and is merely hidden there, until a resend is asked for.
+//
+// ⚠️ HIDING IT ALONE WOULD KILL "RESEND". That button is gated by sendBlocked, which needs a token,
+// and the reset just cleared it — so with the widget hidden the button would be disabled forever.
+// `requestResend` is the other half: with no token it REVEALS the captcha instead of sending, and
+// the send happens on the next press once it is solved.
+/* ── The two decisions, as plain functions ───────────────────────────────────────────────────────
+ * Pulled out of the hook so they can be TESTED. vitest runs `environment: 'node'` here — no jsdom,
+ * no @testing-library — so a rule living inside React state is a rule nothing can check, and this
+ * one cannot be checked in the harness either: dev/facets.jsx passes captchaSiteKey={null} and no
+ * site key exists locally, so no real widget ever renders. Same reason mobileNav.js was split out of
+ * CakeDesigner.
+ */
+
+/** Where the captcha belongs on screen. Mounted either way — callers HIDE it, never unmount it. */
+export function captchaVisible(step, resendAsked) {
+  return step === 'start' || resendAsked === true;
+}
+
+/**
+ * What pressing "Resend code" should do.
+ *
+ * ⚠️ THIS IS THE HALF THAT KEEPS THE BUTTON ALIVE. Resend is gated by sendBlocked, which needs a
+ * token, and the send that got us to this screen spent it. With the widget hidden and no reveal, the
+ * button would be disabled forever — on the one screen where someone is already waiting for a code
+ * that did not arrive.
+ */
+export function resendAction(configured, token) {
+  return configured && !token ? 'reveal' : 'send';
+}
+
 export function useOtp({ send, verify, onVerified }) {
   const [step, setStep] = useState('start');    // 'start' → 'code'
   const [code, setCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [err,  setErr]  = useState(null);
   const [captchaToken, setCaptchaToken] = useState(null);
+  const [resendAsked, setResendAsked] = useState(false);
   const captchaRef = useRef(null);
 
   const resetCaptcha = useCallback(() => {
@@ -36,6 +79,8 @@ export function useOtp({ send, verify, onVerified }) {
     try {
       await send(captchaToken ?? undefined);
       setStep('code');
+      // A fresh code makes the previous resend request spent too — hide the widget again.
+      setResendAsked(false);
     } catch (e) {
       setErr(e.message);
     } finally {
@@ -58,13 +103,23 @@ export function useOtp({ send, verify, onVerified }) {
     }
   }, [verify, code, onVerified]);
 
+  /* Asked for another code. With a token in hand this just sends; without one it reveals the captcha
+     and sends nothing, because the token the first send spent is gone and nothing else can restore it. */
+  const requestResend = useCallback((configured) => {
+    if (resendAction(configured, captchaToken) === 'reveal') { setResendAsked(true); return; }
+    doSend();
+  }, [captchaToken, doSend]);
+
   return {
     step, code, setCode, busy, err, setErr,
     captchaRef, captchaToken, setCaptchaToken,
-    send: doSend, verify: doVerify,
+    send: doSend, verify: doVerify, requestResend,
+    /* Where the widget belongs on screen. It is MOUNTED either way — callers hide it rather than
+       unmount it — so a solved token survives the move to the code step. */
+    captchaNeeded: captchaVisible(step, resendAsked),
     // A send is blocked until the captcha is solved — but only when one is configured at all, or
     // every environment without a site key would have a permanently dead button.
     sendBlocked: (configured) => busy || (configured && !captchaToken),
-    reset: () => { setStep('start'); setCode(''); setErr(null); resetCaptcha(); },
+    reset: () => { setStep('start'); setCode(''); setErr(null); setResendAsked(false); resetCaptcha(); },
   };
 }

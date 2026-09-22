@@ -896,7 +896,8 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, captchaSiteKey, pr
           </div>
         )}
 
-        {captchaEl}
+        {/* Hidden, not unmounted, on the code step — same rule as VerifyStep; see useOtp. */}
+        <div style={otp.captchaNeeded ? undefined : { display: 'none' }}>{captchaEl}</div>
 
         {step === 'start' ? (
           <>
@@ -909,7 +910,12 @@ function LoginModal({ invite, inviteId, apiBaseUrl, supabase, captchaSiteKey, pr
             <input style={m.input} value={code} onChange={e => setCode(e.target.value)}
               inputMode="numeric" placeholder="6-digit code" autoFocus />
             <button style={m.primaryBtn} disabled={busy || !code.trim()} onClick={verify}>{busy ? 'Verifying…' : 'Verify & enter'}</button>
-            <button style={m.linkBtn} disabled={sendBlocked} onClick={send}>Resend code</button>
+            <button style={m.linkBtn} disabled={busy}
+              onClick={() => otp.requestResend(captchaConfigured)}>
+              {otp.captchaNeeded && captchaConfigured && !otp.captchaToken
+                ? 'Resend code — one quick check first'
+                : 'Resend code'}
+            </button>
           </>
         )}
 
