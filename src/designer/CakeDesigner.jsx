@@ -4529,6 +4529,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return st?.color ?? '#ffffff';
     }
     if (selectedEl.type === 'scatter') return design.stickers.find(s => s.elementId === selectedEl.elementId)?.color ?? '#ffffff';
+    /* ⚠️ ONE STICKER READS ITS OWN COLOUR. This fell through to the `#f5b8c8` default below, so the
+       wheel opened on a pink nobody had chosen — harmless while no sticker could be recoloured at
+       all, and wrong the moment one could. Groups first, then the instance's own colour, matching
+       what handleColorChange writes back for the same selection. */
+    if (selectedEl.type === 'sticker') {
+      const st = design.stickers.find(s => s.id === selectedEl.id);
+      if (hasActiveGroup) return st?.groupColors?.[activeGroupKey] ?? activeGroupDefault ?? st?.color ?? '#ffffff';
+      return st?.color ?? '#ffffff';
+    }
     // Single-per-slot topper (decorEl card): read the recompose group colour off any instance.
     if (selectedEl.type === 'decorEl') {
       const st = design.stickers.find(s => s.elementId === selectedEl.elementId);
@@ -8051,6 +8060,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
             ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
             : []);
+      /* ── Whole-element colour, for anything the catalogue marks recolourable ──────────────────
+       *
+       * ⚠️ THIS LIVES IN THE SHARED sticker|decorEl BLOCK, AND IT USED TO BE decorEl ONLY. A single
+       * sticker with `allowed_actions.color: true` therefore had no way to be recoloured at all —
+       * the control did not exist on that path. Measured against the catalogue: 59 elements are
+       * marked colour-changeable with no part groups, 5 of them single_per_slot (which got the
+       * swatch) and **54 plain stickers that got nothing**. Reported on a fondant heart: the box is
+       * ticked in admin, the designer offers no way to use it.
+       *
+       * ⚠️ ONLY WHEN THERE ARE NO PART GROUPS. A segmented GLB's colours ARE its groups — offering a
+       * whole-model tint beside them would be two controls fighting over the same mesh, and the
+       * per-part one is the better answer wherever it exists. Nothing in the catalogue has both
+       * today (checked: zero), so this orders them rather than taking anything away.
+       *
+       * The wheel already understands both selections: handleColorChange writes `color` for a
+       * sticker and for every instance of a decorEl, and wheelColorOf reads each back. */
+      const colourElId = el.type === 'sticker' ? inst?.elementId : el.elementId;
+      if (!editGroups.length && elementById.get(colourElId)?.allowed_actions?.color === true) {
+        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
+          <button key="col"
+            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
+                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
+            onClick={() => {
+              const opening = !colorOpen;
+              closeAllPopups();
+              /* ⚠️ A STICKER KEEPS ITS OWN SELECTION. Re-selecting as decorEl here would recolour
+                 EVERY instance of that element on the cake, not the one the baker is looking at —
+                 which is right for a multi-slot card and wrong for one sticker among several. */
+              if (el.type !== 'sticker') setSelectedEl({ type: 'decorEl', elementId: colourElId });
+              if (opening) setColorOpen(true);
+            }}>
+            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
+                          background: inst?.color ?? '#ffffff' }} />
+          </button>,
+        ] });
+      }
+
       if (editGroups.length) {
         groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
           <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
@@ -8100,22 +8146,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        *
        * The wheel already understands a decorEl selection — wheelColorOf and handleColorChange both
        * have a branch for it — so this is the button that was missing, not a new colour path. */
-      if (elementById.get(elId)?.allowed_actions?.color === true) {
-        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
-          <button key="col"
-            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
-                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-            onClick={() => {
-              const opening = !colorOpen;
-              closeAllPopups();
-              setSelectedEl({ type: 'decorEl', elementId: elId });
-              if (opening) setColorOpen(true);
-            }}>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
-                          background: design.stickers.find(st => st.elementId === elId)?.color ?? '#ffffff' }} />
-          </button>,
-        ] });
-      }
       groups.push({ key: 'actions', divider: false, footer: true, controls: [
         <button key="del" style={s.deleteBtn}
           onClick={() => { design.stickers.filter(s => s.elementId === elId).forEach(s => removeSticker(s.id)); clearAllSelections(); }}>
