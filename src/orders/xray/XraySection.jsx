@@ -25,34 +25,35 @@
 // structure without gaining decoration.
 
 /**
- * A render-order counter, so sections number themselves 1, 2, 3 … in the order they appear.
+ * The number each section wears, worked out from WHICH SECTIONS ARE PRESENT.
  *
  * ⚠️ NUMBERED BY WHAT IS PRESENT, NOT BY A FIXED CATALOGUE. A cake with no garnishes must read
- * 1, 2, 3, not 1, 2, 4 — a gap looks like something failed to load. Which sections exist is only
- * knowable while rendering (decorations depend on the design, prints are fetched), so the count is
- * claimed as each one draws.
+ * 1, 2, 3, not 1, 2, 4 — a gap looks like something failed to load.
  *
- * ⚠️ CREATED FRESH ON EVERY RENDER by the caller, never module-level. A counter that outlived a
- * render would keep climbing — 1, 2, 3 then 4, 5, 6 on the next paint — and StrictMode's double
- * render would show it immediately.
+ * ⚠️ AND NOT BY A COUNTER CLAIMED WHILE RENDERING, which is what this replaced and why. A counter
+ * is mutable state shared by every section, and the sections are not all in one component: the
+ * decorations and the edible prints each hold their own `useState`, so each re-renders ON ITS OWN
+ * when a guide arrives, a step list is opened or a print is made. Every one of those re-renders
+ * claimed a FRESH number from a counter the parent had not reset, so the page drifted as it was
+ * used — reported as a sheet reading 1 then 4, where the first paint had correctly read 1, 2, 3.
  *
- * Known and accepted: Edible prints load asynchronously, so on the rare sheet that has them the
- * sections after it renumber once, shortly after opening. The alternative is holding every number
- * back until the slowest section resolves, which would leave a baker looking at an unnumbered sheet
- * to protect them from a one-time shift.
+ * Derived from data, the number is the same on every render, in any order, however many times a
+ * child paints. Which is what a number on a worksheet has to be: a baker reads "4" off the screen
+ * and looks for "4" on the paper.
+ *
+ * @param {Array} keys  the sections that WILL render, in the order they appear on the page.
+ *                      Falsy entries are dropped, so a caller can write
+ *                      `[hasChecklist && 'checklist', …]` and not filter.
+ * @returns {(key: string) => number|null}  its 1-based number, or null for a key not on the page.
  */
-export function makeSeq() {
-  let n = 0;
-  return { next: () => ++n };
+export function sectionNumbers(keys) {
+  const present = (keys ?? []).filter(Boolean);
+  return (key) => {
+    const i = present.indexOf(key);
+    return i < 0 ? null : i + 1;
+  };
 }
 
-/**
- * The section heading: a numbered chip in the section's colour, then the title, then whatever the
- * section counts ("3 kg · 2 tiers", "4").
- *
- * `meta` sits INSIDE the heading rather than under it, because it is an attribute of the section
- * and a line of its own would read as content.
- */
 export function SectionHead({ n, color, children, meta = null, style = null }) {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 10, ...style }}>

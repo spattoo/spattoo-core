@@ -10,8 +10,8 @@ import XrayTinSection, { sectionHeight } from './XrayTinSection.jsx';
 import { tinOptions } from './tinHelper.js';
 import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
-import XrayDecorationSteps from './XrayDecorationSteps.jsx';
-import { makeSeq, SectionHead, sectionWrap } from './XraySection.jsx';
+import XrayDecorationSteps, { decorationRows } from './XrayDecorationSteps.jsx';
+import { sectionNumbers, SectionHead, sectionWrap } from './XraySection.jsx';
 import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 import { INK } from '../../shared/tokens.js';
 /* ⚠️ THE SHARED DISMISS, not a second X. Sandeep: "lets change the 'Close' button to 'X' button."
@@ -71,9 +71,6 @@ const s = {
 };
 
 export default function XrayReport({ order, apiClient, onClose }) {
-  /* Section numbering. Declared in the component body so it is recreated on every render and each
-     paint counts from 1 — a counter that outlived a render would climb forever. See makeSeq. */
-  const seq = makeSeq();
   /* ⚠️ 768, THE SAME NUMBER OrdersPanel USES — and through the same hook, which is the one
      definition of "is this a phone" (check:narrow). X-Ray opens FROM order details, so on a phone
      it is a step in a journey and is left with a back arrow; on desktop it is a dialog over a
@@ -195,6 +192,32 @@ export default function XrayReport({ order, apiClient, onClose }) {
     }
     return out;
   }, [design, tinPlan, buildGuides]);
+
+  /* ── The section numbers ────────────────────────────────────────────────────────────────────────
+     Worked out from WHAT WILL RENDER, in the order it appears on the page, and passed down as a
+     lookup — never claimed by a counter while rendering.
+
+     ⚠️ THE ORDER HERE IS THE PAGE'S ORDER, and it is not the order these values are declared in:
+     decorations and prints sit ABOVE tins in the JSX, because a modelled topper and a printed sheet
+     are made before anything is baked. Read the JSX, not this list, if the two ever disagree — and
+     then fix this list.
+
+     ⚠️ EACH CONDITION IS THE SECTION'S OWN, not a guess at it. `decorationRows` is the same function
+     the section renders from, so "numbered but absent" cannot happen; garnishes and prints mirror
+     their components' early returns exactly. */
+  const numberOf = useMemo(() => sectionNumbers([
+    report.checklist?.length > 0                                   && 'checklist',
+    (report.garnishes ?? []).length > 0                            && 'garnishes',
+    decorationRows({ design, fromPhoto, storedSteps, decorationMeta, guides: buildGuides,
+                     unidentified: coverage?.unidentified ?? [] }).length > 0 && 'decorations',
+    // Renders whenever the API can serve it — the section is a BUTTON before it is a list, so it is
+    // on the page from the first paint even though its contents arrive later.
+    !!(order?.id && apiClient?.identifyEdiblePrints)                && 'prints',
+    tinPlan.tiers.length > 0                                       && 'tins',
+    colors.length > 0                                              && 'colours',
+    (withNozzle.length + freehand.length) > 0                      && 'piping',
+  ]), [report, design, fromPhoto, storedSteps, decorationMeta, buildGuides, coverage,
+       order?.id, apiClient, tinPlan, colors, withNozzle, freehand]);
 
   // Build guides for the baker's own decorations — same rail, same fetch, different guide_type.
 
@@ -487,7 +510,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
             paper carries the ticks. */}
         {report.checklist?.length > 0 && (
           <div style={sectionWrap('#2C2A26')}>
-            <SectionHead n={seq.next()} color="#2C2A26"
+            <SectionHead n={numberOf('checklist')} color="#2C2A26"
               meta={<span style={{ ...s.muted, fontWeight: 600 }}>(tick them off on the printed sheet)</span>}>
               Checklist — {report.checklistTotal} item{report.checklistTotal === 1 ? '' : 's'}
             </SectionHead>
@@ -539,7 +562,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
           decorationMeta={decorationMeta}
           // Derived from the pieces' own paths — see GarnishGuides. Nothing is fetched for these.
           garnishes={report.garnishes ?? []}
-          seq={seq}
+          numberOf={numberOf}
           /* ⚠️ THE DECORATIONS THE CATALOGUE DID NOT RECOGNISE, which are the ones a baker is most
              likely to need told. They are already NAMED higher up this report as gaps ("1 thing on
              the photo could not be identified") — this is the same list, now with a way to act on
@@ -557,7 +580,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
             started: the sheet has to be printed and dry before anything is assembled. */}
         {/* No `onClose`: a print that has just been made opens Print & cut-outs ABOVE this sheet,
             so this one stays put and the baker comes back to it. */}
-        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} seq={seq} s={s} />
+        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} numberOf={numberOf} s={s} />
 
         {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.
 
@@ -580,7 +603,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {/* Tins */}
         {tinPlan.tiers.length > 0 && (
           <div style={sectionWrap('#1B5FA8')}>
-            <SectionHead n={seq.next()} color="#1B5FA8"
+            <SectionHead n={numberOf('tins')} color="#1B5FA8"
               meta={tinPlan.totalKg ? <span style={s.tag}>{tinPlan.totalKg} kg · {tinPlan.tiers.length} tier{tinPlan.tiers.length > 1 ? 's' : ''}</span> : null}>
               Tins &amp; weight
             </SectionHead>
@@ -725,7 +748,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {/* Cream colours */}
         {colors.length > 0 && (
           <div style={sectionWrap('#C2569B')}>
-            <SectionHead n={seq.next()} color="#C2569B" meta={<span style={s.tag}>{colors.length}</span>}>
+            <SectionHead n={numberOf('colours')} color="#C2569B" meta={<span style={s.tag}>{colors.length}</span>}>
               Cream colours
             </SectionHead>
             <div style={s.card}>
@@ -753,7 +776,7 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {/* Piping & nozzles */}
         {(withNozzle.length > 0 || freehand.length > 0) && (
           <div style={sectionWrap('#1E7A35')}>
-            <SectionHead n={seq.next()} color="#1E7A35" meta={<span style={s.tag}>{withNozzle.length + freehand.length}</span>}>
+            <SectionHead n={numberOf('piping')} color="#1E7A35" meta={<span style={s.tag}>{withNozzle.length + freehand.length}</span>}>
               Piping &amp; nozzles
             </SectionHead>
             <div style={s.card}>

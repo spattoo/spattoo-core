@@ -31,13 +31,23 @@ import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 // could be an edible-print decal or a reference for a fondant figure, and the baker decides that
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
-export default function XrayDecorationSteps({
-  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
-  garnishes = [], unidentified = [], seq, s,
-}) {
-  const rows = fromPhoto
+/**
+ * The rows this section would draw — exported so the REPORT can ask whether the section exists
+ * before it renders, and number the page accordingly (see `sectionNumbers`). Pure, and the one
+ * definition: the component below calls this too, so "is it there" and "what is in it" can never
+ * disagree.
+ */
+export function decorationRows({ design, fromPhoto, storedSteps, decorationMeta, guides, unidentified = [] }) {
+  return fromPhoto
     ? [...photoRows(design, storedSteps, decorationMeta), ...unmatchedRows(unidentified, storedSteps)]
     : elementRows(design, guides);
+}
+
+export default function XrayDecorationSteps({
+  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
+  garnishes = [], unidentified = [], numberOf, s,
+}) {
+  const rows = decorationRows({ design, fromPhoto, storedSteps, decorationMeta, guides, unidentified });
   if (!rows.length && !garnishes.length) return null;
 
   return (
@@ -46,11 +56,11 @@ export default function XrayDecorationSteps({
           derived from the piece's own stored paths — it is not written by anything and cannot be
           about a different garnish — so putting it under "check it before you build" would tell a
           baker to doubt the one guide here that is exact. Honesty runs in both directions. */}
-      {!!garnishes.length && <GarnishGuides garnishes={garnishes} seq={seq} s={s} />}
+      {!!garnishes.length && <GarnishGuides garnishes={garnishes} numberOf={numberOf} s={s} />}
 
       {!!rows.length && (
       <div style={sectionWrap('#6A5A8C')}>
-      <SectionHead n={seq.next()} color="#6A5A8C" meta={<span style={s.tag}>{rows.length}</span>}>
+      <SectionHead n={numberOf('decorations')} color="#6A5A8C" meta={<span style={s.tag}>{rows.length}</span>}>
         Decorations
       </SectionHead>
       {/* Said once for the whole section, as well as per row. The row badge marks an individual
@@ -79,10 +89,10 @@ export default function XrayDecorationSteps({
  * The strokes were saved in the order they were piped, so the guide is a reading of the piece rather
  * than a description of it. Nothing is fetched, nothing is generated, and there is no "generate"
  * button because there is nothing to wait for. */
-function GarnishGuides({ garnishes, seq, s }) {
+function GarnishGuides({ garnishes, numberOf, s }) {
   return (
     <div style={{ marginBottom: 14, ...sectionWrap('#4A2C1B') }}>
-      <SectionHead n={seq.next()} color="#4A2C1B" meta={<span style={s.tag}>{garnishes.length}</span>}>
+      <SectionHead n={numberOf('garnishes')} color="#4A2C1B" meta={<span style={s.tag}>{garnishes.length}</span>}>
         Chocolate garnishes
       </SectionHead>
       <div style={{ ...s.muted, marginTop: -4, marginBottom: 8 }}>
