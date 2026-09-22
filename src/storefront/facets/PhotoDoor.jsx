@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PhotoAddTile } from '../../shared/PhotoAddTile.jsx';
 import { compressImage } from '../../shared/image.js';
 import { putPhoto, deletePhoto, getPhoto, photosAvailable } from './photoStore.js';
 
@@ -25,7 +26,6 @@ export default function PhotoDoor({ draft, patch, bakerName, slug, onBack }) {
   const [error, setError] = useState(null);
   const [previews, setPreviews] = useState({});   // id -> object URL
   const [storable, setStorable] = useState(true);
-  const fileRef = useRef(null);
   // Every object URL this component minted, revoked on unmount. Without it, three photos across a
   // few visits leak a few megabytes of blob into a tab the customer keeps open.
   const urls = useRef([]);
@@ -80,7 +80,6 @@ export default function PhotoDoor({ draft, patch, bakerName, slug, onBack }) {
       setError('Could not read that photo. Try another one.');
     } finally {
       setBusy(false);
-      if (fileRef.current) fileRef.current.value = '';   // so re-picking the same file fires again
     }
   }
 
@@ -144,30 +143,38 @@ export default function PhotoDoor({ draft, patch, bakerName, slug, onBack }) {
         {' '}to share it — and for a child, their parent or guardian.
       </p>
 
-      {photos.length > 0 && (
-        <div style={s.grid}>
-          {photos.map(p => (
-            <div key={p.id} style={s.thumb}>
-              {previews[p.id]
-                ? <img src={previews[p.id]} alt={p.name || 'Reference photo'} style={s.img} />
-                /* The blob is gone — evicted, or a different device. Say so rather than showing a
-                   broken frame the customer cannot act on. */
-                : <div style={s.lost}>Photo no longer on this device</div>}
-              <button type="button" style={s.remove} onClick={() => remove(p.id)}
-                      aria-label={`Remove ${p.name || 'photo'}`}>✕</button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple
-             style={{ display: 'none' }} onChange={e => add(e.target.files)} />
-
-      {photos.length < MAX_PHOTOS && (
-        <button type="button" style={s.pick} disabled={busy} onClick={() => fileRef.current?.click()}>
-          {busy ? 'Adding…' : photos.length ? 'Add another' : 'Choose a photo'}
-        </button>
-      )}
+      {/* ⚠️ THE ADD CONTROL IS IN THE GRID, not a bar under it. It was a full-width dashed button
+          saying "Choose a photo", which reads as an action to perform; a square the size and shape
+          of its neighbours says "another one goes here", which is what is about to happen. It also
+          makes the empty state legible without a sentence — one dashed tile on its own reads as a
+          slot to fill. Shared with New Order and My Decorations (shared/PhotoAddTile.jsx), which
+          is where the shape comes from. */}
+      <div style={s.grid}>
+        {photos.map(p => (
+          <div key={p.id} style={s.thumb}>
+            {previews[p.id]
+              ? <img src={previews[p.id]} alt={p.name || 'Reference photo'} style={s.img} />
+              /* The blob is gone — evicted, or a different device. Say so rather than showing a
+                 broken frame the customer cannot act on. */
+              : <div style={s.lost}>Photo no longer on this device</div>}
+            <button type="button" style={s.remove} onClick={() => remove(p.id)}
+                    aria-label={`Remove ${p.name || 'photo'}`}>✕</button>
+          </div>
+        ))}
+        {/* Last, after what is already there: this door caps at MAX_PHOTOS, so "another one" always
+            belongs at the end of a short row. `size: '100%'` lets the grid decide — the tile is one
+            cell of the same auto-fill track as every thumbnail, so it can never be a different size
+            from the pictures beside it. */}
+        {photos.length < MAX_PHOTOS && (
+          <PhotoAddTile
+            color="#7A6C60"
+            size="100%"
+            busy={busy}
+            label={photos.length ? 'Add another' : 'Add a photo'}
+            onFiles={add}
+          />
+        )}
+      </div>
 
       {error && <div style={s.err}>{error}</div>}
 

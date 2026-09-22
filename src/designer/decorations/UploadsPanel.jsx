@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import { PhotoAddTile } from '../../shared/PhotoAddTile.jsx';
 import { ACCEPT_IMAGE, validateImageFile, compressImage, imageExt } from '../../shared/image.js';
 import { useUploadLimits } from '../../shared/useUploadLimits.js';
 import { PUBLISH_LABEL, UNPUBLISH_LABEL, PUBLISH_NOTE } from './decorationCopy.js';
@@ -327,14 +328,6 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
         </div>
       ) : null}
     >
-          {/* "A new one" is an ANSWER to "which image?", not a rival button elsewhere. Uploading here
-              keeps the frame's photo on the same registered path as everything else. */}
-          <label style={{ ...S.uploadBtn, ...(uploading ? { opacity: 0.6, cursor: 'default' } : null) }}>
-            {uploading ? 'Uploading…' : '+  Upload a new image'}
-            <input type="file" accept={ACCEPT_IMAGE} style={{ display: 'none' }} disabled={uploading}
-              onChange={e => { const f = e.target.files?.[0]; e.target.value = ''; uploadNew(f); }} />
-          </label>
-
           {uploads === null && <div style={S.note}>Loading…</div>}
 
           {uploads?.length === 0 && (
@@ -344,9 +337,21 @@ export default function UploadsPanel({ apiClient, elementTypes = [], canPromote 
             </div>
           )}
 
-          {uploads?.length > 0 && (
+          {uploads !== null && (
             <div style={S.grid}>
-              {uploads.map(u => {
+              {/* ⚠️ FIRST, NOT LAST — and unlike the other two surfaces that use this tile. New
+                  Order and the storefront cap at three photos, so "add another" belongs after what
+                  you have. This library grows without limit, and a control at the end of two
+                  hundred uploads is a control nobody finds.
+                  It was a full-width dashed bar reading "+ Upload a new image", which looks like an
+                  action to perform; a square the size of the thumbnails says a picture goes here.
+                  One file at a time, because uploadNew names and registers each one. */}
+              <PhotoAddTile
+                size="100%" label="Upload" multiple={false} accept={ACCEPT_IMAGE}
+                busy={uploading} color="#6B5E8C"
+                onFiles={files => uploadNew(files?.[0])}
+              />
+              {(uploads ?? []).map(u => {
                 return (
                 <div key={u.id} style={S.card}>
                   <div style={S.thumbWrap}>
