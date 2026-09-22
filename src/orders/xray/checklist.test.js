@@ -261,3 +261,43 @@ describe('procedural decorations reach the sheet', () => {
     expect(harvestPlaceables(old).flatMap(g => g.items).length).toBeGreaterThan(0);
   });
 });
+
+// ── The checklist names what the model SAW, not what it matched ─────────────────────────────────
+//
+// A real order, 2026-09-22: a cake with a wide fondant hat on top. The hat matched a white elephant
+// figurine in the catalogue — zone, type and colour agree, and that is 0.60 of a score against a
+// 0.35 floor — so the checklist a baker ticks at the bench read "Elephant · top surface", while the
+// Decorations section three lines below called the same object "flower on the top".
+//
+// `harvest.js` is blunt about what a checklist claims: "that this is EVERYTHING … a checklist that
+// silently omits is worse than no checklist, because it is believed." That same trust is what makes
+// a WRONG entry expensive — a baker either hunts for an elephant that is not on the cake, or stops
+// believing the list.
+describe('a photo-read decoration is named by what was seen', () => {
+  // `seen` is written by the backend mapper beside the match, precisely so no reader has to trust
+  // the match. Only photo orders carry it.
+  const photoDesign = {
+    tiers: [{ topPipings: [], bottomPipings: [] }],
+    stickers: [
+      { elementId: 'elephant', name: 'Elephant', zone: 'top_surface', tierIndex: 0,
+        seen: { what: 'hat', placement: 'top_surface' } },
+    ],
+  };
+
+  it('uses seen.what over the matched element name', () => {
+    const groups = harvestPlaceables(photoDesign);
+    const labels = groups.flatMap(g => g.items.map(i => i.what));
+    expect(labels).toContain('hat');
+    expect(labels).not.toContain('Elephant');
+  });
+
+  it('still uses the element name on a DESIGNED order, where it is a fact', () => {
+    // No `seen` — the customer placed this element themselves, so its name is authoritative.
+    const designed = {
+      tiers: [{ topPipings: [], bottomPipings: [] }],
+      stickers: [{ elementId: 'lion', name: 'Lion topper', zone: 'top', tierIndex: 0 }],
+    };
+    const labels = harvestPlaceables(designed).flatMap(g => g.items.map(i => i.what));
+    expect(labels).toContain('Lion topper');
+  });
+});

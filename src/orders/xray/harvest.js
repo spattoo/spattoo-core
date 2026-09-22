@@ -1,5 +1,6 @@
 // Pull the X-Ray-relevant bits out of a saved design snapshot.
 import { normalizeHex } from './gelLibrary.js';
+import { decorationWhat } from './decorationLabel.js';
 
 // The cake board is a hardcoded render constant, not part of the design — and we
 // deliberately exclude it from the cream-colour table.
@@ -207,9 +208,16 @@ export function harvestPlaceables(design) {
     // lion goes on, or it does not save anyone a decision.
     [...(design?.stickers ?? []), ...(design?.decorations ?? [])]
       .filter(s => (s?.tierIndex ?? 0) === i)
+      /* ⚠️ WHAT THE MODEL SAW, NOT WHAT IT MATCHED. This read `s.name` — the matched library
+         element — and on a photo order that match is a guess scored against a 0.35 floor. A real
+         cake's wide fondant hat came through the checklist as "Elephant" while the Decorations
+         section of the same sheet called it "flower on the top": two names for one object, three
+         lines apart, and the wrong one on the half a baker ticks at the bench. `seen` is written
+         beside the match for exactly this; see decorationLabel.js. `name` still wins on a DESIGNED
+         order, where the sticker is a library element the customer actually placed. */
       .forEach(s => push(
         bucket,
-        s?.name || 'Decoration',
+        decorationWhat(s),
         s?.zone ? String(s.zone).replace(/_/g, ' ') : null,
         `deco-${s?.elementId ?? s?.name}-${s?.zone ?? ''}`,
       ));

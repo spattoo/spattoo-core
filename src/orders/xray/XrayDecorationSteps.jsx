@@ -4,6 +4,7 @@ import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
 import { SectionHead, sectionWrap } from './XraySection.jsx';
+import { decorationLabel } from './decorationLabel.js';
 import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 
 // ── How to make the decorations ──────────────────────────────────────────────────────────────────
@@ -107,24 +108,15 @@ function GarnishGuides({ garnishes, seq, s }) {
 
 // ── Row builders ────────────────────────────────────────────────────────────────────────────────
 
-const ZONE_WORDS = {
-  top_surface: 'top surface', side: 'side', rim: 'rim', base: 'base', board: 'board',
-};
-
-// A photo decoration, described the way the model reported it. `seen` is written by the backend
-// mapper alongside the match precisely so this never has to trust the match.
-function describe(sticker) {
-  const seen = sticker?.seen ?? {};
-  const what  = seen.what || sticker?.name || 'decoration';
-  const where = ZONE_WORDS[seen.placement] || ZONE_WORDS[sticker?.zone] || null;
-  return where ? `${what} on the ${where}` : what;
-}
+// A photo decoration, described the way the model reported it. Shared with the CHECKLIST — see
+// decorationLabel.js for why one function: the two surfaces called the same decoration different
+// things, and the checklist was the one that was wrong.
 
 function photoRows(design, storedSteps, meta) {
   const out = [];
   for (const d of [...(design?.stickers ?? []), ...(design?.decorations ?? [])]) {
     if (!d?.id) continue;                       // no stable key → nothing to store steps under
-    const label = describe(d);
+    const label = decorationLabel(d);
     out.push({
       key:     d.id,
       title:   label,
