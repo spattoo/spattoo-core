@@ -63,12 +63,20 @@ describe('full-screen takeovers', () => {
 
   /* ⚠️ THE SECOND REPORT — "Print & cut-outs" in order details. The sheet itself is A4Sheet, fixed
      above; what is left is the shell around it, which sat at a bare 60 inside OrdersPanel's docked
-     page and painted its loading and error states there. A dialog, so Z.panel. */
+     page and painted its loading and error states there.
+     ⚠️ ITS LEVEL IS NOW A VARIABLE, and that is the point rather than a loosening. It is a dialog
+     (Z.panel) when opened from order details, and Z.overStudio when opened from INSIDE X-Ray —
+     because a 1000 dialog opened from within a 4000 takeover renders underneath it, which is why
+     that button used to have to close X-Ray first. Both ends are still pinned, just not inline. */
   it('the cut-out sheet\'s shell leaves the docked page too', () => {
     const s = src('../orders/OrdersPanel.jsx');
     expect(s).toMatch(/<Takeover>/);
-    expect(s).toMatch(/background: 'rgba\(20,18,22,0\.55\)', zIndex: Z\.panel/);
+    expect(s).toMatch(/background: 'rgba\(20,18,22,0\.55\)', zIndex: z\b/);
+    // The two levels it can take, named rather than numbered.
+    expect(s).toMatch(/z = Z\.panel/);                       // the default: a dialog
+    expect(s).toMatch(/z=\{raised \? Z\.overStudio : Z\.panel\}/);
     expect(s).not.toMatch(/zIndex: 60\b/);
+    expect(s).not.toMatch(/zIndex: 4100\b/);                 // named, never a bare number
   });
 
   /* The storefront preview: a full-screen destination opened from a button inside SettingsPanel. */

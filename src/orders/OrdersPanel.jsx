@@ -192,6 +192,10 @@ function XrayLauncher({ order, apiClient, variant, enabled }) {
 function CutoutLauncher({ order, apiClient, variant }) {
   const [open, setOpen] = useState(false);
   const [prints, setPrints] = useState([]);
+  /* Whether this was opened from INSIDE X-Ray (which is still on screen above us) or straight from
+     order details. It decides two things that must agree: which z it paints at, and therefore what
+     dismissing it returns to. */
+  const [raised, setRaised] = useState(false);
   const { design, fromPhoto } = resolveXraySpec(order);
   /* ⚠️ NOT on a photo order. A designed cake's `elementId`s ARE its decorations — the customer picked
    * them, so printing their outline is exactly right. A photo order's are the MATCHER's closest
@@ -225,7 +229,11 @@ function CutoutLauncher({ order, apiClient, variant }) {
     /* ⚠️ LOADS BEFORE IT OPENS. The sheet is handed `prints` as a prop, so opening on the event
        alone would show an empty sheet whenever the fetch had not come back yet — which is exactly
        the case this exists for, since the print was made a moment ago. */
-    const offOpen = onOpenPrintSheet(async () => { await load(); if (alive) setOpen(true); });
+    const offOpen = onOpenPrintSheet(async () => {
+      await load();
+      // Raised, because this request came from inside X-Ray, which is still open above us.
+      if (alive) { setRaised(true); setOpen(true); }
+    });
     return () => { alive = false; off(); offOpen(); };
   }, [order?.id, apiClient]);
 
@@ -238,7 +246,14 @@ function CutoutLauncher({ order, apiClient, variant }) {
                      hands over, and neither half alone describes the sheet. */
                   short={<>Print &amp;<br />cut-outs</>}
                   onClick={() => setOpen(true)} variant={variant} />
-      {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient} onClose={() => setOpen(false)} />}
+      {open && <CutoutModal ids={ids} prints={prints} order={order} apiClient={apiClient}
+                            z={raised ? Z.overStudio : Z.panel}
+                            /* ⚠️ CLOSING RETURNS TO WHAT IT WAS OPENED FROM. Raised means X-Ray is
+                               still behind this, so dismissing lands the baker back in the sheet
+                               they pressed the button in — at the section they were reading —
+                               rather than two steps away in order details. `raised` is cleared so
+                               the next open from this button is a plain dialog again. */
+                            onClose={() => { setOpen(false); setRaised(false); }} />}
     </>
   );
 }
@@ -291,7 +306,7 @@ function CutFileLauncher({ order, variant }) {
 // The catalogue is fetched here rather than read off the design: a saved snapshot carries element
 // IDs and placement, not image URLs, and the sheet needs pixels to trace. One call, filtered — the
 // same call the designer makes to fill its own picker.
-function CutoutModal({ ids, prints = [], order, apiClient, onClose }) {
+function CutoutModal({ ids, prints = [], order, apiClient, onClose, z = Z.panel }) {
   const [elements, setElements] = useState(null);
   const [err, setErr] = useState('');
 
@@ -325,7 +340,13 @@ function CutoutModal({ ids, prints = [], order, apiClient, onClose }) {
    * painting inside the page. Z.panel because that is what this is: a dialog, not a destination. */
   return (
     <Takeover>
-      <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: Z.panel,
+      {/* ⚠️ `z`, NOT ALWAYS Z.panel. As a dialog over order details this is Z.panel and that is
+          right — it is not a destination. But it is also opened FROM X-Ray, which is a takeover at
+          Z.studio (4000), and a 1000 dialog opened from inside a 4000 destination renders
+          underneath it. That is why the button used to close X-Ray first: there was no other way
+          to see this. Z.overStudio (4100) is the level the scale already keeps for "a panel opened
+          from inside one" — the same one EdiblePrintStudio passes for its uploads picker. */}
+      <div style={{ position: 'fixed', inset: 0, background: 'rgba(20,18,22,0.55)', zIndex: z,
                     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
            onClick={onClose}>
         <div style={{ background: '#fff', borderRadius: 14, maxWidth: 1040, width: '100%',

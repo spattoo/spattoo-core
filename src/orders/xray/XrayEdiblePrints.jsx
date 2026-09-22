@@ -21,7 +21,7 @@ import { SectionHead } from './XraySection.jsx';
  * Identify is free but not instant, and a report that fires an AI read on open would do it for every
  * order whether anyone wanted prints or not. The same reason the build guides sit behind a button.
  */
-export default function XrayEdiblePrints({ orderId, apiClient, seq, onClose, s }) {
+export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
   const [prints, setPrints] = useState(null);   // null = never asked
   const [ticked, setTicked] = useState({});     // index → bool
   const [busy, setBusy]   = useState(false);
@@ -159,7 +159,12 @@ export default function XrayEdiblePrints({ orderId, apiClient, seq, onClose, s }
                         screen reader that says it is pressable (root CLAUDE.md rule 7). */}
                     <button
                       type="button"
-                      onClick={() => { openPrintSheet(); onClose?.(); }}
+                      /* ⚠️ DOES NOT CLOSE X-RAY. The sheet stacks ABOVE it (Z.overStudio), so
+                         dismissing the sheet lands the baker back here — in the section they
+                         pressed this in — rather than two steps away in order details. X-Ray is a
+                         long worksheet and this is section 6 of it; closing it would throw away
+                         their place in exchange for nothing. */
+                      onClick={() => openPrintSheet()}
                       style={{
                         border: '1.5px solid #2C4433', background: '#fff', color: '#2C4433',
                         borderRadius: 9, padding: '7px 13px', fontFamily: 'inherit',

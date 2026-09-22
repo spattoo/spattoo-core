@@ -26,8 +26,21 @@ describe('Print & cut-outs refreshes when a print is made', () => {
   it('opens the sheet on request, and loads before it does', () => {
     // The sheet takes `prints` as a prop, so opening on the event alone would show an empty sheet
     // whenever the fetch had not returned — which is exactly this case, a print made a moment ago.
-    expect(src).toMatch(/onOpenPrintSheet\(async \(\) => \{ await load\(\);/);
-    expect(src).toMatch(/setOpen\(true\)/);
+    const handler = src.slice(src.indexOf('onOpenPrintSheet(async'), src.indexOf('return () => { alive'));
+    expect(handler).toMatch(/await load\(\)/);
+    expect(handler).toMatch(/setOpen\(true\)/);
+  });
+
+  it('opens RAISED when the request came from inside X-Ray', () => {
+    /* ⚠️ The z and what dismissing returns to are ONE decision. The sheet is a Z.panel dialog when
+       opened from order details; opened from X-Ray it must paint at Z.overStudio, because a 1000
+       dialog inside a 4000 takeover renders underneath it — which is why the button used to close
+       X-Ray first. Raised also means back lands in X-Ray rather than two steps away. */
+    const handler = src.slice(src.indexOf('onOpenPrintSheet(async'), src.indexOf('return () => { alive'));
+    expect(handler).toMatch(/setRaised\(true\)/);
+    expect(src).toMatch(/z=\{raised \? Z\.overStudio : Z\.panel\}/);
+    // …and cleared on close, or the next plain open would paint over a takeover that is not there.
+    expect(src).toMatch(/setOpen\(false\); setRaised\(false\);/);
   });
 
   it('detaches EVERY listener on unmount, and still cancels the in-flight fetch', () => {
