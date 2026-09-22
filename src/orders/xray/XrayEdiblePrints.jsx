@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { cropStyle } from './XrayDecorationSteps.jsx';
+import { SectionHead } from './XraySection.jsx';
 
 /* ── The edible prints on this cake, generated and sent to the print sheet ───────────────────────
  *
@@ -19,7 +20,7 @@ import { cropStyle } from './XrayDecorationSteps.jsx';
  * Identify is free but not instant, and a report that fires an AI read on open would do it for every
  * order whether anyone wanted prints or not. The same reason the build guides sit behind a button.
  */
-export default function XrayEdiblePrints({ orderId, apiClient, s }) {
+export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
   const [prints, setPrints] = useState(null);   // null = never asked
   const [ticked, setTicked] = useState({});     // index → bool
   const [busy, setBusy]   = useState(false);
@@ -71,9 +72,9 @@ export default function XrayEdiblePrints({ orderId, apiClient, s }) {
   return (
     <div style={s.card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <div style={{ ...s.sub, marginBottom: 0 }}>
-          <span style={s.dot('#1B5FA8')} /> Edible prints
-        </div>
+        <SectionHead n={seq.next()} color="#1B5FA8" style={{ marginBottom: 0 }}>
+          Edible prints
+        </SectionHead>
         {prints === null && (
           <button type="button" onClick={find} disabled={busy}
                   title="Free — it re-reads the reference photo this order already has."
