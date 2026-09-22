@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, Fragment } from 'react';
 import { useNarrow } from '../shared/useNarrow.js';
 import { dietTone, hasAllergen, restrictions } from './dietary.js';
-import { onEdiblePrintsChanged } from './ediblePrintsBus.js';
+import { onEdiblePrintsChanged, onOpenPrintSheet } from './ediblePrintsBus.js';
 import { PanelBackArrow, PanelBackCrumb, PanelDismiss } from '../shared/panelTopBar.jsx';
 import FinishedPhotoEditor from './FinishedPhotoEditor.jsx';
 import Segmented from '../shared/Segmented.jsx';
@@ -222,7 +222,11 @@ function CutoutLauncher({ order, apiClient, variant }) {
        so it never remounts and this list stayed as it was before the print existed. The button
        then did not appear, and the baker had nowhere to open the thing they had just paid for. */
     const off = onEdiblePrintsChanged(load);
-    return () => { alive = false; off(); };
+    /* ⚠️ LOADS BEFORE IT OPENS. The sheet is handed `prints` as a prop, so opening on the event
+       alone would show an empty sheet whenever the fetch had not come back yet — which is exactly
+       the case this exists for, since the print was made a moment ago. */
+    const offOpen = onOpenPrintSheet(async () => { await load(); if (alive) setOpen(true); });
+    return () => { alive = false; off(); offOpen(); };
   }, [order?.id, apiClient]);
 
   if (!ids.length && !prints.length) return null;

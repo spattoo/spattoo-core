@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { creditsChanged } from '../../billing/creditsBus.js';
-import { ediblePrintsChanged } from '../ediblePrintsBus.js';
+import { ediblePrintsChanged, openPrintSheet } from '../ediblePrintsBus.js';
 import { cropStyle } from './XrayDecorationSteps.jsx';
 import { SectionHead } from './XraySection.jsx';
 
@@ -21,7 +21,7 @@ import { SectionHead } from './XraySection.jsx';
  * Identify is free but not instant, and a report that fires an AI read on open would do it for every
  * order whether anyone wanted prints or not. The same reason the build guides sit behind a button.
  */
-export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
+export default function XrayEdiblePrints({ orderId, apiClient, seq, onClose, s }) {
   const [prints, setPrints] = useState(null);   // null = never asked
   const [ticked, setTicked] = useState({});     // index → bool
   const [busy, setBusy]   = useState(false);
@@ -149,9 +149,24 @@ export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
                      pressed Make it from inside an order, so the answer they need is where it is
                      on THAT order. Uploads is still mentioned second, because the print is theirs
                      to reuse on the next cake and that is worth knowing once. */
-                  <div style={{ ...s.muted, color: '#2C4433' }}>
-                    Made. Close this sheet and open <strong>Print &amp; cut-outs</strong> on the
-                    order to print it. It is also saved in your uploads as “{made[p.index].name}”.
+                  <div style={{ ...s.muted, color: '#2C4433', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start' }}>
+                    <span>Made, and saved in your uploads as “{made[p.index].name}”.</span>
+                    {/* ⚠️ A BUTTON, NOT AN INSTRUCTION. This first said "Close this sheet and open
+                        Print & cut-outs", which asks a baker to remember a name, dismiss what they
+                        are looking at, and go find it — for something they just paid credits for
+                        and cannot see. Closing X-Ray and opening the sheet is two things WE can do,
+                        so we do them. A real <button>: keyboard focus, Enter and Space, and a
+                        screen reader that says it is pressable (root CLAUDE.md rule 7). */}
+                    <button
+                      type="button"
+                      onClick={() => { openPrintSheet(); onClose?.(); }}
+                      style={{
+                        border: '1.5px solid #2C4433', background: '#fff', color: '#2C4433',
+                        borderRadius: 9, padding: '7px 13px', fontFamily: 'inherit',
+                        fontSize: 12, fontWeight: 800, cursor: 'pointer',
+                      }}>
+                      Open Print &amp; cut-outs
+                    </button>
                   </div>
                 )}
               </span>

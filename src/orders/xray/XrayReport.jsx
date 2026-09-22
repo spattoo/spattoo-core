@@ -539,7 +539,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
         {/* Edible prints — the pieces that are PRINTED rather than made. After the how-to sections
             because it is a different job done on a different machine, and usually the first thing
             started: the sheet has to be printed and dry before anything is assembled. */}
-        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} seq={seq} s={s} />
+        {/* `onClose` so a print that has just been made can hand the baker straight to the sheet
+            that prints it — closing this takeover and opening Print & cut-outs underneath. */}
+        <XrayEdiblePrints orderId={order?.id} apiClient={apiClient} seq={seq} onClose={onClose} s={s} />
 
         {/* Annotated cake — now BOTH kinds of order, by two different routes to the same anchor.
 

@@ -40,3 +40,30 @@ export function onEdiblePrintsChanged(fn) {
   listeners.add(fn);
   return () => listeners.delete(fn);
 }
+
+// ── "Take me to the print sheet" ─────────────────────────────────────────────────────────────────
+//
+// A separate signal from the one above, and deliberately not a flag on it. "A print was made" is a
+// fact about data that several readers may care about; "open the sheet now" is a one-off intent
+// from a baker who just pressed something. Folding the second into the first would mean every
+// future listener of a data change had to work out whether it was also supposed to open a modal.
+//
+// ⚠️ WHY IT HAS TO CROSS COMPONENTS AT ALL. The print sheet is opened by the launcher inside
+// OrdersPanel; the button that should open it sits in X-Ray, a takeover rendered above it. The
+// alternative was the copy that shipped first — "Close this sheet and open Print & cut-outs" —
+// which is an instruction rather than a link, and asks a baker to remember a name and go find it.
+
+const openListeners = new Set();
+
+/** Ask the order's Print & cut-outs sheet to open. The caller closes whatever it is standing in. */
+export function openPrintSheet() {
+  for (const fn of openListeners) {
+    try { fn(); } catch { /* one broken listener must not stop the others */ }
+  }
+}
+
+/** Returns an unsubscribe function, for useEffect cleanup. */
+export function onOpenPrintSheet(fn) {
+  openListeners.add(fn);
+  return () => openListeners.delete(fn);
+}
