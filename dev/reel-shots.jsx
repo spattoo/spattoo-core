@@ -20,6 +20,17 @@ import { recordCanvas, pickMimeType, extensionFor, downloadBlob } from '../src/d
  * It also answers the question the plan cannot: does a cut actually make the reel better? Play
  * "Turntable" (today's shot, exactly) against the multi-shot recipes on the same cake and judge it.
  *
+ * ⚠️ THE TIMINGS BELOW ARE THE ORIGINAL ONES, AND THEY ARE KNOWN TO BE WRONG. Sandeep, first
+ * viewing: "those are moving very fast." Measured afterwards, the camera is not the problem — every
+ * shot here is SLOWER than the shipped turntable (125°/s peak) and the close `detail` shot is the
+ * slowest thing on the page at 12°/s mean. What is wrong is the CUT RATE: 1.4s per shot in Reveal
+ * and 0.9s in Four cuts, against 4.5s today. The fix is fewer, longer shots — roughly one cut every
+ * 2–2.5s, which makes a multi-shot reel LONGER than 4.5s rather than the same length chopped finer.
+ *
+ * Deliberately not applied yet, so the page still demonstrates the fault the plan describes. See
+ * plans/reel-studio.md §5c, which carries the measurements. Retune before judging a reel template
+ * on pacing — and add a tempo control rather than guessing at numbers a second time.
+ *
  * ── WHAT THIS DELIBERATELY IS NOT ───────────────────────────────────────────────────────────────
  * Not the product. It records the canvas at its ON-SCREEN size, where a real take resizes the
  * drawing buffer to 1080×1920, probes the device and demotes to 720p if it cannot sustain the shot
