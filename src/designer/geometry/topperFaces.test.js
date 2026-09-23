@@ -79,3 +79,23 @@ describe('the face registry', () => {
     }
   });
 });
+
+/* ── The fit has to survive a LONG word, not just "Ava" ──────────────────────────────────────────
+ * Parisienne and Pinyon Script shipped at -0.08, judged on short words, and turned "Happy
+ * Anniversary" into a tangle — the n-n-i-v run collapsing into one shape. Reported 2026-09-23.
+ * These pin the ceiling rather than the exact number, because the number is set by LOOKING and a
+ * test that froze it would fail every time someone legitimately re-tuned by eye. What must not
+ * happen again is a fine copperplate being tightened the way a wide face can be. */
+describe('the fit a face wants', () => {
+  it('keeps the two fine copperplates loose enough for a long word', () => {
+    for (const key of ['parisienne', 'pinyon_script']) {
+      expect(faceFit(key)).toBeGreaterThanOrEqual(-0.05);
+      expect(faceFit(key)).toBeLessThan(0);          // still negative: letters must close up
+    }
+  });
+
+  it('leaves every face tighter than the value that eats a letter', () => {
+    // -0.16 on Parisienne rendered "Bithday" — the r gone. Nothing may go near that again.
+    for (const key of Object.keys(TOPPER_FACES)) expect(faceFit(key)).toBeGreaterThan(-0.15);
+  });
+});
