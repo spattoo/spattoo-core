@@ -28,6 +28,13 @@ import { topperStick } from './topperPiece.js';
 // choose how far above the cake the thing sits. `bury` is that number — a FRACTION of the stick's
 // hanging length, so it keeps meaning the same thing when the element is resized.
 
+// ⚠️ IT DOES NOT BELONG IN THE BUILD GUIDE, AND THAT WAS ASKED AND ANSWERED. The obvious next move
+// is to make X-Ray say "fit a pick" when a stuck element is on the cake, or to have the guide
+// generator write a step for it. Sandeep, on the fondant heart whose guide has no stick step:
+// *"x-ray includes it anyways and thats good enough. adding a stick is not a step thats important to
+// be included in the guide."* The decoration already appears on the sheet; pushing a pick into it is
+// not a technique a decorator needs telling. Leave the guides alone.
+
 /** What the code believes about a stick when a row authors nothing. */
 export const ELEMENT_STICK_DEFAULTS = Object.freeze({
   // Half in, half out: the stick reads as a stick, and the element clears the icing.
