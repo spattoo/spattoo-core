@@ -4,7 +4,7 @@ import { TAKE_GROUNDS } from '../constants.js';
 import { takeRow as row, takeLabel as label, takeNote as note, takePick as pick,
          groundsFor, GroundSwatches, NameOnFrame, TakeButton } from '../capture/takeUi.jsx';
 import { PHOTO_SHAPES, DEFAULT_SHAPE, shapeByKey } from './photoShapes.js';
-import { PHOTO_ANGLES, DEFAULT_ANGLE } from './photoAngles.js';
+import { PHOTO_ANGLES, PHOTO_OPENS_AT } from './photoAngles.js';
 
 /* ── The photograph, chosen before it is taken ───────────────────────────────────────────────────
  *
@@ -54,7 +54,9 @@ export default function PhotoOptions({
 
   // Frame it the way the panel opens, so the first thing the baker sees is a composed shot rather
   // than whatever angle the last edit left behind. Once only — after this the camera is theirs.
-  useEffect(() => { if (open) onAngle?.(DEFAULT_ANGLE); }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
+  // FACE-ON, not three-quarter: see PHOTO_OPENS_AT. A name piped across the front was running off
+  // the side of every frame, and the reel's preview already stood dead-on.
+  useEffect(() => { if (open) onAngle?.(PHOTO_OPENS_AT); }, [open]);   // eslint-disable-line react-hooks/exhaustive-deps
   /* ── Per-take choices are CLEARED every time the panel opens ─────────────────────────────────
    *
    * ⚠️ Reported: after one take with the name off, "I don't see that entire field at all" and no way

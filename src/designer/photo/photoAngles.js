@@ -45,7 +45,28 @@ export const PHOTO_ANGLES = [
   },
 ];
 
+/* The angle `angleByKey` falls back to when it is handed something it does not know. Three-quarter
+   because it is the most forgiving of any cake — see its entry above. */
 export const DEFAULT_ANGLE = 'three-quarter';
+
+/* ── Where the PHOTO PANEL opens ─────────────────────────────────────────────────────────────────
+ *
+ * Not the same question as the fallback, and it used to be answered with the same constant. The
+ * panel opened at three-quarter, so every photograph started rotated ~38° off the front, and a name
+ * piped across the front of a cake ran off the side of the frame. Sandeep: *"when i take photo, its
+ * always taking from a little side angle. the one we are capturing for reel is better position."*
+ *
+ * The reel preview stands at CAMERA_POSITION_MOBILE — x = 0, dead face-on — and he is right that it
+ * is the better opening: a cake's front is where the writing goes, and the baker can drag to a
+ * three-quarter in one gesture if this cake wants one. The reverse is harder, because nothing tells
+ * you how far off-front you are.
+ *
+ * ⚠️ THE ENTRY'S OWN COMMENT ARGUES FOR THREE-QUARTER — "the usual product shot", the only angle
+ * showing front, side and top at once. That reasoning is sound and it is still what the chip does;
+ * what changed is which one the panel STARTS on, which is a different decision from which is the
+ * best shot. Kept as a separate constant so neither has to lie about the other.
+ */
+export const PHOTO_OPENS_AT = 'front';
 
 export function angleByKey(key) {
   return PHOTO_ANGLES.find(a => a.key === key) ?? PHOTO_ANGLES.find(a => a.key === DEFAULT_ANGLE);
