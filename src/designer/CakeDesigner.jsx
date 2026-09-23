@@ -27,7 +27,7 @@ import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '..
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -99,7 +99,7 @@ import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
-import { calendarSheet, resolveCalendarCfg, calendarLayouts, resolveDate }
+import { calendarSheet, resolveCalendarCfg, calendarLayouts, resolveDate, CALENDAR_DEFAULTS }
   from './shared/textures/calendarArt.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
@@ -2209,6 +2209,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // null when editing the element's single colour. Set when a per-group swatch / on-canvas dot is
   // tapped; the wheel then reads/writes sticker.groupColors[activeGroupKey] instead of sticker.color.
   const [activeGroupKey, setActiveGroupKey] = useState(null);
+  /* Which of a CALENDAR's three colours the shared wheel is editing: 'ink' (the numbers), 'accent'
+     (the month name and the ring) or 'paper' (the background). Null = not editing a calendar colour.
+     ⚠️ String keys, so the falsy-zero trap the note above records for group indices cannot bite. */
+  const [calendarColorKey, setCalendarColorKey] = useState(null);
   // "Is a group being edited?" is a question about PRESENCE, not truthiness — and it must be asked
   // through this flag, never as `if (activeGroupKey)`.
   //
@@ -4371,6 +4375,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (selectedEl.type === 'text') return selectedText?.color ?? '#ffffff';
     if (selectedEl.type === 'sticker') {
       const st = design.stickers.find(s => s.id === selectedEl.id);
+      /* ⚠️ A CALENDAR HAS NO `color`. It draws from its own recipe — ink, accent, paper — so the wheel
+         reads the named one the swatches selected. Falling through to `st.color` would open the wheel
+         on a colour the renderer never reads, which is the "picker that visibly does nothing" this
+         file already warns about for striped tiers. */
+      if (calendarColorKey && st?.calendar) {
+        const cal = { ...CALENDAR_DEFAULTS, ...st.calendar };
+        // `paper: null` is a real value (no background). Show the remembered colour so the wheel is
+        // not blank while the background is switched off — the studio's `lastPaper` rule.
+        return cal[calendarColorKey] ?? cal.lastPaper ?? CALENDAR_DEFAULTS.paper;
+      }
       // Editing a part-group / hue region → that group's colour, falling back to the colour the group
       // ACTUALLY IS (a hue region's detected hex) before the element's single colour.
       if (hasActiveGroup) return st?.groupColors?.[activeGroupKey] ?? activeGroupDefault ?? st?.color ?? '#ffffff';
@@ -4429,6 +4443,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     }
     if (selectedEl.type === 'text') updateText(selectedEl.id, { color: c });
     if (selectedEl.type === 'sticker') {
+      /* The customer's calendar diverges from the catalogue's recipe here, deliberately: it is THEIR
+         calendar now. `lastPaper` rides along so switching the background off and on again comes back
+         to the colour they picked rather than the authored default. */
+      const stCal = design.stickers.find(s => s.id === selectedEl.id);
+      if (calendarColorKey && stCal?.calendar) {
+        updateSticker(selectedEl.id, {
+          calendar: { ...stCal.calendar, [calendarColorKey]: c,
+                      ...(calendarColorKey === 'paper' ? { lastPaper: c } : null) },
+        });
+        return;
+      }
       if (hasActiveGroup) {
         // Recolour ONE group on this instance — a GLB part-group (render matches every mesh whose
         // userData.group === activeGroupKey: both shoes, both eyes) or a hue region (render recolours
@@ -4480,6 +4505,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setPipingPopupOpen(false);
     setColorOpen(false);
     setActiveGroupKey(null);
+    /* Alongside activeGroupKey, and for the same reason: a "which colour am I editing" selection
+       that outlives its popup is a wheel silently pointed at the wrong field. Without this a second
+       calendar would open on whichever colour the first one had selected. */
+    setCalendarColorKey(null);
   }
 
   // Clear the transient right-side editor UI: the piping-card stack + tools composer + open popups.
@@ -7868,7 +7897,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>
     );
-    const hasColourControl = (c.color || c.gradient) && !hueRegionsReplacesWheel;
+    /* ⚠️ NOT FOR A CALENDAR, and this is the ONE place that decides it — `colourCtls` and
+     * `mergeIntoSizeRow` both read this flag, so gating the render sites instead leaves the other
+     * route showing the wheel. It did: the swatch was suppressed at the standalone push and went on
+     * appearing in the merged Size row, beside the three named ones.
+     *
+     * A calendar has no `color`; it draws from its recipe. The generic wheel writes `sticker.color`,
+     * which nothing renders — the "picker that visibly does nothing" the striped-tier note warns
+     * about, and worse here because three working swatches sit next to it. */
+    /* ⚠️ RESOLVED FROM `el`, NOT `inst` — `inst` is not declared until the `el.type === 'sticker'`
+     * block far below, and optional chaining does not rescue an undeclared name: it THROWS. Putting
+     * `!inst?.calendar` here white-screened the designer with "inst is not defined", while 2203 tests
+     * stayed green because nothing in the suite mounts CakeDesignerInner. The same temporal-dead-zone
+     * scar this file already records four times over (selectedEl, stackSingleCard, templates, isSide).
+     * `c` above is derived from the same lookup, so the sticker is reachable here the same way. */
+    const calInst = el.type === 'sticker' ? design.stickers.find(s => s.id === el.id) : null;
+    const hasColourControl = (c.color || c.gradient) && !hueRegionsReplacesWheel && !calInst?.calendar;
     if (hasColourControl) colourCtls = [colourControl];
 
     /* ⚠️ GENERAL RULE, not a photo-frame special case. Sandeep, on the faux ball: "same controls
@@ -7931,7 +7975,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * The wheel already understands both selections: handleColorChange writes `color` for a
        * sticker and for every instance of a decorEl, and wheelColorOf reads each back. */
       const colourElId = el.type === 'sticker' ? inst?.elementId : el.elementId;
-      if (!editGroups.length && elementById.get(colourElId)?.allowed_actions?.color === true) {
+      /* ⚠️ NOT FOR A CALENDAR. This writes `sticker.color`, which a calendar's renderer never reads —
+         it draws from its recipe. Offering it beside the three named swatches would be a wheel that
+         visibly does nothing, the exact failure the striped-tier note above records. */
+      if (!editGroups.length && !inst?.calendar
+          && elementById.get(colourElId)?.allowed_actions?.color === true) {
         groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
           <button key="col"
             style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
@@ -8233,28 +8281,105 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           // The row holds both things the customer owns — which shape, and which date — so it is
           // named for the decoration rather than for one of them.
           panelLabel: 'Calendar',
-          scroll: true,
+          /* ⚠️ NOT A SCROLLING ROW. `scroll` wraps the controls in a nowrap ScrollFadeRow, which
+           * crammed the date beside the shape tiles and put the scroll ARROW on top of it —
+           * Sandeep: "calender data selector is showing a date like thing… also make it to the next
+           * line on desktop view." Off, the panel's other branch is `flexWrap: 'wrap'`, so a
+           * full-width control takes its own line and the arrow never appears. */
           controls: [
             ...shapeTiles,
-            <input
-              key="calendar-date"
-              type="date"
-              value={iso}
-              aria-label="The date to ring on the calendar"
-              onChange={e => {
-                const [y, m, d] = (e.target.value || '').split('-').map(Number);
-                // The picker can clear itself, and a calendar with no ringed date is not a thing the
-                // renderer can draw — resolveDate would silently fall back to today. Keep the last
-                // real date instead of writing a hole.
-                if (!y || !m || !d) return;
-                updateSticker(el.id, { calendarValues: { year: y, month: m, day: d } });
-              }}
-              style={{
-                width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: 8,
-                border: '1.5px solid #ddd', fontSize: 13, fontFamily: 'inherit', outline: 'none',
-                textAlign: 'center',
-              }}
-            />,
+            /* ⚠️ THREE COLOURS, ONE FLAG. `allowed_actions.color` unlocks all of them — Sandeep:
+             * "color: true unlocks all three." A calendar has no single colour to offer instead, so
+             * the swatches name what they change: the numbers, the month name and ring, the field.
+             * Each opens the SHARED wheel (INVARIANTS #3) by naming which colour it is editing, the
+             * same way a GLB part-group does through activeGroupKey. */
+            ...(caps?.color ? [(() => {
+              const cal = { ...CALENDAR_DEFAULTS, ...inst.calendar };
+              const swatches = [['ink', 'Numbers'], ['accent', 'Month'], ['paper', 'Background']];
+              return (
+                <div key="cal-colours" style={{ width: '100%', display: 'flex', gap: 10,
+                                                justifyContent: 'center', flexWrap: 'wrap', marginTop: 6 }}>
+                  {swatches.map(([k, label]) => {
+                    const off = k === 'paper' && !cal.paper;
+                    const shown = cal[k] ?? cal.lastPaper ?? CALENDAR_DEFAULTS.paper;
+                    const on = colorOpen && calendarColorKey === k;
+                    return (
+                      <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3 }}>
+                        <button type="button" aria-label={`${label} colour`} aria-pressed={on}
+                          onClick={() => {
+                            const opening = !(colorOpen && calendarColorKey === k);
+                            closeAllPopups();
+                            setCalendarColorKey(k);
+                            if (opening) setColorOpen(true);
+                          }}
+                          style={{ width: 26, height: 26, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                                   background: off ? 'transparent' : shown,
+                                   border: on ? `2.5px solid ${INK}` : '1.5px solid #999999',
+                                   /* A background that is OFF is shown as an empty ring rather than a
+                                      colour, because `paper: null` means no field at all. */
+                                   backgroundImage: off ? 'linear-gradient(45deg,transparent 45%,#bbb 45%,#bbb 55%,transparent 55%)' : 'none' }} />
+                        <span style={{ fontSize: 9, fontWeight: 700, color: '#5B6B60' }}>{label}</span>
+                      </div>
+                    );
+                  })}
+                  {/* Off = drawn straight onto the cake. A piped calendar wants this. */}
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10.5,
+                                  fontWeight: 700, color: '#5B6B60', cursor: 'pointer' }}>
+                    <input type="checkbox" checked={!!cal.paper}
+                      onChange={e => updateSticker(el.id, {
+                        calendar: { ...inst.calendar,
+                                    paper: e.target.checked ? (cal.lastPaper ?? CALENDAR_DEFAULTS.paper) : null },
+                      })} />
+                    Background
+                  </label>
+                </div>
+              );
+            })()] : []),
+            /* ⚠️ AN ICON, NOT A DATE FIELD. A bare <input type="date"> renders its own text ("23/09/…"),
+             * which reads as a form field in a row of round controls and gets clipped at card width.
+             * The button carries CalendarIcon and the chosen date as its caption — the same
+             * control-above-a-label shape Size and Spin use — and the real input sits behind it,
+             * visually hidden but still the thing that opens the OS picker and still focusable. */
+            <div key="calendar-date" style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 4 }}>
+              <button
+                type="button"
+                onClick={e => {
+                  /* ⚠️ NO REF. A ref declared in buildToolbar would be recreated every render, and a
+                     component-scope one would be SHARED — two calendars on a cake would open each
+                     other's picker. The input is this button's own sibling, so ask the DOM. */
+                  const el2 = e.currentTarget.parentElement?.querySelector('input[type="date"]');
+                  if (!el2) return;
+                  // showPicker() is the only way to open the OS calendar from a click on something
+                  // else; where it is unsupported, focus still gives the customer the native field.
+                  if (typeof el2.showPicker === 'function') { try { el2.showPicker(); return; } catch (_) { /* fall through */ } }
+                  el2.focus();
+                }}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                         border: 'none', background: 'none', cursor: 'pointer', padding: 0,
+                         fontFamily: 'inherit', color: INK }}
+              >
+                <CalendarIcon size={22} />
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5B6B60' }}>
+                  {iso ? `${pad(cv.day)}/${pad(cv.month)}/${cv.year}` : 'Date'}
+                </span>
+              </button>
+              <input
+                type="date"
+                value={iso}
+                aria-label="The date to ring on the calendar"
+                onChange={e => {
+                  const [y, m, d] = (e.target.value || '').split('-').map(Number);
+                  // The picker can clear itself, and a calendar with no ringed date is not a thing the
+                  // renderer can draw — resolveDate would silently fall back to today. Keep the last
+                  // real date instead of writing a hole.
+                  if (!y || !m || !d) return;
+                  updateSticker(el.id, { calendarValues: { year: y, month: m, day: d } });
+                }}
+                /* Not `display: none` and not `hidden`: a hidden input cannot be focused and
+                   showPicker() throws on one. Zero-sized and clipped keeps it real. */
+                style={{ position: 'absolute', width: 1, height: 1, opacity: 0, pointerEvents: 'none' }}
+              />
+            </div>,
           ],
         });
       }

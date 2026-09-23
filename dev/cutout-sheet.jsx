@@ -30,7 +30,7 @@ import { calendarSourcesFor } from '../src/chefsdesk/a4/calendarSource.js';
 
 const CAL_GRID = {
   layout: 'grid', medium: 'printed',
-  ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
+  ink: '#1A1A1A', accent: '#D8342B', paper: '#ffffff',
   ringStyle: 'circle', showDayHeader: true, showMonthName: true,
 };
 

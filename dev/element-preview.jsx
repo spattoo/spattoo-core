@@ -66,7 +66,7 @@ const BOTH = {
  */
 const GRID_RECIPE = {
   layout: 'grid', medium: 'printed',
-  ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
+  ink: '#1A1A1A', accent: '#D8342B', paper: '#ffffff',
   ringStyle: 'circle', showDayHeader: true, showMonthName: true,
   rect: { x: 0.5, y: 0.54, w: 0.78, h: 0.56 }, fontScale: 1,
 };

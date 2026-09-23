@@ -84,6 +84,28 @@ export function CopyIcon({ size = 16 }) {
  * Paired with `shared/NavRow.jsx`, which is the standard row this belongs on. If you are drawing
  * this by hand, the row around it probably wants NavRow instead.
  */
+/* A calendar page: the binding rings, the header rule, and a marked day.
+ *
+ * ⚠️ DRAWN HERE RATHER THAN LIFTED, because there was nothing to lift. `OrdersCalendar.jsx` looked
+ * like the obvious source and is not: its only inline SVG is a CHEVRON (`M9 6l6 6-6 6`), which is
+ * the exact path `check:one-chevron` scans for. Copying it under a calendar name would have drawn an
+ * arrow and failed the gate at once.
+ *
+ * The marked day is the point of the glyph: this icon opens the control that RINGS a date, so the
+ * dot says which question the button asks. Stroked, currentColor, 24-box — the house shape.
+ */
+export function CalendarIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <rect x="3" y="5" width="18" height="16" rx="2.5" />
+      <path d="M3 10h18" />
+      <path d="M8 3v4M16 3v4" />
+      <circle cx="12" cy="15.5" r="1.6" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function ChevronRightIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"

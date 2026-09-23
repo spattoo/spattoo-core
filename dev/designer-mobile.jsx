@@ -623,7 +623,7 @@ const CAL_RECIPE = {
      offered on the cake, so this fixture proves the tiles appear without any authoring at all. */
   layout: 'grid',
   medium: 'printed',
-  ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
+  ink: '#1A1A1A', accent: '#D8342B', paper: '#ffffff',
   ringStyle: 'circle', showDayHeader: true, showMonthName: true,
   rect: { x: 0.5, y: 0.54, w: 0.78, h: 0.56 }, fontScale: 1,
 };
@@ -631,10 +631,12 @@ const CAL_RECIPE = {
 CAT_ELEMENTS.push({
   id: 'e-calendar', name: 'Month calendar', description: 'the customer rings a date',
   element_type_id: 'et-topper', category_id: 'cat-1',
-  image_url: null, thumbnail_url: CAT_THUMB('#FDF3EC'), thumb_key: null,
+  image_url: null, thumbnail_url: CAT_THUMB('#ffffff'), thumb_key: null,
   allowed_zones: ['top_surface'],
   // `color: false` — the ink and accent are AUTHORED; the customer owns the DATE and nothing else.
-  allowed_actions: { move: true, tilt: false, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  /* ⚠️ `color: true` — the harness must offer the three colour swatches, or driving it would prove
+     only that they are absent. This mirrors what CalendarStudio now saves. */
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: false },
   placement_config: {
     top_surface: 'hug', r: 1,
     sheet: calendarSheet(CAL_RECIPE),

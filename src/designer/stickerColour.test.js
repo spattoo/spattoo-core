@@ -27,14 +27,22 @@ describe('whole-element colour is offered wherever the element allows it', () =>
   });
 
   it('is gated on the element flag, never on the card type', () => {
-    const gate = src.slice(src.indexOf('if (!editGroups.length && elementById'), src.indexOf('groups.push({ key: \'colour\''));
+    const gate = src.slice(src.indexOf('if (!editGroups.length && !inst?.calendar'), src.indexOf('groups.push({ key: \'colour\''));
     expect(gate).toMatch(/allowed_actions\?\.color === true/);
     expect(gate).not.toMatch(/single_per_slot|isMultiSlotEl/);
   });
 
   it('yields to part groups, which are the better colour control where they exist', () => {
     // A segmented GLB's colours ARE its groups; two controls over one mesh would fight.
-    expect(src).toMatch(/if \(!editGroups\.length && elementById/);
+    expect(src).toMatch(/if \(!editGroups\.length &&/);
+  });
+
+  /* ⚠️ AND IT YIELDS TO A CALENDAR, for the same reason with a different cause. A calendar draws
+   * from its own recipe (ink / accent / paper) and never reads `sticker.color`, so the generic wheel
+   * beside its three named swatches would be a control that visibly does nothing — the failure the
+   * striped-tier note in CakeDesigner records. Pinned so the exclusion cannot be dropped by accident. */
+  it('yields to a calendar, which has three named colours instead of one', () => {
+    expect(src).toMatch(/!editGroups\.length && !inst\?\.calendar/);
   });
 
   it('recolours ONE sticker, not every instance of that element', () => {
