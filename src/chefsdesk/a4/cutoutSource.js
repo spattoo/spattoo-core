@@ -97,6 +97,19 @@ function previewOf(outline, px = 220) {
  *   would put a blank card in the strip and make the baker work out why.
  */
 export async function elementSources(element) {
+  /* ⚠️ A CALENDAR MUST NOT BE TRACED FROM ITS THUMBNAIL, and this guard is the whole reason that
+   * sentence needs saying. A calendar element carries no `image_url` — it is a recipe, not a
+   * picture — but it DOES carry a `thumbnail_url`, which the Calendar Studio bakes from a SAMPLE
+   * date so the decorations picker has a tile to show. Fall through to the line below and this
+   * sheet prints a real, plausible, beautifully rendered calendar showing a date nobody chose.
+   *
+   * That is worse than printing nothing. Nothing is obvious; a wrong date is not — it survives
+   * every check a baker makes, all the way onto the cake.
+   *
+   * The calendar IS printable, just not from here: its date lives on the INSTANCE, so it is built
+   * from the design by `calendarSource.js` and handed to the sheet ready to draw itself. */
+  if (element?.placement_config?.calendar) return [];
+
   const url = element.image_url || element.thumbnail_url;
   if (!url) return [];
 

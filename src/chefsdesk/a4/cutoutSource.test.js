@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
-import { strokeOutline, cutoutPaths } from './cutoutSource.js';
+import { strokeOutline, cutoutPaths, elementSources } from './cutoutSource.js';
 import { outlineMm } from '../../designer/geometry/traceOutline.js';
 
 // A recording 2D context. The drawing is the product here — a template whose lines are wrong is
@@ -97,5 +97,32 @@ describe('cutoutPaths', () => {
     expect(p.mark).toHaveLength(1);
     expect(p.cut[0]).toMatch(/^M[\d.-]+,[\d.-]+ .*Z$/);
     expect(p.mark[0]).toMatch(/Z$/);
+  });
+});
+
+/* The one part of `elementSources` that can be asserted without a DOM: it refuses a calendar BEFORE
+ * it reaches for any pixels. Everything after that line needs a canvas and an image loader. */
+describe('elementSources refuses to trace a calendar', () => {
+  it('returns nothing for a calendar element, even though it has a thumbnail', async () => {
+    // The thumbnail is baked from a SAMPLE date. Tracing it would print a date nobody chose.
+    const cal = {
+      id: 'c1', name: 'Month calendar',
+      image_url: null, thumbnail_url: 'https://example.test/sample-september.png',
+      placement_config: { top_surface: 'hug', calendar: { layout: 'grid' } },
+    };
+    await expect(elementSources(cal)).resolves.toEqual([]);
+  });
+
+  it('still refuses when the calendar somehow has artwork too', async () => {
+    const cal = {
+      id: 'c2', name: 'Month calendar',
+      image_url: 'https://example.test/anything.png',
+      placement_config: { calendar: { layout: 'round' } },
+    };
+    await expect(elementSources(cal)).resolves.toEqual([]);
+  });
+
+  it('an ordinary element with no artwork is still just empty, not an error', async () => {
+    await expect(elementSources({ id: 'x', name: 'Lion' })).resolves.toEqual([]);
   });
 });
