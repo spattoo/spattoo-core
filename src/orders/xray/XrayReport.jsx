@@ -12,6 +12,7 @@ import { resolveXraySpec } from './resolveXraySpec.js';
 import { decorationWidthMm, tierInchFor } from './decorationTemplate.js';
 import XrayDecorationSteps, { decorationRows } from './XrayDecorationSteps.jsx';
 import { sectionNumbers, SectionHead, sectionWrap } from './XraySection.jsx';
+import GelMix from './GelMix.jsx';
 import XrayEdiblePrints from './XrayEdiblePrints.jsx';
 import { INK } from '../../shared/tokens.js';
 /* ⚠️ THE SHARED DISMISS, not a second X. Sandeep: "lets change the 'Close' button to 'X' button."
@@ -765,6 +766,9 @@ export default function XrayReport({ order, apiClient, onClose }) {
                       <div style={{ fontSize: 12.5, color: '#444', marginTop: 3 }}>
                         {rec?.recipe}{rec?.approx && <span style={s.muted}> (closest match — adjust by eye)</span>}
                       </div>
+                      {/* Drawn as well as named — the same strip the decoration guide uses, so a
+                          baker reads one picture on both halves of the sheet. */}
+                      <GelMix hex={c.hex} recipe={rec} />
                     </div>
                   </div>
                 );

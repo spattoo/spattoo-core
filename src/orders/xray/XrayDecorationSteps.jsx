@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
+import GelMix from './GelMix.jsx';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
 import { SectionHead, sectionWrap } from './XraySection.jsx';
 import { decorationLabel } from './decorationLabel.js';
@@ -517,7 +518,9 @@ export function cropStyle(photoUrl, bbox) {
 function ColourRow({ colour, s }) {
   const recipe = gelRecipeFor(colour.hex);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    // flex-start, not center: the row is now two or three lines tall and a centred swatch drifts
+    // away from the role it belongs to.
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
       <span style={{
         width: 20, height: 20, borderRadius: 5, background: colour.hex,
         border: '1.5px solid rgba(0,0,0,0.12)', flexShrink: 0,
@@ -528,6 +531,8 @@ function ColourRow({ colour, s }) {
           <span style={{ fontWeight: 600, color: '#8A857D', fontVariantNumeric: 'tabular-nums' }}> · {colour.hex}</span>
         </div>
         {recipe?.recipe && <div style={{ ...s.muted, marginTop: 1 }}>{recipe.recipe}</div>}
+        {/* The same three colours the sentence names, drawn. See GelMix. */}
+        <GelMix hex={colour.hex} recipe={recipe} />
       </div>
     </div>
   );

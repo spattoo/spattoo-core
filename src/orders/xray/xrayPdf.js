@@ -2,6 +2,7 @@ import { newA4Canvas, canvasesToPdfBlob } from '../pdf.js';
 import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
+import { gelRecipeFor } from './gelLibrary.js';
 import { loadImage } from '../framePhoto.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
 import { dietTone, hasAllergen, dietaryLine, restrictions } from '../dietary.js';
@@ -110,6 +111,25 @@ class Sheet {
     this.ctx.fill();
     this.text(label, this.margin + r * 3.4, this.y, { size, weight: 700 });
     this.y += size * 1.9;
+  }
+
+  /* The mix, drawn: white + the gel neat → the target. The screen shows the same three chips
+     (GelMix.jsx) and for the same reason — a gel's NAME is not a colour, and two brands' "egg
+     yellow" are different pigments. On paper it matters more, not less: the sheet is read at a
+     bench with the actual tub in hand and no way to tap anything.
+     Returns the width drawn, so a caller can place text after it; 0 when there is no gel, which is
+     the plain-white case and needs no picture. */
+  gelMix(recipe, x, y, size) {
+    const gel = recipe?.gel?.hex;
+    if (!gel) return 0;
+    const gap = size * 0.55;
+    const step = size + gap;
+    this.swatch('#FFFFFF', x, y, size);
+    this.text('+', x + size + gap * 0.18, y + size * 0.16, { size: size * 0.8, weight: 800, color: MUTED });
+    this.swatch(gel, x + step, y, size);
+    this.text('>', x + step * 2 + gap * 0.1, y + size * 0.16, { size: size * 0.8, weight: 800, color: MUTED });
+    this.swatch(recipe.hex ?? '#eee', x + step * 2, y, size);
+    return step * 2 + size;
   }
 
   swatch(hex, x, y, size) {
@@ -614,12 +634,16 @@ function drawColors(sheet, colors) {
 
     sheet.font(mm(3.2), 400);
     const recipeH = Math.ceil(sheet.ctx.measureText(recipe).width / maxW) * mm(4.3) + mm(4.3);
-    const rowH = Math.max(sw + mm(4), recipeH + mm(7));
+    // The strip is a row of its own under the recipe, so reserve its height before the page break
+    // is decided — measuring after it would split a mix across two pages.
+    const mixH = c.recipe?.gel?.hex ? mm(5.5) : 0;
+    const rowH = Math.max(sw + mm(4), recipeH + mm(7) + mixH);
     const y = sheet.space(rowH);
 
     sheet.swatch(c.hex, sheet.margin, y, sw);
     sheet.text(`${c.hex}   ${c.uses.join(', ')}`, textX, y, { size: mm(3), weight: 700, color: MUTED, maxW });
-    sheet.text(recipe, textX, y + mm(4.6), { size: mm(3.2), maxW });
+    const recipeBottom = sheet.text(recipe, textX, y + mm(4.6), { size: mm(3.2), maxW });
+    if (mixH) sheet.gelMix(c.recipe, textX, y + mm(4.6) + (recipeBottom || mm(4.3)) + mm(1), mm(4));
 
     sheet.rule(y + rowH - mm(1.5));
     sheet.y = y + rowH;
@@ -784,11 +808,20 @@ function drawDecorationReference(sheet, photo, meta, guide) {
     for (const c of colours) {
       const sw = mm(3.4);
       sheet.swatch(c.hex, textX, ty + mm(0.4), sw);
+      /* The mix, on the decoration's own colours as well as the cake's. The recipe is derived here
+         rather than carried on the row because these colours come from the GUIDE (what the model
+         read off the decoration), not from the design — one call, the same table, so the printed
+         strip and the screen's agree. */
+      const rec = gelRecipeFor(c.hex);
       // Hex printed alongside the role: the steps carry role tokens rather than colour names so one
       // guide serves every colour variant, and this is the only place that trade is paid back.
       sheet.text(`${readable(c.role)} · ${c.hex}`, textX + sw + mm(2), ty,
         { size: mm(3.2), weight: 700 });
       ty += Math.max(sw, mm(3.2)) + mm(1.2);
+      if (rec?.gel?.hex) {
+        sheet.gelMix(rec, textX + sw + mm(2), ty - mm(0.6), mm(3));
+        ty += mm(4.4);
+      }
     }
   }
 
