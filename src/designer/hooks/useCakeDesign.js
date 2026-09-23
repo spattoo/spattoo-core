@@ -21,6 +21,7 @@ import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
+import { calendarSheet, resolveCalendarCfg, calendarLayouts } from '../shared/textures/calendarArt.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
@@ -902,7 +903,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     // one thing the product already knows the answer to. And there is no single authored number that
     // would work: the right size is the cake's, and the top tier of a three-tier stack is not the
     // width of a single.
-    const sheetCfg = element.placement_config?.sheet;
+    /* ⚠️ A CALENDAR'S EXTENT CANNOT BE READ FROM STORAGE, because the SHAPE is the customer's now
+     * (Sandeep: "round or grid should be an option"). `placement_config.sheet` is baked when the
+     * studio saves, from the shape it was authored as — so a calendar switched to the other shape
+     * would be sized by the one it used to be: a disc wearing a rectangle's scale. Ask calendarArt
+     * what THIS instance will actually be drawn as, and take the extent from that. */
+    const calCfg = element.placement_config?.calendar;
+    const sheetCfg = calCfg
+      ? calendarSheet(resolveCalendarCfg(calCfg))
+      : element.placement_config?.sheet;
     if (sheetCfg && zone === ZONES.TOP_SURFACE) {
       defaultScale = null;   // resolved below, once the tier being placed on is known
     }
@@ -1063,8 +1072,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // An EDIBLE SHEET: printed artwork the baker lays on the cake (the football disc). Same
           // fit-to-the-boundary rule as a photo frame, different provenance — the artwork IS the
           // picture, so there is no mask and no border ring. See placement.js surfaceFit.
-          sheetShape:     element.placement_config?.sheet?.shape ?? null,      // 'round' | 'rect'
-          sheetFill:      element.placement_config?.sheet?.fill ?? 1,          // artwork extent within its square plane
+          sheetShape:     sheetCfg?.shape ?? null,      // 'round' | 'rect' — DERIVED for a calendar
+          sheetFill:      sheetCfg?.fill ?? 1,          // artwork extent within its square plane
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
@@ -1089,6 +1098,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // birthday would quietly drift to whenever the baker last looked at it. Freezing today's
           // date at placement is the same rule text slots follow: seeded from a default, then owned
           // by the customer.
+          /* The SHAPE the customer picked, seeded from the recipe's first offered layout — the same
+             rule `modes[0]` follows for a pose. A recipe naming ONE shape yields one option and the
+             card grows no chooser at all, so every calendar saved before this behaves as it did. */
+          calendarLayout: calCfg ? calendarLayouts(calCfg)[0] : null,
           calendarValues: element.placement_config?.calendar
                             ? (() => {
                                 const d = new Date();

@@ -16,7 +16,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
@@ -47,6 +47,7 @@ import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
+import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -98,6 +99,8 @@ import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
+import { calendarSheet, resolveCalendarCfg, calendarLayouts, calendarHasChoice, resolveDate }
+  from './shared/textures/calendarArt.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
 import AnchoredPopup from '../shared/AnchoredPopup.jsx';
@@ -8181,11 +8184,60 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // calendarLayout asks for, and because three integers survive a JSON round trip without ever
         // meeting a timezone. `new Date('2026-03-01')` is UTC midnight and can render as February.
         const iso = (cv.year && cv.month && cv.day) ? `${cv.year}-${pad(cv.month)}-${pad(cv.day)}` : '';
+        /* ⚠️ THE SHAPE SITS IN THIS GROUP, NOT IN ONE OF ITS OWN. Sandeep: "round or grid should be
+         * an option, not a separate control" — and not two catalogue rows either, because the shape
+         * "is an internal setting which user would know only after looking into the control". So the
+         * calendar's card holds both of the things a customer owns: which shape, and which date.
+         *
+         * ⚠️ TILES, NOT A TOGGLE, and this codebase has already paid for that lesson once — the Pose
+         * row was deleted because the tiles beside it rendered the option instead of naming it.
+         * A Grid/Round toggle would be the same mistake in a new place.
+         *
+         * ⚠️ ONE SHAPE GROWS NO CHOOSER. `calendarHasChoice` mirrors `zoneHasChoice`: a recipe that
+         * names a single layout offers nothing to pick, so every calendar saved before this looks
+         * exactly as it did. */
+        const layouts = calendarLayouts(inst.calendar);
+        const chosen = resolveCalendarCfg(inst.calendar, inst.calendarLayout).layout;
+        const shapeTiles = calendarHasChoice(inst.calendar) ? layouts.map(l => (
+          <div key={`cal-${l}`} style={{ flexShrink: 0 }}>
+            <CalendarLayoutTile
+              layout={l}
+              calendar={inst.calendar}
+              date={resolveDate(cv)}
+              on={l === chosen}
+              onPick={() => {
+                if (l === chosen) return;
+                /* ⚠️ THE FIT MOVES WITH THE SHAPE, so all four fields are written together.
+                 * `updateSticker` is a plain merge — it recomputes nothing — and a disc and a
+                 * rectangle do not occupy the same extent. Writing the layout alone would leave a
+                 * round calendar wearing the grid's scale, which reads as a placement bug rather
+                 * than the stale number it is. Same trap as the invented 0.92 that hung a printed
+                 * sheet off the cake. */
+                const sheet = calendarSheet(resolveCalendarCfg(inst.calendar, l));
+                const fitted = surfaceFitMax(
+                  { zone: inst.zone, sheetShape: sheet.shape, sheetFill: sheet.fill },
+                  tierOfSticker(inst),
+                );
+                updateSticker(el.id, {
+                  calendarLayout: l,
+                  sheetShape: sheet.shape,
+                  sheetFill: sheet.fill,
+                  ...(fitted ? { scale: fitted } : null),
+                });
+              }}
+            />
+          </div>
+        )) : [];
+
         groups.push({
           key: 'calendar',
           divider: true,
-          panelLabel: 'Date',
+          // Named for what the customer is choosing. With two shapes on offer the row is not only a
+          // date any more, and a label that said "Date" over a pair of shape tiles would be wrong.
+          panelLabel: shapeTiles.length ? 'Calendar' : 'Date',
+          scroll: shapeTiles.length > 0,
           controls: [
+            ...shapeTiles,
             <input
               key="calendar-date"
               type="date"

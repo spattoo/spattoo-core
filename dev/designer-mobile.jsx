@@ -619,7 +619,12 @@ const STUBS = {
  * the calendar seeds at STICKER_SIZE and renders as a stamp in the middle of the lid (measured).
  */
 const CAL_RECIPE = {
-  layout: 'grid', medium: 'printed',
+  /* ⚠️ `layouts`, PLURAL — this fixture exists to exercise the CHOICE. With a single `layout` the
+     card shows no chooser at all (calendarHasChoice), which is correct behaviour and would certify
+     nothing: a fixture without the thing it is meant to test is a fixture that certifies its absence.
+     Same trap designSnapshot.test.js records for toppers. */
+  layouts: ['grid', 'round'],
+  medium: 'printed',
   ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
   ringStyle: 'circle', showDayHeader: true, showMonthName: true,
   rect: { x: 0.5, y: 0.54, w: 0.78, h: 0.56 }, fontScale: 1,

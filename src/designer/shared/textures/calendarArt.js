@@ -89,6 +89,52 @@ export const CALENDAR_DEFAULTS = Object.freeze({
  * — if those two ever disagree, the calendar is fitted to a boundary it does not actually draw. */
 export const CALENDAR_DISC_INSET = 0.012;
 
+/* The shapes a calendar can be drawn as. A recipe names which of them IT offers, and the customer
+ * picks from that list on the cake. */
+export const CALENDAR_LAYOUTS = Object.freeze(['grid', 'round']);
+
+/**
+ * Which layouts this recipe offers — the customer's options, not a free choice.
+ *
+ * ⚠️ DELIBERATELY `zoneModes`' SHAPE, because this is the same question that file already answers
+ * ("an authored list, the FIRST is the default, one entry means no control at all") and two spellings
+ * of one idea is how they drift. Both forms read:
+ *
+ *     { layout: 'round' }                 -> ['round']            one shape, no chooser
+ *     { layouts: ['grid', 'round'] }      -> ['grid', 'round']    grid is the default
+ *
+ * The single `layout` form is what every calendar saved before this carried, so it keeps working and
+ * keeps showing no chooser — which is right: it was authored as one shape.
+ */
+export function calendarLayouts(cfg) {
+  const list = Array.isArray(cfg?.layouts)
+    ? cfg.layouts.filter(l => CALENDAR_LAYOUTS.includes(l))
+    : [];
+  if (list.length) return list;
+  const single = cfg?.layout ?? CALENDAR_DEFAULTS.layout;
+  return CALENDAR_LAYOUTS.includes(single) ? [single] : [CALENDAR_DEFAULTS.layout];
+}
+
+/** Does this calendar offer a CHOICE? One shape grows no control — same rule as `zoneHasChoice`. */
+export const calendarHasChoice = (cfg) => calendarLayouts(cfg).length > 1;
+
+/**
+ * The recipe to draw, with the customer's chosen shape folded in.
+ *
+ * ⚠️ THE CHOICE IS VALIDATED, NEVER TRUSTED — the same rule `zoneSeatFields` states for poses: a
+ * stored value that the recipe no longer offers (an admin narrowed the list after the cake was saved)
+ * falls back to the default rather than drawing a shape this calendar does not have.
+ *
+ * ⚠️ AND THE SHAPE CHANGES THE FIT, which is why `calendarSheet` must be asked AFTER this, never
+ * before. A calendar's extent is a disc for 'round' and a rectangle for 'grid'; sizing a switched
+ * calendar by the shape it used to be is how a round one ends up wearing a square's scale.
+ */
+export function resolveCalendarCfg(calendar, chosen = null) {
+  const allowed = calendarLayouts(calendar);
+  const layout = chosen && allowed.includes(chosen) ? chosen : allowed[0];
+  return { ...CALENDAR_DEFAULTS, ...(calendar || {}), layout };
+}
+
 export const CALENDAR_VALUE_KEYS = Object.freeze({ YEAR: 'year', MONTH: 'month', DAY: 'day' });
 
 /** The chosen date, defaulted so a freshly placed calendar draws something real. */

@@ -1,6 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
-import { composeCalendar, resolveDate, CALENDAR_DEFAULTS } from '../shared/textures/calendarArt.js';
+import { composeCalendar, resolveDate, resolveCalendarCfg } from '../shared/textures/calendarArt.js';
 
 /* ── A calendar's texture: drawn from numbers, never fetched ──────────────────────────────────────
  *
@@ -40,13 +40,19 @@ const CALENDAR_TEXTURE_PX = 1024;
  * @param {object|null} values    the customer's chosen `{ year, month, day }`. Missing or junk falls
  *                                back to today via `resolveDate`, which also clamps 31 February.
  */
-export function useCalendarTexture(calendar, values) {
+export function useCalendarTexture(calendar, values, layout = null) {
   // The date is resolved OUTSIDE the memo's identity: `values` is a fresh object on every render
   // (useCakeDesign rebuilds the sticker), so keying the memo on it directly would redraw a 1024²
   // canvas on every frame of an unrelated drag. The resolved triple is three numbers.
   const { year, month, day } = resolveDate(values ?? {});
   // Same reasoning for the config: it arrives from placement_config and is a new object each read.
   const cfgKey = useMemo(() => JSON.stringify(calendar ?? null), [calendar]);
+  /* ⚠️ THE SHAPE IS A PROP, NOT PART OF THE RECIPE, and forgetting that shipped a bug: the state
+   * said 'round', every assertion passed, and the cake went on drawing a grid — oversized, because
+   * the SCALE had followed the switch and the DRAWING had not. A recipe offering `layouts` carries
+   * no singular `layout` at all, so `{...CALENDAR_DEFAULTS, ...calendar}` quietly resolved to the
+   * default. `resolveCalendarCfg` is the one place that decides, and it validates the choice against
+   * what the recipe actually offers. */
 
   const texture = useMemo(() => {
     if (!calendar) return null;
@@ -54,7 +60,7 @@ export function useCalendarTexture(calendar, values) {
       const canvas = composeCalendar(
         CALENDAR_TEXTURE_PX,
         { year, month, day },
-        { ...CALENDAR_DEFAULTS, ...calendar },
+        resolveCalendarCfg(calendar, layout),
       );
       const tex = new THREE.CanvasTexture(canvas);
       tex.colorSpace = THREE.SRGBColorSpace;
@@ -68,7 +74,7 @@ export function useCalendarTexture(calendar, values) {
       return null;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cfgKey, year, month, day]);
+  }, [cfgKey, layout, year, month, day]);
 
   // This texture is OURS — nothing else holds it, unlike the drei-cached image the sticker path
   // borrows — so it must be freed when the date changes or the element leaves the cake. Without

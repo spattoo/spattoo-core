@@ -1,4 +1,4 @@
-import { composeCalendar, resolveDate, CALENDAR_DEFAULTS } from '../../designer/shared/textures/calendarArt.js';
+import { composeCalendar, resolveDate, resolveCalendarCfg } from '../../designer/shared/textures/calendarArt.js';
 
 // ── A calendar on the print sheet ────────────────────────────────────────────────────────────────
 //
@@ -54,7 +54,12 @@ export function calendarsIn(design) {
     .map(s => ({
       id: String(s.id),
       name: s.name || 'Calendar',
-      cfg: { ...CALENDAR_DEFAULTS, ...s.calendar },
+      /* ⚠️ THE SHAPE IS THE CUSTOMER'S TOO, not just the date. A calendar can offer both layouts and
+         the placement records which one was picked — so the sheet must print the shape on the cake,
+         not the one the recipe happens to list first. Same class of bug as printing a sample date,
+         and just as quiet. `resolveCalendarCfg` validates the choice against what the recipe
+         actually offers, so a narrowed list cannot print a shape that is no longer on offer. */
+      cfg: resolveCalendarCfg(s.calendar, s.calendarLayout),
       // The customer's date. `resolveDate` clamps a day the month does not have and falls back to
       // today for a value that never got set, so the sheet can always draw something real.
       date: resolveDate(s.calendarValues ?? {}),
