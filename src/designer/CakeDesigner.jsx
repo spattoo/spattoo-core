@@ -118,6 +118,7 @@ import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
+import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
@@ -1982,6 +1983,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const row = [...elementById.values()].find(r => r?.placement_config?.procedural === 'chocolate_garnish');
     return garnishPlacementOptions(row?.placement_config?.chocolate_garnish ?? null);
   }, [elementById]);
+  /* How big a message may be, from the Texts row's own `placement_config.scale` — the Size range an
+     admin types in Manage Elements, and the default scale `r` beside it.
+
+     ⚠️ IT WAS AUTHORED AND NEVER READ. The dial carried 0.3–0.95 step 0.05 in code while the row said
+     0.2–2.5 step 0.25, so an admin could set the bounds, press Save, and change nothing — the exact
+     failure `addWritingFromRow` warns about two hundred lines down, where the acrylic studio's output
+     was written and never read. Reported as *"its not honoring what i authored in admin"*.
+
+     Same shape as `garnishOptions` above: found by `procedural`, never by slug or name, and falling
+     back to the code's seed when no row is loaded (a harness, or a host with no catalogue). */
+  const writingScale = useMemo(() => {
+    const row = [...elementById.values()].find(r => r?.placement_config?.procedural === 'writing');
+    return writingScaleFrom(row?.placement_config ?? null);
+  }, [elementById]);
+
   // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
   // (Declared after elementById so it doesn't read it before initialization.)
   const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
@@ -4762,7 +4778,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tuned = acrylic
       ? writingFromAcrylicRow(acrylic)
       : (el?.placement_config?.writing ?? {});
-    const id = addWriting({ font: DEFAULT_CREAM_FONT, ...tuned });
+    /* The authored STARTING size — the row's "Default scale (r)", read through the same function the
+       dial's bounds come from so the two cannot disagree about what the row said. Under `tuned` on
+       purpose: an acrylic row's own `size` is the more specific statement and keeps its precedence,
+       and the code's WRITING_FIT still answers for a row that authored neither. */
+    const { r: authoredR } = writingScaleFrom(el?.placement_config ?? null);
+    const authoredFit = authoredR === null ? {} : { fit: authoredR };
+    const id = addWriting({ font: DEFAULT_CREAM_FONT, ...authoredFit, ...tuned });
     focusEditor('decoration');
     selectExclusive({ type: 'writing', id });
   }
@@ -8756,7 +8778,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                stored on every saved design and every template, so changing what a number MEANS
                would resize board messages on work that is already out there. A wider range changes
                nothing that exists and lets the ones that need it grow. */
-            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style), min: 0.3, max: 2.5, step: 0.05,
+            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style),
+              min: writingScale.min, max: writingScale.max, step: writingScale.step,
               fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
             /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
                a baker most wants to get back to. */

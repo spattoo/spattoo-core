@@ -421,7 +421,15 @@ CAT_ELEMENTS.push({
   image_url: CAT_THUMB('#f6e7d8'), thumbnail_url: CAT_THUMB('#f6e7d8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
-  placement_config: { procedural: 'writing', writing: { text: 'Happy\nBirthday' } },
+  /* ⚠️ THE SIZE RANGE AND DEFAULT SCALE ARE AUTHORED HERE, exactly as the live "Texts" row authors
+     them (0c53a84d…: scale 0.2–2.5 step 0.25, r 0.5). They were absent, so this harness could not
+     have shown that the Size dial ignored them — which is what happened: the dial carried 0.3–0.95
+     step 0.05 in code while the row said otherwise, and nobody could see it here. A fixture without
+     the field the bug lives in is a fixture that certifies the bug. */
+  placement_config: {
+    procedural: 'writing', writing: { text: 'Happy\nBirthday' },
+    r: 0.5, scale: { min: 0.2, max: 2.5, step: 0.25 },
+  },
   default_color: '#ffffff', sort_order: 22,
 });
 
