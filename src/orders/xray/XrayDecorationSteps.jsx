@@ -530,7 +530,14 @@ function ColourRow({ colour, s }) {
           {readable(colour.role)}
           <span style={{ fontWeight: 600, color: '#8A857D', fontVariantNumeric: 'tabular-nums' }}> · {colour.hex}</span>
         </div>
-        {recipe?.recipe && <div style={{ ...s.muted, marginTop: 1 }}>{recipe.recipe}</div>}
+        {recipe?.recipe && (
+          <div style={{ ...s.muted, marginTop: 1 }}>
+            {recipe.recipe}
+            {/* Said on BOTH colour surfaces now. It was only on the cake's Cream colours, so the
+                decoration guide printed a near-miss with the same confidence as an exact match. */}
+            {recipe.approx && <span> (closest match — adjust by eye)</span>}
+          </div>
+        )}
         {/* The same three colours the sentence names, drawn. See GelMix. */}
         <GelMix hex={colour.hex} recipe={recipe} />
       </div>

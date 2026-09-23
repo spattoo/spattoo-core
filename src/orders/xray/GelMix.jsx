@@ -11,7 +11,7 @@ import { gelRecipeFor } from './gelLibrary.js';
 // thing the sentence cannot say is how far the target sits from the gel it starts at. The picture
 // says all three at once — this white, this gel, and THIS is where you are heading.
 //
-//     ▢ white  +  ▣ gel  →  ▣ target
+//     ▢ white  +  ▣ gel  [+  ▣ second gel]  →  ▣ what that actually gets you
 //
 // ⚠️ NO NEW DATA. `gelLibrary.js` has carried a hex for every gel since it was written — "roughly
 // full strength" — and the target hex is what the model read off the photo. Both were already on
@@ -67,13 +67,24 @@ export default function GelMix({ hex, recipe = undefined, base = '#FFFFFF' }) {
   const rec = recipe === undefined ? gelRecipeFor(hex) : recipe;
   if (!rec?.gel?.hex) return null;
 
+  /* ⚠️ THE LAST CHIP IS WHERE THE RECIPE LANDS, NOT WHAT WAS ASKED FOR. Drawing the target there
+     would make every recipe look exact — including the ones that are not, which is the failure this
+     drawing existed to expose in the first place (an olive answered with yellow). `reachedHex` is
+     what gelLibrary says these gels actually get you; when it differs from the target, the row's own
+     swatch is right there above it and the two can be compared. */
   return (
     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, marginTop: 4 }}>
       <Chip hex={base} title="White buttercream" />
       <Op>+</Op>
       <Chip hex={rec.gel.hex} title={`${rec.gel.brand} ${rec.gel.name} — neat`} />
+      {rec.second?.hex && (
+        <>
+          <Op>+</Op>
+          <Chip hex={rec.second.hex} title={`${rec.second.brand} ${rec.second.name} — a touch, to correct it`} />
+        </>
+      )}
       <Op>→</Op>
-      <Chip hex={rec.hex ?? hex} title={`Target ${rec.hex ?? hex}`} />
+      <Chip hex={rec.reachedHex ?? rec.hex ?? hex} title={`What this mix gets you — ${rec.reachedHex ?? rec.hex ?? hex}`} />
     </span>
   );
 }

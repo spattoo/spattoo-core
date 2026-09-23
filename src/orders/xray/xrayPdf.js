@@ -124,12 +124,18 @@ class Sheet {
     if (!gel) return 0;
     const gap = size * 0.55;
     const step = size + gap;
-    this.swatch('#FFFFFF', x, y, size);
-    this.text('+', x + size + gap * 0.18, y + size * 0.16, { size: size * 0.8, weight: 800, color: MUTED });
-    this.swatch(gel, x + step, y, size);
-    this.text('>', x + step * 2 + gap * 0.1, y + size * 0.16, { size: size * 0.8, weight: 800, color: MUTED });
-    this.swatch(recipe.hex ?? '#eee', x + step * 2, y, size);
-    return step * 2 + size;
+    const chips = ['#FFFFFF', gel, ...(recipe.second?.hex ? [recipe.second.hex] : [])];
+    chips.forEach((hex, i) => {
+      this.swatch(hex, x + step * i, y, size);
+      if (i < chips.length - 1) {
+        this.text('+', x + step * i + size + gap * 0.18, y + size * 0.16, { size: size * 0.8, weight: 800, color: MUTED });
+      }
+    });
+    const endX = x + step * chips.length;
+    this.text('>', endX - gap * 0.9, y + size * 0.16, { size: size * 0.8, weight: 800, color: MUTED });
+    // Where it LANDS, not what was asked for — see GelMix.jsx.
+    this.swatch(recipe.reachedHex ?? recipe.hex ?? '#eee', endX, y, size);
+    return endX + size - x;
   }
 
   swatch(hex, x, y, size) {
