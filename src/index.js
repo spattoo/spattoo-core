@@ -104,6 +104,11 @@ export { tierShape, perimeter, boundingRadius, topContains, topClamp } from './d
 export { topperShapes, pieceCount, components, bridgeLoose, offsetParts, backingPlate, followsBox } from './designer/geometry/topperShape.js';
 // THE size control — the admin studios size a topper with the same dial the customer will.
 export { SizeDial } from './designer/shared/SizeDial.jsx';
+// THE colour control and THE scrolling row, for the same reason and by the same bargain. Admin
+// studios had neither and reached for `<input type="color">` and a bare overflow div; both are
+// breaches of rule 1 that could not be fixed while the components lived inside CakeDesigner.jsx.
+export { ColorWheel } from './designer/shared/ColorWheel.jsx';
+export { ScrollFadeRow } from './designer/shared/ScrollFadeRow.jsx';
 // One face list and one finish list, shared by the studio and the cake. creamFonts.json is already
 // copied into spattoo-admin; a topper does not get a second copy of anything.
 export { TOPPER_FACES, DEFAULT_TOPPER_FACE, loadTopperFace, isMonoline, faceFit } from './designer/geometry/topperFaces.js';
