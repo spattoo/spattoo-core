@@ -321,20 +321,46 @@ function ScrollFadeRow({ children, style, fade = '255,253,249', wrapStyle = null
   };
   // `to left` / `to right` point AWAY from the edge, so each gradient is opaque at its own side.
   const edgeStyle = (side) => ({
-    position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 38, pointerEvents: 'none',
+    position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 30, pointerEvents: 'none',
     background: `linear-gradient(to ${side}, rgba(${fade},0), rgba(${fade},0.95))`,
   });
-  /* 26px, not the storefront's 38: that circle sits over a full-width gallery, while these rows are
-     ~354px inside a phone card, where 38 would cover half a tile. Same white / hairline / shadow
-     language, scaled to the surface it sits on. */
+  /* ── 20px, INSET — and the number it replaced was sized against the wrong surface ────────────────
+   *
+   * Sandeep: "scrolling row arrow mark is really looks disturbing. it covers the view. can it be a
+   * small arrow mark (and clearly visible also)."
+   *
+   * It was 26px flush at the edge, justified here as "these rows are ~354px inside a phone card".
+   * That was true of the phone and wrong about desktop, where the same row lives in the element
+   * stack — 184px of usable width at the old 200px popup. A 26px circle is 14% of that row and it
+   * landed squarely ON the PLACEMENT tile beside it, which is what "covers the view" means.
+   *
+   * Two changes, and the second matters more than the first. SMALLER (20, glyph 13) so it is
+   * furniture rather than a control competing with the tiles; and INSET 3px so it sits beside the
+   * row's edge instead of flush against the card, which is what made it read as pasted on top.
+   * The fade narrows to 30 to match — a 38px gradient under a 20px button is a shadow with nothing
+   * casting it.
+   *
+   * ⚠️ STILL AN OVERLAY. Reserving a lane was tried and does not work with this markup — see the
+   * note above the scroller below, which carries the measurement. Small and inset is what this fix
+   * delivers; a row whose last control never sits under the button needs a structural change. */
+  const ARROW = 20, ARROW_INSET = 3;
   const arrowStyle = (side) => ({
-    position: 'absolute', top: '50%', [side]: 0, transform: 'translateY(-50%)',
-    width: 26, height: 26, borderRadius: '50%', padding: 0, zIndex: 2,
+    position: 'absolute', top: '50%', [side]: ARROW_INSET, transform: 'translateY(-50%)',
+    width: ARROW, height: ARROW, borderRadius: '50%', padding: 0, zIndex: 2,
     border: `1px solid ${LINE}`, background: SURFACE, color: INK,
     boxShadow: '0 1px 4px rgba(0,0,0,0.14)', cursor: 'pointer',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     ...(side === 'left' ? { transform: 'translateY(-50%) rotate(180deg)' } : null),
   });
+  /* ⚠️ END PADDING DOES NOT MOVE THE LAST CONTROL OUT FROM UNDER THE ARROW — measured, not assumed.
+   * Tried here and reverted: `paddingRight` on this scroller adds to the SCROLL EXTENT, so at
+   * scrollLeft 0 every item sits exactly where it did and the reserved lane only appears once you
+   * have already scrolled to the end. Measured on the element card at 300px: scrollWidth 308 vs
+   * clientWidth 264, with the Tilt readout ("0°/0°", left 1384) still beneath a button spanning
+   * 1389–1409. The scroller IS the wrapper the arrow is anchored to, so there is no box to pad
+   * between them. Making the arrow sit genuinely outside the scrolling area means restructuring
+   * this into two boxes — a bigger change than the complaint warrants, and not one to slip in
+   * beside a width fix. */
   return (
     <div style={{ position: 'relative', ...(wrapStyle ?? { width: '100%' }) }}>
       <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
@@ -342,12 +368,12 @@ function ScrollFadeRow({ children, style, fade = '255,253,249', wrapStyle = null
       {edges.right && <div aria-hidden="true" style={edgeStyle('right')} />}
       {edges.left && (
         <button type="button" aria-label="Scroll left" style={arrowStyle('left')} onClick={step(-1)}>
-          <ChevronRightIcon size={15} />
+          <ChevronRightIcon size={13} />
         </button>
       )}
       {edges.right && (
         <button type="button" aria-label="Scroll right" style={arrowStyle('right')} onClick={step(1)}>
-          <ChevronRightIcon size={15} />
+          <ChevronRightIcon size={13} />
         </button>
       )}
     </div>
@@ -1888,6 +1914,35 @@ const STACK_TAB_W = 22;
 /** How far the stack sits in from the right on a phone: clear of the handle, plus the same 10 of
  *  breathing room it has on a desktop. Derived, so widening the handle never lands it on the panel. */
 const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
+
+/* ── The element stack's width on DESKTOP, and the two numbers derived from it ───────────────────
+ *
+ * Sandeep: "we have fixed UI issues for mobile view recents. but that also introduced some problems
+ * for the desktop view… overall can we increase the size of the popup window (width) for desktop?"
+ *
+ * It was 200 — NARROWER THAN THE PHONE, whose expanded card is min(300px, 100vw - 84px). The mobile
+ * work widened mobile and left desktop where it was, so the same card had less room on a 1440px
+ * screen than on a 390px one. Everything that looked broken on desktop followed from that: the
+ * PLACEMENT tiles clipped mid-word ("SI…"), the scroll arrow covering the tile it sat on, and the
+ * footer wrapping Duplicate under Remove.
+ *
+ * ⚠️ 300 IS ARITHMETIC, NOT TASTE. editPopup pads 8px a side and the footer gaps 4, so the two
+ * footer buttons (measured: Duplicate 98, Remove from cake 158) need W - 16 >= 260, i.e. W >= 276.
+ * 280 fits by four pixels, which is not a margin — 300 leaves 24 and matches the phone's open width.
+ *
+ * ⚠️ THE OTHER TWO ARE DERIVED, and that is the whole point of this block. The canvas insets so the
+ * cake sits BESIDE the stack, and the colour wheel dodges to its left; both were literals (220, 230)
+ * carrying a comment that restated "editPopup is right:10 width:200". Three numbers, one of them
+ * written down twice, and nothing to keep them in step — exactly what STACK_RIGHT_MOBILE above
+ * exists to prevent ("Derived, so widening the handle never lands it on the panel").
+ *
+ * Desktop only by construction: both mobile branches override `width` before this is reached. */
+const EDIT_POPUP_W       = 300;
+const EDIT_POPUP_RIGHT   = 10;
+/** Canvas gives way to the stack, so the cake is beside it rather than under it. */
+const CANVAS_INSET_STACK = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 10;
+/** The colour wheel sits clear to the stack's LEFT — one more step out than the canvas. */
+const WHEEL_DODGE_STACK  = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 20;
 
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
@@ -11221,7 +11276,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               and already take their own space. */}
           <div style={{
             position: 'absolute', inset: 0,
-            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0),
+            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
             bottom: bottomSheetH,
             /* ⚠️ `bottom` NO LONGER ANIMATES, and that is the fix rather than a regression. While it
                did, two animations ran against each other: this transition slid the sheet while
@@ -11736,8 +11791,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div ref={isMobile ? editSheetRef : null}
                    style={isMobile ? { ...s.wheelPanelMobile, ...(editDragH ? { height: editDragH } : {}) }
                      // When the element edit stack is open on the right, sit the colour wheel to its
-                     // LEFT (and above it) instead of overlapping behind it. editPopup is right:10 width:200.
-                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: 230, zIndex: 30 } : {}) }}>
+                     // LEFT (and above it) instead of overlapping behind it.
+                     // ⚠️ DERIVED from the stack's own width — this used to be a literal 230 beside a
+                     // comment restating "editPopup is right:10 width:200", so widening the stack put
+                     // the wheel back underneath it. See EDIT_POPUP_W.
+                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: WHEEL_DODGE_STACK, zIndex: 30 } : {}) }}>
                 {/* The grip the other two sheets always had and this one did not. It is no longer
                     load-bearing — nothing is hidden behind a drag any more — so it is now what it
                     should always have been: an optional way to make the picker bigger. */}
@@ -14255,8 +14313,8 @@ const s = {
   previewTileOn: { border: `1.5px solid ${INK}`, background: 'rgba(0,0,0,0.04)' },
   editPopup: {
     position: 'absolute',
-    right: 10, top: 12,
-    width: 200, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
+    right: EDIT_POPUP_RIGHT, top: 12,
+    width: EDIT_POPUP_W, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
     background: 'rgba(255,255,255,0.72)',
     backdropFilter: 'blur(16px)',
     WebkitBackdropFilter: 'blur(16px)',
