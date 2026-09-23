@@ -633,7 +633,6 @@ CAT_ELEMENTS.push({
   element_type_id: 'et-topper', category_id: 'cat-1',
   image_url: null, thumbnail_url: CAT_THUMB('#ffffff'), thumb_key: null,
   allowed_zones: ['top_surface'],
-  // `color: false` — the ink and accent are AUTHORED; the customer owns the DATE and nothing else.
   /* ⚠️ `color: true` — the harness must offer the three colour swatches, or driving it would prove
      only that they are absent. This mirrors what CalendarStudio now saves. */
   allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: false },
@@ -643,6 +642,28 @@ CAT_ELEMENTS.push({
     calendar: CAL_RECIPE,
   },
   default_color: null, sort_order: 9,
+});
+
+/* ⚠️ THE NEGATIVE CONTROL, and the fixture above is worthless without it. Driving a single
+ * `color: true` calendar can only ever prove "the swatches appear" — it cannot tell a gate that
+ * READS the element from one that is simply always on, which is how the last calendar bug passed
+ * five assertions while the cake drew the wrong thing. This row is identical except for the one
+ * flag, so the swatches must be ABSENT on it.
+ *
+ * It also stands in for Sandeep's own element, which is the case that started this: a calendar
+ * authored before CalendarStudio began saving `color: true`. */
+CAT_ELEMENTS.push({
+  id: 'e-calendar-nocolor', name: 'Month calendar (fixed colours)', description: 'colours authored, not chosen',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: null, thumbnail_url: CAT_THUMB('#f0e8e0'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, tilt: false, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  placement_config: {
+    top_surface: 'hug', r: 1,
+    sheet: calendarSheet(CAL_RECIPE),
+    calendar: CAL_RECIPE,
+  },
+  default_color: null, sort_order: 10,
 });
 
 const apiClient = new Proxy(STUBS, {
