@@ -315,14 +315,31 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
             }}>{open ? 'Hide steps' : `${guide.steps?.length ?? 0} steps`}</button>
           </>
         ) : (
+          /* ⚠️ FILLED, BECAUSE THIS IS THE ONE BUTTON ON THE CARD THAT DOES SOMETHING NEW. It was a
+             white button with a hairline border on a white card, beside two other buttons wearing
+             exactly that — "Hide steps", "Find the prints" — and it disappeared into them. Sandeep:
+             *"it looks like merged with the other content and not looking highlighted."*
+             The comment further up this file had already picked the winner: *"the button that
+             deserves a press is 'How do I make this?', which spends credits."* Everything else here
+             opens something already paid for. Filled says which one is the decision.
+             #2C2A26 and white is the sheet's own primary — the same as Download PDF in the header
+             (XrayReport `s.dl`), not a new colour. */
           <button type="button" onClick={generate} disabled={busy || !canGenerate}
             title={row.elementId
               ? 'Costs 20 credits once. Every future cake with this decoration includes it.'
               : 'Costs 20 credits. Read from this order’s reference photo.'}
             style={{
-              border: '1.5px solid #E0DDD8', background: busy ? '#F4F1EC' : '#fff', borderRadius: 9,
-              cursor: busy ? 'default' : 'pointer', padding: '6px 12px', fontFamily: 'inherit',
-              fontSize: 12, fontWeight: 700, color: '#555',
+              /* ⚠️ BUSY AND DISABLED ARE NOT ONE STATE. Working is the button DOING what it was
+                 pressed for, so it stays dark and lit — lightened, not greyed out, or a baker who
+                 has just spent credits watches their press appear to be rejected. Unavailable is
+                 the opposite claim: a pale field with pale text, which is what "you cannot press
+                 this" looks like everywhere. One grey for both said the wrong thing about each. */
+              border: 'none',
+              background: !canGenerate ? '#F1EDE7' : busy ? '#57514A' : '#2C2A26',
+              color:      !canGenerate ? '#A49D95' : '#fff',
+              borderRadius: 9, cursor: (busy || !canGenerate) ? 'default' : 'pointer',
+              padding: '7px 13px', fontFamily: 'inherit',
+              fontSize: 12, fontWeight: 800,
             }}>
             {busy ? 'Reading…' : 'How do I make this?'}
           </button>
