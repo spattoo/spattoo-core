@@ -94,29 +94,17 @@ export const CALENDAR_DISC_INSET = 0.012;
 export const CALENDAR_LAYOUTS = Object.freeze(['grid', 'round']);
 
 /**
- * Which layouts this recipe offers — the customer's options, not a free choice.
+ * The shapes a calendar can be drawn as. ALWAYS BOTH.
  *
- * ⚠️ DELIBERATELY `zoneModes`' SHAPE, because this is the same question that file already answers
- * ("an authored list, the FIRST is the default, one entry means no control at all") and two spellings
- * of one idea is how they drift. Both forms read:
+ * ⚠️ THERE IS ONE CALENDAR ELEMENT, and grid vs round is an OPTION ON IT — not a property of the
+ * element, and emphatically not two catalogue rows. Sandeep, after an earlier version let an admin
+ * choose which shapes to offer: *"i never asked for 2 elements actually. you made it so complicated.
+ * lets not think of it as 2 elements. its only one. ring vs grid is just an option."*
  *
- *     { layout: 'round' }                 -> ['round']            one shape, no chooser
- *     { layouts: ['grid', 'round'] }      -> ['grid', 'round']    grid is the default
- *
- * The single `layout` form is what every calendar saved before this carried, so it keeps working and
- * keeps showing no chooser — which is right: it was authored as one shape.
+ * So there is nothing to author and nothing to gate on. `calendar.layout` is only where the customer
+ * STARTS (and which shape the studio's thumbnail shows); every calendar offers both on the cake.
  */
-export function calendarLayouts(cfg) {
-  const list = Array.isArray(cfg?.layouts)
-    ? cfg.layouts.filter(l => CALENDAR_LAYOUTS.includes(l))
-    : [];
-  if (list.length) return list;
-  const single = cfg?.layout ?? CALENDAR_DEFAULTS.layout;
-  return CALENDAR_LAYOUTS.includes(single) ? [single] : [CALENDAR_DEFAULTS.layout];
-}
-
-/** Does this calendar offer a CHOICE? One shape grows no control — same rule as `zoneHasChoice`. */
-export const calendarHasChoice = (cfg) => calendarLayouts(cfg).length > 1;
+export const calendarLayouts = () => CALENDAR_LAYOUTS;
 
 /**
  * The recipe to draw, with the customer's chosen shape folded in.
@@ -130,8 +118,9 @@ export const calendarHasChoice = (cfg) => calendarLayouts(cfg).length > 1;
  * calendar by the shape it used to be is how a round one ends up wearing a square's scale.
  */
 export function resolveCalendarCfg(calendar, chosen = null) {
-  const allowed = calendarLayouts(calendar);
-  const layout = chosen && allowed.includes(chosen) ? chosen : allowed[0];
+  const layout = chosen && CALENDAR_LAYOUTS.includes(chosen)
+    ? chosen
+    : (CALENDAR_LAYOUTS.includes(calendar?.layout) ? calendar.layout : CALENDAR_DEFAULTS.layout);
   return { ...CALENDAR_DEFAULTS, ...(calendar || {}), layout };
 }
 

@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   calendarLayout, daysInMonth, firstWeekday, resolveDate,
   CALENDAR_DEFAULTS, DAY_INITIALS, calendarSheet, CALENDAR_DISC_INSET,
-  calendarLayouts, calendarHasChoice, resolveCalendarCfg,
+  calendarLayouts, resolveCalendarCfg, CALENDAR_LAYOUTS,
 } from './calendarArt.js';
 
 /* The grid arithmetic is the one thing a calendar cannot get wrong, and it is also the only part
@@ -179,57 +179,46 @@ describe('calendarSheet — how big the cake should draw it', () => {
   });
 });
 
-describe('calendarLayouts — which shapes a calendar offers', () => {
-  /* Sandeep: "round or grid should be an option, not a separate control" — and not two catalogue
-   * rows either: "user would not understand it. its an internal setting which user would know only
-   * after looking into the control." So the recipe names its shapes and the customer picks one. */
+describe('calendarLayouts — always both', () => {
+  /* ⚠️ THERE IS ONE CALENDAR ELEMENT. Sandeep, after an earlier version let an admin choose which
+   * shapes to offer: "i never asked for 2 elements actually. you made it so complicated. lets not
+   * think of it as 2 elements. its only one. ring vs grid is just an option." So there is nothing
+   * to author, nothing to narrow, and nothing to gate on. */
 
-  it('a calendar authored as ONE shape offers only that, and grows no chooser', () => {
-    // Every calendar saved before this carried a single `layout`. It must keep working, and it must
-    // keep showing no control — it was authored as one shape on purpose.
-    expect(calendarLayouts({ layout: 'round' })).toEqual(['round']);
-    expect(calendarHasChoice({ layout: 'round' })).toBe(false);
+  it('offers both shapes, whatever the recipe says', () => {
+    expect(calendarLayouts()).toEqual(['grid', 'round']);
+    expect(calendarLayouts()).toEqual(CALENDAR_LAYOUTS);
   });
 
-  it('a calendar offering both lists both, first is the default', () => {
-    expect(calendarLayouts({ layouts: ['grid', 'round'] })).toEqual(['grid', 'round']);
-    expect(calendarHasChoice({ layouts: ['grid', 'round'] })).toBe(true);
-    expect(resolveCalendarCfg({ layouts: ['grid', 'round'] }).layout).toBe('grid');
+  it('the recipe only decides where the customer STARTS', () => {
+    expect(resolveCalendarCfg({ layout: 'round' }).layout).toBe('round');
+    expect(resolveCalendarCfg({ layout: 'grid' }).layout).toBe('grid');
+    expect(resolveCalendarCfg({}).layout).toBe(CALENDAR_DEFAULTS.layout);
   });
 
-  it('drops a shape it does not know rather than trying to draw it', () => {
-    expect(calendarLayouts({ layouts: ['grid', 'banana'] })).toEqual(['grid']);
-    expect(calendarLayouts({ layouts: ['banana'] })).toEqual([CALENDAR_DEFAULTS.layout]);
+  it("the customer's pick beats the starting shape", () => {
+    expect(resolveCalendarCfg({ layout: 'round' }, 'grid').layout).toBe('grid');
+    expect(resolveCalendarCfg({ layout: 'grid' }, 'round').layout).toBe('round');
   });
 
-  it('honours a choice the recipe offers', () => {
-    expect(resolveCalendarCfg({ layouts: ['grid', 'round'] }, 'round').layout).toBe('round');
-  });
-
-  /* ⚠️ THE CHOICE IS VALIDATED, NEVER TRUSTED — the rule zoneSeatFields states for poses. An admin
-   * can narrow the list after a cake was saved, and that cake must not go on drawing a shape this
-   * calendar no longer offers. */
-  it('refuses a stored choice the recipe no longer offers', () => {
-    expect(resolveCalendarCfg({ layouts: ['grid'] }, 'round').layout).toBe('grid');
-    expect(resolveCalendarCfg({ layout: 'round' }, 'grid').layout).toBe('round');
+  it('a shape it does not know falls back rather than trying to draw it', () => {
+    expect(resolveCalendarCfg({ layout: 'round' }, 'banana').layout).toBe('round');
+    expect(resolveCalendarCfg({ layout: 'banana' }).layout).toBe(CALENDAR_DEFAULTS.layout);
   });
 
   it('keeps the rest of the recipe intact while swapping the shape', () => {
-    const recipe = { layouts: ['grid', 'round'], ink: '#111111', accent: '#ff0000', paper: null };
-    const r = resolveCalendarCfg(recipe, 'round');
+    const r = resolveCalendarCfg({ layout: 'grid', ink: '#111111', accent: '#ff0000', paper: null }, 'round');
     expect(r.ink).toBe('#111111');
     expect(r.accent).toBe('#ff0000');
     expect(r.paper).toBeNull();
-    expect(r.ringStyle).toBeDefined();       // defaults still fill the gaps
+    expect(r.ringStyle).toBeDefined();
   });
 
-  /* The whole reason the shape must be resolved BEFORE the fit is asked for: a disc and a rectangle
-   * do not occupy the same extent, so a switched calendar sized by the shape it used to be is wrong. */
-  it('the sheet extent follows the CHOSEN shape, not the authored one', () => {
-    const recipe = { layouts: ['grid', 'round'], paper: null };
+  /* The whole reason the shape is resolved BEFORE the fit is asked for: a disc and a rectangle do
+   * not occupy the same extent, so a switched calendar sized by its old shape is wrong. */
+  it('the sheet extent follows the CHOSEN shape', () => {
+    const recipe = { layout: 'grid', paper: null };
     expect(calendarSheet(resolveCalendarCfg(recipe, 'round')).shape).toBe('round');
     expect(calendarSheet(resolveCalendarCfg(recipe, 'grid')).shape).toBe('rect');
-    expect(calendarSheet(resolveCalendarCfg(recipe, 'round')).fill)
-      .not.toBe(calendarSheet(resolveCalendarCfg(recipe, 'grid')).fill);
   });
 });

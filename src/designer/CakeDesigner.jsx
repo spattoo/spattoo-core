@@ -99,7 +99,7 @@ import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
-import { calendarSheet, resolveCalendarCfg, calendarLayouts, calendarHasChoice, resolveDate }
+import { calendarSheet, resolveCalendarCfg, calendarLayouts, resolveDate }
   from './shared/textures/calendarArt.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
@@ -8193,12 +8193,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          * row was deleted because the tiles beside it rendered the option instead of naming it.
          * A Grid/Round toggle would be the same mistake in a new place.
          *
-         * ⚠️ ONE SHAPE GROWS NO CHOOSER. `calendarHasChoice` mirrors `zoneHasChoice`: a recipe that
-         * names a single layout offers nothing to pick, so every calendar saved before this looks
-         * exactly as it did. */
-        const layouts = calendarLayouts(inst.calendar);
+         * ⚠️ ALWAYS BOTH. There is ONE calendar element and the shape is an option on it — Sandeep:
+         * "its only one. ring vs grid is just an option." So there is nothing to gate on. */
         const chosen = resolveCalendarCfg(inst.calendar, inst.calendarLayout).layout;
-        const shapeTiles = calendarHasChoice(inst.calendar) ? layouts.map(l => (
+        const shapeTiles = calendarLayouts().map(l => (
           <div key={`cal-${l}`} style={{ flexShrink: 0 }}>
             <CalendarLayoutTile
               layout={l}
@@ -8227,15 +8225,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               }}
             />
           </div>
-        )) : [];
+        ));
 
         groups.push({
           key: 'calendar',
           divider: true,
-          // Named for what the customer is choosing. With two shapes on offer the row is not only a
-          // date any more, and a label that said "Date" over a pair of shape tiles would be wrong.
-          panelLabel: shapeTiles.length ? 'Calendar' : 'Date',
-          scroll: shapeTiles.length > 0,
+          // The row holds both things the customer owns — which shape, and which date — so it is
+          // named for the decoration rather than for one of them.
+          panelLabel: 'Calendar',
+          scroll: true,
           controls: [
             ...shapeTiles,
             <input

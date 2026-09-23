@@ -619,11 +619,9 @@ const STUBS = {
  * the calendar seeds at STICKER_SIZE and renders as a stamp in the middle of the lid (measured).
  */
 const CAL_RECIPE = {
-  /* ⚠️ `layouts`, PLURAL — this fixture exists to exercise the CHOICE. With a single `layout` the
-     card shows no chooser at all (calendarHasChoice), which is correct behaviour and would certify
-     nothing: a fixture without the thing it is meant to test is a fixture that certifies its absence.
-     Same trap designSnapshot.test.js records for toppers. */
-  layouts: ['grid', 'round'],
+  /* A SINGLE `layout` on purpose — it is only where the customer starts. Both shapes are always
+     offered on the cake, so this fixture proves the tiles appear without any authoring at all. */
+  layout: 'grid',
   medium: 'printed',
   ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
   ringStyle: 'circle', showDayHeader: true, showMonthName: true,

@@ -21,7 +21,7 @@ import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
-import { calendarSheet, resolveCalendarCfg, calendarLayouts } from '../shared/textures/calendarArt.js';
+import { calendarSheet, resolveCalendarCfg } from '../shared/textures/calendarArt.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
@@ -1098,10 +1098,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // birthday would quietly drift to whenever the baker last looked at it. Freezing today's
           // date at placement is the same rule text slots follow: seeded from a default, then owned
           // by the customer.
-          /* The SHAPE the customer picked, seeded from the recipe's first offered layout — the same
-             rule `modes[0]` follows for a pose. A recipe naming ONE shape yields one option and the
-             card grows no chooser at all, so every calendar saved before this behaves as it did. */
-          calendarLayout: calCfg ? calendarLayouts(calCfg)[0] : null,
+          /* Where the customer STARTS. Both shapes are always offered on the cake; the recipe's
+             `layout` only says which one it opens on (and which the studio's thumbnail shows). */
+          calendarLayout: calCfg ? resolveCalendarCfg(calCfg).layout : null,
           calendarValues: element.placement_config?.calendar
                             ? (() => {
                                 const d = new Date();
