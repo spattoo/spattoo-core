@@ -46,6 +46,7 @@ import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
+import { useCalendarTexture } from './useCalendarTexture.js';
 import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
@@ -1305,40 +1306,57 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
   }
   return (
     <mesh geometry={geo}>
-      <meshPhysicalMaterial
-        map={texture}
-        // Print exposure — shared/printExposure.js. `color` is the light-driven share of the albedo.
-        color={print.color}
-        // A print is INK, and ink has no specular highlight of its own. The dielectric specular is an
-        // ADDITIVE WHITE that is not multiplied by the albedo, so it cannot be scaled by the exposure model
-        // — and being additive it wrecks exactly the DARK pixels (measured: it lifted the artwork's browns
-        // 1.19× while leaving pale areas at 1.03×, i.e. it flattens contrast and desaturates). Sheen belongs
-        // to the CAKE's surface, not to the picture printed on it. 0 = the print renders as its artwork.
-        specularIntensity={0}
-        transparent
-        alphaTest={0.05}
-        // Matte by default (fondant-like) so the bright environment doesn't reflect a whitish sheen
-        // that washes out the printed colour — the old 0.75 read glossy and desaturated head-on.
-        // Honors the element's placement_config.roughness/metalness override (parity with StickerModel).
-        // envMapIntensity damps how much the HDRI lifts/desaturates the albedo.
-        roughness={roughness ?? 0.95}
-        metalness={metalness ?? 0}
-        // Same reason as specularIntensity: the HDRI's reflection is additive white on top of the print.
-        envMapIntensity={0}
-        // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
-        // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
-        // it in shadow. Selection does not tint the material (the additive violet SELECTION_COLOR corrupted
-        // saturated albedos — see the relief path note); SelectionBox draws the cue beside the element.
-        toneMapped={false}
-        // The orientation-INDEPENDENT share of the exposure: the artwork as self-illumination (emissiveMap
-        // = the albedo), so it cannot be blown out by where the decal sits. Strength is in the colour.
-        emissive={print.emissive}
-        emissiveMap={texture}
-        emissiveIntensity={1}
-        side={THREE.DoubleSide}
-        depthWrite={false}
-      />
+      <PrintDecalMaterial texture={texture} print={print} roughness={roughness} metalness={metalness} />
     </mesh>
+  );
+}
+
+/* ── What a PRINT looks like, in ONE place ────────────────────────────────────────────────────────
+ * Lifted verbatim out of the flat-decal return above, which was its only caller until the calendar
+ * arrived. A calendar is printed (or piped) ON the cake exactly as a decal is, so it must not grow a
+ * second opinion about ink — INVARIANTS #2 is one renderer, and #15 is that a preview and the thing
+ * previewed ask ONE function. Two copies of this agree on the day they are written and drift after,
+ * and the one that drifts is always the one the customer is looking at.
+ *
+ * ⚠️ NOT the relief material above. That one carries displacement, a normal map and alphaTest 0.5
+ * for a raised fondant cut-out; this is the FLAT print at alphaTest 0.05. They are deliberate twins,
+ * not a duplication to merge.
+ */
+function PrintDecalMaterial({ texture, print, roughness = null, metalness = null }) {
+  return (
+    <meshPhysicalMaterial
+      map={texture}
+      // Print exposure — shared/printExposure.js. `color` is the light-driven share of the albedo.
+      color={print.color}
+      // A print is INK, and ink has no specular highlight of its own. The dielectric specular is an
+      // ADDITIVE WHITE that is not multiplied by the albedo, so it cannot be scaled by the exposure model
+      // — and being additive it wrecks exactly the DARK pixels (measured: it lifted the artwork's browns
+      // 1.19× while leaving pale areas at 1.03×, i.e. it flattens contrast and desaturates). Sheen belongs
+      // to the CAKE's surface, not to the picture printed on it. 0 = the print renders as its artwork.
+      specularIntensity={0}
+      transparent
+      alphaTest={0.05}
+      // Matte by default (fondant-like) so the bright environment doesn't reflect a whitish sheen
+      // that washes out the printed colour — the old 0.75 read glossy and desaturated head-on.
+      // Honors the element's placement_config.roughness/metalness override (parity with StickerModel).
+      // envMapIntensity damps how much the HDRI lifts/desaturates the albedo.
+      roughness={roughness ?? 0.95}
+      metalness={metalness ?? 0}
+      // Same reason as specularIntensity: the HDRI's reflection is additive white on top of the print.
+      envMapIntensity={0}
+      // The print bypasses the scene's ACES tone mapping (which desaturates) so the decal shows its
+      // true colours — the cake stays filmic, the artwork stays vivid. A little emissive still lifts
+      // it in shadow. Selection does not tint the material (the additive violet SELECTION_COLOR corrupted
+      // saturated albedos — see the relief path note); SelectionBox draws the cue beside the element.
+      toneMapped={false}
+      // The orientation-INDEPENDENT share of the exposure: the artwork as self-illumination (emissiveMap
+      // = the albedo), so it cannot be blown out by where the decal sits. Strength is in the colour.
+      emissive={print.emissive}
+      emissiveMap={texture}
+      emissiveIntensity={1}
+      side={THREE.DoubleSide}
+      depthWrite={false}
+    />
   );
 }
 
@@ -1643,7 +1661,43 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
   return <primitive object={clonedScene} scale={scale} position={position} />;
 }
 
-function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+/* ── A calendar on the cake, drawn from numbers ───────────────────────────────────────────────────
+ * The sticker path composites a customer's value ONTO loaded artwork. A calendar has no artwork at
+ * all — `image_url` is null on the element by design, because 12 months x 31 dates x 2 layouts is a
+ * per-value asset explosion. So it cannot ride through StickerTexture, which opens with an
+ * unconditional `useTexture(corsUrl(imageUrl))` and has nothing to be handed.
+ *
+ * What it DOES share is the material and the plane, which is the part that matters: a calendar and a
+ * decal must read as the same ink on the same cake.
+ *
+ * ⚠️ FLAT, because this is a TOP_SURFACE element (allowed_zones is ['top_surface']). No curve, no
+ * fold, no relief — the geometry is the same PlaneGeometry the non-curved decal branch builds, so
+ * whatever the parent group does to seat and rotate it applies identically to both.
+ */
+function CalendarFace({ calendar, calendarValues, printFinish = null, roughness = null, metalness = null, onDepth }) {
+  const texture = useCalendarTexture(calendar, calendarValues);
+  const print = useMemo(() => printMaterialTerms(printFinish), [printFinish]);
+  const geo = useMemo(() => new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE, 1, 1), []);
+  // A flat sheet stands 0 proud of its hit plane, so the selection border has nothing to clear.
+  useEffect(() => { onDepth?.(0); }, [onDepth]);
+  useEffect(() => () => geo.dispose(), [geo]);
+  if (!texture) return null;
+  return (
+    <mesh geometry={geo}>
+      <PrintDecalMaterial texture={texture} print={print} roughness={roughness} metalness={metalness} />
+    </mesh>
+  );
+}
+
+function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, onSeat, onDepth, onVExtent }) {
+  // ⚠️ BEFORE the imageUrl guard, which is the whole reason this branch exists here rather than
+  // deeper down: a calendar element carries no image_url, so the guard below would render nothing at
+  // all and the decoration would vanish the moment it was placed. Config-gated on
+  // placement_config.calendar, never on element type or slug (INVARIANTS #1/#6).
+  if (calendar) {
+    return <CalendarFace calendar={calendar} calendarValues={calendarValues} printFinish={printFinish}
+                         roughness={roughness} metalness={metalness} onDepth={onDepth} />;
+  }
   if (!imageUrl) return null;
   const isGlb = /\.(glb|gltf)(\?|$)/i.test(imageUrl);
   const inner = (
@@ -1782,7 +1836,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           PLANE of the wall, which is how a jersey ends up sitting diagonally — the one thing the wall
           had no control for at all. One Euler, so a combined lean is a single predictable rotation. */}
       <group rotation={[sticker.tiltAngle ?? 0, 0, sticker.rollAngle ?? 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onDepth={setDepth} onVExtent={setVext} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
@@ -1966,7 +2020,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a

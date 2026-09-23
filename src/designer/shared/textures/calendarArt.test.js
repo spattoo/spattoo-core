@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   calendarLayout, daysInMonth, firstWeekday, resolveDate,
-  CALENDAR_DEFAULTS, DAY_INITIALS,
+  CALENDAR_DEFAULTS, DAY_INITIALS, calendarSheet, CALENDAR_DISC_INSET,
 } from './calendarArt.js';
 
 /* The grid arithmetic is the one thing a calendar cannot get wrong, and it is also the only part
@@ -127,5 +127,53 @@ describe('resolveDate', () => {
   it('survives junk without throwing', () => {
     const r = resolveDate({ year: 'x', month: null, day: undefined }, NOW);
     expect(r).toEqual({ year: 2025, month: 10, day: 15 });
+  });
+});
+
+describe('calendarSheet — how big the cake should draw it', () => {
+  /* This exists because an INVENTED fill (0.92) put the printed sheet off the edge of the cake in a
+   * real render. `fill` is the artwork's half-extent as a fraction of the plane half, and every case
+   * below is read off what drawCalendar actually paints — never tuned until the picture looked right,
+   * which is how a wrong relationship survives as a plausible number. */
+
+  it('a round calendar reports its own disc, from the inset it is drawn with', () => {
+    const s = calendarSheet({ layout: 'round' });
+    expect(s.shape).toBe('round');
+    // The arc is stroked at S*(0.5 - inset), so the half-extent is (0.5 - inset) of a 0.5 half.
+    expect(s.fill).toBeCloseTo(1 - CALENDAR_DISC_INSET * 2, 10);
+  });
+
+  it('paper fills the whole plane, so a papered grid is exactly 1', () => {
+    // drawCalendar does fillRect(0, 0, S, S) — the sheet IS the plane, with no margin to discount.
+    expect(calendarSheet({ layout: 'grid', paper: '#FDF3EC' })).toEqual({ shape: 'rect', fill: 1 });
+  });
+
+  it('a PIPED grid measures its own drawing instead, and is smaller than the plane', () => {
+    const s = calendarSheet({ layout: 'grid', paper: null });
+    expect(s.shape).toBe('rect');
+    expect(s.fill).toBeLessThan(1);      // there is no paper, so the plane is not full
+    expect(s.fill).toBeGreaterThan(0.5); // ...but it is not a stamp either
+  });
+
+  it('follows the authored rect, which is the whole reason it is a function', () => {
+    const narrow = calendarSheet({ layout: 'grid', paper: null, rect: { x: 0.5, y: 0.54, w: 0.5, h: 0.56 } });
+    const wide   = calendarSheet({ layout: 'grid', paper: null, rect: { x: 0.5, y: 0.54, w: 0.9, h: 0.56 } });
+    expect(wide.fill).toBeGreaterThan(narrow.fill);
+  });
+
+  it('does not change when the month does — sizing is not a function of the date', () => {
+    // Row count runs 4-6 across months. If this rule read the live month, a cake would resize itself
+    // when the customer picked March over February.
+    const a = calendarSheet({ layout: 'grid', paper: null });
+    const b = calendarSheet({ layout: 'grid', paper: null });
+    expect(a).toEqual(b);
+    expect(calendarSheet()).toEqual(calendarSheet(CALENDAR_DEFAULTS));
+  });
+
+  it('an off-centre rect is measured from the PLANE centre, not its own', () => {
+    // A rect pushed right reaches further from the middle, so the fitted box must grow to hold it.
+    const centred = calendarSheet({ layout: 'grid', paper: null, rect: { x: 0.5, y: 0.54, w: 0.6, h: 0.56 } });
+    const shifted = calendarSheet({ layout: 'grid', paper: null, rect: { x: 0.62, y: 0.54, w: 0.6, h: 0.56 } });
+    expect(shifted.fill).toBeGreaterThan(centred.fill);
   });
 });

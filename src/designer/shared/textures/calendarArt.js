@@ -84,6 +84,11 @@ export const CALENDAR_DEFAULTS = Object.freeze({
  * alone — two calendars with different dates currently collapse into one row. Naming the keys here
  * gives that work one thing to read instead of a calendar special case.
  */
+/* How far the round layout's outline sits inside its plane, as a fraction of the SIDE. Named because
+ * `drawCalendar` strokes the circle here and `calendarSheet` reports the extent from the same number
+ * — if those two ever disagree, the calendar is fitted to a boundary it does not actually draw. */
+export const CALENDAR_DISC_INSET = 0.012;
+
 export const CALENDAR_VALUE_KEYS = Object.freeze({ YEAR: 'year', MONTH: 'month', DAY: 'day' });
 
 /** The chosen date, defaulted so a freshly placed calendar draws something real. */
@@ -158,9 +163,11 @@ function ringPath(ctx, cx, cy, rx, ry, style) {
 /**
  * Draw the calendar onto `ctx` at `S`×`S`.
  *
- * ⚠️ A 'grid' calendar draws NO background. It is piped or printed straight onto the cake's own
- * surface, so filling paper behind it would put a white square on a buttercream lid. Only 'round'
- * fills, because its disc IS the printed sheet in the reference photo.
+ * ⚠️ THE BACKGROUND IS `paper`, NOT THE LAYOUT — and this comment used to say the opposite. It
+ * claimed only 'round' fills, which was true of the first cut and false the moment Sandeep asked for
+ * "ability to change the background color": a PRINTED calendar carries its own paper whatever its
+ * shape. `paper: null` is how a calendar says it has none, which is what a piped one wants. The
+ * reasoning is at the fill itself; what matters here is that layout does not decide this.
  */
 export function drawCalendar(ctx, S, date, cfg = CALENDAR_DEFAULTS, opts = {}) {
   const c = { ...CALENDAR_DEFAULTS, ...(cfg || {}) };
@@ -177,7 +184,7 @@ export function drawCalendar(ctx, S, date, cfg = CALENDAR_DEFAULTS, opts = {}) {
    * So both layouts fill, and `paper: null` is how a calendar says it has none — which is what a
    * piped one wants, drawn in gel on the cake's own surface. */
   if (c.layout === 'round') {
-    const r = S * 0.5 - S * 0.012;
+    const r = S * (0.5 - CALENDAR_DISC_INSET);
     ctx.beginPath();
     ctx.arc(S / 2, S / 2, r, 0, Math.PI * 2);
     if (c.paper) { ctx.fillStyle = c.paper; ctx.fill(); }
@@ -225,6 +232,50 @@ export function drawCalendar(ctx, S, date, cfg = CALENDAR_DEFAULTS, opts = {}) {
     ctx.fillStyle = chosen && c.ringStyle !== 'heart' ? c.accent : c.ink;
     ctx.fillText(String(cell.day), px(cell.cx), px(cell.cy));
   }
+}
+
+/**
+ * How much of its square plane this recipe actually paints — `{ shape, fill }`, the shape exactly as
+ * `placement.js surfaceFit` wants it, where `fill` is the artwork's HALF-EXTENT as a fraction of the
+ * plane half. Feed it to `placement_config.sheet` and the calendar is sized to the CAKE.
+ *
+ * ⚠️ A FUNCTION, NOT TWO CONSTANTS, and the difference is not tidiness. `rect` is authorable, so a
+ * piped grid's extent moves the moment an admin nudges the layout. Retyping the number at each
+ * authoring site is how the studio and the designer come to disagree about how big a calendar is —
+ * and the symptom is a sheet hanging off the cake, which reads as a placement bug rather than the
+ * stale constant it actually is. Measured on the real render: an invented 0.92 overhung the lid.
+ *
+ * Derived from what `drawCalendar` paints, case by case:
+ *   round           the outline arc at S*(0.5 - CALENDAR_DISC_INSET), and the disc IS round
+ *   grid + paper    fillRect(0, 0, S, S) — the paper is the whole plane
+ *   grid, no paper  the grid rect, plus the month name drawn above it
+ *
+ * ⚠️ THE NO-PAPER CASE IS COMPUTED AT ITS WORST CASE, deliberately. Row count runs 4–6 depending on
+ * the month, and fewer rows mean taller cells and therefore a BIGGER title sitting further above the
+ * grid. Sizing off the live month would make the cake resize itself when the customer picked March
+ * over February, which is absurd; taking the 4-row case means the artwork can never exceed the box
+ * it was fitted into, for any date.
+ */
+export function calendarSheet(cfg = CALENDAR_DEFAULTS) {
+  const c = { ...CALENDAR_DEFAULTS, ...(cfg || {}) };
+  if (c.layout === 'round') return { shape: 'round', fill: 1 - CALENDAR_DISC_INSET * 2 };
+  if (c.paper) return { shape: 'rect', fill: 1 };
+
+  const rect = { ...CALENDAR_DEFAULTS.rect, ...(c.rect || {}) };
+  const headerRows = c.showDayHeader ? 1 : 0;
+  const cellW = rect.w / 7;
+  const cellH = rect.h / (4 + headerRows);              // 4 = the worst case; see above
+  const cellFont = Math.min(cellW, cellH) * 0.54 * (c.fontScale ?? 1);
+
+  const top = rect.y - rect.h / 2;
+  // textBaseline is 'middle', so the title spans half its own size either side of its baseline.
+  const titleTop = c.showMonthName ? top - cellFont * 1.1 - (cellFont * 1.5) / 2 : top;
+
+  // Half-extents from the PLANE's centre (0.5), then as a fraction of the plane half (also 0.5).
+  const up = 0.5 - titleTop;
+  const down = (rect.y + rect.h / 2) - 0.5;
+  const side = rect.w / 2 + Math.abs(rect.x - 0.5);
+  return { shape: 'rect', fill: Math.max(up, down, side) / 0.5 };
 }
 
 /** The whole calendar on a fresh canvas — the studio preview, its thumbnail bake, and (later) the

@@ -1076,6 +1076,24 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           textValues:     Object.fromEntries(
                             (element.placement_config?.text_slots ?? []).map(sl => [sl.key, sl.default ?? '']),
                           ),
+          // A CALENDAR is the same bargain as a text slot, one step further: the element carries no
+          // artwork AT ALL (image_url is null), only the recipe for drawing one — layout, medium,
+          // ink, accent, paper, ringStyle. The DATE is the customer's. 12 months x 31 dates x 2
+          // layouts is a per-value asset explosion, so nothing is stored but the numbers that
+          // describe it. See shared/textures/calendarArt.js. Absent -> an ordinary decal.
+          calendar:       element.placement_config?.calendar ?? null,
+          // ⚠️ SEEDED CONCRETELY, not left empty, and the difference is not cosmetic. `resolveDate`
+          // falls back to TODAY when it is handed nothing — so an untouched calendar left as `{}`
+          // would show a different date every time the design was reopened, and a cake ordered for a
+          // birthday would quietly drift to whenever the baker last looked at it. Freezing today's
+          // date at placement is the same rule text slots follow: seeded from a default, then owned
+          // by the customer.
+          calendarValues: element.placement_config?.calendar
+                            ? (() => {
+                                const d = new Date();
+                                return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+                              })()
+                            : null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         seatTheta,            // round side: seat angle around the wall
           y:             seatY,                // side: seat height on the wall

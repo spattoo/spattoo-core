@@ -196,6 +196,9 @@ export { TEXT_STYLES, applyTextStyleConfig, textStyleOf } from './designer/textS
 export {
   CALENDAR_DEFAULTS, CALENDAR_VALUE_KEYS, DAY_INITIALS, MONTH_NAMES as CALENDAR_MONTH_NAMES,
   daysInMonth, firstWeekday, resolveDate, calendarLayout, drawCalendar, composeCalendar,
+  // The extent rule, so the studio authors `placement_config.sheet` from the same numbers the
+  // renderer paints with rather than a constant someone typed twice.
+  calendarSheet, CALENDAR_DISC_INSET,
 } from './designer/shared/textures/calendarArt.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 // Shared fondant-grain normal — the SAME matte surface the cake wall carries, reused by the Relief

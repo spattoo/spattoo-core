@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { CakeDesigner } from '../src/index.js';
 import { STRIPE_PRESETS } from '../src/designer/stripePresets.js';
+import { calendarSheet } from '../src/designer/shared/textures/calendarArt.js';
 
 /* ── The real designer, on a phone, against a stubbed API. Open /designer-mobile.html ────────────
  *
@@ -604,6 +605,40 @@ const STUBS = {
     { id: 't3', name: 'Anniversary', slug: 'anniversary', category: 'occasion' },
   ]),
 };
+
+/* ⚠️ THE ROW WITH NO ARTWORK, which is the whole point of it being here. Every other fixture in
+ * this file has an image; a calendar has `image_url: null` because it is a RECIPE — 12 months x 31
+ * dates x 2 layouts would be a per-value asset explosion. That is exactly the case StickerFace's
+ * `if (!imageUrl) return null` used to swallow: the row appeared in the picker and the decoration
+ * vanished the instant it was placed.
+ *
+ * `thumbnail_url` is still set, because the picker tile reads `thumb_key ?? thumbnail_url` with no
+ * fallback and an element with neither shows an empty square.
+ *
+ * ⚠️ `sheet` is ASKED FOR, not typed. The same call CalendarStudio makes when it saves — without it
+ * the calendar seeds at STICKER_SIZE and renders as a stamp in the middle of the lid (measured).
+ */
+const CAL_RECIPE = {
+  layout: 'grid', medium: 'printed',
+  ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
+  ringStyle: 'circle', showDayHeader: true, showMonthName: true,
+  rect: { x: 0.5, y: 0.54, w: 0.78, h: 0.56 }, fontScale: 1,
+};
+
+CAT_ELEMENTS.push({
+  id: 'e-calendar', name: 'Month calendar', description: 'the customer rings a date',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: null, thumbnail_url: CAT_THUMB('#FDF3EC'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  // `color: false` — the ink and accent are AUTHORED; the customer owns the DATE and nothing else.
+  allowed_actions: { move: true, tilt: false, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  placement_config: {
+    top_surface: 'hug', r: 1,
+    sheet: calendarSheet(CAL_RECIPE),
+    calendar: CAL_RECIPE,
+  },
+  default_color: null, sort_order: 9,
+});
 
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),

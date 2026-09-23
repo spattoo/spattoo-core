@@ -8158,6 +8158,55 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           )),
         });
       }
+
+      /* A CALENDAR's DATE — the one value the customer owns on this element. Gated on the instance
+       * carrying `calendar` (placement_config.calendar), never on element type or slug, exactly like
+       * the text slots above: both are "the artwork is a recipe and this is the value".
+       *
+       * ⚠️ THE NATIVE PICKER, because this app already answered "pick a date" three times and the
+       * answer is `<input type="date">` — the storefront's delivery date (SizeDateFacets), the order
+       * form, and the order modal. A row of year/month/day selects would be a second answer to a
+       * solved question, and a worse one on a phone, where the native control is an OS wheel rather
+       * than three dropdowns. (The admin studio's selects are a SAMPLE control that is never saved.)
+       *
+       * ⚠️ It is safe in this card. The "a keyboard covers a 56px bar" rule that keeps the number
+       * editor a sheet is about the NAV STRIP; this card is `wheelPanelMobile`, a content-sized,
+       * capped, drag-resizable sheet — and nine of the fifteen decoration cards already carry inputs.
+       */
+      if (inst?.calendar) {
+        const cv = inst.calendarValues ?? {};
+        const pad = (n) => String(n).padStart(2, '0');
+        // The input speaks YYYY-MM-DD; the recipe stores {year, month, day} because that is what
+        // calendarLayout asks for, and because three integers survive a JSON round trip without ever
+        // meeting a timezone. `new Date('2026-03-01')` is UTC midnight and can render as February.
+        const iso = (cv.year && cv.month && cv.day) ? `${cv.year}-${pad(cv.month)}-${pad(cv.day)}` : '';
+        groups.push({
+          key: 'calendar',
+          divider: true,
+          panelLabel: 'Date',
+          controls: [
+            <input
+              key="calendar-date"
+              type="date"
+              value={iso}
+              aria-label="The date to ring on the calendar"
+              onChange={e => {
+                const [y, m, d] = (e.target.value || '').split('-').map(Number);
+                // The picker can clear itself, and a calendar with no ringed date is not a thing the
+                // renderer can draw — resolveDate would silently fall back to today. Keep the last
+                // real date instead of writing a hole.
+                if (!y || !m || !d) return;
+                updateSticker(el.id, { calendarValues: { year: y, month: m, day: d } });
+              }}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: 8,
+                border: '1.5px solid #ddd', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                textAlign: 'center',
+              }}
+            />,
+          ],
+        });
+      }
     }
 
     /* ── TILT AND FINISH ARE BUILT HERE, PUSHED FURTHER DOWN ────────────────────────────────────

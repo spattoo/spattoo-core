@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import ElementPreview from '../src/designer/preview/ElementPreview.jsx';
 import { ZONES } from '../src/designer/constants.js';
+import { calendarSheet } from '../src/designer/shared/textures/calendarArt.js';
 
 /* ── The admin element preview, without admin ────────────────────────────────────────────────────
  *
@@ -51,7 +52,67 @@ const BOTH = {
   allowed_actions: { resize: true, duplicate: true, color: true, delete: true },
 };
 
-const ELEMENTS = [TOPPER, WALL_HUG, BOTH];
+/* ── The two calendars, in the shape CalendarStudio actually SAVES ──────────────────────────────
+ * Copied field-for-field off the studio's handleSave rather than reconstructed, because a harness
+ * that exercises a shape nothing writes proves nothing at all.
+ *
+ * ⚠️ `image_url: null` IS THE TEST. Every other row here has artwork; these have none, because a
+ * calendar is a recipe and 12 months x 31 dates x 2 layouts is a per-value asset explosion. This is
+ * exactly what `StickerFace`'s `if (!imageUrl) return null` used to swallow — the decoration
+ * appeared in the picker and then vanished the instant it was placed.
+ *
+ * ⚠️ `color: false` on purpose: the ink and accent are AUTHORED here, not a customer choice. The
+ * customer owns the DATE and nothing else.
+ */
+const GRID_RECIPE = {
+  layout: 'grid', medium: 'printed',
+  ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
+  ringStyle: 'circle', showDayHeader: true, showMonthName: true,
+  rect: { x: 0.5, y: 0.54, w: 0.78, h: 0.56 }, fontScale: 1,
+};
+
+const ROUND_RECIPE = {
+  layout: 'round', medium: 'piped',
+  ink: '#3E2723', accent: '#D8342B', paper: null,
+  ringStyle: 'heart', showDayHeader: true, showMonthName: true,
+  rect: { x: 0.5, y: 0.54, w: 0.68, h: 0.5 }, fontScale: 1,
+};
+
+const CAL_ACTIONS = { resize: true, duplicate: false, color: false, gradient: false, delete: true, move: true, tilt: false };
+
+// Sandeep's second reference: a printed disc reading "October 2025". Paper, so it carries a field.
+const CALENDAR_GRID = {
+  id: 'sample-calendar-grid',
+  name: 'Calendar grid (printed)',
+  image_url: null,
+  allowed_zones: [ZONES.TOP_SURFACE],
+  placement_config: {
+    top_surface: 'hug', r: 1,
+    // ASKED FOR, never typed — the same call the Calendar Studio makes when it saves.
+    sheet: calendarSheet(GRID_RECIPE),
+    calendar: GRID_RECIPE,
+  },
+  allowed_actions: CAL_ACTIONS,
+};
+
+// Sandeep's first reference: a piped freehand month with the date circled in red gel — and his
+// follow-up, "ring also - with grid lines only. but inside a circle outline". `paper: null` is how a
+// calendar says it has no field: the gel goes straight onto the cake's own surface.
+const CALENDAR_ROUND = {
+  id: 'sample-calendar-round',
+  name: 'Calendar round (piped)',
+  image_url: null,
+  allowed_zones: [ZONES.TOP_SURFACE],
+  placement_config: {
+    top_surface: 'hug', r: 1,
+    // ASKED FOR, never typed — the same call the Calendar Studio makes when it saves.
+    sheet: calendarSheet(ROUND_RECIPE),
+    calendar: ROUND_RECIPE,
+  },
+  allowed_actions: CAL_ACTIONS,
+};
+
+const ELEMENTS = [TOPPER, WALL_HUG, BOTH, CALENDAR_GRID, CALENDAR_ROUND];
 
 function Harness() {
   const [el, setEl] = useState(ELEMENTS[0]);
