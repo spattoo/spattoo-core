@@ -7775,6 +7775,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         label: slot.poseChoice ? `${label} ${POSE_LABEL[slot.mode] ?? slot.mode}` : label,
         checked, sticker, scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
     });
+    /* ⚠️ ONE SLOT IS NOT A CHOICE — the same rule `zoneHasChoice` already applies to poses, which is
+     * why the Pose row was deleted: "an element with one pose grows no controls". A calendar goes on
+     * the top and nowhere else, so its card showed a PLACEMENT section containing a single tile with
+     * a tick already in it — a control that cannot be operated, taking the top third of a phone card.
+     * Sandeep: "calendar control does not need 3d preview that says TOP. it works only on top."
+     *
+     * ⚠️ GATED ON `instance`, and that is the whole safety of it. With an instance this chooser MOVES
+     * an already-placed decoration between slots (see onToggle: "single-select; can't unplace here"),
+     * so one slot leaves nothing to move to. WITHOUT one it is the hero card's add/remove mechanism —
+     * ticking is how the element gets on the cake at all — and hiding it there would strip a
+     * single-slot element of any way to be placed or taken off. Slot COUNT, never element type (#2),
+     * so a one-zone element on a multi-tier cake still has several slots and keeps its chooser. */
+    if (instance && slots.length <= 1) return null;
     const onToggle = slot => {
       if (instance) {
         // Scatter: move THIS instance to the picked surface (single-select; can't unplace here).
@@ -8352,7 +8365,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              * The button carries CalendarIcon and the chosen date as its caption — the same
              * control-above-a-label shape Size and Spin use — and the real input sits behind it,
              * visually hidden but still the thing that opens the OS picker and still focusable. */
-            <div key="calendar-date" style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 4 }}>
+            /* ⚠️ THE CONTROL IS NAMED, because the icon cannot name it. Sandeep: "before the
+               calender icon, pls say Date label." A calendar icon on a CALENDAR's card is the one
+               picture that says nothing — the whole decoration is a calendar, so the icon reads as
+               decoration rather than as "this is the date control". Every other group on this card
+               is labelled (Calendar, Size, Spin); this one was not. */
+            <div key="calendar-date" style={{ width: '100%', display: 'flex', alignItems: 'center',
+                                              justifyContent: 'center', gap: 9, marginTop: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#5B6B60' }}>Date</span>
               <button
                 type="button"
                 onClick={e => {
@@ -8372,7 +8392,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               >
                 <CalendarIcon size={22} />
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5B6B60' }}>
-                  {iso ? `${pad(cv.day)}/${pad(cv.month)}/${cv.year}` : 'Date'}
+                  {/* Was 'Date', which now sits in the label beside the icon — leaving it here read
+                      "Date  Date". A calendar's date is seeded at placement so this is near-unreachable,
+                      but it says what it means rather than repeating the label. */}
+                  {iso ? `${pad(cv.day)}/${pad(cv.month)}/${cv.year}` : 'Not set'}
                 </span>
               </button>
               <input
