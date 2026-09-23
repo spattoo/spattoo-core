@@ -25,6 +25,7 @@ import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondC
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
 import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
+import { elementStick } from '../geometry/elementStick.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 
@@ -1156,6 +1157,19 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
                          },
           // Shared fondant surface: opt-in per element (absent → use the GLB's own texture/material).
           useSharedFondantTexture: element.placement_config?.useSharedFondantTexture === true,
+          /* ── On a stick? ──────────────────────────────────────────────────────────────────────
+             Seeded OFF even when the element offers one. A pick is a thing a baker DECIDES to add —
+             "can add stick", not "comes on a stick" — so placing a heart gives a heart, and the
+             card offers the pick beside it. `bury` rides along from the row so the first press of
+             the toggle lands at the depth an admin authored rather than at a code constant; the
+             baker then moves it, and their number wins (see geometry/elementStick.js). */
+          /* ⚠️ `extra.stick` IS READ BY NAME, like every other field this function takes from `extra`
+             — it spreads nothing, so a caller passing an unread key gets silence. Placing WITH a
+             stick already on is what the admin preview needs to show the capability at all, and
+             what a paste or a re-place of a stuck element needs to keep one. */
+          stick: extra.stick ?? (element.allowed_actions?.stick === true
+            ? { on: false, bury: elementStick(element.placement_config, element.allowed_actions).bury }
+            : null),
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
           // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)
           // or matte (high roughness / 0 metalness) from config — applied on the shared art path.
@@ -1198,6 +1212,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             // so every element — including a promoted decoration whose type never asked for it — got a
             // Tilt control in the popup. Tilt now appears only when a type explicitly enables it.
             tilt:      element.allowed_actions?.tilt      ?? false,
+            /* May this element be put on a stick and pushed into the cake. OFF by default, like
+               every capability that arrived after the first ones: a decoration that says nothing
+               does not silently grow a pick. The DEPTH that goes with it is not a capability — it
+               is a number, and lives in placement_config.stick (see geometry/elementStick.js). */
+            stick:     element.allowed_actions?.stick     ?? false,
           },
         }],
       };

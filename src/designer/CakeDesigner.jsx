@@ -121,6 +121,7 @@ import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig
 import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
+import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
@@ -11638,6 +11639,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <SizeDial size={ctl.value} min={ctl.min} max={ctl.max} step={ctl.step}
                       onChange={v => resizeSticker(sticker, v)} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(ctl.value * 100)}%</span>
+                  </div>
+                ) });
+              }
+            }
+
+            /* ── On a stick ───────────────────────────────────────────────────────────────────
+               Offered only by an element whose row ticks it (`allowed_actions.stick`), like every
+               other capability here.
+
+               ⚠️ THE DEPTH COMES WITH THE STICK, IN THE SAME SECTION, and that is the whole point
+               of the control. Sandeep, the moment the stick was proposed: *"when stick is added - a
+               property to control how much to insert should accompany."* A pick with no depth is a
+               decoration pinned at one height; choosing how far above the cake it sits is the
+               reason a baker reaches for one. So the dial appears WITH the toggle rather than in a
+               row of its own further down — INVARIANTS #11, the control and what it changes
+               together.
+
+               `bury` is a fraction of the stick, not a distance: resizing the heart must not change
+               how deep it is pushed in. */
+            if (caps?.stick && selectedEl?.type === 'sticker') {
+              const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
+              if (sticker) {
+                const st = sticker.stick ?? { on: false, bury: 0.5 };
+                sections.push({ id: 'stick', label: 'Stick', node: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+                    <Chip label="On a stick" active={st.on} isMobile={isMobile}
+                          onClick={() => updateSticker(sticker.id, { stick: { ...st, on: !st.on } })} />
+                    {st.on ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+                        <SizeDial size={st.bury ?? 0.5} min={0} max={1} step={0.05}
+                          onChange={v => updateSticker(sticker.id, { stick: { ...st, bury: v } })} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
+                          {Math.round((st.bury ?? 0.5) * 100)}% pushed in
+                        </span>
+                      </div>
+                    ) : (
+                      /* Said rather than shown greyed: a dial that does nothing until a toggle is
+                         pressed is a control a baker tries first and learns from second. */
+                      <span style={{ fontSize: 11.5, color: '#8A857D', lineHeight: 1.4 }}>
+                        Put it on a pick to stand it above the icing — then choose how far in it goes.
+                      </span>
+                    )}
                   </div>
                 ) });
               }

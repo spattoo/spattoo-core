@@ -14,6 +14,7 @@ import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
 import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
+import { stickFor, stickLift } from '../geometry/elementStick.js';
 import CreamWriting from './CreamWriting.jsx';
 import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -1689,6 +1690,42 @@ function CalendarFace({ calendar, calendarValues, printFinish = null, roughness 
   );
 }
 
+/* ── The pick a catalogue element is pushed in on ────────────────────────────────────────────────
+ *
+ * A fondant heart on a stick, standing proud of the icing. The stick existed only inside the topper
+ * studios until now (`payload.stick` on a composed piece), so a library element could never have
+ * one — see geometry/elementStick.js.
+ *
+ * ⚠️ THE GEOMETRY IS `topperStick`'S, NOT A SECOND COPY. That function already answers how long a
+ * stick is, how much of it is buried and how far it tucks up behind the piece, and its own comment
+ * says why there is one: two copies is how a baker buries it to one depth on one screen and another
+ * depth on the other. `stickFor` only hands it the element's measured box.
+ *
+ * ⚠️ A WOODEN PICK, matte pale beech — the same material Toppers draws for a plain card, because it
+ * is the same object. A metallic stem belongs to a piece CUT from one sheet (`stickStock`); an
+ * element pushed onto a bought pick is not that, so there is no finish branch here.
+ *
+ * Drawn from the element's SEAT downwards: the rod's top tucks up behind the artwork and the rest
+ * hangs below, exactly as it does under a card.
+ */
+function ElementStick({ stick }) {
+  const geo = useMemo(() => {
+    if (!stick) return null;
+    const run = stick.len + stick.tuck;
+    const g = new THREE.CylinderGeometry(stick.radius, stick.radius, run, 14);
+    // Built about its middle; slide it so the end that goes INTO the cake sits at the origin.
+    g.translate(0, run / 2, 0);
+    return g;
+  }, [stick]);
+  useEffect(() => () => geo?.dispose(), [geo]);
+  if (!geo) return null;
+  return (
+    <mesh geometry={geo} position={[0, -(stick.len), 0]} castShadow receiveShadow raycast={() => {}}>
+      <meshStandardMaterial color="#D8BE93" roughness={0.85} metalness={0} />
+    </mesh>
+  );
+}
+
 function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, onSeat, onDepth, onVExtent }) {
   // ⚠️ BEFORE the imageUrl guard, which is the whole reason this branch exists here rather than
   // deeper down: a calendar element carries no image_url, so the guard below would render nothing at
@@ -2003,7 +2040,16 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     ? frameTopMaxScale(shp, sticker.photoShape, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
     : Infinity;
   const effScale = Math.min(sticker.scale ?? 1, topFrameMax);
-  const py = topY + (sticker.yOffset ?? 0) + (
+  /* ⚠️ A STICK IS NOT AN `insert`, and they compose rather than compete. `insert` sinks the
+     ELEMENT's own base into the surface; a stick puts a ROD in and the element rides above on
+     whatever length stayed out. So this is added to the seat the pose already worked out, and an
+     element with no stick adds zero. See geometry/elementStick.js. */
+  /* No row here, and none needed: the authored depth is baked onto the instance when the element is
+     placed (useCakeDesign), so what reaches the canvas already carries the number. The renderer's
+     own fallback covers a design saved before this existed. */
+  const stick = stickFor(glbBox, sticker.stick, null);
+  const lift = stickLift(stick) * effScale;
+  const py = topY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
@@ -2020,6 +2066,9 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
     <>
+      {/* Drawn FIRST, so the element's own artwork covers the tuck — the same order Toppers uses,
+          and for the same reason: the overlap is the attachment and nothing should be seen joining. */}
+      <ElementStick stick={stick} />
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
