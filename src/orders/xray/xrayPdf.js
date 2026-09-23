@@ -3,6 +3,7 @@ import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { layoutDiagram, DIAGRAM } from './xrayProject.js';
 import { strengthColor } from './report.js';
 import { gelRecipeFor } from './gelLibrary.js';
+import { colourAdvice } from './colourBase.js';
 import { loadImage } from '../framePhoto.js';
 import { corsUrl } from '../../designer/utils/assetUrl.js';
 import { dietTone, hasAllergen, dietaryLine, restrictions } from '../dietary.js';
@@ -819,12 +820,22 @@ function drawDecorationReference(sheet, photo, meta, guide) {
          read off the decoration), not from the design — one call, the same table, so the printed
          strip and the screen's agree. */
       const rec = gelRecipeFor(c.hex);
+      /* ⚠️ THE SAME MATERIAL-AWARE SENTENCE THE SCREEN SHOWS. This printed "White buttercream + …"
+         for an isomalt splash and a fondant bow alike; the sheet is what a baker carries to the
+         bench, so it is the copy that matters MOST, not least. See colourBase.js. */
+      const advice = colourAdvice(rec, guide?.medium ?? null);
       // Hex printed alongside the role: the steps carry role tokens rather than colour names so one
       // guide serves every colour variant, and this is the only place that trade is paid back.
       sheet.text(`${readable(c.role)} · ${c.hex}`, textX + sw + mm(2), ty,
         { size: mm(3.2), weight: 700 });
       ty += Math.max(sw, mm(3.2)) + mm(1.2);
-      if (rec?.gel?.hex) {
+      if (advice.text) {
+        ty += sheet.text(advice.text, textX + sw + mm(2), ty - mm(0.4),
+          { size: mm(2.9), color: MUTED, maxW: sheet.contentW - (textX - sheet.margin) - sw - mm(4) }) + mm(0.6);
+      }
+      // Only where the gel table applies — a white-plus-gel strip under "oil-based colour only"
+      // contradicts the line above it, on paper where nobody can tap for a second opinion.
+      if (advice.showGel && rec?.gel?.hex) {
         sheet.gelMix(rec, textX + sw + mm(2), ty - mm(0.6), mm(3));
         ty += mm(4.4);
       }

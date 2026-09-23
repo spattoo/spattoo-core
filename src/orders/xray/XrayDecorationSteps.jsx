@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
+import { colourAdvice } from './colourBase.js';
 import GelMix from './GelMix.jsx';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
 import { SectionHead, sectionWrap } from './XraySection.jsx';
@@ -292,14 +293,20 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
           {row.title}
         </span>
 
-        {/* ⚠️ SAID ON THE ROW, because this decoration is deliberately absent from the checklist
-            above and the report has already told the baker so ("could not be identified"). Without
-            this the same thing appears as a gap in one section and a buildable item in another,
-            which reads as the sheet contradicting itself. It is not a warning about the guide —
-            that is the AI-draft tag beside it — it is about the CATALOGUE not knowing the object,
-            which is why there is no picture of it to show. */}
-        {row.unmatched && (
-          <span style={{ ...s.tag, background: '#F3F0E8', color: '#6B5E3C' }}>not in our catalogue</span>
+        {/* ⚠️ "FROM YOUR PHOTO", NOT "NOT IN OUR CATALOGUE". The old wording named our machinery: a
+            baker does not know we keep a catalogue, or that matching against it is a step, so it
+            read as a fault in the thing they were looking at. Sandeep: *"user might not understand
+            what do we mean by not in our catalogue."* What it actually tells them is where this
+            card came from — their picture, rather than something we already knew — and that is both
+            true and useful, because it is the reason to check it.
+
+            ⚠️ AND IT GOES AWAY ONCE THERE IS A GUIDE. Its job was to explain a card with no picture
+            and no place in the checklist. A generated card has a reference crop from the photo and
+            a full set of steps, so the gap it existed to explain is no longer on screen — and it
+            was sitting next to "AI draft — not reviewed", which already carries the doubt. Two
+            caveats in a row teach a baker to distrust a guide that is working. */}
+        {row.unmatched && !guide && (
+          <span style={{ ...s.tag, background: '#F3F0E8', color: '#6B5E3C' }}>From your photo</span>
         )}
 
         {guide ? (
@@ -475,7 +482,9 @@ function ReferenceAndColours({ guide, row, photoUrl, s }) {
         <div style={{ flex: 1, minWidth: 190 }}>
           <div style={PANEL_LABEL}>COLOUR GUIDE</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            {colours.map((c, i) => <ColourRow key={i} colour={c} s={s} />)}
+            {/* The guide's OWN material, so the sentence matches the steps beneath it. It is right
+                here on the same object — the colour line simply never asked. */}
+            {colours.map((c, i) => <ColourRow key={i} colour={c} medium={guide?.medium ?? null} s={s} />)}
           </div>
         </div>
       )}
@@ -532,8 +541,13 @@ export function cropStyle(photoUrl, bbox) {
 // The hex is what the model saw; the recipe is ours. gelRecipeFor turns a target colour into the
 // gel paste and drop count a baker actually works with — the same table the cream-colour section
 // uses, so the two can never disagree about how a colour is mixed.
-function ColourRow({ colour, s }) {
+function ColourRow({ colour, medium, s }) {
   const recipe = gelRecipeFor(colour.hex);
+  /* ⚠️ THE SENTENCE IS THE MATERIAL'S, NOT ALWAYS BUTTERCREAM. `gelRecipeFor` answers for the cake's
+     CREAM COLOURS, where "white buttercream + gel" is right; this card is a decoration, and the same
+     sentence was telling a baker to mix an isomalt splash into a bowl of cream. See colourBase.js —
+     the gel MATCH survives, because the pigment is the same pigment. */
+  const advice = colourAdvice(recipe, medium);
   return (
     // flex-start, not center: the row is now two or three lines tall and a centred swatch drifts
     // away from the role it belongs to.
@@ -547,16 +561,19 @@ function ColourRow({ colour, s }) {
           {readable(colour.role)}
           <span style={{ fontWeight: 600, color: '#8A857D', fontVariantNumeric: 'tabular-nums' }}> · {colour.hex}</span>
         </div>
-        {recipe?.recipe && (
+        {advice.text && (
           <div style={{ ...s.muted, marginTop: 1 }}>
-            {recipe.recipe}
+            {advice.text}
             {/* Said on BOTH colour surfaces now. It was only on the cake's Cream colours, so the
-                decoration guide printed a near-miss with the same confidence as an exact match. */}
-            {recipe.approx && <span> (closest match — adjust by eye)</span>}
+                decoration guide printed a near-miss with the same confidence as an exact match.
+                Only where a gel is actually being named — "closest match" under "oil-based colour
+                only" would be qualifying a sentence that names no product. */}
+            {recipe?.approx && advice.showGel && <span> (closest match — adjust by eye)</span>}
           </div>
         )}
-        {/* The same three colours the sentence names, drawn. See GelMix. */}
-        <GelMix hex={colour.hex} recipe={recipe} />
+        {/* Drawn only when the gel table applies: a white-plus-gel picture beside "oil-based colour
+            only — a gel will seize chocolate" contradicts the words directly above it. */}
+        {advice.showGel && <GelMix hex={colour.hex} recipe={recipe} />}
       </div>
     </div>
   );
