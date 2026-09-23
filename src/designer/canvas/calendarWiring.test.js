@@ -19,6 +19,7 @@ import { readFileSync } from 'node:fs';
 const read = (f) => readFileSync(new URL(f, import.meta.url), 'utf8');
 const canvas = read('./CakeCanvas.jsx');
 const hook   = read('./useCalendarTexture.js');
+const card   = read('../CakeDesigner.jsx');
 
 const bodyOf = (src, name) => {
   const start = src.indexOf(`function ${name}(`);
@@ -59,5 +60,47 @@ describe('the chosen shape reaches the cake', () => {
     // Without `layout` in the memo deps the canvas is cached and the cake never redraws — the same
     // bug wearing a different hat.
     expect(hook).toMatch(/\}, \[cfgKey, layout, year, month, day\]\);/);
+  });
+});
+
+describe("the customer's colours reach the calendar, not sticker.color", () => {
+  /* A calendar draws from its own recipe — ink, accent, paper — and never reads `sticker.color`.
+   * Writing the generic field would be a wheel that visibly does nothing, which is the failure the
+   * striped-tier note in CakeDesigner records, and the same shape as the layout prop that was never
+   * threaded to the renderer. Pinned here because neither is visible to a state assertion. */
+
+  it('the wheel READS the named colour off the instance recipe', () => {
+    expect(card).toMatch(/calendarColorKey && st\?\.calendar/);
+    expect(card).toMatch(/cal\[calendarColorKey\]/);
+  });
+
+  it('the wheel WRITES back into calendar, not into color', () => {
+    expect(card).toMatch(/calendar: \{ \.\.\.stCal\.calendar, \[calendarColorKey\]: c,/);
+  });
+
+  /* ⚠️ BOTH ROUTES. The swatch reaches the card two ways — its own group push AND the merged Size
+   * row — and gating only the first left it on screen beside the three working ones. The shared
+   * condition is the one that matters; the group gate is kept as the belt to that brace. */
+  it('the generic whole-element swatch is suppressed for a calendar', () => {
+    expect(card).toMatch(/!editGroups\.length && !inst\?\.calendar/);
+    /* From `el`, not `inst` — `inst` is out of scope there and throws at render, which no test in
+       this repo can see because none mounts CakeDesignerInner. */
+    expect(card).toMatch(/!hueRegionsReplacesWheel && !calInst\?\.calendar/);
+  });
+
+  it("the 'which colour' selection does not outlive its popup", () => {
+    // Otherwise a second calendar opens on whichever colour the first one had selected.
+    const close = card.slice(card.indexOf('function closeAllPopups'), card.indexOf('function resetEditors'));
+    expect(close).toMatch(/setCalendarColorKey\(null\)/);
+  });
+
+  it('switching the background off remembers the colour', () => {
+    // `paper: null` is a real value; without lastPaper, re-ticking falls back to the authored
+    // default and the swatch shows a colour that is not the one that comes back.
+    expect(card).toMatch(/lastPaper/);
+  });
+
+  it('the three colours are gated on the admin flag', () => {
+    expect(card).toMatch(/caps\?\.color \? \[/);
   });
 });

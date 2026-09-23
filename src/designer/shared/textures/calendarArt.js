@@ -65,7 +65,7 @@ export const CALENDAR_DEFAULTS = Object.freeze({
    * always has paper, which is his second. So this is authored, not derived from `medium`: the two
    * usually agree, but a printed sheet on a coloured cake may want no field of its own, and coupling
    * them would take that choice away for a rule that is only usually true. */
-  paper: '#FDF3EC',
+  paper: '#ffffff',
   showDayHeader: true,         // S M T W T F S
   showMonthName: true,
   ringStyle: 'circle',         // 'circle' | 'heart' — the reference photos show one of each
