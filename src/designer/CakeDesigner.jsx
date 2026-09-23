@@ -8275,6 +8275,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         ));
 
+        /* ⚠️ READ OFF THE ELEMENT, NEVER OFF `caps` — and gating this on `caps` shipped a bug that
+         * could not be undone from admin. `caps` is the INSTANCE's allowedActions, seeded from the
+         * element at placement time and then frozen: `buildDesignSnapshot` serialises `stickers:
+         * design.stickers` WHOLESALE, so a stale `color: false` is baked into every saved design and
+         * every order too. An admin ticking "Color changeable" therefore reached the next calendar
+         * placed and never the one already on the cake — Sandeep: "i still dont see color pickers.."
+         * `isStickerMovable` (~2010) and the generic swatch (~7982) both ask the catalogue for
+         * exactly this reason, and the comment there spells out the cost: gating on the sticker's own
+         * copy "would have frozen every decoration on every cake and in every saved order, which no
+         * migration of the catalogue could undo." The calendar was the one gate that did not. */
+        const calColourAllowed = elementById.get(inst?.elementId)?.allowed_actions?.color === true;
+
         groups.push({
           key: 'calendar',
           divider: true,
@@ -8293,7 +8305,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              * the swatches name what they change: the numbers, the month name and ring, the field.
              * Each opens the SHARED wheel (INVARIANTS #3) by naming which colour it is editing, the
              * same way a GLB part-group does through activeGroupKey. */
-            ...(caps?.color ? [(() => {
+            ...(calColourAllowed ? [(() => {
               const cal = { ...CALENDAR_DEFAULTS, ...inst.calendar };
               const swatches = [['ink', 'Numbers'], ['accent', 'Month'], ['paper', 'Background']];
               return (

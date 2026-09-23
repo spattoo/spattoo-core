@@ -100,7 +100,16 @@ describe("the customer's colours reach the calendar, not sticker.color", () => {
     expect(card).toMatch(/lastPaper/);
   });
 
-  it('the three colours are gated on the admin flag', () => {
-    expect(card).toMatch(/caps\?\.color \? \[/);
+  /* ⚠️ THE ELEMENT, NOT THE INSTANCE — and this assertion PINNED THE BUG in its first form. It read
+   * `/caps\?\.color \? \[/` and passed, because the code did exactly that; what it could not see is
+   * that `caps` is the sticker's own allowedActions, seeded at placement and then frozen into the
+   * saved snapshot (`buildDesignSnapshot` passes `design.stickers` through wholesale). So an admin
+   * ticking "Color changeable" never reached a calendar already on a cake, and never would for any
+   * saved order. A test that asserts the mechanism it was written beside certifies whatever that
+   * mechanism does. Both directions are pinned here so the instance copy cannot creep back. */
+  it("the three colours are gated on the ELEMENT's admin flag, not the frozen instance", () => {
+    expect(card).toMatch(/const calColourAllowed = elementById\.get\(inst\?\.elementId\)\?\.allowed_actions\?\.color === true/);
+    expect(card).toMatch(/\.\.\.\(calColourAllowed \? \[/);
+    expect(card).not.toMatch(/\.\.\.\(caps\?\.color \? \[/);
   });
 });
