@@ -17,7 +17,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
@@ -8512,28 +8512,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * There is deliberately no Height stepper for the side either; the cake is the control. */
       /* Depth now rides in the Size row as the SIDE companion — see companionCtls above. `isSide` is
          declared up there too, because that row reads it. */
-      // Pose — only where the element's config offers this zone more than one (zoneHasChoice), so an
-      // element with a single pose grows no control. Standing vs hugging is a RE-SEAT: see
-      // setStickerPose for why yOffset/tilt/insert are cleared and x/z re-clamped.
-      if (sticker && zoneHasChoice(elementById.get(sticker.elementId)?.placement_config, sticker.zone)) {
-        const poses = zoneModes(elementById.get(sticker.elementId)?.placement_config, sticker.zone);
-        // "Hugging", not "lying" — `hug` is the word this codebase and its authoring screens have
-        // always used for an element laid against a surface, so the customer-facing label matches
-        // the one everyone already says.
-        const POSE_LABEL = { stand: 'Standing', hug: 'Hugging', perch: 'Perched', verge: 'Over edge' };
-        groups.push({ key: 'pose', divider: true, controls: [
-          <span key="pose-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Pose</span>,
-          ...poses.map(m => (
-            <button key={`pose-${m}`}
-              style={{ ...s.tbIconBtn, width: 'auto', padding: '0 8px', fontSize: 10, fontWeight: 800,
-                background: sticker.placementMode === m ? INK : undefined,
-                color: sticker.placementMode === m ? '#fff' : undefined }}
-              onClick={() => setStickerPose(sticker, m)}>
-              {POSE_LABEL[m] ?? m}
-            </button>
-          )),
-        ] });
-      }
+      /* ── THE POSE ROW IS GONE — THE TILES ALREADY ARE IT ────────────────────────────────────────
+       *
+       * Sandeep, on the fondant heart's card: "we have top standing and top hugging preview, why is
+       * there a pose control? we never had this previously for any control." Then, plainly: "pose is
+       * not needed."
+       *
+       * He is right, and the duplication was structural rather than accidental — BOTH surfaces hang
+       * off the SAME predicate. `zoneHasChoice(placement_config, zone)` gated this row, and
+       * `elementPlacementChooser` expands one tile per zone × pose off `zoneModes` (the same list),
+       * which is exactly why the card showed "TOP STANDING" and "TOP HUGGING" tiles AND a
+       * Standing/Hugging toggle saying the same thing, agreeing with each other.
+       *
+       * They also did the same WORK. This called `setStickerPose`, a re-seat that clears
+       * yOffset/tilt/insert and re-clamps x/z; tapping a tile calls `updateSticker` with
+       * `zoneSeatFields(pc, slot.zone, slot.mode)` and clears the identical fields. Same operation,
+       * two controls.
+       *
+       * The tiles win because they are strictly more informative: each one RENDERS the pose
+       * (TopperPreview keys upright off `mode`), so the choice is made by looking at the two options
+       * rather than by reading two words. A text toggle cannot do that.
+       *
+       * ⚠️ ONE PATH LOSES SOMETHING, and it is recorded here rather than guarded against. A
+       * `cluster` element skips the chooser entirely (see the `!placement_config.cluster` branch
+       * above — you position those by dragging the ball), so a cluster element that ALSO named two
+       * poses would now have no way to switch between them. That combination needs hand-written SQL
+       * to exist at all: the admin editor writes one mode per zone (`serializeZone`), so `modes`
+       * cannot be authored through the UI. If such an element is ever made deliberately, bring this
+       * back for that case alone — do not restore it for everything. */
       // (Tilt moved out below — now gated by the `tilt` capability)
       // Spin (rotation) — any decoration on the top surface. Flat mode spins it in the plane of the
       // surface and stand spins its facing; both read `sticker.rotation`, so gating this on `stand`

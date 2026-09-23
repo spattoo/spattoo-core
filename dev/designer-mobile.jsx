@@ -98,6 +98,48 @@ const CAT_ELEMENTS = [
   default_color: '#F0DEB8', sort_order: i,
 }));
 
+/* ⚠️ A TWO-POSE ELEMENT, which this harness could not make at all — and the gap hid a duplicate
+ * control for as long as it existed. Sandeep, on the fondant heart's card: "we have top standing and
+ * top hugging preview, why is there a pose control? we never had this previously for any control."
+ *
+ * Both surfaces hang off ONE predicate — zoneHasChoice(placement_config, zone), i.e. a zone naming
+ * more than one mode. Every other stub here names exactly one (`top_surface: 'stand'`), so neither
+ * the second PLACEMENT tile nor the Pose row could ever appear, and the duplication was only
+ * reachable against a real database.
+ *
+ * ⚠️ AND THIS ROW DOES NOT YET PROVE IT — SAID PLAINLY RATHER THAN LEFT TO BE DISCOVERED. Placing it
+ * rendered ONE tile ("TOP") and no Pose row, where two tiles were expected. The config shape itself
+ * is right: running placement.js's own zoneCfg/zoneModes against this exact object returns
+ * ['stand','hug'] and zoneHasChoice true. So the break is downstream — placementSlots builds slots
+ * from `allowed_zones` BEFORE the pose expansion runs, and something there resolved one slot. Not
+ * chased, because the Pose row it was built to demonstrate has since been deleted (it duplicated the
+ * tiles) and the fixture was no longer on the critical path.
+ *
+ * Kept rather than reverted: the harness could not express a two-pose element at all, and that gap
+ * is worth carrying even unproven. Anyone extending it should fix the slot count FIRST and only then
+ * trust what this row shows.
+ *
+ * ⚠️ `modes` IS THE OBJECT FORM of a zone, not a sibling key: zoneCfg reads placement_config[zone],
+ * and zoneModes reads `.modes` off THAT. `{ top_surface: { mode, modes } }`, never
+ * `{ top_surface: 'stand', modes: [...] }` — the same trap the cloud and rainbow rows name for
+ * `procedural`. Shape copied from migration 087, which authors "modes": ["stand","hug"].
+ *
+ * Pushed separately rather than added to the .map above, for the reason Gold Leaf is: every row up
+ * there shares one placement_config, so a `modes` key added to it would give all seven a pose. */
+CAT_ELEMENTS.push({
+  id: 'e8', name: 'Fondant heart', description: 'two poses on the top',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e88a9a'), thumbnail_url: CAT_THUMB('#e88a9a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: true },
+  placement_config: {
+    r: 1, scale: { max: 6, min: 0.5, step: 0.5 },
+    top_surface: { mode: 'stand', modes: ['stand', 'hug'] },
+    side: 'hug',
+  },
+  default_color: '#e88a9a', sort_order: 8,
+});
+
 /* ⚠️ THE FOOD FOIL ROW, and it could not live in the table above. A tier finish paints shards into
  * the tier's material instead of placing a sticker, and it is routed by `placement_config.kind ===
  * 'tier_finish'` — but every row in that table shares ONE placement_config through the .map(), so
