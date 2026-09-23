@@ -54,6 +54,12 @@ export default function ElementPreview({
   // the only way to know the second one looks right is to look at it.
   mode: modeOverride = null,
   autoRotate = true,
+  /* Instance fields to place it WITH — passed straight to addSticker's `extra`. The screen exists to
+     answer "what does this row actually look like on a cake", and some of what a row offers is only
+     visible once the instance opts into it: a stick is the first, since an element that CAN take a
+     pick is placed without one (a baker decides), so previewing the capability needs a way to say
+     "and with the stick on". Empty for every existing caller. */
+  extra = null,
   style,
 }) {
   const { design, addSticker, addTier, resetDesign } = useCakeDesign();
@@ -71,9 +77,10 @@ export default function ElementPreview({
     // Validated against what the zone allows, never trusted — same rule as the designer's, so this
     // screen cannot show a pose a cake could not actually be given.
     const { placementMode: mode } = zoneSeatFields(element.placement_config, z, modeOverride);
-    addSticker(element, z, Math.min(tierIndex, Math.max(0, tierCount - 1)), mode);
+    addSticker(element, z, Math.min(tierIndex, Math.max(0, tierCount - 1)), mode, {}, extra ?? {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [element?.id, element?.image_url, zone, tierCount, tierIndex, modeOverride]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [element?.id, element?.image_url, zone, tierCount, tierIndex, modeOverride, JSON.stringify(extra)]);
 
   return <CakePreview design={design} autoRotate={autoRotate} style={style} />;
 }

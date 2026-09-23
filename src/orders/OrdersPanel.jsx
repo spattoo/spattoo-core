@@ -14,6 +14,7 @@ import XrayReport from './xray/XrayReport.jsx';
 import CutoutSheet from '../chefsdesk/CutoutSheet.jsx';
 import { downloadToppersCutFile } from '../designer/topper/topperCutFile.js';
 import { hasXraySpec, resolveXraySpec } from './xray/resolveXraySpec.js';
+import { calendarSourcesFor } from '../chefsdesk/a4/calendarSource.js';
 import { creditsChanged } from '../billing/creditsBus.js';
 import PhotoSheet from './PhotoSheet.jsx';
 import { compressImage, imageExt, validateImageFile, ACCEPT_IMAGE } from '../shared/image.js';
@@ -324,8 +325,27 @@ function CutoutModal({ ids, prints = [], order, apiClient, onClose, z = Z.panel 
   /* Prints arrive already shaped like an element — `{ id, name, image_url }` — so the sheet traces
    * them with the same elementSources and learns no second kind of thing. Prints FIRST: they have to
    * be printed and dry before anything is assembled, so they are the first job on the bench. */
+  /* ⚠️ THE CALENDARS COME FROM THE DESIGN, NOT THE CATALOGUE, and that is the whole point. The
+   * catalogue row is the RECIPE; the DATE is on the placement. Building these from `elements` would
+   * print the Calendar Studio's sample date — a real, plausible calendar showing a date nobody
+   * chose. Read the saved design instead, one source per placement, so two calendars on one cake
+   * print their own two dates. (`PhotoSheet` reads `design_snapshot.stickers` for the same reason:
+   * a customer's crop is theirs, not the element's.)
+   *
+   * Not on a photo order, for the reason `ids` is not: that design's decorations are the MATCHER's
+   * stand-ins, and a stand-in is not the thing. */
+  const calendarItems = useMemo(() => {
+    const { design, fromPhoto: photo } = resolveXraySpec(order);
+    return photo ? [] : calendarSourcesFor(design);
+  }, [order]);
+
+  /* Calendars are dropped from the traced list: they are already above, drawn from their own
+   * numbers, and `elementSources` refuses them anyway. Filtering here as well keeps the sheet's
+   * "could not be prepared" count honest — without it a perfectly printable calendar would be
+   * reported to the baker as a decoration that failed. */
   const sheetItems = useMemo(
-    () => (elements === null ? null : [...prints, ...elements]),
+    () => (elements === null ? null
+          : [...prints, ...elements.filter(e => !e.placement_config?.calendar)]),
     [elements, prints],
   );
 
@@ -358,7 +378,8 @@ function CutoutModal({ ids, prints = [], order, apiClient, onClose, z = Z.panel 
           {err && <div style={{ padding: 16, color: '#B42318', fontWeight: 600, fontSize: 13 }}>{err}</div>}
           {sheetItems === null
             ? <div style={{ padding: 40, textAlign: 'center', color: '#6B8C74', fontWeight: 600 }}>Loading decorations…</div>
-            : <CutoutSheet elements={sheetItems} title={order?.customer_name || order?.id || 'cake'}
+            : <CutoutSheet elements={sheetItems} extraSources={calendarItems}
+                           title={order?.customer_name || order?.id || 'cake'}
                            onClose={onClose} />}
         </div>
       </div>

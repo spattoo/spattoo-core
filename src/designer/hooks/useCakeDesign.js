@@ -21,10 +21,12 @@ import { materialSurface } from '../materials.js';
 import { DEFAULT_STYLE } from '../creamStyles.js';
 import { LUSTER_DUST_DEFAULTS, LUSTER_DUST_NEW_SPLASH } from '../shared/textures/lusterDust.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_NEW_FLAKE, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
+import { calendarSheet, resolveCalendarCfg } from '../shared/textures/calendarArt.js';
 import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondCreamLayer.js';
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
 import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
+import { elementStick } from '../geometry/elementStick.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
 
@@ -901,7 +903,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     // one thing the product already knows the answer to. And there is no single authored number that
     // would work: the right size is the cake's, and the top tier of a three-tier stack is not the
     // width of a single.
-    const sheetCfg = element.placement_config?.sheet;
+    /* ⚠️ A CALENDAR'S EXTENT CANNOT BE READ FROM STORAGE, because the SHAPE is the customer's now
+     * (Sandeep: "round or grid should be an option"). `placement_config.sheet` is baked when the
+     * studio saves, from the shape it was authored as — so a calendar switched to the other shape
+     * would be sized by the one it used to be: a disc wearing a rectangle's scale. Ask calendarArt
+     * what THIS instance will actually be drawn as, and take the extent from that. */
+    const calCfg = element.placement_config?.calendar;
+    const sheetCfg = calCfg
+      ? calendarSheet(resolveCalendarCfg(calCfg))
+      : element.placement_config?.sheet;
     if (sheetCfg && zone === ZONES.TOP_SURFACE) {
       defaultScale = null;   // resolved below, once the tier being placed on is known
     }
@@ -1062,8 +1072,8 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // An EDIBLE SHEET: printed artwork the baker lays on the cake (the football disc). Same
           // fit-to-the-boundary rule as a photo frame, different provenance — the artwork IS the
           // picture, so there is no mask and no border ring. See placement.js surfaceFit.
-          sheetShape:     element.placement_config?.sheet?.shape ?? null,      // 'round' | 'rect'
-          sheetFill:      element.placement_config?.sheet?.fill ?? 1,          // artwork extent within its square plane
+          sheetShape:     sheetCfg?.shape ?? null,      // 'round' | 'rect' — DERIVED for a calendar
+          sheetFill:      sheetCfg?.fill ?? 1,          // artwork extent within its square plane
           borderWidth:    element.placement_config?.photo?.border?.width ?? 0.06,  // thin default; 0 = no border
           photoUrl:       null,                       // customer upload (set at design time); distinct from imageUrl (the mask/shape)
           photoTransform: { x: 0, y: 0, zoom: 1, rot: 0 },   // pan (UV fraction) + zoom + 2D rotation (deg); cover-fit baseline at zoom 1
@@ -1076,6 +1086,27 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           textValues:     Object.fromEntries(
                             (element.placement_config?.text_slots ?? []).map(sl => [sl.key, sl.default ?? '']),
                           ),
+          // A CALENDAR is the same bargain as a text slot, one step further: the element carries no
+          // artwork AT ALL (image_url is null), only the recipe for drawing one — layout, medium,
+          // ink, accent, paper, ringStyle. The DATE is the customer's. 12 months x 31 dates x 2
+          // layouts is a per-value asset explosion, so nothing is stored but the numbers that
+          // describe it. See shared/textures/calendarArt.js. Absent -> an ordinary decal.
+          calendar:       element.placement_config?.calendar ?? null,
+          // ⚠️ SEEDED CONCRETELY, not left empty, and the difference is not cosmetic. `resolveDate`
+          // falls back to TODAY when it is handed nothing — so an untouched calendar left as `{}`
+          // would show a different date every time the design was reopened, and a cake ordered for a
+          // birthday would quietly drift to whenever the baker last looked at it. Freezing today's
+          // date at placement is the same rule text slots follow: seeded from a default, then owned
+          // by the customer.
+          /* Where the customer STARTS. Both shapes are always offered on the cake; the recipe's
+             `layout` only says which one it opens on (and which the studio's thumbnail shows). */
+          calendarLayout: calCfg ? resolveCalendarCfg(calCfg).layout : null,
+          calendarValues: element.placement_config?.calendar
+                            ? (() => {
+                                const d = new Date();
+                                return { year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() };
+                              })()
+                            : null,
           u:             position.u ?? null,   // rect side: perimeter fraction (round uses theta)
           theta:         seatTheta,            // round side: seat angle around the wall
           y:             seatY,                // side: seat height on the wall
@@ -1138,6 +1169,19 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
                          },
           // Shared fondant surface: opt-in per element (absent → use the GLB's own texture/material).
           useSharedFondantTexture: element.placement_config?.useSharedFondantTexture === true,
+          /* ── On a stick? ──────────────────────────────────────────────────────────────────────
+             Seeded OFF even when the element offers one. A pick is a thing a baker DECIDES to add —
+             "can add stick", not "comes on a stick" — so placing a heart gives a heart, and the
+             card offers the pick beside it. `bury` rides along from the row so the first press of
+             the toggle lands at the depth an admin authored rather than at a code constant; the
+             baker then moves it, and their number wins (see geometry/elementStick.js). */
+          /* ⚠️ `extra.stick` IS READ BY NAME, like every other field this function takes from `extra`
+             — it spreads nothing, so a caller passing an unread key gets silence. Placing WITH a
+             stick already on is what the admin preview needs to show the capability at all, and
+             what a paste or a re-place of a stuck element needs to keep one. */
+          stick: extra.stick ?? (element.allowed_actions?.stick === true
+            ? { on: false, bury: elementStick(element.placement_config, element.allowed_actions).bury }
+            : null),
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
           // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)
           // or matte (high roughness / 0 metalness) from config — applied on the shared art path.
@@ -1180,6 +1224,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             // so every element — including a promoted decoration whose type never asked for it — got a
             // Tilt control in the popup. Tilt now appears only when a type explicitly enables it.
             tilt:      element.allowed_actions?.tilt      ?? false,
+            /* May this element be put on a stick and pushed into the cake. OFF by default, like
+               every capability that arrived after the first ones: a decoration that says nothing
+               does not silently grow a pick. The DEPTH that goes with it is not a capability — it
+               is a number, and lives in placement_config.stick (see geometry/elementStick.js). */
+            stick:     element.allowed_actions?.stick     ?? false,
           },
         }],
       };

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { garnishWhere } from '../../designer/geometry/garnishPlacement.js';
 import { creditsChanged } from '../../billing/creditsBus.js';
 import { gelRecipeFor } from './gelLibrary.js';
+import GelMix from './GelMix.jsx';
 import { downloadDecorationTemplate } from './decorationTemplate.js';
 import { SectionHead, sectionWrap } from './XraySection.jsx';
 import { decorationLabel } from './decorationLabel.js';
@@ -31,13 +32,23 @@ import GarnishBuildGuide from './GarnishBuildGuide.jsx';
 // could be an edible-print decal or a reference for a fondant figure, and the baker decides that
 // WITH THE CUSTOMER — often after the order is placed. So the A4 print path is always available
 // (free, deterministic, PhotoSheet) and steps are only ever generated when asked for.
-export default function XrayDecorationSteps({
-  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
-  garnishes = [], unidentified = [], seq, s,
-}) {
-  const rows = fromPhoto
+/**
+ * The rows this section would draw — exported so the REPORT can ask whether the section exists
+ * before it renders, and number the page accordingly (see `sectionNumbers`). Pure, and the one
+ * definition: the component below calls this too, so "is it there" and "what is in it" can never
+ * disagree.
+ */
+export function decorationRows({ design, fromPhoto, storedSteps, decorationMeta, guides, unidentified = [] }) {
+  return fromPhoto
     ? [...photoRows(design, storedSteps, decorationMeta), ...unmatchedRows(unidentified, storedSteps)]
     : elementRows(design, guides);
+}
+
+export default function XrayDecorationSteps({
+  design, fromPhoto, storedSteps, guides, orderId, photoUrl, decorationMeta, apiClient, onGenerated,
+  garnishes = [], unidentified = [], numberOf, s,
+}) {
+  const rows = decorationRows({ design, fromPhoto, storedSteps, decorationMeta, guides, unidentified });
   if (!rows.length && !garnishes.length) return null;
 
   return (
@@ -46,11 +57,11 @@ export default function XrayDecorationSteps({
           derived from the piece's own stored paths — it is not written by anything and cannot be
           about a different garnish — so putting it under "check it before you build" would tell a
           baker to doubt the one guide here that is exact. Honesty runs in both directions. */}
-      {!!garnishes.length && <GarnishGuides garnishes={garnishes} seq={seq} s={s} />}
+      {!!garnishes.length && <GarnishGuides garnishes={garnishes} numberOf={numberOf} s={s} />}
 
       {!!rows.length && (
       <div style={sectionWrap('#6A5A8C')}>
-      <SectionHead n={seq.next()} color="#6A5A8C" meta={<span style={s.tag}>{rows.length}</span>}>
+      <SectionHead n={numberOf('decorations')} color="#6A5A8C" meta={<span style={s.tag}>{rows.length}</span>}>
         Decorations
       </SectionHead>
       {/* Said once for the whole section, as well as per row. The row badge marks an individual
@@ -79,10 +90,10 @@ export default function XrayDecorationSteps({
  * The strokes were saved in the order they were piped, so the guide is a reading of the piece rather
  * than a description of it. Nothing is fetched, nothing is generated, and there is no "generate"
  * button because there is nothing to wait for. */
-function GarnishGuides({ garnishes, seq, s }) {
+function GarnishGuides({ garnishes, numberOf, s }) {
   return (
     <div style={{ marginBottom: 14, ...sectionWrap('#4A2C1B') }}>
-      <SectionHead n={seq.next()} color="#4A2C1B" meta={<span style={s.tag}>{garnishes.length}</span>}>
+      <SectionHead n={numberOf('garnishes')} color="#4A2C1B" meta={<span style={s.tag}>{garnishes.length}</span>}>
         Chocolate garnishes
       </SectionHead>
       <div style={{ ...s.muted, marginTop: -4, marginBottom: 8 }}>
@@ -304,14 +315,31 @@ function DecorationRow({ row, orderId, photoUrl, apiClient, onGenerated, s }) {
             }}>{open ? 'Hide steps' : `${guide.steps?.length ?? 0} steps`}</button>
           </>
         ) : (
+          /* ⚠️ FILLED, BECAUSE THIS IS THE ONE BUTTON ON THE CARD THAT DOES SOMETHING NEW. It was a
+             white button with a hairline border on a white card, beside two other buttons wearing
+             exactly that — "Hide steps", "Find the prints" — and it disappeared into them. Sandeep:
+             *"it looks like merged with the other content and not looking highlighted."*
+             The comment further up this file had already picked the winner: *"the button that
+             deserves a press is 'How do I make this?', which spends credits."* Everything else here
+             opens something already paid for. Filled says which one is the decision.
+             #2C2A26 and white is the sheet's own primary — the same as Download PDF in the header
+             (XrayReport `s.dl`), not a new colour. */
           <button type="button" onClick={generate} disabled={busy || !canGenerate}
             title={row.elementId
               ? 'Costs 20 credits once. Every future cake with this decoration includes it.'
               : 'Costs 20 credits. Read from this order’s reference photo.'}
             style={{
-              border: '1.5px solid #E0DDD8', background: busy ? '#F4F1EC' : '#fff', borderRadius: 9,
-              cursor: busy ? 'default' : 'pointer', padding: '6px 12px', fontFamily: 'inherit',
-              fontSize: 12, fontWeight: 700, color: '#555',
+              /* ⚠️ BUSY AND DISABLED ARE NOT ONE STATE. Working is the button DOING what it was
+                 pressed for, so it stays dark and lit — lightened, not greyed out, or a baker who
+                 has just spent credits watches their press appear to be rejected. Unavailable is
+                 the opposite claim: a pale field with pale text, which is what "you cannot press
+                 this" looks like everywhere. One grey for both said the wrong thing about each. */
+              border: 'none',
+              background: !canGenerate ? '#F1EDE7' : busy ? '#57514A' : '#2C2A26',
+              color:      !canGenerate ? '#A49D95' : '#fff',
+              borderRadius: 9, cursor: (busy || !canGenerate) ? 'default' : 'pointer',
+              padding: '7px 13px', fontFamily: 'inherit',
+              fontSize: 12, fontWeight: 800,
             }}>
             {busy ? 'Reading…' : 'How do I make this?'}
           </button>
@@ -507,7 +535,9 @@ export function cropStyle(photoUrl, bbox) {
 function ColourRow({ colour, s }) {
   const recipe = gelRecipeFor(colour.hex);
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+    // flex-start, not center: the row is now two or three lines tall and a centred swatch drifts
+    // away from the role it belongs to.
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
       <span style={{
         width: 20, height: 20, borderRadius: 5, background: colour.hex,
         border: '1.5px solid rgba(0,0,0,0.12)', flexShrink: 0,
@@ -517,7 +547,16 @@ function ColourRow({ colour, s }) {
           {readable(colour.role)}
           <span style={{ fontWeight: 600, color: '#8A857D', fontVariantNumeric: 'tabular-nums' }}> · {colour.hex}</span>
         </div>
-        {recipe?.recipe && <div style={{ ...s.muted, marginTop: 1 }}>{recipe.recipe}</div>}
+        {recipe?.recipe && (
+          <div style={{ ...s.muted, marginTop: 1 }}>
+            {recipe.recipe}
+            {/* Said on BOTH colour surfaces now. It was only on the cake's Cream colours, so the
+                decoration guide printed a near-miss with the same confidence as an exact match. */}
+            {recipe.approx && <span> (closest match — adjust by eye)</span>}
+          </div>
+        )}
+        {/* The same three colours the sentence names, drawn. See GelMix. */}
+        <GelMix hex={colour.hex} recipe={recipe} />
       </div>
     </div>
   );

@@ -78,7 +78,17 @@ describe('a saved design comes back as the same cake', () => {
     }],
     texts:    [{ id: 't1', content: 'HELLO', theta: 0, y: 0.7, fontSize: 0.2, color: '#e0479e' }],
     ages:     [{ id: 'a1', value: '30', size: 0.95, finish: 'gold' }],
-    stickers: [{ id: 's1', elementId: 'e1', imageUrl: 'lion.glb', zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1 }],
+    /* ⚠️ A CALENDAR AMONG THEM, for the reason `toppers` below is a real one: an absent key cannot be
+       seen to be lost. A calendar's DATE lives on the instance (`calendarValues`) and its recipe on
+       `calendar` — neither is derivable from anything else, so if a serialiser ever stops carrying
+       them the cake comes back showing a date nobody chose. That failure is silent: the calendar
+       still draws, just not the customer's. Both sides pass stickers through wholesale today, which
+       is exactly why this has to be pinned now rather than after it breaks. */
+    stickers: [{ id: 's1', elementId: 'e1', imageUrl: 'lion.glb', zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1 },
+               { id: 's2', elementId: 'e2', imageUrl: null, zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1,
+                 calendar: { layout: 'round', medium: 'piped', ink: '#1A1A1A', accent: '#D8342B',
+                             paper: null, ringStyle: 'heart' },
+                 calendarValues: { year: 2026, month: 12, day: 25 } }],
     writings: [{ id: 'w1', text: 'Happy Birthday', font: 'script', surface: 'top', color: '#ffffff' },
                { id: 'w2', text: 'Love, Mum',      font: 'script', surface: 'board', color: '#e0479e' }],
     piping:   [{ id: 'k1', points: [[0, 0], [1, 1]], color: '#fff' }],

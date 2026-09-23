@@ -36,7 +36,7 @@ const s = {
  * @param {function} [onClose]  wired to the sheet header's Close. Omitted, the header simply has no
  *                              Close — it used to draw one anyway, connected to nothing.
  */
-export default function CutoutSheet({ elements = [], title = 'cake', onClose }) {
+export default function CutoutSheet({ elements = [], extraSources = [], title = 'cake', onClose }) {
   const [sources, setSources] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr]         = useState('');
@@ -68,9 +68,18 @@ export default function CutoutSheet({ elements = [], title = 'cake', onClose }) 
     return () => { alive = false; };
   }, [key]);   // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ⚠️ SOURCES THAT ARRIVE READY TO DRAW, merged here rather than traced above. A4Sheet states the
+     rule this follows: "a source arrives ready to draw itself, and this file has no `if (mask)` in
+     it — and cannot grow one." The same applies here. A calendar draws from three integers and a
+     recipe, so it has no pixels to trace and no failure mode to report; teaching this component what
+     a calendar IS would be a type branch (rule 2) and the next such element would add another.
+     ⚠️ Merged at RENDER, not inside the effect: that effect is keyed on element IDS, so folding
+     these into its setState would go stale the moment they changed without an element changing. */
+  const allSources = useMemo(() => [...extraSources, ...sources], [extraSources, sources]);
+
   if (loading) return <div style={s.state}>Tracing the decorations…</div>;
 
-  if (!sources.length) {
+  if (!allSources.length) {
     return (
       <div style={s.state}>
         Nothing on this cake can be printed.<br />
@@ -79,7 +88,7 @@ export default function CutoutSheet({ elements = [], title = 'cake', onClose }) 
     );
   }
 
-  const cutouts = sources.filter(x => x.kind === 'cutout').length;
+  const cutouts = allSources.filter(x => x.kind === 'cutout').length;
 
   return (
     <div style={s.wrap}>
@@ -92,7 +101,7 @@ export default function CutoutSheet({ elements = [], title = 'cake', onClose }) 
       </p>
 
       <A4Sheet
-        sources={sources}
+        sources={allSources}
         // The baker chooses what goes on. Auto-placing the first decoration would be undoing their
         // first act, which is the same reason the Edible Print Studio does not either.
         autoPlaceFirst={false}

@@ -21,7 +21,7 @@ import { SectionHead } from './XraySection.jsx';
  * Identify is free but not instant, and a report that fires an AI read on open would do it for every
  * order whether anyone wanted prints or not. The same reason the build guides sit behind a button.
  */
-export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
+export default function XrayEdiblePrints({ orderId, apiClient, numberOf, s }) {
   const [prints, setPrints] = useState(null);   // null = never asked
   const [ticked, setTicked] = useState({});     // index → bool
   const [busy, setBusy]   = useState(false);
@@ -82,7 +82,7 @@ export default function XrayEdiblePrints({ orderId, apiClient, seq, s }) {
   return (
     <div style={s.card}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-        <SectionHead n={seq.next()} color="#1B5FA8" style={{ marginBottom: 0 }}>
+        <SectionHead n={numberOf('prints')} color="#1B5FA8" style={{ marginBottom: 0 }}>
           Edible prints
         </SectionHead>
         {prints === null && (

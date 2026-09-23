@@ -41,6 +41,27 @@ import creamFonts from './creamFonts.json';
  * The sweep before that stopped at -0.05 and concluded tracking did nothing at all. Both errors were
  * about range: once too short, once too far.
  *
+ * ⚠️ AND A THIRD ERROR, ABOUT THE WORD: THEY WERE JUDGED ON SHORT ONES. "Ava", "Birthday". Reported
+ * 2026-09-23 on the acrylic Look in Texts — *"letters are too close. see anniversary is not even
+ * good to read"* — and reproduced immediately: Parisienne and Pinyon Script at -0.08 turn "Happy
+ * Anniversary" into a tangle, the n-n-i-v run collapsing into one shape. Both are fine copperplates
+ * whose round letters are narrow, so the same tracking that merely tightens a wide face welds these.
+ * The other three (Great Vibes, Dancing Script, Pacifico) still read at theirs and are untouched.
+ *
+ * Both are now -0.04, chosen by sweeping -0.08/-0.06/-0.05/-0.04/-0.02/0 on that phrase and looking.
+ * What that costs, measured rather than feared — pieces and bridges for "Happy Anniversary":
+ *
+ *     Parisienne      -0.08 → 4 pieces, 3 bridges (illegible)      -0.04 → 8 pieces, 7 bridges
+ *     Pinyon Script   -0.08 → 3 pieces, 2 bridges (tangled)        -0.04 → 7 pieces, 6 bridges
+ *
+ * So it roughly doubles the bridges on a long phrase, and that is the right way round: this file
+ * already says a legible-looking NUMBER and an illegible WORD is the bad trade. A short word is
+ * barely affected — Parisienne "Ava" goes from 2 pieces to 3.
+ *
+ * ⚠️ ONE NUMBER SERVES BOTH USES, and it should. The acrylic writing on a cake side and a cut card
+ * topper are the same physical object — a word cut from a sheet — so a value that reads on one
+ * reads on the other. Do not split it per surface; split it per FACE, which is what it already is.
+ *
  * ⚠️ AND EVERY NUMBER HERE IS PER FACE. Having looked at two outline faces and found half the
  * fully-joining value about right, I set the four centreline ones by applying the same fraction
  * WITHOUT LOOKING AT THEM. Felix came out at -0.15 and rendered as an unreadable tangle. They need
@@ -71,8 +92,8 @@ const parsed = new Map();
 
 export const TOPPER_FACES = {
   great_vibes:      { label: 'Great Vibes',    kind: 'outline',    fit: -0.07, licence: 'OFL 1.1' },
-  parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
-  pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.08, licence: 'OFL 1.1' },
+  parisienne:       { label: 'Parisienne',     kind: 'outline',    fit: -0.04, licence: 'OFL 1.1' },
+  pinyon_script:    { label: 'Pinyon Script',  kind: 'outline',    fit: -0.04, licence: 'OFL 1.1' },
   dancing_script:   { label: 'Dancing Script', kind: 'outline',    fit: -0.10, licence: 'OFL 1.1' },
   /* ⚠️ BLOCK faces, and their `fit` is near zero where every script above is deeply negative.
    * A script's letters already almost touch, so a small negative closes them into one cuttable

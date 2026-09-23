@@ -91,10 +91,14 @@ Already built, app-wide, in `src/shared/`:
 | `Slider.jsx` | **The** bounded number chosen by dragging — label, live value, optional units. `value={null}` is "not set": a range input always has a position, so a FILTER built on a bare one starts life filtering. Five files hand-rolled `<input type="range">` before this. Not a substitute for `SizeDial` or `ColorWheel`. |
 | `NavRow.jsx` | **The** row that opens something — label, hint, right-hand value, chevron, and the press/hover/focus behaviour. See rule 7. |
 
-Inside the designer: `PreviewTile` (`src/designer/shared/`), and `ColorWheel`, `SizeDial`,
-`PlacementChooser` — all three currently live inside `src/designer/CakeDesigner.jsx`. `ColorWheel` is
-**the** colour control for every colour a customer picks; `SizeDial` is **the** size control. Never a
-row of hand-rolled swatches, never a native `<input type="color">`.
+Inside the designer, all in `src/designer/shared/` and all exported from `src/index.js`:
+`PreviewTile`, `ColorWheel`, `SizeDial`, `ScrollFadeRow`. Only `PlacementChooser` still lives inside
+`src/designer/CakeDesigner.jsx`. `ColorWheel` is **the** colour control for every colour a customer
+picks; `SizeDial` is **the** size control; `ScrollFadeRow` is **the** row that scrolls sideways, and
+it derives its own fade and arrow from scroll position rather than trusting a caller to declare it.
+Never a row of hand-rolled swatches, never a native `<input type="color">` — **and that applies in
+spattoo-admin too**, which is why these are exported rather than living where only one file can
+reach them.
 
 When asked for something "like the piping popup", open the piping code and reuse it. Do not
 approximate from memory.

@@ -1,6 +1,7 @@
 import { createRoot } from 'react-dom/client';
 import { CakeDesigner } from '../src/index.js';
 import { STRIPE_PRESETS } from '../src/designer/stripePresets.js';
+import { calendarSheet } from '../src/designer/shared/textures/calendarArt.js';
 
 /* ── The real designer, on a phone, against a stubbed API. Open /designer-mobile.html ────────────
  *
@@ -97,6 +98,48 @@ const CAT_ELEMENTS = [
   placement_config: { r: 1, scale: { max: 6, min: 0.5, step: 0.5 }, top_surface: 'stand' },
   default_color: '#F0DEB8', sort_order: i,
 }));
+
+/* ⚠️ A TWO-POSE ELEMENT, which this harness could not make at all — and the gap hid a duplicate
+ * control for as long as it existed. Sandeep, on the fondant heart's card: "we have top standing and
+ * top hugging preview, why is there a pose control? we never had this previously for any control."
+ *
+ * Both surfaces hang off ONE predicate — zoneHasChoice(placement_config, zone), i.e. a zone naming
+ * more than one mode. Every other stub here names exactly one (`top_surface: 'stand'`), so neither
+ * the second PLACEMENT tile nor the Pose row could ever appear, and the duplication was only
+ * reachable against a real database.
+ *
+ * ⚠️ AND THIS ROW DOES NOT YET PROVE IT — SAID PLAINLY RATHER THAN LEFT TO BE DISCOVERED. Placing it
+ * rendered ONE tile ("TOP") and no Pose row, where two tiles were expected. The config shape itself
+ * is right: running placement.js's own zoneCfg/zoneModes against this exact object returns
+ * ['stand','hug'] and zoneHasChoice true. So the break is downstream — placementSlots builds slots
+ * from `allowed_zones` BEFORE the pose expansion runs, and something there resolved one slot. Not
+ * chased, because the Pose row it was built to demonstrate has since been deleted (it duplicated the
+ * tiles) and the fixture was no longer on the critical path.
+ *
+ * Kept rather than reverted: the harness could not express a two-pose element at all, and that gap
+ * is worth carrying even unproven. Anyone extending it should fix the slot count FIRST and only then
+ * trust what this row shows.
+ *
+ * ⚠️ `modes` IS THE OBJECT FORM of a zone, not a sibling key: zoneCfg reads placement_config[zone],
+ * and zoneModes reads `.modes` off THAT. `{ top_surface: { mode, modes } }`, never
+ * `{ top_surface: 'stand', modes: [...] }` — the same trap the cloud and rainbow rows name for
+ * `procedural`. Shape copied from migration 087, which authors "modes": ["stand","hug"].
+ *
+ * Pushed separately rather than added to the .map above, for the reason Gold Leaf is: every row up
+ * there shares one placement_config, so a `modes` key added to it would give all seven a pose. */
+CAT_ELEMENTS.push({
+  id: 'e8', name: 'Fondant heart', description: 'two poses on the top',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#e88a9a'), thumbnail_url: CAT_THUMB('#e88a9a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: true },
+  placement_config: {
+    r: 1, scale: { max: 6, min: 0.5, step: 0.5 },
+    top_surface: { mode: 'stand', modes: ['stand', 'hug'] },
+    side: 'hug',
+  },
+  default_color: '#e88a9a', sort_order: 8,
+});
 
 /* ⚠️ THE FOOD FOIL ROW, and it could not live in the table above. A tier finish paints shards into
  * the tier's material instead of placing a sticker, and it is routed by `placement_config.kind ===
@@ -379,7 +422,15 @@ CAT_ELEMENTS.push({
   image_url: CAT_THUMB('#f6e7d8'), thumbnail_url: CAT_THUMB('#f6e7d8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
-  placement_config: { procedural: 'writing', writing: { text: 'Happy\nBirthday' } },
+  /* ⚠️ THE SIZE RANGE AND DEFAULT SCALE ARE AUTHORED HERE, exactly as the live "Texts" row authors
+     them (0c53a84d…: scale 0.2–2.5 step 0.25, r 0.5). They were absent, so this harness could not
+     have shown that the Size dial ignored them — which is what happened: the dial carried 0.3–0.95
+     step 0.05 in code while the row said otherwise, and nobody could see it here. A fixture without
+     the field the bug lives in is a fixture that certifies the bug. */
+  placement_config: {
+    procedural: 'writing', writing: { text: 'Happy\nBirthday' },
+    r: 0.5, scale: { min: 0.2, max: 2.5, step: 0.25 },
+  },
   default_color: '#ffffff', sort_order: 22,
 });
 
@@ -554,6 +605,43 @@ const STUBS = {
     { id: 't3', name: 'Anniversary', slug: 'anniversary', category: 'occasion' },
   ]),
 };
+
+/* ⚠️ THE ROW WITH NO ARTWORK, which is the whole point of it being here. Every other fixture in
+ * this file has an image; a calendar has `image_url: null` because it is a RECIPE — 12 months x 31
+ * dates x 2 layouts would be a per-value asset explosion. That is exactly the case StickerFace's
+ * `if (!imageUrl) return null` used to swallow: the row appeared in the picker and the decoration
+ * vanished the instant it was placed.
+ *
+ * `thumbnail_url` is still set, because the picker tile reads `thumb_key ?? thumbnail_url` with no
+ * fallback and an element with neither shows an empty square.
+ *
+ * ⚠️ `sheet` is ASKED FOR, not typed. The same call CalendarStudio makes when it saves — without it
+ * the calendar seeds at STICKER_SIZE and renders as a stamp in the middle of the lid (measured).
+ */
+const CAL_RECIPE = {
+  /* A SINGLE `layout` on purpose — it is only where the customer starts. Both shapes are always
+     offered on the cake, so this fixture proves the tiles appear without any authoring at all. */
+  layout: 'grid',
+  medium: 'printed',
+  ink: '#1A1A1A', accent: '#D8342B', paper: '#FDF3EC',
+  ringStyle: 'circle', showDayHeader: true, showMonthName: true,
+  rect: { x: 0.5, y: 0.54, w: 0.78, h: 0.56 }, fontScale: 1,
+};
+
+CAT_ELEMENTS.push({
+  id: 'e-calendar', name: 'Month calendar', description: 'the customer rings a date',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: null, thumbnail_url: CAT_THUMB('#FDF3EC'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  // `color: false` — the ink and accent are AUTHORED; the customer owns the DATE and nothing else.
+  allowed_actions: { move: true, tilt: false, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+  placement_config: {
+    top_surface: 'hug', r: 1,
+    sheet: calendarSheet(CAL_RECIPE),
+    calendar: CAL_RECIPE,
+  },
+  default_color: null, sort_order: 9,
+});
 
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),

@@ -7,7 +7,6 @@ import { splitMobileNav, strandedMenus } from './mobileNav.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
-import { HexColorPicker } from 'react-colorful';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius } from './canvas/CakeCanvas';
 import { configureStrokeMeshes } from './canvas/strokeMesh.js';
 import { shellBand, wallYoBounds, stackedYoBounds, clampYo } from './geometry/boardBands.js';
@@ -17,7 +16,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneHasChoice, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
@@ -28,7 +27,7 @@ import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '..
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon, ChevronRightIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -48,6 +47,7 @@ import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
+import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
 const BOARD_TOP_Y = 0.1;
@@ -99,6 +99,8 @@ import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
+import { calendarSheet, resolveCalendarCfg, calendarLayouts, resolveDate }
+  from './shared/textures/calendarArt.js';
 import { useImageRegions } from './shared/color/useImageRegions.js';
 import PreviewTile from './shared/PreviewTile.jsx';
 import AnchoredPopup from '../shared/AnchoredPopup.jsx';
@@ -119,8 +121,12 @@ import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
+import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
+import Chip from '../shared/Chip.jsx';
+import { ColorWheel } from './shared/ColorWheel.jsx';
+import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
 import { ControlCell } from './shared/ControlCell.jsx';   // the captioned cell a control row is built from
@@ -230,217 +236,15 @@ function pipingPlacementChanged(current, next, isTop) {
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
-// ── Size dial ─────────────────────────────────────────────────────────────────
-// SizeDial moved to shared/SizeDial.jsx — it is THE size control and other modules need it.
-
-/**
- * A horizontally scrolling row that admits it scrolls.
- *
- * Fifteen presets, seven visible, and the seventh landed 5px short of the edge — near enough to a
- * clean end that the row read as "these are the colours". Exactly the defect the sheet had
- * vertically, rotated ninety degrees, so it gets the same answer: a fade at the edge that is there
- * while there is more and gone when there is not.
- */
-/* ⚠️ BOTH EDGES, AND ONLY WHERE THERE IS SOMETHING TO SEE. Sandeep, on the rainbow's tile row:
- * "can we add something to show that there are still items to right and you need to scroll. how
- * does the user know otherwise" — then "both edges and every row whereever needed. if the controls
- * fit in row, not needed."
- *
- * That last sentence is the whole design: each fade is derived from the scroll position, so a row
- * whose contents fit shows nothing at all. There is no flag to set and no way for a caller to
- * declare "this one scrolls" and be wrong about it.
- *
- * The LEFT edge matters as much as the right. Once you have scrolled, the tiles you came from are
- * off-screen behind you with nothing to say so, and a row that only ever hints forward reads as
- * having a beginning wherever you happen to have stopped.
- *
- * ⚠️ `fade` IS THE SURFACE COLOUR, as an "r,g,b" triple, and it has to be passed. The gradient has
- * to end in the colour BEHIND the row or the fade reads as a smear: the default 255,253,249 is the
- * colour picker's sheet, and over a white card it would show as a faint cream wash. Callers on a
- * white surface pass '255,255,255'.
- *
- * ⚠️ `read` returns the PREVIOUS object when nothing changed. Without that, every scroll event sets
- * fresh state and re-renders the row — 21 of these now exist, several carrying live 3D previews.
- */
-/* ⚠️ `wrapStyle` EXISTS BECAUSE THE WRAPPER IS NOT ALWAYS A BLOCK. The default `width: '100%'` is
- * right for a row that owns its line, but buildToolbar's panel rows are FLEX CHILDREN sitting beside
- * a label span (s.editPanelRow) — a 100%-wide wrapper there pushes the label out and overflows the
- * card. Those pass `{ flex: 1, minWidth: 0 }` instead, which is what the bare div they replaced had. */
-function ScrollFadeRow({ children, style, fade = '255,253,249', wrapStyle = null }) {
-  const ref = useRef(null);
-  const [edges, setEdges] = useState({ left: false, right: false });
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return undefined;
-    const read = () => {
-      const left = el.scrollLeft > 4;
-      const right = el.scrollWidth - el.scrollLeft - el.clientWidth > 4;
-      setEdges(prev => (prev.left === left && prev.right === right ? prev : { left, right }));
-    };
-    read();
-    el.addEventListener('scroll', read, { passive: true });
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
-    return () => { el.removeEventListener('scroll', read); ro.disconnect(); };
-  }, [children]);
-  /* ⚠️ THE FADE ALONE WAS NOT ENOUGH, AND THAT IS THE WHOLE REASON FOR THE ARROW. Shipped in
-   * 0.1.584 as a gradient only; Sandeep, looking at it on a phone: "if you did the right side
-   * shaded part, thats not very impactful. and not looking obvious. may be a right arrow something
-   * like that would help?" He was right — 30px of white-to-transparent over a near-white card on a
-   * translucent surface is a whisper, and the clipped tile was still doing the work.
-   *
-   * ⚠️ IT IS A REAL BUTTON, NOT A MARKER. Rule 7 cuts both ways: a thing that looks pressable must
-   * be pressable. Tapping scrolls the row one step, which on a phone is the difference between a
-   * hint and a control you can actually use.
-   *
-   * ⚠️ IT SCROLLS THIS ROW AND NOTHING ELSE. `scrollBy` is called on `ref.current` alone, and the
-   * handler stops propagation — these rows sit inside a scrolling card body inside a docked sheet,
-   * and a click that bubbled could move either of them out from under the thing being tapped.
-   *
-   * ⚠️ ChevronRightIcon, ROTATED — not a second glyph. `check:one-chevron` scans for `›`, its
-   * entities, and a hand-drawn `M9 6l6 6-6 6` path; drawing one here would fail it, and rightly,
-   * since a text glyph takes whatever font is loaded and changes shape between screens. Disclosure
-   * already rotates this same icon rather than drawing a twin. The gate's ACCEPTED list carves out
-   * carousel arrows, but this does not need the carve-out: reusing the shared icon keeps it green.
-   *
-   * ⚠️ The step follows the storefront carousel: first child's width plus the gap, smooth. A fixed
-   * pixel step would over- or under-shoot depending on whether a row holds 46px dials or 68px tiles.
-   * But a row whose only child is ONE full-width track — the piping ring controls, which centre
-   * themselves with `margin: 0 auto` — would measure that track and jump straight to the far end,
-   * so the step is capped at most of a screenful.
-   */
-  const step = (dir) => (e) => {
-    e.stopPropagation();
-    const el = ref.current;
-    if (!el) return;
-    const first = el.firstElementChild;
-    const gap = parseFloat(getComputedStyle(el).gap) || 8;
-    const cell = first ? first.getBoundingClientRect().width + gap : el.clientWidth * 0.6;
-    const by = Math.min(cell, el.clientWidth * 0.8);
-    el.scrollBy({ left: dir * by, behavior: 'smooth' });
-  };
-  // `to left` / `to right` point AWAY from the edge, so each gradient is opaque at its own side.
-  const edgeStyle = (side) => ({
-    position: 'absolute', top: 0, bottom: 0, [side]: 0, width: 38, pointerEvents: 'none',
-    background: `linear-gradient(to ${side}, rgba(${fade},0), rgba(${fade},0.95))`,
-  });
-  /* 26px, not the storefront's 38: that circle sits over a full-width gallery, while these rows are
-     ~354px inside a phone card, where 38 would cover half a tile. Same white / hairline / shadow
-     language, scaled to the surface it sits on. */
-  const arrowStyle = (side) => ({
-    position: 'absolute', top: '50%', [side]: 0, transform: 'translateY(-50%)',
-    width: 26, height: 26, borderRadius: '50%', padding: 0, zIndex: 2,
-    border: `1px solid ${LINE}`, background: SURFACE, color: INK,
-    boxShadow: '0 1px 4px rgba(0,0,0,0.14)', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    ...(side === 'left' ? { transform: 'translateY(-50%) rotate(180deg)' } : null),
-  });
-  return (
-    <div style={{ position: 'relative', ...(wrapStyle ?? { width: '100%' }) }}>
-      <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
-      {edges.left && <div aria-hidden="true" style={edgeStyle('left')} />}
-      {edges.right && <div aria-hidden="true" style={edgeStyle('right')} />}
-      {edges.left && (
-        <button type="button" aria-label="Scroll left" style={arrowStyle('left')} onClick={step(-1)}>
-          <ChevronRightIcon size={15} />
-        </button>
-      )}
-      {edges.right && (
-        <button type="button" aria-label="Scroll right" style={arrowStyle('right')} onClick={step(1)}>
-          <ChevronRightIcon size={15} />
-        </button>
-      )}
-    </div>
-  );
-}
-
-// ── Color picker (react-colorful) ─────────────────────────────────────────────
-function ColorWheel({ color, onChange, cakeColors = [], width = 216, compact = false }) {
-  // Common cake piping colour presets
-  const PRESETS = [
-    '#ffffff','#f5e6c8','#f5b8c8','#e8a0b0','#c8b5e8',
-    '#b5c8e8','#b5e8d5','#f0c040','#e87040','#5c3d2e',
-    '#3e2010',INK,'#d4af37','#8b1a1a','#2e5c3e',
-  ];
-  // ── What you SEE and what you can TAP are different sizes ───────────────────────────────────
-  // These were 22px, half the touch floor, in four wrapped rows. Making the whole circle 44 fixed the
-  // target and overshot the drawing — a row of 44px discs reads as buttons rather than colour chips,
-  // and dominates a sheet where the picker is the main event.
-  //
-  // So the circle is 32 and the tap area around it is still 44. The floor is about what a thumb can
-  // hit, not about how big the paint is, and conflating the two is why it looked wrong.
-  const HIT = 44;
-  const dot = compact ? 32 : Math.max(18, Math.round(width / 9.8));
-  const swatch = (c, key) => {
-    const circle = (
-      <div style={{
-        width: dot, height: dot, borderRadius: '50%', background: c,
-        border: color.toLowerCase() === c.toLowerCase() ? `2.5px solid ${INK}` : '1.5px solid #999999',
-        boxSizing: 'border-box', flexShrink: 0,
-        boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-      }} />
-    );
-    if (!compact) return <div key={key} onClick={() => onChange(c)} style={{ cursor: 'pointer', display: 'flex' }}>{circle}</div>;
-    return (
-      <div key={key} onClick={() => onChange(c)} style={{
-        width: HIT, height: HIT, flexShrink: 0, cursor: 'pointer',
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
-      }}>{circle}</div>
-    );
-  };
-
-  // ── Phone: swatches FIRST, in one row that scrolls ──────────────────────────────────────────
-  // Order is the whole point. The sheet opens short, so whatever is at the top is what a baker can
-  // reach without doing anything — and picking a preset is the common case, while the gradient
-  // picker is the rare one. It used to be the other way round: the picker sat on top and the
-  // swatches were below the fold of a sheet that covered the cake anyway.
-  //
-  // The picker stays, directly underneath. It does not need a disclosure of its own because the
-  // sheet's drag handle already is one — pull up and it is there.
-  if (compact) {
-    return (
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12, width: '100%' }}>
-        {/* gap 2, not 8: each swatch already carries 6px of invisible tap area on either side, so a
-            wider gap here is spacing added to spacing. */}
-        <ScrollFadeRow style={{
-          display: 'flex', gap: 2, overflowX: 'auto', padding: '2px 0 4px',
-          scrollbarWidth: 'none', WebkitOverflowScrolling: 'touch',
-        }}>
-          {PRESETS.map(c => swatch(c, c))}
-          {cakeColors.length > 0 && (
-            // A rule rather than a heading: "Colors from cake" cost a whole line of the sheet's
-            // height to label six swatches that are self-evident once they are beside the presets.
-            <div aria-label="Colors from cake"
-                 style={{ flexShrink: 0, width: 1, alignSelf: 'stretch', margin: '4px 2px', background: 'rgba(0,0,0,0.16)' }} />
-          )}
-          {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
-        </ScrollFadeRow>
-        <HexColorPicker color={color} onChange={onChange}
-                        style={{ width: '100%', height: 150 }} />
-      </div>
-    );
-  }
-
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
-      <HexColorPicker color={color} onChange={onChange} style={{ width, height: Math.round(width * 0.72) }} />
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, width, justifyContent: 'center' }}>
-        {PRESETS.map(c => swatch(c, c))}
-      </div>
-      {cakeColors.length > 0 && (
-        <div style={{ width }}>
-          <div style={{
-            fontSize: 10, fontWeight: 600, letterSpacing: '0.06em',
-            color: INK, textTransform: 'uppercase', marginBottom: 7, textAlign: 'center',
-          }}>Colors from cake</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }}>
-            {cakeColors.map((c, i) => swatch(c, `cake-${i}`))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+// ── Shared controls, moved out of this file ───────────────────────────────────
+// SizeDial      → shared/SizeDial.jsx      — THE size control.
+// ColorWheel    → shared/ColorWheel.jsx    — THE colour control.
+// ScrollFadeRow → shared/ScrollFadeRow.jsx — THE horizontally scrolling row.
+//
+// All three are imported above. They left because a component inside a 14k-line module is
+// reachable only by copying it, and spattoo-admin was copying it — the Calendar Studio reached
+// for a native <input type="color"> because the real control could not be imported. Each file
+// carries the full reasoning it had here; nothing was redesigned on the way out.
 
 // Gradient (multi-colour) controls — the swatch chips + direction toggle that sit under the
 // colour wheel. Purely presentational and SHARED by every colour popup (sticker, piping, …): the
@@ -1889,6 +1693,35 @@ const STACK_TAB_W = 22;
  *  breathing room it has on a desktop. Derived, so widening the handle never lands it on the panel. */
 const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
 
+/* ── The element stack's width on DESKTOP, and the two numbers derived from it ───────────────────
+ *
+ * Sandeep: "we have fixed UI issues for mobile view recents. but that also introduced some problems
+ * for the desktop view… overall can we increase the size of the popup window (width) for desktop?"
+ *
+ * It was 200 — NARROWER THAN THE PHONE, whose expanded card is min(300px, 100vw - 84px). The mobile
+ * work widened mobile and left desktop where it was, so the same card had less room on a 1440px
+ * screen than on a 390px one. Everything that looked broken on desktop followed from that: the
+ * PLACEMENT tiles clipped mid-word ("SI…"), the scroll arrow covering the tile it sat on, and the
+ * footer wrapping Duplicate under Remove.
+ *
+ * ⚠️ 300 IS ARITHMETIC, NOT TASTE. editPopup pads 8px a side and the footer gaps 4, so the two
+ * footer buttons (measured: Duplicate 98, Remove from cake 158) need W - 16 >= 260, i.e. W >= 276.
+ * 280 fits by four pixels, which is not a margin — 300 leaves 24 and matches the phone's open width.
+ *
+ * ⚠️ THE OTHER TWO ARE DERIVED, and that is the whole point of this block. The canvas insets so the
+ * cake sits BESIDE the stack, and the colour wheel dodges to its left; both were literals (220, 230)
+ * carrying a comment that restated "editPopup is right:10 width:200". Three numbers, one of them
+ * written down twice, and nothing to keep them in step — exactly what STACK_RIGHT_MOBILE above
+ * exists to prevent ("Derived, so widening the handle never lands it on the panel").
+ *
+ * Desktop only by construction: both mobile branches override `width` before this is reached. */
+const EDIT_POPUP_W       = 300;
+const EDIT_POPUP_RIGHT   = 10;
+/** Canvas gives way to the stack, so the cake is beside it rather than under it. */
+const CANVAS_INSET_STACK = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 10;
+/** The colour wheel sits clear to the stack's LEFT — one more step out than the canvas. */
+const WHEEL_DODGE_STACK  = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 20;
+
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
@@ -2154,6 +1987,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const row = [...elementById.values()].find(r => r?.placement_config?.procedural === 'chocolate_garnish');
     return garnishPlacementOptions(row?.placement_config?.chocolate_garnish ?? null);
   }, [elementById]);
+  /* How big a message may be, from the Texts row's own `placement_config.scale` — the Size range an
+     admin types in Manage Elements, and the default scale `r` beside it.
+
+     ⚠️ IT WAS AUTHORED AND NEVER READ. The dial carried 0.3–0.95 step 0.05 in code while the row said
+     0.2–2.5 step 0.25, so an admin could set the bounds, press Save, and change nothing — the exact
+     failure `addWritingFromRow` warns about two hundred lines down, where the acrylic studio's output
+     was written and never read. Reported as *"its not honoring what i authored in admin"*.
+
+     Same shape as `garnishOptions` above: found by `procedural`, never by slug or name, and falling
+     back to the code's seed when no row is loaded (a harness, or a host with no catalogue). */
+  const writingScale = useMemo(() => {
+    const row = [...elementById.values()].find(r => r?.placement_config?.procedural === 'writing');
+    return writingScaleFrom(row?.placement_config ?? null);
+  }, [elementById]);
+
   // The food-foil ("gold leaf") element is identified by CONFIG, never slug (#1): kind === 'tier_finish'.
   // (Declared after elementById so it doesn't read it before initialization.)
   const foilElement = [...elementById.values()].find(e => e.placement_config?.kind === 'tier_finish') ?? null;
@@ -4934,7 +4782,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tuned = acrylic
       ? writingFromAcrylicRow(acrylic)
       : (el?.placement_config?.writing ?? {});
-    const id = addWriting({ font: DEFAULT_CREAM_FONT, ...tuned });
+    /* The authored STARTING size — the row's "Default scale (r)", read through the same function the
+       dial's bounds come from so the two cannot disagree about what the row said. Under `tuned` on
+       purpose: an acrylic row's own `size` is the more specific statement and keeps its precedence,
+       and the code's WRITING_FIT still answers for a row that authored neither. */
+    const { r: authoredR } = writingScaleFrom(el?.placement_config ?? null);
+    const authoredFit = authoredR === null ? {} : { fit: authoredR };
+    const id = addWriting({ font: DEFAULT_CREAM_FONT, ...authoredFit, ...tuned });
     focusEditor('decoration');
     selectExclusive({ type: 'writing', id });
   }
@@ -8308,6 +8162,102 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           )),
         });
       }
+
+      /* A CALENDAR's DATE — the one value the customer owns on this element. Gated on the instance
+       * carrying `calendar` (placement_config.calendar), never on element type or slug, exactly like
+       * the text slots above: both are "the artwork is a recipe and this is the value".
+       *
+       * ⚠️ THE NATIVE PICKER, because this app already answered "pick a date" three times and the
+       * answer is `<input type="date">` — the storefront's delivery date (SizeDateFacets), the order
+       * form, and the order modal. A row of year/month/day selects would be a second answer to a
+       * solved question, and a worse one on a phone, where the native control is an OS wheel rather
+       * than three dropdowns. (The admin studio's selects are a SAMPLE control that is never saved.)
+       *
+       * ⚠️ It is safe in this card. The "a keyboard covers a 56px bar" rule that keeps the number
+       * editor a sheet is about the NAV STRIP; this card is `wheelPanelMobile`, a content-sized,
+       * capped, drag-resizable sheet — and nine of the fifteen decoration cards already carry inputs.
+       */
+      if (inst?.calendar) {
+        const cv = inst.calendarValues ?? {};
+        const pad = (n) => String(n).padStart(2, '0');
+        // The input speaks YYYY-MM-DD; the recipe stores {year, month, day} because that is what
+        // calendarLayout asks for, and because three integers survive a JSON round trip without ever
+        // meeting a timezone. `new Date('2026-03-01')` is UTC midnight and can render as February.
+        const iso = (cv.year && cv.month && cv.day) ? `${cv.year}-${pad(cv.month)}-${pad(cv.day)}` : '';
+        /* ⚠️ THE SHAPE SITS IN THIS GROUP, NOT IN ONE OF ITS OWN. Sandeep: "round or grid should be
+         * an option, not a separate control" — and not two catalogue rows either, because the shape
+         * "is an internal setting which user would know only after looking into the control". So the
+         * calendar's card holds both of the things a customer owns: which shape, and which date.
+         *
+         * ⚠️ TILES, NOT A TOGGLE, and this codebase has already paid for that lesson once — the Pose
+         * row was deleted because the tiles beside it rendered the option instead of naming it.
+         * A Grid/Round toggle would be the same mistake in a new place.
+         *
+         * ⚠️ ALWAYS BOTH. There is ONE calendar element and the shape is an option on it — Sandeep:
+         * "its only one. ring vs grid is just an option." So there is nothing to gate on. */
+        const chosen = resolveCalendarCfg(inst.calendar, inst.calendarLayout).layout;
+        const shapeTiles = calendarLayouts().map(l => (
+          <div key={`cal-${l}`} style={{ flexShrink: 0 }}>
+            <CalendarLayoutTile
+              layout={l}
+              calendar={inst.calendar}
+              date={resolveDate(cv)}
+              on={l === chosen}
+              onPick={() => {
+                if (l === chosen) return;
+                /* ⚠️ THE FIT MOVES WITH THE SHAPE, so all four fields are written together.
+                 * `updateSticker` is a plain merge — it recomputes nothing — and a disc and a
+                 * rectangle do not occupy the same extent. Writing the layout alone would leave a
+                 * round calendar wearing the grid's scale, which reads as a placement bug rather
+                 * than the stale number it is. Same trap as the invented 0.92 that hung a printed
+                 * sheet off the cake. */
+                const sheet = calendarSheet(resolveCalendarCfg(inst.calendar, l));
+                const fitted = surfaceFitMax(
+                  { zone: inst.zone, sheetShape: sheet.shape, sheetFill: sheet.fill },
+                  tierOfSticker(inst),
+                );
+                updateSticker(el.id, {
+                  calendarLayout: l,
+                  sheetShape: sheet.shape,
+                  sheetFill: sheet.fill,
+                  ...(fitted ? { scale: fitted } : null),
+                });
+              }}
+            />
+          </div>
+        ));
+
+        groups.push({
+          key: 'calendar',
+          divider: true,
+          // The row holds both things the customer owns — which shape, and which date — so it is
+          // named for the decoration rather than for one of them.
+          panelLabel: 'Calendar',
+          scroll: true,
+          controls: [
+            ...shapeTiles,
+            <input
+              key="calendar-date"
+              type="date"
+              value={iso}
+              aria-label="The date to ring on the calendar"
+              onChange={e => {
+                const [y, m, d] = (e.target.value || '').split('-').map(Number);
+                // The picker can clear itself, and a calendar with no ringed date is not a thing the
+                // renderer can draw — resolveDate would silently fall back to today. Keep the last
+                // real date instead of writing a hole.
+                if (!y || !m || !d) return;
+                updateSticker(el.id, { calendarValues: { year: y, month: m, day: d } });
+              }}
+              style={{
+                width: '100%', boxSizing: 'border-box', padding: '7px 9px', borderRadius: 8,
+                border: '1.5px solid #ddd', fontSize: 13, fontFamily: 'inherit', outline: 'none',
+                textAlign: 'center',
+              }}
+            />,
+          ],
+        });
+      }
     }
 
     /* ── TILT AND FINISH ARE BUILT HERE, PUSHED FURTHER DOWN ────────────────────────────────────
@@ -8457,28 +8407,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * There is deliberately no Height stepper for the side either; the cake is the control. */
       /* Depth now rides in the Size row as the SIDE companion — see companionCtls above. `isSide` is
          declared up there too, because that row reads it. */
-      // Pose — only where the element's config offers this zone more than one (zoneHasChoice), so an
-      // element with a single pose grows no control. Standing vs hugging is a RE-SEAT: see
-      // setStickerPose for why yOffset/tilt/insert are cleared and x/z re-clamped.
-      if (sticker && zoneHasChoice(elementById.get(sticker.elementId)?.placement_config, sticker.zone)) {
-        const poses = zoneModes(elementById.get(sticker.elementId)?.placement_config, sticker.zone);
-        // "Hugging", not "lying" — `hug` is the word this codebase and its authoring screens have
-        // always used for an element laid against a surface, so the customer-facing label matches
-        // the one everyone already says.
-        const POSE_LABEL = { stand: 'Standing', hug: 'Hugging', perch: 'Perched', verge: 'Over edge' };
-        groups.push({ key: 'pose', divider: true, controls: [
-          <span key="pose-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Pose</span>,
-          ...poses.map(m => (
-            <button key={`pose-${m}`}
-              style={{ ...s.tbIconBtn, width: 'auto', padding: '0 8px', fontSize: 10, fontWeight: 800,
-                background: sticker.placementMode === m ? INK : undefined,
-                color: sticker.placementMode === m ? '#fff' : undefined }}
-              onClick={() => setStickerPose(sticker, m)}>
-              {POSE_LABEL[m] ?? m}
-            </button>
-          )),
-        ] });
-      }
+      /* ── THE POSE ROW IS GONE — THE TILES ALREADY ARE IT ────────────────────────────────────────
+       *
+       * Sandeep, on the fondant heart's card: "we have top standing and top hugging preview, why is
+       * there a pose control? we never had this previously for any control." Then, plainly: "pose is
+       * not needed."
+       *
+       * He is right, and the duplication was structural rather than accidental — BOTH surfaces hang
+       * off the SAME predicate. `zoneHasChoice(placement_config, zone)` gated this row, and
+       * `elementPlacementChooser` expands one tile per zone × pose off `zoneModes` (the same list),
+       * which is exactly why the card showed "TOP STANDING" and "TOP HUGGING" tiles AND a
+       * Standing/Hugging toggle saying the same thing, agreeing with each other.
+       *
+       * They also did the same WORK. This called `setStickerPose`, a re-seat that clears
+       * yOffset/tilt/insert and re-clamps x/z; tapping a tile calls `updateSticker` with
+       * `zoneSeatFields(pc, slot.zone, slot.mode)` and clears the identical fields. Same operation,
+       * two controls.
+       *
+       * The tiles win because they are strictly more informative: each one RENDERS the pose
+       * (TopperPreview keys upright off `mode`), so the choice is made by looking at the two options
+       * rather than by reading two words. A text toggle cannot do that.
+       *
+       * ⚠️ ONE PATH LOSES SOMETHING, and it is recorded here rather than guarded against. A
+       * `cluster` element skips the chooser entirely (see the `!placement_config.cluster` branch
+       * above — you position those by dragging the ball), so a cluster element that ALSO named two
+       * poses would now have no way to switch between them. That combination needs hand-written SQL
+       * to exist at all: the admin editor writes one mode per zone (`serializeZone`), so `modes`
+       * cannot be authored through the UI. If such an element is ever made deliberately, bring this
+       * back for that case alone — do not restore it for everything. */
       // (Tilt moved out below — now gated by the `tilt` capability)
       // Spin (rotation) — any decoration on the top surface. Flat mode spins it in the plane of the
       // surface and stand spins its facing; both read `sticker.rotation`, so gating this on `stand`
@@ -8911,7 +8867,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {[
             /* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the
                control this app already means by "how big". */
-            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style), min: 0.3, max: 0.95, step: 0.05,
+            /* ⚠️ THE CEILING IS 2.5, NOT 0.95, AND `fit` IS NOT A PERCENTAGE OF THE CAKE.
+               It scales the BOX the message is laid into, and that box is measured differently on
+               each surface (`writingSurface`): the top gets a diameter, the side a face width, the
+               board `boardRadius * 0.9` — a RADIUS. So the same 0.95 spans most of a cake top and
+               barely half a board, and a message on the board could not be made big enough at all.
+               Reported on exactly that surface: *"size dialer shows only a max of 0.95. need to
+               increase."*
+               Raising the ceiling rather than redefining the board's box on purpose: `fit` is
+               stored on every saved design and every template, so changing what a number MEANS
+               would resize board messages on work that is already out there. A wider range changes
+               nothing that exists and lets the ones that need it grow. */
+            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style),
+              min: writingScale.min, max: writingScale.max, step: writingScale.step,
               fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
             /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
                a baker most wants to get back to. */
@@ -11221,7 +11189,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               and already take their own space. */}
           <div style={{
             position: 'absolute', inset: 0,
-            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : 220) : 0),
+            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
             bottom: bottomSheetH,
             /* ⚠️ `bottom` NO LONGER ANIMATES, and that is the fix rather than a regression. While it
                did, two animations ran against each other: this transition slid the sheet while
@@ -11726,6 +11694,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               }
             }
 
+            /* ── On a stick ───────────────────────────────────────────────────────────────────
+               Offered only by an element whose row ticks it (`allowed_actions.stick`), like every
+               other capability here.
+
+               ⚠️ THE DEPTH COMES WITH THE STICK, IN THE SAME SECTION, and that is the whole point
+               of the control. Sandeep, the moment the stick was proposed: *"when stick is added - a
+               property to control how much to insert should accompany."* A pick with no depth is a
+               decoration pinned at one height; choosing how far above the cake it sits is the
+               reason a baker reaches for one. So the dial appears WITH the toggle rather than in a
+               row of its own further down — INVARIANTS #11, the control and what it changes
+               together.
+
+               `bury` is a fraction of the stick, not a distance: resizing the heart must not change
+               how deep it is pushed in. */
+            if (caps?.stick && selectedEl?.type === 'sticker') {
+              const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
+              if (sticker) {
+                const st = sticker.stick ?? { on: false, bury: 0.5 };
+                sections.push({ id: 'stick', label: 'Stick', node: (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
+                    <Chip label="On a stick" active={st.on} isMobile={isMobile}
+                          onClick={() => updateSticker(sticker.id, { stick: { ...st, on: !st.on } })} />
+                    {st.on ? (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
+                        <SizeDial size={st.bury ?? 0.5} min={0} max={1} step={0.05}
+                          onChange={v => updateSticker(sticker.id, { stick: { ...st, bury: v } })} />
+                        <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
+                          {Math.round((st.bury ?? 0.5) * 100)}% pushed in
+                        </span>
+                      </div>
+                    ) : (
+                      /* Said rather than shown greyed: a dial that does nothing until a toggle is
+                         pressed is a control a baker tries first and learns from second. */
+                      <span style={{ fontSize: 11.5, color: '#8A857D', lineHeight: 1.4 }}>
+                        Put it on a pick to stand it above the icing — then choose how far in it goes.
+                      </span>
+                    )}
+                  </div>
+                ) });
+              }
+            }
+
             if (!sections.length) return null;
             // A tab that no longer exists (the selection changed under it) falls back to the first,
             // rather than showing an empty sheet.
@@ -11736,8 +11746,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div ref={isMobile ? editSheetRef : null}
                    style={isMobile ? { ...s.wheelPanelMobile, ...(editDragH ? { height: editDragH } : {}) }
                      // When the element edit stack is open on the right, sit the colour wheel to its
-                     // LEFT (and above it) instead of overlapping behind it. editPopup is right:10 width:200.
-                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: 230, zIndex: 30 } : {}) }}>
+                     // LEFT (and above it) instead of overlapping behind it.
+                     // ⚠️ DERIVED from the stack's own width — this used to be a literal 230 beside a
+                     // comment restating "editPopup is right:10 width:200", so widening the stack put
+                     // the wheel back underneath it. See EDIT_POPUP_W.
+                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: WHEEL_DODGE_STACK, zIndex: 30 } : {}) }}>
                 {/* The grip the other two sheets always had and this one did not. It is no longer
                     load-bearing — nothing is hidden behind a drag any more — so it is now what it
                     should always have been: an optional way to make the picker bigger. */}
@@ -14255,8 +14268,8 @@ const s = {
   previewTileOn: { border: `1.5px solid ${INK}`, background: 'rgba(0,0,0,0.04)' },
   editPopup: {
     position: 'absolute',
-    right: 10, top: 12,
-    width: 200, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
+    right: EDIT_POPUP_RIGHT, top: 12,
+    width: EDIT_POPUP_W, maxHeight: 'min(calc(100% - 24px), calc(100vh - 96px))',
     background: 'rgba(255,255,255,0.72)',
     backdropFilter: 'blur(16px)',
     WebkitBackdropFilter: 'blur(16px)',

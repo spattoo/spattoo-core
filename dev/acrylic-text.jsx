@@ -76,10 +76,20 @@ function App() {
    * The designer does the same thing through `orbitEnableFor(id)`; a preview that skips it is not
    * testing the drag, it is testing OrbitControls. */
   const [orbit, setOrbit] = useState(true);
+  /* ?text=, ?face= and ?tracking= drive this page from the URL, so a SWEEP can be shot and compared
+     instead of described. Tracking especially: it is the one number here that is set by looking, and
+     "looking" means at several values of it, on a real word, side by side. */
+  const q = new URLSearchParams(location.search);
+  const qTrack = q.has('tracking') ? Number(q.get('tracking')) : null;
   const [w, setW] = useState({
-    id: 1, style: 'acrylic', text: 'Ava', font: 'great_vibes',
-    tracking: faceFit('great_vibes'), acrylicFinish: 'gold',
-    surface: 'side', sideAngle: 0, sideY: 1.0, fit: 0.55,
+    id: 1, style: 'acrylic',
+    text: q.get('text') ?? 'Ava',
+    font: q.get('face') ?? 'great_vibes',
+    acrylicFinish: 'gold',
+    // After the default, or the default wins — the whole point of the override.
+    tracking: qTrack ?? faceFit(q.get('face') ?? 'great_vibes'),
+    surface: q.get('surface') ?? 'side', sideAngle: 0, sideY: 1.0,
+    fit: q.has('fit') ? Number(q.get('fit')) : 0.55,
     color: '#ffffff', finish: 'cream',
   });
   const set = (c) => setW(p => ({ ...p, ...c }));
