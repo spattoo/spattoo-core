@@ -67,12 +67,29 @@ const TPL_DESIGN = (color) => ({
             topPipings: [], bottomPipings: [], creamLayers: [] }],
   stickers: [], texts: [], garnishes: [],
 });
-const TEMPLATES_STUB = [
-  { id: 't1', name: 'Rose & Pistachio',  tier_count: 1, thumbnail_url: '/sample-cake-1.png', attrs: { min_weight_kg: 1 },   design: TPL_DESIGN('#F6DCE2') },
+/* ⚠️ THE LIST CARRIES NO `design`, AND THAT IS THE CONTRACT — not a shortcut taken in the stub.
+   GET /api/templates stopped selecting it (spattoo-backend `lib/templateList.js`): a list row is
+   what BROWSING needs, and the design is fetched by id for the ONE template somebody opens. A stub
+   that still handed the whole design over would load a card instantly here and only here, and the
+   by-id path — the entire point of the change — would never run in the harness that exists to show
+   it running. See plans/template-browsing-at-scale.md, Layer 1.
+
+   `t1` is `offering: 'premium'` so the Premium badge has something to draw on; it moved onto the
+   thumbnail when the card's name row went away. */
+const TEMPLATES_FULL = [
+  { id: 't1', name: 'Rose & Pistachio',  tier_count: 1, thumbnail_url: '/sample-cake-1.png', attrs: { min_weight_kg: 1 },   offering: 'premium', design: TPL_DESIGN('#F6DCE2') },
   { id: 't2', name: 'Cocoa Drip',        tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: { min_weight_kg: 1.5 }, design: TPL_DESIGN('#C9A227') },
   { id: 't3', name: 'Buttercream Bloom', tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,                  design: TPL_DESIGN('#EDE7DA') },
 ];
-const templatesOverride = { fetchTemplates: async () => TEMPLATES_STUB };
+const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
+/* ⚠️ `fetchTemplate` HAS TO BE STUBBED NOW. The Proxy below answers anything unstubbed with
+   `async () => null`, so without this the card's by-id fallback resolves null, `templateDesign`
+   stays null, and CLICKING A TEMPLATE SILENTLY DOES NOTHING — no error, no log, just a flyout that
+   will not close. That is the exact failure this harness is here to make visible. */
+const templatesOverride = {
+  fetchTemplates: async () => TEMPLATES_STUB,
+  fetchTemplate:  async (id) => TEMPLATES_FULL.find(t => t.id === id) ?? null,
+};
 
 const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides, ...capsOverride, ...templatesOverride } : { ...overrides, ...capsOverride, ...templatesOverride }, {
   // Unstubbed methods still answer null: the designer reads some as arrays, so an empty OBJECT crashes it.

@@ -11242,7 +11242,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 }}
               >
                 {thumbSrc(t)
-                  ? <img src={thumbSrc(t)} alt={t.name} width={180} height={120} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#FAFAF8' }} />
+                  /* ⚠️ `height: 'auto'` IS LOAD-BEARING. The width/height ATTRIBUTES are there to
+                     reserve the tile before the picture arrives (no reflow as the grid fills), but
+                     they are presentational hints, and with no author height `height=180` BEATS
+                     `aspect-ratio` — measured 171x180 instead of 171x171, a tile that was square in
+                     the stylesheet and not on the screen. */
+                  ? <img src={thumbSrc(t)} alt={t.name} width={180} height={180} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1', objectFit: 'contain', borderRadius: 8, background: '#FAFAF8', display: 'block' }} />
                   : <div style={s.templateThumbPlaceholder} />
                 }
                 {/* Mobile's stand-in for hover. An explicit control, not a gesture: tapping the card
@@ -11258,15 +11263,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     }}
                   >⤢</button>
                 )}
-                <div style={s.templateCardFooter}>
-                  <span style={s.templateCardName}>{t.name}</span>
-                  {t.offering === 'premium' && (
-                    <span style={s.templateBadge}>Premium</span>
-                  )}
-                </div>
-                {/* No "1-tier" caption. The thumbnail already shows how many tiers there are, and on
-                    a grid of nine cakes it was nine repetitions of a word doing no work — the count
-                    is still there for anyone who wants it, in the enlarged preview on hover. */}
+                {/* ⚠️ NO NAME ON THE CARD, AND NO CAPTION AT ALL. Sandeep, 2026-09-24: "we can
+                    actually skip showing the name. its difficult to name a lot of templates.
+                    thumbnail speaks. just the way canva app does." The catalogue already showed the
+                    label failing at the one job it had — two cards read "Football" and two read
+                    "Dino" — so it was width spent on a word that did not distinguish anything.
+                    (The "1-tier" caption went earlier for the same reason: nine repetitions of a
+                    word doing no work. The tier count is still in the enlarged preview.)
+
+                    ⚠️ THE NAME IS STILL HERE, IT IS JUST NOT DRAWN. It is the img's `alt` and the
+                    preview button's label, so a screen reader still says which cake this is, and
+                    `matchesTemplateSearch` still finds a template by a name nobody can see — search
+                    reads the name, the tag slugs AND the tag display names. Taking it out of the
+                    DOM would leave a grid of pictures nothing can name.
+                    It stays READABLE in the enlarged preview, which is how you tell those two
+                    Footballs apart: hover on desktop, the ⤢ button on a phone. */}
+                {t.offering === 'premium' && <span style={s.templateBadge}>Premium</span>}
               </div>
             ))
             }
@@ -14090,31 +14102,35 @@ const s = {
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     WebkitTapHighlightColor: 'transparent',
   },
+  /* ⚠️ THE PICTURE IS THE WHOLE CARD — no caption row, so no bottom padding and no gap to hold one.
+     A square tile because the stored thumbnails ARE square: the capture canvas is a fixed 400x400
+     and contentCrop's 3:2 target clamps to it, so a 3:2 box showed every cake letterboxed with a
+     dead gutter down each side. Matching the tile to the picture is what makes the cakes bigger
+     without changing a single stored image. */
   templateCard: {
     border: '1.5px solid #999999', borderRadius: 12,
     overflow: 'hidden', cursor: 'pointer',
-    display: 'flex', flexDirection: 'column', gap: 6,
-    padding: '0 0 8px',
+    display: 'flex', flexDirection: 'column',
+    padding: 0,
     transition: 'all 0.15s',
     flexShrink: 0,
   },
   templateThumbPlaceholder: {
-    width: '100%', height: 120,
+    width: '100%', aspectRatio: '1 / 1',
     background: '#FAFAF8', display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     fontSize: 32,
   },
-  templateCardFooter: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '4px 8px 0',
-  },
-  templateCardName: {
-    fontSize: 11, fontWeight: 700, color: INK,
-  },
+  /* ⚠️ ON the picture now, not beside a name — there is no name to sit beside. Top LEFT, because
+     the ⤢ preview button owns the top right on a phone, and two chips in one corner is a collision
+     that would only show up on the one device that cannot hover. Near-opaque white rather than the
+     old #FAFAF8 wash: it sits over a cake now, not on the card's own surface. */
   templateBadge: {
+    position: 'absolute', top: 6, left: 6, zIndex: 1,
     fontSize: 9, color: '#333', fontWeight: 700,
-    background: '#FAFAF8', border: '1px solid #999999',
+    background: 'rgba(255,255,255,0.92)', border: '1px solid #999999',
     borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
   },
 
   tierCheckRow: {
