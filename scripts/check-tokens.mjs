@@ -38,6 +38,14 @@ const ACCEPTED = {
      colour to the app's text colour. Change the token and the gel would silently change too. This
      is the exact case the token module's header describes. */
   'src/orders/xray/gelLibrary.js': 'a purchasable gel colour, measured — not UI ink',
+  /* ⚠️ THE SAME CASE AS gelLibrary ABOVE, and the gate's own message offers both paths — import the
+     token, or state a reason. Here the reason decides it. `ink` is the colour of the NUMBERS ON A
+     CAKE: piping gel through a writing tip, or printer ink on an edible sheet. It is not the app's
+     text colour that happens to look similar. Importing INK would tie what a customer's calendar is
+     piped in to a UI value tuned for contrast on a white panel — retune INK for a chrome reason and
+     every calendar already on a cake silently changes pigment. `accent` and `paper` are artwork for
+     the same reason and collide with no token at all. */
+  'src/designer/shared/textures/calendarArt.js': 'piping gel / printer ink ON the cake, not UI ink',
 };
 
 // Values the module defines, read FROM the module so the gate can never disagree with it.

@@ -184,6 +184,14 @@ export {
   applyPatches, coverPatches, bakeArtwork, findCleanSource, findInkColor,
 } from './designer/shared/textures/textSlots.js';
 export { TEXT_STYLES, applyTextStyleConfig, textStyleOf } from './designer/textStyles.js';
+// The calendar recipe — a month grid with one date ringed, GENERATED rather than uploaded. Same
+// one-renderer rule as text slots above: the admin Calendar Studio previews and bakes its thumbnail
+// with these, the designer composites the cake texture with them, and the X-Ray print sheet will
+// draw from them too. A baker must never print a different calendar from the one the customer saw.
+export {
+  CALENDAR_DEFAULTS, CALENDAR_VALUE_KEYS, DAY_INITIALS, MONTH_NAMES as CALENDAR_MONTH_NAMES,
+  daysInMonth, firstWeekday, resolveDate, calendarLayout, drawCalendar, composeCalendar,
+} from './designer/shared/textures/calendarArt.js';
 export { getRusticNormalMap } from './designer/shared/textures/rusticTexture.js';
 // Shared fondant-grain normal — the SAME matte surface the cake wall carries, reused by the Relief
 // Studio so the solid-slab side walls preview identically to the designer (one texture, no drift).
