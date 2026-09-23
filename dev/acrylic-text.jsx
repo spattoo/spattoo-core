@@ -88,7 +88,8 @@ function App() {
     acrylicFinish: 'gold',
     // After the default, or the default wins — the whole point of the override.
     tracking: qTrack ?? faceFit(q.get('face') ?? 'great_vibes'),
-    surface: 'side', sideAngle: 0, sideY: 1.0, fit: 0.55,
+    surface: q.get('surface') ?? 'side', sideAngle: 0, sideY: 1.0,
+    fit: q.has('fit') ? Number(q.get('fit')) : 0.55,
     color: '#ffffff', finish: 'cream',
   });
   const set = (c) => setW(p => ({ ...p, ...c }));

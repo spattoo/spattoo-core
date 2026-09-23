@@ -8745,7 +8745,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {[
             /* Size is a proportion, so SizeDial's thin→thick taper is honest here — it is the
                control this app already means by "how big". */
-            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style), min: 0.3, max: 0.95, step: 0.05,
+            /* ⚠️ THE CEILING IS 2.5, NOT 0.95, AND `fit` IS NOT A PERCENTAGE OF THE CAKE.
+               It scales the BOX the message is laid into, and that box is measured differently on
+               each surface (`writingSurface`): the top gets a diameter, the side a face width, the
+               board `boardRadius * 0.9` — a RADIUS. So the same 0.95 spans most of a cake top and
+               barely half a board, and a message on the board could not be made big enough at all.
+               Reported on exactly that surface: *"size dialer shows only a max of 0.95. need to
+               increase."*
+               Raising the ceiling rather than redefining the board's box on purpose: `fit` is
+               stored on every saved design and every template, so changing what a number MEANS
+               would resize board messages on work that is already out there. A wider range changes
+               nothing that exists and lets the ones that need it grow. */
+            { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style), min: 0.3, max: 2.5, step: 0.05,
               fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
             /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
                a baker most wants to get back to. */
