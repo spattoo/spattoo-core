@@ -78,14 +78,16 @@ describe("the customer's colours reach the calendar, not sticker.color", () => {
     expect(card).toMatch(/calendar: \{ \.\.\.stCal\.calendar, \[calendarColorKey\]: c,/);
   });
 
-  /* ⚠️ BOTH ROUTES. The swatch reaches the card two ways — its own group push AND the merged Size
-   * row — and gating only the first left it on screen beside the three working ones. The shared
-   * condition is the one that matters; the group gate is kept as the belt to that brace. */
+  /* ⚠️ ONE ROUTE NOW, AND THAT IS THE POINT. The swatch used to reach the card two ways — its own
+   * group push AND the merged Size row — so gating only the first left it on screen beside the three
+   * working ones, and gating both meant writing the exclusion twice. It is one control with one
+   * gate; the calendar exclusion lives in that gate and nowhere else. See stickerColour.test.js,
+   * which pins the count. */
   it('the generic whole-element swatch is suppressed for a calendar', () => {
     expect(card).toMatch(/!editGroups\.length && !inst\?\.calendar/);
-    /* From `el`, not `inst` — `inst` is out of scope there and throws at render, which no test in
-       this repo can see because none mounts CakeDesignerInner. */
-    expect(card).toMatch(/!hueRegionsReplacesWheel && !calInst\?\.calendar/);
+    const gate = card.slice(card.indexOf('const hasColourControl ='),
+                            card.indexOf('if (hasColourControl) colourCtls'));
+    expect(gate).toMatch(/!inst\?\.calendar/);
   });
 
   it("the 'which colour' selection does not outlive its popup", () => {

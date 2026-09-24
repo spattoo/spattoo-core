@@ -616,6 +616,28 @@ const CATS_HANDLED_ELSEWHERE = new Set(['age_group']);
    `relationship`. */
 const CAT_ORDER = ['occasion', 'emotion', 'relationship', 'style', 'color', 'material', 'theme', 'gender'];
 
+/* Tags → `[[category, tags], …]`, suppressed categories removed and CAT_ORDER applied.
+ *
+ * ⚠️ ONE grouping for the two surfaces that group tags: the FILTER (which chips narrow the grid)
+ * and the SAVE modal (which chips file a new template). They differ in what a chip IS — the filter
+ * works in slugs and per-category lists, the modal in a flat Set of ids — so they render their own
+ * chips; what they must not disagree about is which categories exist, in what order, and which are
+ * handled elsewhere. Admin learned the same lesson an hour earlier with TagChipPicker. */
+function groupTagsByCategory(tags) {
+  const list = tags ?? [];
+  return [...new Set(list.map(t => t.category).filter(Boolean))]
+    .filter(cat => !CATS_HANDLED_ELSEWHERE.has(cat))
+    .sort((a, b) => {
+      const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    })
+    .map(cat => [cat, list.filter(t => t.category === cat)])
+    .filter(([, group]) => group.length);
+}
+
 
 
 // `light` = drawn on the dark filled button the funnel becomes while the drawer is open.
@@ -649,20 +671,7 @@ function FilterPanel({ allTags, active, onChange, open, onApply, onClear, count,
      exactly when something could match it — and a category added in admin needs no code change to
      become a filter. Only CATS_HANDLED_ELSEWHERE is subtracted, and only `age_group` is in it.
      Ordered by CAT_ORDER, with anything it does not name appended rather than dropped. */
-  const byCategory = {};
-  const present = [...new Set(allTags.map(t => t.category).filter(Boolean))]
-    .filter(cat => !CATS_HANDLED_ELSEWHERE.has(cat))
-    .sort((a, b) => {
-      const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
-      if (ia === -1 && ib === -1) return a.localeCompare(b);
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
-    });
-  for (const cat of present) {
-    const tags = allTags.filter(t => t.category === cat);
-    if (tags.length) byCategory[cat] = tags;
-  }
+  const byCategory = Object.fromEntries(groupTagsByCategory(allTags));
 
   return (
     <div style={{ borderBottom: open ? '1px solid #999999' : 'none', marginBottom: open ? 6 : 0 }}>
@@ -2346,10 +2355,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Resize is opt-in (allowed_actions.resize; default off — see useCakeDesign placement). This defensive
   // fallback (a sticker with no allowedActions at all) mirrors that default so the edge case is opt-in too.
   const STICKER_CAPS = { resize: false, delete: true, color: false, duplicate: true };
+  /* ⚠️ A `decorEl` SELECTION HAD NO ANSWER HERE, and that made its colour control dead. The final
+     branch resolves `allowedActionsBySlug[selectedEl.type]`, which is keyed by ELEMENT-TYPE SLUG —
+     "decorEl" is a card kind, not a slug, so it landed on null and every `caps?.color` test came out
+     false for exactly the single-per-slot heroes the whole-element swatch exists for. The button was
+     on the card and lit up when pressed; the wheel never came. Found by driving a hero card in the
+     harness, which is the only way it could be found: it is a null where a null is a legal answer.
+     Read off the ELEMENT, like every other decorEl decision — the card stands for the element, not
+     for one placed instance, and carries no `allowedActions` of its own. */
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
      : selectedEl.type === 'scatter' ? (design.stickers.find(s => s.elementId === selectedEl.elementId)?.allowedActions ?? STICKER_CAPS)
+     : selectedEl.type === 'decorEl' ? (elementById.get(selectedEl.elementId)?.allowed_actions ?? null)
      : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
 
@@ -2364,7 +2382,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templateWeight, setTemplateWeight] = useState('');
   const [templateMinAge, setTemplateMinAge] = useState('');
   const [templateMaxAge, setTemplateMaxAge] = useState('');
-  const [templateOccasionIds, setTemplateOccasionIds] = useState(new Set());
+  /* Every tag the baker ticked while saving, of any category — not occasions alone. Renamed from
+     `templateOccasionIds` when the modal stopped offering one category; the payload below still
+     carries the old FIELD name as well, for hosts built against it. */
+  const [templateTagIds, setTemplateTagIds] = useState(new Set());
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -3451,7 +3472,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   function closeSaveModal() {
     setSaveModal(false); setSaveMsg(null); setReelOffer(false);
     setTemplateName(''); setTemplateWeight('');
-    setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set());
+    setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateTagIds(new Set());
   }
 
   async function handleSaveTemplate() {
@@ -3499,7 +3520,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         weightKg:     templateWeight !== '' ? parseFloat(templateWeight) : null,
         minAge:       templateMinAge !== '' ? parseInt(templateMinAge, 10) : null,
         maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
-        occasionTagIds: [...templateOccasionIds],
+        /* ⚠️ THE SAME IDS UNDER BOTH NAMES, AND THAT IS THE COMPATIBILITY. Core ships as a vendored
+           tarball, so a released core runs against a host that has not been rebuilt — and that host
+           reads `occasionTagIds` by name (spattoo-web apps/app BakerApp.tsx maps it field by field).
+           Sending only `tagIds` would hand it `undefined` and post NO tags, silently.
+           Sending every id under the old name is safe because the name is a misnomer:
+           POST /baker/templates validates no category, it inserts whatever ids it is given. So an
+           old host files an emotion tag correctly without knowing it did. */
+        tagIds:         [...templateTagIds],
+        occasionTagIds: [...templateTagIds],
       });
       /* ── Saving a template is the moment to offer a reel ──────────────────────────────────────
        * Not a nag and not a coach-mark. A baker has just finished a design they thought worth
@@ -6758,7 +6787,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     writeGradient(gradStops.filter((_, idx) => idx !== i));
     setGradStop(0);
   }
-  // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
+  // Right panel shows when: tier selected (always), or the wheel was opened on something that can
+  // take a colour. A decorEl reaches this through `caps` — see the note at its declaration.
   const showRightPanel = tierPanelVisible
     || ((caps?.color || caps?.gradient) && colorOpen)
     // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
@@ -7979,10 +8009,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     let tiltInSizeRow = false;
     let finishInSizeRow = false;
 
+    /* ⚠️ THE ONE WHOLE-ELEMENT COLOUR SWATCH ON A CARD, and it has to stay the only one. There were
+     * TWO: this, and a second button pushed further down by the sticker|decorEl block — so a
+     * decoration that is both colourable and resizable rendered a "Colour" row AND a Colour cell in
+     * the control row, two buttons opening the same wheel. Reported on the fondant heart, which is
+     * every plain sticker with `color` and `resize` ticked. They were added at different times for
+     * different reasons and neither knew about the other; what each knew that the other did not is
+     * folded in here — the decorEl re-selection from that one, the active border and
+     * `getCurrentColor` from this one. */
     const colourControl = (
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !hasActiveGroup) ? '2.5px solid #6c47ff' : 'none' }}
-          onClick={() => { const opening = !(colorOpen && !hasActiveGroup); closeAllPopups(); if (opening) setColorOpen(true); }}>
+          onClick={() => {
+            const opening = !(colorOpen && !hasActiveGroup);
+            closeAllPopups();
+            /* ⚠️ A DECOREL CARD RE-SELECTS AS ONE. Its card stands for every instance of that
+               element on the cake and handleColorChange writes all of them — but only for a
+               `decorEl` selection. A STICKER keeps its own: re-selecting there would recolour every
+               copy when the baker is looking at one. */
+            if (el.type === 'decorEl') setSelectedEl({ type: 'decorEl', elementId: el.elementId });
+            if (opening) setColorOpen(true);
+          }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>
     );
@@ -7994,14 +8041,54 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * A calendar has no `color`; it draws from its recipe. The generic wheel writes `sticker.color`,
      * which nothing renders — the "picker that visibly does nothing" the striped-tier note warns
      * about, and worse here because three working swatches sit next to it. */
-    /* ⚠️ RESOLVED FROM `el`, NOT `inst` — `inst` is not declared until the `el.type === 'sticker'`
-     * block far below, and optional chaining does not rescue an undeclared name: it THROWS. Putting
-     * `!inst?.calendar` here white-screened the designer with "inst is not defined", while 2203 tests
-     * stayed green because nothing in the suite mounts CakeDesignerInner. The same temporal-dead-zone
-     * scar this file already records four times over (selectedEl, stackSingleCard, templates, isSide).
-     * `c` above is derived from the same lookup, so the sticker is reachable here the same way. */
-    const calInst = el.type === 'sticker' ? design.stickers.find(s => s.id === el.id) : null;
-    const hasColourControl = (c.color || c.gradient) && !hueRegionsReplacesWheel && !calInst?.calendar;
+    /* ⚠️ RESOLVED HERE, ABOVE EVERY DECISION THAT READS IT. `inst` used to be declared inside the
+     * `sticker | decorEl` block far below, so this line could only reach a sticker and had to say so
+     * at length — optional chaining does not rescue an undeclared name, it THROWS, and putting
+     * `!inst?.calendar` here once white-screened the designer while 2203 tests stayed green. Hoisting
+     * it is what lets ONE gate decide the colour swatch instead of two blocks each deciding half.
+     * A plain sticker is itself; a single-per-slot topper is a decorEl card, so any one of its placed
+     * instances stands for it (a recolour applies to all of them). */
+    const inst = el.type === 'sticker' ? design.stickers.find(s => s.id === el.id)
+               : el.type === 'decorEl' ? design.stickers.find(s => s.elementId === el.elementId)
+               : null;
+    // GLB part-groups (inst.groups) OR — for a 2D `hue_regions` sticker — one group per detected colour
+    // (index-keyed; default = the region's detected hex). Same swatch UI + groupColors path for both.
+    // `recolor.locked` — the uploader of a custom decoration said "these colours must not change"
+    // (a logo, a brand mark). The element still RENDERS in the colours they chose (groupColors is
+    // seeded from recolor.group_defaults), it simply offers no swatches to change them. Config, not
+    // a type branch.
+    const editGroups = (el.type !== 'sticker' && el.type !== 'decorEl') ? []
+      : inst?.groups?.length
+        ? inst.groups
+        : (inst?.recolor?.method === 'hue_regions' && !inst.recolor.locked
+            // No label: auto-detected regions have no meaningful name (unlike a GLB's "Shoes"/"Eyes"), and
+            // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
+            ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
+            : []);
+
+    /* ⚠️ ONE PLACE DECIDES WHETHER THIS CARD HAS A WHOLE-ELEMENT WHEEL. Both render sites read this
+     * flag, so gating them separately leaves one of them showing a swatch the other suppressed —
+     * which is exactly how the fondant heart ended up with two.
+     *
+     * ⚠️ READ OFF THE ELEMENT, NOT THE PLACED INSTANCE, for a sticker or a decorEl. `allowedActions`
+     * is a snapshot taken when the decoration was placed, so a card on an old design would go on
+     * refusing a colour an admin has since ticked. The same rule `isStickerMovable` already follows.
+     * A decorEl card carries no `allowedActions` at all (`c` is `{}` for it), which is why that path
+     * needed its own answer in the first place.
+     *
+     * ⚠️ NOT WHERE THE PARTS ARE THE COLOURS. A segmented GLB recolours per group and a hue-region
+     * sticker per region ("Customise colours" below); a whole-model tint beside those is two controls
+     * fighting over the same mesh, and the per-part one is the better answer wherever it exists.
+     *
+     * ⚠️ NOT FOR A CALENDAR. It has no `color` — it draws from its recipe — so the generic wheel
+     * writes a field nothing renders, the "picker that visibly does nothing" the striped-tier note
+     * warns about, and worse here because three working swatches sit next to it. */
+    const hasColourControl = (el.type === 'sticker' || el.type === 'decorEl')
+      ? (!editGroups.length && !inst?.calendar
+         && (elementById.get(el.type === 'sticker' ? inst?.elementId : el.elementId)
+               ?.allowed_actions?.color === true
+             || c.gradient === true))
+      : ((c.color || c.gradient) && !hueRegionsReplacesWheel);
     if (hasColourControl) colourCtls = [colourControl];
 
     /* ⚠️ GENERAL RULE, not a photo-frame special case. Sandeep, on the faux ball: "same controls
@@ -8023,71 +8110,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        once the photo block has had its say. Pushing it here as well would give a frame TWO colour
        controls — the bug the single flag prevents. */
 
-    // GLB Recompose — per-group colour pickers. Self-explaining: each editable part-group gets a
-    // named, filled swatch ("Shoes", "Eyes", …) so the customer sees exactly which parts recolour.
-    // Config-driven off the instance's `groups` (admin's `_model.groups` where editable); absent →
-    // nothing renders. No element-type/slug branch. Tapping a swatch opens the shared ColorWheel for
-    // that group (activeGroupKey); the render recolours every mesh whose userData.group matches.
-    // Resolve the representative instance: a plain sticker is itself; a single-per-slot topper is a
-    // decorEl card, so use any one of its placed instances (recolour applies to all of them).
-    if (el.type === 'sticker' || el.type === 'decorEl') {
-      const inst = el.type === 'sticker'
-        ? design.stickers.find(s => s.id === el.id)
-        : design.stickers.find(s => s.elementId === el.elementId);
-      // GLB part-groups (inst.groups) OR — for a 2D `hue_regions` sticker — one group per detected colour
-      // (index-keyed; default = the region's detected hex). Same swatch UI + groupColors path for both.
-      // `recolor.locked` — the uploader of a custom decoration said "these colours must not change"
-      // (a logo, a brand mark). The element still RENDERS in the colours they chose (groupColors is
-      // seeded from recolor.group_defaults), it simply offers no swatches to change them. Config, not
-      // a type branch.
-      const editGroups = inst?.groups?.length
-        ? inst.groups
-        : (inst?.recolor?.method === 'hue_regions' && !inst.recolor.locked
-            // No label: auto-detected regions have no meaningful name (unlike a GLB's "Shoes"/"Eyes"), and
-            // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
-            ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
-            : []);
-      /* ── Whole-element colour, for anything the catalogue marks recolourable ──────────────────
-       *
-       * ⚠️ THIS LIVES IN THE SHARED sticker|decorEl BLOCK, AND IT USED TO BE decorEl ONLY. A single
-       * sticker with `allowed_actions.color: true` therefore had no way to be recoloured at all —
-       * the control did not exist on that path. Measured against the catalogue: 59 elements are
-       * marked colour-changeable with no part groups, 5 of them single_per_slot (which got the
-       * swatch) and **54 plain stickers that got nothing**. Reported on a fondant heart: the box is
-       * ticked in admin, the designer offers no way to use it.
-       *
-       * ⚠️ ONLY WHEN THERE ARE NO PART GROUPS. A segmented GLB's colours ARE its groups — offering a
-       * whole-model tint beside them would be two controls fighting over the same mesh, and the
-       * per-part one is the better answer wherever it exists. Nothing in the catalogue has both
-       * today (checked: zero), so this orders them rather than taking anything away.
-       *
-       * The wheel already understands both selections: handleColorChange writes `color` for a
-       * sticker and for every instance of a decorEl, and wheelColorOf reads each back. */
-      const colourElId = el.type === 'sticker' ? inst?.elementId : el.elementId;
-      /* ⚠️ NOT FOR A CALENDAR. This writes `sticker.color`, which a calendar's renderer never reads —
-         it draws from its recipe. Offering it beside the three named swatches would be a wheel that
-         visibly does nothing, the exact failure the striped-tier note above records. */
-      if (!editGroups.length && !inst?.calendar
-          && elementById.get(colourElId)?.allowed_actions?.color === true) {
-        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
-          <button key="col"
-            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
-                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-            onClick={() => {
-              const opening = !colorOpen;
-              closeAllPopups();
-              /* ⚠️ A STICKER KEEPS ITS OWN SELECTION. Re-selecting as decorEl here would recolour
-                 EVERY instance of that element on the cake, not the one the baker is looking at —
-                 which is right for a multi-slot card and wrong for one sticker among several. */
-              if (el.type !== 'sticker') setSelectedEl({ type: 'decorEl', elementId: colourElId });
-              if (opening) setColorOpen(true);
-            }}>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
-                          background: inst?.color ?? '#ffffff' }} />
-          </button>,
-        ] });
-      }
+    /* GLB Recompose — per-group colour pickers. Self-explaining: each editable part-group gets a
+       named, filled swatch ("Shoes", "Eyes", …) so the customer sees exactly which parts recolour.
+       Config-driven off the instance's `groups` (admin's `_model.groups` where editable); absent →
+       nothing renders. No element-type/slug branch. Tapping a swatch opens the shared ColorWheel for
+       that group (activeGroupKey); the render recolours every mesh whose userData.group matches.
 
+       ⚠️ THE WHOLE-ELEMENT SWATCH THAT USED TO SIT HERE HAS GONE, not the behaviour it added. It was
+       written to fix a real gap — 54 plain stickers marked colour-changeable with no part groups and
+       no way to use it, reported on the fondant heart — but it fixed it by adding a SECOND button
+       beside the one `colourCtls` already renders, and the same heart came back with two. Everything
+       it knew now lives in `hasColourControl` and `colourControl` above: the element-read gate, the
+       "not where the parts are the colours" rule, and the decorEl re-selection. */
+    if (el.type === 'sticker' || el.type === 'decorEl') {
       if (editGroups.length) {
         groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
           <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
@@ -8149,7 +8184,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // showing top/side previews and letting you MOVE this instance between them (INVARIANTS #6/#3).
     // Reuses the shared chooser in single-instance mode; instance controls stay below.
     if (el.type === 'sticker') {
-      const inst = design.stickers.find(s => s.id === el.id);
       const srcEl = elementById.get(inst?.elementId);
       // Cluster-capable elements don't use the per-surface move chooser — you drag the ball to position
       // it and use the "Cluster" toggle (drop several for multiple clusters). Skip the preview chooser.
@@ -8162,7 +8196,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Photo-cake frame controls — Upload + fit (zoom/pan). Gated on the instance carrying a window
     // mask (config-driven, placement_config.photo), never on element type/slug (INVARIANTS #1/#6).
     if (el.type === 'sticker') {
-      const inst = design.stickers.find(s => s.id === el.id);
       if (inst?.photoMask) {
         const t = inst.photoTransform ?? { x: 0, y: 0, zoom: 1 };
         const setT = patch => updateSticker(el.id, { photoTransform: { ...t, ...patch } });
@@ -13158,22 +13191,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 : 'Optional. The lightest you can build this at, if it has one.'}
             </div>
 
-            {filterTags.filter(t => t.category === 'occasion').length > 0 && (
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Occasions</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {filterTags.filter(t => t.category === 'occasion').map(tag => {
-                    const on = templateOccasionIds.has(tag.id);
-                    return (
-                      <button key={tag.id} type="button"
-                        style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${on ? primaryColor : '#e5d0d8'}`, background: on ? hexToRgba(primaryColor, 0.1) : '#fff', color: on ? primaryColor : '#888', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}
-                        onClick={() => setTemplateOccasionIds(prev => { const next = new Set(prev); on ? next.delete(tag.id) : next.add(tag.id); return next; })}
-                      >
-                        {tag.name}
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* ⚠️ EVERY CATEGORY, not occasions alone. A baker could file their own cake by occasion
+                and by nothing else — not as a sorry cake, not by colour, not by style — so anything
+                they made was unfindable by every other facet. Grouped through the same
+                groupTagsByCategory the filter uses, so the two cannot disagree about what exists.
+
+                ⚠️ `filterTags`, NOT `offeredTags`. The filter narrows chips to tags a loaded
+                template already carries, which is right for narrowing a grid and exactly wrong here:
+                this cake is new, and the first template to carry a tag has to be able to get it.
+
+                `age_group` is absent for the reason it is absent from the filter — this modal asks
+                for min/max age as NUMBERS a few rows up, and CATS_HANDLED_ELSEWHERE says so once. */}
+            {filterTags.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {groupTagsByCategory(filterTags).map(([cat, tags]) => (
+                  <div key={cat}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>{catLabel(cat)}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {tags.map(tag => {
+                        const on = templateTagIds.has(tag.id);
+                        return (
+                          <button key={tag.id} type="button"
+                            style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${on ? primaryColor : '#e5d0d8'}`, background: on ? hexToRgba(primaryColor, 0.1) : '#fff', color: on ? primaryColor : '#888', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}
+                            onClick={() => setTemplateTagIds(prev => { const next = new Set(prev); on ? next.delete(tag.id) : next.add(tag.id); return next; })}
+                          >
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 

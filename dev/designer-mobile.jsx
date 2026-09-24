@@ -514,6 +514,42 @@ CAT_ELEMENTS.push({
   default_color: '#4A2C1B', sort_order: 27,
 });
 
+/* ⚠️ A COLOURABLE HERO (`single_per_slot`) — the card type this harness could not make, and the one
+ * the whole-element colour swatch was written FOR. `c` is `{}` on a decorEl card, so its swatch is
+ * gated on the ELEMENT rather than on a placed instance's `allowedActions`; with no fixture, that
+ * branch could only be reasoned about. It is also the card whose swatch must RE-SELECT as a decorEl
+ * before opening the wheel — its card stands for every instance of the element on the cake.
+ *
+ * ⚠️ `single_per_slot` is what makes it a decorEl card, NOT the element type. A hero places one
+ * instance per (tier × surface) through the chooser's checkboxes. */
+CAT_ELEMENTS.push({
+  id: 'e28', name: 'Fondant crown hero', description: 'a colourable single-per-slot hero',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#E3C46A'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { single_per_slot: true, r: 0.7, top_surface: 'stand', side: 'hug' },
+  default_color: '#E3C46A', sort_order: 28,
+});
+
+/* ⚠️ A SEGMENTED GLB — a model whose colours ARE its part groups (`_model.groups`, admin's GLB
+ * Studio). It gets the named "Customise colours" swatches and must get NO whole-model wheel beside
+ * them: two controls fighting over the same mesh, and the per-part one is the better answer. The
+ * catalogue has nothing with both today, which is exactly why a fixture has to carry the rule —
+ * otherwise the only thing protecting it is a comment. */
+CAT_ELEMENTS.push({
+  id: 'e29', name: 'Two-part rosette', description: 'a GLB with recolourable part groups',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#C86B8A'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { r: 0.6, top_surface: 'lay', side: 'hug', _model: { groups: [
+    { key: 'petals', label: 'Petals', editable: true, default: '#C86B8A' },
+    { key: 'centre', label: 'Centre', editable: true, default: '#F0D89B' },
+  ] } },
+  default_color: '#C86B8A', sort_order: 29,
+});
+
 /* ⚠️ AN EDGE-SEATED FIGURE, which nothing here could make. Every row above seats on the top surface
  * or hugs a wall, so the `perch`/`verge` modes — and with them `edgeSeatSeed`, the shared front-edge
  * seed both the add path and the chooser's move path call — were unreachable without a database.
