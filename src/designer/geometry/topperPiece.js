@@ -156,9 +156,21 @@ const STICK_TUCK  = 0.55;   // how far it runs UP behind the card, likewise
  *
  * `bury` is a fraction of `len` — how much of the hanging part goes into the icing.
  */
+/* ⚠️ `lengthScale` AND `radiusScale` ARE MULTIPLIERS ON THE PROPORTIONS ABOVE, defaulting to 1, so
+   a card topper composed before they existed is bit-identical. They exist because a CATALOGUE
+   element is not a card: a card topper is a big flat thing whose own height is a fair guide to how
+   long its pick should be, and a fondant heart is a small solid one where 0.8× its height is a stub
+   too short to reach the icing it is supposed to be pushed into. Sandeep, on the heart: *"stick
+   length should be dynamic"* and *"add a control for the stick thickness. its too thin now."*
+   The BAKER moves them, off `placement_config.stick` — see geometry/elementStick.js. */
+const clampScale = (v, lo, hi, fallback) =>
+  (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
+
 export function topperStick(box, stick) {
   if (!stick?.on || !box || !(box.h > 0)) return null;
-  const len = box.h * STICK_BELOW;
+  const lengthScale = clampScale(stick.lengthScale, 0.25, 6, 1);
+  const radiusScale = clampScale(stick.radiusScale, 0.25, 6, 1);
+  const len = box.h * STICK_BELOW * lengthScale;
   const tuck = box.h * STICK_TUCK;
   const bottom = box.cy - box.h / 2;
   const bury = Math.max(0, Math.min(1, Number.isFinite(stick.bury) ? stick.bury : 0.5));
@@ -167,7 +179,7 @@ export function topperStick(box, stick) {
     tuck,
     bury,
     buried: len * bury,
-    radius: Math.max(box.h * 0.014, 0.006),
+    radius: Math.max(box.h * 0.014, 0.006) * radiusScale,
     /* A metallic stick is not a rod but a TAB, cut from the same sheet — see `stickStock`. Carried
        here beside the rod's radius so one function still answers "how big is the stick", whichever
        of the two it turns out to be. */

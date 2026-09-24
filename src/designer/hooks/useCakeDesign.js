@@ -1179,8 +1179,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              — it spreads nothing, so a caller passing an unread key gets silence. Placing WITH a
              stick already on is what the admin preview needs to show the capability at all, and
              what a paste or a re-place of a stuck element needs to keep one. */
+          /* ⚠️ THE WHOLE ROD, NOT JUST ITS DEPTH. Seeding `bury` alone left length and thickness to
+             be re-resolved from the row on every render, so an instance could not carry a baker's
+             own — and both are controls on the card now (Sandeep: *"stick length should be
+             dynamic"*, *"add a control for the stick thickness"*). Spread, so a number added to
+             `elementStick` in future arrives here without this line being edited again. */
           stick: extra.stick ?? (element.allowed_actions?.stick === true
-            ? { on: false, bury: elementStick(element.placement_config, element.allowed_actions).bury }
+            ? (({ offered, finish, ...rod }) => ({ on: false, ...rod }))(
+                elementStick(element.placement_config, element.allowed_actions))
             : null),
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
           // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)

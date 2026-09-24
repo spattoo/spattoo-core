@@ -57,7 +57,7 @@ import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from '
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
-import { elementStick } from './geometry/elementStick.js';
+import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -8767,21 +8767,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const sticker = design.stickers.find(stkr => stkr.id === el.id);
       const srcEl   = sticker && elementById.get(sticker.elementId);
       if (sticker) {
-        const st   = sticker.stick ?? { on: false, bury: elementStick(srcEl?.placement_config, srcEl?.allowed_actions).bury };
-        const bury = st.bury ?? elementStick(srcEl?.placement_config, srcEl?.allowed_actions).bury;
+        const row  = elementStick(srcEl?.placement_config, srcEl?.allowed_actions);
+        const st   = sticker.stick ?? { on: false, ...row };
+        const bury = st.bury ?? row.bury;
+        const len  = st.length ?? row.length;
+        const thk  = st.thickness ?? row.thickness;
         const setStick = patch => updateSticker(el.id, { stick: { ...st, ...patch } });
-        groups.push({ key: 'stick', divider: true, controls: [
+        /* One stepper, three times — In, Long and Thick are the same control over three numbers, and
+           three hand-rolled copies of it in one row is how they end up with three widths. */
+        const dial = (key, label, value, fmt, set, lo, hi, step) => ([
+          <span key={`${key}-lbl`} style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{label}</span>,
+          <button key={`${key}-`} style={s.tbIconBtn}
+            onClick={() => set(Math.max(lo, +(value - step).toFixed(2)))}>−</button>,
+          <span key={`${key}-val`} style={{ ...s.tbSizeLabel, minWidth: 28 }}>{fmt(value)}</span>,
+          <button key={`${key}+`} style={s.tbIconBtn}
+            onClick={() => set(Math.min(hi, +(value + step).toFixed(2)))}>+</button>,
+        ]);
+        /* ⚠️ SCROLLS, like the faux ball's Colour·Size·Spin·Tilt row and for the same reason: four
+           controls will not fit a 390px card, and a row that wraps makes the card two lines taller
+           and pushes the cake off a phone. ScrollFadeRow gives it the fade and the arrow, which is
+           what that row was once caught lacking. */
+        groups.push({ key: 'stick', divider: true, scroll: true, controls: [
           <Chip key="stick-on" label="On a stick" active={!!st.on} isMobile={isMobile}
                 onClick={() => setStick({ on: !st.on })} />,
-          /* The depth appears only once there IS a stick — a stepper that moves a number nothing is
-             using is the "picker that visibly does nothing" this file warns about elsewhere. */
+          /* The numbers appear only once there IS a stick — steppers moving values nothing is using
+             are the "picker that visibly does nothing" this file warns about elsewhere. */
           ...(st.on ? [
-            <span key="stick-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>In</span>,
-            <button key="stick-" style={s.tbIconBtn}
-              onClick={() => setStick({ bury: Math.max(0, +(bury - 0.05).toFixed(2)) })}>−</button>,
-            <span key="stick-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(bury * 100)}%</span>,
-            <button key="stick+" style={s.tbIconBtn}
-              onClick={() => setStick({ bury: Math.min(1, +(bury + 0.05).toFixed(2)) })}>+</button>,
+            // How far the pick goes INTO the icing, as a fraction of the rod. Sandeep asked for this
+            // the moment the stick was proposed.
+            ...dial('bury', 'In', bury, v => `${Math.round(v * 100)}%`, v => setStick({ bury: v }), 0, 1, 0.05),
+            /* ⚠️ LENGTH AND THICKNESS ARE MULTIPLIERS on the rod `topperStick` derives from the
+               element's own box — never world lengths (INVARIANTS #8). Shown as a plain × so what a
+               baker reads is what the number means. */
+            ...dial('slen', 'Long', len, v => `${v.toFixed(1)}×`, v => setStick({ length: v }),
+                    STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
+            ...dial('sthk', 'Thick', thk, v => `${v.toFixed(1)}×`, v => setStick({ thickness: v }),
+                    STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
           ] : []),
         ] });
       }

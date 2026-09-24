@@ -1705,8 +1705,15 @@ function CalendarFace({ calendar, calendarValues, calendarLayout = null, printFi
  * is the same object. A metallic stem belongs to a piece CUT from one sheet (`stickStock`); an
  * element pushed onto a bought pick is not that, so there is no finish branch here.
  *
- * Drawn from the element's SEAT downwards: the rod's top tucks up behind the artwork and the rest
+ * Drawn from the element's BOTTOM downwards: the rod's top tucks up behind the artwork and the rest
  * hangs below, exactly as it does under a card.
+ *
+ * ⚠️ `stick.baseY`, NOT `-stick.len`, AND THAT WAS THE FLOATING BUG. This group's origin is the
+ * element's CENTRE, while `topperStick` measures the rod from the box's BOTTOM edge — so hanging it
+ * a bare `len` below the origin left it half the element's height too high, and the heart's pick
+ * stopped in mid-air above the icing at any depth under about 0.63. Sandeep: *"stick is floating."*
+ * Both numbers were right in their own frame, which is why nothing caught it; `stickFor` now does
+ * the conversion once and hands down a single offset.
  */
 function ElementStick({ stick }) {
   const geo = useMemo(() => {
@@ -1720,7 +1727,7 @@ function ElementStick({ stick }) {
   useEffect(() => () => geo?.dispose(), [geo]);
   if (!geo) return null;
   return (
-    <mesh geometry={geo} position={[0, -(stick.len), 0]} castShadow receiveShadow raycast={() => {}}>
+    <mesh geometry={geo} position={[0, stick.baseY, 0]} castShadow receiveShadow raycast={() => {}}>
       <meshStandardMaterial color="#D8BE93" roughness={0.85} metalness={0} />
     </mesh>
   );
