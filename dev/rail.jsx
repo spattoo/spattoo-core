@@ -122,6 +122,19 @@ const templatesOverride = {
   fetchTags:      async () => TAGS_STUB,
 };
 
+/* ⚠️ onSaveTemplate IS A PROP, NOT AN apiClient METHOD, so the Proxy below cannot stand in for it.
+   Without one, "Save as Template" answers "Saving templates is unavailable here" and the modal's
+   tag chips — the whole of findability item 5 — could not be driven in this harness at all.
+   Records what was TICKED, under both field names, so a check can tell the two apart: a core that
+   sent only `tagIds` would leave a host built on `occasionTagIds` posting nothing. */
+const onSaveTemplate = async (t) => {
+  window.__lastSave = {
+    name: t.name, designJson: t.designJson,
+    tagIds: t.tagIds ?? null, occasionTagIds: t.occasionTagIds ?? null,
+  };
+  console.log('[harness] saved template', t.name, 'tagIds:', JSON.stringify(t.tagIds));
+};
+
 const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides, ...capsOverride, ...templatesOverride } : { ...overrides, ...capsOverride, ...templatesOverride }, {
   // Unstubbed methods still answer null: the designer reads some as arrays, so an empty OBJECT crashes it.
   get: (target, k) => target[k] ?? (async () => null),
@@ -203,5 +216,6 @@ createRoot(document.getElementById('root')).render(
     orderMode={customer ? 'customer' : 'baker'}
     onOrder={() => {}}
     onShareStore={() => {}}
+    onSaveTemplate={onSaveTemplate}
   />,
 );
