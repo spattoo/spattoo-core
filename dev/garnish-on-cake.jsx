@@ -3,6 +3,7 @@ import { CakePreview, configureEnvMap, SceneBackground } from '../src/designer/c
 import { DESIGNER_GROUND } from '../src/designer/constants.js';
 import { HARNESS_ASSETS_BASE } from './scene.js';   // light it the way production does
 import { fillShape } from '../src/designer/geometry/pipingFill.js';
+import { brushStroke } from '../src/designer/geometry/brushStroke.js';
 import { TOPPER_FINISHES } from '../src/designer/geometry/topperFinishes.js';
 import { useThree, useFrame } from '@react-three/fiber';
 import { useRef, useState, useEffect } from 'react';
@@ -139,6 +140,24 @@ const leaf = [];
 for (let i = 0; i <= 26; i++) { const t = i / 26; leaf.push([60 + t * 300, 210 - Math.sin(t * Math.PI) * 100]); }
 for (let i = 26; i >= 0; i--) { const t = i / 26; leaf.push([60 + t * 300, 210 + Math.sin(t * Math.PI) * 100]); }
 const paths = [leaf, ...fillShape(leaf, { pattern: 'hatch', spacing: 26, inset: 9, ropeWidth: 12, seed: 5 })];
+
+/* ⚠️ `?fan=1` — A FEATHERED PULL, WHICH IS SEVERAL RIBBONS AND ONE GESTURE.
+ *
+ * The studio's brush presets are not all one shape: "Feathered pull" lays 3 ribbons and "Wide fan"
+ * 4, deliberately sharing a group so they move, resize and colour as one piece. The plate shows all
+ * of them and the cake showed ONE, because the panel path took `const [panel] = panelsFrom(rings)`.
+ * Nothing errored and no test could see it — the maths was right about the panel it built.
+ *
+ * Built with the REAL `brushStroke`, off three spines laid the way `addBrush` lays them, so this is
+ * the shape the studio actually produces rather than three rectangles standing in for it. */
+const fanRings = [0, 1, 2].map(i => {
+  const spine = [];
+  for (let k = 0; k <= 20; k++) {
+    const t = k / 20;
+    spine.push([150 + i * 60 + t * t * 26 * (i - 1), 330 - t * 230]);
+  }
+  return brushStroke(spine, { width: 26, seed: i + 1, frayed: true })?.outline;
+}).filter(Boolean);
 
 /* ⚠️ THE COLOUR IS DRIVEN FROM THE URL, so this harness can be MEASURED rather than looked at.
  * `?color=%234EC5B0` renders the piece in that colour on the real cake scene — same lights, same
@@ -328,6 +347,8 @@ const design = {
         Array.from({ length: 25 }, (_, i) => { const t = (i / 24) * Math.PI * 2;
           return [210 + Math.cos(t) * 45, 170 + Math.sin(t) * 45]; }),
       ] }] : []),
+    ...(_q.has('fan') ? [{ id: 'f', name: 'Feathered pull', kind: 'brushed', color: asked, plate: 420,
+      radius: 0.45, theta: 0.6, mode: 'stand', scale: 1.2, rings: fanRings }] : []),
     ...(_q.has('onlyside') ? [] : [
     // A CUT panel with a hole punched in it, beside a piped piece — the two ways of being made.
     { id: 'a', name: 'Panel', kind: 'cut', color: asked, plate: 420, radius: 0.5, mode: 'stand', scale: 1.3,

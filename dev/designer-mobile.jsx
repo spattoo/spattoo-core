@@ -499,6 +499,21 @@ CAT_ELEMENTS.push({
   default_color: '#5aa83c', sort_order: 20,
 });
 
+/* ⚠️ THE CHOCOLATE GARNISH STUDIO'S OWN DOOR, which this harness did not have — so the one seam
+ * between the studio and the cake (`onSave` → `addGarnish` → the Garnishes renderer) could only be
+ * reasoned about, never driven. `dev/garnish-studio.html` proves what the studio SENDS and
+ * `dev/garnish-on-cake.html` proves what the cake DRAWS; neither could catch a piece being dropped
+ * in between, and one was. Same `procedural` routing as grass above — the value, not a nested key. */
+CAT_ELEMENTS.push({
+  id: 'e27', name: 'Chocolate garnish', description: 'piped or brushed off the cake, then placed',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: CAT_THUMB('#4A2C1B'), thumbnail_url: CAT_THUMB('#4A2C1B'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { procedural: 'chocolate_garnish' },
+  default_color: '#4A2C1B', sort_order: 27,
+});
+
 /* ⚠️ AN EDGE-SEATED FIGURE, which nothing here could make. Every row above seats on the top surface
  * or hugs a wall, so the `perch`/`verge` modes — and with them `edgeSeatSeed`, the shared front-edge
  * seed both the add path and the chooser's move path call — were unreachable without a database.

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildPanelGeometry, panelsFrom, PANEL_THICKNESS } from './garnishPanel.js';
+import { buildPanelGeometry, buildPanelsGeometry, panelsFrom, PANEL_THICKNESS } from './garnishPanel.js';
 
 /* A cut panel is a REGION extruded into a slab, not a path swept into a rope. What these protect is
  * the part that makes it read as chocolate rather than as a toy: that it is thin, that its edges are
@@ -61,6 +61,43 @@ describe('cutting a panel', () => {
     expect(buildPanelGeometry(null)).toBeNull();
     expect(buildPanelGeometry([])).toBeNull();
     expect(buildPanelGeometry([[[0, 0], [1, 1]]])).toBeNull();
+  });
+});
+
+describe('cutting a whole plate', () => {
+  /* ⚠️ EVERY SHAPE THE BAKER DREW, which is the bug this function exists for. The renderer used to
+     build `panelsFrom(rings)[0]` and nothing else, so a plate of three brushed petals placed one —
+     and `Feathered pull`, which is THREE ribbons from a single tap, placed a third of itself. */
+  it('builds every outline, not just the first', () => {
+    const one = buildPanelsGeometry([square(100)], { scale: 0.01 });
+    const two = buildPanelsGeometry([square(100), square(100, 300)], { scale: 0.01 });
+    expect(two.geometry.getAttribute('position').count)
+      .toBe(one.geometry.getAttribute('position').count * 2);
+  });
+
+  /* ⚠️ IN THE ARRANGEMENT THEY WERE DRAWN IN. Seating each panel on its own bottom-centre would
+     stack them all at one point — the piece would be the right shapes in the wrong places. */
+  it('keeps them apart, in one frame', () => {
+    const out = buildPanelsGeometry([square(100), square(100, 300)], { scale: 0.01 });
+    // Two 100-unit squares 300 apart span 400 units => 4 world units at this scale.
+    expect(out.size.w).toBeCloseTo(4, 5);
+    expect(out.size.h).toBeCloseTo(4, 5);
+  });
+
+  it('still punches a hole, and still rests on y = 0', () => {
+    const solid = buildPanelsGeometry([square(100)], { scale: 0.01 });
+    const holed = buildPanelsGeometry([square(100), circle(50, 50, 20)], { scale: 0.01 });
+    expect(holed.geometry.getAttribute('position').count)
+      .toBeGreaterThan(solid.geometry.getAttribute('position').count);
+    expect(holed.size.w).toBeCloseTo(solid.size.w, 5);
+    holed.geometry.computeBoundingBox();
+    expect(Math.abs(holed.geometry.boundingBox.min.y)).toBeLessThan(1e-6);
+  });
+
+  it('returns nothing rather than throwing on nothing', () => {
+    expect(buildPanelsGeometry(null)).toBeNull();
+    expect(buildPanelsGeometry([])).toBeNull();
+    expect(buildPanelsGeometry([[[0, 0], [1, 1]]])).toBeNull();
   });
 });
 

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { isInside } from './regions.js';
+import { mergePenGeometries } from './creamPen.js';
 
 // ── A cut panel: chocolate spread, set, and cut ──────────────────────────────────────────────────
 //
@@ -32,6 +33,10 @@ const toVec2 = ring => ring.map(([x, y]) => new THREE.Vector2(x, y));
  * scale   plate units → world units
  *
  * Returns `{ geometry, size }`, or `null` when there is nothing to cut.
+ *
+ * ⚠️ ONE PANEL. For a whole plate — every outline the baker drew, in the arrangement they drew it —
+ * call `buildPanelsGeometry` below. That is what a placed garnish is made of; this is the primitive
+ * it is built from.
  */
 /* `frame` as in `garnishPiece.js`, and for the same reason: a two-tone panel is several slabs that
  * must be placed in ONE frame, or each centres on itself and the inlay lands on top of its host. */
@@ -40,31 +45,60 @@ export function buildPanelGeometry(rings, { scale = 1, thickness = PANEL_THICKNE
   if (!closed.length) return null;
 
   const [outline, ...rest] = closed;
-  const shape = new THREE.Shape(toVec2(outline.map(([x, y]) => [x * scale, -y * scale])));
-
   /* ⚠️ ONLY the rings that are genuinely inside become holes. A ring that merely overlaps is a
    * different piece of chocolate and punching it would cut a notch out of the panel's edge — which
    * is not what a baker who drew two overlapping shapes asked for. */
-  for (const r of rest) {
-    if (!isInside(r, outline)) continue;
-    shape.holes.push(new THREE.Path(toVec2(r.map(([x, y]) => [x * scale, -y * scale]))));
-  }
+  const holes = rest.filter(r => isInside(r, outline));
+  return seat(extrudePanel({ outline, holes }, scale, thickness), frame);
+}
 
+/**
+ * EVERY panel the rings describe, as ONE geometry — the whole plate, not its largest shape.
+ *
+ * ⚠️ THIS IS WHAT THE CAKE CALLS, AND IT IS THE FUNCTION THAT WAS MISSING. The renderer took
+ * `const [panel] = panelsFrom(rings)` under a comment reasoning that "a piece is ONE piece of
+ * chocolate; two separate outlines are two garnishes". That is true about chocolate and wrong about
+ * this product: the STUDIO puts every shape on one plate and offers one "Use it on the cake", so a
+ * baker who brushed three petals got one, silently. Worse, the `Feathered pull` preset lays THREE
+ * ribbons from a single tap and `Wide fan` four — deliberately grouped so they move and colour as
+ * one gesture — and those were losing two thirds of themselves the moment they were placed, with
+ * nothing on screen to say anything had gone. The build guide had it right all along:
+ * `garnishGuide.js` walks every panel and tells the baker to cut all of them.
+ *
+ * Merging is not "placing something nobody made". A sheet of set chocolate peels off as the shapes
+ * that are on it, in the arrangement they were drawn in, which is exactly what this builds. Wanting
+ * the petals apart ON THE CAKE is Duplicate or Fan on the placed piece, or a second visit to the
+ * studio — it was never a reason to throw two of them away.
+ *
+ * ⚠️ ONE ORIGIN FOR THE WHOLE SET, applied after the merge. Seating each panel on its own
+ * bottom-centre first would stack them all at one point and throw the arrangement away — the same
+ * trap `frame` exists to avoid for a two-tone piece.
+ */
+export function buildPanelsGeometry(rings, { scale = 1, thickness = PANEL_THICKNESS, frame = null } = {}) {
+  const panels = panelsFrom(rings);
+  if (!panels.length) return null;
+  const merged = mergePenGeometries(panels.map(pn => extrudePanel(pn, scale, thickness)));
+  return merged ? seat(merged, frame) : null;
+}
+
+/* One panel, extruded WHERE IT WAS DRAWN and deliberately not seated — seating is the caller's last
+   step, once it knows how many panels the piece is made of. */
+function extrudePanel(panel, scale, thickness) {
+  const flip = ring => toVec2(ring.map(([x, y]) => [x * scale, -y * scale]));
+  const shape = new THREE.Shape(flip(panel.outline));
+  for (const r of panel.holes) shape.holes.push(new THREE.Path(flip(r)));
   /* No bevel. A cut edge is square — that is what a knife through set chocolate leaves — and a
-   * bevelled one reads as moulded plastic, which is the single tell that separates a chocolate panel
-   * from a toy. */
-  const geometry = new THREE.ExtrudeGeometry(shape, {
-    depth: thickness,
-    bevelEnabled: false,
-    curveSegments: 12,
-  });
+     bevelled one reads as moulded plastic, which is the single tell that separates a chocolate panel
+     from a toy. */
+  return new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false, curveSegments: 12 });
+}
 
+/* Bottom-centre origin, the same convention the piped piece uses — a standing panel turns about the
+   point where it meets the cake, and every caller can assume one rule rather than two. */
+function seat(geometry, frame) {
   geometry.computeBoundingBox();
   const bb = frame ?? geometry.boundingBox.clone();   // cloned: see garnishPiece.js
   const size = { w: bb.max.x - bb.min.x, h: bb.max.y - bb.min.y, d: bb.max.z - bb.min.z };
-
-  /* Bottom-centre origin, the same convention the piped piece uses — a standing panel turns about the
-   * point where it meets the cake, and every caller can assume one rule rather than two. */
   geometry.translate(-(bb.min.x + bb.max.x) / 2, -bb.min.y, -(bb.min.z + bb.max.z) / 2);
   return { geometry, size, bounds: bb };
 }
