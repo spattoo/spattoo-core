@@ -46,6 +46,16 @@ function searchableFields(t, nameBySlug) {
     const name = nameBySlug?.get?.(slug);
     if (name) fields.push(name);
   }
+  /* ⚠️ WHAT THE CAKE CONTAINS AND WHAT IT SAYS — the gap this search was reported for. Sandeep:
+     "if a cake has ranbow in it, and the template is names 'kids birthday cake', when user searches
+     the template with rainbow, it does not show up. thats a big gap in fact."
+     `search_slugs` is derived on the server from the design (spattoo-api lib/templateElements.js):
+     the names of the decorations on the cake, their tags, and the words piped on it. It arrives on
+     the list row — the DESIGN does not, and cannot, since Layer 1 took it out of the payload, which
+     is why this is derived server-side rather than read here.
+     ⚠️ Searched, never drawn. The filter's chips come from `tag_slugs`, which a person curated;
+     these would put every element's name into the funnel as a chip. */
+  for (const term of t.search_slugs ?? []) fields.push(String(term));
   return fields.map(f => f.toLowerCase());
 }
 

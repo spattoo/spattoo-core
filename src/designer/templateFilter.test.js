@@ -105,6 +105,47 @@ describe('every word must match something, and any word may match any field', ()
   });
 });
 
+describe('what the cake CONTAINS and what it SAYS', () => {
+  /* The reported gap, verbatim: "if a cake has ranbow in it, and the template is names 'kids
+     birthday cake', when user searches the template with rainbow, it does not show up."
+     `search_slugs` is derived server-side from the design — element names, element tags, and the
+     words piped on the cake — because the design itself is no longer in the list payload. */
+  const kids = {
+    name: 'Kids birthday cake',
+    tag_slugs: ['birthday'],
+    search_slugs: ['rainbow', 'cloud', 'grass clump'],
+  };
+
+  it('finds a template by a decoration that is ON it, not named in it', () => {
+    expect(matchesTemplateSearch(kids, 'rainbow', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kids, 'cloud', NAMES)).toBe(true);
+  });
+
+  it('finds it by what is WRITTEN on the cake', () => {
+    const mum = { name: 'Vintage-2', tag_slugs: [], search_slugs: ['best mom ever'] };
+    expect(matchesTemplateSearch(mum, 'mom', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(mum, 'best mom', NAMES)).toBe(true);
+  });
+
+  /* Tokenising and this land together for a reason: one word from the NAME and one from the
+     DESIGN is the query somebody actually types. Neither half works without the other. */
+  it('spans the name and the design in one query', () => {
+    expect(matchesTemplateSearch(kids, 'birthday rainbow', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kids, 'kids cloud', NAMES)).toBe(true);
+  });
+
+  it('still fails on a word nothing carries', () => {
+    expect(matchesTemplateSearch(kids, 'rainbow unicorn', NAMES)).toBe(false);
+  });
+
+  /* ⚠️ A ROW WITHOUT THE FIELD MUST NOT THROW. Every template in the wild predates this column,
+     and a client can be newer than the API that answers it — `search_slugs` is absent, not empty. */
+  it('tolerates a row that has no search_slugs at all', () => {
+    expect(matchesTemplateSearch({ name: 'Plain', tag_slugs: [] }, 'plain', NAMES)).toBe(true);
+    expect(matchesTemplateSearch({ name: 'Plain' }, 'rainbow', NAMES)).toBe(false);
+  });
+});
+
 describe('OR inside a category, AND across them', () => {
   /* Two occasions means "either": no cake is a birthday AND an anniversary, so ANDing within a
      category would return nothing every time. Two categories means "both": a cake is readily a
