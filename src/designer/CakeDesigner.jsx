@@ -3191,7 +3191,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           // start a design — and in the More sheet the two now sit a few rows apart, where one word
           // for two different things is a coin toss. This one chooses which global templates the
           // bakery OFFERS, which is what features/template-visibility.md calls it.
-          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
+          /* ⚠️ NOT "Template visibility" ANY MORE. The page now holds the baker's OWN templates with a
+             Remove on each, beside the on/off switches for Spattoo's library — removing one of your own
+             is not a visibility setting. "Manage" also keeps it distinct from the rail's own Templates,
+             which is where you BROWSE them to start a cake. */
+          { id: 'templates', label: 'Manage templates', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
         ] : []),
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level

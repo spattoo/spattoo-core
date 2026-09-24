@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import SettingsPanel from '../src/settings/SettingsPanel.jsx';
+import TemplatesPanel from '../src/settings/TemplatesPanel.jsx';
 import { STUBS, EMPTY } from './settingsStubs.js';
 
 // The real settings panel against a stubbed API. It sits behind auth in the app, so it was the one
@@ -20,6 +21,18 @@ const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? EMPTY,
 });
 
+/* ⚠️ THE SIBLING PAGES ARE REACHED FROM THE RAIL, NOT FROM INSIDE THIS PANEL, so mounting
+ * SettingsPanel alone could never show them — `?panel=templates` had no way in and the screen was
+ * unlookable-at for the same reason Store Settings was before this harness existed. One query param
+ * mounts the page directly, against the same stubs.
+ *
+ *   /settings.html                    Store Settings
+ *   /settings.html?panel=templates    Manage templates (your own + the Spattoo library)
+ */
+const panel = new URLSearchParams(location.search).get('panel');
+
 createRoot(document.getElementById('root')).render(
-  <SettingsPanel open apiClient={apiClient} onClose={() => {}} />,
+  panel === 'templates'
+    ? <TemplatesPanel open apiClient={apiClient} onClose={() => {}} />
+    : <SettingsPanel open apiClient={apiClient} onClose={() => {}} />,
 );

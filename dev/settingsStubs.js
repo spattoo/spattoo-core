@@ -60,6 +60,22 @@ export const STUBS = {
   getSignedUploadUrl:  async () => ({ url: '', key: '', publicUrl: '' }),
   publishStorefront:   async () => ({ ok: true }),
   unpublishStorefront: async () => ({ ok: true }),
+  /* ── Templates: BOTH lists, because the screen is about the difference between them ──────────
+     The Spattoo library is switched on and off; the baker's own are removed. Without a stub for
+     `fetchMyTemplates` the Proxy answers EMPTY and "Your templates" renders its empty state — true
+     to a new baker, and useless for looking at the section that carries the destructive action.
+     One global arrives already excluded so the off state is on screen too. */
+  fetchBakerTemplates: async () => ([
+    { id: 'g1', name: 'Two-tier rose',   thumbnail_url: null, tier_count: 2, offering: 'standard', excluded: false },
+    { id: 'g2', name: 'Number cake',     thumbnail_url: null, tier_count: 1, offering: 'standard', excluded: true  },
+    { id: 'g3', name: 'Naked berry',     thumbnail_url: null, tier_count: 1, offering: 'standard', excluded: false },
+  ]),
+  fetchMyTemplates: async () => ([
+    { id: 'm1', name: 'Anniversary gold', thumbnail_url: null, tier_count: 2, offering: 'standard', created_at: '2026-09-22T10:00:00Z' },
+    { id: 'm2', name: 'Engagement ring',  thumbnail_url: null, tier_count: 1, offering: 'standard', created_at: '2026-09-18T10:00:00Z' },
+  ]),
+  deleteBakerTemplate: async () => ({ ok: true }),
+
 };
 
 // Anything not stubbed answers with an empty shape instead of throwing.
