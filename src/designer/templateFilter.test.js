@@ -105,6 +105,65 @@ describe('every word must match something, and any word may match any field', ()
   });
 });
 
+describe('an age in the search box', () => {
+  /* "cake for 4 years girl" is the query this exists for. The age is range-tested against the
+     design's own min/max — the same rule the slider uses — and never matched as text. */
+  const kids  = { name: 'Dino party',  tag_slugs: ['birthday'], attrs: { min_age: 2,  max_age: 12 } };
+  const adult = { name: 'Couple',      tag_slugs: ['anniversary'], attrs: { min_age: 20, max_age: 99 } };
+  const open  = { name: 'Plain round', tag_slugs: [] };   // no attrs at all
+
+  it('reads an age only when it carries a unit', () => {
+    expect(matchesTemplateSearch(kids, '4 years', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kids, '4 yrs', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kids, '4yo', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kids, '4 year old', NAMES)).toBe(true);
+  });
+
+  it('excludes a design whose range does not reach that age', () => {
+    expect(matchesTemplateSearch(adult, '4 years', NAMES)).toBe(false);
+    expect(matchesTemplateSearch(kids, '40 years', NAMES)).toBe(false);
+  });
+
+  /* ⚠️ THE POINT OF THE UNIT. A bare number is not an age — it is far more often an anniversary.
+     `25` must stay an ordinary word, so it matches the NAME here and not the age range. */
+  it('leaves a bare number as an ordinary word', () => {
+    const silver = { name: '25 years together', tag_slugs: [], attrs: { min_age: 20, max_age: 99 } };
+    expect(matchesTemplateSearch(silver, '25', NAMES)).toBe(true);
+    // As a word it matches the name; as an age it would have been range-tested and still passed —
+    // so the telling case is a design whose range excludes 25 but whose NAME carries it.
+    const kidsNamed25 = { name: 'Party 25 balloons', tag_slugs: [], attrs: { min_age: 2, max_age: 12 } };
+    expect(matchesTemplateSearch(kidsNamed25, '25', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kidsNamed25, '25 years', NAMES)).toBe(false);
+  });
+
+  it('combines an age with ordinary words', () => {
+    expect(matchesTemplateSearch(kids, 'dino 4 years', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(kids, 'unicorn 4 years', NAMES)).toBe(false);
+  });
+
+  /* The sentence somebody actually types. Without the filler list `for` matches nothing and the
+     whole query returns no cakes — the feature would ship and the use case would still fail. */
+  it('survives a sentence: "cake for 4 years girl"', () => {
+    const girly = { name: 'Dino party', tag_slugs: ['girls'], attrs: { min_age: 2, max_age: 12 } };
+    const names = new Map([['girls', 'Girls'], ['birthday', 'Birthday']]);
+    expect(matchesTemplateSearch(girly, 'for 4 years girl', names)).toBe(true);
+    expect(matchesTemplateSearch(adult, 'for 4 years girl', names)).toBe(false);
+  });
+
+  it('an age alone is a complete query', () => {
+    expect(matchesTemplateSearch(kids, '4 years', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(adult, '4 years', NAMES)).toBe(false);
+  });
+
+  /* ⚠️ UNSET MEANS UNFILTERED. A template with no range answers to every age — noise, and exactly
+     why the range is being made required at authoring time. Pinned so the day that changes, this
+     test says what the old behaviour was. */
+  it('a design with no range still matches any age', () => {
+    expect(matchesTemplateSearch(open, '4 years', NAMES)).toBe(true);
+    expect(matchesTemplateSearch(open, '40 years', NAMES)).toBe(true);
+  });
+});
+
 describe('what the cake CONTAINS and what it SAYS', () => {
   /* The reported gap, verbatim: "if a cake has ranbow in it, and the template is names 'kids
      birthday cake', when user searches the template with rainbow, it does not show up."

@@ -83,9 +83,59 @@ function searchableFields(t, nameBySlug) {
  * does, because each of its words is a substring of that same field. "baby shower" finds
  * `baby-shower` — now by the slug as well as the display name.
  */
+/* ── Does this design suit somebody of N? ────────────────────────────────────────────────────────
+ *
+ * ONE rule, two callers: the "Suits age" slider and the search box. A second copy would be a second
+ * answer to the same question, and the wrong one would be whichever the user happened to use.
+ *
+ * ⚠️ UNSET MEANS UNFILTERED, not "suits nobody". A template with no range is included by every age
+ * — which is noise, and the reason the range is being made required at authoring time. Until then
+ * a template without one answers to "4 years" and "40 years" alike.
+ */
+export function matchesAge(t, n) {
+  if (!Number.isInteger(n)) return true;
+  /* ⚠️ THE CEILING MEANS "18 OR OLDER", NOT "EXACTLY 18", because that is what the slider's readout
+     says. Testing 18 exactly drops every template whose `min_age` is 20 — Couple (20–99) is one —
+     so the label would promise adults and quietly exclude some. At the ceiling the only question is
+     whether a design reaches adulthood at all. */
+  if (n >= AGE_FILTER_MAX) {
+    return !(t.attrs?.max_age != null && t.attrs.max_age < AGE_FILTER_MAX);
+  }
+  if (t.attrs?.min_age != null && t.attrs.min_age > n) return false;
+  if (t.attrs?.max_age != null && t.attrs.max_age < n) return false;
+  return true;
+}
+
+/* ── "4 years" in the search box, and ONLY with a unit ───────────────────────────────────────────
+ *
+ * ⚠️ A BARE NUMBER IS NOT AN AGE. Sandeep: "bare number does not necessarily mean age. it can be
+ * anniversary. office anniversary etc." A 25 on a cake is far more often a silver wedding than a
+ * 25-year-old. So an age is recognised only when it carries a unit — `4 years`, `4 yrs`, `4 yr`,
+ * `4yo`, `4 year old` — and a bare `25` stays an ordinary word matching "25" wherever it appears.
+ *
+ * ⚠️ AND THE NUMBER IS RANGE-TESTED, NOT MATCHED AS TEXT. Expanding a 2–12 range into terms would
+ * cost bytes on every row and be WRONG: matching is substring-per-word, so a search for "2" would
+ * match "12 years". The range lives in `attrs`, which the list row already carries.
+ */
+const AGE_PHRASE = /(\d{1,3})\s*(?:years?|yrs?|yo)\b(?:\s+old\b)?/g;
+
+/* ⚠️ A CLOSED, TINY LIST, and it earns its place from a real query: "cake for 4 years girl". Every
+ * word must match something, so `for` — which matches nothing in a catalogue of cakes — would
+ * return no cakes at all for a sentence somebody genuinely types. These are dropped, not matched.
+ * Keep it small: each addition is a word nobody can search for again. */
+const FILLER = new Set(['for', 'a', 'an', 'the', 'of', 'with', 'old', 'yr', 'yrs', 'year', 'years']);
+
 export function matchesTemplateSearch(t, q, nameBySlug) {
-  const words = String(q ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (!words.length) return true;
+  const raw = String(q ?? '').trim().toLowerCase();
+  if (!raw) return true;
+
+  // Age phrases come out of the string first, so their digits and units never reach the word match.
+  const ages = [];
+  const rest = raw.replace(AGE_PHRASE, (_, n) => { ages.push(parseInt(n, 10)); return ' '; });
+  for (const n of ages) if (!matchesAge(t, n)) return false;
+
+  const words = rest.split(/\s+/).filter(w => w && !FILLER.has(w));
+  if (!words.length) return true;            // the query was only an age, and it matched
   const fields = searchableFields(t, nameBySlug);
   return words.every(word => fields.some(field => field.includes(word)));
 }
@@ -122,19 +172,9 @@ export function templateMatches(t, { q, tags, weight, age }, nameBySlug) {
     if (!isNaN(w) && t.attrs?.min_weight_kg != null && t.attrs.min_weight_kg > w) return false;
   }
   if (age !== '' && age != null) {
+    // The slider's number, through the same rule the search box's "4 years" uses.
     const n = parseInt(age, 10);
-    if (!isNaN(n)) {
-      /* ⚠️ THE TOP OF THE TRACK MEANS "18 OR OLDER", NOT "EXACTLY 18", because that is what the
-         readout says. Testing 18 exactly drops every template whose `min_age` is 20 — Couple (20–99)
-         is one — so the label would have promised adults and quietly excluded some. At the ceiling
-         the only question is whether a design reaches adulthood at all. */
-      if (n >= AGE_FILTER_MAX) {
-        if (t.attrs?.max_age != null && t.attrs.max_age < AGE_FILTER_MAX) return false;
-      } else {
-        if (t.attrs?.min_age != null && t.attrs.min_age > n) return false;
-        if (t.attrs?.max_age != null && t.attrs.max_age < n) return false;
-      }
-    }
+    if (!isNaN(n) && !matchesAge(t, n)) return false;
   }
   return true;
 }
