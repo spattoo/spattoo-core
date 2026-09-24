@@ -76,10 +76,38 @@ const TPL_DESIGN = (color) => ({
 
    `t1` is `offering: 'premium'` so the Premium badge has something to draw on; it moved onto the
    thumbnail when the card's name row went away. */
+/* ⚠️ A VOCABULARY, because without one the funnel has NO CHIPS AT ALL and the filter cannot be
+   judged here. The Proxy answers `null` for an unstubbed `fetchTags`, so `filterTags` stayed empty
+   and every category rendered nothing — a harness that could not show the control it was opened to
+   look at.
+   Two rows exist to make the check able to FAIL rather than to pass:
+     `age_group` — deliberately suppressed (CATS_HANDLED_ELSEWHERE), and CARRIED by a template
+       below. If nothing carried it, its chip would be missing because nothing matches it, and a
+       suppression check would pass by accident.
+     `dietary`   — a category CAT_ORDER does not name. It must render LAST rather than vanish;
+       that is the whole difference between the suppression list and the whitelist it replaced. */
+const TAGS_STUB = [
+  { id: 'g1', slug: 'birthday',    name: 'Birthday',       category: 'occasion',     sort_order: 10 },
+  { id: 'g2', slug: 'anniversary', name: 'Anniversary',    category: 'occasion',     sort_order: 30 },
+  { id: 'g3', slug: 'sorry',       name: 'Sorry',          category: 'emotion',      sort_order: 10 },
+  { id: 'g4', slug: 'with-you',    name: "We're with you", category: 'emotion',      sort_order: 75 },
+  { id: 'g5', slug: 'mother',      name: 'Mom',            category: 'relationship', sort_order: 10 },
+  { id: 'g6', slug: 'rustic',      name: 'Rustic',         category: 'style',        sort_order: 10 },
+  { id: 'g7', slug: 'pink',        name: 'Pink',           category: 'color',        sort_order: 10 },
+  { id: 'g8', slug: 'kids-4-12',   name: 'Kids (4–12)',    category: 'age_group',    sort_order: 10 },
+  { id: 'g9', slug: 'eggless',     name: 'Eggless',        category: 'dietary',      sort_order: 10 },
+];
+
+/* ⚠️ `tag_slugs` ON EVERY ROW, because `offeredTags` narrows the vocabulary to tags at least one
+   LOADED TEMPLATE carries — a tags stub on its own still renders nothing. Between them these three
+   carry all nine slugs above, so every group has something to match. */
 const TEMPLATES_FULL = [
-  { id: 't1', name: 'Rose & Pistachio',  tier_count: 1, thumbnail_url: '/sample-cake-1.png', attrs: { min_weight_kg: 1 },   offering: 'premium', design: TPL_DESIGN('#F6DCE2') },
-  { id: 't2', name: 'Cocoa Drip',        tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: { min_weight_kg: 1.5 }, design: TPL_DESIGN('#C9A227') },
-  { id: 't3', name: 'Buttercream Bloom', tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,                  design: TPL_DESIGN('#EDE7DA') },
+  { id: 't1', name: 'Rose & Pistachio',  tier_count: 1, thumbnail_url: '/sample-cake-1.png', attrs: { min_weight_kg: 1 },   offering: 'premium',
+    tag_slugs: ['birthday', 'sorry', 'mother', 'pink'],            design: TPL_DESIGN('#F6DCE2') },
+  { id: 't2', name: 'Cocoa Drip',        tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: { min_weight_kg: 1.5 },
+    tag_slugs: ['anniversary', 'with-you', 'rustic', 'kids-4-12'], design: TPL_DESIGN('#C9A227') },
+  { id: 't3', name: 'Buttercream Bloom', tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,
+    tag_slugs: ['birthday', 'eggless'],                            design: TPL_DESIGN('#EDE7DA') },
 ];
 const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
 /* ⚠️ `fetchTemplate` HAS TO BE STUBBED NOW. The Proxy below answers anything unstubbed with
@@ -89,6 +117,9 @@ const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
 const templatesOverride = {
   fetchTemplates: async () => TEMPLATES_STUB,
   fetchTemplate:  async (id) => TEMPLATES_FULL.find(t => t.id === id) ?? null,
+  // An ARRAY, not an envelope: CakeDesigner takes `fetchTags` at face value only when Array.isArray,
+  // and the save-as-template modal calls `filterTags.filter()` on it.
+  fetchTags:      async () => TAGS_STUB,
 };
 
 const apiClient = new Proxy(withSettings ? { ...SETTINGS_STUBS, ...overrides, ...capsOverride, ...templatesOverride } : { ...overrides, ...capsOverride, ...templatesOverride }, {

@@ -580,17 +580,41 @@ function collectElementColors(design) {
 
 
 // ── Filter ────────────────────────────────────────────────────────────────────
+/* Nicer wording than the raw slug where we have an opinion. An OVERRIDE map, not a requirement —
+   `catLabel` prettifies anything missing, so a category authored in admin is readable the day it
+   exists rather than rendering as `undefined`. */
 const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
-/* ⚠️ NO `age_group`. Who a design suits is captured as NUMBERS at template creation
-   (cake_template_attrs.min_age/max_age — set on all 28 templates on dev) and as five age_group tags
-   that NOTHING carries and nothing can set: POST /templates only accepts `occasion_tag_ids`, so
-   there is no path that writes one. Two fields for one fact, and only the numbers are populated.
-   The slider below reads the numbers, so the chips are gone rather than wired up — tagging every
-   template by hand would also have invited the drift, a template tagged "Kids (4–12)" whose max_age
-   is 3 being a contradiction nobody would ever see.
-   `gender` stays a chip because it has no numeric equivalent; it is also unassigned today, so
-   `offeredTags` hides it until somebody tags one. */
-const TMPL_CATS = ['occasion', 'style', 'color', 'gender'];
+const catLabel = (cat) => CAT_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+
+/* ── WHICH CATEGORIES BECOME CHIPS — A SUPPRESSION LIST, NOT A WHITELIST ─────────────────────────
+ *
+ * This was `TMPL_CATS = ['occasion', 'style', 'color', 'gender']`, and it was doing two jobs that
+ * look identical and are opposites. One was a deliberate exclusion (below). The other was an
+ * accidental whitelist: a category authored in admin simply did not appear, and nothing said so.
+ * Migration 109 added `emotion` and `relationship`, and both would have been invisible here — the
+ * rows existing, the tags applied, and the filter never offering them.
+ *
+ * So it is inverted. The data decides WHICH categories exist; this decides only which are
+ * deliberately handled somewhere else. An unlisted category now SHOWS — the failure is loud.
+ *
+ * ⚠️ `age_group` IS THE DELIBERATE ONE, and it must stay suppressed. Who a design suits is captured
+ * as NUMBERS at template creation (cake_template_attrs.min_age/max_age) and ALSO as five age_group
+ * tags that nothing carries and nothing can set — `POST /baker/templates` accepts only
+ * `occasion_tag_ids`, so no path writes one. Two fields for one fact, and only the numbers are
+ * populated. The "Suits age" slider reads the numbers. Wiring the chips up instead would invite the
+ * drift too: a template tagged "Kids (4–12)" whose max_age is 3 is a contradiction nobody would see.
+ *
+ * `gender` is NOT suppressed — it has no numeric equivalent. It is unassigned today, so the
+ * narrowing below hides it until somebody tags a template with one, which is the correct reason for
+ * a chip to be absent: nothing would match it.
+ */
+const CATS_HANDLED_ELSEWHERE = new Set(['age_group']);
+
+/* Display order only. A category missing from this list still renders — it goes last. There is no
+   per-category ordering in the database (`tags.sort_order` is per TAG), so the preference lives
+   here; alphabetical would bury `occasion`, the most-used filter, between `emotion` and
+   `relationship`. */
+const CAT_ORDER = ['occasion', 'emotion', 'relationship', 'style', 'color', 'material', 'theme', 'gender'];
 
 
 
@@ -619,12 +643,26 @@ function FunnelIcon({ size = 15, active, light }) {
  * Narrowing rather than deleting: the day somebody tags a template `kids-4-12` in admin, the chip
  * comes back on its own. A hardcoded list of "categories we support" would not.
  */
-function FilterPanel({ allTags, active, onChange, categories, open, onApply, onClear, count, children }) {
-  const byCategory = categories.reduce((acc, cat) => {
+function FilterPanel({ allTags, active, onChange, open, onApply, onClear, count, children }) {
+  /* ⚠️ THE CATEGORIES COME FROM THE TAGS, not from a list of the ones we know about. `allTags` is
+     already narrowed by the caller to tags at least one loaded template CARRIES, so a group appears
+     exactly when something could match it — and a category added in admin needs no code change to
+     become a filter. Only CATS_HANDLED_ELSEWHERE is subtracted, and only `age_group` is in it.
+     Ordered by CAT_ORDER, with anything it does not name appended rather than dropped. */
+  const byCategory = {};
+  const present = [...new Set(allTags.map(t => t.category).filter(Boolean))]
+    .filter(cat => !CATS_HANDLED_ELSEWHERE.has(cat))
+    .sort((a, b) => {
+      const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+  for (const cat of present) {
     const tags = allTags.filter(t => t.category === cat);
-    if (tags.length) acc[cat] = tags;
-    return acc;
-  }, {});
+    if (tags.length) byCategory[cat] = tags;
+  }
 
   return (
     <div style={{ borderBottom: open ? '1px solid #999999' : 'none', marginBottom: open ? 6 : 0 }}>
@@ -635,7 +673,7 @@ function FilterPanel({ allTags, active, onChange, categories, open, onApply, onC
             ? Object.entries(byCategory).map(([cat, tags]) => (
                 <div key={cat}>
                   <div style={{ fontSize: 8, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>
-                    {CAT_LABEL[cat]}
+                    {catLabel(cat)}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {tags.map(tag => {
@@ -11224,7 +11262,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               allTags={offeredTags}
               active={draftFilters}
               onChange={setDraftFilters}
-              categories={TMPL_CATS}
               open={tmplFiltersOpen}
               count={draftCount}
               onClear={() => { setDraftFilters({}); setDraftWeight(''); setDraftAge(''); }}
