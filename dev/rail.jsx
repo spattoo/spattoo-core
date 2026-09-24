@@ -108,6 +108,20 @@ const TEMPLATES_FULL = [
     tag_slugs: ['anniversary', 'with-you', 'rustic', 'kids-4-12'], design: TPL_DESIGN('#C9A227') },
   { id: 't3', name: 'Buttercream Bloom', tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,
     tag_slugs: ['birthday', 'eggless'],                            design: TPL_DESIGN('#EDE7DA') },
+  /* ⚠️ ENOUGH OF THEM TO SCROLL. Three templates cannot exercise a grid that reveals a page at a
+     time: the first page would be the whole catalogue and the sentinel would never fire, so the
+     check would pass without the feature existing. Forty-five filler rows put the count either side
+     of the 24 page size twice over.
+     ⚠️ THEY CARRY NO tag_slugs, deliberately. The three above are what the CATEGORY chip checks
+     read, and tagging these would change every count those assertions pin. */
+  ...Array.from({ length: 45 }, (_, i) => ({
+    id: `f${i + 1}`,
+    name: `Filler ${String(i + 1).padStart(2, '0')}`,
+    tier_count: 1,
+    thumbnail_url: i % 2 ? '/sample-cake-2.png' : '/sample-cake-1.png',
+    attrs: null,
+    design: TPL_DESIGN('#EDE7DA'),
+  })),
 ];
 const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
 /* ⚠️ `fetchTemplate` HAS TO BE STUBBED NOW. The Proxy below answers anything unstubbed with

@@ -21,6 +21,7 @@ import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
+import useRevealOnScroll from '../shared/useRevealOnScroll.js';
 import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
@@ -2416,6 +2417,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const applied = { q, tags: templateFilters, weight: filterWeight, age: filterAge };
     return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
   }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+
+  /* The grid draws a page at a time and grows as you near the bottom — no button, no request, no
+     jump. `shownTemplates` is a useMemo, so its identity changes exactly when the question changes
+     (a filter, a word typed) and the reveal starts again at the top. Nothing is fetched: the whole
+     filtered list is already here, which is what Layer 1 bought by taking `design` out of the list.
+     See plans/template-browsing-at-scale.md. */
+  const { visible: revealedTemplates, sentinelRef: tmplSentinelRef, done: tmplAllShown }
+    = useRevealOnScroll(shownTemplates);
 
   /* What Apply would give, on the button, before it is pressed. Same predicate as the grid — the one
      thing that must never be a second copy, because the wrong answer would be the one being sold. */
@@ -11352,7 +11361,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
             <div style={s.templateGrid}>
-            {shownTemplates
+            {revealedTemplates
               .map(t => (
               /* `position: relative` on both now: it anchors the enlarged preview, and that is not a
                  phone-only need. The width came off — a grid track decides it. */
@@ -11438,6 +11447,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))
             }
             </div>{/* end templateGrid */}
+
+            {/* ── The next page, before you get to the edge ────────────────────────────────────
+                An empty element the observer watches. It sits AFTER the grid and inside the same
+                scroller, so an ancestor that scrolls clips the intersection and this reads
+                correctly in the desktop flyout and the phone sheet without being told which.
+                Nothing is fetched when it fires — the list is already in memory. */}
+            {!tmplAllShown && <div ref={tmplSentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+
+            {/* ⚠️ SAID ONCE, AT THE END. A grid that simply stops reads as a grid that gave up —
+                the credits ledger answers the same question with "That's your full history." Only
+                worth saying when there was more than one page to scroll through; on a short list
+                the end is obvious and a line about it is noise. */}
+            {tmplAllShown && shownTemplates.length > 24 && (
+              <div style={{ fontSize: 10.5, color: '#C3CBC6', fontWeight: 600, textAlign: 'center', padding: '10px 0 2px' }}>
+                That&rsquo;s all {shownTemplates.length} templates.
+              </div>
+            )}
 
             {/* Enlarged preview. Portalled to the body because the panel clips its own overflow,
                 and anchored beside the card on desktop / centred as a sheet on mobile (rect null). */}
