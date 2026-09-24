@@ -56,6 +56,7 @@ import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from '
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
+import { elementStick } from './geometry/elementStick.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -8655,6 +8656,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       groups.push({ key: 'ta', divider: true, panelLabel: 'Tilt', controls: tiltCtls });
     }
 
+    /* ── On a stick ──────────────────────────────────────────────────────────────────────────
+       A pick pushed into the icing, with the decoration riding above it. Offered by an element
+       whose row ticks `allowed_actions.stick` — config-gated like Bury, Fold and Cluster below,
+       never element type.
+
+       ⚠️ IT BELONGS ON THE CARD, WITH SIZE AND TILT — and the first version of this put it in the
+       COLOUR SHEET's tabs instead. That sheet only opens for a decoration once the colour swatch is
+       tapped (`showRightPanel` = a tier is selected, or `colorOpen`), so a baker who ticked "Can add
+       a stick" in admin, dropped the heart on the cake and opened its card saw no stick anywhere and
+       reported the feature as not working. Nothing was wrong with the capability, the seed or the
+       renderer: the only control was behind a swatch nobody had a reason to press. The card is the
+       one surface that lists what this decoration can do, so a capability that is not on it does not
+       exist.
+
+       ⚠️ THE DEPTH COMES WITH THE STICK, IN THE SAME ROW (INVARIANTS #11). Sandeep, the moment the
+       stick was proposed: *"when stick is added - a property to control how much to insert should
+       accompany."* A pick with no depth is a decoration pinned at one height; choosing how far above
+       the icing it sits is the reason a baker reaches for one.
+
+       `bury` is a FRACTION of the stick, not a distance, so resizing the heart does not change how
+       deep it is pushed in. Its starting value is the element's own authored number — read through
+       `elementStick`, never a literal here — for an instance placed before this feature existed and
+       so carrying no `stick` of its own. */
+    if (el.type === 'sticker' && c.stick) {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const srcEl   = sticker && elementById.get(sticker.elementId);
+      if (sticker) {
+        const st   = sticker.stick ?? { on: false, bury: elementStick(srcEl?.placement_config, srcEl?.allowed_actions).bury };
+        const bury = st.bury ?? elementStick(srcEl?.placement_config, srcEl?.allowed_actions).bury;
+        const setStick = patch => updateSticker(el.id, { stick: { ...st, ...patch } });
+        groups.push({ key: 'stick', divider: true, controls: [
+          <Chip key="stick-on" label="On a stick" active={!!st.on} isMobile={isMobile}
+                onClick={() => setStick({ on: !st.on })} />,
+          /* The depth appears only once there IS a stick — a stepper that moves a number nothing is
+             using is the "picker that visibly does nothing" this file warns about elsewhere. */
+          ...(st.on ? [
+            <span key="stick-lbl" style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>In</span>,
+            <button key="stick-" style={s.tbIconBtn}
+              onClick={() => setStick({ bury: Math.max(0, +(bury - 0.05).toFixed(2)) })}>−</button>,
+            <span key="stick-val" style={{ ...s.tbSizeLabel, minWidth: 28 }}>{Math.round(bury * 100)}%</span>,
+            <button key="stick+" style={s.tbIconBtn}
+              onClick={() => setStick({ bury: Math.min(1, +(bury + 0.05).toFixed(2)) })}>+</button>,
+          ] : []),
+        ] });
+      }
+    }
+
     // Bury (insert depth) — how far an INSERTED element's base sinks INTO the cake. Config-gated on
     // the instance being inserted (`insertDepth != null` — the SAME signal the renderer's `isInsert`
     // uses in CakeCanvas.jsx), never on element type/zone/mode. ORTHOGONAL to Height (vertical float
@@ -11919,48 +11967,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <SizeDial size={ctl.value} min={ctl.min} max={ctl.max} step={ctl.step}
                       onChange={v => resizeSticker(sticker, v)} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>{Math.round(ctl.value * 100)}%</span>
-                  </div>
-                ) });
-              }
-            }
-
-            /* ── On a stick ───────────────────────────────────────────────────────────────────
-               Offered only by an element whose row ticks it (`allowed_actions.stick`), like every
-               other capability here.
-
-               ⚠️ THE DEPTH COMES WITH THE STICK, IN THE SAME SECTION, and that is the whole point
-               of the control. Sandeep, the moment the stick was proposed: *"when stick is added - a
-               property to control how much to insert should accompany."* A pick with no depth is a
-               decoration pinned at one height; choosing how far above the cake it sits is the
-               reason a baker reaches for one. So the dial appears WITH the toggle rather than in a
-               row of its own further down — INVARIANTS #11, the control and what it changes
-               together.
-
-               `bury` is a fraction of the stick, not a distance: resizing the heart must not change
-               how deep it is pushed in. */
-            if (caps?.stick && selectedEl?.type === 'sticker') {
-              const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
-              if (sticker) {
-                const st = sticker.stick ?? { on: false, bury: 0.5 };
-                sections.push({ id: 'stick', label: 'Stick', node: (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
-                    <Chip label="On a stick" active={st.on} isMobile={isMobile}
-                          onClick={() => updateSticker(sticker.id, { stick: { ...st, on: !st.on } })} />
-                    {st.on ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-                        <SizeDial size={st.bury ?? 0.5} min={0} max={1} step={0.05}
-                          onChange={v => updateSticker(sticker.id, { stick: { ...st, bury: v } })} />
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
-                          {Math.round((st.bury ?? 0.5) * 100)}% pushed in
-                        </span>
-                      </div>
-                    ) : (
-                      /* Said rather than shown greyed: a dial that does nothing until a toggle is
-                         pressed is a control a baker tries first and learns from second. */
-                      <span style={{ fontSize: 11.5, color: '#8A857D', lineHeight: 1.4 }}>
-                        Put it on a pick to stand it above the icing — then choose how far in it goes.
-                      </span>
-                    )}
                   </div>
                 ) });
               }

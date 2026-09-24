@@ -196,6 +196,25 @@ CAT_ELEMENTS.push({
   default_color: '#C86B8A', sort_order: 10,
 });
 
+/* ⚠️ AN ELEMENT THAT CAN GO ON A PICK, which nothing here could express — and the gap that hid a
+ * shipped bug for a release. `allowed_actions.stick` is the capability an admin ticks ("Can add a
+ * stick"); the fondant heart has it in the real catalogue, and the designer showed no stick control
+ * anywhere on the heart's card, because the only one built lived in the COLOUR SHEET's tabs. A
+ * fixture that ticks the box is how that surface gets looked at.
+ *
+ * Deliberately a PLAIN scatterable GLB (no `scatter`, no `single_per_slot`) — the shape the real
+ * fondant heart is — so it takes the ordinary sticker-card path, which is the path that was wrong. */
+CAT_ELEMENTS.push({
+  id: 'e26', name: 'Heart on a pick', description: 'a stick-capable GLB',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#c41c1c'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  // `stick.bury` is the STARTING depth the row authors; the card's stepper moves it from there.
+  placement_config: { r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'stand', side: 'hug', stick: { bury: 0.4 } },
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, stick: true, duplicate: true },
+  default_color: '#c41c1c', sort_order: 26,
+});
+
 /* ⚠️ A NUMBER TOPPER ROW, so `design.ages` can be non-empty and the AGE CARD exists at all.
  * Without one, addAge is never called here, design.ages stays [], and the age card — its Duplicate,
  * its finish chooser and its remove button — could not be looked at in this harness. Same gap this
