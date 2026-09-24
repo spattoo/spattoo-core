@@ -23,7 +23,17 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
-import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
+import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
+
+/* ── Where the take preview may start ───────────────────────────────────────────────────────────
+ * Air between the spatula's blade and the framed shot. Small enough that the frame still gets the
+ * space, large enough that the two do not read as touching. */
+const FRAME_GAP = 16;
+/* The frame lives inside the canvas container, which begins at the nav COLUMN's right edge — so the
+ * blade's overhang past this box is what has to be cleared, not the whole rail. Derived, because the
+ * last hardcoded version of this number was right when it was written and wrong within two paddings.
+ */
+const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
@@ -11393,18 +11403,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ? { position: 'absolute', top: 8, bottom: 'auto', left: '50%', right: 'auto',
                     transform: 'translateX(-50%)', height: '46%', aspectRatio: frameAspect,
                     boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' }
-                // Parked immediately left of the panel, which is ~424px wide and centred in the
-                // VIEWPORT. Hence vw and not %: this box is positioned inside the canvas container,
-                // whose own 50% sits right of the viewport's by half the tool rail — anchoring on
-                // `calc(50% + …)` put the frame 40px underneath the panel on a 1200px window.
-                //
-                // Width is the smaller of "what is left beside the panel" and "what this much height
-                // allows", so the frame shrinks on a narrow window and on a short one, and 9:16 is
-                // never the thing that gives. A clamped WIDTH with aspect-ratio would silently
-                // letterbox instead — an untruthful preview, which is the one bug this cannot have.
+                /* Parked between the RAIL and the panel — the two things it must not go under.
+                   The panel is ~424px wide and centred in the VIEWPORT, hence vw and not %: this box
+                   sits inside the canvas container, whose own 50% is right of the viewport's by half
+                   the tool rail, and anchoring on `calc(50% + …)` put the frame 40px beneath the
+                   panel on a 1200px window.
+
+                   ⚠️ ANCHORED ON THE LEFT, AND THE LEFT IS DERIVED FROM THE RAIL. It used to anchor
+                   on the right with `width: max(160px, min(calc(50vw - 320px), 46vh))`, and that 320
+                   reserved 108px from the viewport's edge while the spatula paints out to
+                   RAIL_RIGHT — so the frame's left sat 25px UNDER the blade. Measured in the harness
+                   at 1280: frame left 108, rail right 133. Reported as *"a window opens to the left
+                   corner backside of the spatula menu. placement is ugly."*
+
+                   It is the same failure the rail module exists to stop — a hardcoded number that
+                   was once the edge and quietly stopped being one — so the clearance is DERIVED and
+                   the frame cannot drift back under the blade whatever the rail does next. The
+                   container starts at the nav COLUMN's edge (padLeft + width), so the blade's
+                   overhang past this box is RAIL_RIGHT minus that.
+
+                   Width is then the smaller of "what is left beside the panel" and "what this much
+                   height allows", so it shrinks on a narrow window and on a short one, and the crop
+                   ratio is never the thing that gives — a clamped width with aspect-ratio would
+                   silently letterbox, an untruthful preview, which is the one bug this cannot have.
+                   On a very narrow desktop window the frame shrinks rather than sliding back under
+                   the rail: small and correct beats big and hidden. */
                 : { position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-                    right: 'calc(50vw + 212px)', left: 'auto', bottom: 'auto',
-                    width: 'max(160px, min(calc(50vw - 320px), 46vh))',
+                    left: FRAME_LEFT, right: 'auto', bottom: 'auto',
+                    width: `max(120px, min(calc(50vw - ${212 + RAIL_RIGHT + FRAME_GAP}px), 46vh))`,
                     height: 'auto', aspectRatio: frameAspect,
                     boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' })
             : { position: 'absolute', inset: 0 }}
