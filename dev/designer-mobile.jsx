@@ -701,6 +701,21 @@ const reloadDesign = PARAMS.has('reload')
   ? (() => { try { return JSON.parse(localStorage.getItem(RELOAD_KEY) || 'null'); } catch { return null; } })()
   : null;
 
+/* ── A cake with something ON it, so the ELEMENT STACK opens ────────────────────────────────────
+ *
+ * `?stack=1`. The stack lists what is on the cake, and this harness's catalogue panel is empty — so
+ * there was no way to open it here at all, and the desktop layout it drives (the canvas inset, the
+ * colour wheel's dodge, the collapse handle) could not be looked at. A writing is the cheapest thing
+ * that populates it: no element row, no asset, no catalogue.
+ */
+const stackDesign = PARAMS.has('stack') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  writings: [{
+    id: 'w1', style: 'acrylic', text: 'Happy Birthday', font: 'parisienne',
+    surface: 'side', sideY: 1.0, fit: 0.9, acrylicFinish: 'gold', color: '#ffffff',
+  }],
+} : null;
+
 const STRIPE_KEY = PARAMS.get('stripes');
 const stripedDesign = STRIPE_KEY ? {
   tiers: [{
@@ -732,5 +747,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

@@ -1726,7 +1726,16 @@ const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
  *
  * Desktop only by construction: both mobile branches override `width` before this is reached. */
 const EDIT_POPUP_W       = 300;
-const EDIT_POPUP_RIGHT   = 10;
+/* ⚠️ IT LEAVES THE HANDLE'S LANE, exactly as STACK_RIGHT_MOBILE does above, and for the same
+ * reason: the collapse tab is parked on the right edge and the stack opens to its LEFT. At the old
+ * 10 the two overlapped by 12px — measured with the stack out at 1280: tab 1258–1280, stack
+ * 970–1270 — so the tab sat on top of the panel's own edge and read as stuck to it rather than as
+ * the handle of the thing beside it.
+ *
+ * Derived from the tab, not typed: the tab's width is written down once. The 18px this costs the
+ * canvas is the price of a handle that is always reachable, and CANVAS_INSET_STACK below picks it
+ * up on its own. */
+const EDIT_POPUP_RIGHT   = STACK_TAB_W + 6;
 /** Canvas gives way to the stack, so the cake is beside it rather than under it. */
 const CANVAS_INSET_STACK = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 10;
 /** The colour wheel sits clear to the stack's LEFT — one more step out than the canvas. */
@@ -2150,9 +2159,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // cardId. expandedPipingId holds the expanded card's cardId; only one is open at a time.
   const [pipingCards,        setPipingCards]        = useState([]);
   const [expandedPipingId,   setExpandedPipingId]   = useState(null);
-  // Is the element stack pulled OUT? Phone only — see the flyout below. Shut by default, because a
-  // baker opens the designer to look at the cake, not at a list of what is on it.
-  const [stackFlyoutOpen,    setStackFlyoutOpen]    = useState(false);
+  /* Is the element stack pulled OUT? Both platforms now — see the flyout below.
+   *
+   * ⚠️ `null` MEANS "THE BAKER HAS NOT SAID", and the default is resolved from the platform rather
+   * than stored. The two defaults are opposites and each is right: on a phone the list COVERS the
+   * cake, so it starts shut — a baker opens the designer to look at the cake, not at a list of what
+   * is on it. On desktop it sits BESIDE the cake, so it starts out, which is what it has always
+   * done. Storing `!isMobile` here instead would mean reading the breakpoint at mount, in a file
+   * where `isMobile` is declared 700 lines below this and the breakpoint has exactly one home
+   * (check:narrow). Derived, it also survives a window resized across the breakpoint before anyone
+   * has touched the handle. */
+  const [stackOutPref,       setStackOutPref]       = useState(null);
   // Which ring's color picker popup is open, keyed `${cardId}-${zone}-${tierIndex}` (null = none),
   // plus the screen-space anchor (the tapped Color dot) the floating popup positions against.
   /* Which candidate ring the piping controls are editing, as { tierIndex, zone }.
@@ -6935,13 +6952,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const stackHasExpandedCard = decorationCards.some(isCardSelected)
     || selectedEl?.type === 'writing'
     || expandedPipingId != null;
-  const stackShown = !isMobile || stackFlyoutOpen || stackHasExpandedCard;
+  /* ⚠️ ONE FORMULA FOR BOTH PLATFORMS, and it used to be `!isMobile || …` — desktop could not hide
+     the stack at all. Widening the cards to 300px inset the canvas by 320 and the cake came back
+     noticeably smaller; Sandeep: *"this has shrinked the canvas size … we should have a side arrow
+     to drag them off or on."* The handle for exactly that already existed on the phone, so this is
+     the gate coming off rather than a second mechanism arriving.
+
+     An EXPANDED card still forces it open on desktop as it does on a phone, and for the same
+     reason: selecting a decoration on the cake is what expands that decoration's card, so with the
+     stack tucked away the click would look like nothing happened. The handle tucks it back. */
+  const stackOut   = stackOutPref ?? !isMobile;
+  const stackShown = stackOut || stackHasExpandedCard;
 
   // Opened by picking something ON THE CAKE rather than by the handle → show ONLY that element's
   // card. Tapping a lion is a question about the lion; answering it with a list of the other eleven
   // decorations puts the rest of the cake behind a column the baker did not ask for. The handle is
   // what asks for the list, and it still does.
-  const stackSingleCard = isMobile && !stackFlyoutOpen && stackHasExpandedCard;
+  const stackSingleCard = isMobile && !stackOut && stackHasExpandedCard;
 
   /* ⚠️ THE FOLD MARK IS HIDDEN WHENEVER "Done" IS ON SCREEN. Sandeep: "there is down arrow button
    * and 'Done' button. both doing the samething. shall we remove the downarrow?"
@@ -7057,8 +7084,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //   · list → shut, AND collapse whatever was expanded. Without the second half the panel springs
   //     straight back open, because an expanded card is itself a reason to be shown.
   function toggleStackFlyout() {
-    if (stackFlyoutOpen) { setStackFlyoutOpen(false); clearAllSelections(); }
-    else setStackFlyoutOpen(true);
+    if (stackOut) { setStackOutPref(false); clearAllSelections(); }
+    else setStackOutPref(true);
   }
 
   function selectDecorationCard(card) {
@@ -11371,7 +11398,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               and already take their own space. */}
           <div style={{
             position: 'absolute', inset: 0,
-            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
+            /* ⚠️ `stackShown`, NOT `elementStackOpen`: the inset is about whether the stack is ON
+               SCREEN, not whether there is anything to list. Keyed on the latter, tucking the stack
+               away left a 320px hole beside the cake — the handle moved the panel and the canvas
+               stayed shrunk, which is the whole thing it was pulled for. */
+            right: toolsOpen ? (isMobile ? 0 : 276)
+                 : (elementStackOpen && stackShown ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
             bottom: bottomSheetH,
             /* ⚠️ `bottom` NO LONGER ANIMATES, and that is the fix rather than a regression. While it
                did, two animations ran against each other: this transition slid the sheet while
@@ -11948,7 +11980,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                      // ⚠️ DERIVED from the stack's own width — this used to be a literal 230 beside a
                      // comment restating "editPopup is right:10 width:200", so widening the stack put
                      // the wheel back underneath it. See EDIT_POPUP_W.
-                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: WHEEL_DODGE_STACK, zIndex: 30 } : {}) }}>
+                     : { ...s.wheelPanel, ...(elementStackOpen && stackShown ? { right: WHEEL_DODGE_STACK, zIndex: 30 } : {}) }}>
                 {/* The grip the other two sheets always had and this one did not. It is no longer
                     load-bearing — nothing is hidden behind a drag any more — so it is now what it
                     should always have been: an optional way to make the picker bigger. */}
@@ -12028,14 +12060,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               Tried the other way first — the handle riding the panel's edge — and it ends up floating
               in the middle of the cake whenever the panel is shorter than the stage, which is most of
               the time: it reads as a stray button rather than the handle of the thing beside it. */}
-          {elementStackOpen && isMobile && (
+          {/* ⚠️ NO LONGER PHONE-ONLY. Desktop had no way to put the stack away, and at 300px wide it
+              takes 320px off the canvas — the cake refits smaller every time a card is open. The
+              handle is unchanged otherwise: same place, same behaviour, same words. */}
+          {elementStackOpen && (
             <button onClick={toggleStackFlyout}
               // Reads the LIST's state, not the panel's: with one card showing, the handle still
               // offers the list, so it must still point outward and still say "show".
-              aria-label={stackFlyoutOpen ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
-              aria-expanded={stackFlyoutOpen}
+              aria-label={stackOut ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
+              aria-expanded={stackOut}
               style={s.stackTab}>
-              {stackFlyoutOpen ? '▶' : '◀'}
+              {stackOut ? '▶' : '◀'}
             </button>
           )}
 
