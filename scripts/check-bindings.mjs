@@ -164,7 +164,19 @@ for (const rel of files) {
   // false alarms down. Anything looser flagged dozens of legitimate object keys and locals from
   // outer scopes, and a gate that cries wolf is a gate that gets deleted.
   const sites = [
-    /[^A-Za-z0-9_.$]([a-z][A-Za-z0-9_$]*)\s*\(/g,              // name(
+    // ⚠️ NOT AFTER A BACKSLASH, or a regex escape reads as a call. `\b(?:…)` inside
+    // /(\d{1,3})\s*(?:years?|yrs?|yo)\b(?:\s+old\b)?/ reported a call to `b` — a confident
+    // ReferenceError warning about a file that runs fine. `\s(`, `\d(` and `\w(` are the same
+    // shape, and all of them are single letters, so excluding the backslash covers the family.
+    //
+    // The read matcher below already defends against regex literals for the same reason — it
+    // excludes a preceding `/` so `/phone/i.test(x)` is not read as `i.test`. This is that defence,
+    // arriving at the call matcher through an escape rather than a delimiter.
+    //
+    // Narrow on purpose: blanking regex literals wholesale is what this file's header warns about,
+    // because `/` is also division and a stripper got it wrong three ways in a row. No valid call
+    // site has a backslash immediately before the name, so nothing real is lost.
+    /[^A-Za-z0-9_.$\\]([a-z][A-Za-z0-9_$]*)\s*\(/g,            // name(
     // Not after a `/`, or a regex's own flags read as a name: `/phone/i.test(x)` is `i.test`.
     /[^A-Za-z0-9_.$'"`/]([a-z][A-Za-z0-9_$]*)\s*\.[a-zA-Z]/g,  // name.foo
     /[^A-Za-z0-9_.$]([a-z][A-Za-z0-9_$]*)\s*[<>]=?\s*[\d'"`]/g, // name > 4, name <= '…'
