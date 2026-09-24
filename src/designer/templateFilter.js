@@ -28,18 +28,56 @@ export const AGE_FILTER_MAX = 18;
  * is most likely to type: "Valentine's" is `valentines`, "Multi-color" is `multi-color`, and a
  * hyphen-or-apostrophe mismatch is not a miss anybody could explain.
  */
-export function matchesTemplateSearch(t, q, nameBySlug) {
-  if (!q) return true;
-  if (t.name?.toLowerCase().includes(q)) return true;
-  return (t.tag_slugs ?? []).some((slug) => {
-    if (String(slug).toLowerCase().includes(q)) return true;
-    /* ⚠️ THE DISPLAY NAME TOO, and it has to come from the client's tag list — the template payload
-       carries `tag_slugs` and no names (lib/templateList.js). Slug and name diverge exactly where
-       somebody is most likely to type: "Valentine's" is `valentines`, "Baby Shower" is `baby-shower`.
-       A miss on an apostrophe or a hyphen is not one anybody could explain. */
+/* Everything a template can be found BY, lowercased: its name, every tag slug, and every tag's
+ * display name.
+ *
+ * ⚠️ THE DISPLAY NAME TOO, and it has to come from the client's tag list — the template payload
+ * carries `tag_slugs` and no names (lib/templateList.js). Slug and name diverge exactly where
+ * somebody is most likely to type: "Valentine's" is `valentines`, "Baby Shower" is `baby-shower`.
+ * A miss on an apostrophe or a hyphen is not one anybody could explain.
+ *
+ * Built once per template rather than walked once per query word, which is also why tokenising
+ * below costs nothing: the tag loop used to run for every search, and now runs for every template.
+ */
+function searchableFields(t, nameBySlug) {
+  const fields = [t.name ?? ''];
+  for (const slug of t.tag_slugs ?? []) {
+    fields.push(String(slug));
     const name = nameBySlug?.get?.(slug);
-    return !!name && name.toLowerCase().includes(q);
-  });
+    if (name) fields.push(name);
+  }
+  return fields.map(f => f.toLowerCase());
+}
+
+/* ── ONE WORD PER FIELD WAS THE REAL CEILING ─────────────────────────────────────────────────────
+ *
+ * ⚠️ IT MATCHED THE WHOLE QUERY AGAINST ONE FIELD AT A TIME, so a query spanning two of them found
+ * nothing. `field.includes(q)` with `q` the entire string means "birthday pink" asks for a single
+ * field containing that exact phrase — and no template has one, even when it carries the `birthday`
+ * tag and the `pink` tag. Each half matched something; nothing matched all of it.
+ *
+ * That ceiling is invisible while every template is filed under one word and becomes the whole
+ * problem the moment there are several dimensions to file under. It is what would have made
+ * emotion and relationship tags useless: a cake tagged `i-love-you` + `mother` returns nothing for
+ * "love you mom", which is exactly how somebody would search for it.
+ *
+ * So: EVERY word must match SOMETHING, and any word may match any field. AND across the words,
+ * because typing more should narrow; OR across the fields, because a word does not know which
+ * dimension it belongs to. The same shape `matchesFilters` already uses for chips.
+ *
+ * ⚠️ STILL A SUBSTRING PER WORD, NOT A WHOLE-WORD MATCH. "choc" has to keep finding "chocolate" and
+ * "din" "Dino" — the old behaviour was forgiving and people type prefixes. Tokenising narrows what
+ * a query MEANS; it must not narrow what a word MATCHES.
+ *
+ * Nothing is lost against the old behaviour: a two-word phrase that used to match one field still
+ * does, because each of its words is a substring of that same field. "baby shower" finds
+ * `baby-shower` — now by the slug as well as the display name.
+ */
+export function matchesTemplateSearch(t, q, nameBySlug) {
+  const words = String(q ?? '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!words.length) return true;
+  const fields = searchableFields(t, nameBySlug);
+  return words.every(word => fields.some(field => field.includes(word)));
 }
 
 /* ── OR inside a category, AND across them ───────────────────────────────────────────────────────

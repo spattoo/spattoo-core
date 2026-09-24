@@ -42,6 +42,69 @@ describe('search is not just the name', () => {
   });
 });
 
+describe('every word must match something, and any word may match any field', () => {
+  /* The ceiling this replaced: the whole query was tested against one field at a time, so a search
+     spanning two of them found nothing. "birthday green" asked for a single field containing that
+     phrase; Dino carries `birthday` and `green` as separate tags and matched neither. */
+  it('finds a template whose words come from different tags', () => {
+    expect(count({ q: 'birthday green' })).toBe(1);          // Dino
+    expect(count({ q: 'birthday wedding' })).toBe(2);        // Vintage cake, Butterfly
+  });
+
+  it('spans the NAME and a tag', () => {
+    expect(count({ q: 'dino green' })).toBe(1);
+    expect(count({ q: 'dino birthday' })).toBe(1);
+  });
+
+  it('does not care about order or extra spaces', () => {
+    expect(count({ q: 'green dino' })).toBe(1);
+    expect(count({ q: '  dino   green  ' })).toBe(1);
+  });
+
+  /* AND across the words: typing more narrows. A word that matches nothing fails the whole query,
+     rather than the query degrading into "any of these". */
+  it('fails the whole query on one unmatched word', () => {
+    expect(count({ q: 'dino unicorn' })).toBe(0);
+    expect(count({ q: 'birthday unicorn' })).toBe(0);
+  });
+
+  /* ⚠️ A PREFIX STILL MATCHES. Tokenising narrows what a query MEANS, never what a word MATCHES —
+     "choc" has to keep finding "chocolate". */
+  it('keeps matching on a substring within each word', () => {
+    /* ⚠️ THREE, NOT ONE, AND THE REASON IS WORTH KEEPING: "din" is inside "wedDINg". Dino matches by
+       name; Vintage cake and Butterfly match on their `wedding` tag. A prefix search over a tag
+       vocabulary is forgiving to a fault, and this was equally true of the old whole-query match —
+       nothing regressed, the first assertion here was simply wrong about the fixture.
+       Whole-word matching would tidy it and would break "choc" → "chocolate". That is the trade,
+       made deliberately, and this test records which side of it we are on. */
+    expect(count({ q: 'din' })).toBe(3);
+    expect(count({ q: 'trop white' })).toBe(1);              // both prefixes, both Dino's tags
+  });
+
+  /* Nothing regresses: a two-word phrase that used to match one field still does, because each of
+     its words is a substring of that same field — and now the SLUG answers it too, not only the
+     display name. */
+  it('still finds a two-word display name, and its hyphenated slug', () => {
+    expect(matchesTemplateSearch({ name: 'x', tag_slugs: ['baby-shower'] }, 'baby shower', NAMES)).toBe(true);
+    expect(matchesTemplateSearch({ name: 'x', tag_slugs: ['baby-shower'] }, 'baby-shower', NAMES)).toBe(true);
+    expect(matchesTemplateSearch({ name: 'x', tag_slugs: ['baby-shower'] }, 'shower baby', NAMES)).toBe(true);
+  });
+
+  /* The case the emotion and relationship vocabularies exist for, and the reason this had to land
+     first: two dimensions, one query. See plans/catalogue-findability.md. */
+  it('matches a query spanning two dimensions', () => {
+    const t = { name: 'Vintage-2', tag_slugs: ['i-love-you', 'mother'] };
+    const names = new Map([['i-love-you', 'I love you'], ['mother', 'Mom']]);
+    expect(matchesTemplateSearch(t, 'love you mom', names)).toBe(true);
+    expect(matchesTemplateSearch(t, 'mom', names)).toBe(true);
+    expect(matchesTemplateSearch(t, 'love dad', names)).toBe(false);
+  });
+
+  it('a whitespace-only query is not a filter', () => {
+    expect(count({ q: '   ' })).toBe(T.length);
+  });
+});
+
 describe('OR inside a category, AND across them', () => {
   /* Two occasions means "either": no cake is a birthday AND an anniversary, so ANDing within a
      category would return nothing every time. Two categories means "both": a cake is readily a
