@@ -109,6 +109,12 @@ export { SizeDial } from './designer/shared/SizeDial.jsx';
 // breaches of rule 1 that could not be fixed while the components lived inside CakeDesigner.jsx.
 export { ColorWheel } from './designer/shared/ColorWheel.jsx';
 export { ScrollFadeRow } from './designer/shared/ScrollFadeRow.jsx';
+// THE grid of cake templates — square picture-only tiles that reveal a page at a time. Exported
+// because plans/baker-catalogue.md gives it three designer-side callers: the rail's Templates
+// flyout, Settings → Spattoo templates (stocking the shop) and the catalogue's Edit mode. The
+// storefront keeps its OWN gallery on purpose — captioned cards in the baker's palette, not the
+// app's chrome — so this is not the one component for every template list, only for ours.
+export { default as TemplateGrid } from './designer/shared/TemplateGrid.jsx';
 // One face list and one finish list, shared by the studio and the cake. creamFonts.json is already
 // copied into spattoo-admin; a topper does not get a second copy of anything.
 export { TOPPER_FACES, DEFAULT_TOPPER_FACE, loadTopperFace, isMonoline, faceFit } from './designer/geometry/topperFaces.js';

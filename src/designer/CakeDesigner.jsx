@@ -21,7 +21,7 @@ import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
-import useRevealOnScroll from '../shared/useRevealOnScroll.js';
+import TemplateGrid from './shared/TemplateGrid.jsx';
 import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
@@ -2419,13 +2419,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
   }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
 
-  /* The grid draws a page at a time and grows as you near the bottom — no button, no request, no
-     jump. `shownTemplates` is a useMemo, so its identity changes exactly when the question changes
-     (a filter, a word typed) and the reveal starts again at the top. Nothing is fetched: the whole
-     filtered list is already here, which is what Layer 1 bought by taking `design` out of the list.
-     See plans/template-browsing-at-scale.md. */
-  const { visible: revealedTemplates, sentinelRef: tmplSentinelRef, done: tmplAllShown }
-    = useRevealOnScroll(shownTemplates);
+  /* ⚠️ THE REVEAL MOVED INTO `TemplateGrid`. It draws a page at a time and grows as you near the
+     bottom — no button, no request, no jump — and it now owns the hook, the sentinel and the
+     end-of-list line, because all three of its callers want the same behaviour and none of them
+     wants to wire it. `shownTemplates` is still computed here: the grid consumes it, and the
+     "No templates match" line beside the funnel reports its length.
+     See plans/template-browsing-at-scale.md Layer 2, and plans/baker-catalogue.md step 1. */
 
   /* What Apply would give, on the button, before it is pressed. Same predicate as the grid — the one
      thing that must never be a second copy, because the wrong answer would be the one being sold. */
@@ -2627,8 +2626,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // is what rescues the templates saved before the capture was cropped, which is most of them.
   // { src, name, tiers, rect } — rect is the card, so the panel can be anchored beside it.
   const [tplPreview, setTplPreview] = useState(null);
-  const tplPreviewTimer = useRef(null);
-  useEffect(() => () => clearTimeout(tplPreviewTimer.current), []);
+  /* The hover debounce that used to live here went with the tile — `TemplateGrid` holds it in its
+     own ref, so the timer and its cleanup are no longer this component's to keep. `tplPreview`
+     itself stays: the enlarged picture is portalled past this panel's clipping, which is a decision
+     about THIS surface rather than about the grid. */
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
   // Server-resolved capabilities (from /api/me). null = not loaded / host app
@@ -11414,110 +11415,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {!templatesLoading && templates.length === 0 && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
             )}
-            <div style={s.templateGrid}>
-            {revealedTemplates
-              .map(t => (
-              /* `position: relative` on both now: it anchors the enlarged preview, and that is not a
-                 phone-only need. The width came off — a grid track decides it. */
-              <div key={t.id} style={{ ...s.templateCard, position: 'relative' }}
-                // Desktop only: touch has no hover, and the two substitutes both break here —
-                // long-press fights the panel's own scrolling, and tap already loads the template.
-                // Mobile gets the explicit ⤢ button below instead.
-                onMouseEnter={isMobile ? undefined : (e) => {
-                  const src = thumbSrc(t);
-                  if (!src) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  clearTimeout(tplPreviewTimer.current);
-                  // A short delay so running the cursor down the list doesn't strobe previews.
-                  tplPreviewTimer.current = setTimeout(
-                    () => setTplPreview({ src, name: t.name, tiers: t.tier_count, rect }), 180);
-                }}
-                onMouseLeave={isMobile ? undefined : () => {
-                  clearTimeout(tplPreviewTimer.current);
-                  setTplPreview(null);
-                }}
-                onClick={async () => {
-                  let templateDesign = t.design ?? null;
-                  if (!templateDesign) {
-                    if (apiClient) {
-                      const full = await apiClient.fetchTemplate(t.id).catch(() => null);
-                      templateDesign = full?.design ?? null;
-                    } else {
-                      const { data } = await supabase
-                        .from('cake_templates')
-                        .select('design')
-                        .eq('id', t.id)
-                        .single();
-                      templateDesign = data?.design ?? null;
-                    }
+            {/* ── The grid, the reveal and the tile all live in TemplateGrid now ────────────────
+                Extracted to `designer/shared/TemplateGrid.jsx` because plans/baker-catalogue.md
+                needs a third caller — Settings → Spattoo templates, for stocking the shop, and this
+                same flyout in Edit-catalogue mode — and a third inline copy is how a hand-rolled
+                chip was committed while shared/Chip.jsx sat unused.
+
+                What stays HERE is what only this surface knows: what a tap MEANS (fetch the design
+                if the list row does not carry it, then load it and close the flyout) and where the
+                enlarged preview is drawn, which is a portal past this panel's own clipping.
+
+                `shownTemplates` is a useMemo, which the reveal hook requires — it resets on array
+                IDENTITY, so a filter change or a typed word starts the grid at the top again. */}
+            <TemplateGrid
+              templates={shownTemplates}
+              isMobile={isMobile}
+              onPreview={setTplPreview}
+              onPreviewEnd={() => setTplPreview(null)}
+              onPick={async (t) => {
+                let templateDesign = t.design ?? null;
+                if (!templateDesign) {
+                  if (apiClient) {
+                    const full = await apiClient.fetchTemplate(t.id).catch(() => null);
+                    templateDesign = full?.design ?? null;
+                  } else {
+                    const { data } = await supabase
+                      .from('cake_templates')
+                      .select('design')
+                      .eq('id', t.id)
+                      .single();
+                    templateDesign = data?.design ?? null;
                   }
-                  if (templateDesign) {
-                    loadDesign(templateDesign);
-                    setTemplatesOpen(false);
-                    clearAllSelections();
-                    resetEditors();
-                  }
-                }}
-              >
-                {thumbSrc(t)
-                  /* ⚠️ `height: 'auto'` IS LOAD-BEARING. The width/height ATTRIBUTES are there to
-                     reserve the tile before the picture arrives (no reflow as the grid fills), but
-                     they are presentational hints, and with no author height `height=180` BEATS
-                     `aspect-ratio` — measured 171x180 instead of 171x171, a tile that was square in
-                     the stylesheet and not on the screen. */
-                  ? <img src={thumbSrc(t)} alt={t.name} width={180} height={180} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1', objectFit: 'contain', borderRadius: 8, background: '#FAFAF8', display: 'block' }} />
-                  : <div style={s.templateThumbPlaceholder} />
                 }
-                {/* Mobile's stand-in for hover. An explicit control, not a gesture: tapping the card
-                    loads the template, so the preview needs a target of its own. */}
-                {isMobile && thumbSrc(t) && (
-                  <button
-                    type="button"
-                    aria-label={`Preview ${t.name}`}
-                    style={s.templatePreviewBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();      // never load the template from this button
-                      setTplPreview({ src: thumbSrc(t), name: t.name, tiers: t.tier_count, rect: null });
-                    }}
-                  >⤢</button>
-                )}
-                {/* ⚠️ NO NAME ON THE CARD, AND NO CAPTION AT ALL. Sandeep, 2026-09-24: "we can
-                    actually skip showing the name. its difficult to name a lot of templates.
-                    thumbnail speaks. just the way canva app does." The catalogue already showed the
-                    label failing at the one job it had — two cards read "Football" and two read
-                    "Dino" — so it was width spent on a word that did not distinguish anything.
-                    (The "1-tier" caption went earlier for the same reason: nine repetitions of a
-                    word doing no work. The tier count is still in the enlarged preview.)
-
-                    ⚠️ THE NAME IS STILL HERE, IT IS JUST NOT DRAWN. It is the img's `alt` and the
-                    preview button's label, so a screen reader still says which cake this is, and
-                    `matchesTemplateSearch` still finds a template by a name nobody can see — search
-                    reads the name, the tag slugs AND the tag display names. Taking it out of the
-                    DOM would leave a grid of pictures nothing can name.
-                    It stays READABLE in the enlarged preview, which is how you tell those two
-                    Footballs apart: hover on desktop, the ⤢ button on a phone. */}
-                {t.offering === 'premium' && <span style={s.templateBadge}>Premium</span>}
-              </div>
-            ))
-            }
-            </div>{/* end templateGrid */}
-
-            {/* ── The next page, before you get to the edge ────────────────────────────────────
-                An empty element the observer watches. It sits AFTER the grid and inside the same
-                scroller, so an ancestor that scrolls clips the intersection and this reads
-                correctly in the desktop flyout and the phone sheet without being told which.
-                Nothing is fetched when it fires — the list is already in memory. */}
-            {!tmplAllShown && <div ref={tmplSentinelRef} style={{ height: 1 }} aria-hidden="true" />}
-
-            {/* ⚠️ SAID ONCE, AT THE END. A grid that simply stops reads as a grid that gave up —
-                the credits ledger answers the same question with "That's your full history." Only
-                worth saying when there was more than one page to scroll through; on a short list
-                the end is obvious and a line about it is noise. */}
-            {tmplAllShown && shownTemplates.length > 24 && (
-              <div style={{ fontSize: 10.5, color: '#C3CBC6', fontWeight: 600, textAlign: 'center', padding: '10px 0 2px' }}>
-                That&rsquo;s all {shownTemplates.length} templates.
-              </div>
-            )}
+                if (templateDesign) {
+                  loadDesign(templateDesign);
+                  setTemplatesOpen(false);
+                  clearAllSelections();
+                  resetEditors();
+                }
+              }}
+            />
 
             {/* Enlarged preview. Portalled to the body because the panel clips its own overflow,
                 and anchored beside the card on desktop / centred as a sheet on mobile (rect null). */}
@@ -14300,11 +14237,6 @@ const s = {
    * than of a small one. `auto-fill` + `minmax` means the count follows the width instead of being
    * asserted per breakpoint: two columns on a phone, three in the widened flyout, without either
    * number appearing anywhere. */
-  templateGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
-    gap: 10,
-  },
   // Enlarged thumbnail. pointerEvents none on desktop so it can never sit between the cursor and
   // the card it belongs to — that would fire mouseleave and make the preview flicker itself away.
   templatePreview: {
@@ -14325,45 +14257,11 @@ const s = {
     background: 'rgba(20,16,18,0.45)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
   },
-  templatePreviewBtn: {
-    position: 'absolute', top: 6, right: 6,
-    width: 26, height: 26, borderRadius: 8,
-    border: 'none', background: 'rgba(255,255,255,0.92)',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-    fontSize: 13, lineHeight: 1, color: '#333', cursor: 'pointer',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    WebkitTapHighlightColor: 'transparent',
-  },
-  /* ⚠️ THE PICTURE IS THE WHOLE CARD — no caption row, so no bottom padding and no gap to hold one.
-     A square tile because the stored thumbnails ARE square: the capture canvas is a fixed 400x400
-     and contentCrop's 3:2 target clamps to it, so a 3:2 box showed every cake letterboxed with a
-     dead gutter down each side. Matching the tile to the picture is what makes the cakes bigger
-     without changing a single stored image. */
-  templateCard: {
-    border: '1.5px solid #999999', borderRadius: 12,
-    overflow: 'hidden', cursor: 'pointer',
-    display: 'flex', flexDirection: 'column',
-    padding: 0,
-    transition: 'all 0.15s',
-    flexShrink: 0,
-  },
-  templateThumbPlaceholder: {
-    width: '100%', aspectRatio: '1 / 1',
-    background: '#FAFAF8', display: 'flex',
-    alignItems: 'center', justifyContent: 'center',
-    fontSize: 32,
-  },
-  /* ⚠️ ON the picture now, not beside a name — there is no name to sit beside. Top LEFT, because
-     the ⤢ preview button owns the top right on a phone, and two chips in one corner is a collision
-     that would only show up on the one device that cannot hover. Near-opaque white rather than the
-     old #FAFAF8 wash: it sits over a cake now, not on the card's own surface. */
-  templateBadge: {
-    position: 'absolute', top: 6, left: 6, zIndex: 1,
-    fontSize: 9, color: '#333', fontWeight: 700,
-    background: 'rgba(255,255,255,0.92)', border: '1px solid #999999',
-    borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
-    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
-  },
+  /* The tile's own styles — grid, card, placeholder, Premium badge and the ⤢ preview button — moved
+     to `designer/shared/TemplateGrid.jsx` with the tile, along with the reasoning behind each (the
+     square-thumbnail rule, why the badge sits top-LEFT, why the grid counts its own columns). Only
+     the enlarged-preview OVERLAY stays here, because portalling it past this panel's clipping is a
+     fact about this surface rather than about the grid. */
 
   tierCheckRow: {
     display: 'flex', alignItems: 'center', gap: 7,
