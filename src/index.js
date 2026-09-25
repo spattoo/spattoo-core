@@ -217,6 +217,12 @@ export { normalMapFromImage, loadNormalMapFromUrl, loadStrokeMaps, composeStroke
 // EXIF orientation and hung forever on a file it couldn't decode).
 export { ACCEPT_IMAGE, IMAGE_TYPES, MAX_IMAGE_BYTES, validateImageFile, imageExt, decodeImage, encodeWebp, compressImage, normalizeArtwork, extractLogoPalette } from './shared/image.js';
 export { useUploadLimits } from './shared/useUploadLimits.js';
+// What a template must say about itself before it can be saved. Exported for the same reason the
+// image pipeline above is: spattoo-admin's template authoring must apply the IDENTICAL rule to the
+// baker's save modal, and two copies of "which categories are required" is the coupling that was
+// removed from TMPL_CATS, CAT_LABEL and admin's CATEGORIES — it must not come back through a
+// validation check. One named list, two callers.
+export { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from './shared/tagRequirements.js';
 // Vendor-neutral error telemetry. Host apps inject a Sentry-backed transport via
 // configureTelemetry(); until then it logs to the console. See src/telemetry/.
 export { reportError, reportMessage, setContext, configureTelemetry } from './telemetry/index.js';

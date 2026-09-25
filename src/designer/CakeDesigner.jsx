@@ -22,6 +22,7 @@ import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import useRevealOnScroll from '../shared/useRevealOnScroll.js';
+import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
@@ -3504,6 +3505,34 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // cached older client.
     if (design.tiers.length > 1 && templateWeight === '') {
       setSaveMsg({ ok: false, text: 'A tiered design needs a minimum weight — the lightest you can build it at.' });
+      return;
+    }
+    // ── Who this design suits: an age range, and a gender ────────────────────────────────────────
+    // ⚠️ UNSET MEANS UNFILTERED, NOT "SUITS NOBODY". A template with no age range answers every age
+    // query and one with no gender answers every gender query — noise that grows with the catalogue
+    // and is invisible while it does, because nothing separates "suits everyone" from "nobody filled
+    // this in". Requiring both makes those two different answers.
+    //
+    // ⚠️ BLANK, WITH NO DEFAULT. Sandeep: "if it matches 1-100, then the author say that." A
+    // pre-filled 1–100 would mean "everyone" without anybody deciding it, turning a field that
+    // carries signal into one that carries a default — the same as having no field at all.
+    //
+    // ⚠️ THE RULE LIVES IN shared/tagRequirements.js, NOT HERE. Admin's create form must apply the
+    // identical one, and `=== 'gender'` scattered across two repos is exactly the coupling that was
+    // removed from TMPL_CATS, CAT_LABEL and admin's CATEGORIES. It must not come back as a
+    // validation check.
+    //
+    // Client-side only, for the reason the weight check states three lines up.
+    const ageProblem = ageRangeProblem(templateMinAge, templateMaxAge);
+    if (ageProblem) {
+      setSaveMsg({ ok: false, text: ageProblem });
+      return;
+    }
+    // `filterTags`, not `offeredTags` — the same vocabulary the chips above are drawn from, so the
+    // message can never name a category that is not on screen.
+    const missingCategories = missingRequiredCategories(filterTags, templateTagIds);
+    if (missingCategories.length) {
+      setSaveMsg({ ok: false, text: requiredTagMessage(missingCategories) });
       return;
     }
     if (!onSaveTemplate) {
@@ -13222,7 +13251,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <input style={{ ...s.modalInput }} type="number" min="0" step="0.5" placeholder="e.g. 2" value={templateWeight} onChange={e => setTemplateWeight(e.target.value)} />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Suits ages</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Suits ages *</div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <input style={{ ...s.modalInput, width: '50%' }} type="number" min="0" step="1" placeholder="Min" value={templateMinAge} onChange={e => setTemplateMinAge(e.target.value)} />
                   <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
@@ -13257,7 +13286,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {groupTagsByCategory(filterTags).map(([cat, tags]) => (
                   <div key={cat}>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>{catLabel(cat)}</div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>{catLabel(cat)}{REQUIRED_TAG_CATEGORIES.includes(cat) ? ' *' : ''}</div>
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                       {tags.map(tag => {
                         const on = templateTagIds.has(tag.id);
