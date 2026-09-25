@@ -52,9 +52,41 @@ export default function useRevealOnScroll(items, { page = 24, rootMargin = '600p
       entries => { if (entries.some(e => e.isIntersecting)) setCount(c => Math.min(c + page, total)); },
       { rootMargin },
     );
-    io.observe(el);
-    return () => io.disconnect();
-  }, [done, page, total, rootMargin]);
+    /* ⚠️ OBSERVE ON THE NEXT FRAME, NOT SYNCHRONOUSLY — and this half is as load-bearing as the
+     * `count` dependency below. `observe()` reports the CURRENT intersection immediately, and since
+     * this effect re-runs after every reveal, observing at once asks the question against a layout
+     * the browser has not performed yet: the new row is not on screen, the sentinel still looks to
+     * be in view, the callback advances again, and it cascades to the end of the list.
+     *
+     * Measured, with `count` in the deps but observing synchronously: 60 of 60 tiles on mount at a
+     * 900px viewport, and 30 at 300px — the whole list revealed before a single scroll, which
+     * removes the paging this hook exists to provide as completely as the stall did.
+     *
+     * One frame is enough for the revealed row to land, so the next decision is made against where
+     * the sentinel actually is. */
+    const raf = requestAnimationFrame(() => io.observe(el));
+    return () => { cancelAnimationFrame(raf); io.disconnect(); };
+    /* ⚠️ `count` IS IN HERE, AND WITHOUT IT THIS REVEALS EXACTLY TWO PAGES AND STOPS.
+     *
+     * An IntersectionObserver invokes its callback on a TRANSITION, not continuously. Observe once
+     * and the first reveal fires; the new row pushes the sentinel down, but `rootMargin` is 600px,
+     * so it usually stays INSIDE the margin — still intersecting, no transition, no second callback.
+     * The grid then sits at `2 * page` for ever.
+     *
+     * Measured in a browser (dev/template-grid.html, 60 templates, scrolled to the bottom six
+     * times): `page=6` stuck at 12, `page=24` stuck at 48 — two pages in both cases, whatever the
+     * viewport height and whether or not the document could scroll.
+     *
+     * ⚠️ IT WAS INVISIBLE IN PRODUCTION AND WAS ABOUT TO STOP BEING SO. At the default page of 24,
+     * two pages is 48 — more than the whole catalogue — so nothing was ever withheld. It would have
+     * appeared as "the grid stops at 48" on the day the catalogue passed 48 templates, which is the
+     * growth plans/template-browsing-at-scale.md exists for.
+     *
+     * Re-creating the observer after each reveal fixes it because `observe()` reports the CURRENT
+     * state immediately: still in view → reveal again, until the sentinel is finally pushed beyond
+     * the margin or the list runs out. That is the behaviour the rootMargin note above describes —
+     * the next page arrives before you reach the end — rather than one it only claimed. */
+  }, [done, page, total, rootMargin, count]);
 
   return { visible: list.slice(0, count), sentinelRef, done, total, shown: Math.min(count, total) };
 }
