@@ -2388,6 +2388,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      `templateOccasionIds` when the modal stopped offering one category; the payload below still
      carries the old FIELD name as well, for hosts built against it. */
   const [templateTagIds, setTemplateTagIds] = useState(new Set());
+  /* Whether this design goes straight into the catalogue, or waits in My templates. Default OFF —
+     saving is a working action, selling is a decision. See plans/baker-catalogue.md. */
+  const [templateInCatalogue, setTemplateInCatalogue] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
@@ -3488,6 +3491,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setSaveModal(false); setSaveMsg(null); setReelOffer(false);
     setTemplateName(''); setTemplateWeight('');
     setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateTagIds(new Set());
+    setTemplateInCatalogue(false);
   }
 
   async function handleSaveTemplate() {
@@ -3572,6 +3576,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
            old host files an emotion tag correctly without knowing it did. */
         tagIds:         [...templateTagIds],
         occasionTagIds: [...templateTagIds],
+        /* ⚠️ INERT UNTIL THE HOST MAPS IT, and there is no older field to dual-send under. The
+           baker app maps this payload FIELD BY FIELD, so a host that has not been rebuilt drops
+           this and the design is staged — which is the right default, so the failure is silent and
+           safe rather than silent and wrong. (`tagIds` above is dropped by exactly that mechanism
+           today; it survives only because the same ids also travel as `occasionTagIds`.) */
+        addToCatalogue: templateInCatalogue,
       });
       /* ── Saving a template is the moment to offer a reel ──────────────────────────────────────
        * Not a nag and not a coach-mark. A baker has just finished a design they thought worth
@@ -13241,6 +13251,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ))}
               </div>
             )}
+
+            {/* ── Saving is not selling ────────────────────────────────────────────────────────
+                ⚠️ OFF BY DEFAULT, AND NOT A REQUIRED CHOICE. Everything above describes the DESIGN
+                — its name, what it suits, how it is filed. This asks something different: whether a
+                stranger can order it. A required field whose honest answer is usually the same
+                teaches people to click past it, which is how a draft ends up on a storefront.
+
+                Until now there was no choice at all and the answer was always yes: a design was on
+                the baker's storefront the moment it was saved, because `templatesForBaker` returned
+                every template with their `baker_id`. Nobody decided that; it fell out of the query.
+
+                Unticked, the design waits in Settings → My templates and can be moved into the
+                catalogue later. See plans/baker-catalogue.md. */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginTop: 4 }}>
+              <input
+                type="checkbox"
+                checked={templateInCatalogue}
+                onChange={e => setTemplateInCatalogue(e.target.checked)}
+                style={{ accentColor: primaryColor, width: 15, height: 15, marginTop: 1, cursor: 'pointer', flexShrink: 0 }}
+              />
+              <span>
+                <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: INK }}>
+                  Also add to my catalogue
+                </span>
+                <span style={{ display: 'block', fontSize: 11, color: '#888', lineHeight: 1.45, marginTop: 1 }}>
+                  Customers can order it. Leave this off to keep it in My templates for now.
+                </span>
+              </span>
+            </label>
 
             {saveMsg && (
               <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : DANGER, marginTop: 8 }}>
