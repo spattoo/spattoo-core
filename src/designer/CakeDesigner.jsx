@@ -154,6 +154,7 @@ import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
 import TemplatesPanel from '../settings/TemplatesPanel';
+import SpattooTemplatesPanel from '../settings/SpattooTemplatesPanel.jsx';
 import BillingPanel from '../settings/BillingPanel';
 import TopUpsPanel from '../settings/TopUpsPanel.jsx';
 import CreditsPill from '../billing/CreditsPill.jsx';
@@ -2530,6 +2531,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
   const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
+  // The Spattoo library a baker stocks their catalogue from — a peer destination of My templates,
+  // not a section inside it. See plans/baker-catalogue.md.
+  const [spattooTemplatesPanelOpen, setSpattooTemplatesPanelOpen] = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
   const [topUpsPanelOpen,     setTopUpsPanelOpen]     = useState(false);
   /* Which screen Top-ups opens on. Null is its own menu; the order panel's no-email notice sends
@@ -2621,6 +2625,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const plainRail = orderMode === 'customer';
 
   const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
+    || spattooTemplatesPanelOpen
     || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
 
 
@@ -3192,15 +3197,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
           { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
             badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
-          // NOT "Templates". The rail already has a Templates destination — browsing templates to
-          // start a design — and in the More sheet the two now sit a few rows apart, where one word
-          // for two different things is a coin toss. This one chooses which global templates the
-          // bakery OFFERS, which is what features/template-visibility.md calls it.
-          /* ⚠️ NOT "Template visibility" ANY MORE. The page now holds the baker's OWN templates with a
-             Remove on each, beside the on/off switches for Spattoo's library — removing one of your own
-             is not a visibility setting. "Manage" also keeps it distinct from the rail's own Templates,
-             which is where you BROWSE them to start a cake. */
-          { id: 'templates', label: 'Manage templates', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
+          /* ── TWO ENTRIES, BECAUSE THEY ARE TWO DIFFERENT JOBS ──────────────────────────────────
+             "Spattoo templates" is the library we author and publish from admin; a baker taps one to
+             stock their catalogue. "My templates" is their own saved work, which they delete — and
+             can also put in the catalogue. One page held both as sections while the model was
+             opt-OUT; under a chosen catalogue they stopped being one screen.
+
+             ⚠️ NEITHER IS CALLED "Templates". The rail already has a Templates destination — where
+             you BROWSE to start a cake, and which is now the catalogue itself — and in the More sheet
+             these sit a few rows apart, where one word for two different things is a coin toss. That
+             collision is why the old entry was never called "Templates" either. */
+          { id: 'spattoo-templates', label: 'Spattoo templates', open: () => setSpattooTemplatesPanelOpen(true), active: spattooTemplatesPanelOpen },
+          { id: 'templates', label: 'My templates', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
         ] : []),
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
@@ -3264,6 +3272,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setSettingsPanelOpen(false);
     setFlavoursPanelOpen(false);
     setTemplatesPanelOpen(false);
+    /* ⚠️ THIS ONE SAVES AS YOU TAP, so a rail click closing it loses nothing — which is exactly why
+       it was built that way. The note above says a docked panel holding unsaved work would have to
+       guard THIS path; the Spattoo grid sidesteps that by never holding any. */
+    setSpattooTemplatesPanelOpen(false);
     setBillingPanelOpen(false);
     setTopUpsPanelOpen(false);
     setOrdersPanelOpen(false);
@@ -13569,6 +13581,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       <TemplatesPanel
         open={templatesPanelOpen}
         onClose={() => setTemplatesPanelOpen(false)}
+        apiClient={apiClient}
+        primaryColor={primaryColor}
+        accentColor={accentColor}
+      />
+
+      {/* ── Spattoo templates — the library a catalogue is stocked from ── */}
+      <SpattooTemplatesPanel
+        open={spattooTemplatesPanelOpen}
+        onClose={() => setSpattooTemplatesPanelOpen(false)}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}

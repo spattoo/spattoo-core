@@ -1,6 +1,19 @@
 // Sample store data for the real SettingsPanel, shared by the settings harness and the rail harness
 // (`rail.html?settings`), so Store Settings can be judged in place beside the rail with real content.
 
+/* ⚠️ A REAL PICTURE, NOT `null`. Every stubbed template used to carry `thumbnail_url: null`, so the
+   templates grid drew its placeholder — and a screenshot then proved the LAYOUT while showing
+   nothing about whether a picture actually lands in a tile, which is the one thing a picture-only
+   grid is built around. An inline SVG data URI keeps the harness offline and self-contained, and a
+   different hue per template makes the order visible when tiles reveal as you scroll. */
+const cakeThumb = (hue) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
+  `<svg xmlns="http://www.w3.org/2000/svg" width="180" height="180">
+     <rect width="180" height="180" fill="hsl(${hue} 45% 92%)"/>
+     <rect x="42" y="96" width="96" height="52" rx="6" fill="hsl(${hue} 45% 74%)"/>
+     <rect x="54" y="66" width="72" height="34" rx="5" fill="hsl(${hue} 45% 82%)"/>
+     <circle cx="90" cy="58" r="7" fill="hsl(${hue} 55% 60%)"/>
+   </svg>`);
+
 export const STUBS = {
   // Wrapped in `baker`, the shape GET /baker/profile returns and SettingsPanel destructures. Returned
   // bare, every profile field — colours, name, Instagram — silently loaded as empty.
@@ -70,11 +83,29 @@ export const STUBS = {
     { id: 'g2', name: 'Number cake',     thumbnail_url: null, tier_count: 1, offering: 'standard', excluded: true  },
     { id: 'g3', name: 'Naked berry',     thumbnail_url: null, tier_count: 1, offering: 'standard', excluded: false },
   ]),
+  /* ⚠️ Thumbnails here too, and the ids MATCH `fetchBakerCatalogue` — My templates reads its rows
+     from this call and its offered state from that one, so `m1`/`m2` have to be the same templates
+     in both or the toggles would attach to nothing. */
   fetchMyTemplates: async () => ([
-    { id: 'm1', name: 'Anniversary gold', thumbnail_url: null, tier_count: 2, offering: 'standard', created_at: '2026-09-22T10:00:00Z' },
-    { id: 'm2', name: 'Engagement ring',  thumbnail_url: null, tier_count: 1, offering: 'standard', created_at: '2026-09-18T10:00:00Z' },
+    { id: 'm1', name: 'Anniversary gold', thumbnail_url: cakeThumb(15),  tier_count: 2, offering: 'standard', created_at: '2026-09-22T10:00:00Z' },
+    { id: 'm2', name: 'Engagement ring',  thumbnail_url: cakeThumb(280), tier_count: 1, offering: 'standard', created_at: '2026-09-18T10:00:00Z' },
   ]),
   deleteBakerTemplate: async () => ({ ok: true }),
+
+  /* ── The catalogue: what the baker CHOSE to offer ────────────────────────────────────────────
+     `GET /baker/catalogue` returns BOTH kinds with `source`, because the PUT replaces the whole set
+     — a screen showing only half still has to send the other half or it silently empties it. Two of
+     the five start offered, so the grid shows both states without anybody tapping.
+     `updateBakerCatalogue` logs what it would send: the whole catalogue, never a delta. */
+  fetchBakerCatalogue: async () => ([
+    { id: 'g1', name: 'Two-tier rose', thumbnail_url: cakeThumb(340), tier_count: 2, offering: 'standard', source: 'spattoo', offered: true  },
+    { id: 'g2', name: 'Number cake',   thumbnail_url: cakeThumb(40),  tier_count: 1, offering: 'premium',  source: 'spattoo', offered: false },
+    { id: 'g3', name: 'Naked berry',   thumbnail_url: cakeThumb(95),  tier_count: 1, offering: 'standard', source: 'spattoo', offered: false },
+    { id: 'g4', name: 'Football',      thumbnail_url: cakeThumb(210), tier_count: 1, offering: 'standard', source: 'spattoo', offered: false },
+    { id: 'm1', name: 'Anniversary gold', thumbnail_url: cakeThumb(15),  tier_count: 2, offering: 'standard', source: 'mine', offered: true  },
+    { id: 'm2', name: 'Engagement ring',  thumbnail_url: cakeThumb(280), tier_count: 1, offering: 'standard', source: 'mine', offered: false },
+  ]),
+  updateBakerCatalogue: async (ids) => { console.log('PUT /baker/catalogue', ids); return { ok: true, offered_count: ids.length }; },
 
 };
 
