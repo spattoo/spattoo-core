@@ -10718,7 +10718,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'grid', gap: 10 }}>
             <button type="button" style={s.startChoiceTile}
               onClick={() => { markSeenCookie(START_CHOICE_KEY); leaveStartChoice(() => openTemplates()); }}>
-              <span style={s.startChoiceTitle}>Start from a cake we make</span>
+              <span style={s.startChoiceTitle}>Start from a cake template</span>
               <span style={s.startChoiceBody}>Pick one you like and change what you want — colour, size, decorations.</span>
             </button>
             <button type="button" style={s.startChoiceTile}
