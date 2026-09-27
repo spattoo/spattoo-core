@@ -114,6 +114,16 @@ const TEMPLATES_FULL = [
      of the 24 page size twice over.
      ⚠️ THEY CARRY NO tag_slugs, deliberately. The three above are what the CATEGORY chip checks
      read, and tagging these would change every count those assertions pin. */
+  /* ⚠️ THE BAKER'S OWN, AND THEY LIVE HERE RATHER THAN ONLY IN THE CATALOGUE STUB. They used to be
+     invented separately as `own-1`/`own-2`, which meant the flyout browsed a list that did not
+     contain them while the catalogue screens managed two designs the flyout had never heard of —
+     "one catalogue rather than two unrelated lists" was not true for the baker's own work. Filtering
+     the flyout by `offered` made that visible immediately: the one own design in the catalogue could
+     never appear in it. */
+  { id: 'own-1', name: 'Anniversary gold', tier_count: 2, thumbnail_url: '/sample-cake-1.png', attrs: null,
+    tag_slugs: ['anniversary'],                                    design: TPL_DESIGN('#C9A227') },
+  { id: 'own-2', name: 'Engagement ring',  tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,
+    tag_slugs: [],                                                 design: TPL_DESIGN('#EDE7DA') },
   ...Array.from({ length: 45 }, (_, i) => ({
     id: `f${i + 1}`,
     name: `Filler ${String(i + 1).padStart(2, '0')}`,
@@ -123,7 +133,17 @@ const TEMPLATES_FULL = [
     design: TPL_DESIGN('#EDE7DA'),
   })),
 ];
-const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
+/* ⚠️ WHAT IS IN THE CATALOGUE, IN ONE PLACE. `GET /api/templates` now labels every row with
+   `offered` and `source` (spattoo-api lib/templateList.js), and the flyout filters on the first —
+   so a stub without these flags renders an EMPTY Catalogue and a filter bug and a working filter
+   look identical. One Spattoo cake and one of the baker's own are in it, so both screens have
+   something to show at rest: the flyout draws these two, Library draws the other 48. */
+const OFFERED_IDS = new Set(['t1', 'own-1']);
+const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => ({
+  ...t,
+  source:  t.id.startsWith('own-') ? 'mine' : 'spattoo',
+  offered: OFFERED_IDS.has(t.id),
+}));
 /* ⚠️ `fetchTemplate` HAS TO BE STUBBED NOW. The Proxy below answers anything unstubbed with
    `async () => null`, so without this the card's by-id fallback resolves null, `templateDesign`
    stays null, and CLICKING A TEMPLATE SILENTLY DOES NOTHING — no error, no log, just a flyout that
@@ -135,14 +155,17 @@ const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
    the catalogue screens manage are one catalogue rather than two unrelated lists.
    Two offered at rest (one Spattoo cake, one of the baker's own), so both states are on screen
    before anybody taps. */
-const CATALOGUE_STUB = [
-  ...TEMPLATES_STUB.slice(0, 6).map((t, i) => ({
-    id: t.id, name: t.name, thumbnail_url: t.thumbnail_url, tier_count: t.tier_count,
-    offering: t.offering ?? 'standard', source: 'spattoo', offered: i === 0,
-  })),
-  { id: 'own-1', name: 'Anniversary gold', thumbnail_url: '/sample-cake-1.png', tier_count: 2, offering: 'standard', source: 'mine', offered: true  },
-  { id: 'own-2', name: 'Engagement ring',  thumbnail_url: '/sample-cake-2.png', tier_count: 1, offering: 'standard', source: 'mine', offered: false },
-];
+/* ⚠️ MUTABLE, AND THAT IS THE POINT — a frozen catalogue cannot test the thing most worth testing.
+   `PUT /baker/catalogue` REPLACES the set, and "move to library" builds the new set from a FRESH
+   `GET /baker/catalogue` rather than from the tiles on screen (see moveToLibrary in CakeDesigner).
+   With a constant stub the second removal re-read the ORIGINAL catalogue and correctly computed a
+   set still containing the cake removed first — so the assertion guarding against emptying the
+   catalogue could never pass, and the harness looked like a product bug. The stub now remembers
+   what was written, exactly as the API would. */
+let CATALOGUE_STUB = TEMPLATES_STUB.map(t => ({
+  id: t.id, name: t.name, thumbnail_url: t.thumbnail_url, tier_count: t.tier_count,
+  offering: t.offering ?? 'standard', source: t.source, offered: t.offered,
+}));
 const MY_TEMPLATES_STUB = CATALOGUE_STUB.filter(t => t.source === 'mine')
   .map(({ source, offered, ...t }) => ({ ...t, created_at: '2026-09-22T10:00:00Z' }));
 
@@ -159,7 +182,13 @@ const templatesOverride = {
   deleteBakerTemplate:  async (id) => { console.log('[harness] DELETE template', id); return { ok: true }; },
   // Logs the WHOLE set it was handed — the contract both screens must honour, since the route
   // replaces rather than merges and a screen sending only its own half would empty the other.
-  updateBakerCatalogue: async (ids) => { console.log('[harness] PUT /baker/catalogue', ids); return { ok: true, offered_count: ids.length }; },
+  updateBakerCatalogue: async (ids) => {
+    console.log('[harness] PUT /baker/catalogue', ids);
+    // Replace-set, like the route: anything listed is offered, anything absent is not.
+    const next = new Set(ids);
+    CATALOGUE_STUB = CATALOGUE_STUB.map(t => ({ ...t, offered: next.has(t.id) }));
+    return { ok: true, offered_count: ids.length };
+  },
 };
 
 /* ⚠️ onSaveTemplate IS A PROP, NOT AN apiClient METHOD, so the Proxy below cannot stand in for it.

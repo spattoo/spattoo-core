@@ -2395,6 +2395,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState([]);
+  // Which tile is mid-move back to the Library, so its control can say so rather than sit inert.
+  const [catalogueBusyId, setCatalogueBusyId] = useState(null);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
   /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
@@ -2416,11 +2418,28 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * by what the unfiltered set can match. Computing it in the JSX meant the only way to know how
    * many results a chip produced was to scroll past the whole filter form and count them.
    */
+  /* ── THIS FLYOUT IS THE CATALOGUE ─────────────────────────────────────────────────────────────
+   * Sandeep: "a template should appear either in library or in catalogue at a given time." Library
+   * holds what has not been chosen; this holds what has. `GET /api/templates` labels every row with
+   * `offered` (spattoo-api lib/templateList.js), so the split is read off the row rather than
+   * fetched again.
+   *
+   * ⚠️ ABSENT MEANS SHOW IT, AND THAT IS LOAD-BEARING RATHER THAN DEFENSIVE. Three callers cannot
+   * supply the flag: the supabase-only branch of `loadTemplates` below selects its own columns, the
+   * public storefront STRIPS `offered` (what a baker did not choose is competitor-facing), and an
+   * older API predates it entirely. A strict `=== true` would blank the flyout for all three — a
+   * customer would meet a bakery with no cakes. Only an explicit `false` hides a tile.
+   *
+   * ⚠️ Everything the flyout DISPLAYS narrows from here — the grid, the draft count, the chips — so
+   * a chip cannot advertise a tag that only a Library cake carries and then match nothing. */
+  const catalogueTemplates = useMemo(
+    () => (templates ?? []).filter(t => t.offered !== false), [templates]);
+
   const shownTemplates = useMemo(() => {
     const q = tmplSearch.trim().toLowerCase();
     const applied = { q, tags: templateFilters, weight: filterWeight, age: filterAge };
-    return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
-  }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+    return catalogueTemplates.filter(t => templateMatches(t, applied, tagNameBySlug));
+  }, [catalogueTemplates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
 
   /* ⚠️ THE REVEAL MOVED INTO `TemplateGrid`. It draws a page at a time and grows as you near the
      bottom — no button, no request, no jump — and it now owns the hook, the sentinel and the
@@ -2435,8 +2454,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (!tmplFiltersOpen) return 0;
     const q = tmplSearch.trim().toLowerCase();
     const draft = { q, tags: draftFilters, weight: draftWeight, age: draftAge };
-    return (templates ?? []).filter(t => templateMatches(t, draft, tagNameBySlug)).length;
-  }, [tmplFiltersOpen, templates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
+    return catalogueTemplates.filter(t => templateMatches(t, draft, tagNameBySlug)).length;
+  }, [tmplFiltersOpen, catalogueTemplates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
 
   /* ⚠️ ONLY TAGS SOMETHING CARRIES. Derived from every loaded template, NOT from `shownTemplates` —
      narrowing by the current selection would make the other chips vanish as soon as one was picked,
@@ -2446,9 +2465,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     .filter(v => (Array.isArray(v) ? v.length > 0 : !!v)).length;
 
   const offeredTags = useMemo(() => {
-    const present = new Set((templates ?? []).flatMap(t => t.tag_slugs ?? []));
+    const present = new Set(catalogueTemplates.flatMap(t => t.tag_slugs ?? []));
     return (filterTags ?? []).filter(t => present.has(t.slug));
-  }, [templates, filterTags]);
+  }, [catalogueTemplates, filterTags]);
   const textInputRef = useRef();
   const thumbContainerRef = useRef();
   // Draws the capture canvas a frame on demand. The browser stops animating a hidden or minimised
@@ -4556,6 +4575,42 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setTemplatesLoading(true);
     setTemplates(await loadTemplates());
     setTemplatesLoading(false);
+  }
+
+  /* ── "catalogue should have option to move to library" ────────────────────────────────────────
+   * Sandeep's words, and the other half of one template being in one place at a time. Taking a cake
+   * out here puts it back on the Library shelf; it is never deleted, and for a Spattoo cake it never
+   * could be ("baker can never delete spattoo templates").
+   *
+   * ⚠️ THE WHOLE SET IS FETCHED, NOT DERIVED FROM WHAT IS ON SCREEN, AND THAT IS THE BUG THIS AVOIDS.
+   * `PUT /baker/catalogue` REPLACES the catalogue, and `GET /api/templates` applies the exclusion
+   * filter BEFORE labelling — so a template that is both offered and excluded never reaches this
+   * list. Building the new set from these rows would omit it, and the PUT's clear-step would then set
+   * it `offered = false` permanently. Measured on dev today: `exclusion_rows` 0, so no such row
+   * exists — but the OLD Manage-templates screen is still live in released bundles and can write one
+   * at any moment, from a browser nobody has updated. `GET /baker/catalogue` applies no exclusion
+   * filter, so it is the complete set; one extra request, only when a baker actually removes
+   * something, buys correctness that cannot quietly lapse.
+   *
+   * Optimistic on the ROW, because the tile must leave the grid at once — a catalogue that waits for
+   * two round trips reads as a dead control. Restored if either call fails. */
+  async function moveToLibrary(t) {
+    if (!apiClient?.fetchBakerCatalogue || !apiClient?.updateBakerCatalogue) return;
+    const before = templates;
+    setCatalogueBusyId(t.id);
+    setTemplates(prev => prev.map(r => (r.id === t.id ? { ...r, offered: false } : r)));
+    try {
+      const all = await apiClient.fetchBakerCatalogue();
+      const next = (Array.isArray(all) ? all : [])
+        .filter(r => r.offered && r.id !== t.id)
+        .map(r => r.id);
+      await apiClient.updateBakerCatalogue(next);
+    } catch (e) {
+      setTemplates(before);
+      console.error('[catalogue] move to library failed:', e?.message ?? e);
+    } finally {
+      setCatalogueBusyId(null);
+    }
   }
 
   async function openTemplates() {
@@ -11495,8 +11550,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {templatesLoading && (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}><CakeSpinner size={20} /></div>
             )}
-            {!templatesLoading && templates.length === 0 && (
-              <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
+            {/* ⚠️ TWO DIFFERENT EMPTINESSES, and the difference decides whether a baker knows what to
+                do. Nothing exists at all is one thing; a full shelf with nothing chosen from it is
+                another, and it is the state EVERY new baker starts in under the opt-in catalogue.
+                Only somebody who can stock it is told where to go — a customer must not be pointed
+                at a screen they cannot open. */}
+            {!templatesLoading && shownTemplates.length === 0 && tmplActiveFilters === 0 && !tmplSearch.trim() && (
+              <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0', lineHeight: 1.6 }}>
+                {templates.length === 0
+                  ? 'No templates yet'
+                  : hasCap('store:manage')
+                    ? 'Your catalogue is empty. Add designs from Templates ▸ Library.'
+                    : 'No cakes to show yet.'}
+              </div>
             )}
             {/* ── The grid, the reveal and the tile all live in TemplateGrid now ────────────────
                 Extracted to `designer/shared/TemplateGrid.jsx` because plans/baker-catalogue.md
@@ -11515,6 +11581,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isMobile={isMobile}
               onPreview={setTplPreview}
               onPreviewEnd={() => setTplPreview(null)}
+              /* ⚠️ ONLY FOR SOMEBODY WHO MAY STOCK THE SHOP. `PUT /baker/catalogue` is gated
+                 `store:manage` server-side, so on a customer this control could only ever 403 —
+                 and this same flyout is what a customer browses. Bottom-left: Premium owns
+                 top-left, the ⤢ preview owns top-right, and Library's Delete sits bottom-right,
+                 so the same corner never means two things. */
+              overlay={hasCap('store:manage') && apiClient?.updateBakerCatalogue ? (t) => (
+                <button
+                  type="button"
+                  aria-label={`Move ${t.name} to library`}
+                  disabled={catalogueBusyId === t.id}
+                  onClick={(e) => { e.stopPropagation(); moveToLibrary(t); }}
+                  style={{
+                    position: 'absolute', bottom: 6, left: 6, zIndex: 2,
+                    border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '3px 8px',
+                    background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                    fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
+                    cursor: catalogueBusyId === t.id ? 'progress' : 'pointer',
+                  }}
+                >{catalogueBusyId === t.id ? 'Moving…' : 'To library'}</button>
+              ) : undefined}
               onPick={async (t) => {
                 let templateDesign = t.design ?? null;
                 if (!templateDesign) {
