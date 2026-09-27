@@ -89,9 +89,22 @@ describe('putting a cake in the catalogue is DELIBERATE', () => {
      only way back is to find the cake in the Catalogue and move it out — that is not an undo. The
      same gesture in the Catalogue flyout merely loads a design onto the canvas and costs nothing, so
      one tap cannot mean both things. */
-  it('the tile does not pick — there is no onPick on the Library grid', () => {
-    const grid = library.slice(library.indexOf('<TemplateGrid'), library.indexOf('/>', library.indexOf('<TemplateGrid')));
-    expect(grid).not.toMatch(/onPick=/);
+  /* ⚠️ A TAP OPENS THE DESIGN; IT DOES NOT STOCK THE SHOP. Both halves came from Sandeep a day
+     apart, and together they are coherent: "user should be able to load the template to canvas when
+     clicking on the template… customise an existing one and create a new one out of it", alongside
+     the earlier "it should be a deliberate action" for the catalogue. Loading a design costs nothing
+     and a new cake undoes it; publishing to strangers has no undo. So the tile picks — with the
+     SAME handler the Catalogue flyout uses, passed in — and stocking stays a button. */
+  it('a tap starts a design, and never stocks the catalogue', () => {
+    expect(library).toMatch(/onPick=\{onPickTemplate\}/);
+    expect(library).not.toMatch(/onPick=\{addToCatalogue\}/);
+  });
+
+  /* One implementation of "start a cake from a template", not two that drift — the panel takes it
+     as a prop rather than fetching and loading a design itself. */
+  it('the panel does not grow its own copy of loading a design', () => {
+    expect(library).not.toMatch(/fetchTemplate\(/);
+    expect(library).not.toMatch(/loadDesign\(/);
   });
 
   it('a named button does it, and says what it will do', () => {
@@ -113,8 +126,11 @@ describe('putting a cake in the catalogue is DELIBERATE', () => {
   });
 
   /* Neither screen may still tell a baker to tap a cake — the instruction stopped being true. */
-  it('no copy still says to tap a cake', () => {
-    expect(library).not.toMatch(/Tap a cake/);
+  /* The instruction that must never come back is "tap to ADD" — tapping to OPEN is now correct and
+     is told to the baker in both places. */
+  it('no copy tells anyone a tap stocks the catalogue', () => {
+    expect(library).not.toMatch(/Tap a cake to (add|put)/i);
+    expect(library).toMatch(/Tap a cake to open it/);
   });
 });
 

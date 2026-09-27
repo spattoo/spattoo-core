@@ -37,8 +37,14 @@ const apiClient = new Proxy(STUBS, {
  */
 const panel = new URLSearchParams(location.search).get('panel');
 
+/* ⚠️ `onPickTemplate` IS STUBBED OR THE HARNESS CANNOT SHOW WHAT A TAP DOES. CakeDesigner supplies
+   the real one (`startFromTemplate`, which loads the design onto the canvas); mounted bare, the prop
+   is undefined, `TemplateGrid` correctly drops the pointer cursor, and the tile looks inert — which
+   reads as the feature being broken rather than the harness being incomplete. There is no canvas
+   here, so it logs instead: enough to prove the tile picks and to see WHICH cake it picked. */
 createRoot(document.getElementById('root')).render(
   panel === 'library'
-    ? <LibraryPanel open apiClient={apiClient} onClose={() => {}} />
+    ? <LibraryPanel open apiClient={apiClient} onClose={() => {}}
+        onPickTemplate={(t) => console.log('[harness] start from template', t.id, t.name)} />
     : <SettingsPanel open apiClient={apiClient} onClose={() => {}} />,
 );

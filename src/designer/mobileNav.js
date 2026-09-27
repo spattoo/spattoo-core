@@ -40,7 +40,7 @@
  * nothing at all. Orders and Templates both carry one today, and both are primary. `strandedMenus`
  * below exists to make it loud rather than silent if that ever stops being true.
  *
- * ⚠️ TEMPLATES IS WHY THAT RULE EARNED ITS KEEP. It gained a submenu (Catalogue · Library)
+ * ⚠️ TEMPLATES IS WHY THAT RULE EARNED ITS KEEP. It gained a submenu (Library · Catalogue)
  * on 2026-09-26 and is in this list already — but only because a baker reaches for it at the start
  * of every cake, not because anyone checked. Had it been secondary, the submenu would have rendered
  * into a sheet that cannot draw one, and the item would simply have done nothing.

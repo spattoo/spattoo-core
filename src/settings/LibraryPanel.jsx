@@ -5,6 +5,7 @@ import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { ConfirmPanel } from '../shared/Panel.jsx';
 import { INK } from '../shared/tokens.js';
 import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
+import { TrashIcon } from '../shared/icons.jsx';
 
 /* ── Spattoo templates — the library a baker stocks their catalogue from ─────────────────────────
  *
@@ -30,7 +31,11 @@ import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
  * every save from here or this screen would silently empty their half. That is why `offered` holds
  * every id from the fetch and only the DISPLAY is filtered to `source === 'spattoo'`.
  */
-export default function LibraryPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333' }) {
+/* `onPickTemplate` — start a cake from this design. Supplied by CakeDesigner, which owns the canvas;
+   it is the SAME function the Catalogue flyout picks with, so "start from a template" has one
+   implementation rather than two that drift. Absent (a host that only manages a catalogue) means the
+   tiles are not pickable, and TemplateGrid then drops the pointer cursor by itself. */
+export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [rows,    setRows]    = useState(null);
   const [offered, setOffered] = useState(() => new Set());
@@ -149,7 +154,7 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Library</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
-              Use “Move to catalogue” to start offering a cake
+              Tap a cake to open it · “Move to catalogue” to offer it
             </div>
           </div>
           {!isMobile && <PanelDismiss onClick={onClose} />}
@@ -205,22 +210,46 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
               <TemplateGrid
                 templates={shown}
                 isMobile={isMobile}
-                /* ⚠️ NO `onPick` — PUTTING A CAKE IN THE CATALOGUE IS A NAMED BUTTON, NOT A TAP.
-                   Sandeep: "even clicking by mistake will add it to catalogue. it should be a
-                   deliberate action. add button like 'Move to catalogue' for each template."
+                /* ⚠️ A TAP OPENS THE DESIGN — IT DOES NOT STOCK THE SHOP. Sandeep asked for both
+                   halves of this, a day apart, and together they are coherent rather than a reversal:
 
-                   He is right, and the asymmetry is the argument: a stray tap here changes what
-                   STRANGERS can order, and the only way back is to find the cake in the Catalogue
-                   and move it out. That is not an undo. Tapping a tile in the Catalogue flyout loads
-                   a design and costs nothing, so the same gesture cannot mean both. The picture is
-                   now a picture; `TemplateGrid` drops the pointer cursor when nothing picks.
+                     "even clicking by mistake will add it to catalogue. it should be a deliberate
+                      action. add button like 'Move to catalogue' for each template."
+                     "user should be able to load the template to canvas when clicking on the
+                      template. they want to customise an existing one and create a new one out of it."
 
-                   ⚠️ ONE ROW ALONG THE BOTTOM, not two pinned corners. Both controls must be legible
-                   at rest on a phone (rule 7), and at 165px a pinned pair collides. The move button
-                   flexes and Delete keeps its width, so the long label truncates before it wraps. */
+                   The asymmetry is the whole point. Loading a design onto the canvas costs nothing
+                   and a new cake undoes it; publishing one to strangers has no undo, and stays a
+                   named button. So the tile is pickable again, and the picture means "show me this
+                   cake", exactly as it does in the Catalogue flyout — the same handler, passed in. */
+                onPick={onPickTemplate}
                 overlay={(t) => (
-                  <div style={{ position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
-                                display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                  <>
+                    {/* ⚠️ AN ICON, TOP RIGHT — Sandeep asked for it there. It frees the bottom row for
+                        the one control that needs words, and the corner is genuinely free on this
+                        screen: Premium sits top-LEFT, and the ⤢ preview that owns top-right in the
+                        flyout is never drawn here (no `onPreview` is passed). The label lives in
+                        `aria-label`, so the action is still announced and still testable. */}
+                    {apiClient.deleteBakerTemplate && t.source === 'mine' && (
+                      <button
+                        type="button"
+                        aria-label={`Delete ${t.name}`}
+                        title={`Delete ${t.name}`}
+                        onClick={(e) => { e.stopPropagation(); setPending(t); }}
+                        style={{
+                          position: 'absolute', top: 6, right: 6, zIndex: 2,
+                          width: 26, height: 26, borderRadius: 8,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: '1.5px solid #FBCFCF',
+                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                          color: '#B91C1C', padding: 0,
+                          cursor: removing ? 'not-allowed' : 'pointer',
+                          WebkitTapHighlightColor: 'transparent',
+                        }}
+                      ><TrashIcon size={14} /></button>
+                    )}
+
+                    {/* The one action that needs words, alone along the bottom now. */}
                     {apiClient.updateBakerCatalogue && (
                       <button
                         type="button"
@@ -228,7 +257,7 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
                         disabled={busy}
                         onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
                         style={{
-                          flex: 1, minWidth: 0,
+                          position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
                           border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
                           background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
                           fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
@@ -237,36 +266,17 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
                         }}
                       >Move to catalogue</button>
                     )}
-                    {/* ⚠️ ONLY ON THE BAKER'S OWN. Spattoo's cakes can never be deleted — Sandeep:
-                        "baker can never delete spattoo templates - he can only move them to
-                        catalogue or from catalogue move back to library." `DELETE
-                        /baker/templates/:id` is scoped `.eq('baker_id', req.bakerId)` and would 404
-                        on a global anyway, so drawing the control there offers a button that cannot
-                        work. */}
-                    {apiClient.deleteBakerTemplate && t.source === 'mine' && (
-                      <button
-                        type="button"
-                        aria-label={`Delete ${t.name}`}
-                        onClick={(e) => { e.stopPropagation(); setPending(t); }}
-                        style={{
-                          flexShrink: 0,
-                          border: '1.5px solid #FBCFCF', borderRadius: 8, padding: '4px 8px',
-                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-                          fontSize: 10.5, fontWeight: 800, color: '#B91C1C', fontFamily: 'inherit',
-                          cursor: removing ? 'not-allowed' : 'pointer',
-                        }}
-                      >Delete</button>
-                    )}
-                  </div>
+                  </>
                 )}
               />
 
               {/* Says what the buttons do, once, under the grid — the tiles carry no caption. */}
               {shown.length > 0 && (
                 <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, paddingTop: 4 }}>
-                  “Move to catalogue” starts offering a cake to your customers, and moves it out of
-                  this list. It saves straight away, and you can move it back from Catalogue. Your
-                  own designs can be deleted; Spattoo’s always stay available here.
+                  Tap a cake to open it on the canvas and make your own version of it.
+                  “Move to catalogue” starts offering it to your customers and moves it out of this
+                  list — that saves straight away, and you can move it back from Catalogue. Your own
+                  designs can be deleted; Spattoo’s always stay available here.
                 </div>
               )}
             </>

@@ -106,6 +106,20 @@ export function CalendarIcon({ size = 18 }) {
   );
 }
 
+// A waste basket: remove this for good. Used by the Library's tiles, where a caption-less picture
+// leaves no room for the word "Delete" beside a second control — and where the action is the one
+// thing on the screen that tapping again cannot undo.
+export function TrashIcon({ size = 16 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M3 6h18M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
 export function ChevronRightIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"

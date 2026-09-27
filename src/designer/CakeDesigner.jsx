@@ -2997,11 +2997,25 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      the catalogue — it is the only template surface they get, and tapping a cake loads it onto the
      canvas to modify and quote from. Gating it behind store:manage would hand every customer a
      Templates item that opens an empty menu. Library is the baker's shelf and is gated. */
+/* ⚠️ LIBRARY FIRST, CATALOGUE SECOND — Sandeep, after using it. It also matches the order the work
+   actually happens in: you stock the shelf before you can have a catalogue, and a baker opening this
+   menu early has nothing in the second entry yet. A customer has only Catalogue, so for them the
+   menu collapses to one item and the rail opens the flyout directly.
+
+   ⚠️ BOTH ENTRIES LEAVE THE OPEN DESTINATION FIRST (see selectMenuItem). Library is a docked PAGE at
+   z-index 300 and the Catalogue is a FLYOUT at 20, so choosing Catalogue while Library was open drew
+   it behind the page — Sandeep: "i cant see any catalogue because the flyout is opening behind the
+   page." Raising the flyout would have been the wrong fix: it would leave two destinations on screen
+   at once, which is the exact bug `leaveOpenPanels` exists to prevent.
+
+   ⚠️ `openCatalogue` FORCES the flyout open; it does not toggle. `openTemplates` decides by reading
+   `templatesOpen` from the render closure, so closing panels and toggling in one handler would read
+   a stale value and could shut the flyout the moment it opened. */
   const templatesMenu = hasCap('design:create') ? [
-    { id: 'tpl-catalogue', label: 'Catalogue', open: () => openTemplatesRef.current?.(), active: templatesOpen },
     ...(hasCap('store:manage')
       ? [{ id: 'tpl-library', label: 'Library', open: () => setLibraryPanelOpen(true), active: libraryPanelOpen }]
       : []),
+    { id: 'tpl-catalogue', label: 'Catalogue', open: () => openCatalogueRef.current?.(), active: templatesOpen },
   ] : [];
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
@@ -3016,6 +3030,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // openTemplates is declared further down and changes every render. The callback below is made ONCE,
   // so it reaches the current openTemplates through this ref rather than keeping the first render's.
   const openTemplatesRef = useRef(null);
+  // Same trick, for the submenu's Catalogue entry — built ~1,500 lines above where it is declared.
+  const openCatalogueRef = useRef(null);
   const openNotificationLink = useCallback((link) => {
     // What the link means is decided in one place (notifications/notificationLink.js), shared with the
     // page-load path below, so a tap in the bell and a WhatsApp button cannot open different things.
@@ -4627,6 +4643,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }
   openTemplatesRef.current = openTemplates;   // for openNotificationLink — see the ref's note
 
+  /* Open the Catalogue, never toggle it. The submenu closes the current destination first, and
+     `openTemplates` reads `templatesOpen` from this render — after `leaveOpenPanels()` that value is
+     stale, so a toggle could close the flyout in the same beat it opened. Choosing "Catalogue" from a
+     menu means SHOW ME THE CATALOGUE; it has no second meaning to toggle to. */
+  async function openCatalogue() {
+    setElementsOpen(false);
+    setTemplatesOpen(true);
+    if (templates.length) return;
+    setTemplatesLoading(true);
+    setTemplates(await loadTemplates());
+    setTemplatesLoading(false);
+  }
+  openCatalogueRef.current = openCatalogue;
+
 const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   // ── Color helpers ─────────────────────────────────────────────────────────
@@ -4788,6 +4818,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // own); piping cards + tools are independent UI state and must be cleared explicitly, else they
   // linger as orphaned cards after the design underneath them is gone. Used by every full design swap
   // (New Cake, template load) so no stale cards survive it.
+  /* ── Start a cake from a template ──────────────────────────────────────────────────────────────
+   * The Catalogue flyout and the Library page both do this, so it is written once. Sandeep asked for
+   * the second caller: "user should be able to load the template to canvas when clicking on the
+   * template. they want to customise an existing one and create a new one out of it."
+   *
+   * ⚠️ THE LIST ROW CARRIES NO `design`, DELIBERATELY — `lib/templateList.js` stopped selecting it so
+   * that browsing does not ship N designs for the ONE somebody opens. So it is fetched by id here,
+   * and `t.design ?? null` still honours any caller that already has it.
+   *
+   * ⚠️ CLOSES BOTH SURFACES, because either can be the one you picked from. Closing only the flyout
+   * left the Library page sitting over the canvas it had just loaded a cake onto.
+   *
+   * Silent when the design cannot be fetched: the flyout's own note explains that a null here is
+   * what "clicking a template does nothing" looked like before `fetchTemplate` was stubbed. */
+  async function startFromTemplate(t) {
+    let templateDesign = t.design ?? null;
+    if (!templateDesign) {
+      if (apiClient) {
+        const full = await apiClient.fetchTemplate(t.id).catch(() => null);
+        templateDesign = full?.design ?? null;
+      } else if (supabase) {
+        const { data } = await supabase
+          .from('cake_templates')
+          .select('design')
+          .eq('id', t.id)
+          .single();
+        templateDesign = data?.design ?? null;
+      }
+    }
+    if (!templateDesign) return;
+    loadDesign(templateDesign);
+    setTemplatesOpen(false);
+    setLibraryPanelOpen(false);
+    clearAllSelections();
+    resetEditors();
+  }
+
   function resetEditors() {
     setPipingCards([]);
     setExpandedPipingId(null);
@@ -6679,6 +6746,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      whole of it. */
   function selectMenuItem(item) {
     setNavMenuId(null);
+    /* ⚠️ A SUBMENU ENTRY IS A DESTINATION, so it closes the others — the same rule `openRailItem`
+       already follows for every rail item without a menu. Without this, choosing Catalogue while
+       Library was open drew the flyout (z-index 20) BEHIND the docked page (300) and looked like a
+       dead menu item. The fix is leaving the page, not out-stacking it: two destinations at once is
+       the bug `leaveOpenPanels` was written for, and its own note explains the same symptom on
+       Billing — "the cake was created behind it, and nothing appeared to happen". */
+    leaveOpenPanels();
     item.open?.();
   }
 
@@ -11601,28 +11675,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   }}
                 >{catalogueBusyId === t.id ? 'Moving…' : 'To library'}</button>
               ) : undefined}
-              onPick={async (t) => {
-                let templateDesign = t.design ?? null;
-                if (!templateDesign) {
-                  if (apiClient) {
-                    const full = await apiClient.fetchTemplate(t.id).catch(() => null);
-                    templateDesign = full?.design ?? null;
-                  } else {
-                    const { data } = await supabase
-                      .from('cake_templates')
-                      .select('design')
-                      .eq('id', t.id)
-                      .single();
-                    templateDesign = data?.design ?? null;
-                  }
-                }
-                if (templateDesign) {
-                  loadDesign(templateDesign);
-                  setTemplatesOpen(false);
-                  clearAllSelections();
-                  resetEditors();
-                }
-              }}
+              /* What a tap MEANS here — and on the Library page, which is handed this same
+                 function. Extracted rather than copied: two versions of "start a cake from a
+                 template" would drift the first time either was touched. */
+              onPick={startFromTemplate}
             />
 
             {/* Enlarged preview. Portalled to the body because the panel clips its own overflow,
@@ -13733,6 +13789,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         open={libraryPanelOpen}
         onClose={() => setLibraryPanelOpen(false)}
         apiClient={apiClient}
+        /* ⚠️ THE SAME WORK THE CATALOGUE FLYOUT DOES, PASSED IN RATHER THAN WRITTEN AGAIN. Sandeep:
+           "user should be able to load the template to canvas when clicking on the template. they
+           want to customise an existing one and create a new one out of it." The list row carries no
+           `design` (it was taken out of the payload deliberately), so it is fetched by id — with the
+           supabase fallback for a host with no apiClient. A second copy of "start a cake from a
+           template" is precisely the kind of duplicate that drifts the first time either is touched.
+
+           ⚠️ This is why a tap here is SAFE again: it loads a design onto the canvas, which costs
+           nothing and is undone by starting a new cake. Stocking the shop stays a named button. */
+        onPickTemplate={startFromTemplate}
         primaryColor={primaryColor}
         accentColor={accentColor}
       />
