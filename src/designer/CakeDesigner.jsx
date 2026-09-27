@@ -4916,6 +4916,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setTemplatesOpen(false);
       setLibraryPanelOpen(false);
       clearAllSelections();
+      /* ⚠️ A LOADED CAKE STARTS WITH THE STACK SHUT, even if the baker pulled it out while working
+         on the previous one — `stackOutPref` is a session preference and would otherwise carry
+         across. Sandeep asked for closed on load; a fresh cake is a fresh start. `false` rather than
+         `null` so the default cannot reopen it either. */
+      setStackOutPref(false);
       resetEditors();
     } finally {
       setPickingId(null);
@@ -7363,7 +7368,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      An EXPANDED card still forces it open on desktop as it does on a phone, and for the same
      reason: selecting a decoration on the cake is what expands that decoration's card, so with the
      stack tucked away the click would look like nothing happened. The handle tucks it back. */
-  const stackOut   = stackOutPref ?? !isMobile;
+  /* ⚠️ HIDDEN UNTIL ASKED FOR, ON DESKTOP TOO. This was `?? !isMobile` — desktop opened the stack on
+     every cake, so loading a design from the Catalogue or the Library dropped a column of cards over
+     the canvas before the baker had touched anything. Sandeep: "when i load a cake from catalogue or
+     library- the side card popup stack should not be opened by default. it should be dragged to right
+     and need to be opened only when an element is selected."
+
+     ⚠️ SELECTING STILL OPENS IT, and that needs no new machinery: `stackShown` below is
+     `stackOut || stackHasExpandedCard`, and tapping a decoration on the cake expands that
+     decoration's card.
+
+     ⚠️ AND IT CANNOT STRAND THE CARD-ONLY DECORATIONS — which is why it used to default open. Grass,
+     gold leaf, letter blocks and cream have no pointer handlers on the cake, so their card is the
+     only way to edit them; `isCardSelected` returns TRUE for those card types on a matching
+     `selectedEl`, and adding one selects it, so the stack springs out on the add. The handle on the
+     edge is the way back to the list.
+
+     ⚠️ ROADMAP (Sandeep): the side stack goes away entirely once clicking an element on the cake
+     opens its card as a popup — "as long as we can open a card popup when user clicks on a element
+     on cake, we dont need to have a stack to the side". The work that unlocks it is pointer handlers
+     for grass, letter blocks, luster dust and anything else lacking them. This is step one: hidden,
+     not yet gone. */
+  const stackOut   = stackOutPref ?? false;
   const stackShown = stackOut || stackHasExpandedCard;
 
   // Opened by picking something ON THE CAKE rather than by the handle → show ONLY that element's
@@ -12497,7 +12523,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // offers the list, so it must still point outward and still say "show".
               aria-label={stackOut ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
               aria-expanded={stackOut}
-              style={s.stackTab}>
+              /* ⚠️ IT MOVES WITH THE PANEL ON DESKTOP. `s.stackTab` is `right: 0`, so open or shut
+                 the tab sat in the same spot — Sandeep: "the arrow mark when its opened should be on
+                 the left side. for both drag in and out it shows at the same place." Open, it now
+                 rides the panel's LEFT edge: the desktop stack is `s.editPopup`, `right:
+                 EDIT_POPUP_RIGHT` and `width: EDIT_POPUP_W`, so its left edge is exactly
+                 `EDIT_POPUP_W + EDIT_POPUP_RIGHT` from the stage's right.
+
+                 ⚠️ PHONE KEEPS ITS FIXED RIGHT EDGE, deliberately. The note above records that
+                 riding the panel's edge was tried and rejected there — it floats mid-cake whenever
+                 the panel is shorter than the stage — but that argument is about the phone's
+                 `STACK_RIGHT_MOBILE` sheet and thumb reach. On desktop the stack is a full-height
+                 column, so its edge is exactly where the handle belongs.
+
+                 The rounding is unchanged and still correct: the flat side butts against the panel,
+                 the rounded side is the one you pull. */
+              style={{
+                ...s.stackTab,
+                ...(stackOut && !isMobile ? { right: EDIT_POPUP_W + EDIT_POPUP_RIGHT } : null),
+              }}>
               {stackOut ? '▶' : '◀'}
             </button>
           )}
@@ -14895,6 +14939,9 @@ const s = {
   // button that happens to be at the edge, and narrow enough that shut, it costs the cake 22px.
   stackTab: {
     position: 'absolute', top: '50%', right: 0, transform: 'translateY(-50%)',
+    // Slides between the stage edge and the panel's edge instead of jumping — the panel's own
+    // container already transitions `right`, so the two move together.
+    transition: 'right 0.18s ease',
     width: STACK_TAB_W, height: 56, padding: 0,
     border: 'none', borderRadius: '10px 0 0 10px',
     background: 'rgba(255,255,255,0.82)',
