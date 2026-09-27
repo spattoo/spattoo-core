@@ -2408,8 +2408,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templatesLoading, setTemplatesLoading] = useState(false);
   /* ⚠️ A FAILED FETCH IS NOT AN EMPTY CATALOGUE, and conflating them hid a 500 for hours. The
      designer used to swallow the error and render "No templates yet" — indistinguishable from a
-     baker who has stocked nothing, on a screen that also drew a Templates button because the
-     capabilities call had failed the same silent way. Now the failure has somewhere to be said. */
+     baker who has stocked nothing. Now the failure has somewhere to be said.
+
+     ⚠️ An earlier version of this comment added that the rail "also drew a Templates button because
+     the capabilities call had failed the same silent way". That was wrong and is retracted: a
+     storefront customer genuinely holds `design:create`, which is all that item requires, so it
+     rendered correctly and needed no explanation. `fetchMe`'s `.catch(() => null)` is a real and
+     separate hazard — `hasCap` reads a null capability set as ALLOW EVERYTHING, so a failed /me
+     would offer controls the person is not entitled to — but it was not involved here. */
   const [templatesError, setTemplatesError] = useState(null);
 
   /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
