@@ -2,12 +2,13 @@ import { useState, useEffect, useMemo } from 'react';
 import { useIsMobile } from './controls.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { ConfirmPanel } from '../shared/Panel.jsx';
 import { INK } from '../shared/tokens.js';
 import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
 
 /* ── Spattoo templates — the library a baker stocks their catalogue from ─────────────────────────
  *
- * Spattoo authors templates and publishes them from admin; this is where a baker picks the ones they
+ * Spattoo authors templates and publishes them from admin, and a baker’s own saved designs land here
  * want to offer. Tapping a tile puts it in their catalogue or takes it out. What they choose is what
  * their customers see — see plans/baker-catalogue.md.
  *
@@ -29,13 +30,18 @@ import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
  * every save from here or this screen would silently empty their half. That is why `offered` holds
  * every id from the fetch and only the DISPLAY is filtered to `source === 'spattoo'`.
  */
-export default function SpattooTemplatesPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333' }) {
+export default function LibraryPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [rows,    setRows]    = useState(null);
   const [offered, setOffered] = useState(() => new Set());
   const [loading, setLoading] = useState(false);
   const [busy,    setBusy]    = useState(false);
   const [error,   setError]   = useState(null);
+  /* Which of the baker's OWN designs is being confirmed for deletion, and whether that call is out.
+     ⚠️ Deleting is the one action here that tapping again cannot undo, so it is the one action that
+     asks first — everything else on this screen saves silently on the tap. */
+  const [pending,  setPending]  = useState(null);
+  const [removing, setRemoving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
@@ -55,13 +61,21 @@ export default function SpattooTemplatesPanel({ open, onClose, apiClient, primar
       .finally(() => setLoading(false));
   }, [open]);
 
-  /* Only Spattoo's own are shown here; a baker's saved designs are managed in My templates.
-     ⚠️ Memoised because TemplateGrid's reveal hook resets on array IDENTITY — a fresh array every
-     render would restart the grid at the top on every tap. */
-  const shown = useMemo(
-    () => (rows ?? []).filter(t => t.source !== 'mine'),
-    [rows],
-  );
+  /* ── EVERYTHING THAT EXISTS, both sources ────────────────────────────────────────────────────
+   * Spattoo's cakes and the baker's own saved designs, in one grid. This filtered to Spattoo's for
+   * one day, while the baker's own lived on a separate page; Sandeep collapsed that:
+   *
+   *   "if it moves to library - now library becomes spattoo designs+baker designs. and only baker
+   *    designs can be removed from library, while both can be added to catalogue. that keeps
+   *    catalogue clean with only the selected templates."
+   *
+   * So Library is the whole shelf and Catalogue is the chosen subset. `GET /baker/catalogue` already
+   * answers exactly this — globals plus the baker's own, each flagged `offered` and `source` — so
+   * the response IS the shelf and nothing new is fetched.
+   *
+   * ⚠️ Memoised because TemplateGrid's reveal hook resets on array IDENTITY — a fresh array every
+   * render would restart the grid at the top on every tap. */
+  const shown = useMemo(() => rows ?? [], [rows]);
 
   /* Optimistic, then reconciled. The tile changes on the tap — a grid that waits for a round trip
      before showing anything reads as a dead control — and the previous set is restored if the call
@@ -80,6 +94,25 @@ export default function SpattooTemplatesPanel({ open, onClose, apiClient, primar
       setError(e.message);
     } finally {
       setBusy(false);
+    }
+  }
+
+  /* Delete one of the baker's OWN designs. Optimistic only AFTER the server says yes — a tile that
+     vanishes and comes back is worse than one that takes a moment to go. It also leaves the offered
+     set, because a deleted design cannot be in a catalogue. */
+  async function removeMine(id) {
+    if (!apiClient.deleteBakerTemplate) return;
+    setRemoving(true); setError(null);
+    try {
+      await apiClient.deleteBakerTemplate(id);
+      setRows(prev => (prev ?? []).filter(t => t.id !== id));
+      setOffered(prev => { const next = new Set(prev); next.delete(id); return next; });
+      setPending(null);
+    } catch (e) {
+      setError(e.message);
+      setPending(null);
+    } finally {
+      setRemoving(false);
     }
   }
 
@@ -107,7 +140,7 @@ export default function SpattooTemplatesPanel({ open, onClose, apiClient, primar
         }}>
           {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Spattoo templates</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Library</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
               Tap a cake to add it to your catalogue
             </div>
@@ -149,7 +182,7 @@ export default function SpattooTemplatesPanel({ open, onClose, apiClient, primar
 
               {shown.length === 0 && (
                 <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>
-                  No Spattoo templates yet. They appear here as we publish them.
+                  Nothing in your library yet. Spattoo’s cakes appear here as we publish them, and your own saved designs join them.
                 </span>
               )}
 
@@ -161,19 +194,59 @@ export default function SpattooTemplatesPanel({ open, onClose, apiClient, primar
                 isMobile={isMobile}
                 selectedIds={offered}
                 onPick={toggle}
+                /* ⚠️ ONLY ON THE BAKER'S OWN. Spattoo's cakes can never be deleted — Sandeep:
+                   "baker can never delete spattoo templates - he can only move them to catalogue or
+                   from catalogue move back to library." `DELETE /baker/templates/:id` is scoped
+                   `.eq('baker_id', req.bakerId)` and would 404 on a global anyway, so drawing the
+                   control there would offer a button that cannot work.
+                   Bottom-right, because the tile's two top corners are already spoken for: Premium
+                   sits top-left and the ⤢ preview owns top-right on a phone. */
+                overlay={apiClient.deleteBakerTemplate ? (t) => (t.source === 'mine' ? (
+                  <button
+                    type="button"
+                    aria-label={`Delete ${t.name}`}
+                    onClick={(e) => { e.stopPropagation(); setPending(t); }}
+                    style={{
+                      position: 'absolute', bottom: 6, right: 6, zIndex: 2,
+                      border: '1.5px solid #FBCFCF', borderRadius: 8, padding: '3px 8px',
+                      background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                      fontSize: 10.5, fontWeight: 800, color: '#B91C1C', fontFamily: 'inherit',
+                      cursor: removing ? 'not-allowed' : 'pointer',
+                    }}
+                  >Delete</button>
+                ) : null) : undefined}
               />
 
               {/* Says what a tap did, once, under the grid — the tiles carry no caption to say it. */}
               {shown.length > 0 && (
                 <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, paddingTop: 4 }}>
                   Cakes with a dark outline are in your catalogue — your customers can order those.
-                  Changes save as you tap.
+                  Changes save as you tap. Your own designs can be deleted; Spattoo’s move in and out
+                  of the catalogue but stay on the shelf.
                 </div>
               )}
             </>
           )}
         </div>
       </div>
+
+      {/* THE shared confirmation (shared/Panel.jsx) — three hand-rolled ones had already drifted to
+          three widths and three greys before it existed. Deleting is the one action on this screen
+          that tapping again cannot undo, so it is the one that asks first. */}
+      <ConfirmPanel
+        open={!!pending}
+        isMobile={isMobile}
+        title="Delete this design?"
+        message={pending
+          ? `“${pending.name}” will be deleted from your library and will stop appearing to your customers. This cannot be undone. Orders already placed from it are not affected.`
+          : ''}
+        confirmLabel={removing ? 'Deleting…' : 'Delete'}
+        cancelLabel="Keep it"
+        danger
+        busy={removing}
+        onConfirm={() => pending && removeMine(pending.id)}
+        onCancel={() => setPending(null)}
+      />
     </>
   );
 }

@@ -83,9 +83,9 @@ export const STUBS = {
     { id: 'g2', name: 'Number cake',     thumbnail_url: null, tier_count: 1, offering: 'standard', excluded: true  },
     { id: 'g3', name: 'Naked berry',     thumbnail_url: null, tier_count: 1, offering: 'standard', excluded: false },
   ]),
-  /* ⚠️ Thumbnails here too, and the ids MATCH `fetchBakerCatalogue` — My templates reads its rows
-     from this call and its offered state from that one, so `m1`/`m2` have to be the same templates
-     in both or the toggles would attach to nothing. */
+  /* ⚠️ NO SCREEN READS THIS ANY MORE — "My templates" was deleted on 2026-09-27 and Library reads
+     everything from `fetchBakerCatalogue` below. Kept because a released baker app still calls it,
+     and the ids MATCH that call deliberately: `m1`/`m2` are the same two designs in both. */
   fetchMyTemplates: async () => ([
     { id: 'm1', name: 'Anniversary gold', thumbnail_url: cakeThumb(15),  tier_count: 2, offering: 'standard', created_at: '2026-09-22T10:00:00Z' },
     { id: 'm2', name: 'Engagement ring',  thumbnail_url: cakeThumb(280), tier_count: 1, offering: 'standard', created_at: '2026-09-18T10:00:00Z' },

@@ -153,8 +153,7 @@ import InvitePanel from '../customers/InvitePanel';
 import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
-import TemplatesPanel from '../settings/TemplatesPanel';
-import SpattooTemplatesPanel from '../settings/SpattooTemplatesPanel.jsx';
+import LibraryPanel from '../settings/LibraryPanel.jsx';
 import BillingPanel from '../settings/BillingPanel';
 import TopUpsPanel from '../settings/TopUpsPanel.jsx';
 import CreditsPill from '../billing/CreditsPill.jsx';
@@ -2530,7 +2529,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
-  const [cataloguePanelOpen,  setCataloguePanelOpen]  = useState(false);
+  /* ⚠️ THE CATALOGUE IS THE FLYOUT, NOT A PAGE. It was a docked settings page for a day — rows with
+     toggles and a Remove — and that screen is gone: Catalogue is what the rail's Templates opens,
+     where a tap loads the cake onto the canvas for a baker and a customer alike. Stocking, deleting
+     and un-offering all live in Library. See plans/baker-catalogue.md. */
   // The Spattoo library a baker stocks their catalogue from — a peer destination of My templates,
   // not a section inside it. See plans/baker-catalogue.md.
   const [libraryPanelOpen, setLibraryPanelOpen] = useState(false);
@@ -2624,7 +2626,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    */
   const plainRail = orderMode === 'customer';
 
-  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || cataloguePanelOpen
+  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen
     || libraryPanelOpen
     || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
 
@@ -2967,12 +2969,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * ⚠️ Browse goes through `openTemplatesRef`, not `openTemplates`. This list is built ~1,500 lines
    * above where that function is declared, and it changes every render — the same reason
    * `openNotificationLink` already reads it through the ref. */
+  /* ⚠️ "BROWSE" IS GONE, AND IT WAS A REAL FAULT RATHER THAN A WORDING ONE. It opened the flyout,
+     which shows the templates this baker offers — the same cakes Library listed, in different
+     chrome. Sandeep, looking at it: "browse and library has no difference here? then there is no
+     use." It also read as a verb among two nouns. The flyout IS the catalogue, so it is called that.
+
+     ⚠️ CATALOGUE IS `design:create`, NOT `store:manage`, and that is load-bearing. A CUSTOMER sees
+     the catalogue — it is the only template surface they get, and tapping a cake loads it onto the
+     canvas to modify and quote from. Gating it behind store:manage would hand every customer a
+     Templates item that opens an empty menu. Library is the baker's shelf and is gated. */
   const templatesMenu = hasCap('design:create') ? [
-    { id: 'tpl-browse',    label: 'Browse',        open: () => openTemplatesRef.current?.(), active: templatesOpen },
-    ...(hasCap('store:manage') ? [
-      { id: 'tpl-library',   label: 'Library',   open: () => setLibraryPanelOpen(true),   active: libraryPanelOpen },
-      { id: 'tpl-catalogue', label: 'Catalogue', open: () => setCataloguePanelOpen(true), active: cataloguePanelOpen },
-    ] : []),
+    { id: 'tpl-catalogue', label: 'Catalogue', open: () => openTemplatesRef.current?.(), active: templatesOpen },
+    ...(hasCap('store:manage')
+      ? [{ id: 'tpl-library', label: 'Library', open: () => setLibraryPanelOpen(true), active: libraryPanelOpen }]
+      : []),
   ] : [];
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
@@ -3109,7 +3119,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
        returns early for any item with a `menu` ("a submenu is not a destination yet"). Browse is the
        first item inside instead. Templates is in MOBILE_PRIMARY, which is what `strandedMenus`
        requires of anything carrying a menu: the phone strip can draw one, the More sheet cannot. */
-    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create', menu: templatesMenu },
+    /* ⚠️ A ONE-ITEM MENU IS NOT A MENU. A CUSTOMER has `design:create` but not `store:manage`, so
+       their `templatesMenu` holds Catalogue alone — and `openRailItem` returns early for anything
+       carrying a `menu`, which would put their only template surface behind an extra tap into a
+       list of one. Below two items the menu is dropped and the rail item opens the flyout directly,
+       which is what `openRailItem`'s `id === 'templates'` branch already does. */
+    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create',
+      ...(templatesMenu.length > 1 ? { menu: templatesMenu } : null) },
     { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
     // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
@@ -3268,11 +3284,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  /* ⚠️ `templatesOpen`, `libraryPanelOpen` AND `cataloguePanelOpen` ARE ALL HERE because the
-     Templates submenu reads all three for its `active` flags — Browse lights while the flyout is
-     open, Library and Catalogue while their pages are. Miss one and the rail goes on showing the
-     previous state: a destination you are looking at that the nav says you are not in. */
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesOpen, libraryPanelOpen, cataloguePanelOpen, billingPanelOpen, topUpsPanelOpen]);
+  /* ⚠️ `templatesOpen` AND `libraryPanelOpen` ARE BOTH HERE because the Templates submenu reads
+     them for its `active` flags — Catalogue lights while the flyout is open, Library while its page
+     is. Miss one and the rail goes on showing the previous state: a destination you are looking at
+     that the nav says you are not in. */
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -3313,7 +3329,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setDashboardOpen(false);
     setSettingsPanelOpen(false);
     setFlavoursPanelOpen(false);
-    setCataloguePanelOpen(false);
     /* ⚠️ THIS ONE SAVES AS YOU TAP, so a rail click closing it loses nothing — which is exactly why
        it was built that way. The note above says a docked panel holding unsaved work would have to
        guard THIS path; the Spattoo grid sidesteps that by never holding any. */
@@ -13320,8 +13335,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 the baker's storefront the moment it was saved, because `templatesForBaker` returned
                 every template with their `baker_id`. Nobody decided that; it fell out of the query.
 
-                Unticked, the design waits in Settings → My templates and can be moved into the
-                catalogue later. See plans/baker-catalogue.md. */}
+                ⚠️ LIBRARY IS THE DEFAULT, AND THAT IS SANDEEP'S RULE: "default option to save any
+                template is into library." Unticked, the design joins the baker's Library — the shelf
+                that holds Spattoo's cakes and their own together — and they add it to the catalogue
+                from there whenever they want. Nothing is hidden by saving: a design that is not in
+                the catalogue is still on their shelf, which is why this can safely default to off.
+                See plans/baker-catalogue.md. */}
             <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginTop: 4 }}>
               <input
                 type="checkbox"
@@ -13334,7 +13353,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   Also add to my catalogue
                 </span>
                 <span style={{ display: 'block', fontSize: 11, color: '#888', lineHeight: 1.45, marginTop: 1 }}>
-                  Customers can order it. Leave this off to keep it in My templates for now.
+                  Customers can order it. Leave this off and it waits in your library.
                 </span>
               </span>
             </label>
@@ -13623,17 +13642,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onCapture={runPhoto} />
       )}
 
-      {/* ── Templates panel (hide/show Spattoo's global templates) ── */}
-      <TemplatesPanel
-        open={cataloguePanelOpen}
-        onClose={() => setCataloguePanelOpen(false)}
-        apiClient={apiClient}
-        primaryColor={primaryColor}
-        accentColor={accentColor}
-      />
-
-      {/* ── Spattoo templates — the library a catalogue is stocked from ── */}
-      <SpattooTemplatesPanel
+      {/* ── Library — the shelf a catalogue is stocked from ── */}
+      <LibraryPanel
         open={libraryPanelOpen}
         onClose={() => setLibraryPanelOpen(false)}
         apiClient={apiClient}

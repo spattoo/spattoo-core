@@ -1,60 +1,66 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
-/* ── The two screens a baker curates from ────────────────────────────────────────────────────────
+/* ── Library: the one shelf a baker curates their catalogue from ─────────────────────────────────
  *
- * `SpattooTemplatesPanel` is the library they stock from; `TemplatesPanel` is their own work. Both
- * write the catalogue, and both carry decisions that a later edit would quietly undo — so these pin
- * the decisions, not the markup.
+ * `LibraryPanel` shows EVERYTHING that exists for this baker — Spattoo's published cakes and their
+ * own saved designs — and tapping a tile puts it in the catalogue or takes it out. Sandeep settled
+ * the shape of it:
  *
- * Source assertions rather than a render, following customerUpdates.test.jsx: these are docked pages
- * with network calls in an effect, and what is worth protecting here is a CONTRACT with the API and
- * a deliberate break from the settings convention. Neither survives a rewrite by accident, and
- * neither is visible to renderToStaticMarkup.
+ *   "Library covers spattoo templates, and catalogue should be the chosen templates… baker can never
+ *    delete spattoo templates - he can only move them to catalogue or from catalogue move back to
+ *    library… only baker designs can be removed from library, while both can be added to catalogue.
+ *    that keeps catalogue clean with only the selected templates."
+ *
+ * There was a second page here for a day — `TemplatesPanel.jsx`, "My templates" — and it is gone:
+ * one shelf, one chosen subset. These tests moved with it rather than being deleted, because the
+ * decisions they pin are the ones that outlived the screen.
+ *
+ * Source assertions rather than a render, following customerUpdates.test.jsx: this is a docked page
+ * with network calls in an effect, and what is worth protecting is a CONTRACT with the API plus a
+ * deliberate break from the settings convention. Neither survives a rewrite by accident, and neither
+ * is visible to renderToStaticMarkup.
  */
-const spattoo = readFileSync(new URL('./SpattooTemplatesPanel.jsx', import.meta.url), 'utf8');
-const mine    = readFileSync(new URL('./TemplatesPanel.jsx', import.meta.url), 'utf8');
+const library = readFileSync(new URL('./LibraryPanel.jsx', import.meta.url), 'utf8');
 
 describe('the catalogue PUT carries the WHOLE set', () => {
-  /* ⚠️ THE BUG THIS PREVENTS IS SILENT AND EXPENSIVE. `PUT /api/baker/catalogue` replaces the
-     catalogue rather than taking a delta. Each screen shows half of it — Spattoo's library here,
-     the baker's own designs there — so a screen that sent only what it DISPLAYS would empty the
-     other half the first time anybody used it. A baker would tidy their own templates and find
-     their shop had lost every Spattoo cake, with nothing on screen to explain it.
+  /* ⚠️ THE BUG THIS PREVENTS IS SILENT AND EXPENSIVE. `PUT /api/baker/catalogue` REPLACES the
+     catalogue rather than taking a delta. While two screens each showed half of it, a screen that
+     sent only what it displayed would empty the other half the first time anybody used it.
 
-     Both panels therefore hold every offered id from the fetch and filter only the DISPLAY. */
-  it('the Spattoo grid sends the full offered set, not the tiles it shows', () => {
-    expect(spattoo).toMatch(/updateBakerCatalogue\(\[\.\.\.next\]\)/);
-    // `next` is derived from `offered`, which is seeded from the WHOLE response.
-    expect(spattoo).toMatch(/setOffered\(new Set\(arr\.filter\(t => t\.offered\)\.map\(t => t\.id\)\)\)/);
-    // and the filtering is on display only
-    expect(spattoo).toMatch(/\(rows \?\? \[\]\)\.filter\(t => t\.source !== 'mine'\)/);
+     One screen shows the whole shelf now, so the halves cannot drift — but the route is still
+     replace-set, and `offered` is still seeded from the WHOLE response rather than from the tiles
+     on screen. A future filter (by occasion, by source, by a search box) would reintroduce exactly
+     the old bug the moment it filtered `offered` instead of the display. */
+  it('sends the full offered set, not the tiles it happens to show', () => {
+    expect(library).toMatch(/updateBakerCatalogue\(\[\.\.\.next\]\)/);
+    expect(library).toMatch(/setOffered\(new Set\(arr\.filter\(t => t\.offered\)\.map\(t => t\.id\)\)\)/);
   });
 
-  it('My templates sends the full offered set too, including Spattoo ids it never displays', () => {
-    expect(mine).toMatch(/updateBakerCatalogue\(\[\.\.\.next\]\)/);
-    expect(mine).toMatch(/setOffered\(new Set\(all\.filter\(t => t\.offered\)\.map\(t => t\.id\)\)\)/);
+  /* ⚠️ AND THE SHELF IS NOT FILTERED BY SOURCE ANY MORE. It was `rows.filter(t => t.source !== 'mine')`
+     for one day, while the baker's own designs lived on their own page. If that filter comes back,
+     a baker's own saved designs exist in the database and appear on no screen at all — unreachable,
+     with no way to see, re-offer or delete them. */
+  it('shows both sources on the one shelf', () => {
+    expect(library).toMatch(/const shown = useMemo\(\(\) => rows \?\? \[\], \[rows\]\)/);
+    expect(library).not.toMatch(/filter\(t => t\.source !== 'mine'\)/);
+    expect(library).not.toMatch(/filter\(t => t\.source === 'spattoo'\)/);
   });
 });
 
-describe('neither screen holds unsaved work', () => {
+describe('the screen holds no unsaved work', () => {
   /* ⚠️ NOT A STYLE CHOICE. `leaveOpenPanels()` in CakeDesigner closes docked pages on ANY rail
      click, and that file warns that a panel holding something a baker typed would have to guard
      that path. A catalogue assembled from hundreds of tiles is a long session, so a draft here is
      thirty taps lost by pressing New Cake. Saving on each tap is what makes the rail click free.
 
-     Every other settings panel is draft-until-Save; these two are the deliberate exceptions. */
-  it('the Spattoo grid has no Save button', () => {
-    expect(spattoo).not.toMatch(/Save Templates|Save Catalogue|handleSave/);
+     Every other settings panel is draft-until-Save; this one is the deliberate exception. */
+  it('has no Save button', () => {
+    expect(library).not.toMatch(/Save Templates|Save Catalogue|Save Library|handleSave/);
   });
 
-  it('My templates lost its Save button when the Spattoo section left', () => {
-    expect(mine).not.toMatch(/Save Templates|handleSave/);
-  });
-
-  it('both save on the tap itself', () => {
-    expect(spattoo).toMatch(/async function toggle\(/);
-    expect(mine).toMatch(/async function toggleCatalogue\(/);
+  it('saves on the tap itself', () => {
+    expect(library).toMatch(/async function toggle\(/);
   });
 });
 
@@ -63,54 +69,65 @@ describe('an optimistic tap is reverted when the call fails', () => {
      the screen can briefly claim something the server has not accepted. Restoring the previous set
      is what keeps that honest; without it a failed save leaves a cake looking offered when it is
      not, which is the state a customer would then fail to order from. */
-  it('the grid restores the previous set on error', () => {
-    expect(spattoo).toMatch(/const before = offered;/);
-    expect(spattoo).toMatch(/setOffered\(before\);/);
+  it('restores the previous set on error', () => {
+    expect(library).toMatch(/const before = offered;/);
+    expect(library).toMatch(/setOffered\(before\);/);
+  });
+});
+
+describe('only the baker’s own designs can be deleted', () => {
+  /* ⚠️ SANDEEP DREW THIS LINE EXPLICITLY: "baker can never delete spattoo templates - he can only
+     move them to catalogue or from catalogue move back to library."
+
+     It is also the only thing the API would allow: `DELETE /baker/templates/:id` is scoped
+     `.eq('baker_id', req.bakerId)`, so on a global it 404s and deletes nothing. A control that
+     cannot work is worse than no control — rule 7. Both sources sit in one grid now, so the gate is
+     per-tile rather than per-screen, which is precisely the kind of thing an edit undoes quietly. */
+  it('draws Delete only on a tile whose source is mine', () => {
+    expect(library).toMatch(/t\.source === 'mine'/);
   });
 
-  it('My templates restores the previous set on error', () => {
-    expect(mine).toMatch(/const before = offered;/);
-    expect(mine).toMatch(/setOffered\(before\);/);
+  it('goes through the shared ConfirmPanel — a delete cannot be undone by tapping again', () => {
+    expect(library).toMatch(/<ConfirmPanel/);
+    expect(library).toMatch(/deleteBakerTemplate\(id\)/);
+  });
+
+  /* A deleted design cannot be in a catalogue, so it leaves the offered set too. Without this the
+     next tap on any other tile would PUT a dead id back to the server. */
+  it('drops the deleted id from the offered set', () => {
+    expect(library).toMatch(/setOffered\(prev => \{ const next = new Set\(prev\); next\.delete\(id\); return next; \}\)/);
   });
 });
 
 describe('an older baker app degrades rather than breaking', () => {
-  /* Core is vendored, so a released host predates these routes. `fetchBakerCatalogue` and
-     `updateBakerCatalogue` may simply not exist on the injected client — the same situation
-     `fetchMyTemplates` was already guarded for. */
-  it('the grid renders empty rather than calling a method that is not there', () => {
-    expect(spattoo).toMatch(/if \(!apiClient\.fetchBakerCatalogue\) \{ setRows\(\[\]\); return; \}/);
-    expect(spattoo).toMatch(/if \(!apiClient\.updateBakerCatalogue\) return;/);
+  /* Core is vendored, so a released host predates these routes. `fetchBakerCatalogue`,
+     `updateBakerCatalogue` and `deleteBakerTemplate` may simply not exist on the injected client. */
+  it('renders empty rather than calling a fetch that is not there', () => {
+    expect(library).toMatch(/if \(!apiClient\.fetchBakerCatalogue\) \{ setRows\(\[\]\); return; \}/);
   });
 
-  /* ⚠️ A SWITCH THAT CANNOT SAVE IS NOT DRAWN. Rendering it against an older host would give a
-     baker a control that silently does nothing, which is worse than no control — the same failure
-     the templates route's own comment describes for an older Settings panel. */
-  it('My templates hides the catalogue toggle when the host cannot save it', () => {
-    expect(mine).toMatch(/\{apiClient\.updateBakerCatalogue && \(\s*<Toggle/);
+  it('ignores a tap it could not save', () => {
+    expect(library).toMatch(/if \(!apiClient\.updateBakerCatalogue\) return;/);
   });
-});
 
-describe('deleting is still confirmed, and still immediate', () => {
-  /* The one action here that cannot be undone by tapping again. It was immediate before this
-     rework and stays immediate: a deletion must not sit in a draft a baker may close believing it
-     done — which is the same reasoning that now applies to the whole screen. */
-  it('Remove goes through the shared ConfirmPanel', () => {
-    expect(mine).toMatch(/<ConfirmPanel/);
-    expect(mine).toMatch(/deleteBakerTemplate/);
+  /* ⚠️ A CONTROL THAT CANNOT SAVE IS NOT DRAWN — the same reasoning as the per-source gate above,
+     for the same button. */
+  it('draws no Delete at all when the host cannot delete', () => {
+    expect(library).toMatch(/overlay=\{apiClient\.deleteBakerTemplate \?/);
   });
 });
 
-describe('the Spattoo library is not shown as rows', () => {
-  /* 22 globals carry 16 distinct names — `Football` five times — so a row labelled by name cannot
-     tell two cakes apart. The browse flyout settled this: the picture identifies the cake. Same
-     component, so the two surfaces cannot drift. */
-  it('the grid uses the shared TemplateGrid', () => {
-    expect(spattoo).toMatch(/import TemplateGrid from '\.\.\/designer\/shared\/TemplateGrid\.jsx'/);
-    expect(spattoo).toMatch(/<TemplateGrid/);
+describe('the library is a grid, not a list of rows', () => {
+  /* 22 globals carry 16 distinct names — `Football` five times, `love` three — so a row labelled by
+     name cannot tell two cakes apart, and a search box over those names would concentrate the
+     problem rather than solve it. The browse flyout settled this: the picture identifies the cake.
+     Same component as the flyout, so the two surfaces cannot drift. */
+  it('uses the shared TemplateGrid', () => {
+    expect(library).toMatch(/import TemplateGrid from '\.\.\/designer\/shared\/TemplateGrid\.jsx'/);
+    expect(library).toMatch(/<TemplateGrid/);
   });
 
-  it('and passes the chosen set so the tiles show what is stocked', () => {
-    expect(spattoo).toMatch(/selectedIds=\{offered\}/);
+  it('passes the chosen set so the tiles show what is stocked', () => {
+    expect(library).toMatch(/selectedIds=\{offered\}/);
   });
 });
