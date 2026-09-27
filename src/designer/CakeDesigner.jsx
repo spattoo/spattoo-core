@@ -2530,10 +2530,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
-  const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
+  const [cataloguePanelOpen,  setCataloguePanelOpen]  = useState(false);
   // The Spattoo library a baker stocks their catalogue from — a peer destination of My templates,
   // not a section inside it. See plans/baker-catalogue.md.
-  const [spattooTemplatesPanelOpen, setSpattooTemplatesPanelOpen] = useState(false);
+  const [libraryPanelOpen, setLibraryPanelOpen] = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
   const [topUpsPanelOpen,     setTopUpsPanelOpen]     = useState(false);
   /* Which screen Top-ups opens on. Null is its own menu; the order panel's no-email notice sends
@@ -2624,8 +2624,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    */
   const plainRail = orderMode === 'customer';
 
-  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
-    || spattooTemplatesPanelOpen
+  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || cataloguePanelOpen
+    || libraryPanelOpen
     || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
 
 
@@ -2941,8 +2941,39 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which Orders entries this person may see — decided once, read by both rails.
   // `active` on the items that open the Orders page, so the rail lights Orders while it is open —
   // the same flag the Settings menu items carry.
+  /* ⚠️ EACH ITEM CARRIES ITS OWN `open`, and that is what makes the submenu machinery generic.
+     `selectOrdersMenuItem` used to branch on `item.action` / `item.view` — Orders-specific logic in
+     the one function both rails pass as `onSelect` for EVERY submenu, so a second menu could not
+     exist without either routing through Orders' dispatcher or forking the call sites. The wiring
+     lives here, where the handlers are in scope; ORDERS_MENU stays data. */
   const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires))
-    .map(item => (item.view ? { ...item, active: ordersPanelOpen } : item));
+    .map(item => ({
+      ...item,
+      ...(item.view ? { active: ordersPanelOpen } : null),
+      open: item.action === 'newOrder' ? () => startOrderForDate() : () => openOrdersPanel(item.view),
+    }));
+
+  /* ── Templates ▸ Browse · Library · Catalogue ────────────────────────────────────────────────
+   *
+   * ⚠️ BROWSE IS AN ITEM BECAUSE THE PARENT STOPPED BEING ONE. `openRailItem` returns early for any
+   * rail item carrying a `menu` — "a submenu is not a destination yet" — so tapping Templates now
+   * unfurls this list instead of opening the browse flyout. Without Browse in here there would be no
+   * route to it at all, and on a phone Templates holds one of six strip slots precisely because
+   * browsing designs is a first-class destination (mobileNav.js, MOBILE_PRIMARY).
+   *
+   * It is FIRST for the same reason: INVARIANTS #12, laid out by what is reached for. Browsing
+   * starts every cake; the other two are setup.
+   *
+   * ⚠️ Browse goes through `openTemplatesRef`, not `openTemplates`. This list is built ~1,500 lines
+   * above where that function is declared, and it changes every render — the same reason
+   * `openNotificationLink` already reads it through the ref. */
+  const templatesMenu = hasCap('design:create') ? [
+    { id: 'tpl-browse',    label: 'Browse',        open: () => openTemplatesRef.current?.(), active: templatesOpen },
+    ...(hasCap('store:manage') ? [
+      { id: 'tpl-library',   label: 'Library',   open: () => setLibraryPanelOpen(true),   active: libraryPanelOpen },
+      { id: 'tpl-catalogue', label: 'Catalogue', open: () => setCataloguePanelOpen(true), active: cataloguePanelOpen },
+    ] : []),
+  ] : [];
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
   // ── Opening what a notification points at ──────────────────────────────────────────────────────
@@ -3074,7 +3105,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // shorter honest one, and "Decor" is what a baker says out loud anyway.
     { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create', short: 'New' },
     { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
-    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create' },
+    /* ⚠️ CARRIES A SUBMENU NOW, so tapping it no longer opens the browse flyout — `openRailItem`
+       returns early for any item with a `menu` ("a submenu is not a destination yet"). Browse is the
+       first item inside instead. Templates is in MOBILE_PRIMARY, which is what `strandedMenus`
+       requires of anything carrying a menu: the phone strip can draw one, the More sheet cannot. */
+    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create', menu: templatesMenu },
     { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
     // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
@@ -3112,7 +3147,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // written TWICE (desktop rail + mobile header), so it wants sharing before a thirteenth entry is
     // added to one of them and not the other. `tourNonce` / `startNonce` / `TourIcon` are left in
     // place deliberately — unused today, and exactly what a new home would need.
-  ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
+  /* ⚠️ EVERY MENU THIS LIST CARRIES MUST BE A DEPENDENCY, and leaving one out fails in a way that
+     looks like the rail item is simply dead. `templatesMenu` was missing here for one round: the map
+     below destructures `menu` off the memoised item, so the rail rendered an object captured before
+     the menu existed — no RailSubmenu wrapper at all — while `openRailItem(id, menu)` got the
+     CURRENT value and took its early return for menu-carrying items. Result: Templates opened
+     neither the flyout nor a submenu. Measured in the browser: zero `.spattoo-rail-menu` elements
+     after clicking it, with the button list unchanged.
+     ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and
+     `strandedMenus` only looks for a menu stranded in the More sheet — not for one that never
+     reaches the renderer. */
+  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode]);
 
   /* ── The tools below the divider must sit on the nav's rhythm ────────────────────────────────
    * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
@@ -3197,18 +3242,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
           { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
             badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
-          /* ── TWO ENTRIES, BECAUSE THEY ARE TWO DIFFERENT JOBS ──────────────────────────────────
-             "Spattoo templates" is the library we author and publish from admin; a baker taps one to
-             stock their catalogue. "My templates" is their own saved work, which they delete — and
-             can also put in the catalogue. One page held both as sections while the model was
-             opt-OUT; under a chosen catalogue they stopped being one screen.
-
-             ⚠️ NEITHER IS CALLED "Templates". The rail already has a Templates destination — where
-             you BROWSE to start a cake, and which is now the catalogue itself — and in the More sheet
-             these sit a few rows apart, where one word for two different things is a coin toss. That
-             collision is why the old entry was never called "Templates" either. */
-          { id: 'spattoo-templates', label: 'Spattoo templates', open: () => setSpattooTemplatesPanelOpen(true), active: spattooTemplatesPanelOpen },
-          { id: 'templates', label: 'My templates', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
+          /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
+             for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
+             three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the
+             spatula — which is where Sandeep asked for them from the start. A second door to the
+             same room is worse than a longer walk to one. See plans/baker-catalogue.md. */
         ] : []),
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
@@ -3230,7 +3268,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesPanelOpen, billingPanelOpen, topUpsPanelOpen]);
+  /* ⚠️ `templatesOpen`, `libraryPanelOpen` AND `cataloguePanelOpen` ARE ALL HERE because the
+     Templates submenu reads all three for its `active` flags — Browse lights while the flyout is
+     open, Library and Catalogue while their pages are. Miss one and the rail goes on showing the
+     previous state: a destination you are looking at that the nav says you are not in. */
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesOpen, libraryPanelOpen, cataloguePanelOpen, billingPanelOpen, topUpsPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -3271,11 +3313,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setDashboardOpen(false);
     setSettingsPanelOpen(false);
     setFlavoursPanelOpen(false);
-    setTemplatesPanelOpen(false);
+    setCataloguePanelOpen(false);
     /* ⚠️ THIS ONE SAVES AS YOU TAP, so a rail click closing it loses nothing — which is exactly why
        it was built that way. The note above says a docked panel holding unsaved work would have to
        guard THIS path; the Spattoo grid sidesteps that by never holding any. */
-    setSpattooTemplatesPanelOpen(false);
+    setLibraryPanelOpen(false);
     setBillingPanelOpen(false);
     setTopUpsPanelOpen(false);
     setOrdersPanelOpen(false);
@@ -6558,12 +6600,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setManualOrderOpen(true);
   }
 
-  // What an Orders-menu entry does, decided once — the desktop rail and the mobile bar both read
-  // this, so they cannot drift into meaning different things by the same label.
-  function selectOrdersMenuItem(item) {
+  /* What a submenu entry does, decided once — the desktop rail and the mobile bar both read this,
+     so they cannot drift into meaning different things by the same label.
+     ⚠️ GENERIC NOW. It was `selectOrdersMenuItem` and branched on Orders' own `action`/`view`
+     fields, while both rails passed it as the `onSelect` for every submenu they draw. Adding a
+     second menu meant either routing Templates through Orders' dispatcher or forking two call
+     sites. Each item carries its own `open` instead (see where the menus are built), so this is the
+     whole of it. */
+  function selectMenuItem(item) {
     setNavMenuId(null);
-    if (item.action === 'newOrder') { startOrderForDate(); return; }
-    openOrdersPanel(item.view);
+    item.open?.();
   }
 
   async function handleManualOrderSubmit(formData) {
@@ -10916,7 +10962,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   escapeClip
                   onHoverOpen={() => { setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
                   onHoverClose={() => setNavMenuId(o => (o === id ? null : o))}
-                  onSelect={selectOrdersMenuItem}>
+                  onSelect={selectMenuItem}>
                   {button}
                 </RailSubmenu>
               );
@@ -13150,7 +13196,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   containerRef={navMenuId === id ? navMenuRef : null}
                   style={s.mobileNavSlotWrap}
                   anchorStyle={{ top: 'auto', bottom: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)' }}
-                  onSelect={selectOrdersMenuItem}>
+                  onSelect={selectMenuItem}>
                   {slot}
                 </RailSubmenu>
               );
@@ -13579,8 +13625,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Templates panel (hide/show Spattoo's global templates) ── */}
       <TemplatesPanel
-        open={templatesPanelOpen}
-        onClose={() => setTemplatesPanelOpen(false)}
+        open={cataloguePanelOpen}
+        onClose={() => setCataloguePanelOpen(false)}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}
@@ -13588,8 +13634,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
       {/* ── Spattoo templates — the library a catalogue is stocked from ── */}
       <SpattooTemplatesPanel
-        open={spattooTemplatesPanelOpen}
-        onClose={() => setSpattooTemplatesPanelOpen(false)}
+        open={libraryPanelOpen}
+        onClose={() => setLibraryPanelOpen(false)}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}

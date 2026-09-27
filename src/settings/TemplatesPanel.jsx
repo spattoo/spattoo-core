@@ -63,9 +63,26 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
       apiClient.fetchBakerCatalogue ? apiClient.fetchBakerCatalogue().catch(() => []) : Promise.resolve([]),
     ])
       .then(([own, catalogue]) => {
-        setMine(Array.isArray(own) ? own : []);
         const all = Array.isArray(catalogue) ? catalogue : [];
         setOffered(new Set(all.filter(t => t.offered).map(t => t.id)));
+
+        /* ── What this screen LISTS ───────────────────────────────────────────────────────────
+         * Every design of the baker's own — offered or not — plus every Spattoo cake they have
+         * added. That is the whole of "what do I sell?", and it is why there is no separate My
+         * templates page any more.
+         *
+         * ⚠️ THEIR OWN ARE LISTED EVEN WHEN NOT OFFERED, and that is the point rather than an
+         * oversight. Switch one off and it has to stay visible somewhere, or it exists in the
+         * database and appears on no screen at all — no way to see it, turn it back on, or delete
+         * it. Designs would pile up invisibly. Spattoo's are the opposite: taken out of the
+         * catalogue they go back to being Library rows, which is a page that already exists.
+         *
+         * Their own come first — INVARIANTS #12, and it is their content. `fetchMyTemplates` is the
+         * source for those because it carries `created_at`, which the catalogue route does not. */
+        const mineRows = (Array.isArray(own) ? own : []).map(t => ({ ...t, source: 'mine' }));
+        const mineIds = new Set(mineRows.map(t => t.id));
+        const addedFromLibrary = all.filter(t => t.source !== 'mine' && t.offered && !mineIds.has(t.id));
+        setMine([...mineRows, ...addedFromLibrary]);
       })
       .catch(e => { setError(e.message); setMine([]); })
       .finally(() => setLoading(false));
@@ -136,8 +153,8 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
               nothing is "back" beside an always-visible rail; the arrow on a phone. */}
           {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>My templates</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>The designs you saved, and which of them customers can order</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Catalogue</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>What your customers can order</div>
           </div>
           {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
@@ -159,9 +176,9 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
           )}
 
           {mine && !loading && (
-            <Section title="Your templates">
+            <Section title="Your catalogue">
               <Field
-                label="Designs you saved"
+                label="Cakes you offer"
                 hint="Saved from the designer with “Save as Template”. Turn one on to let customers order it. Removing deletes it for good — the cakes you have already sold are not affected."
               >
                 {/* Says what the toggle means once, where it applies, rather than on every row. */}
@@ -185,6 +202,7 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
                   )}
                   {mine.map((t, i) => {
                     const inCatalogue = offered.has(t.id);
+                    const isMine = t.source === 'mine';
                     return (
                       <div key={t.id} style={{
                         display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0',
@@ -211,6 +229,12 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
                           <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>
                             {t.tier_count != null ? `${t.tier_count}-tier` : ''}
                             {t.tier_count != null && ' · '}
+                            {/* ⚠️ WHOSE IT IS, BECAUSE IT DECIDES WHAT THE ROW CAN DO. Only the
+                                baker's own carry Remove; a Spattoo cake leaves the catalogue by its
+                                toggle and goes back to being a Library row. Without this the missing
+                                button is the only clue, and an absent control explains nothing. */}
+                            {isMine ? 'Yours' : 'Spattoo'}
+                            {' · '}
                             {isMobile
                               ? (inCatalogue ? 'Orderable' : 'Not offered')
                               : (inCatalogue ? 'Customers can order this' : 'Not offered yet')}
@@ -224,20 +248,29 @@ export default function TemplatesPanel({ open, onClose, apiClient, primaryColor 
                           <Toggle checked={inCatalogue} onChange={() => toggleCatalogue(t.id)} />
                         )}
 
-                        {/* A real <button> with its own edge, not a bare word — rule 7: a clickable
+                        {/* ⚠️ THEIR OWN ONLY. This screen lists Spattoo cakes too now, and
+                            `DELETE /api/baker/templates/:id` is scoped `.eq('baker_id', req.bakerId)`
+                            — so on a Spattoo row it would answer 404 and delete nothing. A button
+                            that cannot work is worse than no button: the baker taps it, an error
+                            appears, and nothing explains why. Taking a Spattoo cake out of the
+                            catalogue is the toggle's job; it goes back to being a Library row.
+
+                            A real <button> with its own edge, not a bare word — rule 7: a clickable
                             has to look like one at rest, on a phone, with no hover to help it. */}
-                        <button
-                          type="button"
-                          onClick={() => setPending(t)}
-                          disabled={removing}
-                          style={{
-                            padding: '7px 14px', borderRadius: 9, cursor: removing ? 'not-allowed' : 'pointer',
-                            border: '1.5px solid #FBCFCF', background: '#FEF2F2', color: '#B91C1C',
-                            fontSize: 12, fontWeight: 800, fontFamily: 'inherit', flexShrink: 0,
-                          }}
-                        >
-                          Remove
-                        </button>
+                        {isMine && (
+                          <button
+                            type="button"
+                            onClick={() => setPending(t)}
+                            disabled={removing}
+                            style={{
+                              padding: '7px 14px', borderRadius: 9, cursor: removing ? 'not-allowed' : 'pointer',
+                              border: '1.5px solid #FBCFCF', background: '#FEF2F2', color: '#B91C1C',
+                              fontSize: 12, fontWeight: 800, fontFamily: 'inherit', flexShrink: 0,
+                            }}
+                          >
+                            Remove
+                          </button>
+                        )}
                       </div>
                     );
                   })}

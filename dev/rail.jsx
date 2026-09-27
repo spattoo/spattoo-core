@@ -128,12 +128,38 @@ const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => t);
    `async () => null`, so without this the card's by-id fallback resolves null, `templateDesign`
    stays null, and CLICKING A TEMPLATE SILENTLY DOES NOTHING — no error, no log, just a flyout that
    will not close. That is the exact failure this harness is here to make visible. */
+/* ⚠️ THE CATALOGUE SCREENS NEED STUBS OR THEY OPEN ON NOTHING. The Proxy below answers anything
+   unstubbed with `async () => null`, which is the same trap this file already warns about for
+   `fetchTemplate`: Library and Catalogue would render their empty states and the submenu would look
+   like it led nowhere. Keyed to the SAME ids as TEMPLATES_STUB, so what the flyout browses and what
+   the catalogue screens manage are one catalogue rather than two unrelated lists.
+   Two offered at rest (one Spattoo cake, one of the baker's own), so both states are on screen
+   before anybody taps. */
+const CATALOGUE_STUB = [
+  ...TEMPLATES_STUB.slice(0, 6).map((t, i) => ({
+    id: t.id, name: t.name, thumbnail_url: t.thumbnail_url, tier_count: t.tier_count,
+    offering: t.offering ?? 'standard', source: 'spattoo', offered: i === 0,
+  })),
+  { id: 'own-1', name: 'Anniversary gold', thumbnail_url: '/sample-cake-1.png', tier_count: 2, offering: 'standard', source: 'mine', offered: true  },
+  { id: 'own-2', name: 'Engagement ring',  thumbnail_url: '/sample-cake-2.png', tier_count: 1, offering: 'standard', source: 'mine', offered: false },
+];
+const MY_TEMPLATES_STUB = CATALOGUE_STUB.filter(t => t.source === 'mine')
+  .map(({ source, offered, ...t }) => ({ ...t, created_at: '2026-09-22T10:00:00Z' }));
+
 const templatesOverride = {
   fetchTemplates: async () => TEMPLATES_STUB,
   fetchTemplate:  async (id) => TEMPLATES_FULL.find(t => t.id === id) ?? null,
   // An ARRAY, not an envelope: CakeDesigner takes `fetchTags` at face value only when Array.isArray,
   // and the save-as-template modal calls `filterTags.filter()` on it.
   fetchTags:      async () => TAGS_STUB,
+
+  // Templates ▸ Library and Templates ▸ Catalogue.
+  fetchBakerCatalogue:  async () => CATALOGUE_STUB,
+  fetchMyTemplates:     async () => MY_TEMPLATES_STUB,
+  deleteBakerTemplate:  async (id) => { console.log('[harness] DELETE template', id); return { ok: true }; },
+  // Logs the WHOLE set it was handed — the contract both screens must honour, since the route
+  // replaces rather than merges and a screen sending only its own half would empty the other.
+  updateBakerCatalogue: async (ids) => { console.log('[harness] PUT /baker/catalogue', ids); return { ok: true, offered_count: ids.length }; },
 };
 
 /* ⚠️ onSaveTemplate IS A PROP, NOT AN apiClient METHOD, so the Proxy below cannot stand in for it.
