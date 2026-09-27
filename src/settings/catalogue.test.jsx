@@ -37,14 +37,47 @@ describe('the catalogue PUT carries the WHOLE set', () => {
     expect(library).toMatch(/setOffered\(new Set\(arr\.filter\(t => t\.offered\)\.map\(t => t\.id\)\)\)/);
   });
 
+  /* ⚠️ AND THE SCREEN SHOWS A SUBSET WHILE SENDING THE WHOLE SET — which is exactly the situation
+     the warning above describes, now permanent rather than transitional. `shown` is filtered; `next`
+     is built from `offered`, which came from the whole response. A refactor that built the PUT from
+     `shown` would empty the catalogue completely on the first tap. */
+  it('builds the PUT from the whole set even though the grid shows only part of it', () => {
+    expect(library).toMatch(/const next = new Set\(before\)\.add\(t\.id\);/);
+    expect(library).not.toMatch(/updateBakerCatalogue\(\[\.\.\.shown/);
+  });
+
   /* ⚠️ AND THE SHELF IS NOT FILTERED BY SOURCE ANY MORE. It was `rows.filter(t => t.source !== 'mine')`
      for one day, while the baker's own designs lived on their own page. If that filter comes back,
      a baker's own saved designs exist in the database and appear on no screen at all — unreachable,
      with no way to see, re-offer or delete them. */
   it('shows both sources on the one shelf', () => {
-    expect(library).toMatch(/const shown = useMemo\(\(\) => rows \?\? \[\], \[rows\]\)/);
     expect(library).not.toMatch(/filter\(t => t\.source !== 'mine'\)/);
     expect(library).not.toMatch(/filter\(t => t\.source === 'spattoo'\)/);
+  });
+});
+
+describe('a template is in the Library OR the Catalogue, never both', () => {
+  /* ⚠️ SANDEEP'S RULE, AND IT IS THE SHAPE OF BOTH SCREENS: "a template should appear either in
+     library or in catalogue at a given time."
+
+     So the shelf holds what has NOT been chosen, adding a cake REMOVES it from this grid, and there
+     is no chosen-outline here — every tile is un-chosen by definition, so an outline would draw on
+     all of them or none. Before this rule the shelf showed everything with two visual states, which
+     is the version these assertions replaced. */
+  it('the shelf holds only what is not in the catalogue', () => {
+    expect(library).toMatch(/\(rows \?\? \[\]\)\.filter\(t => !offered\.has\(t\.id\)\)/);
+  });
+
+  it('draws no chosen-outline, because nothing here is chosen', () => {
+    expect(library).not.toMatch(/selectedIds=/);
+  });
+
+  /* A tap can only ever ADD from here. Taking one back out is the Catalogue's affordance — the other
+     half of one template being in one place at a time. A toggle would silently re-add a cake the
+     baker had just removed, from a screen that cannot show it. */
+  it('the tap adds only — it is not a toggle', () => {
+    expect(library).toMatch(/async function addToCatalogue\(/);
+    expect(library).not.toMatch(/if \(next\.has\(t\.id\)\) next\.delete/);
   });
 });
 
@@ -60,7 +93,7 @@ describe('the screen holds no unsaved work', () => {
   });
 
   it('saves on the tap itself', () => {
-    expect(library).toMatch(/async function toggle\(/);
+    expect(library).toMatch(/async function addToCatalogue\(/);
   });
 });
 
@@ -127,7 +160,9 @@ describe('the library is a grid, not a list of rows', () => {
     expect(library).toMatch(/<TemplateGrid/);
   });
 
-  it('passes the chosen set so the tiles show what is stocked', () => {
-    expect(library).toMatch(/selectedIds=\{offered\}/);
+  /* The count is what now says where everything went, since the tiles no longer carry two states:
+     what is left to choose, and how many are in the catalogue instead. */
+  it('says how many are left to choose and how many were chosen', () => {
+    expect(library).toMatch(/\{available\} to choose from · \{offered\.size\} in your catalogue/);
   });
 });

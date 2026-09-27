@@ -61,30 +61,35 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
       .finally(() => setLoading(false));
   }, [open]);
 
-  /* ── EVERYTHING THAT EXISTS, both sources ────────────────────────────────────────────────────
-   * Spattoo's cakes and the baker's own saved designs, in one grid. This filtered to Spattoo's for
-   * one day, while the baker's own lived on a separate page; Sandeep collapsed that:
+  /* ── WHAT IS NOT IN THE CATALOGUE — one place, never two ──────────────────────────────────────
+   * Both sources, Spattoo's cakes and the baker's own, but only the ones they have NOT chosen yet.
+   * Sandeep's rule, and it is the whole shape of these two screens:
    *
-   *   "if it moves to library - now library becomes spattoo designs+baker designs. and only baker
-   *    designs can be removed from library, while both can be added to catalogue. that keeps
-   *    catalogue clean with only the selected templates."
+   *   "a template should appear either in library or in catalogue at a given time."
    *
-   * So Library is the whole shelf and Catalogue is the chosen subset. `GET /baker/catalogue` already
-   * answers exactly this — globals plus the baker's own, each flagged `offered` and `source` — so
-   * the response IS the shelf and nothing new is fetched.
+   * So adding a cake REMOVES it from this grid — the tile leaves, and appears in the Catalogue. That
+   * is why there is no chosen-outline here any more: nothing on this shelf is in the catalogue, so an
+   * outline could only ever draw on nothing. Taking one back out is the Catalogue's job.
+   *
+   * ⚠️ FILTERED BY `offered`, NEVER BY `source`. Both kinds share this shelf — "library becomes
+   * spattoo designs+baker designs" — and filtering by source is what put the baker's own designs on a
+   * separate page, where a design switched off existed in the database and appeared on no screen.
    *
    * ⚠️ Memoised because TemplateGrid's reveal hook resets on array IDENTITY — a fresh array every
    * render would restart the grid at the top on every tap. */
-  const shown = useMemo(() => rows ?? [], [rows]);
+  const shown = useMemo(() => (rows ?? []).filter(t => !offered.has(t.id)), [rows, offered]);
 
-  /* Optimistic, then reconciled. The tile changes on the tap — a grid that waits for a round trip
+  /* Optimistic, then reconciled. The tile leaves on the tap — a grid that waits for a round trip
      before showing anything reads as a dead control — and the previous set is restored if the call
-     fails, so the screen never claims something the server did not accept. */
-  async function toggle(t) {
+     fails, so the screen never claims something the server did not accept.
+
+     ⚠️ ADD-ONLY, and that is not a simplification: a cake already in the catalogue is not on this
+     screen to tap. Removing is the Catalogue's affordance ("catalogue should have option to move to
+     library"), which is the other half of one template being in one place at a time. */
+  async function addToCatalogue(t) {
     if (!apiClient.updateBakerCatalogue) return;
     const before = offered;
-    const next = new Set(before);
-    if (next.has(t.id)) next.delete(t.id); else next.add(t.id);
+    const next = new Set(before).add(t.id);
     setOffered(next);
     setBusy(true); setError(null);
     try {
@@ -118,7 +123,9 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
 
   if (!open) return null;
 
-  const inCatalogue = shown.filter(t => offered.has(t.id)).length;
+  /* What is left to choose from, which is what this screen now holds. `offered.size` is the other
+     side of the same coin — the Catalogue's count — and says where the rest went. */
+  const available = shown.length;
 
   return (
     <>
@@ -170,7 +177,7 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20 }}>
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
-                  {inCatalogue} of {shown.length} in your catalogue
+                  {available} to choose from · {offered.size} in your catalogue
                 </span>
                 {busy && (
                   <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -180,20 +187,25 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
                 )}
               </div>
 
+              {/* Two very different emptinesses, and saying the wrong one is alarming. Everything
+                  chosen is success; nothing to choose is a new bakery waiting on us. */}
               {shown.length === 0 && (
                 <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>
-                  Nothing in your library yet. Spattoo’s cakes appear here as we publish them, and your own saved designs join them.
+                  {offered.size > 0
+                    ? 'Every design is in your catalogue. Move one back here from Catalogue to set it aside.'
+                    : 'Nothing in your library yet. Spattoo’s cakes appear here as we publish them, and your own saved designs join them.'}
                 </span>
               )}
 
-              {/* ⚠️ `selectedIds` DRAWS the chosen ones and `onPick` TOGGLES — the same tile the browse
-                  flyout uses, where a tap loads a design instead. The grid knows nothing about
-                  catalogues; what a tap MEANS is this screen's business. */}
+              {/* ⚠️ NO `selectedIds`, DELIBERATELY. Every tile here is un-chosen by definition, so an
+                  outline would draw on all of them or none — it carried meaning only while this shelf
+                  showed both states. The same tile the Catalogue flyout uses, where a tap loads a
+                  design instead; the grid knows nothing about catalogues, and what a tap MEANS is
+                  this screen's business. */}
               <TemplateGrid
                 templates={shown}
                 isMobile={isMobile}
-                selectedIds={offered}
-                onPick={toggle}
+                onPick={addToCatalogue}
                 /* ⚠️ ONLY ON THE BAKER'S OWN. Spattoo's cakes can never be deleted — Sandeep:
                    "baker can never delete spattoo templates - he can only move them to catalogue or
                    from catalogue move back to library." `DELETE /baker/templates/:id` is scoped
@@ -220,9 +232,9 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
               {/* Says what a tap did, once, under the grid — the tiles carry no caption to say it. */}
               {shown.length > 0 && (
                 <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, paddingTop: 4 }}>
-                  Cakes with a dark outline are in your catalogue — your customers can order those.
-                  Changes save as you tap. Your own designs can be deleted; Spattoo’s move in and out
-                  of the catalogue but stay on the shelf.
+                  Tap a cake to put it in your catalogue — your customers can order those, and it
+                  moves out of this list. Changes save as you tap. Your own designs can be deleted;
+                  Spattoo’s always stay available here.
                 </div>
               )}
             </>
