@@ -11914,14 +11914,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             right: toolsOpen ? (isMobile ? 0 : 276)
                  : (elementStackOpen && stackShown ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
             bottom: bottomSheetH,
-            /* ⚠️ `bottom` NO LONGER ANIMATES, and that is the fix rather than a regression. While it
-               did, two animations ran against each other: this transition slid the sheet while
-               FitCakeToView teleported the camera the moment the resulting aspect change tripped its
-               deadband — one eased, one jumped, neither synchronised. The sheet now moves in a single
-               step and the camera glides (FIT_EASE_S), so there is one animation and it is the one
-               you are actually watching. `right` keeps its transition: that is the desktop tools
-               panel, which does not resize the canvas the same way. */
-            transition: 'right 0.18s ease',
+            /* ⚠️ NEITHER AXIS ANIMATES NOW, and that is the fix rather than a regression. While
+               `bottom` did, two animations ran against each other: the CSS transition slid the sheet
+               while FitCakeToView retargeted the camera the moment the resulting aspect change
+               tripped its deadband — one eased, one jumped, neither synchronised. The container
+               moves in a single step and the camera glides (FIT_EASE_S, easeOutCubic), so there is
+               one animation and it is the one you are actually watching.
+
+               ⚠️ `right` USED TO BE EXEMPT, ON A REASON THAT STOPPED BEING TRUE. The note here said
+               it was "the desktop tools panel, which does not resize the canvas the same way" — but
+               the element stack was later routed through this same `right` (CANVAS_INSET_STACK on
+               the line above), and that DOES resize the canvas. So the stack toggle reproduced the
+               original bug precisely. Sandeep: "when i click on the arrow mark on the card stack, it
+               opens, so the cake moves to left to accomodate card stack… the cake moving left or
+               right is happening not smoothly."
+
+               The mechanism, for whoever reads this next: a 180ms eased inset changes `size` on
+               every frame of the transition, a resize deliberately SKIPS the fit's throttle
+               (`frameChanged`, 0.01 aspect delta), so the camera restarts its glide against a
+               target that is still moving. One step in, one glide out. */
           }}>
           {/* Darkens everything outside the 9:16 crop so the frame you are about to record is
               obvious without a word of explanation. Behind the canvas box, never over it. */}
@@ -14952,9 +14963,11 @@ const s = {
   // button that happens to be at the edge, and narrow enough that shut, it costs the cake 22px.
   stackTab: {
     position: 'absolute', top: '50%', right: 0, transform: 'translateY(-50%)',
-    // Slides between the stage edge and the panel's edge instead of jumping — the panel's own
-    // container already transitions `right`, so the two move together.
-    transition: 'right 0.18s ease',
+    /* ⚠️ NO TRANSITION, and that reverses what I added earlier today. The reasoning then was that
+       the handle should slide with the panel — but the panel is conditionally rendered and POPS in,
+       and the canvas inset no longer eases either (see the note there). That left the tab as the
+       only thing moving, travelling 328px ACROSS the panel it had just opened, at zIndex 21 over the
+       panel's 20. One movement, owned by the camera; everything else arrives in place. */
     width: STACK_TAB_W, height: 56, padding: 0,
     border: 'none', borderRadius: '10px 0 0 10px',
     background: 'rgba(255,255,255,0.82)',
