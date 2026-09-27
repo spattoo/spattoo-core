@@ -7348,10 +7348,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // see the thing you were editing. Desktop keeps it open: there is room beside the cake there, and
   // hiding it would cost a click for nothing.
   //
-  // It cannot simply be DROPPED on a phone, which is the tempting version of this fix. Grass, letter
-  // blocks, gold leaf and luster dust have no pointer handlers on the cake at all — their drag handles
-  // only exist inside their own mode, and their card is what opens that mode. Take the stack away and
-  // a baker can add grass and then never edit or remove it.
+  // It cannot simply be DROPPED, which is the tempting version of this fix — but the REASON stated
+  // here was wrong, and it mattered because it made the work sound bigger than it is.
+  //
+  // ⚠️ CORRECTED 2026-09-27. This said grass, letter blocks, gold leaf and luster dust "have no
+  // pointer handlers on the cake at all". They do: `onGrassSelect`, `onBlockSelect`, `onFoilSelect`
+  // and `onDustSelect` are all accepted by CakeCanvas AND passed by this file, and each one calls
+  // `selectExclusive({ type: … })` — exactly what `isCardSelected` reads. So clicking one of those on
+  // the cake selects it and expands its card today.
+  //
+  // What is actually missing is a HOME for that card. `focusEditor('decoration')` opens it inside
+  // this stack and nowhere else, so removing the stack would leave a selected decoration with no
+  // controls — a baker could add grass, click it, and still have nothing to adjust. The conclusion
+  // survives; the cause does not.
+  //
+  // That distinction is the roadmap (Sandeep): "as long as we can open a card popup when user clicks
+  // on a element on cake, we dont need to have a stack to the side." The click already works. The
+  // piece to build is the standalone popup, not the handlers.
   //
   // And it springs open by itself whenever a card is EXPANDED, because selecting a decoration on the
   // cake is what expands that decoration's card. With the flyout shut, tapping a decoration would
