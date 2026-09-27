@@ -1822,8 +1822,13 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
 
   // Hover to open, on pointers that hover. The menu is a DOM child of this wrapper, so moving onto
   // it does not fire mouseleave — but the 10px gap between button and menu is over neither, which
-  // is what the close DELAY buys. Cancelled on re-entry. Click still toggles, which is what a touch
-  // device gets, and the mobile bar passes no hover handlers at all.
+  // is what the close DELAY buys. Cancelled on re-entry.
+  //
+  // ⚠️ THIS COMMENT USED TO SAY "click still toggles, which is what a touch device gets" — true of
+  // the intent and false of the behaviour, because on a hovering pointer the click arrives AFTER
+  // mouseenter has opened the menu, and the toggle then shut it. The caller now suppresses that
+  // toggle for a menu hover opened (`hoverOpenedRef`); touch, which passes no hover handlers, still
+  // toggles on tap.
   useEffect(() => () => clearTimeout(closeTimer.current), []);
   const hoverProps = typeof onHoverOpen === 'function' ? {
     onMouseEnter: () => { clearTimeout(closeTimer.current); onHoverOpen(); },
@@ -2703,6 +2708,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const profileRef       = useRef(null);
   const chefsDeskRef     = useRef(null);
   const navMenuRef       = useRef(null);
+  /* ⚠️ WHICH MENU HOVER OPENED, so a click cannot close what hovering just revealed.
+   *
+   * On a pointer that hovers, `onMouseEnter` opens the submenu BEFORE the click lands — so a click
+   * that toggles finds it open and shuts it, and the first click reads as doing nothing. Measured
+   * before fixing: hover alone → 2 items, first click → 0, second click → 2.
+   *
+   * ⚠️ MY FIRST DIAGNOSIS OF THIS WAS WRONG and is recorded here so it is not re-derived: I blamed
+   * the document `mousedown` below. It cannot be the cause — it is guarded by `navMenuRef.current`,
+   * which is only attached while a menu is ALREADY open, so it does nothing on a first click.
+   *
+   * A ref rather than pointer-type sniffing: `click` is not reliably a PointerEvent across browsers,
+   * and the distinction that actually matters is already explicit — the desktop rail passes
+   * `onHoverOpen`, the mobile bar passes none. So touch never sets this, and keeps its tap-to-toggle,
+   * which is the only way to dismiss a menu without a pointer to move away. */
+  const hoverOpenedRef   = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
   const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
@@ -3385,7 +3405,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (menu) {
       // A submenu is not a destination yet — opening it leaves the screen alone. Choosing an item
       // from it goes through the same close-then-open as everything else.
-      setNavMenuId(o => (o === id ? null : id));
+      //
+      // ⚠️ IF HOVER OPENED THIS MENU, THE CLICK LEAVES IT ALONE. Sandeep: "for Templates when you
+      // hover it, pls show submenu. but for sub menu a click is needed to open." Hovering reveals
+      // the choices; clicking one of THEM is what goes somewhere. A click on the parent would
+      // otherwise close the list the same movement had just opened.
+      //
+      // Touch never sets this ref (no hover handlers on the mobile bar), so a tap still toggles —
+      // and there it has to, since there is no pointer to move away.
+      if (hoverOpenedRef.current !== id) setNavMenuId(o => (o === id ? null : id));
       setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false);
       return;
     }
@@ -11104,8 +11132,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
                   escapeClip
-                  onHoverOpen={() => { setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
-                  onHoverClose={() => setNavMenuId(o => (o === id ? null : o))}
+                  onHoverOpen={() => { hoverOpenedRef.current = id; setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
+                  /* Cleared HERE rather than on mouse-leave: the close runs on a 220ms timer (the
+                     gap between button and menu is over neither), so clearing any earlier would
+                     leave the ref stale for a pointer that left and came straight back. */
+                  onHoverClose={() => { hoverOpenedRef.current = null; setNavMenuId(o => (o === id ? null : o)); }}
                   onSelect={selectMenuItem}>
                   {button}
                 </RailSubmenu>
