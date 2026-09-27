@@ -50,7 +50,7 @@ const s = {
    * box showed every cake letterboxed with a dead gutter down each side. */
   card: {
     border: '1.5px solid #999999', borderRadius: 12,
-    overflow: 'hidden', cursor: 'pointer',
+    overflow: 'hidden',
     display: 'flex', flexDirection: 'column',
     padding: 0,
     transition: 'all 0.15s',
@@ -149,7 +149,12 @@ export default function TemplateGrid({
           return (
             <div
               key={t.id}
-              style={{ ...s.card, ...(on ? s.cardOn : null) }}
+              /* ⚠️ THE CURSOR FOLLOWS WHETHER A TAP DOES ANYTHING. Rule 7 read backwards: a tile
+                 that only HOLDS controls must not present itself as one. Library stopped picking on
+                 tap — Sandeep: "even clicking by mistake will add it to catalogue. it should be a
+                 deliberate action" — so there the picture is a picture and the buttons are the
+                 controls. The flyout still picks, and still points. */
+              style={{ ...s.card, cursor: onPick ? 'pointer' : 'default', ...(on ? s.cardOn : null) }}
               /* Desktop only: touch has no hover, and the two substitutes both break here —
                  long-press fights the panel's own scrolling, and a tap already picks the template. */
               onMouseEnter={isMobile ? undefined : (e) => hoverIn(t, e)}

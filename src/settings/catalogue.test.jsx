@@ -72,12 +72,49 @@ describe('a template is in the Library OR the Catalogue, never both', () => {
     expect(library).not.toMatch(/selectedIds=/);
   });
 
-  /* A tap can only ever ADD from here. Taking one back out is the Catalogue's affordance — the other
-     half of one template being in one place at a time. A toggle would silently re-add a cake the
-     baker had just removed, from a screen that cannot show it. */
-  it('the tap adds only — it is not a toggle', () => {
+  /* Adding can only ever ADD from here. Taking one back out is the Catalogue's affordance — the
+     other half of one template being in one place at a time. A toggle would silently re-add a cake
+     the baker had just removed, from a screen that cannot show it. */
+  it('the action adds only — it is not a toggle', () => {
     expect(library).toMatch(/async function addToCatalogue\(/);
     expect(library).not.toMatch(/if \(next\.has\(t\.id\)\) next\.delete/);
+  });
+});
+
+describe('putting a cake in the catalogue is DELIBERATE', () => {
+  /* ⚠️ SANDEEP ASKED FOR THIS AFTER USING IT: "even clicking by mistake will add it to catalogue.
+     it should be a deliberate action. add button like 'Move to catalogue' for each template."
+
+     The asymmetry is the whole argument. A stray tap here changes what STRANGERS can order, and the
+     only way back is to find the cake in the Catalogue and move it out — that is not an undo. The
+     same gesture in the Catalogue flyout merely loads a design onto the canvas and costs nothing, so
+     one tap cannot mean both things. */
+  it('the tile does not pick — there is no onPick on the Library grid', () => {
+    const grid = library.slice(library.indexOf('<TemplateGrid'), library.indexOf('/>', library.indexOf('<TemplateGrid')));
+    expect(grid).not.toMatch(/onPick=/);
+  });
+
+  it('a named button does it, and says what it will do', () => {
+    expect(library).toMatch(/>Move to catalogue</);
+    expect(library).toMatch(/aria-label=\{`Move \$\{t\.name\} to catalogue`\}/);
+  });
+
+  /* ⚠️ The control must not pick the tile underneath it as well — TemplateGrid's own contract says
+     an overlay's control has to stopPropagation, and here there is nothing to pick, so a missing
+     guard would be invisible until the day a tap means something again. */
+  it('the button does not also act on the tile', () => {
+    expect(library).toMatch(/e\.stopPropagation\(\); addToCatalogue\(t\);/);
+  });
+
+  /* Rule 7 backwards: a tile that no longer does anything must stop advertising that it does. */
+  it('the shared grid drops the pointer cursor when nothing picks', () => {
+    const gridSrc = readFileSync(new URL('../designer/shared/TemplateGrid.jsx', import.meta.url), 'utf8');
+    expect(gridSrc).toMatch(/cursor: onPick \? 'pointer' : 'default'/);
+  });
+
+  /* Neither screen may still tell a baker to tap a cake — the instruction stopped being true. */
+  it('no copy still says to tap a cake', () => {
+    expect(library).not.toMatch(/Tap a cake/);
   });
 });
 
@@ -145,8 +182,17 @@ describe('an older baker app degrades rather than breaking', () => {
 
   /* ⚠️ A CONTROL THAT CANNOT SAVE IS NOT DRAWN — the same reasoning as the per-source gate above,
      for the same button. */
+  /* ⚠️ The gate MOVED rather than went: the overlay now draws two controls, so `deleteBakerTemplate`
+     is checked beside the per-tile source test instead of wrapping the whole overlay. Both halves
+     still have to hold — an older host draws no Delete, and no host draws one on a Spattoo cake. */
   it('draws no Delete at all when the host cannot delete', () => {
-    expect(library).toMatch(/overlay=\{apiClient\.deleteBakerTemplate \?/);
+    expect(library).toMatch(/apiClient\.deleteBakerTemplate && t\.source === 'mine'/);
+  });
+
+  /* The move button has the same problem in the other direction: a host that cannot save a
+     catalogue must not offer a button whose only outcome is a failed request. */
+  it('draws no Move button when the host cannot save the catalogue', () => {
+    expect(library).toMatch(/\{apiClient\.updateBakerCatalogue && \(/);
   });
 });
 

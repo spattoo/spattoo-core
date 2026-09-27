@@ -149,7 +149,7 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
           <div style={{ flex: 1 }}>
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Library</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
-              Tap a cake to add it to your catalogue
+              Use “Move to catalogue” to start offering a cake
             </div>
           </div>
           {!isMobile && <PanelDismiss onClick={onClose} />}
@@ -205,36 +205,68 @@ export default function LibraryPanel({ open, onClose, apiClient, primaryColor = 
               <TemplateGrid
                 templates={shown}
                 isMobile={isMobile}
-                onPick={addToCatalogue}
-                /* ⚠️ ONLY ON THE BAKER'S OWN. Spattoo's cakes can never be deleted — Sandeep:
-                   "baker can never delete spattoo templates - he can only move them to catalogue or
-                   from catalogue move back to library." `DELETE /baker/templates/:id` is scoped
-                   `.eq('baker_id', req.bakerId)` and would 404 on a global anyway, so drawing the
-                   control there would offer a button that cannot work.
-                   Bottom-right, because the tile's two top corners are already spoken for: Premium
-                   sits top-left and the ⤢ preview owns top-right on a phone. */
-                overlay={apiClient.deleteBakerTemplate ? (t) => (t.source === 'mine' ? (
-                  <button
-                    type="button"
-                    aria-label={`Delete ${t.name}`}
-                    onClick={(e) => { e.stopPropagation(); setPending(t); }}
-                    style={{
-                      position: 'absolute', bottom: 6, right: 6, zIndex: 2,
-                      border: '1.5px solid #FBCFCF', borderRadius: 8, padding: '3px 8px',
-                      background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-                      fontSize: 10.5, fontWeight: 800, color: '#B91C1C', fontFamily: 'inherit',
-                      cursor: removing ? 'not-allowed' : 'pointer',
-                    }}
-                  >Delete</button>
-                ) : null) : undefined}
+                /* ⚠️ NO `onPick` — PUTTING A CAKE IN THE CATALOGUE IS A NAMED BUTTON, NOT A TAP.
+                   Sandeep: "even clicking by mistake will add it to catalogue. it should be a
+                   deliberate action. add button like 'Move to catalogue' for each template."
+
+                   He is right, and the asymmetry is the argument: a stray tap here changes what
+                   STRANGERS can order, and the only way back is to find the cake in the Catalogue
+                   and move it out. That is not an undo. Tapping a tile in the Catalogue flyout loads
+                   a design and costs nothing, so the same gesture cannot mean both. The picture is
+                   now a picture; `TemplateGrid` drops the pointer cursor when nothing picks.
+
+                   ⚠️ ONE ROW ALONG THE BOTTOM, not two pinned corners. Both controls must be legible
+                   at rest on a phone (rule 7), and at 165px a pinned pair collides. The move button
+                   flexes and Delete keeps its width, so the long label truncates before it wraps. */
+                overlay={(t) => (
+                  <div style={{ position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
+                                display: 'flex', gap: 6, alignItems: 'stretch' }}>
+                    {apiClient.updateBakerCatalogue && (
+                      <button
+                        type="button"
+                        aria-label={`Move ${t.name} to catalogue`}
+                        disabled={busy}
+                        onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
+                        style={{
+                          flex: 1, minWidth: 0,
+                          border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
+                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                          fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
+                          cursor: busy ? 'progress' : 'pointer',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}
+                      >Move to catalogue</button>
+                    )}
+                    {/* ⚠️ ONLY ON THE BAKER'S OWN. Spattoo's cakes can never be deleted — Sandeep:
+                        "baker can never delete spattoo templates - he can only move them to
+                        catalogue or from catalogue move back to library." `DELETE
+                        /baker/templates/:id` is scoped `.eq('baker_id', req.bakerId)` and would 404
+                        on a global anyway, so drawing the control there offers a button that cannot
+                        work. */}
+                    {apiClient.deleteBakerTemplate && t.source === 'mine' && (
+                      <button
+                        type="button"
+                        aria-label={`Delete ${t.name}`}
+                        onClick={(e) => { e.stopPropagation(); setPending(t); }}
+                        style={{
+                          flexShrink: 0,
+                          border: '1.5px solid #FBCFCF', borderRadius: 8, padding: '4px 8px',
+                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                          fontSize: 10.5, fontWeight: 800, color: '#B91C1C', fontFamily: 'inherit',
+                          cursor: removing ? 'not-allowed' : 'pointer',
+                        }}
+                      >Delete</button>
+                    )}
+                  </div>
+                )}
               />
 
-              {/* Says what a tap did, once, under the grid — the tiles carry no caption to say it. */}
+              {/* Says what the buttons do, once, under the grid — the tiles carry no caption. */}
               {shown.length > 0 && (
                 <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, paddingTop: 4 }}>
-                  Tap a cake to put it in your catalogue — your customers can order those, and it
-                  moves out of this list. Changes save as you tap. Your own designs can be deleted;
-                  Spattoo’s always stay available here.
+                  “Move to catalogue” starts offering a cake to your customers, and moves it out of
+                  this list. It saves straight away, and you can move it back from Catalogue. Your
+                  own designs can be deleted; Spattoo’s always stay available here.
                 </div>
               )}
             </>
