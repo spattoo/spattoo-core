@@ -2406,6 +2406,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      the Catalogue flyout and the Library page — because the wait is the same round trip in each. */
   const [pickingId, setPickingId] = useState(null);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  /* ⚠️ A FAILED FETCH IS NOT AN EMPTY CATALOGUE, and conflating them hid a 500 for hours. The
+     designer used to swallow the error and render "No templates yet" — indistinguishable from a
+     baker who has stocked nothing, on a screen that also drew a Templates button because the
+     capabilities call had failed the same silent way. Now the failure has somewhere to be said. */
+  const [templatesError, setTemplatesError] = useState(null);
 
   /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
    * These four read `templates` (declared just above) and `tmplSearch`. They used to sit ~220 lines
@@ -4595,8 +4600,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * catch because an unresolved name inside an async branch only throws once reached. */
   async function loadTemplates() {
     if (apiClient) {
-      const data = await apiClient.fetchTemplates().catch(() => []);
-      return data ?? [];
+      /* The catch stays — a rejected promise must not take the designer down — but it RECORDS the
+         failure instead of erasing it. An empty array now means the catalogue is empty. */
+      try {
+        setTemplatesError(null);
+        const data = await apiClient.fetchTemplates();
+        return data ?? [];
+      } catch (e) {
+        console.error('[templates] fetch failed:', e?.status ?? '', e?.message ?? e);
+        setTemplatesError(e?.status === 403 || e?.status === 401
+          ? 'You do not have access to this bakery’s designs.'
+          : 'Could not load designs. Check your connection and try again.');
+        return [];
+      }
     }
     if (!supabase) return [];
     const { data, error } = await supabase
@@ -5495,20 +5511,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {patches.map((p, k) => {
         const on = grassSelected?.tier === tier && grassSelected?.idx === k;
         return (
-          <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-            <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
-              fmt={v => v.toFixed(2)}
-              onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
-            <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
-              border: `1.5px solid ${on ? INK : LINE}`, background: on ? INK_TINT : SURFACE }}>
-              <button onClick={() => setGrassSelected({ tier, idx: k })}
-                style={{ padding: '2px 4px 2px 8px', border: 'none', background: 'transparent', fontSize: 9,
-                  fontWeight: 700, color: INK, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>{k + 1}</button>
-              <button title="Remove" onClick={() => onRemove(k)}
-                style={{ padding: '2px 6px', border: 'none', background: 'transparent', fontSize: 11,
-                  color: DANGER, cursor: 'pointer' }}>×</button>
-            </span>
-          </div>
+          /* ⚠️ `ControlCell`, NOT A HAND-ROLLED COLUMN. This was the same column-plus-caption
+             markup ControlCell was extracted for, minus the caption — so the dial sat on a row of
+             its own with the pill under it and nothing naming either, while the Density/Height row
+             below was properly captioned. Four sites in this file hand-rolled that column; this is
+             one of them. */
+          /* ⚠️ TAPPING THE CELL STILL SELECTS THE CLUMP. The pill this replaced carried two
+             buttons — the number selected, the × removed — and its note said so: "Tapping the
+             caption selects; the dial sizes it." A first cut of this cell kept only the ×, which
+             left selecting as a side effect of dragging the dial. The wrapper takes the tap now, so
+             the whole cell selects and the × still removes, and the selected one is outlined. */
+          <span key={k} onClick={() => setGrassSelected({ tier, idx: k })}
+            style={{ display: 'inline-flex', flexShrink: 0, borderRadius: 10, padding: '2px 4px',
+              cursor: 'pointer',
+              border: `1.5px solid ${on ? INK : 'transparent'}`,
+              background: on ? INK_TINT : 'transparent' }}>
+            <ControlCell label={`Clump ${k + 1}`}>
+              <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
+                fmt={v => v.toFixed(2)}
+                onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
+              <button title="Remove" aria-label={`Remove clump ${k + 1}`}
+                onClick={(e) => { e.stopPropagation(); onRemove(k); }}
+                style={{ padding: '2px 5px', border: 'none', background: 'transparent',
+                  fontSize: 13, lineHeight: 1, color: DANGER, cursor: 'pointer' }}>×</button>
+            </ControlCell>
+          </span>
         );
       })}
     </ScrollFadeRow>
@@ -9793,6 +9820,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Colour
           </div>
           <ColorWheel
+            compact={isMobile}
             color={g.color ?? garnishColor}
             onChange={c => updateGarnish(g.id, {
               color: c,
@@ -9968,7 +9996,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>{mediumLabel} colour</div>
-        <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
+        <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))} compact={isMobile}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
 
         {/* ⚠️ ONLY WHEN IT CAN ACTUALLY BE FILLED. An open stroke has no inside and a curved wall
@@ -10192,12 +10220,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             (cakeColors), so a name can be matched to a border without eyedropping it. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Block colour</div>
         <ColorWheel color={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
-          onChange={c => updateNameBlocks({ blockColor: c })}
+          onChange={c => updateNameBlocks({ blockColor: c })} compact={isMobile}
           cakeColors={blockCakeColors(nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor)} width={152} />
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Letter colour</div>
         <ColorWheel color={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
-          onChange={c => updateNameBlocks({ letterColor: c })}
+          onChange={c => updateNameBlocks({ letterColor: c })} compact={isMobile}
           cakeColors={blockCakeColors(nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor)} width={152} />
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -10680,7 +10708,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ColorWheel — INVARIANTS #3. Same defect as the letter-blocks card had, introduced the
             same day: a hand-rolled swatch row is a second colour control, and it reads as one. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Grass colour</div>
-        <ColorWheel color={grassColor} onChange={setGrassColor} width={152}
+        {/* ⚠️ `compact` ON A PHONE, AND IT ALREADY EXISTED. Sandeep: "see the color picker. it does
+            not need to be expanded. its taking a lot of space." Measured at 375px before the change:
+            this block was 198px of a 566px card — 35% of it — because the full form draws a 152px
+            gradient box, fifteen swatches wrapped over three rows, a "COLORS FROM CAKE" heading and
+            more swatches beneath it.
+            `ColorWheel`'s compact branch was written for exactly this sheet: swatches FIRST in one
+            scrolling row (44px taps, 32px paint), the gradient underneath, and the heading replaced
+            by a hairline — its own note says that heading "cost a whole line of the sheet's height to
+            label six swatches that are self-evident once they are beside the presets". Nine callers
+            in this file, and only ONE was passing it. */}
+        <ColorWheel color={grassColor} onChange={setGrassColor} width={152} compact={isMobile}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
 
         {/* s.deleteBtn — the destructive tone, where the FIELD is the signal. It was a white button
@@ -11677,7 +11715,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 another, and it is the state EVERY new baker starts in under the opt-in catalogue.
                 Only somebody who can stock it is told where to go — a customer must not be pointed
                 at a screen they cannot open. */}
-            {!templatesLoading && shownTemplates.length === 0 && tmplActiveFilters === 0 && !tmplSearch.trim() && (
+            {/* ⚠️ SAID BEFORE THE EMPTY STATE, because "it broke" and "there is nothing" are
+                different facts and only one of them is the baker's to act on. With a Try again, so
+                the answer to a dropped connection is not "close the app". */}
+            {!templatesLoading && templatesError && (
+              <div style={{ fontSize: 11.5, color: '#B91C1C', textAlign: 'center', padding: '16px 8px', lineHeight: 1.6 }}>
+                {templatesError}
+                <div>
+                  <button type="button"
+                    onClick={async () => { setTemplatesLoading(true); setTemplates(await loadTemplates()); setTemplatesLoading(false); }}
+                    style={{ marginTop: 8, padding: '5px 12px', borderRadius: 7, cursor: 'pointer',
+                      border: `1.5px solid ${INK}`, background: SURFACE, color: INK,
+                      fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit' }}>
+                    Try again
+                  </button>
+                </div>
+              </div>
+            )}
+            {!templatesLoading && !templatesError && shownTemplates.length === 0 && tmplActiveFilters === 0 && !tmplSearch.trim() && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0', lineHeight: 1.6 }}>
                 {templates.length === 0
                   ? 'No templates yet'
@@ -13656,7 +13711,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onRopeChange={setGarnishRope}
           /* The ONE colour control, handed in rather than rebuilt — see INVARIANTS #3. */
           colorControl={
-            <ColorWheel color={garnishColor} onChange={setGarnishColor} width={152}
+            <ColorWheel color={garnishColor} onChange={setGarnishColor} width={152} compact={isMobile}
               cakeColors={[...new Set(collectElementColors(design))]} />
           }
           onSave={piece => {
