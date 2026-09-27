@@ -171,7 +171,23 @@ const MY_TEMPLATES_STUB = CATALOGUE_STUB.filter(t => t.source === 'mine')
 
 const templatesOverride = {
   fetchTemplates: async () => TEMPLATES_STUB,
-  fetchTemplate:  async (id) => TEMPLATES_FULL.find(t => t.id === id) ?? null,
+  /* ⚠️ `?slowpick=800` AND `?failpick` EXIST BECAUSE A ZERO-LATENCY STUB CANNOT SHOW A WAIT.
+     Picking a template awaits this call — the list row carries no `design`, deliberately — and in
+     the app that is a ~1s network round trip with a spinner on the tapped tile. Here it resolved in
+     a single microtask, so `setPickingId` and its clear landed in one flush and the spinner never
+     reached the DOM: sampled every 25ms across 1.5s, ZERO frames showed it. That reads exactly like
+     the feature being broken, which is the trap this harness exists to avoid.
+
+     `?failpick` resolves null instead, which is the path `startFromTemplate` takes when a fetch
+     fails — the one occasion nothing is going to happen, and the only way to prove the `finally`
+     stops the spinner rather than leaving it turning for ever. */
+  fetchTemplate:  async (id) => {
+    const q = new URLSearchParams(location.search);
+    const delay = Number(q.get('slowpick') ?? 0);
+    if (delay > 0) await new Promise(r => setTimeout(r, delay));
+    if (q.has('failpick')) return null;
+    return TEMPLATES_FULL.find(t => t.id === id) ?? null;
+  },
   // An ARRAY, not an envelope: CakeDesigner takes `fetchTags` at face value only when Array.isArray,
   // and the save-as-template modal calls `filterTags.filter()` on it.
   fetchTags:      async () => TAGS_STUB,

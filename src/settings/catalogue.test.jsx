@@ -119,10 +119,13 @@ describe('putting a cake in the catalogue is DELIBERATE', () => {
     expect(library).toMatch(/e\.stopPropagation\(\); addToCatalogue\(t\);/);
   });
 
-  /* Rule 7 backwards: a tile that no longer does anything must stop advertising that it does. */
+  /* Rule 7 backwards: a tile that no longer does anything must stop advertising that it does.
+     ⚠️ The expression gained a THIRD state when picking became visible — `progress` while a fetch
+     is in flight — so this pins the two ends rather than the exact ternary it started as. */
   it('the shared grid drops the pointer cursor when nothing picks', () => {
     const gridSrc = readFileSync(new URL('../designer/shared/TemplateGrid.jsx', import.meta.url), 'utf8');
-    expect(gridSrc).toMatch(/cursor: onPick \? 'pointer' : 'default'/);
+    expect(gridSrc).toMatch(/cursor: !onPick \? 'default'/);
+    expect(gridSrc).toMatch(/blocked \? 'progress' : 'pointer'/);
   });
 
   /* Neither screen may still tell a baker to tap a cake — the instruction stopped being true. */

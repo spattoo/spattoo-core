@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import useRevealOnScroll from '../../shared/useRevealOnScroll.js';
+import Spinner from '../../shared/Spinner.jsx';
 
 /* ── THE grid of cake templates ──────────────────────────────────────────────────────────────────
  *
@@ -106,6 +107,14 @@ const s = {
  *               indistinguishable from acting on the tile.
  * selectedIds   optional Set of ids to draw as chosen — the Spattoo browser showing what is already
  *               in the catalogue
+ * busyId        the tile whose pick is in flight. ⚠️ A TAP HERE COSTS A ROUND TRIP: the list row
+ *               carries no `design` (lib/templateList.js dropped it so browsing does not ship N
+ *               designs for the ONE somebody opens), so picking fetches by id — about a second.
+ *               Sandeep: "its taking a second to load on the canvas- but there is no indication of
+ *               loading." Unmarked, that second is indistinguishable from a dead control, and a
+ *               second tap fires a second fetch. The spinner sits ON the tapped tile rather than
+ *               over the panel, because WHICH cake is loading is the useful half, and picks are
+ *               ignored while one is in flight.
  * page          how many appear at a time (the hook's default is 24)
  */
 export default function TemplateGrid({
@@ -116,6 +125,7 @@ export default function TemplateGrid({
   onPreviewEnd,
   overlay,
   selectedIds,
+  busyId = null,
   page = 24,
 }) {
   const { visible, sentinelRef, done } = useRevealOnScroll(templates, { page });
@@ -146,6 +156,10 @@ export default function TemplateGrid({
         {visible.map(t => {
           const src = thumbSrc(t);
           const on = selectedIds?.has?.(t.id) ?? false;
+          const busy = busyId != null && busyId === t.id;
+          // Any pick in flight blocks the rest: two overlapping loads would race to loadDesign and
+          // the loser would quietly win the canvas.
+          const blocked = busyId != null;
           return (
             <div
               key={t.id}
@@ -154,12 +168,14 @@ export default function TemplateGrid({
                  tap — Sandeep: "even clicking by mistake will add it to catalogue. it should be a
                  deliberate action" — so there the picture is a picture and the buttons are the
                  controls. The flyout still picks, and still points. */
-              style={{ ...s.card, cursor: onPick ? 'pointer' : 'default', ...(on ? s.cardOn : null) }}
+              style={{ ...s.card,
+                       cursor: !onPick ? 'default' : blocked ? 'progress' : 'pointer',
+                       ...(on ? s.cardOn : null) }}
               /* Desktop only: touch has no hover, and the two substitutes both break here —
                  long-press fights the panel's own scrolling, and a tap already picks the template. */
               onMouseEnter={isMobile ? undefined : (e) => hoverIn(t, e)}
               onMouseLeave={isMobile ? undefined : hoverOut}
-              onClick={() => onPick?.(t)}
+              onClick={() => { if (!blocked) onPick?.(t); }}
             >
               {src
                 /* ⚠️ `height: 'auto'` IS LOAD-BEARING. The width/height ATTRIBUTES reserve the tile
@@ -197,6 +213,21 @@ export default function TemplateGrid({
                   out of the DOM would leave a grid of pictures nothing can name. It stays READABLE
                   in the enlarged preview, which is how you tell those two Footballs apart. */}
               {t.offering === 'premium' && <span style={s.badge}>Premium</span>}
+
+              {/* ⚠️ OVER THE PICTURE, ON THE TILE THAT WAS TAPPED. INVARIANTS #11 — the control and
+                  what it changes, visible together: the answer to "did my tap register?" belongs on
+                  the thing tapped, not in a corner of the panel. Scrimmed so the ring reads against
+                  any thumbnail, and `pointerEvents: none` so it never eats the tap it is reporting. */}
+              {busy && (
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 3,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.72)', borderRadius: 12,
+                  pointerEvents: 'none',
+                }}>
+                  <Spinner size={24} label={null} />
+                </div>
+              )}
 
               {overlay?.(t)}
             </div>

@@ -35,7 +35,7 @@ import { TrashIcon } from '../shared/icons.jsx';
    it is the SAME function the Catalogue flyout picks with, so "start from a template" has one
    implementation rather than two that drift. Absent (a host that only manages a catalogue) means the
    tiles are not pickable, and TemplateGrid then drops the pointer cursor by itself. */
-export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate, primaryColor = INK, accentColor = '#333333' }) {
+export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate, pickingId = null, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [rows,    setRows]    = useState(null);
   const [offered, setOffered] = useState(() => new Set());
@@ -210,6 +210,9 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
               <TemplateGrid
                 templates={shown}
                 isMobile={isMobile}
+                /* The wait belongs to CakeDesigner (it owns the canvas and the fetch), so the id
+                   comes in rather than being tracked twice. */
+                busyId={pickingId}
                 /* ⚠️ A TAP OPENS THE DESIGN — IT DOES NOT STOCK THE SHOP. Sandeep asked for both
                    halves of this, a day apart, and together they are coherent rather than a reversal:
 

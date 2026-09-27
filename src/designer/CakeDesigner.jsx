@@ -2402,6 +2402,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templates, setTemplates] = useState([]);
   // Which tile is mid-move back to the Library, so its control can say so rather than sit inert.
   const [catalogueBusyId, setCatalogueBusyId] = useState(null);
+  /* Which template is being fetched and loaded onto the canvas. Shared by BOTH template surfaces —
+     the Catalogue flyout and the Library page — because the wait is the same round trip in each. */
+  const [pickingId, setPickingId] = useState(null);
   const [templatesLoading, setTemplatesLoading] = useState(false);
 
   /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
@@ -4861,26 +4864,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * Silent when the design cannot be fetched: the flyout's own note explains that a null here is
    * what "clicking a template does nothing" looked like before `fetchTemplate` was stubbed. */
   async function startFromTemplate(t) {
-    let templateDesign = t.design ?? null;
-    if (!templateDesign) {
-      if (apiClient) {
-        const full = await apiClient.fetchTemplate(t.id).catch(() => null);
-        templateDesign = full?.design ?? null;
-      } else if (supabase) {
-        const { data } = await supabase
-          .from('cake_templates')
-          .select('design')
-          .eq('id', t.id)
-          .single();
-        templateDesign = data?.design ?? null;
+    /* ⚠️ MARKED BUSY BEFORE THE AWAIT, AND CLEARED IN `finally`. Sandeep: "its taking a second to
+       load on the canvas- but there is no indication of loading." That second is the by-id fetch —
+       the list row deliberately carries no `design` — and unmarked it reads as a dead tile.
+
+       ⚠️ `finally` COVERS THE SILENT-RETURN PATH TOO. `fetchTemplate` is `.catch(() => null)`, so a
+       failed fetch falls through to `if (!templateDesign) return` — an early return that, with a
+       spinner running, would leave the tile spinning for ever on the one path where nothing is
+       going to happen. A `try/finally` is the difference between "nothing loaded" and "frozen". */
+    if (pickingId) return;            // one pick at a time; two would race to loadDesign
+    setPickingId(t.id);
+    try {
+      let templateDesign = t.design ?? null;
+      if (!templateDesign) {
+        if (apiClient) {
+          const full = await apiClient.fetchTemplate(t.id).catch(() => null);
+          templateDesign = full?.design ?? null;
+        } else if (supabase) {
+          const { data } = await supabase
+            .from('cake_templates')
+            .select('design')
+            .eq('id', t.id)
+            .single();
+          templateDesign = data?.design ?? null;
+        }
       }
+      if (!templateDesign) return;
+      loadDesign(templateDesign);
+      setTemplatesOpen(false);
+      setLibraryPanelOpen(false);
+      clearAllSelections();
+      resetEditors();
+    } finally {
+      setPickingId(null);
     }
-    if (!templateDesign) return;
-    loadDesign(templateDesign);
-    setTemplatesOpen(false);
-    setLibraryPanelOpen(false);
-    clearAllSelections();
-    resetEditors();
   }
 
   function resetEditors() {
@@ -11684,6 +11701,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <TemplateGrid
               templates={shownTemplates}
               isMobile={isMobile}
+              busyId={pickingId}
               onPreview={setTplPreview}
               onPreviewEnd={() => setTplPreview(null)}
               /* ⚠️ ONLY FOR SOMEBODY WHO MAY STOCK THE SHOP. `PUT /baker/catalogue` is gated
@@ -13830,6 +13848,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            ⚠️ This is why a tap here is SAFE again: it loads a design onto the canvas, which costs
            nothing and is undone by starting a new cake. Stocking the shop stays a named button. */
         onPickTemplate={startFromTemplate}
+        pickingId={pickingId}
         primaryColor={primaryColor}
         accentColor={accentColor}
       />
