@@ -22,7 +22,7 @@ import { chromium } from 'playwright';
 
 const OUT = `${process.env.HOME}/Downloads`;
 const b = await chromium.launch();
-const page = await b.newPage({ viewport: { width: 420, height: 880 }, deviceScaleFactor: 2 });
+const page = await b.newPage({ viewport: { width: Number(process.env.W || 420), height: 880 }, deviceScaleFactor: 2 });
 page.on('pageerror', e => console.error('PAGE ERROR:', e.message));
 
 await page.goto('http://localhost:5190/designer-mobile.html?catalog', { waitUntil: 'domcontentloaded' });
