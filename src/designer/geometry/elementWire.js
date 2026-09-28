@@ -64,6 +64,19 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
   finish: null,
 });
 
+/* ── A wire's length has its own range, and borrowing the pick's was a bug ──────────────────────
+ *
+ * ⚠️ THE DEFAULT SAT EXACTLY ON THE CEILING. `STICK_SCALE` is 0.25–6, which is a sensible span for a
+ * cocktail stick under a card; the wire's tuned default is 6, so every control built from that range
+ * could only ever make a wire SHORTER. A default with no headroom above it is a control that does
+ * half of what it looks like it does.
+ *
+ * A wire is also genuinely longer than a pick — the reference photographs show butterflies one to
+ * three of their own widths clear of the icing, where a pick barely reaches past the piece it
+ * carries. So it gets its own span rather than the one it was nearest to.
+ */
+export const WIRE_LENGTH = Object.freeze({ min: 1, max: 14, step: 0.5 });
+
 /* The wire's own gauge, as a fraction of the element's height. Chosen against a render in
    dev/element-wire.html rather than guessed: at 0.017 a heart's stem reads as wire, at half that it
    disappears on a phone, and at double it reads as a painted skewer. */
@@ -91,7 +104,7 @@ export function elementWire(placementConfig, allowedActions) {
   const cfg = placementConfig?.wire ?? {};
   return {
     offered:   allowedActions?.wire === true,
-    length:    clamp(cfg.length,    STICK_SCALE, ELEMENT_WIRE_DEFAULTS.length),
+    length:    clamp(cfg.length,    WIRE_LENGTH, ELEMENT_WIRE_DEFAULTS.length),
     thickness: clamp(cfg.thickness, STICK_SCALE, ELEMENT_WIRE_DEFAULTS.thickness),
     bend:      clamp(cfg.bend,      WIRE_BEND,   ELEMENT_WIRE_DEFAULTS.bend),
     sweep:     clamp(cfg.sweep,     WIRE_SWEEP,  ELEMENT_WIRE_DEFAULTS.sweep),
@@ -127,7 +140,7 @@ export function wireFor(box, instanceWire, rowWire) {
   const row = rowWire ?? ELEMENT_WIRE_DEFAULTS;
   const pick = (k, range) => clamp(instanceWire[k], range, clamp(row[k], range, ELEMENT_WIRE_DEFAULTS[k]));
 
-  const length    = pick('length', STICK_SCALE);
+  const length    = pick('length', WIRE_LENGTH);
   const thickness = pick('thickness', STICK_SCALE);
   const bend      = pick('bend', WIRE_BEND);
   const sweep     = pick('sweep', WIRE_SWEEP);

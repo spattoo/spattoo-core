@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wireFor, wireLift, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND } from './elementWire.js';
+import { wireFor, wireLift, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP } from './elementWire.js';
 
 const box = { h: 0.1, cy: 0 };
 const on = (extra = {}) => wireFor(box, { on: true, ...extra }, null);
@@ -112,5 +112,25 @@ describe('a row authors the starting values, an instance overrides them', () => 
   it('clamps a nonsense value rather than drawing a spring', () => {
     const w = on({ bend: 99 });
     expect(Math.max(...w.points.map(p => Math.hypot(p.x, p.z)))).toBeCloseTo(w.len * WIRE_BEND.max, 6);
+  });
+});
+
+/* ⚠️ THE TEST FOR A BUG THAT HAD ALREADY SHIPPED ONCE. `length` borrowed the pick's 0.25–6 range
+   while its own tuned default was 6, so every control built from that range could only make a wire
+   SHORTER — a default with no headroom above it is a control doing half what it appears to. It was
+   found by reading, not by a test, which is the wrong way round for arithmetic this mechanical. */
+describe('every default leaves room to move in both directions', () => {
+  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP };
+  for (const [key, range] of Object.entries(ranges)) {
+    it(`${key} sits strictly inside its own range`, () => {
+      const v = ELEMENT_WIRE_DEFAULTS[key];
+      expect(v).toBeGreaterThan(range.min);
+      expect(v).toBeLessThan(range.max);
+    });
+  }
+
+  it('bury is a fraction, and half of one', () => {
+    expect(ELEMENT_WIRE_DEFAULTS.bury).toBeGreaterThan(0);
+    expect(ELEMENT_WIRE_DEFAULTS.bury).toBeLessThan(1);
   });
 });
