@@ -180,8 +180,8 @@ const ATELIER_TOKENS = {
   // APP, square + hairline reads PRINT, and that distinction changes the page more than any colour.
   radius:     0,
   cardStyle:  'flat',
-  // The gallery breaks out of the content column — images edge to edge, captions as print credits.
-  gallery:    'bleed',
+  // (`gallery: 'bleed'` retired 2026-09-28 with the "Our creations" section — this token had exactly
+  //  one consumer, the full-bleed branch of that block.)
   // Left, not centred. Centred-everything is what a page looks like when nobody decided, and it is
   // the most template-ish thing about the storefront — no palette escapes it.
   align:      'left',
@@ -263,7 +263,7 @@ const withGroundControl = list => {
   return at < 0 ? [...list, 'ground'] : [...list.slice(0, at + 1), 'ground', ...list.slice(at + 1)];
 };
 
-export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'gallery', 'reviews'];
+export const DEFAULT_CONTROLS = ['brandColors', 'hero', 'font', 'photo', 'text', 'sections', 'reviews'];
 
 export const TEMPLATES = {
   spotlight: {
@@ -290,8 +290,8 @@ export const TEMPLATES = {
     controls: withGroundControl(DEFAULT_CONTROLS.filter(c => c !== 'font')),
     // ⚠️ PRIMARY IS A COLOUR, NOT THE INK — the correction to a mistake this theme shipped with, and
     // the same one Atelier made: primary was #2E3A46, the ink itself. buildPalette derives the whole
-    // page from primary (`bandSoftA = lighten(primary, 0.66)` is the "Our story" band, the empty
-    // gallery is `lighten(primary, .42)`), so setting it to the ink painted every surface slate-grey
+    // page from primary (`bandSoftA = lighten(primary, 0.66)` is the "Our story" band), so setting
+    // it to the ink painted every surface slate-grey
     // on a warm paper page. The theme's identity is carried by its TOKENS — the paper, the ink type,
     // the drawing — never by this picker, which exists to tint the furniture.
     defaults: { primary: '#A8654B', accent: '#C9A98A', ctaColor: '#F7F2E9' },

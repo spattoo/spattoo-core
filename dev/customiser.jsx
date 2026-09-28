@@ -16,17 +16,14 @@ const THEMES = [
   { id: 4, key: 'ink',        name: 'Ink',        is_active: true,  is_premium: true  },
 ];
 
-const SAMPLE_GALLERY = [
-  { id: 'g1', key: 'k1', url: '/sample-cake-1.png', caption: 'Three-tier celebration cake' },
-  { id: 'g2', key: 'k2', url: '/sample-cake-2.png', caption: 'Floral buttercream' },
-  { id: 'g3', key: 'k3', url: '/sample-cake-3.png', caption: 'Chocolate drip finish' },
-];
+// The baker's cake designs, used here as the HERO picker's source. (There was a SAMPLE_GALLERY too,
+// feeding the "Our creations" control; both went when that section was retired, 2026-09-28.)
 const SAMPLE_TESTIMONIALS = [
   { id: 't1', quote: 'Absolutely stunning — exactly what we pictured.', author: 'Aarti', occasion: 'Birthday' },
   { id: 't2', quote: 'Tasted as good as it looked. Ordering again!',    author: 'Rohan', occasion: 'Anniversary' },
 ];
 
-// Sample cake designs (templates) the baker can pick gallery images from.
+// Sample cake designs (templates) the baker can pick a hero cake from.
 const SAMPLE_DESIGNS = [
   { id: 'd1', name: 'Classic three-tier', thumbnail_url: '/sample-cake-1.png' },
   { id: 'd2', name: 'Floral buttercream',  thumbnail_url: '/sample-cake-2.png' },
@@ -36,15 +33,8 @@ const SAMPLE_DESIGNS = [
 
 // Stub apiClient — read fetches to render; the from-design snapshot returns a fake persisted row.
 const apiClient = {
-  fetchStorefrontPhotos: async () => ({ photos: SAMPLE_GALLERY }),
   fetchTestimonials:     async () => ({ testimonials: SAMPLE_TESTIMONIALS }),
   fetchTemplates:        async () => ({ templates: SAMPLE_DESIGNS }),
-  // Real endpoint copies the design's thumbnail into the gallery folder + inserts a row; the stub
-  // just echoes a row so the picker flow (optimistic add → reconcile) can be verified end-to-end.
-  addStorefrontPhotoFromTemplate: async (id) => {
-    const d = SAMPLE_DESIGNS.find(x => x.id === id);
-    return { id: `p-${id}-x`, key: `storefront/gallery/${id}.webp`, url: d?.thumbnail_url };
-  },
   // Hero snapshot: copies the design thumbnail and returns { key, url } (no photo row).
   addStorefrontImageFromTemplate: async (id) => {
     const d = SAMPLE_DESIGNS.find(x => x.id === id);
