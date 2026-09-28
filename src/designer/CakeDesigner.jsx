@@ -4710,15 +4710,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * out here puts it back on the Library shelf; it is never deleted, and for a Spattoo cake it never
    * could be ("baker can never delete spattoo templates").
    *
-   * ⚠️ THE WHOLE SET IS FETCHED, NOT DERIVED FROM WHAT IS ON SCREEN, AND THAT IS THE BUG THIS AVOIDS.
-   * `PUT /baker/catalogue` REPLACES the catalogue, and `GET /api/templates` applies the exclusion
-   * filter BEFORE labelling — so a template that is both offered and excluded never reaches this
-   * list. Building the new set from these rows would omit it, and the PUT's clear-step would then set
-   * it `offered = false` permanently. Measured on dev today: `exclusion_rows` 0, so no such row
-   * exists — but the OLD Manage-templates screen is still live in released bundles and can write one
-   * at any moment, from a browser nobody has updated. `GET /baker/catalogue` applies no exclusion
-   * filter, so it is the complete set; one extra request, only when a baker actually removes
-   * something, buys correctness that cannot quietly lapse.
+   * ⚠️ THE WHOLE SET IS FETCHED, NOT DERIVED FROM WHAT IS ON SCREEN, AND THE REASON CHANGED ON
+   * 2026-09-28 WITHOUT THE CONCLUSION CHANGING. The old reason was exclusions: `GET /api/templates`
+   * applied an exclusion filter before labelling, so a template that was both offered and excluded
+   * never reached this list, and building the new set from these rows would have dropped it — the
+   * PUT's clear-step then setting it `offered = false` for good. Exclusions are gone now, so that
+   * particular row cannot exist.
+   *
+   * The fetch stays because the SHARPER version of the hazard survives: `PUT /baker/catalogue`
+   * REPLACES the catalogue, and since the cutover `GET /api/templates` returns ONLY offered rows.
+   * So these rows are the catalogue, and anything filtered out of them locally — by the search box,
+   * by a chip — is invisible to a set built from them. `GET /baker/catalogue` is the complete
+   * picture; one extra request, only when a baker actually removes something, buys correctness that
+   * cannot quietly lapse.
    *
    * Optimistic on the ROW, because the tile must leave the grid at once — a catalogue that waits for
    * two round trips reads as a dead control. Restored if either call fails. */
