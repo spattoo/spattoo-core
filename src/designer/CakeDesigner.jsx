@@ -11861,10 +11861,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
                  ⚠️ The flyout TITLE has the same defect (`#888`, 1.44:1 here) and is deliberately NOT
                  changed: `s.flyoutTitle` is shared with the Elements flyout, and that is a second
-                 surface to alter on a decision that has not been asked for. */
-              <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 600, flexShrink: 0,
-                            background: 'rgba(255,255,255,0.92)', borderRadius: 7,
-                            padding: '3px 6px', margin: '2px -6px 0' }}>
+                 surface to alter on a decision that has not been asked for.
+
+                 ⚠️ 12px, MATCHING THE SEARCH INPUT ABOVE IT. Sandeep: "this text is too small." It
+                 was 10px, and I picked that to make a long sentence fit rather than because anyone
+                 could read it — the wrong trade, since this sentence is what tells a baker how the
+                 catalogue gets filled at all. 12 is the size the input beside it already uses, so it
+                 is the surface's own number rather than a new one. Contrast is unaffected: #6B7280
+                 on the 0.92 ground measures 4.55:1 at any size. */
+              <div style={{ fontSize: 12, lineHeight: 1.45, color: '#6B7280', fontWeight: 600,
+                            flexShrink: 0, background: 'rgba(255,255,255,0.92)', borderRadius: 7,
+                            /* ⚠️ PADDING AND NEGATIVE MARGIN MUST CANCEL ON THE LEFT, and both jobs
+                               matter. The GLYPHS have to stay on the panel's 10px content column so
+                               they line up with the search box; the GROUND has to reach the panel's
+                               edge so it still covers the rail showing through (measured: the rail
+                               intrudes ~30px, and the bare text there was 1.00:1).
+                               Two ways to get this wrong, and I made both: `-8` against 8px padding
+                               dragged the text 10px left of the input, and then cancelling the margin
+                               entirely pulled the band 10px inside the panel, where it stopped
+                               covering the strip it exists for. `10` and `-10` do both. */
+                            padding: '4px 10px', margin: '2px -10px 0' }}>
                 {cataloguePhotoBusy ? 'Adding your photo…' : 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'}
               </div>
             )}
