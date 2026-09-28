@@ -122,8 +122,14 @@ function TemplateGallery({ api, bakerName, onBack, onPick, selectedId }) {
     );
   }
 
-  // A baker with nothing to show must not get an empty grid and no explanation. This is a real
-  // state — a new baker who has excluded the global library and not yet made their own.
+  // A baker with nothing to show must not get an empty grid and no explanation.
+  //
+  // ⚠️ THIS IS NOW THE DEFAULT STATE, NOT A RARE ONE. It used to describe a baker who had switched
+  // off the global library and made none of their own — unusual, because everything was offered
+  // until excluded. Since the storefront cut over to the opt-IN catalogue (2026-09-28) the polarity
+  // is reversed: nothing is offered until the baker adds it, and migration 115 seeded no rows, so
+  // EVERY baker lands here until they curate. The copy below is still true and still the right
+  // thing to say; what changed is how often a customer will read it.
   if (!state.templates.length) {
     return (
       <div style={s.note}>
