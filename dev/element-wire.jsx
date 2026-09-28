@@ -56,13 +56,30 @@ const shape = Object.fromEntries(Object.entries({
    pixels — and until now only the first of those reported a BOX, so a stick or a wire on an image
    element drew nothing at all. `?img=1` exercises that path with a transparent test shape; `?img=`
    takes a real element's url. */
+/* ⚠️ THE BUTTERFLY IS THE DEFAULT, AND THE HEART IS NOT, WHICH IS A CORRECTION. This harness opened
+   on a fondant heart floating on a wire because that is the artwork its sibling proves the chain
+   with — and it models something that should never exist. Sandeep: *"folding is only for
+   butterflies, hearts wont float."* A heart goes on a pick, in the icing; the wire is for pieces
+   that hover. A harness whose default case is a thing you would never ship teaches the wrong shape
+   to whoever opens it next.
+
+   Both capabilities are strict per-row opt-ins — `allowed_actions.wire === true` and
+   `placement_config.foldable === true` — so nothing here leaks onto an element that did not ask.
+   `?glb=1` still reaches the heart, for checking the 3D measurement path. */
+const BUTTERFLY = '/cdn/elements/files/2D/768e80bd-dc9c-4eb4-8165-ce85666e14b3.png';
+const HEART = '/cdn/elements/files/3D/5c642a4f-231c-4a0a-a7c8-372415863cfa.glb';
 const TEST_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAB+ElEQVR4nO3Ry3FCMRAFUcJ0FA6XdOyCBRuK30Ojlu50V929NOd0MjMzMzMzM7PYzj+/f/Qb7EAXuNGj/9S6ClDB4QhUsYujIcUuikYTuigaSeiiaBShC6MhRC6KPr7QhdEHF7kw+tAiF0Ufd6XRFsOjD7riaJNh0YdcebTN19EH3GG00eHow+002urj6IPtONrs7ehD7Tza7mX0gRJGGz6NPk7CaMOH0YdJGm15F32QxNGmt+hDJI+2vUYfIXm0rbjJyPTHO03g8InbYAKHT9wGEzh84jaYwOETOHziNpjA4RM4fOI2mMDhEzh8AodP3AYTOHwCh0/g8AkcPoHDJ3D4BA6fwOETOHziNpjIwfsaV+C1J3D4BA6fwOETOHwCh0/g8AkcPoHDNwRY5DU3DFfgNSdw+AQO31BgkdfacFyB15rA4SsBFnmNleEKvMYEDl8psMjhuAI3ABY5HFfgBsAih+MK3ABY5HBckRvgXqKPkDza9hZ9iMTRpnfRB0kabfkw+jAJow2fRh8nYbThy+gD7Tza7u3oQ+042uzj6IPtNNrqcPThdhht9HX0AVcebTMs+pArjjYZHn3QlUZblEYfV9gJ0YcWd0L0wcWdFH18YSdEQ4g7KRpF2EnRSMJOikYTdmI0pKgTE7VZgto14czMzMzMzFr3D78xf7bvIjwlAAAAAElFTkSuQmCC';
 const IMG = q.get('img');
 const FOLD = q.get('fold') === '1';
-const ART = q.get('glb') ?? (IMG === '1' ? TEST_PNG : IMG) ?? '/cdn/elements/files/3D/5c642a4f-231c-4a0a-a7c8-372415863cfa.glb';
+const glb = q.get('glb');
+const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUTTERFLY;
+
+/* Folded unless told otherwise, because a butterfly on a wire that does not fold is flat artwork on
+   a stick — the V is half of what makes it read as flight. `?fold=0` is the comparison. */
+const FOLDED = ART === BUTTERFLY ? q.get('fold') !== '0' : FOLD;
 
 const PIECE = {
-  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLD}-${ART.slice(-24)}`,
+  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${ART.slice(-24)}`,
   name: 'element on a wire',
   image_url: ART,
   allowed_zones: ['top_surface'],
@@ -75,7 +92,7 @@ const PIECE = {
        wings up into a V from the spine — so the lowest point stops being a wingtip and becomes the
        body, and a wire hung from the flat bottom starts in mid-air below it. Sandeep: *"butterfly
        can be folded in core. so need to adjust wire accordingly."* */
-    ...(FOLD ? { foldable: true } : {}),
+    ...(FOLDED ? { foldable: true } : {}),
     wire: shape,
   },
   // The capability is what offers the wire; without it the designer shows no toggle at all.
