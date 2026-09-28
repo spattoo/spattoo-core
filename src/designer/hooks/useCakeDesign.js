@@ -26,6 +26,7 @@ import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondC
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
 import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
+import { elementWire } from '../geometry/elementWire.js';
 import { elementStick } from '../geometry/elementStick.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -1188,6 +1189,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
             ? (({ offered, finish, ...rod }) => ({ on: false, ...rod }))(
                 elementStick(element.placement_config, element.allowed_actions))
             : null),
+          /* ⚠️ THE SAME SHAPE AS THE STICK ABOVE, AND IT HAS TO BE SEEDED HERE OR IT DOES NOT EXIST.
+             This function builds an instance field by field rather than spreading `extra`, so a key
+             nobody lists is silently dropped — which is exactly what happened on the wire's first
+             render: the harness passed `extra.wire`, the canvas read `sticker.wire`, and the piece
+             sat flat on the icing with no wire and no error. Spread, so a number added to
+             `elementWire` later arrives without this line being edited again. */
+          wire: extra.wire ?? (element.allowed_actions?.wire === true
+            ? (({ offered, finish, ...stem }) => ({ on: false, ...stem }))(
+                elementWire(element.placement_config, element.allowed_actions))
+            : null),
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
           // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)
           // or matte (high roughness / 0 metalness) from config — applied on the shared art path.
@@ -1235,6 +1246,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
                does not silently grow a pick. The DEPTH that goes with it is not a capability — it
                is a number, and lives in placement_config.stick (see geometry/elementStick.js). */
             stick:     element.allowed_actions?.stick     ?? false,
+            /* May this element float on a bendable wire. A separate capability from `stick` rather
+               than a mode of it, because the two are alternatives a row chooses between: a butterfly
+               offers a wire, a fondant heart offers a pick, and an element offering both would be
+               asking a customer a question with no good answer. */
+            wire:      element.allowed_actions?.wire      ?? false,
           },
         }],
       };

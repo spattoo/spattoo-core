@@ -15,6 +15,7 @@ import CakeTier from './CakeTier';
 import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
+import { wireFor, wireLift } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
 import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -1733,6 +1734,41 @@ function ElementStick({ stick }) {
   );
 }
 
+/* ── The bendable wire a catalogue element floats on ─────────────────────────────────────────────
+ *
+ * A butterfly hovering off the icing on a thin white stem. Sandeep, with two reference photographs:
+ * *"if you see these butterflies are standing on a white color bendable wire."*
+ *
+ * ⚠️ A SECOND COMPONENT, NOT A BRANCH INSIDE `ElementStick`, AND THE GEOMETRY IS WHY. A pick is one
+ * cylinder about one axis; a wire is a tube swept along a curve that bows perpendicular to its own
+ * lean. Nothing but the material is shared, and a single component carrying both would be a branch
+ * on kind in the middle of a `useMemo` — INVARIANTS #1 in the place it is least visible.
+ *
+ * ⚠️ THE PATH COMES FROM `elementWire`, NOT FROM HERE. The same split `rainbow.js` uses: geometry
+ * answers "where does the wire go", this answers "what does a wire look like". Tests can assert the
+ * first, the build guide can measure it, and only this file needs three.js to draw it.
+ *
+ * ⚠️ WHITE AND BARELY SHINY. A florist's stem wire is paper-wrapped, so it is matte — a metallic
+ * one reads as jewellery wire and catches light the reference photographs do not show. The tube is
+ * thin enough that it disappears at low roughness.
+ */
+function ElementWire({ wire }) {
+  const geo = useMemo(() => {
+    if (!wire?.points?.length) return null;
+    const curve = new THREE.CatmullRomCurve3(wire.points.map(p => new THREE.Vector3(p.x, p.y, p.z)));
+    /* Six radial segments: at this radius the tube is a couple of pixels wide on a phone, and the
+       difference between six sides and sixteen is invisible at twenty butterflies a cake. */
+    return new THREE.TubeGeometry(curve, wire.points.length - 1, wire.radius, 6, false);
+  }, [wire]);
+  useEffect(() => () => geo?.dispose(), [geo]);
+  if (!geo) return null;
+  return (
+    <mesh geometry={geo} castShadow raycast={() => {}}>
+      <meshStandardMaterial color="#F4F2ED" roughness={0.72} metalness={0} />
+    </mesh>
+  );
+}
+
 function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, calendarLayout = null, onSeat, onDepth, onVExtent }) {
   // ⚠️ BEFORE the imageUrl guard, which is the whole reason this branch exists here rather than
   // deeper down: a calendar element carries no image_url, so the guard below would render nothing at
@@ -2055,7 +2091,12 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
      placed (useCakeDesign), so what reaches the canvas already carries the number. The renderer's
      own fallback covers a design saved before this existed. */
   const stick = stickFor(glbBox, sticker.stick, null);
-  const lift = stickLift(stick) * effScale;
+  /* ⚠️ A WIRE AND A PICK ARE ALTERNATIVES, NOT A PAIR. Both answer "what holds this piece off the
+     icing", so an element carrying both would be drawn on two supports at once. The wire wins when
+     it is on, because it is the more specific statement — a row authors a wire deliberately, where
+     a stick is the general default. */
+  const wire = sticker.wire?.on ? wireFor(glbBox, sticker.wire, null) : null;
+  const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
   const py = topY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
@@ -2075,7 +2116,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     <>
       {/* Drawn FIRST, so the element's own artwork covers the tuck — the same order Toppers uses,
           and for the same reason: the overlap is the attachment and nothing should be seen joining. */}
-      <ElementStick stick={stick} />
+      {wire ? <ElementWire wire={wire} /> : <ElementStick stick={stick} />}
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
