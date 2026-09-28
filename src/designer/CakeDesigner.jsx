@@ -11830,12 +11830,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               )}
             </div>
 
-            {/* Says where the picture GOES, before a file is chosen. There is no staging step for an
-                uploaded photo — it is in the catalogue the moment it lands, which customers see — so
-                this is the only honest place to say so. */}
+            {/* ⚠️ BOTH WAYS TO STOCK THE SHELF, NOT JUST THE ONE THIS BUTTON DOES. Sandeep dictated
+                this sentence — "create your catalogue by selecting cakes from library or upload your
+                own. your customers can see your catalogue" — and my first version kept only the
+                upload half, because I wrote it as a caption for the + button instead of as the
+                instruction he gave. He was blunt about it: "altering the sentence is fine but
+                completely skipping a part is not acceptable."
+
+                It earns its place either way: there is no staging step for an uploaded photo — it is
+                in the catalogue the moment it lands — and Library is the other half of how this
+                shelf gets filled, which a baker looking at an upload button would not otherwise be
+                told. Same words as the empty state below, so the screen says it once, one way. */}
             {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
               <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, paddingTop: 2, flexShrink: 0 }}>
-                {cataloguePhotoBusy ? 'Adding your photo…' : 'Upload a photo of a cake you have made — it goes straight into your catalogue, where customers see it.'}
+                {cataloguePhotoBusy ? 'Adding your photo…' : 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'}
               </div>
             )}
             {cataloguePhotoError && (
@@ -11955,7 +11963,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {templates.length === 0
                   ? 'No templates yet'
                   : hasCap('store:manage')
-                    ? 'Create your catalogue by selecting cakes from Library, or upload your own. Your customers see your catalogue.'
+                    /* ⚠️ SANDEEP'S WORDS, VERBATIM — restored 2026-09-28. He dictated this sentence
+                       and I paraphrased it: dropped the "can" from "can see" (which changes it from
+                       "they have access" to "they do look") and added a comma he did not write.
+                       Copy that was given is not copy to improve. */
+                    ? 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'
                     : 'No cakes to show yet.'}
               </div>
             )}
