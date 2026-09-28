@@ -190,6 +190,39 @@ describe('a tap preview is not destroyed by the pointer', () => {
   });
 });
 
+/* ── The upload label sits on the rail, so it needs a GROUND ─────────────────────────────────────
+ *
+ * Sandeep: "the first word 'upload' in this screenshot is hidden behind the back shade… not
+ * readable."
+ *
+ * The flyout is placed at RAIL_FLYOUT_LEFT = RAIL_CENTRE deliberately — it "should read as emerging
+ * from BEHIND the rail" — so the panel's first ~30px has the near-black rail behind it and the panel
+ * is only 60% opaque. Measured contrast at the first word: #9CA3AF 1.00:1, #888 1.37:1, #6B7280
+ * 1.87:1, #4B5563 2.93:1. EVERY colour fails, which is why this is pinned as a background and not a
+ * shade of grey — the obvious "fix" of just darkening the text cannot work and would be reverted
+ * here by a future reader who did not measure it.
+ */
+describe('the upload label survives the rail behind the flyout', () => {
+  it('has a ground of its own, not just a colour', () => {
+    expect(designer).toMatch(/background: 'rgba\(255,255,255,0\.92\)'/);
+  });
+
+  /* 0.92 is the LOWEST alpha that clears AA (4.55:1; 0.88 gives 4.40), so the frosted panel keeps
+     as much translucency as readability allows. Lowering it fails contrast; raising it costs
+     transparency for nothing. */
+  it('and a colour dark enough on that ground', () => {
+    expect(designer).toMatch(/color: '#6B7280'/);
+  });
+
+  /* The grey I invented for this line was too light even on plain white — 2.29:1, a contrast bug
+     independent of the rail. It must not come back as a live style. (It still appears in the
+     comment above the label, recording the measurements, which is why this matches `color: '…'`
+     rather than the bare hex.) */
+  it('never returns to the invented light grey', () => {
+    expect(designer).not.toMatch(/color: '#9CA3AF'/);
+  });
+});
+
 describe('the overlay does not eat the tap it is reporting', () => {
   /* Drawn over the picture, so it must not become the click target — and it sits ON the tile rather
      than over the panel because WHICH cake is loading is the useful half (INVARIANTS #11: the

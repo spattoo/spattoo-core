@@ -11842,7 +11842,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 shelf gets filled, which a baker looking at an upload button would not otherwise be
                 told. Same words as the empty state below, so the screen says it once, one way. */}
             {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
-              <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, paddingTop: 2, flexShrink: 0 }}>
+              /* ⚠️ THIS TEXT SITS ON THE RAIL, AND NO COLOUR CAN FIX THAT. Sandeep: "the first word
+                 'upload' in this screenshot is hidden behind the back shade… not readable."
+
+                 The flyout is placed at `RAIL_FLYOUT_LEFT` = `RAIL_CENTRE` ON PURPOSE — "a flyout
+                 that should read as emerging from BEHIND the rail… so the rail overlaps its square
+                 left edge and hides the seam". So the panel's first ~30px has the near-black rail
+                 behind it, and the panel is `rgba(255,255,255,0.6)`: measured, the ground there is
+                 rgb(162) (0.6×255 + 0.4×22 — the arithmetic matches exactly), against rgb(240+)
+                 further along the same line.
+
+                 ⚠️ MEASURED, NOT JUDGED BY EYE — I could not rank greys from screenshots, and every
+                 one of them failed. Contrast at the first word: `#9CA3AF` 1.00:1, `#888` 1.37:1,
+                 `#6B7280` 1.87:1, `#4B5563` 2.93:1. All below AA, so DARKENING ALONE CANNOT WORK.
+                 And `#9CA3AF` was too light regardless — only 2.29:1 even on a clear white ground,
+                 which is a contrast bug of its own that I introduced when I invented that grey.
+
+                 So it needs a GROUND as well as a darker colour — which is how everything else on
+                 this surface already survives the rail (the search input, the tiles, the Premium and
+                 "To library" chips all paint their own background; these bare lines were the only
+                 ones that did not). `0.92` is the LOWEST alpha that clears AA — 4.55:1, where 0.88
+                 gives 4.40 — so the panel keeps as much translucency as readability allows.
+                 The negative margins keep the text flush at the panel's 10px padding while the band
+                 extends under it, so this line stays aligned with the search box above.
+
+                 ⚠️ The flyout TITLE has the same defect (`#888`, 1.44:1 here) and is deliberately NOT
+                 changed: `s.flyoutTitle` is shared with the Elements flyout, and that is a second
+                 surface to alter on a decision that has not been asked for. */
+              <div style={{ fontSize: 10, color: '#6B7280', fontWeight: 600, flexShrink: 0,
+                            background: 'rgba(255,255,255,0.92)', borderRadius: 7,
+                            padding: '3px 6px', margin: '2px -6px 0' }}>
                 {cataloguePhotoBusy ? 'Adding your photo…' : 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'}
               </div>
             )}
