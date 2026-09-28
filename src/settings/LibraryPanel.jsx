@@ -5,6 +5,13 @@ import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { ConfirmPanel } from '../shared/Panel.jsx';
 import { INK } from '../shared/tokens.js';
 import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
+/* ⚠️ THE SAME MATCHER THE CATALOGUE FLYOUT USES, not a second one. It reads `name`, `tag_slugs` and
+   `search_slugs` — the last being what makes "rainbow" find a cake named "kids birthday cake" — and
+   it parses age phrases ("4 years") against `attrs`. `GET /baker/catalogue` was widened to carry all
+   three for exactly this; a private copy here would drift from the flyout the first time either
+   changed. `nameBySlug` is not passed: it only adds tag DISPLAY names, and since words are matched
+   one at a time, "baby shower" still finds the slug `baby-shower`. */
+import { matchesTemplateSearch } from '../designer/templateFilter.js';
 import { TrashIcon } from '../shared/icons.jsx';
 
 /* ── Spattoo templates — the library a baker stocks their catalogue from ─────────────────────────
@@ -42,6 +49,7 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
   const [loading, setLoading] = useState(false);
   const [busy,    setBusy]    = useState(false);
   const [error,   setError]   = useState(null);
+  const [query,   setQuery]   = useState('');
   /* Which of the baker's OWN designs is being confirmed for deletion, and whether that call is out.
      ⚠️ Deleting is the one action here that tapping again cannot undo, so it is the one action that
      asks first — everything else on this screen saves silently on the tap. */
@@ -82,7 +90,15 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
    *
    * ⚠️ Memoised because TemplateGrid's reveal hook resets on array IDENTITY — a fresh array every
    * render would restart the grid at the top on every tap. */
-  const shown = useMemo(() => (rows ?? []).filter(t => !offered.has(t.id)), [rows, offered]);
+  /* ⚠️ TWO LISTS, BECAUSE THE COUNT AND THE GRID ANSWER DIFFERENT QUESTIONS. `unchosen` is the
+     SHELF — what "to choose from" means — and must not shrink because somebody typed; `shown` is
+     what the grid draws. Filtering one list for both would silently turn "48 to choose from" into
+     "6 to choose from", which is a different claim about the bakery. */
+  const unchosen = useMemo(() => (rows ?? []).filter(t => !offered.has(t.id)), [rows, offered]);
+  const shown = useMemo(
+    () => (query.trim() ? unchosen.filter(t => matchesTemplateSearch(t, query)) : unchosen),
+    [unchosen, query],
+  );
 
   /* Optimistic, then reconciled. The tile leaves on the tap — a grid that waits for a round trip
      before showing anything reads as a dead control — and the previous set is restored if the call
@@ -130,7 +146,9 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
 
   /* What is left to choose from, which is what this screen now holds. `offered.size` is the other
      side of the same coin — the Catalogue's count — and says where the rest went. */
-  const available = shown.length;
+  // The SHELF's size, not the search result's — see the two lists above.
+  const available = unchosen.length;
+  const searching = query.trim().length > 0;
 
   return (
     <>
@@ -180,9 +198,29 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
 
           {rows && !loading && (
             <>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20 }}>
+              {/* ⚠️ SEARCH HERE MATCHES MORE THAN NAMES, WHICH IS THE ONLY REASON IT EXISTS. This
+                  file argued against a search box over the names — 34 rows carry 23 distinct names,
+                  `football` six times, `dino` and `love` three each — and that objection stands. It
+                  is answered by what is matched, not by the box: tags and `search_slugs` (the
+                  decorations on the cake and the words piped on it) come from the route now, so
+                  "rainbow" finds a cake called "kids birthday cake" and the six Footballs are told
+                  apart by what is on them. Same placement and same wording as the Catalogue
+                  flyout's, so the two shelves are searched the same way. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20, flexWrap: 'wrap' }}>
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search templates…"
+                  aria-label="Search your library"
+                  style={{ flex: '1 1 220px', maxWidth: 340, minWidth: 0, padding: '6px 10px',
+                           border: '1.5px solid #999999', borderRadius: 8, fontSize: 12,
+                           fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none',
+                           boxSizing: 'border-box', background: '#ffffff' }}
+                />
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
-                  {available} to choose from · {offered.size} in your catalogue
+                  {searching
+                    ? `${shown.length} of ${available} match · ${offered.size} in your catalogue`
+                    : `${available} to choose from · ${offered.size} in your catalogue`}
                 </span>
                 {busy && (
                   <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
@@ -194,12 +232,32 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
 
               {/* Two very different emptinesses, and saying the wrong one is alarming. Everything
                   chosen is success; nothing to choose is a new bakery waiting on us. */}
+              {/* ⚠️ THREE EMPTINESSES NOW, AND SAYING THE WRONG ONE IS ALARMING. "Everything is
+                  chosen" is success and "nothing here yet" is a new bakery — but a search that
+                  matches nothing is neither, and telling a baker with 48 cakes that their library is
+                  empty because they mistyped would be the worst of the three. The search case is
+                  tested FIRST for that reason, and it offers the way back rather than just the bad
+                  news. */}
               {shown.length === 0 && (
-                <span style={{ fontSize: 12, color: '#9CA3AF', fontWeight: 600 }}>
-                  {offered.size > 0
-                    ? 'Every design is in your catalogue. Move one back here from Catalogue to set it aside.'
-                    : 'Nothing in your library yet. Spattoo’s cakes appear here as we publish them, and your own saved designs join them.'}
-                </span>
+                searching ? (
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600,
+                                 display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    Nothing here matches “{query.trim()}”.
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      style={{ border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '3px 9px',
+                               background: '#fff', font: 'inherit', fontSize: 11.5, fontWeight: 800,
+                               color: '#2C4433', cursor: 'pointer' }}
+                    >Clear search</button>
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>
+                    {offered.size > 0
+                      ? 'Every design is in your catalogue. Move one back here from Catalogue to set it aside.'
+                      : 'Nothing in your library yet. Spattoo’s cakes appear here as we publish them, and your own saved designs join them.'}
+                  </span>
+                )
               )}
 
               {/* ⚠️ NO `selectedIds`, DELIBERATELY. Every tile here is un-chosen by definition, so an

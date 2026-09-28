@@ -232,6 +232,15 @@ describe('the library is a grid, not a list of rows', () => {
   /* The count is what now says where everything went, since the tiles no longer carry two states:
      what is left to choose, and how many are in the catalogue instead. */
   it('says how many are left to choose and how many were chosen', () => {
-    expect(library).toMatch(/\{available\} to choose from · \{offered\.size\} in your catalogue/);
+    expect(library).toMatch(/\$\{available\} to choose from · \$\{offered\.size\} in your catalogue/);
+  });
+
+  /* ⚠️ THE SHELF'S SIZE AND THE SEARCH RESULT ARE DIFFERENT CLAIMS. `available` counts what is left
+     to choose from and must NOT shrink because somebody typed — filtering one list for both would
+     quietly turn "48 to choose from" into "6 to choose from", which says something false about the
+     bakery. While searching, the line reports the match count AND the shelf, so neither is lost. */
+  it('while searching, reports matches without restating the shelf as smaller', () => {
+    expect(library).toMatch(/const available = unchosen\.length;/);
+    expect(library).toMatch(/\$\{shown\.length\} of \$\{available\} match/);
   });
 });

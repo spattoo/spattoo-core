@@ -102,12 +102,21 @@ const TAGS_STUB = [
    LOADED TEMPLATE carries — a tags stub on its own still renders nothing. Between them these three
    carry all nine slugs above, so every group has something to match. */
 const TEMPLATES_FULL = [
+  /* ⚠️ `search_slugs` ON THE THREE REAL ROWS, because that is the half of search this harness could
+     not reach otherwise. It is what the server derives from the DESIGN — the decorations on the cake
+     and the words piped on it — so a cake is findable by what is ON it rather than only by its name.
+     On dev, `Dino` carries ["dinosaur","palm tree","color triangle banner"]; these mirror that shape.
+     ⚠️ Only these three, matching the note below: the 45 fillers stay untagged so the counts other
+     assertions pin do not move. `search_slugs` feeds the SEARCH BOX only, never the chips. */
   { id: 't1', name: 'Rose & Pistachio',  tier_count: 1, thumbnail_url: '/sample-cake-1.png', attrs: { min_weight_kg: 1 },   offering: 'premium',
-    tag_slugs: ['birthday', 'sorry', 'mother', 'pink'],            design: TPL_DESIGN('#F6DCE2') },
+    tag_slugs: ['birthday', 'sorry', 'mother', 'pink'],
+    search_slugs: ['sugar rose', 'pistachio crumb', 'happy birthday amma'],  design: TPL_DESIGN('#F6DCE2') },
   { id: 't2', name: 'Cocoa Drip',        tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: { min_weight_kg: 1.5 },
-    tag_slugs: ['anniversary', 'with-you', 'rustic', 'kids-4-12'], design: TPL_DESIGN('#C9A227') },
+    tag_slugs: ['anniversary', 'with-you', 'rustic', 'kids-4-12'],
+    search_slugs: ['chocolate drip', 'gold leaf', 'palm tree'],              design: TPL_DESIGN('#C9A227') },
   { id: 't3', name: 'Buttercream Bloom', tier_count: 1, thumbnail_url: '/sample-cake-2.png', attrs: null,
-    tag_slugs: ['birthday', 'eggless'],                            design: TPL_DESIGN('#EDE7DA') },
+    tag_slugs: ['birthday', 'eggless'],
+    search_slugs: ['classic shell border', 'daisy flower half'],             design: TPL_DESIGN('#EDE7DA') },
   /* ⚠️ ENOUGH OF THEM TO SCROLL. Three templates cannot exercise a grid that reveals a page at a
      time: the first page would be the whole catalogue and the sentinel would never fire, so the
      check would pass without the feature existing. Forty-five filler rows put the count either side
@@ -194,6 +203,11 @@ let CATALOGUE_STUB = TEMPLATES_STUB.map(t => ({
      order from, which is a real bug the real route was changed to prevent. A stub that is kinder
      than the API hides exactly the failures it exists to surface. */
   type: t.type ?? 'basic', thumbnail_key: t.thumbnail_key ?? null,
+  /* ⚠️ THE SEARCHABLE FIELDS TRAVEL HERE TOO, or Library's search box is name-only IN THE HARNESS
+     and looks broken for a reason the product does not have. `GET /api/baker/catalogue` returns
+     these now; a stub poorer than the API hides exactly the behaviour it exists to exercise —
+     the same trap as the missing `createManualOrder` stub. */
+  tag_slugs: t.tag_slugs ?? [], search_slugs: t.search_slugs ?? [], attrs: t.attrs ?? null,
 }));
 const MY_TEMPLATES_STUB = CATALOGUE_STUB.filter(t => t.source === 'mine')
   .map(({ source, offered, ...t }) => ({ ...t, created_at: '2026-09-22T10:00:00Z' }));
