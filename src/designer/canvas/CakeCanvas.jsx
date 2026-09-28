@@ -683,6 +683,10 @@ function scanContentV(img, spine, rise) {
   const d = ctx.getImageData(0, 0, w, h).data;          // throws if the canvas is CORS-tainted
   const xh = STICKER_SIZE * (spine - 0.5);
   let minSeatY = Infinity, minY = Infinity, maxY = -Infinity;
+  /* ⚠️ HORIZONTAL EXTENT TOO, AND IT IS FREE — the same loop already visits every pixel. It is here
+     so a 2D element can report a BOX rather than only a height, which is what a stick or a wire
+     needs to size itself from. See the `box` in the emit below. */
+  let minX = Infinity, maxX = -Infinity;
   for (let py = 0; py < h; py++) {
     const planeY = STICKER_SIZE * (0.5 - py / h);        // flipY: image top → plane top (+S/2)
     const row = py * w * 4;
@@ -693,11 +697,13 @@ function scanContentV(img, spine, rise) {
         if (y3 < minSeatY) minSeatY = y3;
         if (planeY < minY) minY = planeY;                   // flat content extent
         if (planeY > maxY) maxY = planeY;
+        if (planeX < minX) minX = planeX;
+        if (planeX > maxX) maxX = planeX;
       }
     }
   }
-  if (minY === Infinity) return { seatHalf: half, down: half, up: half };   // fully transparent
-  return { seatHalf: -minSeatY, down: -minY, up: maxY };
+  if (minY === Infinity) return { seatHalf: half, down: half, up: half, left: -half, right: half };   // fully transparent
+  return { seatHalf: -minSeatY, down: -minY, up: maxY, left: minX, right: maxX };
 }
 
 // Load the asset for MEASURING in its own CORS image, so the pixel read can't hit a cache entry
@@ -1117,7 +1123,30 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
     // the already-loaded texture image — no extra fetch (r2.dev rate-limits, so a second download for
     // measuring can fail and fall the seat back to half-plane → constant lift). Only if THIS image is
     // CORS-tainted (e.g. a non-CORS thumbnail poisoned the cache) do we reload clean.
-    const emit = v => { if (!live) return; onSeat?.(Math.max(v.seatHalf, MIN_SEAT)); onVExtent?.({ down: v.down, up: v.up }); };
+    /* ⚠️ A BOX FROM HERE TOO, AND ITS ABSENCE IS WHY A STICK NEVER WORKED ON A 2D ELEMENT. The GLB
+       path (`StickerModel`) has always emitted `box`, and `stickFor`/`wireFor` both return null
+       without one — so an image element could be given "Can add a stick" in admin, have the toggle
+       appear, and draw nothing at all. It went unnoticed because the element it was built for, a
+       fondant heart, is a GLB. Sandeep, on the butterflies: *"butterfly is not glb. its a image
+       element."*
+
+       ⚠️ `halfW` IS DELIBERATELY NOT EMITTED. It is what `glbFoot` tests to decide whether to draw
+       the 3D selection box instead of the flat one, so sending it would silently change how every
+       2D element is outlined — a different feature, and not one being asked for here.
+
+       The content spans -down..+up vertically and left..right horizontally, both measured from the
+       plane's centre, so the box is centred on the CONTENT rather than on the canvas. That matters
+       for exactly the case the seat scan was written for: a wide butterfly on a square PNG. */
+    const emit = v => {
+      if (!live) return;
+      onSeat?.(Math.max(v.seatHalf, MIN_SEAT));
+      const w = (v.right ?? 0) - (v.left ?? 0);
+      const h = (v.up ?? 0) + (v.down ?? 0);
+      onVExtent?.({
+        down: v.down, up: v.up,
+        box: h > 0 ? { w, h, d: 0, cy: (v.up - v.down) / 2, cz: 0 } : null,
+      });
+    };
     const img = texture?.image;
     if (img && (img.naturalWidth || img.width)) {
       try { emit(scanContentV(img, seatSpine, seatRise)); return () => { live = false; }; }
@@ -2068,7 +2097,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const [seatHalf, setSeatHalf] = useState(null);
   // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
   const [glbHalfW, setGlbHalfW] = useState(null);
-  const [glbBox, setGlbBox] = useState(null);   // rendered 3D bounds → 3D selection box
+  /* ⚠️ `artBox`, NOT `glbBox`, AND THE OLD NAME WAS A CLAIM THAT TURNED OUT TO BE FALSE. It held
+     the measured bounds of whatever the element actually is: a GLB's Box3, or — since the texture
+     path started emitting one — a 2D image's opaque content. Everything that sizes itself from the
+     artwork reads this: the 3D selection box, the pick, and now the wire. */
+  const [artBox, setArtBox] = useState(null);
   // How far the element stands proud of its hit plane (see DraggableSideSticker).
   const [depth, setDepth] = useState(0);
   // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
@@ -2090,12 +2123,12 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   /* No row here, and none needed: the authored depth is baked onto the instance when the element is
      placed (useCakeDesign), so what reaches the canvas already carries the number. The renderer's
      own fallback covers a design saved before this existed. */
-  const stick = stickFor(glbBox, sticker.stick, null);
+  const stick = stickFor(artBox, sticker.stick, null);
   /* ⚠️ A WIRE AND A PICK ARE ALTERNATIVES, NOT A PAIR. Both answer "what holds this piece off the
      icing", so an element carrying both would be drawn on two supports at once. The wire wins when
      it is on, because it is the more specific statement — a row authors a wire deliberately, where
      a stick is the general default. */
-  const wire = sticker.wire?.on ? wireFor(glbBox, sticker.wire, null) : null;
+  const wire = sticker.wire?.on ? wireFor(artBox, sticker.wire, null) : null;
   const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
   const py = topY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
@@ -2117,14 +2150,14 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       {/* Drawn FIRST, so the element's own artwork covers the tuck — the same order Toppers uses,
           and for the same reason: the overlap is the attachment and nothing should be seen joining. */}
       {wire ? <ElementWire wire={wire} /> : <ElementStick stick={stick} />}
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && (glbFoot && glbBox
-        ? <SelectionBox width={glbBox.w} height={glbBox.h} centerY={glbBox.cy} depth={glbBox.d} centerZ={glbBox.cz} />
+      {selected && (glbFoot && artBox
+        ? <SelectionBox width={artBox.w} height={artBox.h} centerY={artBox.cy} depth={artBox.d} centerZ={artBox.cz} />
         : <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />)}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
