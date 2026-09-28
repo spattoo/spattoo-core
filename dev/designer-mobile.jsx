@@ -215,6 +215,41 @@ CAT_ELEMENTS.push({
   default_color: '#c41c1c', sort_order: 26,
 });
 
+/* ⚠️ AN ELEMENT THAT FLOATS ON A WIRE, for exactly the reason the pick's fixture above exists: a
+ * capability nothing here can express is a surface nobody looks at, and that is how the pick's
+ * control shipped in the wrong place for a release. `allowed_actions.wire` is the second capability
+ * an admin can tick ("Can add a wire"), and it is what butterflies use.
+ *
+ * ⚠️ A 2D IMAGE, NOT A GLB, AND THAT IS THE POINT OF THIS ONE. The pick's fixture is a GLB because
+ * the fondant heart is; the wire's must not be, because a 2D element measures itself down a
+ * completely different path (`StickerTexture`, not `StickerModel`) and until recently that path
+ * reported no box at all — so a stick or a wire on an image element drew nothing, silently.
+ *
+ * `foldable` too, because a standing butterfly hinges its wings into a V and the wire then has to
+ * meet the SPINE rather than where a flat wingtip would have been. Sandeep: *"butterfly can be
+ * folded in core. so need to adjust wire accordingly."*
+ *
+ * ⚠️ IT ALSO TICKS `stick`, WHICH A REAL ROW SHOULD NOT. Admin warns when both are on, because they
+ * are alternatives — but a row that offers both must still behave, and the card is where that is
+ * resolved: turning the wire on puts the pick away. A fixture that offers only one could never show
+ * whether it does. */
+CAT_ELEMENTS.push({
+  id: 'e27', name: 'Butterfly on a wire', description: 'a wire-capable 2D image',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/cdn/elements/files/2D/768e80bd-dc9c-4eb4-8165-ce85666e14b3.png',
+  thumbnail_url: CAT_THUMB('#e05a9c'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  /* The row authors where each dial STARTS; the card moves it from there. Same arrangement as `r`
+     for size and `fold` for the fold angle — see geometry/elementWire.js for what each one does. */
+  placement_config: {
+    r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'stand', side: 'hug',
+    foldable: true, fold: 34,
+    wire: { length: 6, bend: 0.35, sweep: 35 },
+  },
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, wire: true, stick: true, duplicate: true },
+  default_color: '#e05a9c', sort_order: 27,
+});
+
 /* ⚠️ A NUMBER TOPPER ROW, so `design.ages` can be non-empty and the AGE CARD exists at all.
  * Without one, addAge is never called here, design.ages stays [], and the age card — its Duplicate,
  * its finish chooser and its remove button — could not be looked at in this harness. Same gap this

@@ -59,6 +59,7 @@ import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
+import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -9220,6 +9221,74 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
             ...dial('sthk', 'Thick', thk, v => `${v.toFixed(1)}×`, v => setStick({ thickness: v }),
                     STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
+          ] : []),
+        ] });
+      }
+    }
+
+    /* ── On a wire ───────────────────────────────────────────────────────────────────────────
+       A thin bendable stem with the decoration floating clear of the icing — butterflies hovering
+       off a cake. Offered by a row that ticks `allowed_actions.wire`, config-gated exactly like the
+       stick above and never on element type.
+
+       ⚠️ THE SAME SHAPE AS THE STICK'S CONTROL, DELIBERATELY, INCLUDING LIVING ON THE CARD. That
+       block's own comment records what it cost to learn: the pick's first control went in the
+       COLOUR SHEET, which only opens once a baker taps the colour swatch, so the feature was
+       reported as not working while nothing was wrong with it. The card is the one surface that
+       lists what a decoration can do, and a capability that is not on it does not exist.
+
+       ⚠️ AND TURNING ONE ON TURNS THE OTHER OFF, because they are alternatives rather than a pair.
+       Both answer "what holds this piece off the icing"; an element carrying both would be drawn on
+       two supports at once, and the renderer already resolves that silently in the wire's favour.
+       Resolving it HERE instead means a baker sees the swap happen rather than discovering later
+       that one of the two chips was doing nothing. A row should offer one or the other — admin says
+       so, and warns when both are ticked — but a row that offers both must still behave.
+
+       Starting values come from the element's own authored numbers, read through `elementWire` and
+       never as literals here, so an instance placed before this existed still gets the row's
+       intent. Same reasoning as `r` for size and `fold` for the fold angle: the dial moves, the row
+       says where it starts. */
+    if (el.type === 'sticker' && c.wire) {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const srcEl   = sticker && elementById.get(sticker.elementId);
+      if (sticker) {
+        const row  = elementWire(srcEl?.placement_config, srcEl?.allowed_actions);
+        const wr   = sticker.wire ?? { on: false, ...row };
+        const setWire = patch => updateSticker(el.id, {
+          wire: { ...wr, ...patch },
+          /* Switching a wire on puts the stick away, and only then — a patch that always wrote
+             `stick` would clear a pick every time a baker nudged the bend. */
+          ...(patch.on === true && sticker.stick?.on ? { stick: { ...sticker.stick, on: false } } : {}),
+        });
+        const dial = (key, label, value, fmt, set, lo, hi, step) => ([
+          <span key={`${key}-lbl`} style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{label}</span>,
+          <button key={`${key}-`} style={s.tbIconBtn}
+            onClick={() => set(Math.max(lo, +(value - step).toFixed(2)))}>−</button>,
+          <span key={`${key}-val`} style={{ ...s.tbSizeLabel, minWidth: 28 }}>{fmt(value)}</span>,
+          <button key={`${key}+`} style={s.tbIconBtn}
+            onClick={() => set(Math.min(hi, +(value + step).toFixed(2)))}>+</button>,
+        ]);
+        groups.push({ key: 'wire', divider: true, scroll: true, controls: [
+          <Chip key="wire-on" label="On a wire" active={!!wr.on} isMobile={isMobile}
+                onClick={() => setWire({ on: !wr.on })} />,
+          ...(wr.on ? [
+            /* ⚠️ BEND FIRST, WHICH IS NOT THE STICK'S ORDER AND SHOULD NOT BE. A pick has no shape to
+               choose, so its row opens with depth. A wire's bow is the whole of what makes it read as
+               wire rather than a pin, so it is the control a baker reaches for first (INVARIANTS #12
+               — layout follows use). */
+            ...dial('wbend', 'Bend', wr.bend ?? row.bend, v => `${Math.round(v * 100)}%`,
+                    v => setWire({ bend: v }), WIRE_BEND.min, WIRE_BEND.max, WIRE_BEND.step),
+            ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
+                    v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
+            /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them
+               looking like a row of flags — the reference photographs have every one facing
+               differently. Wraps rather than clamps, because 0 and 360 are the same bearing. */
+            ...dial('wsweep', 'Turn', wr.sweep ?? row.sweep, v => `${Math.round(v)}°`,
+                    v => setWire({ sweep: ((v % 360) + 360) % 360 }), -360, 720, WIRE_SWEEP.step),
+            ...dial('wbury', 'In', wr.bury ?? row.bury, v => `${Math.round(v * 100)}%`,
+                    v => setWire({ bury: v }), 0, 1, 0.05),
+            ...dial('wthk', 'Thick', wr.thickness ?? row.thickness, v => `${v.toFixed(1)}×`,
+                    v => setWire({ thickness: v }), STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
           ] : []),
         ] });
       }
