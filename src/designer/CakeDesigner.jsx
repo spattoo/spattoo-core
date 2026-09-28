@@ -110,6 +110,9 @@ import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
+import { PhotoAddTile } from '../shared/PhotoAddTile.jsx';
+import { validateImageFile, compressImage } from '../shared/image.js';
+import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import { calendarSheet, resolveCalendarCfg, calendarLayouts, resolveDate, CALENDAR_DEFAULTS }
@@ -2417,6 +2420,61 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      separate hazard — `hasCap` reads a null capability set as ALLOW EVERYTHING, so a failed /me
      would offer controls the person is not entitled to — but it was not involved here. */
   const [templatesError, setTemplatesError] = useState(null);
+  /* Uploading a photograph of a cake already made, straight into the catalogue.
+     ⚠️ `cataloguePhoto*`, NOT `photo*`: photo CAPTURE already owns `photoBusy`, beside
+     photoOptsOpen / photoCutout / photoFraming. A second declaration of that name does not shadow
+     it — esbuild refuses the whole module, and every test that imports it fails with it. Two
+     features about photographs in one file; the names have to say which is which. */
+  const [cataloguePhotoBusy,  setCataloguePhotoBusy]  = useState(false);
+  const [cataloguePhotoError, setCataloguePhotoError] = useState(null);
+  /* ⚠️ THE SERVER'S CEILING, NOT A COPY OF IT. `UPLOAD_MAX_IMAGE_MB` is env on the API, so a
+     hardcoded client would accept files the API then 413s. The hook falls back to MAX_IMAGE_BYTES
+     while the fetch is in flight and no-ops when the host has not wired `fetchUploadLimits`, so it
+     is safe to call unconditionally — including on a customer session, which has no upload UI. */
+  const { maxImageBytes } = useUploadLimits(apiClient);
+
+  /* ── A photograph of finished work, uploaded straight to the catalogue ─────────────────────────
+   * Sandeep: "a baker can also upload an existing cake image he made to catalogue… since he does it
+   * only when he is sure to show him prev work, he can add it to catalogue."
+   *
+   * ⚠️ ALWAYS `add_to_catalogue`, AND THE BUTTON SAYS SO. There is no staging step: a photo is
+   * uploaded because the baker has already decided to show it, so routing it through the Library
+   * would be a step with no decision in it. That makes the label load-bearing — "Upload to
+   * catalogue" is what tells them it goes live to customers BEFORE they pick a file, which is the
+   * only honest place to say it.
+   *
+   * ⚠️ NO RIGHTS GATE HERE, and that is deliberate rather than an omission. The attestation is asked
+   * at storefront PUBLISH, which the API refuses to do without, and that attestation stands over the
+   * storefront's content as a whole — including photos added later. Two gates, not three; see
+   * features/content-rights-attestation.md.
+   *
+   * ⚠️ NO `tier_count`. It is a cached copy of `design.tiers.length` and a photograph has no design
+   * to project from — the API stores null, meaning "not stated", so the browse filters can exclude
+   * it honestly rather than narrowing on a guess. */
+  async function uploadCataloguePhoto(fileList) {
+    const file = Array.from(fileList ?? [])[0];
+    if (!file || !apiClient?.uploadCataloguePhoto) return;
+    setCataloguePhotoError(null);
+    const bad = validateImageFile(file, { maxBytes: maxImageBytes });
+    if (bad) { setCataloguePhotoError(bad); return; }
+    setCataloguePhotoBusy(true);
+    try {
+      const blob = await compressImage(file);
+      const key = await uploadThumbnail(blob, apiClient, 'catalogue/photos');
+      if (!key) { setCataloguePhotoError('Upload failed. Please try again.'); return; }
+      /* The name is required by the row and is what search reads. The file's own name is the only
+         thing the baker has already told us, so it is the default rather than an empty field they
+         must fill before anything happens — they can rename it from the catalogue. */
+      const name = (file.name || 'My cake').replace(/\.[^.]+$/, '').slice(0, 80) || 'My cake';
+      await apiClient.uploadCataloguePhoto({ name, thumbnail_url: key });
+      setTemplates(await loadTemplates());
+    } catch (e) {
+      console.error('[catalogue photo] upload failed:', e?.status ?? '', e?.message ?? e);
+      setCataloguePhotoError(e?.message || 'Could not add that photo.');
+    } finally {
+      setCataloguePhotoBusy(false);
+    }
+  }
 
   /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
    * These four read `templates` (declared just above) and `tmplSearch`. They used to sit ~220 lines
@@ -11672,7 +11730,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                  color: tmplFiltersOpen ? '#fff' : INK }}>{tmplActiveFilters}</span>
                 )}
               </button>
+
+              {/* ⚠️ ONLY FOR SOMEBODY WHO MAY STOCK THE SHOP, and this same flyout is what a CUSTOMER
+                  browses — the gate matches `POST /baker/templates`, which is `template:manage` on the
+                  server, so an ungated control could only ever fail. Absent on an older host too: a
+                  released baker app predating `uploadCataloguePhoto` simply does not have the method,
+                  and a button that cannot work is worse than no button.
+                  ⚠️ `template:manage`, NOT `store:manage`. The route is
+                  `requireCapability('template:manage')`; I gated this on store:manage first and
+                  wrote a comment claiming it matched the server, which it did not.
+                  `flexShrink: 0` like the funnel beside it, so the search input keeps the slack. */}
+              {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
+                <PhotoAddTile
+                  color={INK}
+                  size={34}
+                  busy={cataloguePhotoBusy}
+                  multiple={false}
+                  label=""
+                  onFiles={uploadCataloguePhoto}
+                />
+              )}
             </div>
+
+            {/* Says where the picture GOES, before a file is chosen. There is no staging step for an
+                uploaded photo — it is in the catalogue the moment it lands, which customers see — so
+                this is the only honest place to say so. */}
+            {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
+              <div style={{ fontSize: 10, color: '#9CA3AF', fontWeight: 600, paddingTop: 2, flexShrink: 0 }}>
+                {cataloguePhotoBusy ? 'Adding your photo…' : 'Upload a photo of a cake you have made — it goes straight into your catalogue, where customers see it.'}
+              </div>
+            )}
+            {cataloguePhotoError && (
+              <div style={{ fontSize: 11, color: '#B91C1C', fontWeight: 600, paddingTop: 2, flexShrink: 0 }}>
+                {cataloguePhotoError}
+              </div>
+            )}
 
             {/* ⚠️ THE COUNT WENT, THE REFUSAL STAYED. "12 of 28 templates" existed because the chips
                 and the grid are never on screen together on a phone, so a tap appeared to do
@@ -11779,10 +11871,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             )}
             {!templatesLoading && !templatesError && shownTemplates.length === 0 && tmplActiveFilters === 0 && !tmplSearch.trim() && (
               <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0', lineHeight: 1.6 }}>
+                {/* ⚠️ THREE DIFFERENT EMPTINESSES, and only one of them is the baker's to act on.
+                    A customer is never told to go to Library or to upload — they cannot do either,
+                    and naming a screen they have no way to open reads as a broken app. */}
                 {templates.length === 0
                   ? 'No templates yet'
                   : hasCap('store:manage')
-                    ? 'Your catalogue is empty. Add designs from Templates ▸ Library.'
+                    ? 'Create your catalogue by selecting cakes from Library, or upload your own. Your customers see your catalogue.'
                     : 'No cakes to show yet.'}
               </div>
             )}
@@ -11842,7 +11937,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <div style={{ ...s.templatePreview, left, top, width: size.w }}>
                         <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
                         <div style={s.templatePreviewCaption}>
-                          {tplPreview.name} · {tplPreview.tiers}-tier
+                          {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
                         </div>
                       </div>
                     );
@@ -11853,7 +11948,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       onClick={(e) => e.stopPropagation()}>
                       <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
                       <div style={s.templatePreviewCaption}>
-                        {tplPreview.name} · {tplPreview.tiers}-tier
+                        {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
                       </div>
                     </div>
                   </div>

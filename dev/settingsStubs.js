@@ -106,6 +106,10 @@ export const STUBS = {
     { id: 'm2', name: 'Engagement ring',  thumbnail_url: cakeThumb(280), tier_count: 1, offering: 'standard', source: 'mine', offered: false },
   ]),
   updateBakerCatalogue: async (ids) => { console.log('PUT /baker/catalogue', ids); return { ok: true, offered_count: ids.length }; },
+  /* The Catalogue is the rail flyout rather than a settings page, so this harness cannot show the
+     upload button — but the method is stubbed anyway so that mounting LibraryPanel against this
+     client never differs from the real one in what it OFFERS. */
+  uploadCataloguePhoto: async (p) => { console.log('POST /baker/templates (photo)', p); return { ok: true }; },
 
 };
 

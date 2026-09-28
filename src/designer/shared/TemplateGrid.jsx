@@ -68,6 +68,15 @@ const s = {
   /* ⚠️ ON the picture, not beside a name — there is no name to sit beside. Top LEFT, because the ⤢
    * preview button owns the top right on a phone, and two chips in one corner is a collision that
    * would only show up on the one device that cannot hover. */
+  /* The same chip as Premium, in the opposite corner and in the quieter tone — it names what a
+     tile IS rather than what it costs, so it must not out-shout the picture it sits on. */
+  photoBadge: {
+    position: 'absolute', bottom: 6, right: 6, zIndex: 1,
+    fontSize: 9, color: '#555', fontWeight: 700,
+    background: 'rgba(255,255,255,0.92)', border: '1px solid #BBB',
+    borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+  },
   badge: {
     position: 'absolute', top: 6, left: 6, zIndex: 1,
     fontSize: 9, color: '#333', fontWeight: 700,
@@ -213,6 +222,16 @@ export default function TemplateGrid({
                   out of the DOM would leave a grid of pictures nothing can name. It stays READABLE
                   in the enlarged preview, which is how you tell those two Footballs apart. */}
               {t.offering === 'premium' && <span style={s.badge}>Premium</span>}
+
+              {/* ⚠️ THE PHOTO IS THE ONE THAT BEHAVES DIFFERENTLY, so it is the one that is marked.
+                  Sandeep suggested labelling the 3D designs instead — the argument for flipping it
+                  is that almost every tile is a design, so marking those marks nearly everything
+                  and says nothing. A photograph cannot be opened on the canvas: tapping it shows
+                  the picture and offers a quote, where tapping a design loads it. That difference
+                  has to be legible BEFORE the tap, which is rule 7.
+                  Bottom-right: Premium owns top-left, the ⤢ preview owns top-right on a phone, and
+                  the move/delete controls live along the bottom-left of the two managing screens. */}
+              {t.type === 'photo' && <span style={s.photoBadge}>Photo</span>}
 
               {/* ⚠️ OVER THE PICTURE, ON THE TILE THAT WAS TAPPED. INVARIANTS #11 — the control and
                   what it changes, visible together: the answer to "did my tap register?" belongs on

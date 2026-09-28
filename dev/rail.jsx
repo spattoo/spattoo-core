@@ -193,6 +193,18 @@ const templatesOverride = {
   fetchTags:      async () => TAGS_STUB,
 
   // Templates ▸ Library and Templates ▸ Catalogue.
+  /* ⚠️ WITHOUT THIS THE UPLOAD BUTTON DOES NOT EVEN APPEAR. The control is gated on the method
+     existing (`apiClient?.uploadCataloguePhoto`), because a released baker app predating it cannot
+     honour the call — so an unstubbed harness shows no button and looks like the feature was never
+     built. Adds to the stub catalogue so the grid changes, which is the thing worth watching. */
+  uploadCataloguePhoto: async ({ name, thumbnail_url }) => {
+    console.log('[harness] POST /baker/templates (photo)', { name, thumbnail_url });
+    CATALOGUE_STUB = [...CATALOGUE_STUB, {
+      id: `photo-${Date.now()}`, name, thumbnail_url: '/sample-cake-1.png',
+      tier_count: null, offering: 'standard', source: 'mine', offered: true, type: 'photo',
+    }];
+    return { ok: true };
+  },
   fetchBakerCatalogue:  async () => CATALOGUE_STUB,
   fetchMyTemplates:     async () => MY_TEMPLATES_STUB,
   deleteBakerTemplate:  async (id) => { console.log('[harness] DELETE template', id); return { ok: true }; },
