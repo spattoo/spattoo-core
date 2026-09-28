@@ -2158,8 +2158,12 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const innerContent = (e_onDown) => (
     <>
       {/* Drawn FIRST, so the element's own artwork covers the tuck — the same order Toppers uses,
-          and for the same reason: the overlap is the attachment and nothing should be seen joining. */}
-      {wire ? <ElementWire wire={wire} /> : <ElementStick stick={stick} />}
+          and for the same reason: the overlap is the attachment and nothing should be seen joining.
+
+          ⚠️ THE WIRE IS NOT HERE. It is a sibling of this whole subtree, outside the tilt, the yaw
+          and the billboard — see the group below. A pick is short enough that leaning it with its
+          decoration is defensible; a wire is not, and it was visibly broken. */}
+      {wire ? null : <ElementStick stick={stick} />}
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
@@ -2356,18 +2360,42 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     );
     return (
       <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+        {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
+            ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
+            CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
+            the wire in there rotates the whole stem about the piece, so tilting the butterfly swung
+            the buried end out across the board and left it hanging in mid-air beside the cake.
+            Reported with a picture of exactly that.
+
+            The wire is not part of the decoration. It is a thing standing in the icing that the
+            decoration happens to sit on top of, so it belongs in the frame the cake is in — this
+            group, which carries only the placed position and the scale. The butterfly leans; the
+            stem stays put. Every reference photograph shows that, and none shows otherwise.
+
+            ⚠️ IT ALSO TAKES `sweep` BACK OFF THE CAMERA. A 2D sticker is billboarded about Y so its
+            artwork always faces the viewer, and inside that wrapper the bow's compass bearing was
+            measured from the CAMERA — so a cake of butterflies bowed identically from every angle,
+            which is the exact opposite of what that control is for. Out here the bearing is the
+            cake's, and turning the cake turns the bows with it.
+
+            Drawn before `inner` so the artwork still covers the tuck. */}
+        {wire && <ElementWire wire={wire} />}
         {(isGlb2d || isVerge || isInsert) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }
   // Flat mode (sticker laid horizontal on top surface)
   return (
-    <group
-      position={[sticker.x, py, sticker.z]}
-      rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}
-      scale={effScale}
-    >
-      {innerContent(onDown)}
+    <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+      {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
+          the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
+          A flat decal has little use for one, but "little use" is not "cannot happen", and a
+          capability that draws something absurd in a pose nobody checked is how this class of bug
+          arrives. */}
+      {wire && <ElementWire wire={wire} />}
+      <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
+        {innerContent(onDown)}
+      </group>
     </group>
   );
 }

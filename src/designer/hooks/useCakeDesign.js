@@ -1121,12 +1121,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
           rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
-          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
+          /* ⚠️ `extra` WINS, LIKE IT DOES FOR SCALE AND yOffset ABOVE — and it did not, which made a
+             lean impossible to place with and therefore impossible to look at. That is not academic:
+             the wire was drawn inside this element's tilt groups, so a leaning butterfly swung its
+             buried end out across the board, and a harness that passed `tiltAngle` and had it
+             silently dropped rendered five identical pictures that appeared to prove the bug fixed.
+             Every other positional field here honours `extra`; these two were the exception. */
+          tiltAngle:     extra.tiltAngle ?? seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
           // The OTHER lean axis: tiltAngle tips an element front/back, rollAngle tips it left/right
           // (and on a wall, spins it in the plane of that wall — a jersey sitting diagonally). Always
           // starts upright: no placement mode seeds a sideways lean, and a config that wanted one
           // would seed it here beside seatTilt.
-          rollAngle:     0,
+          rollAngle:     extra.rollAngle ?? 0,
           // Insert modifier: fraction of the element's LENGTH sunk into the surface (render scales by
           // measured length), and the RENDER'S "is inserted" signal — non-null iff the zone carried an
           // insert modifier (0 is valid: buried-but-flush). null otherwise. See placement.js zoneInsert

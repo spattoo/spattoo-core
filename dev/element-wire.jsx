@@ -71,6 +71,13 @@ const HEART = '/cdn/elements/files/3D/5c642a4f-231c-4a0a-a7c8-372415863cfa.glb';
 const TEST_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAB+ElEQVR4nO3Ry3FCMRAFUcJ0FA6XdOyCBRuK30Ojlu50V929NOd0MjMzMzMzM7PYzj+/f/Qb7EAXuNGj/9S6ClDB4QhUsYujIcUuikYTuigaSeiiaBShC6MhRC6KPr7QhdEHF7kw+tAiF0Ufd6XRFsOjD7riaJNh0YdcebTN19EH3GG00eHow+002urj6IPtONrs7ehD7Tza7mX0gRJGGz6NPk7CaMOH0YdJGm15F32QxNGmt+hDJI+2vUYfIXm0rbjJyPTHO03g8InbYAKHT9wGEzh84jaYwOETOHziNpjA4RM4fOI2mMDhEzh8AodP3AYTOHwCh0/g8AkcPoHDJ3D4BA6fwOETOHziNpjIwfsaV+C1J3D4BA6fwOETOHwCh0/g8AkcPoHDNwRY5DU3DFfgNSdw+AQO31BgkdfacFyB15rA4SsBFnmNleEKvMYEDl8psMjhuAI3ABY5HFfgBsAih+MK3ABY5HBckRvgXqKPkDza9hZ9iMTRpnfRB0kabfkw+jAJow2fRh8nYbThy+gD7Tza7u3oQ+042uzj6IPtNNrqcPThdhht9HX0AVcebTMs+pArjjYZHn3QlUZblEYfV9gJ0YcWd0L0wcWdFH18YSdEQ4g7KRpF2EnRSMJOikYTdmI0pKgTE7VZgto14czMzMzMzFr3D78xf7bvIjwlAAAAAElFTkSuQmCC';
 const IMG = q.get('img');
 const FOLD = q.get('fold') === '1';
+/* ⚠️ `?tilt=` EXISTS BECAUSE A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE CAKE, and nothing
+   here could express a lean, so nothing here could show it. The wire used to be drawn inside the
+   element's tilt/yaw/billboard groups, which rotated the whole stem about the piece and swung the
+   buried end out across the board. Sweep this against the fix: the butterfly should lean and the
+   stem should not move at all. */
+const TILT = q.has('tilt') ? Number(q.get('tilt')) : 0;
+const ROLL = q.has('roll') ? Number(q.get('roll')) : 0;
 const glb = q.get('glb');
 const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUTTERFLY;
 
@@ -79,7 +86,7 @@ const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUT
 const FOLDED = ART === BUTTERFLY ? q.get('fold') !== '0' : FOLD;
 
 const PIECE = {
-  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${ART.slice(-24)}`,
+  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${ART.slice(-24)}`,
   name: 'element on a wire',
   image_url: ART,
   allowed_zones: ['top_surface'],
@@ -104,7 +111,11 @@ createRoot(document.getElementById('root')).render(
     {/* ⚠️ OFF AT PLACEMENT, like the pick — "can add a wire", so a baker decides. Previewing it
         means saying so explicitly, exactly as the card's toggle does. */}
     <ElementPreview element={PIECE} zone="top_surface" mode="stand" autoRotate={false}
-                    extra={WIRE ? { wire: { on: true, ...shape } } : null}
+                    extra={{
+                      ...(WIRE ? { wire: { on: true, ...shape } } : {}),
+                      ...(TILT ? { tiltAngle: TILT } : {}),
+                      ...(ROLL ? { rollAngle: ROLL } : {}),
+                    }}
                     style={{ height: '100%' }} />
   </div>,
 );
