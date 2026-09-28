@@ -56,3 +56,54 @@ describe('the entry doors report what has been answered', () => {
     expect(shell).toMatch(/const anyFilled = ENTRIES\.some\(x => isFilled\(draft, x\.facet\)\)/);
   });
 });
+
+/* ── The primary action must not be out-shouted ──────────────────────────────────────────────────
+ *
+ * Sandeep: "'start over' button looks more highlighted than the 'send to 31 bakers' button… we
+ * should change the positin of the start over button… it should not hijack the 'send to baker'
+ * button."
+ *
+ * Two independent causes, so two groups of assertions: WHERE the destructive action sits, and what
+ * INK the primary action wears.
+ */
+describe('Start over does not compete with Send', () => {
+  /* It stood at the foot of the body, directly above the pinned footer — so the last thing before
+     "Send to <baker>" was a button for throwing the cake away. Measured after the move: 32px under
+     the title, 273px from Send. */
+  it('lives in the header, not above the footer', () => {
+    expect(shell).toMatch(/Start over, BESIDE THE TITLE/);
+    expect(shell).toMatch(/\{!open && !verifying && !askResume && anyAnswered && \(/);
+  });
+
+  /* ⚠️ RENDERED ONCE. Moving JSX is how a control quietly ends up in both places, and the duplicate
+     would sit exactly where the bug was. */
+  it('is rendered exactly once', () => {
+    expect(shell.match(/>Start over</g) ?? []).toHaveLength(1);
+    expect(shell.match(/style=\{s\.resetWrap\}/g) ?? []).toHaveLength(1);
+  });
+
+  /* ⚠️ NOT THE TOP-RIGHT CORNER, which was the first suggestion: that corner holds the ✕/← whose
+     meaning changes with state, and a destructive action beside a "back" control is how somebody
+     clears a cake they meant to step out of. `s.close` must stay the only thing in that slot. */
+  it('keeps the destructive action out of the dismiss corner', () => {
+    const header = shell.slice(shell.indexOf('<header style={s.head}>'), shell.indexOf('</header>'));
+    expect(header).toMatch(/aria-label=\{open \|\| verifying \? 'Back' : 'Close'\}/);
+    expect(header.indexOf('Start over')).toBeLessThan(header.indexOf("aria-label={open || verifying ? 'Back' : 'Close'}"));
+  });
+
+  /* Quiet in WEIGHT, not in findability. It was a 12px link once, which was the cure for the
+     commonest confusion and nobody could find it — so it keeps an underline, which reads as
+     pressable at rest on a screen with no hover (rule 7). */
+  it('recedes without becoming invisible', () => {
+    expect(shell).toMatch(/textDecoration: 'underline'/);
+  });
+
+  /* ⚠️ NO HARDCODED WHITE ON A BRAND FILL. `s.send` shipped `color: '#fff'` on the baker's colour,
+     so a mid-tone brand gave 2.62:1 while "Start over" — fixed neutrals — was 6.51:1 for every
+     baker. My own tickDisc had the same defect an hour after I wrote it. */
+  it('every brand fill takes an ink that adapts to the colour', () => {
+    expect(shell).not.toMatch(/background: primary, color: '#fff'/);
+    expect(shell).not.toMatch(/ready \? '#fff'/);
+    expect(shell.match(/onColor\(primary\)/g) ?? []).toHaveLength(3);   // send, doneTick, tickDisc
+  });
+});

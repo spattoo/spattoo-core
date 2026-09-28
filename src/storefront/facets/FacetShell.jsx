@@ -8,7 +8,7 @@ import {
   FACETS, emptyDraft, loadDraft, saveDraft, clearDraft, isFilled, canSubmit, withTierCount,
   draftSummary,
 } from './cakeDraft.js';
-import { alpha, darken, lum } from '../storefrontKit.js';
+import { alpha, darken, lum, onColor } from '../storefrontKit.js';
 
 // ── A door outline that survives ANY baker colour ───────────────────────────────────────────────
 // The border below is the baker's own primary, and a baker can pick a PALE one — storefrontKit
@@ -277,6 +277,47 @@ export default function FacetShell({
                 : askResume ? 'Welcome back'
                 : 'Where would you like to start?'}
             </h2>
+
+            {/* ── Start over, BESIDE THE TITLE ──────────────────────────────────────────────────
+                Sandeep: "we should change the positin of the start over button… it should not
+                hijack the 'send to baker' button."
+
+                It used to sit at the foot of the body, directly above the pinned footer — so the
+                last thing before "Send to <baker>" was a button for throwing the cake away. No
+                colour fix cures that: two controls in one visual block compete for the same moment,
+                whichever way they are painted.
+
+                ⚠️ NOT THE TOP-RIGHT CORNER, though that was the first suggestion. That corner holds
+                the header's ✕/← , whose meaning already changes with state (Close on the chooser,
+                Back inside a facet). Putting a DESTRUCTIVE action beside a control that sometimes
+                means "back" is how somebody clears a cake they meant to step out of.
+
+                ⚠️ AND IT STAYS A VISIBLE BUTTON. It was quiet and hidden once before, on the
+                reasoning that it is "the least likely thing anybody came here to do" — then turned
+                out to be the cure for the commonest confusion, a draft restored days later, and the
+                first person to hit that could not find it. Rarely wanted, urgently needed when it
+                is. Quiet in WEIGHT, not in findability.
+
+                The confirmation moves with it: leaving the question down by Send while its trigger
+                lives up here would split one interaction across two ends of the panel. */}
+            {!open && !verifying && !askResume && anyAnswered && (
+              <div style={s.resetWrap}>
+                {confirmReset ? (
+                  <>
+                    <span style={s.resetAsk}>Clear everything and start again?</span>
+                    <button type="button" style={s.resetYes}
+                            onClick={() => { patch({ __reset: true }); setConfirmReset(false); }}>
+                      Yes, start over
+                    </button>
+                    <button type="button" style={s.resetNo}
+                            onClick={() => setConfirmReset(false)}>Cancel</button>
+                  </>
+                ) : (
+                  <button type="button" style={s.resetBtn}
+                          onClick={() => setConfirmReset(true)}>Start over</button>
+                )}
+              </div>
+            )}
           </div>
           <button type="button"
                   onClick={open
@@ -387,38 +428,9 @@ export default function FacetShell({
                     </div>
                   )}
 
-                  {/* ── Start over ───────────────────────────────────────────────────────────────
-                      The draft SURVIVES the tab closing, which is the point of it — somebody can
-                      put their phone down mid-cake and come back. The cost is that a customer
-                      returning days later meets a half-answered cake with no way to clear it, and
-                      until now the only cure was clearing site data.
-
-                      Quiet, and at the bottom: it is the least likely thing anybody came here to
-                      do, and it sits below the doors so it can never be the first thing tapped. */}
-                  {anyAnswered && (
-                    <div style={s.resetWrap}>
-                      {confirmReset ? (
-                        <>
-                          <span style={s.resetAsk}>Clear everything and start again?</span>
-                          <button type="button" style={s.resetYes}
-                                  onClick={() => { patch({ __reset: true }); setConfirmReset(false); }}>
-                            Yes, start over
-                          </button>
-                          <button type="button" style={s.resetNo}
-                                  onClick={() => setConfirmReset(false)}>Cancel</button>
-                        </>
-                      ) : (
-                        /* ⚠️ A BUTTON, not a 12px link. It was styled quiet and put at the bottom
-                           on the reasoning that it is "the least likely thing anybody came here to
-                           do" — but it turned out to be the CURE for the commonest confusion (a
-                           draft restored days later), and the first person to hit that could not
-                           find it. Quiet is right for something rarely wanted; this is rarely
-                           wanted and urgently needed when it is. */
-                        <button type="button" style={s.resetBtn}
-                                onClick={() => setConfirmReset(true)}>Start over</button>
-                      )}
-                    </div>
-                  )}
+                  {/* Start over moved BESIDE THE TITLE — see the header. It stood here, at the foot
+                      of the body directly above the pinned footer, which made the last thing before
+                      "Send to <baker>" a button for throwing the cake away. */}
                 </>
               )}
           </div>
@@ -562,14 +574,25 @@ const s = {
   tickDisc: (primary) => ({
     flexShrink: 0, width: 24, height: 24, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: primary, color: '#fff', fontSize: 13, fontWeight: 800, lineHeight: 1,
+    /* ⚠️ `onColor`, NOT `#fff`. I wrote this disc an hour ago with hardcoded white and measured it
+       at 10.60:1 — true only because the harness baker is #9b5f72. On a sage brand it is 2.62:1.
+       The ink has to follow the colour a baker actually picked. */
+    background: primary, color: onColor(primary), fontSize: 13, fontWeight: 800, lineHeight: 1,
   }),
 
   rest:    { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 },
-  resetWrap: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 10 },
-  resetBtn:  { border: '1.5px solid #DFD6C8', background: '#fff', borderRadius: 11,
-               padding: '10px 16px', font: 'inherit', fontSize: 13, fontWeight: 700,
-               color: '#6B5B4C', cursor: 'pointer' },
+  /* Sits under the title now, not above the footer — so it is scaled to a header, not to the body's
+     doors. `marginTop: 6` keeps it tucked to the title rather than floating between header rows. */
+  resetWrap: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 6 },
+  /* ⚠️ QUIET IN WEIGHT, NOT IN FINDABILITY, and those are different things. The bordered 13px pill
+     this replaces was built to sit among the body's doors; beside a 21px title it would out-shout
+     the heading and simply move the competition it was meant to end. So: no fill, no border, an
+     underline so it still reads as pressable at rest (rule 7 — a baker's screen has no hover).
+     It must NOT become the 12px link it once was: that version was the cure for the commonest
+     confusion and nobody could find it. */
+  resetBtn:  { border: 'none', background: 'none', borderRadius: 0, padding: 0,
+               font: 'inherit', fontSize: 12.5, fontWeight: 700, color: '#7A6C60',
+               textDecoration: 'underline', textUnderlineOffset: 3, cursor: 'pointer' },
   resumeWrap:  { display: 'flex', flexDirection: 'column', gap: 10 },
   resumeTitle: { fontSize: 17, fontWeight: 800, color: '#3D3226' },
   resumeChips: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 2 },
@@ -596,7 +619,12 @@ const s = {
           borderTop: '1px solid #F0E9E0', background: '#FFFDF9' },
   send: (primary, ready) => ({
     width: '100%', padding: '14px 0', borderRadius: 14, border: 'none',
-    background: ready ? primary : '#E3DBD1', color: ready ? '#fff' : '#A2968A',
+    /* ⚠️ THE BUTTON SANDEEP REPORTED, AND THE INK WAS THE FAULT. It hardcoded white on the baker's
+       colour, so on a mid-tone brand the primary action was 2.62:1 while "Start over" — fixed
+       neutrals — was 6.51:1 for every baker. The secondary control was literally more readable than
+       the primary one, which is the same failure this file already fixed once for the doors.
+       `onColor` measures rather than guesses, so this holds for any colour a baker picks. */
+    background: ready ? primary : '#E3DBD1', color: ready ? onColor(primary) : '#A2968A',
     font: 'inherit', fontSize: 15, fontWeight: 800, cursor: ready ? 'pointer' : 'default',
   }),
   hint: { fontSize: 11.5, color: '#A2968A', fontWeight: 600, textAlign: 'center', marginTop: 8 },
@@ -606,7 +634,7 @@ const s = {
                padding: '46px 26px 34px', textAlign: 'center' },
   doneTick:  (primary) => ({ width: 54, height: 54, borderRadius: '50%', display: 'flex',
                              alignItems: 'center', justifyContent: 'center', fontSize: 24,
-                             color: '#fff', background: primary, marginBottom: 4 }),
+                             color: onColor(primary), background: primary, marginBottom: 4 }),
   doneTitle: { fontSize: 21, fontWeight: 800, color: '#2A241F', margin: 0 },
   doneBody:  { fontSize: 13.5, color: '#7A6C60', margin: '0 0 14px' },
 };
