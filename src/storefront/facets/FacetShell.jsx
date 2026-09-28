@@ -38,10 +38,18 @@ const FACET_TITLE = {
   date:    'When do you need it?',
 };
 
-// The chip that INVITES someone in, which is not the same string as the heading once they are there.
-// "How many people?" is a good invitation and a poor header — the size facet asks a second question
-// about shape, and a header still saying "how many people" contradicts the body.
-const FACET_CHIP = { ...FACET_TITLE, size: 'How many people?' };
+// The chip that INVITES someone in, which is not the same string as the heading once they are there
+// ("Size and shape"), because the size facet asks a second question about shape.
+//
+// ⚠️ "Weight?" AND NOT "How many people?", WHICH IS HOW THE CAKE IS ACTUALLY BOUGHT HERE. Sandeep:
+// "in India, its not per servings usually, people will ask in kgs." The chip should say the word a
+// customer would say. It also matches what this facet STORES — `draft.size.weightKg` is the answer,
+// and servings-per-kg is treated throughout as a convention rather than a fact.
+//
+// ⚠️ NOT "How much cake?" either, which was my suggestion: Sandeep — "very vague… in India, its
+// better to ask in plain language in some cases". A vague-but-friendly phrasing is worse than the
+// plain word when the plain word is the one people use.
+const FACET_CHIP = { ...FACET_TITLE, size: 'Weight?' };
 
 // ── The entry screen's title ────────────────────────────────────────────────────────────────────
 // "Where would you like to start?" and NOT the hero button's words. The button says "Let's make your
