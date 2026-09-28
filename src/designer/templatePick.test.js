@@ -223,6 +223,40 @@ describe('the upload label survives the rail behind the flyout', () => {
   });
 });
 
+/* ── Stocking the shelf is a footer decision, not a corner icon ──────────────────────────────────
+ *
+ * Sandeep: "add button is an important part of creating catalogue. it is pushed to a corner. can we
+ * have 2 buttons on this screen? may be at the bottom… then remove the existing top right button
+ * near the filter."
+ */
+describe('the Catalogue flyout offers both ways to stock it', () => {
+  it('names the two doors, in the footer', () => {
+    expect(designer).toMatch(/Choose from Library/);
+    expect(designer).toMatch(/Upload a cake photo/);
+  });
+
+  it('and the corner + tile is gone', () => {
+    expect(designer).not.toMatch(/<PhotoAddTile/);
+  });
+
+  /* ⚠️ THE ORDER OF THESE THREE CALLS IS THE WHOLE BUG, AND IT IS INVISIBLE AT RUNTIME UNTIL SOMEONE
+     LOOKS AT THE SCREEN. `leaveOpenPanels` closes the docked pages and the rail menus but NOT
+     `templatesOpen`, so without the explicit close the Library page (z-index 300) opens with this
+     flyout (20) stranded behind it — Sandeep: "i cant see any catalogue because the flyout is
+     opening behind the page." And Library must be opened AFTER `leaveOpenPanels`, because that call
+     itself does `setLibraryPanelOpen(false)`: reversed, the button opens nothing at all. */
+  it('leaves this flyout before opening Library, and opens it after closing the rest', () => {
+    expect(designer).toMatch(
+      /setTemplatesOpen\(false\); leaveOpenPanels\(\); setLibraryPanelOpen\(true\);/);
+  });
+
+  /* A button that cannot pick a file is a button that does nothing. The label wraps a real input —
+     the idiom SettingsPanel and PhotoAddTile already use — rather than clicking a ref. */
+  it('the upload door is a real file input', () => {
+    expect(designer).toMatch(/type="file"/);
+  });
+});
+
 describe('the overlay does not eat the tap it is reporting', () => {
   /* Drawn over the picture, so it must not become the click target — and it sits ON the tile rather
      than over the panel because WHICH cake is loading is the useful half (INVARIANTS #11: the

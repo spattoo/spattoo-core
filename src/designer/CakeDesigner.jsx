@@ -111,7 +111,6 @@ import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
-import { PhotoAddTile } from '../shared/PhotoAddTile.jsx';
 import { validateImageFile, compressImage } from '../shared/image.js';
 import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
@@ -11818,16 +11817,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   `requireCapability('template:manage')`; I gated this on store:manage first and
                   wrote a comment claiming it matched the server, which it did not.
                   `flexShrink: 0` like the funnel beside it, so the search input keeps the slack. */}
-              {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
-                <PhotoAddTile
-                  color={INK}
-                  size={34}
-                  busy={cataloguePhotoBusy}
-                  multiple={false}
-                  label=""
-                  onFiles={uploadCataloguePhoto}
-                />
-              )}
+              {/* ⚠️ THE UPLOAD CONTROL MOVED TO THE FOOTER (see below). Sandeep: "add button is an
+                  important part of creating catalogue. it is pushed to a corner." A 34px `+` tucked
+                  beside the funnel read as a minor adjunct to SEARCH, when it is one of only two
+                  ways this shelf gets stocked. */}
             </div>
 
             {/* ⚠️ BOTH WAYS TO STOCK THE SHELF, NOT JUST THE ONE THIS BUTTON DOES. Sandeep dictated
@@ -12137,6 +12130,66 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               document.body,
             )}
             </div>{/* end flyoutScroll */}
+
+            {/* ── THE TWO WAYS TO STOCK THE SHELF, GIVEN EQUAL WEIGHT ──────────────────────────
+                Sandeep: "add button is an important part of creating catalogue. it is pushed to a
+                corner. can we have 2 buttons on this screen? may be at the bottom."
+
+                They sit AFTER `flyoutScroll`, which is `flex: 1` — so they pin to the panel's
+                bottom instead of scrolling away with the grid, which is the whole point of moving
+                them out of the search row.
+
+                ⚠️ TWO DOORS, ONE WEIGHT. The catalogue is filled from Library or from a photograph,
+                and nothing about this screen says one is the lesser path — so they are the same
+                size and the same style rather than a primary and a secondary.
+
+                ⚠️ "Choose from Library" LEAVES, and says so. It is a destination, not an action
+                performed here, which is why the word is "Choose" rather than "Add" — the latter
+                implies it happens in place. */}
+            {(hasCap('store:manage') || (hasCap('template:manage') && apiClient?.uploadCataloguePhoto)) && (
+              <div style={{ display: 'flex', gap: 8, flexShrink: 0, paddingTop: 9, marginTop: 2,
+                            borderTop: '1px solid rgba(0,0,0,0.10)' }}>
+                {hasCap('store:manage') && (
+                  <button
+                    type="button"
+                    /* ⚠️ THE FLYOUT MUST BE CLOSED EXPLICITLY. `leaveOpenPanels` closes the docked
+                       pages and the rail menus — it does NOT close `templatesOpen`. Without this
+                       line the Library page (z-index 300) would open with this flyout (20) stranded
+                       behind it, which is the exact failure Sandeep reported before: "i cant see any
+                       catalogue because the flyout is opening behind the page."
+                       ⚠️ And Library is opened AFTER `leaveOpenPanels`, because that call itself
+                       does `setLibraryPanelOpen(false)` — the reverse order opens nothing. */
+                    onClick={() => { setTemplatesOpen(false); leaveOpenPanels(); setLibraryPanelOpen(true); }}
+                    style={s.catalogueAction}
+                  >Choose from Library</button>
+                )}
+
+                {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
+                  /* A `<label>` wrapping a hidden file input — the idiom already used for the logo
+                     picker (settings/SettingsPanel.jsx) and inside PhotoAddTile. The label IS the
+                     control, so it is keyboard reachable and announced as a file input with no
+                     handling of our own.
+                     ⚠️ NOT `PhotoAddTile`: that is deliberately a square dashed TILE, and its own
+                     note argues the square is "the honest shape" for a picture joining a grid while
+                     "a full-width bar says perform an action". Here the bar is right — this is an
+                     action in a footer, not a gap among thumbnails. */
+                  <label style={{ ...s.catalogueAction,
+                                  cursor: cataloguePhotoBusy ? 'progress' : 'pointer',
+                                  opacity: cataloguePhotoBusy ? 0.6 : 1 }}>
+                    {cataloguePhotoBusy ? 'Adding your photo…' : 'Upload a cake photo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={cataloguePhotoBusy}
+                      style={{ display: 'none' }}
+                      /* Cleared after each pick so choosing the SAME file twice still fires a
+                         change event — otherwise a failed upload cannot be retried with it. */
+                      onChange={(e) => { uploadCataloguePhoto(e.target.files); e.target.value = ''; }}
+                    />
+                  </label>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -14980,6 +15033,28 @@ const s = {
     position: 'fixed', inset: 0, zIndex: 320,
     background: 'rgba(20,16,18,0.45)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
+  },
+
+  /* The Catalogue flyout's two footer doors — "Choose from Library" and "Upload a cake photo".
+   *
+   * ⚠️ ONE STYLE FOR BOTH, ON PURPOSE. A catalogue is stocked from the Library or from a photograph,
+   * and nothing here makes one the lesser path — so a primary/secondary pair would assert a
+   * preference the product does not have. `flex: 1` splits the width evenly whatever the panel is.
+   *
+   * ⚠️ IT PAINTS ITS OWN BACKGROUND, like every other control on this surface. The flyout is
+   * translucent over the rail, so anything that does not bring its own ground can be washed out —
+   * measured at 1.00:1 for the bare help line above. The footer sits low, where the rail no longer
+   * intrudes, but the ground costs nothing and removes the dependency on that staying true.
+   *
+   * Borrowed from the "To library" chip on the tiles rather than invented: same border, same ink.
+   * No `whiteSpace: nowrap` — on a phone these wrap rather than overflow the panel. */
+  catalogueAction: {
+    flex: 1, minWidth: 0,
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    padding: '9px 12px', borderRadius: 10,
+    border: '1.5px solid #C5D4C8', background: 'rgba(255,255,255,0.94)',
+    fontSize: 12, fontWeight: 800, color: '#2C4433', lineHeight: 1.3,
+    fontFamily: "'Quicksand', sans-serif", textAlign: 'center', cursor: 'pointer',
   },
   /* The tile's own styles — grid, card, placeholder, Premium badge and the ⤢ preview button — moved
      to `designer/shared/TemplateGrid.jsx` with the tile, along with the reasoning behind each (the
