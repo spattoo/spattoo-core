@@ -38,11 +38,17 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
      of its own width from the icing is a brooch; the reference photographs show them one to three
      widths out, which is what makes the swarm read as flight.
 
-     ⚠️ 6, NOT THE 3 THIS SHIPPED WITH AS A DESK GUESS. At 3 the bow is barely a wobble at the size
-     a piece is actually seen — bend 0 and bend 0.5 were indistinguishable on a contact sheet, which
-     is the same mistake the pick made with a card topper's proportions on a small solid element.
-     Chosen in dev/element-wire.html against a render. */
-  length: 6.0,
+     ⚠️ 4, AND IT HAS BEEN 3 THEN 6 BEFORE LANDING HERE — each move made against a render rather
+     than at a desk. 3 was a desk guess and the bow was a wobble at the size a piece is actually
+     seen; 6 was chosen on a fondant heart, which is roughly square, and reads long under a
+     butterfly, whose width makes the same multiple of its HEIGHT carry much further. Sandeep, on a
+     butterfly at the top of the range: *"lets have a default value as 4, not as 6."*
+
+     ⚠️ AND IT IS ONLY THE FALLBACK. A row that authors `placement_config.wire.length` overrides it,
+     and that is where the real answer for any given element belongs — Sandeep: *"default value
+     should be from the configured value in manage elements."* This number exists so a blank field
+     renders something sensible, not so it decides anything. */
+  length: 4.0,
   /* Multiplier on WIRE_GAUGE below. 1 is the gauge that reads as florist wire in
      dev/element-wire.html; the control exists because a heavy butterfly wants a visibly stiffer
      stem than a paper one. */
@@ -75,7 +81,7 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
  * three of their own widths clear of the icing, where a pick barely reaches past the piece it
  * carries. So it gets its own span rather than the one it was nearest to.
  */
-export const WIRE_LENGTH = Object.freeze({ min: 1, max: 14, step: 0.5 });
+export const WIRE_LENGTH = Object.freeze({ min: 1, max: 9, step: 0.5 });
 
 /* The wire's own gauge, as a fraction of the element's height. Chosen against a render in
    dev/element-wire.html rather than guessed: at 0.017 a heart's stem reads as wire, at half that it
