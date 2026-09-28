@@ -2606,6 +2606,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
+  /* The catalogue photograph a manual order was started FROM, as [{ key, preview }] — the shape
+     OrderModal's own uploader produces, so it needs no special case downstream.
+     ⚠️ The picture is already in R2 (the baker uploaded it into their catalogue), so this passes the
+     EXISTING key rather than uploading a second copy of the same cake. */
+  const [manualOrderPhoto,    setManualOrderPhoto]    = useState(null);
   const [ordersInitialView,   setOrdersInitialView]   = useState('list');  // which Orders view the rail asked for ('list' | 'calendar')
   // Holds the quote result after a successful customer submit; read when the
   // OrderModal success screen is dismissed so the host can react (redirect to a
@@ -12023,6 +12028,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <div style={s.templatePreviewCaption}>
                         {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
                       </div>
+
+                      {/* ── What a baker does with a photograph of their own work ─────────────────
+                          Sandeep: "when baker taps on it, show it bigger with a button 'create
+                          order for a customer'".
+
+                          ⚠️ ONLY IN THIS BRANCH, AND THAT IS NOT AN OVERSIGHT. The other branch is
+                          the desktop HOVER preview — it clears on mouseleave, so a button drawn
+                          there could never be reached by the pointer travelling to it. A tap always
+                          arrives here (TemplateGrid sends `rect: null` for a photo).
+
+                          Gated on `order:manage` to match the Orders panel's own New Order control,
+                          and on the client method existing, so a released baker app that predates
+                          `createManualOrder` draws nothing rather than a button that fails. */}
+                      {tplPreview.template?.type === 'photo'
+                        && hasCap('order:manage') && apiClient?.createManualOrder && (
+                        <button type="button"
+                          style={{ width: '100%', marginTop: 10, padding: '11px 14px', borderRadius: 11,
+                                   border: 'none', background: primaryColor, color: '#fff',
+                                   font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => {
+                            const t = tplPreview.template;
+                            setTplPreview(null);
+                            setTemplatesOpen(false);
+                            /* No key means no picture to attach — still open the order, because a
+                               baker taking an order for a cake they know is worth more than a
+                               refusal over a missing thumbnail. */
+                            setManualOrderPhoto(t?.thumbnail_key
+                              ? [{ key: t.thumbnail_key, preview: t.thumbnail_url }] : null);
+                            setManualOrderOpen(true);
+                          }}>
+                          Create order for a customer
+                        </button>
+                      )}
                     </div>
                   </div>
                 ),
@@ -14334,7 +14372,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           mode="baker"
           manual
           initialDeliveryDate={manualOrderDate}
-          onClose={() => { setManualOrderOpen(false); setManualOrderDate(null); }}
+          initialReferenceKeys={manualOrderPhoto ?? []}
+          onClose={() => { setManualOrderOpen(false); setManualOrderDate(null); setManualOrderPhoto(null); }}
           onSubmit={handleManualOrderSubmit}
           apiClient={apiClient}
           supabase={supabase}

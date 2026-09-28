@@ -124,8 +124,12 @@ describe('putting a cake in the catalogue is DELIBERATE', () => {
      is in flight — so this pins the two ends rather than the exact ternary it started as. */
   it('the shared grid drops the pointer cursor when nothing picks', () => {
     const gridSrc = readFileSync(new URL('../designer/shared/TemplateGrid.jsx', import.meta.url), 'utf8');
-    expect(gridSrc).toMatch(/cursor: !onPick \? 'default'/);
-    expect(gridSrc).toMatch(/blocked \? 'progress' : 'pointer'/);
+    /* ⚠️ "NO `onPick`" STOPPED MEANING "DOES NOTHING" (2026-09-28). A photo tile points even where
+       nothing picks, because its tap opens the picture large — which is an action, and rule 7 says
+       an action must be legible before it. The rule under test is unchanged: a tile that genuinely
+       does nothing must not advertise that it does. */
+    expect(gridSrc).toMatch(/\(onPick \|\| t\.type === 'photo'\) \? 'pointer' : 'default'/);
+    expect(gridSrc).toMatch(/cursor: blocked \? 'progress'/);
   });
 
   /* Neither screen may still tell a baker to tap a cake — the instruction stopped being true. */

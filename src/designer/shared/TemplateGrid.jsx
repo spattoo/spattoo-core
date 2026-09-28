@@ -155,7 +155,10 @@ export default function TemplateGrid({
     const rect = e.currentTarget.getBoundingClientRect();
     clearTimeout(timer.current);
     timer.current = setTimeout(
-      () => onPreview?.({ src, name: t.name, tiers: t.tier_count, rect }), 180);
+      /* `template` rides along so the enlarged view can tell a PHOTO from a design and offer the
+         action that belongs to it. Without the row it only had a src, a name and a tier count —
+         none of which distinguish a picture you can order from a design you can open. */
+      () => onPreview?.({ src, name: t.name, tiers: t.tier_count, rect, template: t }), 180);
   };
   const hoverOut = () => { clearTimeout(timer.current); onPreviewEnd?.(); };
 
@@ -177,14 +180,28 @@ export default function TemplateGrid({
                  tap — Sandeep: "even clicking by mistake will add it to catalogue. it should be a
                  deliberate action" — so there the picture is a picture and the buttons are the
                  controls. The flyout still picks, and still points. */
+              /* A photo always points, even where `onPick` is absent: its tap opens the picture
+                 large, which is an action, and rule 7 says that must be legible before the tap. */
               style={{ ...s.card,
-                       cursor: !onPick ? 'default' : blocked ? 'progress' : 'pointer',
+                       cursor: blocked ? 'progress' : (onPick || t.type === 'photo') ? 'pointer' : 'default',
                        ...(on ? s.cardOn : null) }}
               /* Desktop only: touch has no hover, and the two substitutes both break here —
                  long-press fights the panel's own scrolling, and a tap already picks the template. */
               onMouseEnter={isMobile ? undefined : (e) => hoverIn(t, e)}
               onMouseLeave={isMobile ? undefined : hoverOut}
-              onClick={() => { if (!blocked) onPick?.(t); }}
+              /* ⚠️ A PHOTO IS OPENED, NEVER PICKED, AND BEFORE THIS IT WAS A DEAD TILE. `onPick` runs
+                 `startFromTemplate`, which fetches the design by id and returns early on
+                 `if (!templateDesign) return` — and a photo has no design by construction (migration
+                 116's CHECK). So tapping one did nothing at all, silently. It now opens the enlarged
+                 view, which is where the action for a photograph lives. */
+              onClick={() => {
+                if (blocked) return;
+                if (t.type === 'photo') {
+                  onPreview?.({ src, name: t.name, tiers: t.tier_count, rect: null, template: t });
+                  return;
+                }
+                onPick?.(t);
+              }}
             >
               {src
                 /* ⚠️ `height: 'auto'` IS LOAD-BEARING. The width/height ATTRIBUTES reserve the tile
@@ -205,7 +222,7 @@ export default function TemplateGrid({
                 <button type="button" aria-label={`Preview ${t.name}`} style={s.previewBtn}
                   onClick={(e) => {
                     e.stopPropagation();          // never pick from this button
-                    onPreview?.({ src, name: t.name, tiers: t.tier_count, rect: null });
+                    onPreview?.({ src, name: t.name, tiers: t.tier_count, rect: null, template: t });
                   }}
                 >⤢</button>
               )}

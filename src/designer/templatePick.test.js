@@ -53,11 +53,16 @@ describe('a pick in flight cannot start a second one', () => {
      otherwise race to `loadDesign`, where the loser silently wins the canvas. */
   it('the grid ignores a tap while any pick is loading', () => {
     expect(grid).toMatch(/const blocked = busyId != null;/);
-    expect(grid).toMatch(/onClick=\{\(\) => \{ if \(!blocked\) onPick\?\.\(t\); \}\}/);
+    /* ⚠️ THE HANDLER IS NO LONGER ONE LINE — it grew a PHOTO branch, because a photograph opens
+       rather than picks. What has to survive that is the ORDER: `blocked` returns before either
+       branch is reached. A photo opening mid-fetch would be harmless in itself, but a guard that
+       sits after the branch is a guard the second tap can walk around. */
+    expect(grid).toMatch(/onClick=\{\(\) => \{\s*\n\s*if \(blocked\) return;/);
+    expect(grid).toMatch(/onPick\?\.\(t\);/);
   });
 
   it('and says so with the cursor rather than silently swallowing it', () => {
-    expect(grid).toMatch(/blocked \? 'progress' : 'pointer'/);
+    expect(grid).toMatch(/cursor: blocked \? 'progress'/);
   });
 });
 
@@ -88,6 +93,63 @@ describe('the spinner is shared, not a sixth copy', () => {
     const spinner = readFileSync(new URL('../shared/Spinner.jsx', import.meta.url), 'utf8');
     expect(spinner).not.toMatch(/^\s*import .*@react-three/m);
     expect(spinner).not.toMatch(/from '@react-three/);
+  });
+});
+
+/* ── A photograph is opened, never picked ────────────────────────────────────────────────────────
+ *
+ * Sandeep: "on tap- show the picture big with a 'Request quote' button (customer view). when baker
+ * taps on it, show it bigger with a button 'create order for a customer'".
+ *
+ * ⚠️ BEFORE THIS, A PHOTO TILE WAS A DEAD CONTROL. `onPick` runs `startFromTemplate`, which fetches
+ * the design by id and returns early on `if (!templateDesign) return` — and a photo has no design by
+ * construction (migration 116's CHECK). So the tap did nothing, silently, on both surfaces.
+ */
+describe('a photograph is opened, never picked', () => {
+  const facet = readFileSync(new URL('../storefront/facets/DesignFacet.jsx', import.meta.url), 'utf8');
+  const draft = readFileSync(new URL('../storefront/facets/cakeDraft.js', import.meta.url), 'utf8');
+  const modal = readFileSync(new URL('../orders/OrderModal.jsx', import.meta.url), 'utf8');
+
+  it('the grid opens a photo rather than picking it', () => {
+    expect(grid).toMatch(/if \(t\.type === 'photo'\) \{/);
+  });
+
+  /* Without the row the enlarged view has a src, a name and a tier count — none of which say
+     whether this is a picture you can order or a design you can open. */
+  it('the preview payload carries the row', () => {
+    expect(grid).toMatch(/rect, template: t/);
+    expect(grid).toMatch(/rect: null, template: t/);
+  });
+
+  /* ⚠️ THE ACTION LIVES ONLY IN THE BACKDROP BRANCH. The other branch is the desktop HOVER preview,
+     which clears on mouseleave — a button drawn there could never be reached by a pointer travelling
+     to it. A tap always produces `rect: null`, which is this branch. */
+  it('the baker action sits on the tapped preview, gated like New Order', () => {
+    expect(designer).toMatch(/tplPreview\.template\?\.type === 'photo'/);
+    expect(designer).toMatch(/Create order for a customer/);
+    expect(designer).toMatch(/hasCap\('order:manage'\) && apiClient\?\.createManualOrder/);
+  });
+
+  /* The picture is already in R2 — the baker uploaded it into their own catalogue — so the order
+     references THAT object instead of storing a second copy of one cake. */
+  it('the manual order is seeded with the existing key, not a re-upload', () => {
+    expect(designer).toMatch(/initialReferenceKeys=\{manualOrderPhoto \?\? \[\]\}/);
+    expect(modal).toMatch(/useState\(initialReferenceKeys\)/);
+  });
+
+  it('the customer gets Request quote, and the photo travels as a reference key', () => {
+    expect(facet).toMatch(/Request quote/);
+    expect(facet).toMatch(/kind: 'photo'/);
+    expect(facet).toMatch(/photoKeys: t\.thumbnail_key \? \[t\.thumbnail_key\] : \[\]/);
+  });
+
+  /* ⚠️ `[]` IS NOT NULLISH, AND THAT WAS A REAL BUG. `uploadPhotos` returns `[]` when the customer
+     uploaded nothing, so `referenceKeys ?? draft.design.photoKeys` never fell through — the fallback
+     was unreachable on every path but the photo door. It went unnoticed while `photoKeys` was only
+     ever filled BY that upload, and broke the moment a catalogue photo put a key there without
+     uploading anything: the key was silently dropped and the baker got an order with no picture. */
+  it('an empty upload result falls through to the draft keys', () => {
+    expect(draft).toMatch(/referenceKeys\?\.length \? referenceKeys : draft\.design\.photoKeys/);
   });
 });
 
