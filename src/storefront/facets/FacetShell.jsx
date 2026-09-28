@@ -56,10 +56,32 @@ const FACET_CHIP = { ...FACET_TITLE, size: 'How many people?' };
 // word force the eye to compare rather than recognise, which is backwards for a screen whose job is
 // instant self-identification. And neither asks the customer to KNOW anything: "I know how it
 // should look" would have no door for the many people who know neither.
+// ⚠️ TWO LABELS EACH, BECAUSE THE QUESTION CHANGES ONCE ONE IS ANSWERED. Sandeep: "even after
+// selecting the cake design, it says now, ill pickup the flavour first… the buttons should say
+// something like 'Pick up the flavour now'." "First" is a claim about ORDER, and it stops being
+// true the moment the other door has been used — a customer who has just designed a cake being
+// offered "I'll pick the flavour first" is being asked a question they already answered.
+//
+// `done` is what the answered door says about ITSELF (it is no longer an invitation, it is a way
+// back in), and `next` is what the OTHER door says once this one is filled.
 const ENTRIES = [
-  { facet: 'design',  label: "I'll start with the design" },
-  { facet: 'flavour', label: "I'll pick the flavour first" },
+  { facet: 'design',  label: "I'll start with the design",  done: 'The design',  next: "Now I'll do the design" },
+  { facet: 'flavour', label: "I'll pick the flavour first", done: 'The flavour', next: "Now I'll pick the flavour" },
 ];
+
+/* The label a door wears, given what the draft already holds.
+ *
+ * ⚠️ FIRST PERSON THROUGHOUT, because the panel asks and the customer answers — see
+ * CustomerStorefront: "inside it the customer speaks". An imperative ("Pick the flavour now") is the
+ * shop instructing them, which is a different relationship and the wrong one for this screen.
+ *
+ * ⚠️ AND THE ANSWERED DOOR KEEPS ITS OWN NAME rather than a past-tense sentence. It is still a way
+ * back in — tapping it reopens the facet to change the answer — so it is labelled like a place
+ * ("The design"), matching the heading that facet already shows when it opens. */
+export function entryLabelFor(entry, draft, anyFilled) {
+  if (isFilled(draft, entry.facet)) return entry.done;
+  return anyFilled ? entry.next : entry.label;
+}
 
 function reduce(draft, action) {
   // A tier-count change is a RESHAPE, not a merge: the flavour array has to grow or shrink while
@@ -338,13 +360,19 @@ export default function FacetShell({
                 </div>
               ) : (
                 <>
-                  {ENTRIES.map(e => (
-                    <button key={e.facet} type="button" onClick={() => setOpen(e.facet)}
-                            style={s.entry(primary)}>
-                      <span style={s.entryLabel}>{e.label}</span>
-                      {isFilled(draft, e.facet) && <span style={s.tick(primary)}>✓</span>}
-                    </button>
-                  ))}
+                  {ENTRIES.map(e => {
+                    const filled = isFilled(draft, e.facet);
+                    // Has EITHER door been used? That is what turns "first" into "now" on the one
+                    // still waiting — see entryLabelFor.
+                    const anyFilled = ENTRIES.some(x => isFilled(draft, x.facet));
+                    return (
+                      <button key={e.facet} type="button" onClick={() => setOpen(e.facet)}
+                              style={filled ? s.entryDone(primary) : s.entry(primary)}>
+                        <span style={s.entryLabel}>{entryLabelFor(e, draft, anyFilled)}</span>
+                        {filled && <span style={s.tickDisc(primary)} aria-label="answered">✓</span>}
+                      </button>
+                    );
+                  })}
 
                   {/* What is left, as an invitation rather than a checklist. Nothing here is
                       required — someone who sends a photo and a date has made a real enquiry, and
@@ -492,6 +520,50 @@ const s = {
   }),
   entryLabel: { fontSize: 16, fontWeight: 800, color: '#2A241F', lineHeight: 1.35 },
   tick: (primary) => ({ color: primary, fontWeight: 800, fontSize: 14 }),
+
+  /* ── An ANSWERED door, which is not the same as a PREFERRED one ────────────────────────────────
+   *
+   * ⚠️ THE NOTE ABOVE STILL HOLDS. "Both doors keep IDENTICAL weight. Neither is preferred" is about
+   * a chooser where NEITHER has been used: making one heavier there would answer the question for
+   * the customer. Once a door HAS been answered the two are no longer equal unanswered questions,
+   * and marking it is reporting state rather than recommending a path — the untouched door keeps
+   * exactly the weight it always had, so nothing pushes anyone toward the one they have not used.
+   *
+   * Sandeep: "the selected button (design button) in this case should be more highlighted. tick mark
+   * is hardly seen."
+   *
+   * Still the baker's colour and still no borrowed app chrome (INVARIANTS #14): a heavier wash and a
+   * solid border of the SAME hue, which is the vocabulary this screen already speaks. */
+  entryDone: (primary) => ({
+    display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+    width: '100%', textAlign: 'left', cursor: 'pointer',
+    padding: '17px 18px', borderRadius: 14,
+    border: `2px solid ${doorInk(primary)}`,
+    background: alpha(primary, 0.16),
+    boxShadow: `0 0 0 3px ${alpha(primary, 0.10)}`,
+    font: 'inherit',
+  }),
+
+  /* ⚠️ A DISC, NOT A BARE GLYPH — AND NOT FOR THE REASON I FIRST WROTE HERE. Sandeep: "tick mark is
+   * hardly seen." My first explanation was that the mark was the same hue as its ground. Measured,
+   * that is false: the old `✓` was the baker's colour on the door's 6% wash, rgb(44,68,51) on
+   * rgb(243,242,237) — **9.45:1**, strong contrast.
+   *
+   * What the measurement did show is SIZE and DISTANCE. `entry` is `justify-content: space-between`,
+   * so a 14px glyph is pinned to the far edge of a full-width door: measured at **348px from its own
+   * label on a 496px door**. It is not faint, it is far away and small, and nothing about a darker
+   * colour would have fixed that.
+   *
+   * So this is bigger (24px), filled, and reversed out — white on rgb(44,68,51), measured **10.60:1**
+   * — which reads as a state marker at a glance rather than a stray character at the margin. No new
+   * symbol (INVARIANTS #14): it is the treatment `doneTick` already uses on the sent screen, at door
+   * scale. The distance stays, because the label and the marker belong at opposite ends of a row
+   * that reads left-to-right; what changes is that the far end is now worth looking at. */
+  tickDisc: (primary) => ({
+    flexShrink: 0, width: 24, height: 24, borderRadius: '50%',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    background: primary, color: '#fff', fontSize: 13, fontWeight: 800, lineHeight: 1,
+  }),
 
   rest:    { display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 2 },
   resetWrap: { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: 8, marginTop: 10 },
