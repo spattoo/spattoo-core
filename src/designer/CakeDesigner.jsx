@@ -21,9 +21,21 @@ import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
+import TemplateGrid from './shared/TemplateGrid.jsx';
+import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
-import { RAIL, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
+import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
+
+/* ── Where the take preview may start ───────────────────────────────────────────────────────────
+ * Air between the spatula's blade and the framed shot. Small enough that the frame still gets the
+ * space, large enough that the two do not read as touching. */
+const FRAME_GAP = 16;
+/* The frame lives inside the canvas container, which begins at the nav COLUMN's right edge — so the
+ * blade's overhang past this box is what has to be cleared, not the whole rail. Derived, because the
+ * last hardcoded version of this number was right when it was written and wrong within two paddings.
+ */
+const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
@@ -46,6 +58,8 @@ import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from '
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
+import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
+import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -97,6 +111,8 @@ import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
+import { validateImageFile, compressImage } from '../shared/image.js';
+import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { buildDesignSnapshot } from './utils/designSnapshot.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from './shared/textures/goldLeafFlakes.js';
 import { calendarSheet, resolveCalendarCfg, calendarLayouts, resolveDate, CALENDAR_DEFAULTS }
@@ -140,7 +156,7 @@ import InvitePanel from '../customers/InvitePanel';
 import DashboardPanel from '../dashboard/DashboardPanel';
 import SettingsPanel from '../settings/SettingsPanel';
 import FlavoursPanel from '../settings/FlavoursPanel';
-import TemplatesPanel from '../settings/TemplatesPanel';
+import LibraryPanel from '../settings/LibraryPanel.jsx';
 import BillingPanel from '../settings/BillingPanel';
 import TopUpsPanel from '../settings/TopUpsPanel.jsx';
 import CreditsPill from '../billing/CreditsPill.jsx';
@@ -569,17 +585,63 @@ function collectElementColors(design) {
 
 
 // ── Filter ────────────────────────────────────────────────────────────────────
+/* Nicer wording than the raw slug where we have an opinion. An OVERRIDE map, not a requirement —
+   `catLabel` prettifies anything missing, so a category authored in admin is readable the day it
+   exists rather than rendering as `undefined`. */
 const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
-/* ⚠️ NO `age_group`. Who a design suits is captured as NUMBERS at template creation
-   (cake_template_attrs.min_age/max_age — set on all 28 templates on dev) and as five age_group tags
-   that NOTHING carries and nothing can set: POST /templates only accepts `occasion_tag_ids`, so
-   there is no path that writes one. Two fields for one fact, and only the numbers are populated.
-   The slider below reads the numbers, so the chips are gone rather than wired up — tagging every
-   template by hand would also have invited the drift, a template tagged "Kids (4–12)" whose max_age
-   is 3 being a contradiction nobody would ever see.
-   `gender` stays a chip because it has no numeric equivalent; it is also unassigned today, so
-   `offeredTags` hides it until somebody tags one. */
-const TMPL_CATS = ['occasion', 'style', 'color', 'gender'];
+const catLabel = (cat) => CAT_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+
+/* ── WHICH CATEGORIES BECOME CHIPS — A SUPPRESSION LIST, NOT A WHITELIST ─────────────────────────
+ *
+ * This was `TMPL_CATS = ['occasion', 'style', 'color', 'gender']`, and it was doing two jobs that
+ * look identical and are opposites. One was a deliberate exclusion (below). The other was an
+ * accidental whitelist: a category authored in admin simply did not appear, and nothing said so.
+ * Migration 109 added `emotion` and `relationship`, and both would have been invisible here — the
+ * rows existing, the tags applied, and the filter never offering them.
+ *
+ * So it is inverted. The data decides WHICH categories exist; this decides only which are
+ * deliberately handled somewhere else. An unlisted category now SHOWS — the failure is loud.
+ *
+ * ⚠️ `age_group` IS THE DELIBERATE ONE, and it must stay suppressed. Who a design suits is captured
+ * as NUMBERS at template creation (cake_template_attrs.min_age/max_age) and ALSO as five age_group
+ * tags that nothing carries and nothing can set — `POST /baker/templates` accepts only
+ * `occasion_tag_ids`, so no path writes one. Two fields for one fact, and only the numbers are
+ * populated. The "Suits age" slider reads the numbers. Wiring the chips up instead would invite the
+ * drift too: a template tagged "Kids (4–12)" whose max_age is 3 is a contradiction nobody would see.
+ *
+ * `gender` is NOT suppressed — it has no numeric equivalent. It is unassigned today, so the
+ * narrowing below hides it until somebody tags a template with one, which is the correct reason for
+ * a chip to be absent: nothing would match it.
+ */
+const CATS_HANDLED_ELSEWHERE = new Set(['age_group']);
+
+/* Display order only. A category missing from this list still renders — it goes last. There is no
+   per-category ordering in the database (`tags.sort_order` is per TAG), so the preference lives
+   here; alphabetical would bury `occasion`, the most-used filter, between `emotion` and
+   `relationship`. */
+const CAT_ORDER = ['occasion', 'emotion', 'relationship', 'style', 'color', 'material', 'theme', 'gender'];
+
+/* Tags → `[[category, tags], …]`, suppressed categories removed and CAT_ORDER applied.
+ *
+ * ⚠️ ONE grouping for the two surfaces that group tags: the FILTER (which chips narrow the grid)
+ * and the SAVE modal (which chips file a new template). They differ in what a chip IS — the filter
+ * works in slugs and per-category lists, the modal in a flat Set of ids — so they render their own
+ * chips; what they must not disagree about is which categories exist, in what order, and which are
+ * handled elsewhere. Admin learned the same lesson an hour earlier with TagChipPicker. */
+function groupTagsByCategory(tags) {
+  const list = tags ?? [];
+  return [...new Set(list.map(t => t.category).filter(Boolean))]
+    .filter(cat => !CATS_HANDLED_ELSEWHERE.has(cat))
+    .sort((a, b) => {
+      const ia = CAT_ORDER.indexOf(a), ib = CAT_ORDER.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    })
+    .map(cat => [cat, list.filter(t => t.category === cat)])
+    .filter(([, group]) => group.length);
+}
 
 
 
@@ -608,12 +670,13 @@ function FunnelIcon({ size = 15, active, light }) {
  * Narrowing rather than deleting: the day somebody tags a template `kids-4-12` in admin, the chip
  * comes back on its own. A hardcoded list of "categories we support" would not.
  */
-function FilterPanel({ allTags, active, onChange, categories, open, onApply, onClear, count, children }) {
-  const byCategory = categories.reduce((acc, cat) => {
-    const tags = allTags.filter(t => t.category === cat);
-    if (tags.length) acc[cat] = tags;
-    return acc;
-  }, {});
+function FilterPanel({ allTags, active, onChange, open, onApply, onClear, count, children }) {
+  /* ⚠️ THE CATEGORIES COME FROM THE TAGS, not from a list of the ones we know about. `allTags` is
+     already narrowed by the caller to tags at least one loaded template CARRIES, so a group appears
+     exactly when something could match it — and a category added in admin needs no code change to
+     become a filter. Only CATS_HANDLED_ELSEWHERE is subtracted, and only `age_group` is in it.
+     Ordered by CAT_ORDER, with anything it does not name appended rather than dropped. */
+  const byCategory = Object.fromEntries(groupTagsByCategory(allTags));
 
   return (
     <div style={{ borderBottom: open ? '1px solid #999999' : 'none', marginBottom: open ? 6 : 0 }}>
@@ -624,7 +687,7 @@ function FilterPanel({ allTags, active, onChange, categories, open, onApply, onC
             ? Object.entries(byCategory).map(([cat, tags]) => (
                 <div key={cat}>
                   <div style={{ fontSize: 8, fontWeight: 800, color: '#bbb', letterSpacing: 1.2, textTransform: 'uppercase', marginBottom: 4 }}>
-                    {CAT_LABEL[cat]}
+                    {catLabel(cat)}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
                     {tags.map(tag => {
@@ -1716,7 +1779,16 @@ const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
  *
  * Desktop only by construction: both mobile branches override `width` before this is reached. */
 const EDIT_POPUP_W       = 300;
-const EDIT_POPUP_RIGHT   = 10;
+/* ⚠️ IT LEAVES THE HANDLE'S LANE, exactly as STACK_RIGHT_MOBILE does above, and for the same
+ * reason: the collapse tab is parked on the right edge and the stack opens to its LEFT. At the old
+ * 10 the two overlapped by 12px — measured with the stack out at 1280: tab 1258–1280, stack
+ * 970–1270 — so the tab sat on top of the panel's own edge and read as stuck to it rather than as
+ * the handle of the thing beside it.
+ *
+ * Derived from the tab, not typed: the tab's width is written down once. The 18px this costs the
+ * canvas is the price of a handle that is always reachable, and CANVAS_INSET_STACK below picks it
+ * up on its own. */
+const EDIT_POPUP_RIGHT   = STACK_TAB_W + 6;
 /** Canvas gives way to the stack, so the cake is beside it rather than under it. */
 const CANVAS_INSET_STACK = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 10;
 /** The colour wheel sits clear to the stack's LEFT — one more step out than the canvas. */
@@ -1753,8 +1825,13 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
 
   // Hover to open, on pointers that hover. The menu is a DOM child of this wrapper, so moving onto
   // it does not fire mouseleave — but the 10px gap between button and menu is over neither, which
-  // is what the close DELAY buys. Cancelled on re-entry. Click still toggles, which is what a touch
-  // device gets, and the mobile bar passes no hover handlers at all.
+  // is what the close DELAY buys. Cancelled on re-entry.
+  //
+  // ⚠️ THIS COMMENT USED TO SAY "click still toggles, which is what a touch device gets" — true of
+  // the intent and false of the behaviour, because on a hovering pointer the click arrives AFTER
+  // mouseenter has opened the menu, and the toggle then shut it. The caller now suppresses that
+  // toggle for a menu hover opened (`hoverOpenedRef`); touch, which passes no hover handlers, still
+  // toggles on tap.
   useEffect(() => () => clearTimeout(closeTimer.current), []);
   const hoverProps = typeof onHoverOpen === 'function' ? {
     onMouseEnter: () => { clearTimeout(closeTimer.current); onHoverOpen(); },
@@ -2140,9 +2217,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // cardId. expandedPipingId holds the expanded card's cardId; only one is open at a time.
   const [pipingCards,        setPipingCards]        = useState([]);
   const [expandedPipingId,   setExpandedPipingId]   = useState(null);
-  // Is the element stack pulled OUT? Phone only — see the flyout below. Shut by default, because a
-  // baker opens the designer to look at the cake, not at a list of what is on it.
-  const [stackFlyoutOpen,    setStackFlyoutOpen]    = useState(false);
+  /* Is the element stack pulled OUT? Both platforms now — see the flyout below.
+   *
+   * ⚠️ `null` MEANS "THE BAKER HAS NOT SAID", and the default is resolved from the platform rather
+   * than stored. The two defaults are opposites and each is right: on a phone the list COVERS the
+   * cake, so it starts shut — a baker opens the designer to look at the cake, not at a list of what
+   * is on it. On desktop it sits BESIDE the cake, so it starts out, which is what it has always
+   * done. Storing `!isMobile` here instead would mean reading the breakpoint at mount, in a file
+   * where `isMobile` is declared 700 lines below this and the breakpoint has exactly one home
+   * (check:narrow). Derived, it also survives a window resized across the breakpoint before anyone
+   * has touched the handle. */
+  const [stackOutPref,       setStackOutPref]       = useState(null);
   // Which ring's color picker popup is open, keyed `${cardId}-${zone}-${tierIndex}` (null = none),
   // plus the screen-space anchor (the tapped Color dot) the floating popup positions against.
   /* Which candidate ring the piping controls are editing, as { tierIndex, zone }.
@@ -2280,10 +2365,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Resize is opt-in (allowed_actions.resize; default off — see useCakeDesign placement). This defensive
   // fallback (a sticker with no allowedActions at all) mirrors that default so the edge case is opt-in too.
   const STICKER_CAPS = { resize: false, delete: true, color: false, duplicate: true };
+  /* ⚠️ A `decorEl` SELECTION HAD NO ANSWER HERE, and that made its colour control dead. The final
+     branch resolves `allowedActionsBySlug[selectedEl.type]`, which is keyed by ELEMENT-TYPE SLUG —
+     "decorEl" is a card kind, not a slug, so it landed on null and every `caps?.color` test came out
+     false for exactly the single-per-slot heroes the whole-element swatch exists for. The button was
+     on the card and lit up when pressed; the wheel never came. Found by driving a hero card in the
+     harness, which is the only way it could be found: it is a null where a null is a legal answer.
+     Read off the ELEMENT, like every other decorEl decision — the card stands for the element, not
+     for one placed instance, and carries no `allowedActions` of its own. */
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
      : selectedEl.type === 'scatter' ? (design.stickers.find(s => s.elementId === selectedEl.elementId)?.allowedActions ?? STICKER_CAPS)
+     : selectedEl.type === 'decorEl' ? (elementById.get(selectedEl.elementId)?.allowed_actions ?? null)
      : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
 
@@ -2298,12 +2392,89 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [templateWeight, setTemplateWeight] = useState('');
   const [templateMinAge, setTemplateMinAge] = useState('');
   const [templateMaxAge, setTemplateMaxAge] = useState('');
-  const [templateOccasionIds, setTemplateOccasionIds] = useState(new Set());
+  /* Every tag the baker ticked while saving, of any category — not occasions alone. Renamed from
+     `templateOccasionIds` when the modal stopped offering one category; the payload below still
+     carries the old FIELD name as well, for hosts built against it. */
+  const [templateTagIds, setTemplateTagIds] = useState(new Set());
+  /* Whether this design goes straight into the catalogue, or waits in My templates. Default OFF —
+     saving is a working action, selling is a decision. See plans/baker-catalogue.md. */
+  const [templateInCatalogue, setTemplateInCatalogue] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState(null);
   const [templatesOpen, setTemplatesOpen] = useState(false);
   const [templates, setTemplates] = useState([]);
+  // Which tile is mid-move back to the Library, so its control can say so rather than sit inert.
+  const [catalogueBusyId, setCatalogueBusyId] = useState(null);
+  /* Which template is being fetched and loaded onto the canvas. Shared by BOTH template surfaces —
+     the Catalogue flyout and the Library page — because the wait is the same round trip in each. */
+  const [pickingId, setPickingId] = useState(null);
   const [templatesLoading, setTemplatesLoading] = useState(false);
+  /* ⚠️ A FAILED FETCH IS NOT AN EMPTY CATALOGUE, and conflating them hid a 500 for hours. The
+     designer used to swallow the error and render "No templates yet" — indistinguishable from a
+     baker who has stocked nothing. Now the failure has somewhere to be said.
+
+     ⚠️ An earlier version of this comment added that the rail "also drew a Templates button because
+     the capabilities call had failed the same silent way". That was wrong and is retracted: a
+     storefront customer genuinely holds `design:create`, which is all that item requires, so it
+     rendered correctly and needed no explanation. `fetchMe`'s `.catch(() => null)` is a real and
+     separate hazard — `hasCap` reads a null capability set as ALLOW EVERYTHING, so a failed /me
+     would offer controls the person is not entitled to — but it was not involved here. */
+  const [templatesError, setTemplatesError] = useState(null);
+  /* Uploading a photograph of a cake already made, straight into the catalogue.
+     ⚠️ `cataloguePhoto*`, NOT `photo*`: photo CAPTURE already owns `photoBusy`, beside
+     photoOptsOpen / photoCutout / photoFraming. A second declaration of that name does not shadow
+     it — esbuild refuses the whole module, and every test that imports it fails with it. Two
+     features about photographs in one file; the names have to say which is which. */
+  const [cataloguePhotoBusy,  setCataloguePhotoBusy]  = useState(false);
+  const [cataloguePhotoError, setCataloguePhotoError] = useState(null);
+  /* ⚠️ THE SERVER'S CEILING, NOT A COPY OF IT. `UPLOAD_MAX_IMAGE_MB` is env on the API, so a
+     hardcoded client would accept files the API then 413s. The hook falls back to MAX_IMAGE_BYTES
+     while the fetch is in flight and no-ops when the host has not wired `fetchUploadLimits`, so it
+     is safe to call unconditionally — including on a customer session, which has no upload UI. */
+  const { maxImageBytes } = useUploadLimits(apiClient);
+
+  /* ── A photograph of finished work, uploaded straight to the catalogue ─────────────────────────
+   * Sandeep: "a baker can also upload an existing cake image he made to catalogue… since he does it
+   * only when he is sure to show him prev work, he can add it to catalogue."
+   *
+   * ⚠️ ALWAYS `add_to_catalogue`, AND THE BUTTON SAYS SO. There is no staging step: a photo is
+   * uploaded because the baker has already decided to show it, so routing it through the Library
+   * would be a step with no decision in it. That makes the label load-bearing — "Upload to
+   * catalogue" is what tells them it goes live to customers BEFORE they pick a file, which is the
+   * only honest place to say it.
+   *
+   * ⚠️ NO RIGHTS GATE HERE, and that is deliberate rather than an omission. The attestation is asked
+   * at storefront PUBLISH, which the API refuses to do without, and that attestation stands over the
+   * storefront's content as a whole — including photos added later. Two gates, not three; see
+   * features/content-rights-attestation.md.
+   *
+   * ⚠️ NO `tier_count`. It is a cached copy of `design.tiers.length` and a photograph has no design
+   * to project from — the API stores null, meaning "not stated", so the browse filters can exclude
+   * it honestly rather than narrowing on a guess. */
+  async function uploadCataloguePhoto(fileList) {
+    const file = Array.from(fileList ?? [])[0];
+    if (!file || !apiClient?.uploadCataloguePhoto) return;
+    setCataloguePhotoError(null);
+    const bad = validateImageFile(file, { maxBytes: maxImageBytes });
+    if (bad) { setCataloguePhotoError(bad); return; }
+    setCataloguePhotoBusy(true);
+    try {
+      const blob = await compressImage(file);
+      const key = await uploadThumbnail(blob, apiClient, 'catalogue/photos');
+      if (!key) { setCataloguePhotoError('Upload failed. Please try again.'); return; }
+      /* The name is required by the row and is what search reads. The file's own name is the only
+         thing the baker has already told us, so it is the default rather than an empty field they
+         must fill before anything happens — they can rename it from the catalogue. */
+      const name = (file.name || 'My cake').replace(/\.[^.]+$/, '').slice(0, 80) || 'My cake';
+      await apiClient.uploadCataloguePhoto({ name, thumbnail_url: key });
+      setTemplates(await loadTemplates());
+    } catch (e) {
+      console.error('[catalogue photo] upload failed:', e?.status ?? '', e?.message ?? e);
+      setCataloguePhotoError(e?.message || 'Could not add that photo.');
+    } finally {
+      setCataloguePhotoBusy(false);
+    }
+  }
 
   /* ⚠️ DECLARED HERE, BELOW `templates` AND `tmplSearch`, AND THE REASON IS A CRASH.
    * These four read `templates` (declared just above) and `tmplSearch`. They used to sit ~220 lines
@@ -2324,11 +2495,35 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * by what the unfiltered set can match. Computing it in the JSX meant the only way to know how
    * many results a chip produced was to scroll past the whole filter form and count them.
    */
+  /* ── THIS FLYOUT IS THE CATALOGUE ─────────────────────────────────────────────────────────────
+   * Sandeep: "a template should appear either in library or in catalogue at a given time." Library
+   * holds what has not been chosen; this holds what has. `GET /api/templates` labels every row with
+   * `offered` (spattoo-api lib/templateList.js), so the split is read off the row rather than
+   * fetched again.
+   *
+   * ⚠️ ABSENT MEANS SHOW IT, AND THAT IS LOAD-BEARING RATHER THAN DEFENSIVE. Three callers cannot
+   * supply the flag: the supabase-only branch of `loadTemplates` below selects its own columns, the
+   * public storefront STRIPS `offered` (what a baker did not choose is competitor-facing), and an
+   * older API predates it entirely. A strict `=== true` would blank the flyout for all three — a
+   * customer would meet a bakery with no cakes. Only an explicit `false` hides a tile.
+   *
+   * ⚠️ Everything the flyout DISPLAYS narrows from here — the grid, the draft count, the chips — so
+   * a chip cannot advertise a tag that only a Library cake carries and then match nothing. */
+  const catalogueTemplates = useMemo(
+    () => (templates ?? []).filter(t => t.offered !== false), [templates]);
+
   const shownTemplates = useMemo(() => {
     const q = tmplSearch.trim().toLowerCase();
     const applied = { q, tags: templateFilters, weight: filterWeight, age: filterAge };
-    return (templates ?? []).filter(t => templateMatches(t, applied, tagNameBySlug));
-  }, [templates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+    return catalogueTemplates.filter(t => templateMatches(t, applied, tagNameBySlug));
+  }, [catalogueTemplates, tmplSearch, tagNameBySlug, templateFilters, filterWeight, filterAge]);
+
+  /* ⚠️ THE REVEAL MOVED INTO `TemplateGrid`. It draws a page at a time and grows as you near the
+     bottom — no button, no request, no jump — and it now owns the hook, the sentinel and the
+     end-of-list line, because all three of its callers want the same behaviour and none of them
+     wants to wire it. `shownTemplates` is still computed here: the grid consumes it, and the
+     "No templates match" line beside the funnel reports its length.
+     See plans/template-browsing-at-scale.md Layer 2, and plans/baker-catalogue.md step 1. */
 
   /* What Apply would give, on the button, before it is pressed. Same predicate as the grid — the one
      thing that must never be a second copy, because the wrong answer would be the one being sold. */
@@ -2336,8 +2531,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (!tmplFiltersOpen) return 0;
     const q = tmplSearch.trim().toLowerCase();
     const draft = { q, tags: draftFilters, weight: draftWeight, age: draftAge };
-    return (templates ?? []).filter(t => templateMatches(t, draft, tagNameBySlug)).length;
-  }, [tmplFiltersOpen, templates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
+    return catalogueTemplates.filter(t => templateMatches(t, draft, tagNameBySlug)).length;
+  }, [tmplFiltersOpen, catalogueTemplates, tmplSearch, tagNameBySlug, draftFilters, draftWeight, draftAge]);
 
   /* ⚠️ ONLY TAGS SOMETHING CARRIES. Derived from every loaded template, NOT from `shownTemplates` —
      narrowing by the current selection would make the other chips vanish as soon as one was picked,
@@ -2347,9 +2542,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     .filter(v => (Array.isArray(v) ? v.length > 0 : !!v)).length;
 
   const offeredTags = useMemo(() => {
-    const present = new Set((templates ?? []).flatMap(t => t.tag_slugs ?? []));
+    const present = new Set(catalogueTemplates.flatMap(t => t.tag_slugs ?? []));
     return (filterTags ?? []).filter(t => present.has(t.slug));
-  }, [templates, filterTags]);
+  }, [catalogueTemplates, filterTags]);
   const textInputRef = useRef();
   const thumbContainerRef = useRef();
   // Draws the capture canvas a frame on demand. The browser stops animating a hidden or minimised
@@ -2410,6 +2605,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
+  /* The catalogue photograph a manual order was started FROM, as [{ key, preview }] — the shape
+     OrderModal's own uploader produces, so it needs no special case downstream.
+     ⚠️ The picture is already in R2 (the baker uploaded it into their catalogue), so this passes the
+     EXISTING key rather than uploading a second copy of the same cake. */
+  const [manualOrderPhoto,    setManualOrderPhoto]    = useState(null);
   const [ordersInitialView,   setOrdersInitialView]   = useState('list');  // which Orders view the rail asked for ('list' | 'calendar')
   // Holds the quote result after a successful customer submit; read when the
   // OrderModal success screen is dismissed so the host can react (redirect to a
@@ -2430,7 +2630,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
   const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
-  const [templatesPanelOpen,  setTemplatesPanelOpen]  = useState(false);
+  /* ⚠️ THE CATALOGUE IS THE FLYOUT, NOT A PAGE. It was a docked settings page for a day — rows with
+     toggles and a Remove — and that screen is gone: Catalogue is what the rail's Templates opens,
+     where a tap loads the cake onto the canvas for a baker and a customer alike. Stocking, deleting
+     and un-offering all live in Library. See plans/baker-catalogue.md. */
+  // The Spattoo library a baker stocks their catalogue from — a peer destination of My templates,
+  // not a section inside it. See plans/baker-catalogue.md.
+  const [libraryPanelOpen, setLibraryPanelOpen] = useState(false);
   const [billingPanelOpen,    setBillingPanelOpen]    = useState(false);
   const [topUpsPanelOpen,     setTopUpsPanelOpen]     = useState(false);
   /* Which screen Top-ups opens on. Null is its own menu; the order panel's no-email notice sends
@@ -2521,7 +2727,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    */
   const plainRail = orderMode === 'customer';
 
-  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen || templatesPanelOpen
+  const dockedPageOpen = settingsPanelOpen || billingPanelOpen || flavoursPanelOpen
+    || libraryPanelOpen
     || ordersPanelOpen || customersPanelOpen || invitePanelOpen || dashboardOpen;
 
 
@@ -2530,8 +2737,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // is what rescues the templates saved before the capture was cropped, which is most of them.
   // { src, name, tiers, rect } — rect is the card, so the panel can be anchored beside it.
   const [tplPreview, setTplPreview] = useState(null);
-  const tplPreviewTimer = useRef(null);
-  useEffect(() => () => clearTimeout(tplPreviewTimer.current), []);
+  /* The hover debounce that used to live here went with the tile — `TemplateGrid` holds it in its
+     own ref, so the timer and its cleanup are no longer this component's to keep. `tplPreview`
+     itself stays: the enlarged picture is portalled past this panel's clipping, which is a decision
+     about THIS surface rather than about the grid. */
   const [userData,     setUserData]     = useState(null);
   const [bakerSettings, setBakerSettings] = useState({});
   // Server-resolved capabilities (from /api/me). null = not loaded / host app
@@ -2576,6 +2785,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const profileRef       = useRef(null);
   const chefsDeskRef     = useRef(null);
   const navMenuRef       = useRef(null);
+  /* ⚠️ WHICH MENU HOVER OPENED, so a click cannot close what hovering just revealed.
+   *
+   * On a pointer that hovers, `onMouseEnter` opens the submenu BEFORE the click lands — so a click
+   * that toggles finds it open and shuts it, and the first click reads as doing nothing. Measured
+   * before fixing: hover alone → 2 items, first click → 0, second click → 2.
+   *
+   * ⚠️ MY FIRST DIAGNOSIS OF THIS WAS WRONG and is recorded here so it is not re-derived: I blamed
+   * the document `mousedown` below. It cannot be the cause — it is guarded by `navMenuRef.current`,
+   * which is only attached while a menu is ALREADY open, so it does nothing on a first click.
+   *
+   * A ref rather than pointer-type sniffing: `click` is not reliably a PointerEvent across browsers,
+   * and the distinction that actually matters is already explicit — the desktop rail passes
+   * `onHoverOpen`, the mobile bar passes none. So touch never sets this, and keeps its tap-to-toggle,
+   * which is the only way to dismiss a menu without a pointer to move away. */
+  const hoverOpenedRef   = useRef(null);
   const hitTestRef       = useRef(null);
   const snapCameraRef    = useRef(null);
   const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
@@ -2835,8 +3059,61 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which Orders entries this person may see — decided once, read by both rails.
   // `active` on the items that open the Orders page, so the rail lights Orders while it is open —
   // the same flag the Settings menu items carry.
+  /* ⚠️ EACH ITEM CARRIES ITS OWN `open`, and that is what makes the submenu machinery generic.
+     `selectOrdersMenuItem` used to branch on `item.action` / `item.view` — Orders-specific logic in
+     the one function both rails pass as `onSelect` for EVERY submenu, so a second menu could not
+     exist without either routing through Orders' dispatcher or forking the call sites. The wiring
+     lives here, where the handlers are in scope; ORDERS_MENU stays data. */
   const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires))
-    .map(item => (item.view ? { ...item, active: ordersPanelOpen } : item));
+    .map(item => ({
+      ...item,
+      ...(item.view ? { active: ordersPanelOpen } : null),
+      open: item.action === 'newOrder' ? () => startOrderForDate() : () => openOrdersPanel(item.view),
+    }));
+
+  /* ── Templates ▸ Browse · Library · Catalogue ────────────────────────────────────────────────
+   *
+   * ⚠️ BROWSE IS AN ITEM BECAUSE THE PARENT STOPPED BEING ONE. `openRailItem` returns early for any
+   * rail item carrying a `menu` — "a submenu is not a destination yet" — so tapping Templates now
+   * unfurls this list instead of opening the browse flyout. Without Browse in here there would be no
+   * route to it at all, and on a phone Templates holds one of six strip slots precisely because
+   * browsing designs is a first-class destination (mobileNav.js, MOBILE_PRIMARY).
+   *
+   * It is FIRST for the same reason: INVARIANTS #12, laid out by what is reached for. Browsing
+   * starts every cake; the other two are setup.
+   *
+   * ⚠️ Browse goes through `openTemplatesRef`, not `openTemplates`. This list is built ~1,500 lines
+   * above where that function is declared, and it changes every render — the same reason
+   * `openNotificationLink` already reads it through the ref. */
+  /* ⚠️ "BROWSE" IS GONE, AND IT WAS A REAL FAULT RATHER THAN A WORDING ONE. It opened the flyout,
+     which shows the templates this baker offers — the same cakes Library listed, in different
+     chrome. Sandeep, looking at it: "browse and library has no difference here? then there is no
+     use." It also read as a verb among two nouns. The flyout IS the catalogue, so it is called that.
+
+     ⚠️ CATALOGUE IS `design:create`, NOT `store:manage`, and that is load-bearing. A CUSTOMER sees
+     the catalogue — it is the only template surface they get, and tapping a cake loads it onto the
+     canvas to modify and quote from. Gating it behind store:manage would hand every customer a
+     Templates item that opens an empty menu. Library is the baker's shelf and is gated. */
+/* ⚠️ LIBRARY FIRST, CATALOGUE SECOND — Sandeep, after using it. It also matches the order the work
+   actually happens in: you stock the shelf before you can have a catalogue, and a baker opening this
+   menu early has nothing in the second entry yet. A customer has only Catalogue, so for them the
+   menu collapses to one item and the rail opens the flyout directly.
+
+   ⚠️ BOTH ENTRIES LEAVE THE OPEN DESTINATION FIRST (see selectMenuItem). Library is a docked PAGE at
+   z-index 300 and the Catalogue is a FLYOUT at 20, so choosing Catalogue while Library was open drew
+   it behind the page — Sandeep: "i cant see any catalogue because the flyout is opening behind the
+   page." Raising the flyout would have been the wrong fix: it would leave two destinations on screen
+   at once, which is the exact bug `leaveOpenPanels` exists to prevent.
+
+   ⚠️ `openCatalogue` FORCES the flyout open; it does not toggle. `openTemplates` decides by reading
+   `templatesOpen` from the render closure, so closing panels and toggling in one handler would read
+   a stale value and could shut the flyout the moment it opened. */
+  const templatesMenu = hasCap('design:create') ? [
+    ...(hasCap('store:manage')
+      ? [{ id: 'tpl-library', label: 'Library', open: () => setLibraryPanelOpen(true), active: libraryPanelOpen }]
+      : []),
+    { id: 'tpl-catalogue', label: 'Catalogue', open: () => openCatalogueRef.current?.(), active: templatesOpen },
+  ] : [];
   const canManageStore = hasCap('store:manage') || hasCap('billing:manage') || hasCap('staff:manage');
 
   // ── Opening what a notification points at ──────────────────────────────────────────────────────
@@ -2850,6 +3127,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // openTemplates is declared further down and changes every render. The callback below is made ONCE,
   // so it reaches the current openTemplates through this ref rather than keeping the first render's.
   const openTemplatesRef = useRef(null);
+  // Same trick, for the submenu's Catalogue entry — built ~1,500 lines above where it is declared.
+  const openCatalogueRef = useRef(null);
   const openNotificationLink = useCallback((link) => {
     // What the link means is decided in one place (notifications/notificationLink.js), shared with the
     // page-load path below, so a tap in the bell and a WhatsApp button cannot open different things.
@@ -2968,7 +3247,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // shorter honest one, and "Decor" is what a baker says out loud anyway.
     { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create', short: 'New' },
     { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
-    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create' },
+    /* ⚠️ CARRIES A SUBMENU NOW, so tapping it no longer opens the browse flyout — `openRailItem`
+       returns early for any item with a `menu` ("a submenu is not a destination yet"). Browse is the
+       first item inside instead. Templates is in MOBILE_PRIMARY, which is what `strandedMenus`
+       requires of anything carrying a menu: the phone strip can draw one, the More sheet cannot. */
+    /* ⚠️ A ONE-ITEM MENU IS NOT A MENU. A CUSTOMER has `design:create` but not `store:manage`, so
+       their `templatesMenu` holds Catalogue alone — and `openRailItem` returns early for anything
+       carrying a `menu`, which would put their only template surface behind an extra tap into a
+       list of one. Below two items the menu is dropped and the rail item opens the flyout directly,
+       which is what `openRailItem`'s `id === 'templates'` branch already does. */
+    { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create',
+      ...(templatesMenu.length > 1 ? { menu: templatesMenu } : null) },
     { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
     // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
@@ -3006,7 +3295,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // written TWICE (desktop rail + mobile header), so it wants sharing before a thirteenth entry is
     // added to one of them and not the other. `tourNonce` / `startNonce` / `TourIcon` are left in
     // place deliberately — unused today, and exactly what a new home would need.
-  ].filter(item => hasCap(item.requires)), [ordersMenu, codesign.live, role, capabilities, orderMode]);
+  /* ⚠️ EVERY MENU THIS LIST CARRIES MUST BE A DEPENDENCY, and leaving one out fails in a way that
+     looks like the rail item is simply dead. `templatesMenu` was missing here for one round: the map
+     below destructures `menu` off the memoised item, so the rail rendered an object captured before
+     the menu existed — no RailSubmenu wrapper at all — while `openRailItem(id, menu)` got the
+     CURRENT value and took its early return for menu-carrying items. Result: Templates opened
+     neither the flyout nor a submenu. Measured in the browser: zero `.spattoo-rail-menu` elements
+     after clicking it, with the button list unchanged.
+     ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and
+     `strandedMenus` only looks for a menu stranded in the More sheet — not for one that never
+     reaches the renderer. */
+  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode]);
 
   /* ── The tools below the divider must sit on the nav's rhythm ────────────────────────────────
    * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
@@ -3091,11 +3390,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
           { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
             badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
-          // NOT "Templates". The rail already has a Templates destination — browsing templates to
-          // start a design — and in the More sheet the two now sit a few rows apart, where one word
-          // for two different things is a coin toss. This one chooses which global templates the
-          // bakery OFFERS, which is what features/template-visibility.md calls it.
-          { id: 'templates', label: 'Template visibility', open: () => setTemplatesPanelOpen(true), active: templatesPanelOpen },
+          /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
+             for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
+             three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the
+             spatula — which is where Sandeep asked for them from the start. A second door to the
+             same room is worse than a longer walk to one. See plans/baker-catalogue.md. */
         ] : []),
         // Catalogue authors only. Gated on the BAKER flag, not a capability: `hasCap` answers "may
         // this person do X", and this asks "is this bakery one of ours" — a question no user-level
@@ -3117,7 +3416,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // mount, the memo never recomputes, and the menu entry can never appear however correct its gate
   // is. That is exactly how 'Record a reel' shipped invisible (fixed in cc21e06). printStudioEnabled
   // is the live example: it is false until fetchEntitlements resolves.
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesPanelOpen, billingPanelOpen, topUpsPanelOpen]);
+  /* ⚠️ `templatesOpen` AND `libraryPanelOpen` ARE BOTH HERE because the Templates submenu reads
+     them for its `active` flags — Catalogue lights while the flyout is open, Library while its page
+     is. Miss one and the rail goes on showing the previous state: a destination you are looking at
+     that the nav says you are not in. */
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -3158,7 +3461,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setDashboardOpen(false);
     setSettingsPanelOpen(false);
     setFlavoursPanelOpen(false);
-    setTemplatesPanelOpen(false);
+    /* ⚠️ THIS ONE SAVES AS YOU TAP, so a rail click closing it loses nothing — which is exactly why
+       it was built that way. The note above says a docked panel holding unsaved work would have to
+       guard THIS path; the Spattoo grid sidesteps that by never holding any. */
+    setLibraryPanelOpen(false);
     setBillingPanelOpen(false);
     setTopUpsPanelOpen(false);
     setOrdersPanelOpen(false);
@@ -3176,7 +3482,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (menu) {
       // A submenu is not a destination yet — opening it leaves the screen alone. Choosing an item
       // from it goes through the same close-then-open as everything else.
-      setNavMenuId(o => (o === id ? null : id));
+      //
+      // ⚠️ IF HOVER OPENED THIS MENU, THE CLICK LEAVES IT ALONE. Sandeep: "for Templates when you
+      // hover it, pls show submenu. but for sub menu a click is needed to open." Hovering reveals
+      // the choices; clicking one of THEM is what goes somewhere. A click on the parent would
+      // otherwise close the list the same movement had just opened.
+      //
+      // Touch never sets this ref (no hover handlers on the mobile bar), so a tap still toggles —
+      // and there it has to, since there is no pointer to move away.
+      if (hoverOpenedRef.current !== id) setNavMenuId(o => (o === id ? null : id));
       setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false);
       return;
     }
@@ -3385,7 +3699,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   function closeSaveModal() {
     setSaveModal(false); setSaveMsg(null); setReelOffer(false);
     setTemplateName(''); setTemplateWeight('');
-    setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateOccasionIds(new Set());
+    setTemplateMinAge(''); setTemplateMaxAge(''); setTemplateTagIds(new Set());
+    setTemplateInCatalogue(false);
   }
 
   async function handleSaveTemplate() {
@@ -3404,6 +3719,34 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // cached older client.
     if (design.tiers.length > 1 && templateWeight === '') {
       setSaveMsg({ ok: false, text: 'A tiered design needs a minimum weight — the lightest you can build it at.' });
+      return;
+    }
+    // ── Who this design suits: an age range, and a gender ────────────────────────────────────────
+    // ⚠️ UNSET MEANS UNFILTERED, NOT "SUITS NOBODY". A template with no age range answers every age
+    // query and one with no gender answers every gender query — noise that grows with the catalogue
+    // and is invisible while it does, because nothing separates "suits everyone" from "nobody filled
+    // this in". Requiring both makes those two different answers.
+    //
+    // ⚠️ BLANK, WITH NO DEFAULT. Sandeep: "if it matches 1-100, then the author say that." A
+    // pre-filled 1–100 would mean "everyone" without anybody deciding it, turning a field that
+    // carries signal into one that carries a default — the same as having no field at all.
+    //
+    // ⚠️ THE RULE LIVES IN shared/tagRequirements.js, NOT HERE. Admin's create form must apply the
+    // identical one, and `=== 'gender'` scattered across two repos is exactly the coupling that was
+    // removed from TMPL_CATS, CAT_LABEL and admin's CATEGORIES. It must not come back as a
+    // validation check.
+    //
+    // Client-side only, for the reason the weight check states three lines up.
+    const ageProblem = ageRangeProblem(templateMinAge, templateMaxAge);
+    if (ageProblem) {
+      setSaveMsg({ ok: false, text: ageProblem });
+      return;
+    }
+    // `filterTags`, not `offeredTags` — the same vocabulary the chips above are drawn from, so the
+    // message can never name a category that is not on screen.
+    const missingCategories = missingRequiredCategories(filterTags, templateTagIds);
+    if (missingCategories.length) {
+      setSaveMsg({ ok: false, text: requiredTagMessage(missingCategories) });
       return;
     }
     if (!onSaveTemplate) {
@@ -3433,7 +3776,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         weightKg:     templateWeight !== '' ? parseFloat(templateWeight) : null,
         minAge:       templateMinAge !== '' ? parseInt(templateMinAge, 10) : null,
         maxAge:       templateMaxAge !== '' ? parseInt(templateMaxAge, 10) : null,
-        occasionTagIds: [...templateOccasionIds],
+        /* ⚠️ THE SAME IDS UNDER BOTH NAMES, AND THAT IS THE COMPATIBILITY. Core ships as a vendored
+           tarball, so a released core runs against a host that has not been rebuilt — and that host
+           reads `occasionTagIds` by name (spattoo-web apps/app BakerApp.tsx maps it field by field).
+           Sending only `tagIds` would hand it `undefined` and post NO tags, silently.
+           Sending every id under the old name is safe because the name is a misnomer:
+           POST /baker/templates validates no category, it inserts whatever ids it is given. So an
+           old host files an emotion tag correctly without knowing it did. */
+        tagIds:         [...templateTagIds],
+        occasionTagIds: [...templateTagIds],
+        /* ⚠️ INERT UNTIL THE HOST MAPS IT, and there is no older field to dual-send under. The
+           baker app maps this payload FIELD BY FIELD, so a host that has not been rebuilt drops
+           this and the design is staged — which is the right default, so the failure is silent and
+           safe rather than silent and wrong. (`tagIds` above is dropped by exactly that mechanism
+           today; it survives only because the same ids also travel as `occasionTagIds`.) */
+        addToCatalogue: templateInCatalogue,
       });
       /* ── Saving a template is the moment to offer a reel ──────────────────────────────────────
        * Not a nag and not a coach-mark. A baker has just finished a design they thought worth
@@ -4312,8 +4669,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * catch because an unresolved name inside an async branch only throws once reached. */
   async function loadTemplates() {
     if (apiClient) {
-      const data = await apiClient.fetchTemplates().catch(() => []);
-      return data ?? [];
+      /* The catch stays — a rejected promise must not take the designer down — but it RECORDS the
+         failure instead of erasing it. An empty array now means the catalogue is empty. */
+      try {
+        setTemplatesError(null);
+        const data = await apiClient.fetchTemplates();
+        return data ?? [];
+      } catch (e) {
+        console.error('[templates] fetch failed:', e?.status ?? '', e?.message ?? e);
+        setTemplatesError(e?.status === 403 || e?.status === 401
+          ? 'You do not have access to this bakery’s designs.'
+          : 'Could not load designs. Check your connection and try again.');
+        return [];
+      }
     }
     if (!supabase) return [];
     const { data, error } = await supabase
@@ -4341,6 +4709,46 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setTemplatesLoading(false);
   }
 
+  /* ── "catalogue should have option to move to library" ────────────────────────────────────────
+   * Sandeep's words, and the other half of one template being in one place at a time. Taking a cake
+   * out here puts it back on the Library shelf; it is never deleted, and for a Spattoo cake it never
+   * could be ("baker can never delete spattoo templates").
+   *
+   * ⚠️ THE WHOLE SET IS FETCHED, NOT DERIVED FROM WHAT IS ON SCREEN, AND THE REASON CHANGED ON
+   * 2026-09-28 WITHOUT THE CONCLUSION CHANGING. The old reason was exclusions: `GET /api/templates`
+   * applied an exclusion filter before labelling, so a template that was both offered and excluded
+   * never reached this list, and building the new set from these rows would have dropped it — the
+   * PUT's clear-step then setting it `offered = false` for good. Exclusions are gone now, so that
+   * particular row cannot exist.
+   *
+   * The fetch stays because the SHARPER version of the hazard survives: `PUT /baker/catalogue`
+   * REPLACES the catalogue, and since the cutover `GET /api/templates` returns ONLY offered rows.
+   * So these rows are the catalogue, and anything filtered out of them locally — by the search box,
+   * by a chip — is invisible to a set built from them. `GET /baker/catalogue` is the complete
+   * picture; one extra request, only when a baker actually removes something, buys correctness that
+   * cannot quietly lapse.
+   *
+   * Optimistic on the ROW, because the tile must leave the grid at once — a catalogue that waits for
+   * two round trips reads as a dead control. Restored if either call fails. */
+  async function moveToLibrary(t) {
+    if (!apiClient?.fetchBakerCatalogue || !apiClient?.updateBakerCatalogue) return;
+    const before = templates;
+    setCatalogueBusyId(t.id);
+    setTemplates(prev => prev.map(r => (r.id === t.id ? { ...r, offered: false } : r)));
+    try {
+      const all = await apiClient.fetchBakerCatalogue();
+      const next = (Array.isArray(all) ? all : [])
+        .filter(r => r.offered && r.id !== t.id)
+        .map(r => r.id);
+      await apiClient.updateBakerCatalogue(next);
+    } catch (e) {
+      setTemplates(before);
+      console.error('[catalogue] move to library failed:', e?.message ?? e);
+    } finally {
+      setCatalogueBusyId(null);
+    }
+  }
+
   async function openTemplates() {
     const isOpening = !templatesOpen;
     setTemplatesOpen(isOpening);
@@ -4354,6 +4762,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setTemplatesLoading(false);
   }
   openTemplatesRef.current = openTemplates;   // for openNotificationLink — see the ref's note
+
+  /* Open the Catalogue, never toggle it. The submenu closes the current destination first, and
+     `openTemplates` reads `templatesOpen` from this render — after `leaveOpenPanels()` that value is
+     stale, so a toggle could close the flyout in the same beat it opened. Choosing "Catalogue" from a
+     menu means SHOW ME THE CATALOGUE; it has no second meaning to toggle to. */
+  async function openCatalogue() {
+    setElementsOpen(false);
+    setTemplatesOpen(true);
+    if (templates.length) return;
+    setTemplatesLoading(true);
+    setTemplates(await loadTemplates());
+    setTemplatesLoading(false);
+  }
+  openCatalogueRef.current = openCatalogue;
 
 const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
@@ -4516,6 +4938,62 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // own); piping cards + tools are independent UI state and must be cleared explicitly, else they
   // linger as orphaned cards after the design underneath them is gone. Used by every full design swap
   // (New Cake, template load) so no stale cards survive it.
+  /* ── Start a cake from a template ──────────────────────────────────────────────────────────────
+   * The Catalogue flyout and the Library page both do this, so it is written once. Sandeep asked for
+   * the second caller: "user should be able to load the template to canvas when clicking on the
+   * template. they want to customise an existing one and create a new one out of it."
+   *
+   * ⚠️ THE LIST ROW CARRIES NO `design`, DELIBERATELY — `lib/templateList.js` stopped selecting it so
+   * that browsing does not ship N designs for the ONE somebody opens. So it is fetched by id here,
+   * and `t.design ?? null` still honours any caller that already has it.
+   *
+   * ⚠️ CLOSES BOTH SURFACES, because either can be the one you picked from. Closing only the flyout
+   * left the Library page sitting over the canvas it had just loaded a cake onto.
+   *
+   * Silent when the design cannot be fetched: the flyout's own note explains that a null here is
+   * what "clicking a template does nothing" looked like before `fetchTemplate` was stubbed. */
+  async function startFromTemplate(t) {
+    /* ⚠️ MARKED BUSY BEFORE THE AWAIT, AND CLEARED IN `finally`. Sandeep: "its taking a second to
+       load on the canvas- but there is no indication of loading." That second is the by-id fetch —
+       the list row deliberately carries no `design` — and unmarked it reads as a dead tile.
+
+       ⚠️ `finally` COVERS THE SILENT-RETURN PATH TOO. `fetchTemplate` is `.catch(() => null)`, so a
+       failed fetch falls through to `if (!templateDesign) return` — an early return that, with a
+       spinner running, would leave the tile spinning for ever on the one path where nothing is
+       going to happen. A `try/finally` is the difference between "nothing loaded" and "frozen". */
+    if (pickingId) return;            // one pick at a time; two would race to loadDesign
+    setPickingId(t.id);
+    try {
+      let templateDesign = t.design ?? null;
+      if (!templateDesign) {
+        if (apiClient) {
+          const full = await apiClient.fetchTemplate(t.id).catch(() => null);
+          templateDesign = full?.design ?? null;
+        } else if (supabase) {
+          const { data } = await supabase
+            .from('cake_templates')
+            .select('design')
+            .eq('id', t.id)
+            .single();
+          templateDesign = data?.design ?? null;
+        }
+      }
+      if (!templateDesign) return;
+      loadDesign(templateDesign);
+      setTemplatesOpen(false);
+      setLibraryPanelOpen(false);
+      clearAllSelections();
+      /* ⚠️ A LOADED CAKE STARTS WITH THE STACK SHUT, even if the baker pulled it out while working
+         on the previous one — `stackOutPref` is a session preference and would otherwise carry
+         across. Sandeep asked for closed on load; a fresh cake is a fresh start. `false` rather than
+         `null` so the default cannot reopen it either. */
+      setStackOutPref(false);
+      resetEditors();
+    } finally {
+      setPickingId(null);
+    }
+  }
+
   function resetEditors() {
     setPipingCards([]);
     setExpandedPipingId(null);
@@ -5111,20 +5589,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {patches.map((p, k) => {
         const on = grassSelected?.tier === tier && grassSelected?.idx === k;
         return (
-          <div key={k} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-            <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
-              fmt={v => v.toFixed(2)}
-              onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
-            <span style={{ display: 'inline-flex', alignItems: 'center', borderRadius: 14, overflow: 'hidden',
-              border: `1.5px solid ${on ? INK : LINE}`, background: on ? INK_TINT : SURFACE }}>
-              <button onClick={() => setGrassSelected({ tier, idx: k })}
-                style={{ padding: '2px 4px 2px 8px', border: 'none', background: 'transparent', fontSize: 9,
-                  fontWeight: 700, color: INK, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}>{k + 1}</button>
-              <button title="Remove" onClick={() => onRemove(k)}
-                style={{ padding: '2px 6px', border: 'none', background: 'transparent', fontSize: 11,
-                  color: DANGER, cursor: 'pointer' }}>×</button>
-            </span>
-          </div>
+          /* ⚠️ `ControlCell`, NOT A HAND-ROLLED COLUMN. This was the same column-plus-caption
+             markup ControlCell was extracted for, minus the caption — so the dial sat on a row of
+             its own with the pill under it and nothing naming either, while the Density/Height row
+             below was properly captioned. Four sites in this file hand-rolled that column; this is
+             one of them. */
+          /* ⚠️ TAPPING THE CELL STILL SELECTS THE CLUMP. The pill this replaced carried two
+             buttons — the number selected, the × removed — and its note said so: "Tapping the
+             caption selects; the dial sizes it." A first cut of this cell kept only the ×, which
+             left selecting as a side effect of dragging the dial. The wrapper takes the tap now, so
+             the whole cell selects and the × still removes, and the selected one is outlined. */
+          <span key={k} onClick={() => setGrassSelected({ tier, idx: k })}
+            style={{ display: 'inline-flex', flexShrink: 0, borderRadius: 10, padding: '2px 4px',
+              cursor: 'pointer',
+              border: `1.5px solid ${on ? INK : 'transparent'}`,
+              background: on ? INK_TINT : 'transparent' }}>
+            <ControlCell label={`Clump ${k + 1}`}>
+              <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
+                fmt={v => v.toFixed(2)}
+                onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
+              <button title="Remove" aria-label={`Remove clump ${k + 1}`}
+                onClick={(e) => { e.stopPropagation(); onRemove(k); }}
+                style={{ padding: '2px 5px', border: 'none', background: 'transparent',
+                  fontSize: 13, lineHeight: 1, color: DANGER, cursor: 'pointer' }}>×</button>
+            </ControlCell>
+          </span>
         );
       })}
     </ScrollFadeRow>
@@ -6398,12 +6887,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setManualOrderOpen(true);
   }
 
-  // What an Orders-menu entry does, decided once — the desktop rail and the mobile bar both read
-  // this, so they cannot drift into meaning different things by the same label.
-  function selectOrdersMenuItem(item) {
+  /* What a submenu entry does, decided once — the desktop rail and the mobile bar both read this,
+     so they cannot drift into meaning different things by the same label.
+     ⚠️ GENERIC NOW. It was `selectOrdersMenuItem` and branched on Orders' own `action`/`view`
+     fields, while both rails passed it as the `onSelect` for every submenu they draw. Adding a
+     second menu meant either routing Templates through Orders' dispatcher or forking two call
+     sites. Each item carries its own `open` instead (see where the menus are built), so this is the
+     whole of it. */
+  function selectMenuItem(item) {
     setNavMenuId(null);
-    if (item.action === 'newOrder') { startOrderForDate(); return; }
-    openOrdersPanel(item.view);
+    /* ⚠️ A SUBMENU ENTRY IS A DESTINATION, so it closes the others — the same rule `openRailItem`
+       already follows for every rail item without a menu. Without this, choosing Catalogue while
+       Library was open drew the flyout (z-index 20) BEHIND the docked page (300) and looked like a
+       dead menu item. The fix is leaving the page, not out-stacking it: two destinations at once is
+       the bug `leaveOpenPanels` was written for, and its own note explains the same symptom on
+       Billing — "the cake was created behind it, and nothing appeared to happen". */
+    leaveOpenPanels();
+    item.open?.();
   }
 
   async function handleManualOrderSubmit(formData) {
@@ -6692,7 +7192,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     writeGradient(gradStops.filter((_, idx) => idx !== i));
     setGradStop(0);
   }
-  // Right panel shows when: tier selected (always), or color picker opened, or topper selected (resize)
+  // Right panel shows when: tier selected (always), or the wheel was opened on something that can
+  // take a colour. A decorEl reaches this through `caps` — see the note at its declaration.
   const showRightPanel = tierPanelVisible
     || ((caps?.color || caps?.gradient) && colorOpen)
     // Recompose per-group editing is gated on the group's `editable` flag, not allowed_actions.color.
@@ -6914,10 +7415,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // see the thing you were editing. Desktop keeps it open: there is room beside the cake there, and
   // hiding it would cost a click for nothing.
   //
-  // It cannot simply be DROPPED on a phone, which is the tempting version of this fix. Grass, letter
-  // blocks, gold leaf and luster dust have no pointer handlers on the cake at all — their drag handles
-  // only exist inside their own mode, and their card is what opens that mode. Take the stack away and
-  // a baker can add grass and then never edit or remove it.
+  // It cannot simply be DROPPED, which is the tempting version of this fix — but the REASON stated
+  // here was wrong, and it mattered because it made the work sound bigger than it is.
+  //
+  // ⚠️ CORRECTED 2026-09-27. This said grass, letter blocks, gold leaf and luster dust "have no
+  // pointer handlers on the cake at all". They do: `onGrassSelect`, `onBlockSelect`, `onFoilSelect`
+  // and `onDustSelect` are all accepted by CakeCanvas AND passed by this file, and each one calls
+  // `selectExclusive({ type: … })` — exactly what `isCardSelected` reads. So clicking one of those on
+  // the cake selects it and expands its card today.
+  //
+  // What is actually missing is a HOME for that card. `focusEditor('decoration')` opens it inside
+  // this stack and nowhere else, so removing the stack would leave a selected decoration with no
+  // controls — a baker could add grass, click it, and still have nothing to adjust. The conclusion
+  // survives; the cause does not.
+  //
+  // That distinction is the roadmap (Sandeep): "as long as we can open a card popup when user clicks
+  // on a element on cake, we dont need to have a stack to the side." The click already works. The
+  // piece to build is the standalone popup, not the handlers.
   //
   // And it springs open by itself whenever a card is EXPANDED, because selecting a decoration on the
   // cake is what expands that decoration's card. With the flyout shut, tapping a decoration would
@@ -6925,13 +7439,44 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   const stackHasExpandedCard = decorationCards.some(isCardSelected)
     || selectedEl?.type === 'writing'
     || expandedPipingId != null;
-  const stackShown = !isMobile || stackFlyoutOpen || stackHasExpandedCard;
+  /* ⚠️ ONE FORMULA FOR BOTH PLATFORMS, and it used to be `!isMobile || …` — desktop could not hide
+     the stack at all. Widening the cards to 300px inset the canvas by 320 and the cake came back
+     noticeably smaller; Sandeep: *"this has shrinked the canvas size … we should have a side arrow
+     to drag them off or on."* The handle for exactly that already existed on the phone, so this is
+     the gate coming off rather than a second mechanism arriving.
+
+     An EXPANDED card still forces it open on desktop as it does on a phone, and for the same
+     reason: selecting a decoration on the cake is what expands that decoration's card, so with the
+     stack tucked away the click would look like nothing happened. The handle tucks it back. */
+  /* ⚠️ HIDDEN UNTIL ASKED FOR, ON DESKTOP TOO. This was `?? !isMobile` — desktop opened the stack on
+     every cake, so loading a design from the Catalogue or the Library dropped a column of cards over
+     the canvas before the baker had touched anything. Sandeep: "when i load a cake from catalogue or
+     library- the side card popup stack should not be opened by default. it should be dragged to right
+     and need to be opened only when an element is selected."
+
+     ⚠️ SELECTING STILL OPENS IT, and that needs no new machinery: `stackShown` below is
+     `stackOut || stackHasExpandedCard`, and tapping a decoration on the cake expands that
+     decoration's card.
+
+     ⚠️ AND IT CANNOT STRAND THE CARD-ONLY DECORATIONS — which is why it used to default open. Grass,
+     gold leaf, letter blocks and cream have no pointer handlers on the cake, so their card is the
+     only way to edit them; `isCardSelected` returns TRUE for those card types on a matching
+     `selectedEl`, and adding one selects it, so the stack springs out on the add. The handle on the
+     edge is the way back to the list.
+
+     ⚠️ ROADMAP (Sandeep): the side stack goes away entirely once clicking an element on the cake
+     opens its card as a popup — "as long as we can open a card popup when user clicks on a element
+     on cake, we dont need to have a stack to the side". The work that unlocks it is pointer handlers
+     for grass, letter blocks, luster dust and anything else lacking them. This is step one: hidden,
+     not yet gone. */
+  const stackOut   = stackOutPref ?? false;
+  const stackShown = stackOut || stackHasExpandedCard;
 
   // Opened by picking something ON THE CAKE rather than by the handle → show ONLY that element's
   // card. Tapping a lion is a question about the lion; answering it with a list of the other eleven
   // decorations puts the rest of the cake behind a column the baker did not ask for. The handle is
   // what asks for the list, and it still does.
-  const stackSingleCard = isMobile && !stackFlyoutOpen && stackHasExpandedCard;
+  const stackSingleCard = isMobile && !stackOut && stackHasExpandedCard;
 
   /* ⚠️ THE FOLD MARK IS HIDDEN WHENEVER "Done" IS ON SCREEN. Sandeep: "there is down arrow button
    * and 'Done' button. both doing the samething. shall we remove the downarrow?"
@@ -7047,8 +7592,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //   · list → shut, AND collapse whatever was expanded. Without the second half the panel springs
   //     straight back open, because an expanded card is itself a reason to be shown.
   function toggleStackFlyout() {
-    if (stackFlyoutOpen) { setStackFlyoutOpen(false); clearAllSelections(); }
-    else setStackFlyoutOpen(true);
+    if (stackOut) { setStackOutPref(false); clearAllSelections(); }
+    else setStackOutPref(true);
   }
 
   function selectDecorationCard(card) {
@@ -7775,6 +8320,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         label: slot.poseChoice ? `${label} ${POSE_LABEL[slot.mode] ?? slot.mode}` : label,
         checked, sticker, scaleRange: scaleRangeOf(srcEl, 0.5, 8, 0.1) };
     });
+    /* ⚠️ ONE SLOT IS NOT A CHOICE — the same rule `zoneHasChoice` already applies to poses, which is
+     * why the Pose row was deleted: "an element with one pose grows no controls". A calendar goes on
+     * the top and nowhere else, so its card showed a PLACEMENT section containing a single tile with
+     * a tick already in it — a control that cannot be operated, taking the top third of a phone card.
+     * Sandeep: "calendar control does not need 3d preview that says TOP. it works only on top."
+     *
+     * ⚠️ GATED ON `instance`, and that is the whole safety of it. With an instance this chooser MOVES
+     * an already-placed decoration between slots (see onToggle: "single-select; can't unplace here"),
+     * so one slot leaves nothing to move to. WITHOUT one it is the hero card's add/remove mechanism —
+     * ticking is how the element gets on the cake at all — and hiding it there would strip a
+     * single-slot element of any way to be placed or taken off. Slot COUNT, never element type (#2),
+     * so a one-zone element on a multi-tier cake still has several slots and keeps its chooser. */
+    if (instance && slots.length <= 1) return null;
     const onToggle = slot => {
       if (instance) {
         // Scatter: move THIS instance to the picked surface (single-select; can't unplace here).
@@ -7890,10 +8448,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     let tiltInSizeRow = false;
     let finishInSizeRow = false;
 
+    /* ⚠️ THE ONE WHOLE-ELEMENT COLOUR SWATCH ON A CARD, and it has to stay the only one. There were
+     * TWO: this, and a second button pushed further down by the sticker|decorEl block — so a
+     * decoration that is both colourable and resizable rendered a "Colour" row AND a Colour cell in
+     * the control row, two buttons opening the same wheel. Reported on the fondant heart, which is
+     * every plain sticker with `color` and `resize` ticked. They were added at different times for
+     * different reasons and neither knew about the other; what each knew that the other did not is
+     * folded in here — the decorEl re-selection from that one, the active border and
+     * `getCurrentColor` from this one. */
     const colourControl = (
         <button key="color"
           style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3, border: (colorOpen && !hasActiveGroup) ? '2.5px solid #6c47ff' : 'none' }}
-          onClick={() => { const opening = !(colorOpen && !hasActiveGroup); closeAllPopups(); if (opening) setColorOpen(true); }}>
+          onClick={() => {
+            const opening = !(colorOpen && !hasActiveGroup);
+            closeAllPopups();
+            /* ⚠️ A DECOREL CARD RE-SELECTS AS ONE. Its card stands for every instance of that
+               element on the cake and handleColorChange writes all of them — but only for a
+               `decorEl` selection. A STICKER keeps its own: re-selecting there would recolour every
+               copy when the baker is looking at one. */
+            if (el.type === 'decorEl') setSelectedEl({ type: 'decorEl', elementId: el.elementId });
+            if (opening) setColorOpen(true);
+          }}>
           <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: getCurrentColor() }} />
         </button>
     );
@@ -7905,14 +8480,54 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * A calendar has no `color`; it draws from its recipe. The generic wheel writes `sticker.color`,
      * which nothing renders — the "picker that visibly does nothing" the striped-tier note warns
      * about, and worse here because three working swatches sit next to it. */
-    /* ⚠️ RESOLVED FROM `el`, NOT `inst` — `inst` is not declared until the `el.type === 'sticker'`
-     * block far below, and optional chaining does not rescue an undeclared name: it THROWS. Putting
-     * `!inst?.calendar` here white-screened the designer with "inst is not defined", while 2203 tests
-     * stayed green because nothing in the suite mounts CakeDesignerInner. The same temporal-dead-zone
-     * scar this file already records four times over (selectedEl, stackSingleCard, templates, isSide).
-     * `c` above is derived from the same lookup, so the sticker is reachable here the same way. */
-    const calInst = el.type === 'sticker' ? design.stickers.find(s => s.id === el.id) : null;
-    const hasColourControl = (c.color || c.gradient) && !hueRegionsReplacesWheel && !calInst?.calendar;
+    /* ⚠️ RESOLVED HERE, ABOVE EVERY DECISION THAT READS IT. `inst` used to be declared inside the
+     * `sticker | decorEl` block far below, so this line could only reach a sticker and had to say so
+     * at length — optional chaining does not rescue an undeclared name, it THROWS, and putting
+     * `!inst?.calendar` here once white-screened the designer while 2203 tests stayed green. Hoisting
+     * it is what lets ONE gate decide the colour swatch instead of two blocks each deciding half.
+     * A plain sticker is itself; a single-per-slot topper is a decorEl card, so any one of its placed
+     * instances stands for it (a recolour applies to all of them). */
+    const inst = el.type === 'sticker' ? design.stickers.find(s => s.id === el.id)
+               : el.type === 'decorEl' ? design.stickers.find(s => s.elementId === el.elementId)
+               : null;
+    // GLB part-groups (inst.groups) OR — for a 2D `hue_regions` sticker — one group per detected colour
+    // (index-keyed; default = the region's detected hex). Same swatch UI + groupColors path for both.
+    // `recolor.locked` — the uploader of a custom decoration said "these colours must not change"
+    // (a logo, a brand mark). The element still RENDERS in the colours they chose (groupColors is
+    // seeded from recolor.group_defaults), it simply offers no swatches to change them. Config, not
+    // a type branch.
+    const editGroups = (el.type !== 'sticker' && el.type !== 'decorEl') ? []
+      : inst?.groups?.length
+        ? inst.groups
+        : (inst?.recolor?.method === 'hue_regions' && !inst.recolor.locked
+            // No label: auto-detected regions have no meaningful name (unlike a GLB's "Shoes"/"Eyes"), and
+            // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
+            ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
+            : []);
+
+    /* ⚠️ ONE PLACE DECIDES WHETHER THIS CARD HAS A WHOLE-ELEMENT WHEEL. Both render sites read this
+     * flag, so gating them separately leaves one of them showing a swatch the other suppressed —
+     * which is exactly how the fondant heart ended up with two.
+     *
+     * ⚠️ READ OFF THE ELEMENT, NOT THE PLACED INSTANCE, for a sticker or a decorEl. `allowedActions`
+     * is a snapshot taken when the decoration was placed, so a card on an old design would go on
+     * refusing a colour an admin has since ticked. The same rule `isStickerMovable` already follows.
+     * A decorEl card carries no `allowedActions` at all (`c` is `{}` for it), which is why that path
+     * needed its own answer in the first place.
+     *
+     * ⚠️ NOT WHERE THE PARTS ARE THE COLOURS. A segmented GLB recolours per group and a hue-region
+     * sticker per region ("Customise colours" below); a whole-model tint beside those is two controls
+     * fighting over the same mesh, and the per-part one is the better answer wherever it exists.
+     *
+     * ⚠️ NOT FOR A CALENDAR. It has no `color` — it draws from its recipe — so the generic wheel
+     * writes a field nothing renders, the "picker that visibly does nothing" the striped-tier note
+     * warns about, and worse here because three working swatches sit next to it. */
+    const hasColourControl = (el.type === 'sticker' || el.type === 'decorEl')
+      ? (!editGroups.length && !inst?.calendar
+         && (elementById.get(el.type === 'sticker' ? inst?.elementId : el.elementId)
+               ?.allowed_actions?.color === true
+             || c.gradient === true))
+      : ((c.color || c.gradient) && !hueRegionsReplacesWheel);
     if (hasColourControl) colourCtls = [colourControl];
 
     /* ⚠️ GENERAL RULE, not a photo-frame special case. Sandeep, on the faux ball: "same controls
@@ -7934,71 +8549,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        once the photo block has had its say. Pushing it here as well would give a frame TWO colour
        controls — the bug the single flag prevents. */
 
-    // GLB Recompose — per-group colour pickers. Self-explaining: each editable part-group gets a
-    // named, filled swatch ("Shoes", "Eyes", …) so the customer sees exactly which parts recolour.
-    // Config-driven off the instance's `groups` (admin's `_model.groups` where editable); absent →
-    // nothing renders. No element-type/slug branch. Tapping a swatch opens the shared ColorWheel for
-    // that group (activeGroupKey); the render recolours every mesh whose userData.group matches.
-    // Resolve the representative instance: a plain sticker is itself; a single-per-slot topper is a
-    // decorEl card, so use any one of its placed instances (recolour applies to all of them).
-    if (el.type === 'sticker' || el.type === 'decorEl') {
-      const inst = el.type === 'sticker'
-        ? design.stickers.find(s => s.id === el.id)
-        : design.stickers.find(s => s.elementId === el.elementId);
-      // GLB part-groups (inst.groups) OR — for a 2D `hue_regions` sticker — one group per detected colour
-      // (index-keyed; default = the region's detected hex). Same swatch UI + groupColors path for both.
-      // `recolor.locked` — the uploader of a custom decoration said "these colours must not change"
-      // (a logo, a brand mark). The element still RENDERS in the colours they chose (groupColors is
-      // seeded from recolor.group_defaults), it simply offers no swatches to change them. Config, not
-      // a type branch.
-      const editGroups = inst?.groups?.length
-        ? inst.groups
-        : (inst?.recolor?.method === 'hue_regions' && !inst.recolor.locked
-            // No label: auto-detected regions have no meaningful name (unlike a GLB's "Shoes"/"Eyes"), and
-            // "Colour 1/2/3" is just noise — the swatch shows the colour. Labelless → the span is skipped.
-            ? hueRegions.map((r, i) => ({ key: i, default: r.hex }))
-            : []);
-      /* ── Whole-element colour, for anything the catalogue marks recolourable ──────────────────
-       *
-       * ⚠️ THIS LIVES IN THE SHARED sticker|decorEl BLOCK, AND IT USED TO BE decorEl ONLY. A single
-       * sticker with `allowed_actions.color: true` therefore had no way to be recoloured at all —
-       * the control did not exist on that path. Measured against the catalogue: 59 elements are
-       * marked colour-changeable with no part groups, 5 of them single_per_slot (which got the
-       * swatch) and **54 plain stickers that got nothing**. Reported on a fondant heart: the box is
-       * ticked in admin, the designer offers no way to use it.
-       *
-       * ⚠️ ONLY WHEN THERE ARE NO PART GROUPS. A segmented GLB's colours ARE its groups — offering a
-       * whole-model tint beside them would be two controls fighting over the same mesh, and the
-       * per-part one is the better answer wherever it exists. Nothing in the catalogue has both
-       * today (checked: zero), so this orders them rather than taking anything away.
-       *
-       * The wheel already understands both selections: handleColorChange writes `color` for a
-       * sticker and for every instance of a decorEl, and wheelColorOf reads each back. */
-      const colourElId = el.type === 'sticker' ? inst?.elementId : el.elementId;
-      /* ⚠️ NOT FOR A CALENDAR. This writes `sticker.color`, which a calendar's renderer never reads —
-         it draws from its recipe. Offering it beside the three named swatches would be a wheel that
-         visibly does nothing, the exact failure the striped-tier note above records. */
-      if (!editGroups.length && !inst?.calendar
-          && elementById.get(colourElId)?.allowed_actions?.color === true) {
-        groups.push({ key: 'colour', divider: true, panelLabel: 'Colour', controls: [
-          <button key="col"
-            style={{ ...s.swatchBtn, background: 'conic-gradient(red,yellow,lime,aqua,blue,magenta,red)', padding: 3,
-                     border: colorOpen ? '2.5px solid #6c47ff' : 'none' }}
-            onClick={() => {
-              const opening = !colorOpen;
-              closeAllPopups();
-              /* ⚠️ A STICKER KEEPS ITS OWN SELECTION. Re-selecting as decorEl here would recolour
-                 EVERY instance of that element on the cake, not the one the baker is looking at —
-                 which is right for a multi-slot card and wrong for one sticker among several. */
-              if (el.type !== 'sticker') setSelectedEl({ type: 'decorEl', elementId: colourElId });
-              if (opening) setColorOpen(true);
-            }}>
-            <div style={{ width: '100%', height: '100%', borderRadius: '50%',
-                          background: inst?.color ?? '#ffffff' }} />
-          </button>,
-        ] });
-      }
+    /* GLB Recompose — per-group colour pickers. Self-explaining: each editable part-group gets a
+       named, filled swatch ("Shoes", "Eyes", …) so the customer sees exactly which parts recolour.
+       Config-driven off the instance's `groups` (admin's `_model.groups` where editable); absent →
+       nothing renders. No element-type/slug branch. Tapping a swatch opens the shared ColorWheel for
+       that group (activeGroupKey); the render recolours every mesh whose userData.group matches.
 
+       ⚠️ THE WHOLE-ELEMENT SWATCH THAT USED TO SIT HERE HAS GONE, not the behaviour it added. It was
+       written to fix a real gap — 54 plain stickers marked colour-changeable with no part groups and
+       no way to use it, reported on the fondant heart — but it fixed it by adding a SECOND button
+       beside the one `colourCtls` already renders, and the same heart came back with two. Everything
+       it knew now lives in `hasColourControl` and `colourControl` above: the element-read gate, the
+       "not where the parts are the colours" rule, and the decorEl re-selection. */
+    if (el.type === 'sticker' || el.type === 'decorEl') {
       if (editGroups.length) {
         groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
           <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
@@ -8060,7 +8623,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // showing top/side previews and letting you MOVE this instance between them (INVARIANTS #6/#3).
     // Reuses the shared chooser in single-instance mode; instance controls stay below.
     if (el.type === 'sticker') {
-      const inst = design.stickers.find(s => s.id === el.id);
       const srcEl = elementById.get(inst?.elementId);
       // Cluster-capable elements don't use the per-surface move chooser — you drag the ball to position
       // it and use the "Cluster" toggle (drop several for multiple clusters). Skip the preview chooser.
@@ -8073,7 +8635,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // Photo-cake frame controls — Upload + fit (zoom/pan). Gated on the instance carrying a window
     // mask (config-driven, placement_config.photo), never on element type/slug (INVARIANTS #1/#6).
     if (el.type === 'sticker') {
-      const inst = design.stickers.find(s => s.id === el.id);
       if (inst?.photoMask) {
         const t = inst.photoTransform ?? { x: 0, y: 0, zoom: 1 };
         const setT = patch => updateSticker(el.id, { photoTransform: { ...t, ...patch } });
@@ -8352,7 +8913,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              * The button carries CalendarIcon and the chosen date as its caption — the same
              * control-above-a-label shape Size and Spin use — and the real input sits behind it,
              * visually hidden but still the thing that opens the OS picker and still focusable. */
-            <div key="calendar-date" style={{ width: '100%', display: 'flex', justifyContent: 'center', marginTop: 4 }}>
+            /* ⚠️ THE CONTROL IS NAMED, because the icon cannot name it. Sandeep: "before the
+               calender icon, pls say Date label." A calendar icon on a CALENDAR's card is the one
+               picture that says nothing — the whole decoration is a calendar, so the icon reads as
+               decoration rather than as "this is the date control". Every other group on this card
+               is labelled (Calendar, Size, Spin); this one was not. */
+            <div key="calendar-date" style={{ width: '100%', display: 'flex', alignItems: 'center',
+                                              justifyContent: 'center', gap: 9, marginTop: 4 }}>
+              <span style={{ fontSize: 11, fontWeight: 700, color: '#5B6B60' }}>Date</span>
               <button
                 type="button"
                 onClick={e => {
@@ -8372,7 +8940,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               >
                 <CalendarIcon size={22} />
                 <span style={{ fontSize: 10.5, fontWeight: 700, color: '#5B6B60' }}>
-                  {iso ? `${pad(cv.day)}/${pad(cv.month)}/${cv.year}` : 'Date'}
+                  {/* Was 'Date', which now sits in the label beside the icon — leaving it here read
+                      "Date  Date". A calendar's date is seeded at placement so this is near-unreachable,
+                      but it says what it means rather than repeating the label. */}
+                  {iso ? `${pad(cv.day)}/${pad(cv.month)}/${cv.year}` : 'Not set'}
                 </span>
               </button>
               <input
@@ -8593,6 +9164,154 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // row to ride in. When the Size row took them, pushing here would show Tilt twice.
     if (tiltCtls.length && !tiltInSizeRow) {
       groups.push({ key: 'ta', divider: true, panelLabel: 'Tilt', controls: tiltCtls });
+    }
+
+    /* ── On a stick ──────────────────────────────────────────────────────────────────────────
+       A pick pushed into the icing, with the decoration riding above it. Offered by an element
+       whose row ticks `allowed_actions.stick` — config-gated like Bury, Fold and Cluster below,
+       never element type.
+
+       ⚠️ IT BELONGS ON THE CARD, WITH SIZE AND TILT — and the first version of this put it in the
+       COLOUR SHEET's tabs instead. That sheet only opens for a decoration once the colour swatch is
+       tapped (`showRightPanel` = a tier is selected, or `colorOpen`), so a baker who ticked "Can add
+       a stick" in admin, dropped the heart on the cake and opened its card saw no stick anywhere and
+       reported the feature as not working. Nothing was wrong with the capability, the seed or the
+       renderer: the only control was behind a swatch nobody had a reason to press. The card is the
+       one surface that lists what this decoration can do, so a capability that is not on it does not
+       exist.
+
+       ⚠️ THE DEPTH COMES WITH THE STICK, IN THE SAME ROW (INVARIANTS #11). Sandeep, the moment the
+       stick was proposed: *"when stick is added - a property to control how much to insert should
+       accompany."* A pick with no depth is a decoration pinned at one height; choosing how far above
+       the icing it sits is the reason a baker reaches for one.
+
+       `bury` is a FRACTION of the stick, not a distance, so resizing the heart does not change how
+       deep it is pushed in. Its starting value is the element's own authored number — read through
+       `elementStick`, never a literal here — for an instance placed before this feature existed and
+       so carrying no `stick` of its own. */
+    if (el.type === 'sticker' && c.stick) {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const srcEl   = sticker && elementById.get(sticker.elementId);
+      if (sticker) {
+        const row  = elementStick(srcEl?.placement_config, srcEl?.allowed_actions);
+        const st   = sticker.stick ?? { on: false, ...row };
+        const bury = st.bury ?? row.bury;
+        const len  = st.length ?? row.length;
+        const thk  = st.thickness ?? row.thickness;
+        const setStick = patch => updateSticker(el.id, { stick: { ...st, ...patch } });
+        /* One stepper, three times — In, Long and Thick are the same control over three numbers, and
+           three hand-rolled copies of it in one row is how they end up with three widths. */
+        const dial = (key, label, value, fmt, set, lo, hi, step) => ([
+          <span key={`${key}-lbl`} style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{label}</span>,
+          <button key={`${key}-`} style={s.tbIconBtn}
+            onClick={() => set(Math.max(lo, +(value - step).toFixed(2)))}>−</button>,
+          <span key={`${key}-val`} style={{ ...s.tbSizeLabel, minWidth: 28 }}>{fmt(value)}</span>,
+          <button key={`${key}+`} style={s.tbIconBtn}
+            onClick={() => set(Math.min(hi, +(value + step).toFixed(2)))}>+</button>,
+        ]);
+        /* ⚠️ SCROLLS, like the faux ball's Colour·Size·Spin·Tilt row and for the same reason: four
+           controls will not fit a 390px card, and a row that wraps makes the card two lines taller
+           and pushes the cake off a phone. ScrollFadeRow gives it the fade and the arrow, which is
+           what that row was once caught lacking. */
+        groups.push({ key: 'stick', divider: true, scroll: true, controls: [
+          <Chip key="stick-on" label="On a stick" active={!!st.on} isMobile={isMobile}
+                onClick={() => setStick({ on: !st.on })} />,
+          /* The numbers appear only once there IS a stick — steppers moving values nothing is using
+             are the "picker that visibly does nothing" this file warns about elsewhere. */
+          ...(st.on ? [
+            // How far the pick goes INTO the icing, as a fraction of the rod. Sandeep asked for this
+            // the moment the stick was proposed.
+            ...dial('bury', 'In', bury, v => `${Math.round(v * 100)}%`, v => setStick({ bury: v }), 0, 1, 0.05),
+            /* ⚠️ LENGTH AND THICKNESS ARE MULTIPLIERS on the rod `topperStick` derives from the
+               element's own box — never world lengths (INVARIANTS #8). Shown as a plain × so what a
+               baker reads is what the number means. */
+            ...dial('slen', 'Long', len, v => `${v.toFixed(1)}×`, v => setStick({ length: v }),
+                    STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
+            ...dial('sthk', 'Thick', thk, v => `${v.toFixed(1)}×`, v => setStick({ thickness: v }),
+                    STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
+          ] : []),
+        ] });
+      }
+    }
+
+    /* ── On a wire ───────────────────────────────────────────────────────────────────────────
+       A thin bendable stem with the decoration floating clear of the icing — butterflies hovering
+       off a cake. Offered by a row that ticks `allowed_actions.wire`, config-gated exactly like the
+       stick above and never on element type.
+
+       ⚠️ THE SAME SHAPE AS THE STICK'S CONTROL, DELIBERATELY, INCLUDING LIVING ON THE CARD. That
+       block's own comment records what it cost to learn: the pick's first control went in the
+       COLOUR SHEET, which only opens once a baker taps the colour swatch, so the feature was
+       reported as not working while nothing was wrong with it. The card is the one surface that
+       lists what a decoration can do, and a capability that is not on it does not exist.
+
+       ⚠️ AND TURNING ONE ON TURNS THE OTHER OFF, because they are alternatives rather than a pair.
+       Both answer "what holds this piece off the icing"; an element carrying both would be drawn on
+       two supports at once, and the renderer already resolves that silently in the wire's favour.
+       Resolving it HERE instead means a baker sees the swap happen rather than discovering later
+       that one of the two chips was doing nothing. A row should offer one or the other — admin says
+       so, and warns when both are ticked — but a row that offers both must still behave.
+
+       Starting values come from the element's own authored numbers, read through `elementWire` and
+       never as literals here, so an instance placed before this existed still gets the row's
+       intent. Same reasoning as `r` for size and `fold` for the fold angle: the dial moves, the row
+       says where it starts. */
+    if (el.type === 'sticker' && c.wire) {
+      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+      const srcEl   = sticker && elementById.get(sticker.elementId);
+      if (sticker) {
+        const row  = elementWire(srcEl?.placement_config, srcEl?.allowed_actions);
+        const wr   = sticker.wire ?? { on: false, ...row };
+        const setWire = patch => updateSticker(el.id, {
+          wire: { ...wr, ...patch },
+          /* Switching a wire on puts the stick away, and only then — a patch that always wrote
+             `stick` would clear a pick every time a baker nudged the bend. */
+          ...(patch.on === true && sticker.stick?.on ? { stick: { ...sticker.stick, on: false } } : {}),
+        });
+        /* ⚠️ SizeDial, NOT A −/value/+ STEPPER, AND IT IS THE SHARED CONTROL DOING ITS JOB. CLAUDE.md
+           names it "THE size control", and it is already the control for pen thickness, grass
+           density and dust glow — it decides nothing about range, only how a bounded number is
+           dragged. Five steppers is twenty elements in one scrolling row; five dials is ten, and the
+           row stopped being legible at the first count. Sandeep, with a picture of the arrows
+           colliding with the numbers: *"can we make these as dialers?"*
+
+           `fmt` carries the units, which is the whole reason that prop exists — a dial that printed
+           `toFixed(1)` would read "0.4" for a bend that means 35%, and a control whose number does
+           not say what it is is worse than the stepper it replaced. */
+        const dial = (key, label, value, fmt, set, lo, hi, step) => ([
+          <span key={`${key}-lbl`} style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{label}</span>,
+          <SizeDial key={key} size={value} min={lo} max={hi} step={step} onChange={set} fmt={fmt} />,
+        ]);
+        groups.push({ key: 'wire', divider: true, scroll: true, controls: [
+          <Chip key="wire-on" label="On a wire" active={!!wr.on} isMobile={isMobile}
+                onClick={() => setWire({ on: !wr.on })} />,
+          ...(wr.on ? [
+            /* ⚠️ BEND FIRST, WHICH IS NOT THE STICK'S ORDER AND SHOULD NOT BE. A pick has no shape to
+               choose, so its row opens with depth. A wire's bow is the whole of what makes it read as
+               wire rather than a pin, so it is the control a baker reaches for first (INVARIANTS #12
+               — layout follows use). */
+            ...dial('wbend', 'Bend', wr.bend ?? row.bend, v => `${Math.round(v * 100)}%`,
+                    v => setWire({ bend: v }), WIRE_BEND.min, WIRE_BEND.max, WIRE_BEND.step),
+            ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
+                    v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
+            /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them
+               looking like a row of flags — the reference photographs have every one facing
+               differently.
+
+               ⚠️ 0-360 AND NO WRAP, WHICH THE STEPPER DID NOT NEED. A −/+ pair can carry a value
+               past its own ends and fold it back, so this ran −360..720 and wrapped in the setter.
+               A dial cannot: its arc IS the range, so those bounds would spread one bearing across a
+               third of the travel and start 35° somewhere near the left stop. The arc is the circle
+               now, which is what a bearing wanted in the first place. */
+            ...dial('wsweep', 'Turn', wr.sweep ?? row.sweep, v => `${Math.round(v)}°`,
+                    v => setWire({ sweep: v }), WIRE_SWEEP.min, WIRE_SWEEP.max, WIRE_SWEEP.step),
+            ...dial('wbury', 'In', wr.bury ?? row.bury, v => `${Math.round(v * 100)}%`,
+                    v => setWire({ bury: v }), 0, 1, 0.05),
+            ...dial('wthk', 'Thick', wr.thickness ?? row.thickness, v => `${v.toFixed(1)}×`,
+                    v => setWire({ thickness: v }), STICK_SCALE.min, STICK_SCALE.max, STICK_SCALE.step),
+          ] : []),
+        ] });
+      }
     }
 
     // Bury (insert depth) — how far an INSERTED element's base sinks INTO the cake. Config-gated on
@@ -9293,6 +10012,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             Colour
           </div>
           <ColorWheel
+            compact={isMobile}
             color={g.color ?? garnishColor}
             onChange={c => updateGarnish(g.id, {
               color: c,
@@ -9468,7 +10188,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 6 }}>{mediumLabel} colour</div>
-        <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))}
+        <ColorWheel color={penStyle.color} onChange={c => setPenStyle(ps => ({ ...ps, color: c }))} compact={isMobile}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== penStyle.color.toLowerCase())} width={152} />
 
         {/* ⚠️ ONLY WHEN IT CAN ACTUALLY BE FILLED. An open stroke has no inside and a curved wall
@@ -9692,12 +10412,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             (cakeColors), so a name can be matched to a border without eyedropping it. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Block colour</div>
         <ColorWheel color={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
-          onChange={c => updateNameBlocks({ blockColor: c })}
+          onChange={c => updateNameBlocks({ blockColor: c })} compact={isMobile}
           cakeColors={blockCakeColors(nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor)} width={152} />
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Letter colour</div>
         <ColorWheel color={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
-          onChange={c => updateNameBlocks({ letterColor: c })}
+          onChange={c => updateNameBlocks({ letterColor: c })} compact={isMobile}
           cakeColors={blockCakeColors(nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor)} width={152} />
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -10180,7 +10900,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ColorWheel — INVARIANTS #3. Same defect as the letter-blocks card had, introduced the
             same day: a hand-rolled swatch row is a second colour control, and it reads as one. */}
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Grass colour</div>
-        <ColorWheel color={grassColor} onChange={setGrassColor} width={152}
+        {/* ⚠️ `compact` ON A PHONE, AND IT ALREADY EXISTED. Sandeep: "see the color picker. it does
+            not need to be expanded. its taking a lot of space." Measured at 375px before the change:
+            this block was 198px of a 566px card — 35% of it — because the full form draws a 152px
+            gradient box, fifteen swatches wrapped over three rows, a "COLORS FROM CAKE" heading and
+            more swatches beneath it.
+            `ColorWheel`'s compact branch was written for exactly this sheet: swatches FIRST in one
+            scrolling row (44px taps, 32px paint), the gradient underneath, and the heading replaced
+            by a hairline — its own note says that heading "cost a whole line of the sheet's height to
+            label six swatches that are self-evident once they are beside the presets". Nine callers
+            in this file, and only ONE was passing it. */}
+        <ColorWheel color={grassColor} onChange={setGrassColor} width={152} compact={isMobile}
           cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
 
         {/* s.deleteBtn — the destructive tone, where the FIELD is the signal. It was a white button
@@ -10453,7 +11183,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'grid', gap: 10 }}>
             <button type="button" style={s.startChoiceTile}
               onClick={() => { markSeenCookie(START_CHOICE_KEY); leaveStartChoice(() => openTemplates()); }}>
-              <span style={s.startChoiceTitle}>Start from a cake we make</span>
+              <span style={s.startChoiceTitle}>Start from a cake template</span>
               <span style={s.startChoiceBody}>Pick one you like and change what you want — colour, size, decorations.</span>
             </button>
             <button type="button" style={s.startChoiceTile}
@@ -10649,9 +11379,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   open={navMenuId === id}
                   containerRef={navMenuId === id ? navMenuRef : null}
                   escapeClip
-                  onHoverOpen={() => { setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
-                  onHoverClose={() => setNavMenuId(o => (o === id ? null : o))}
-                  onSelect={selectOrdersMenuItem}>
+                  onHoverOpen={() => { hoverOpenedRef.current = id; setNavMenuId(id); setChefsDeskOpen(false); setSettingsOpen(false); setProfileOpen(false); }}
+                  /* Cleared HERE rather than on mouse-leave: the close runs on a 220ms timer (the
+                     gap between button and menu is over neither), so clearing any earlier would
+                     leave the ref stale for a pointer that left and came straight back. */
+                  onHoverClose={() => { hoverOpenedRef.current = null; setNavMenuId(o => (o === id ? null : o)); }}
+                  onSelect={selectMenuItem}>
                   {button}
                 </RailSubmenu>
               );
@@ -11086,7 +11819,88 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                  color: tmplFiltersOpen ? '#fff' : INK }}>{tmplActiveFilters}</span>
                 )}
               </button>
+
+              {/* ⚠️ ONLY FOR SOMEBODY WHO MAY STOCK THE SHOP, and this same flyout is what a CUSTOMER
+                  browses — the gate matches `POST /baker/templates`, which is `template:manage` on the
+                  server, so an ungated control could only ever fail. Absent on an older host too: a
+                  released baker app predating `uploadCataloguePhoto` simply does not have the method,
+                  and a button that cannot work is worse than no button.
+                  ⚠️ `template:manage`, NOT `store:manage`. The route is
+                  `requireCapability('template:manage')`; I gated this on store:manage first and
+                  wrote a comment claiming it matched the server, which it did not.
+                  `flexShrink: 0` like the funnel beside it, so the search input keeps the slack. */}
+              {/* ⚠️ THE UPLOAD CONTROL MOVED TO THE FOOTER (see below). Sandeep: "add button is an
+                  important part of creating catalogue. it is pushed to a corner." A 34px `+` tucked
+                  beside the funnel read as a minor adjunct to SEARCH, when it is one of only two
+                  ways this shelf gets stocked. */}
             </div>
+
+            {/* ⚠️ BOTH WAYS TO STOCK THE SHELF, NOT JUST THE ONE THIS BUTTON DOES. Sandeep dictated
+                this sentence — "create your catalogue by selecting cakes from library or upload your
+                own. your customers can see your catalogue" — and my first version kept only the
+                upload half, because I wrote it as a caption for the + button instead of as the
+                instruction he gave. He was blunt about it: "altering the sentence is fine but
+                completely skipping a part is not acceptable."
+
+                It earns its place either way: there is no staging step for an uploaded photo — it is
+                in the catalogue the moment it lands — and Library is the other half of how this
+                shelf gets filled, which a baker looking at an upload button would not otherwise be
+                told. Same words as the empty state below, so the screen says it once, one way. */}
+            {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
+              /* ⚠️ THIS TEXT SITS ON THE RAIL, AND NO COLOUR CAN FIX THAT. Sandeep: "the first word
+                 'upload' in this screenshot is hidden behind the back shade… not readable."
+
+                 The flyout is placed at `RAIL_FLYOUT_LEFT` = `RAIL_CENTRE` ON PURPOSE — "a flyout
+                 that should read as emerging from BEHIND the rail… so the rail overlaps its square
+                 left edge and hides the seam". So the panel's first ~30px has the near-black rail
+                 behind it, and the panel is `rgba(255,255,255,0.6)`: measured, the ground there is
+                 rgb(162) (0.6×255 + 0.4×22 — the arithmetic matches exactly), against rgb(240+)
+                 further along the same line.
+
+                 ⚠️ MEASURED, NOT JUDGED BY EYE — I could not rank greys from screenshots, and every
+                 one of them failed. Contrast at the first word: `#9CA3AF` 1.00:1, `#888` 1.37:1,
+                 `#6B7280` 1.87:1, `#4B5563` 2.93:1. All below AA, so DARKENING ALONE CANNOT WORK.
+                 And `#9CA3AF` was too light regardless — only 2.29:1 even on a clear white ground,
+                 which is a contrast bug of its own that I introduced when I invented that grey.
+
+                 So it needs a GROUND as well as a darker colour — which is how everything else on
+                 this surface already survives the rail (the search input, the tiles, the Premium and
+                 "To library" chips all paint their own background; these bare lines were the only
+                 ones that did not). `0.92` is the LOWEST alpha that clears AA — 4.55:1, where 0.88
+                 gives 4.40 — so the panel keeps as much translucency as readability allows.
+                 The negative margins keep the text flush at the panel's 10px padding while the band
+                 extends under it, so this line stays aligned with the search box above.
+
+                 ⚠️ The flyout TITLE has the same defect (`#888`, 1.44:1 here) and is deliberately NOT
+                 changed: `s.flyoutTitle` is shared with the Elements flyout, and that is a second
+                 surface to alter on a decision that has not been asked for.
+
+                 ⚠️ 12px, MATCHING THE SEARCH INPUT ABOVE IT. Sandeep: "this text is too small." It
+                 was 10px, and I picked that to make a long sentence fit rather than because anyone
+                 could read it — the wrong trade, since this sentence is what tells a baker how the
+                 catalogue gets filled at all. 12 is the size the input beside it already uses, so it
+                 is the surface's own number rather than a new one. Contrast is unaffected: #6B7280
+                 on the 0.92 ground measures 4.55:1 at any size. */
+              <div style={{ fontSize: 12, lineHeight: 1.45, color: '#6B7280', fontWeight: 600,
+                            flexShrink: 0, background: 'rgba(255,255,255,0.92)', borderRadius: 7,
+                            /* ⚠️ PADDING AND NEGATIVE MARGIN MUST CANCEL ON THE LEFT, and both jobs
+                               matter. The GLYPHS have to stay on the panel's 10px content column so
+                               they line up with the search box; the GROUND has to reach the panel's
+                               edge so it still covers the rail showing through (measured: the rail
+                               intrudes ~30px, and the bare text there was 1.00:1).
+                               Two ways to get this wrong, and I made both: `-8` against 8px padding
+                               dragged the text 10px left of the input, and then cancelling the margin
+                               entirely pulled the band 10px inside the panel, where it stopped
+                               covering the strip it exists for. `10` and `-10` do both. */
+                            padding: '4px 10px', margin: '2px -10px 0' }}>
+                {cataloguePhotoBusy ? 'Adding your photo…' : 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'}
+              </div>
+            )}
+            {cataloguePhotoError && (
+              <div style={{ fontSize: 11, color: '#B91C1C', fontWeight: 600, paddingTop: 2, flexShrink: 0 }}>
+                {cataloguePhotoError}
+              </div>
+            )}
 
             {/* ⚠️ THE COUNT WENT, THE REFUSAL STAYED. "12 of 28 templates" existed because the chips
                 and the grid are never on screen together on a phone, so a tap appeared to do
@@ -11116,7 +11930,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               allTags={offeredTags}
               active={draftFilters}
               onChange={setDraftFilters}
-              categories={TMPL_CATS}
               open={tmplFiltersOpen}
               count={draftCount}
               onClear={() => { setDraftFilters({}); setDraftWeight(''); setDraftAge(''); }}
@@ -11170,84 +11983,106 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {templatesLoading && (
               <div style={{ display: 'flex', justifyContent: 'center', padding: '16px 0' }}><CakeSpinner size={20} /></div>
             )}
-            {!templatesLoading && templates.length === 0 && (
-              <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0' }}>No templates yet</div>
-            )}
-            <div style={s.templateGrid}>
-            {shownTemplates
-              .map(t => (
-              /* `position: relative` on both now: it anchors the enlarged preview, and that is not a
-                 phone-only need. The width came off — a grid track decides it. */
-              <div key={t.id} style={{ ...s.templateCard, position: 'relative' }}
-                // Desktop only: touch has no hover, and the two substitutes both break here —
-                // long-press fights the panel's own scrolling, and tap already loads the template.
-                // Mobile gets the explicit ⤢ button below instead.
-                onMouseEnter={isMobile ? undefined : (e) => {
-                  const src = thumbSrc(t);
-                  if (!src) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  clearTimeout(tplPreviewTimer.current);
-                  // A short delay so running the cursor down the list doesn't strobe previews.
-                  tplPreviewTimer.current = setTimeout(
-                    () => setTplPreview({ src, name: t.name, tiers: t.tier_count, rect }), 180);
-                }}
-                onMouseLeave={isMobile ? undefined : () => {
-                  clearTimeout(tplPreviewTimer.current);
-                  setTplPreview(null);
-                }}
-                onClick={async () => {
-                  let templateDesign = t.design ?? null;
-                  if (!templateDesign) {
-                    if (apiClient) {
-                      const full = await apiClient.fetchTemplate(t.id).catch(() => null);
-                      templateDesign = full?.design ?? null;
-                    } else {
-                      const { data } = await supabase
-                        .from('cake_templates')
-                        .select('design')
-                        .eq('id', t.id)
-                        .single();
-                      templateDesign = data?.design ?? null;
-                    }
-                  }
-                  if (templateDesign) {
-                    loadDesign(templateDesign);
-                    setTemplatesOpen(false);
-                    clearAllSelections();
-                    resetEditors();
-                  }
-                }}
-              >
-                {thumbSrc(t)
-                  ? <img src={thumbSrc(t)} alt={t.name} width={180} height={120} loading="lazy" decoding="async" onError={onThumbError} style={{ width: '100%', height: 120, objectFit: 'contain', borderRadius: 8, background: '#FAFAF8' }} />
-                  : <div style={s.templateThumbPlaceholder} />
-                }
-                {/* Mobile's stand-in for hover. An explicit control, not a gesture: tapping the card
-                    loads the template, so the preview needs a target of its own. */}
-                {isMobile && thumbSrc(t) && (
-                  <button
-                    type="button"
-                    aria-label={`Preview ${t.name}`}
-                    style={s.templatePreviewBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();      // never load the template from this button
-                      setTplPreview({ src: thumbSrc(t), name: t.name, tiers: t.tier_count, rect: null });
-                    }}
-                  >⤢</button>
-                )}
-                <div style={s.templateCardFooter}>
-                  <span style={s.templateCardName}>{t.name}</span>
-                  {t.offering === 'premium' && (
-                    <span style={s.templateBadge}>Premium</span>
-                  )}
+            {/* ⚠️ TWO DIFFERENT EMPTINESSES, and the difference decides whether a baker knows what to
+                do. Nothing exists at all is one thing; a full shelf with nothing chosen from it is
+                another, and it is the state EVERY new baker starts in under the opt-in catalogue.
+                Only somebody who can stock it is told where to go — a customer must not be pointed
+                at a screen they cannot open. */}
+            {/* ⚠️ SAID BEFORE THE EMPTY STATE, because "it broke" and "there is nothing" are
+                different facts and only one of them is the baker's to act on. With a Try again, so
+                the answer to a dropped connection is not "close the app". */}
+            {!templatesLoading && templatesError && (
+              <div style={{ fontSize: 11.5, color: '#B91C1C', textAlign: 'center', padding: '16px 8px', lineHeight: 1.6 }}>
+                {templatesError}
+                <div>
+                  <button type="button"
+                    onClick={async () => { setTemplatesLoading(true); setTemplates(await loadTemplates()); setTemplatesLoading(false); }}
+                    style={{ marginTop: 8, padding: '5px 12px', borderRadius: 7, cursor: 'pointer',
+                      border: `1.5px solid ${INK}`, background: SURFACE, color: INK,
+                      fontSize: 11.5, fontWeight: 700, fontFamily: 'inherit' }}>
+                    Try again
+                  </button>
                 </div>
-                {/* No "1-tier" caption. The thumbnail already shows how many tiers there are, and on
-                    a grid of nine cakes it was nine repetitions of a word doing no work — the count
-                    is still there for anyone who wants it, in the enlarged preview on hover. */}
               </div>
-            ))
-            }
-            </div>{/* end templateGrid */}
+            )}
+            {!templatesLoading && !templatesError && shownTemplates.length === 0 && tmplActiveFilters === 0 && !tmplSearch.trim() && (
+              <div style={{ fontSize: 11, color: '#888', textAlign: 'center', padding: '16px 0', lineHeight: 1.6 }}>
+                {/* ⚠️ THREE DIFFERENT EMPTINESSES, and only one of them is the baker's to act on.
+                    A customer is never told to go to Library or to upload — they cannot do either,
+                    and naming a screen they have no way to open reads as a broken app. */}
+                {templates.length === 0
+                  ? 'No templates yet'
+                  : hasCap('store:manage')
+                    /* ⚠️ SANDEEP'S WORDS, VERBATIM — restored 2026-09-28. He dictated this sentence
+                       and I paraphrased it: dropped the "can" from "can see" (which changes it from
+                       "they have access" to "they do look") and added a comma he did not write.
+                       Copy that was given is not copy to improve. */
+                    ? 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'
+                    : 'No cakes to show yet.'}
+              </div>
+            )}
+            {/* ── The grid, the reveal and the tile all live in TemplateGrid now ────────────────
+                Extracted to `designer/shared/TemplateGrid.jsx` because plans/baker-catalogue.md
+                needs a third caller — Settings → Spattoo templates, for stocking the shop, and this
+                same flyout in Edit-catalogue mode — and a third inline copy is how a hand-rolled
+                chip was committed while shared/Chip.jsx sat unused.
+
+                What stays HERE is what only this surface knows: what a tap MEANS (fetch the design
+                if the list row does not carry it, then load it and close the flyout) and where the
+                enlarged preview is drawn, which is a portal past this panel's own clipping.
+
+                `shownTemplates` is a useMemo, which the reveal hook requires — it resets on array
+                IDENTITY, so a filter change or a typed word starts the grid at the top again. */}
+            <TemplateGrid
+              templates={shownTemplates}
+              isMobile={isMobile}
+              busyId={pickingId}
+              /* ⚠️ A HOVER MUST NOT REPLACE AN OPEN TAP PREVIEW. Two previews share this one state:
+                 the small ANCHORED card a hover opens beside a tile (it carries that tile's `rect`,
+                 and is drawn `position: fixed`, z-index 320), and the centred BACKDROP view a tap
+                 opens (`rect: null`). Moving the pointer away from the photo tile crosses its
+                 neighbours, each arming `hoverIn`'s 180ms timer — so a hover landed AFTER the tap
+                 and swapped the enlarged view for a small card floating over it. Measured in the
+                 browser: `elementFromPoint` at the button's centre returned a fixed, z-320 div,
+                 which is why the button could be seen and never clicked.
+                 While a tap preview is open, hover is ignored; it resumes once that is dismissed. */
+              onPreview={p => setTplPreview(cur => (cur && !cur.rect && p?.rect) ? cur : p)}
+              /* ⚠️ ONLY A HOVER PREVIEW IS CLEARED BY THE POINTER LEAVING. This was
+                 `() => setTplPreview(null)` and it made the photo tap do NOTHING on desktop, every
+                 time: the tap opens the backdrop preview, the backdrop is a full-screen portal that
+                 lands under the cursor, so the tile beneath it fires `mouseleave` — and that cleared
+                 the preview in the same breath it opened. Sandeep: "when i click on it it does not
+                 show the bigger view... nothing happens on click."
+                 The two kinds are already distinguishable in the data: a HOVER preview carries the
+                 tile's `rect` (it is positioned beside it), a CLICK or tap passes `rect: null` and
+                 is drawn centred on a backdrop. So leaving the tile dismisses the first and must not
+                 touch the second — which the ✕/backdrop click owns. */
+              onPreviewEnd={() => setTplPreview(p => (p && p.rect ? null : p))}
+              /* ⚠️ ONLY FOR SOMEBODY WHO MAY STOCK THE SHOP. `PUT /baker/catalogue` is gated
+                 `store:manage` server-side, so on a customer this control could only ever 403 —
+                 and this same flyout is what a customer browses. Bottom-left: Premium owns
+                 top-left, the ⤢ preview owns top-right, and Library's Delete sits bottom-right,
+                 so the same corner never means two things. */
+              overlay={hasCap('store:manage') && apiClient?.updateBakerCatalogue ? (t) => (
+                <button
+                  type="button"
+                  aria-label={`Move ${t.name} to library`}
+                  disabled={catalogueBusyId === t.id}
+                  onClick={(e) => { e.stopPropagation(); moveToLibrary(t); }}
+                  style={{
+                    position: 'absolute', bottom: 6, left: 6, zIndex: 2,
+                    border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '3px 8px',
+                    background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                    fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
+                    cursor: catalogueBusyId === t.id ? 'progress' : 'pointer',
+                  }}
+                >{catalogueBusyId === t.id ? 'Moving…' : 'To library'}</button>
+              ) : undefined}
+              /* What a tap MEANS here — and on the Library page, which is handed this same
+                 function. Extracted rather than copied: two versions of "start a cake from a
+                 template" would drift the first time either was touched. */
+              onPick={startFromTemplate}
+            />
 
             {/* Enlarged preview. Portalled to the body because the panel clips its own overflow,
                 and anchored beside the card on desktop / centred as a sheet on mobile (rect null). */}
@@ -11261,25 +12096,145 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <div style={{ ...s.templatePreview, left, top, width: size.w }}>
                         <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
                         <div style={s.templatePreviewCaption}>
-                          {tplPreview.name} · {tplPreview.tiers}-tier
+                          {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
                         </div>
                       </div>
                     );
                   })()
                 : (
                   <div style={s.templatePreviewBackdrop} onClick={() => setTplPreview(null)}>
-                    <div style={{ ...s.templatePreview, position: 'relative', width: 'min(92vw, 420px)' }}
+                    {/* ⚠️ `pointerEvents: 'auto'` IS LOAD-BEARING, AND ITS ABSENCE MADE THE BUTTON
+                        DEAD. This spreads `s.templatePreview`, which sets `pointerEvents: 'none'` —
+                        right for the ANCHORED hover card, which must never swallow a click meant for
+                        the tile under it, and inherited by every child here. So the "Create order for
+                        a customer" button rendered, looked perfect, and could not be clicked: the
+                        hit test fell straight through it. Measured in a browser — `elementFromPoint`
+                        at the button's centre never returned the BUTTON.
+                        The hover card and this share a style object but not a purpose: that one is
+                        decoration, this one holds a control. */}
+                    <div style={{ ...s.templatePreview, position: 'relative', pointerEvents: 'auto',
+                                  width: 'min(92vw, 420px)' }}
                       onClick={(e) => e.stopPropagation()}>
                       <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
                       <div style={s.templatePreviewCaption}>
-                        {tplPreview.name} · {tplPreview.tiers}-tier
+                        {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
                       </div>
+
+                      {/* ── What a baker does with a photograph of their own work ─────────────────
+                          Sandeep: "when baker taps on it, show it bigger with a button 'create
+                          order for a customer'".
+
+                          ⚠️ ONLY IN THIS BRANCH, AND THAT IS NOT AN OVERSIGHT. The other branch is
+                          the desktop HOVER preview — it clears on mouseleave, so a button drawn
+                          there could never be reached by the pointer travelling to it. A tap always
+                          arrives here (TemplateGrid sends `rect: null` for a photo).
+
+                          Gated on `order:manage` to match the Orders panel's own New Order control,
+                          and on the client method existing, so a released baker app that predates
+                          `createManualOrder` draws nothing rather than a button that fails. */}
+                      {tplPreview.template?.type === 'photo'
+                        && hasCap('order:manage') && apiClient?.createManualOrder && (
+                        <button type="button"
+                          style={{ width: '100%', marginTop: 10, padding: '11px 14px', borderRadius: 11,
+                                   border: 'none', background: primaryColor, color: '#fff',
+                                   font: 'inherit', fontSize: 13.5, fontWeight: 800, cursor: 'pointer' }}
+                          onClick={() => {
+                            const t = tplPreview.template;
+                            setTplPreview(null);
+                            setTemplatesOpen(false);
+                            /* No key means no picture to attach — still open the order, because a
+                               baker taking an order for a cake they know is worth more than a
+                               refusal over a missing thumbnail. */
+                            setManualOrderPhoto(t?.thumbnail_key
+                              ? [{ key: t.thumbnail_key, preview: t.thumbnail_url }] : null);
+                            setManualOrderOpen(true);
+                          }}>
+                          Create order for a customer
+                        </button>
+                      )}
                     </div>
                   </div>
                 ),
               document.body,
             )}
             </div>{/* end flyoutScroll */}
+
+            {/* ── THE TWO WAYS TO STOCK THE SHELF, GIVEN EQUAL WEIGHT ──────────────────────────
+                Sandeep: "add button is an important part of creating catalogue. it is pushed to a
+                corner. can we have 2 buttons on this screen? may be at the bottom."
+
+                They sit AFTER `flyoutScroll`, which is `flex: 1` — so they pin to the panel's
+                bottom instead of scrolling away with the grid, which is the whole point of moving
+                them out of the search row.
+
+                ⚠️ TWO DOORS, ONE WEIGHT. The catalogue is filled from Library or from a photograph,
+                and nothing about this screen says one is the lesser path — so they are the same
+                size and the same style rather than a primary and a secondary.
+
+                ⚠️ "Choose from Library" LEAVES, and says so. It is a destination, not an action
+                performed here, which is why the word is "Choose" rather than "Add" — the latter
+                implies it happens in place. */}
+            {(hasCap('store:manage') || (hasCap('template:manage') && apiClient?.uploadCataloguePhoto)) && (
+              /* ⚠️ A BORDERED GROUP WITH ITS OWN HEADING, and the heading is Sandeep's words:
+                 "these two buttons need to have a border with a heading — 'Add cake designs to your
+                 catalogue'". Two buttons sitting loose at the foot of a panel read as leftovers of
+                 the grid above them; a titled box says they are one thing, and says what that thing
+                 is before either is pressed.
+
+                 ⚠️ THE OLD `borderTop` IS GONE, NOT KEPT. It separated these from the scrolling grid,
+                 which is the job this box's own top edge now does — leaving both would draw two
+                 hairlines 9px apart, which looks like a mistake rather than a division. */
+              <div style={{ flexShrink: 0, marginTop: 4, padding: '9px 10px 10px',
+                            border: '1px solid rgba(0,0,0,0.12)', borderRadius: 11,
+                            background: 'rgba(255,255,255,0.55)' }}>
+                {/* Small and quiet: it names the group, it is not competing with the buttons in it. */}
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', letterSpacing: 0.2,
+                              marginBottom: 7 }}>
+                  Add cake designs to your catalogue
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
+                {hasCap('store:manage') && (
+                  <button
+                    type="button"
+                    /* ⚠️ THE FLYOUT MUST BE CLOSED EXPLICITLY. `leaveOpenPanels` closes the docked
+                       pages and the rail menus — it does NOT close `templatesOpen`. Without this
+                       line the Library page (z-index 300) would open with this flyout (20) stranded
+                       behind it, which is the exact failure Sandeep reported before: "i cant see any
+                       catalogue because the flyout is opening behind the page."
+                       ⚠️ And Library is opened AFTER `leaveOpenPanels`, because that call itself
+                       does `setLibraryPanelOpen(false)` — the reverse order opens nothing. */
+                    onClick={() => { setTemplatesOpen(false); leaveOpenPanels(); setLibraryPanelOpen(true); }}
+                    style={s.catalogueAction}
+                  >Choose from Library</button>
+                )}
+
+                {hasCap('template:manage') && apiClient?.uploadCataloguePhoto && (
+                  /* A `<label>` wrapping a hidden file input — the idiom already used for the logo
+                     picker (settings/SettingsPanel.jsx) and inside PhotoAddTile. The label IS the
+                     control, so it is keyboard reachable and announced as a file input with no
+                     handling of our own.
+                     ⚠️ NOT `PhotoAddTile`: that is deliberately a square dashed TILE, and its own
+                     note argues the square is "the honest shape" for a picture joining a grid while
+                     "a full-width bar says perform an action". Here the bar is right — this is an
+                     action in a footer, not a gap among thumbnails. */
+                  <label style={{ ...s.catalogueAction,
+                                  cursor: cataloguePhotoBusy ? 'progress' : 'pointer',
+                                  opacity: cataloguePhotoBusy ? 0.6 : 1 }}>
+                    {cataloguePhotoBusy ? 'Adding your photo…' : 'Upload a cake photo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      disabled={cataloguePhotoBusy}
+                      style={{ display: 'none' }}
+                      /* Cleared after each pick so choosing the SAME file twice still fires a
+                         change event — otherwise a failed upload cannot be retried with it. */
+                      onChange={(e) => { uploadCataloguePhoto(e.target.files); e.target.value = ''; }}
+                    />
+                  </label>
+                )}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -11326,16 +12281,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               and already take their own space. */}
           <div style={{
             position: 'absolute', inset: 0,
-            right: toolsOpen ? (isMobile ? 0 : 276) : (elementStackOpen ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
+            /* ⚠️ `stackShown`, NOT `elementStackOpen`: the inset is about whether the stack is ON
+               SCREEN, not whether there is anything to list. Keyed on the latter, tucking the stack
+               away left a 320px hole beside the cake — the handle moved the panel and the canvas
+               stayed shrunk, which is the whole thing it was pulled for. */
+            right: toolsOpen ? (isMobile ? 0 : 276)
+                 : (elementStackOpen && stackShown ? (isMobile ? 0 : CANVAS_INSET_STACK) : 0),
             bottom: bottomSheetH,
-            /* ⚠️ `bottom` NO LONGER ANIMATES, and that is the fix rather than a regression. While it
-               did, two animations ran against each other: this transition slid the sheet while
-               FitCakeToView teleported the camera the moment the resulting aspect change tripped its
-               deadband — one eased, one jumped, neither synchronised. The sheet now moves in a single
-               step and the camera glides (FIT_EASE_S), so there is one animation and it is the one
-               you are actually watching. `right` keeps its transition: that is the desktop tools
-               panel, which does not resize the canvas the same way. */
-            transition: 'right 0.18s ease',
+            /* ⚠️ NEITHER AXIS ANIMATES NOW, and that is the fix rather than a regression. While
+               `bottom` did, two animations ran against each other: the CSS transition slid the sheet
+               while FitCakeToView retargeted the camera the moment the resulting aspect change
+               tripped its deadband — one eased, one jumped, neither synchronised. The container
+               moves in a single step and the camera glides (FIT_EASE_S, easeOutCubic), so there is
+               one animation and it is the one you are actually watching.
+
+               ⚠️ `right` USED TO BE EXEMPT, ON A REASON THAT STOPPED BEING TRUE. The note here said
+               it was "the desktop tools panel, which does not resize the canvas the same way" — but
+               the element stack was later routed through this same `right` (CANVAS_INSET_STACK on
+               the line above), and that DOES resize the canvas. So the stack toggle reproduced the
+               original bug precisely. Sandeep: "when i click on the arrow mark on the card stack, it
+               opens, so the cake moves to left to accomodate card stack… the cake moving left or
+               right is happening not smoothly."
+
+               The mechanism, for whoever reads this next: a 180ms eased inset changes `size` on
+               every frame of the transition, a resize deliberately SKIPS the fit's throttle
+               (`frameChanged`, 0.01 aspect delta), so the camera restarts its glide against a
+               target that is still moving. One step in, one glide out. */
           }}>
           {/* Darkens everything outside the 9:16 crop so the frame you are about to record is
               obvious without a word of explanation. Behind the canvas box, never over it. */}
@@ -11358,18 +12329,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ? { position: 'absolute', top: 8, bottom: 'auto', left: '50%', right: 'auto',
                     transform: 'translateX(-50%)', height: '46%', aspectRatio: frameAspect,
                     boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' }
-                // Parked immediately left of the panel, which is ~424px wide and centred in the
-                // VIEWPORT. Hence vw and not %: this box is positioned inside the canvas container,
-                // whose own 50% sits right of the viewport's by half the tool rail — anchoring on
-                // `calc(50% + …)` put the frame 40px underneath the panel on a 1200px window.
-                //
-                // Width is the smaller of "what is left beside the panel" and "what this much height
-                // allows", so the frame shrinks on a narrow window and on a short one, and 9:16 is
-                // never the thing that gives. A clamped WIDTH with aspect-ratio would silently
-                // letterbox instead — an untruthful preview, which is the one bug this cannot have.
+                /* Parked between the RAIL and the panel — the two things it must not go under.
+                   The panel is ~424px wide and centred in the VIEWPORT, hence vw and not %: this box
+                   sits inside the canvas container, whose own 50% is right of the viewport's by half
+                   the tool rail, and anchoring on `calc(50% + …)` put the frame 40px beneath the
+                   panel on a 1200px window.
+
+                   ⚠️ ANCHORED ON THE LEFT, AND THE LEFT IS DERIVED FROM THE RAIL. It used to anchor
+                   on the right with `width: max(160px, min(calc(50vw - 320px), 46vh))`, and that 320
+                   reserved 108px from the viewport's edge while the spatula paints out to
+                   RAIL_RIGHT — so the frame's left sat 25px UNDER the blade. Measured in the harness
+                   at 1280: frame left 108, rail right 133. Reported as *"a window opens to the left
+                   corner backside of the spatula menu. placement is ugly."*
+
+                   It is the same failure the rail module exists to stop — a hardcoded number that
+                   was once the edge and quietly stopped being one — so the clearance is DERIVED and
+                   the frame cannot drift back under the blade whatever the rail does next. The
+                   container starts at the nav COLUMN's edge (padLeft + width), so the blade's
+                   overhang past this box is RAIL_RIGHT minus that.
+
+                   Width is then the smaller of "what is left beside the panel" and "what this much
+                   height allows", so it shrinks on a narrow window and on a short one, and the crop
+                   ratio is never the thing that gives — a clamped width with aspect-ratio would
+                   silently letterbox, an untruthful preview, which is the one bug this cannot have.
+                   On a very narrow desktop window the frame shrinks rather than sliding back under
+                   the rail: small and correct beats big and hidden. */
                 : { position: 'absolute', top: '50%', transform: 'translateY(-50%)',
-                    right: 'calc(50vw + 212px)', left: 'auto', bottom: 'auto',
-                    width: 'max(160px, min(calc(50vw - 320px), 46vh))',
+                    left: FRAME_LEFT, right: 'auto', bottom: 'auto',
+                    width: `max(120px, min(calc(50vw - ${212 + RAIL_RIGHT + FRAME_GAP}px), 46vh))`,
                     height: 'auto', aspectRatio: frameAspect,
                     boxShadow: '0 0 0 1px rgba(255,255,255,0.35)', overflow: 'hidden' })
             : { position: 'absolute', inset: 0 }}
@@ -11831,48 +12818,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               }
             }
 
-            /* ── On a stick ───────────────────────────────────────────────────────────────────
-               Offered only by an element whose row ticks it (`allowed_actions.stick`), like every
-               other capability here.
-
-               ⚠️ THE DEPTH COMES WITH THE STICK, IN THE SAME SECTION, and that is the whole point
-               of the control. Sandeep, the moment the stick was proposed: *"when stick is added - a
-               property to control how much to insert should accompany."* A pick with no depth is a
-               decoration pinned at one height; choosing how far above the cake it sits is the
-               reason a baker reaches for one. So the dial appears WITH the toggle rather than in a
-               row of its own further down — INVARIANTS #11, the control and what it changes
-               together.
-
-               `bury` is a fraction of the stick, not a distance: resizing the heart must not change
-               how deep it is pushed in. */
-            if (caps?.stick && selectedEl?.type === 'sticker') {
-              const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
-              if (sticker) {
-                const st = sticker.stick ?? { on: false, bury: 0.5 };
-                sections.push({ id: 'stick', label: 'Stick', node: (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12, paddingTop: 4 }}>
-                    <Chip label="On a stick" active={st.on} isMobile={isMobile}
-                          onClick={() => updateSticker(sticker.id, { stick: { ...st, on: !st.on } })} />
-                    {st.on ? (
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' }}>
-                        <SizeDial size={st.bury ?? 0.5} min={0} max={1} step={0.05}
-                          onChange={v => updateSticker(sticker.id, { stick: { ...st, bury: v } })} />
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#333' }}>
-                          {Math.round((st.bury ?? 0.5) * 100)}% pushed in
-                        </span>
-                      </div>
-                    ) : (
-                      /* Said rather than shown greyed: a dial that does nothing until a toggle is
-                         pressed is a control a baker tries first and learns from second. */
-                      <span style={{ fontSize: 11.5, color: '#8A857D', lineHeight: 1.4 }}>
-                        Put it on a pick to stand it above the icing — then choose how far in it goes.
-                      </span>
-                    )}
-                  </div>
-                ) });
-              }
-            }
-
             if (!sections.length) return null;
             // A tab that no longer exists (the selection changed under it) falls back to the first,
             // rather than showing an empty sheet.
@@ -11887,7 +12832,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                      // ⚠️ DERIVED from the stack's own width — this used to be a literal 230 beside a
                      // comment restating "editPopup is right:10 width:200", so widening the stack put
                      // the wheel back underneath it. See EDIT_POPUP_W.
-                     : { ...s.wheelPanel, ...(elementStackOpen ? { right: WHEEL_DODGE_STACK, zIndex: 30 } : {}) }}>
+                     : { ...s.wheelPanel, ...(elementStackOpen && stackShown ? { right: WHEEL_DODGE_STACK, zIndex: 30 } : {}) }}>
                 {/* The grip the other two sheets always had and this one did not. It is no longer
                     load-bearing — nothing is hidden behind a drag any more — so it is now what it
                     should always have been: an optional way to make the picker bigger. */}
@@ -11967,14 +12912,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               Tried the other way first — the handle riding the panel's edge — and it ends up floating
               in the middle of the cake whenever the panel is shorter than the stage, which is most of
               the time: it reads as a stray button rather than the handle of the thing beside it. */}
-          {elementStackOpen && isMobile && (
+          {/* ⚠️ NO LONGER PHONE-ONLY. Desktop had no way to put the stack away, and at 300px wide it
+              takes 320px off the canvas — the cake refits smaller every time a card is open. The
+              handle is unchanged otherwise: same place, same behaviour, same words. */}
+          {elementStackOpen && (
             <button onClick={toggleStackFlyout}
               // Reads the LIST's state, not the panel's: with one card showing, the handle still
               // offers the list, so it must still point outward and still say "show".
-              aria-label={stackFlyoutOpen ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
-              aria-expanded={stackFlyoutOpen}
-              style={s.stackTab}>
-              {stackFlyoutOpen ? '▶' : '◀'}
+              aria-label={stackOut ? 'Hide the elements on this cake' : 'Show the elements on this cake'}
+              aria-expanded={stackOut}
+              /* ⚠️ IT MOVES WITH THE PANEL ON DESKTOP. `s.stackTab` is `right: 0`, so open or shut
+                 the tab sat in the same spot — Sandeep: "the arrow mark when its opened should be on
+                 the left side. for both drag in and out it shows at the same place." Open, it now
+                 rides the panel's LEFT edge: the desktop stack is `s.editPopup`, `right:
+                 EDIT_POPUP_RIGHT` and `width: EDIT_POPUP_W`, so its left edge is exactly
+                 `EDIT_POPUP_W + EDIT_POPUP_RIGHT` from the stage's right.
+
+                 ⚠️ PHONE KEEPS ITS FIXED RIGHT EDGE, deliberately. The note above records that
+                 riding the panel's edge was tried and rejected there — it floats mid-cake whenever
+                 the panel is shorter than the stage — but that argument is about the phone's
+                 `STACK_RIGHT_MOBILE` sheet and thumb reach. On desktop the stack is a full-height
+                 column, so its edge is exactly where the handle belongs.
+
+                 The rounding is unchanged and still correct: the flat side butts against the panel,
+                 the rounded side is the one you pull. */
+              style={{
+                ...s.stackTab,
+                ...(stackOut && !isMobile ? { right: EDIT_POPUP_W + EDIT_POPUP_RIGHT } : null),
+              }}>
+              {stackOut ? '▶' : '◀'}
             </button>
           )}
 
@@ -12939,7 +13905,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   containerRef={navMenuId === id ? navMenuRef : null}
                   style={s.mobileNavSlotWrap}
                   anchorStyle={{ top: 'auto', bottom: 'calc(100% + 10px)', left: '50%', transform: 'translateX(-50%)' }}
-                  onSelect={selectOrdersMenuItem}>
+                  onSelect={selectMenuItem}>
                   {slot}
                 </RailSubmenu>
               );
@@ -12999,7 +13965,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <input style={{ ...s.modalInput }} type="number" min="0" step="0.5" placeholder="e.g. 2" value={templateWeight} onChange={e => setTemplateWeight(e.target.value)} />
               </div>
               <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Suits ages</div>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 4 }}>Suits ages *</div>
                 <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                   <input style={{ ...s.modalInput, width: '50%' }} type="number" min="0" step="1" placeholder="Min" value={templateMinAge} onChange={e => setTemplateMinAge(e.target.value)} />
                   <span style={{ color: '#aaa', fontSize: 12 }}>–</span>
@@ -13019,24 +13985,72 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 : 'Optional. The lightest you can build this at, if it has one.'}
             </div>
 
-            {filterTags.filter(t => t.category === 'occasion').length > 0 && (
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>Occasions</div>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-                  {filterTags.filter(t => t.category === 'occasion').map(tag => {
-                    const on = templateOccasionIds.has(tag.id);
-                    return (
-                      <button key={tag.id} type="button"
-                        style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${on ? primaryColor : '#e5d0d8'}`, background: on ? hexToRgba(primaryColor, 0.1) : '#fff', color: on ? primaryColor : '#888', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}
-                        onClick={() => setTemplateOccasionIds(prev => { const next = new Set(prev); on ? next.delete(tag.id) : next.add(tag.id); return next; })}
-                      >
-                        {tag.name}
-                      </button>
-                    );
-                  })}
-                </div>
+            {/* ⚠️ EVERY CATEGORY, not occasions alone. A baker could file their own cake by occasion
+                and by nothing else — not as a sorry cake, not by colour, not by style — so anything
+                they made was unfindable by every other facet. Grouped through the same
+                groupTagsByCategory the filter uses, so the two cannot disagree about what exists.
+
+                ⚠️ `filterTags`, NOT `offeredTags`. The filter narrows chips to tags a loaded
+                template already carries, which is right for narrowing a grid and exactly wrong here:
+                this cake is new, and the first template to carry a tag has to be able to get it.
+
+                `age_group` is absent for the reason it is absent from the filter — this modal asks
+                for min/max age as NUMBERS a few rows up, and CATS_HANDLED_ELSEWHERE says so once. */}
+            {filterTags.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                {groupTagsByCategory(filterTags).map(([cat, tags]) => (
+                  <div key={cat}>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.5, textTransform: 'uppercase', marginBottom: 6 }}>{catLabel(cat)}{REQUIRED_TAG_CATEGORIES.includes(cat) ? ' *' : ''}</div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                      {tags.map(tag => {
+                        const on = templateTagIds.has(tag.id);
+                        return (
+                          <button key={tag.id} type="button"
+                            style={{ padding: '4px 10px', borderRadius: 20, border: `1.5px solid ${on ? primaryColor : '#e5d0d8'}`, background: on ? hexToRgba(primaryColor, 0.1) : '#fff', color: on ? primaryColor : '#888', fontSize: 11, fontWeight: 700, cursor: 'pointer', fontFamily: "'Quicksand',sans-serif" }}
+                            onClick={() => setTemplateTagIds(prev => { const next = new Set(prev); on ? next.delete(tag.id) : next.add(tag.id); return next; })}
+                          >
+                            {tag.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
+
+            {/* ── Saving is not selling ────────────────────────────────────────────────────────
+                ⚠️ OFF BY DEFAULT, AND NOT A REQUIRED CHOICE. Everything above describes the DESIGN
+                — its name, what it suits, how it is filed. This asks something different: whether a
+                stranger can order it. A required field whose honest answer is usually the same
+                teaches people to click past it, which is how a draft ends up on a storefront.
+
+                Until now there was no choice at all and the answer was always yes: a design was on
+                the baker's storefront the moment it was saved, because `templatesForBaker` returned
+                every template with their `baker_id`. Nobody decided that; it fell out of the query.
+
+                ⚠️ LIBRARY IS THE DEFAULT, AND THAT IS SANDEEP'S RULE: "default option to save any
+                template is into library." Unticked, the design joins the baker's Library — the shelf
+                that holds Spattoo's cakes and their own together — and they add it to the catalogue
+                from there whenever they want. Nothing is hidden by saving: a design that is not in
+                the catalogue is still on their shelf, which is why this can safely default to off.
+                See plans/baker-catalogue.md. */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, cursor: 'pointer', marginTop: 4 }}>
+              <input
+                type="checkbox"
+                checked={templateInCatalogue}
+                onChange={e => setTemplateInCatalogue(e.target.checked)}
+                style={{ accentColor: primaryColor, width: 15, height: 15, marginTop: 1, cursor: 'pointer', flexShrink: 0 }}
+              />
+              <span>
+                <span style={{ display: 'block', fontSize: 12, fontWeight: 700, color: INK }}>
+                  Also add to my catalogue
+                </span>
+                <span style={{ display: 'block', fontSize: 11, color: '#888', lineHeight: 1.45, marginTop: 1 }}>
+                  Customers can order it. Leave this off and it waits in your library.
+                </span>
+              </span>
+            </label>
 
             {saveMsg && (
               <div style={{ fontSize: 12, fontWeight: 600, color: saveMsg.ok ? '#4caf50' : DANGER, marginTop: 8 }}>
@@ -13145,7 +14159,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onRopeChange={setGarnishRope}
           /* The ONE colour control, handed in rather than rebuilt — see INVARIANTS #3. */
           colorControl={
-            <ColorWheel color={garnishColor} onChange={setGarnishColor} width={152}
+            <ColorWheel color={garnishColor} onChange={setGarnishColor} width={152} compact={isMobile}
               cakeColors={[...new Set(collectElementColors(design))]} />
           }
           onSave={piece => {
@@ -13322,11 +14336,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           onCapture={runPhoto} />
       )}
 
-      {/* ── Templates panel (hide/show Spattoo's global templates) ── */}
-      <TemplatesPanel
-        open={templatesPanelOpen}
-        onClose={() => setTemplatesPanelOpen(false)}
+      {/* ── Library — the shelf a catalogue is stocked from ── */}
+      <LibraryPanel
+        open={libraryPanelOpen}
+        onClose={() => setLibraryPanelOpen(false)}
         apiClient={apiClient}
+        /* ⚠️ THE SAME WORK THE CATALOGUE FLYOUT DOES, PASSED IN RATHER THAN WRITTEN AGAIN. Sandeep:
+           "user should be able to load the template to canvas when clicking on the template. they
+           want to customise an existing one and create a new one out of it." The list row carries no
+           `design` (it was taken out of the payload deliberately), so it is fetched by id — with the
+           supabase fallback for a host with no apiClient. A second copy of "start a cake from a
+           template" is precisely the kind of duplicate that drifts the first time either is touched.
+
+           ⚠️ This is why a tap here is SAFE again: it loads a design onto the canvas, which costs
+           nothing and is undone by starting a new cake. Stocking the shop stays a named button. */
+        onPickTemplate={startFromTemplate}
+        pickingId={pickingId}
         primaryColor={primaryColor}
         accentColor={accentColor}
       />
@@ -13515,7 +14540,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           mode="baker"
           manual
           initialDeliveryDate={manualOrderDate}
-          onClose={() => { setManualOrderOpen(false); setManualOrderDate(null); }}
+          initialReferenceKeys={manualOrderPhoto ?? []}
+          onClose={() => { setManualOrderOpen(false); setManualOrderDate(null); setManualOrderPhoto(null); }}
           onSubmit={handleManualOrderSubmit}
           apiClient={apiClient}
           supabase={supabase}
@@ -14033,11 +15059,6 @@ const s = {
    * than of a small one. `auto-fill` + `minmax` means the count follows the width instead of being
    * asserted per breakpoint: two columns on a phone, three in the widened flyout, without either
    * number appearing anywhere. */
-  templateGrid: {
-    display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
-    gap: 10,
-  },
   // Enlarged thumbnail. pointerEvents none on desktop so it can never sit between the cursor and
   // the card it belongs to — that would fire mouseleave and make the preview flicker itself away.
   templatePreview: {
@@ -14058,41 +15079,33 @@ const s = {
     background: 'rgba(20,16,18,0.45)',
     display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20,
   },
-  templatePreviewBtn: {
-    position: 'absolute', top: 6, right: 6,
-    width: 26, height: 26, borderRadius: 8,
-    border: 'none', background: 'rgba(255,255,255,0.92)',
-    boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-    fontSize: 13, lineHeight: 1, color: '#333', cursor: 'pointer',
+
+  /* The Catalogue flyout's two footer doors — "Choose from Library" and "Upload a cake photo".
+   *
+   * ⚠️ ONE STYLE FOR BOTH, ON PURPOSE. A catalogue is stocked from the Library or from a photograph,
+   * and nothing here makes one the lesser path — so a primary/secondary pair would assert a
+   * preference the product does not have. `flex: 1` splits the width evenly whatever the panel is.
+   *
+   * ⚠️ IT PAINTS ITS OWN BACKGROUND, like every other control on this surface. The flyout is
+   * translucent over the rail, so anything that does not bring its own ground can be washed out —
+   * measured at 1.00:1 for the bare help line above. The footer sits low, where the rail no longer
+   * intrudes, but the ground costs nothing and removes the dependency on that staying true.
+   *
+   * Borrowed from the "To library" chip on the tiles rather than invented: same border, same ink.
+   * No `whiteSpace: nowrap` — on a phone these wrap rather than overflow the panel. */
+  catalogueAction: {
+    flex: 1, minWidth: 0,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    WebkitTapHighlightColor: 'transparent',
+    padding: '9px 12px', borderRadius: 10,
+    border: '1.5px solid #C5D4C8', background: 'rgba(255,255,255,0.94)',
+    fontSize: 12, fontWeight: 800, color: '#2C4433', lineHeight: 1.3,
+    fontFamily: "'Quicksand', sans-serif", textAlign: 'center', cursor: 'pointer',
   },
-  templateCard: {
-    border: '1.5px solid #999999', borderRadius: 12,
-    overflow: 'hidden', cursor: 'pointer',
-    display: 'flex', flexDirection: 'column', gap: 6,
-    padding: '0 0 8px',
-    transition: 'all 0.15s',
-    flexShrink: 0,
-  },
-  templateThumbPlaceholder: {
-    width: '100%', height: 120,
-    background: '#FAFAF8', display: 'flex',
-    alignItems: 'center', justifyContent: 'center',
-    fontSize: 32,
-  },
-  templateCardFooter: {
-    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-    padding: '4px 8px 0',
-  },
-  templateCardName: {
-    fontSize: 11, fontWeight: 700, color: INK,
-  },
-  templateBadge: {
-    fontSize: 9, color: '#333', fontWeight: 700,
-    background: '#FAFAF8', border: '1px solid #999999',
-    borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
-  },
+  /* The tile's own styles — grid, card, placeholder, Premium badge and the ⤢ preview button — moved
+     to `designer/shared/TemplateGrid.jsx` with the tile, along with the reasoning behind each (the
+     square-thumbnail rule, why the badge sits top-LEFT, why the grid counts its own columns). Only
+     the enlarged-preview OVERLAY stays here, because portalling it past this panel's clipping is a
+     fact about this surface rather than about the grid. */
 
   tierCheckRow: {
     display: 'flex', alignItems: 'center', gap: 7,
@@ -14347,6 +15360,11 @@ const s = {
   // button that happens to be at the edge, and narrow enough that shut, it costs the cake 22px.
   stackTab: {
     position: 'absolute', top: '50%', right: 0, transform: 'translateY(-50%)',
+    /* ⚠️ NO TRANSITION, and that reverses what I added earlier today. The reasoning then was that
+       the handle should slide with the panel — but the panel is conditionally rendered and POPS in,
+       and the canvas inset no longer eases either (see the note there). That left the tab as the
+       only thing moving, travelling 328px ACROSS the panel it had just opened, at zIndex 21 over the
+       panel's 20. One movement, owned by the camera; everything else arrives in place. */
     width: STACK_TAB_W, height: 56, padding: 0,
     border: 'none', borderRadius: '10px 0 0 10px',
     background: 'rgba(255,255,255,0.82)',

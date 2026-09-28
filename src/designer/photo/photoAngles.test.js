@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { PHOTO_ANGLES, DEFAULT_ANGLE, angleByKey, anglePosition, angleAt } from './photoAngles.js';
+import { PHOTO_ANGLES, DEFAULT_ANGLE, PHOTO_OPENS_AT, angleByKey, anglePosition, angleAt } from './photoAngles.js';
 
 const T = { x: 0, y: 1.55, z: 0 };
 const radiusOf = p => Math.hypot(p.x - T.x, p.y - T.y, p.z - T.z);
@@ -105,5 +105,31 @@ describe('angleAt', () => {
 
   it('does not throw on a camera sitting exactly on the target', () => {
     expect(angleAt(T, { ...T })).toBe(null);
+  });
+});
+
+/* ── Where the panel OPENS is not the same question as the fallback ──────────────────────────────
+ * Both were answered by one constant, so every photograph started ~38° off the front and a name
+ * piped across a cake ran out of frame. Reported against the reel, whose preview already stood
+ * face-on: "when i take photo, its always taking from a little side angle." */
+describe('the angle a photo opens at', () => {
+  it('is face-on, so the front of the cake is in the frame', () => {
+    expect(PHOTO_OPENS_AT).toBe('front');
+    expect(angleByKey(PHOTO_OPENS_AT).theta).toBe(0);
+  });
+
+  it('is a REAL preset, so the chip that lights up is one the baker can tap back to', () => {
+    expect(PHOTO_ANGLES.some(a => a.key === PHOTO_OPENS_AT)).toBe(true);
+  });
+
+  it('looks slightly down, because the top is where the writing goes', () => {
+    const { phi } = angleByKey(PHOTO_OPENS_AT);
+    expect(phi).toBeGreaterThan(0);
+    expect(phi).toBeLessThan(90);   // above the cake's own height, never below it
+  });
+
+  it('leaves the FALLBACK alone — an unknown key is still the forgiving angle', () => {
+    expect(DEFAULT_ANGLE).toBe('three-quarter');
+    expect(angleByKey('no-such-angle').key).toBe('three-quarter');
   });
 });

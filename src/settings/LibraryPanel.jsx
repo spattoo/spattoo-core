@@ -1,0 +1,374 @@
+import { useState, useEffect, useMemo } from 'react';
+import { useIsMobile } from './controls.jsx';
+import { dockedPage, dockedBleed } from '../shared/rail.js';
+import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
+import { ConfirmPanel } from '../shared/Panel.jsx';
+import { INK } from '../shared/tokens.js';
+import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
+/* ⚠️ THE SAME MATCHER THE CATALOGUE FLYOUT USES, not a second one. It reads `name`, `tag_slugs` and
+   `search_slugs` — the last being what makes "rainbow" find a cake named "kids birthday cake" — and
+   it parses age phrases ("4 years") against `attrs`. `GET /baker/catalogue` was widened to carry all
+   three for exactly this; a private copy here would drift from the flyout the first time either
+   changed. `nameBySlug` is not passed: it only adds tag DISPLAY names, and since words are matched
+   one at a time, "baby shower" still finds the slug `baby-shower`. */
+import { matchesTemplateSearch } from '../designer/templateFilter.js';
+import { TrashIcon } from '../shared/icons.jsx';
+
+/* ── Spattoo templates — the library a baker stocks their catalogue from ─────────────────────────
+ *
+ * Spattoo authors templates and publishes them from admin, and a baker’s own saved designs land here
+ * want to offer. Tapping a tile puts it in their catalogue or takes it out. What they choose is what
+ * their customers see — see plans/baker-catalogue.md.
+ *
+ * ⚠️ A GRID, NOT A LIST OF ROWS, and that is from the catalogue itself. 22 globals carry 16 distinct
+ * names today — `Football` five times, `love` three — so a row labelled by name cannot tell two cakes
+ * apart, and a search box over those names would concentrate the problem rather than solve it. The
+ * browse flyout settled this already: "the picture identifies the cake". Same component, same tile.
+ *
+ * ⚠️ SAVES IMMEDIATELY, WHICH BREAKS THE SETTINGS CONVENTION ON PURPOSE. Every other panel here is
+ * draft-until-Save, and this one cannot safely be: `leaveOpenPanels()` in CakeDesigner closes docked
+ * pages on ANY rail click, and that file says so itself — "the day a docked panel starts holding
+ * something a baker typed, it has to guard THIS path too". A catalogue assembled from hundreds of
+ * tiles is a long session, so a draft here would be thirty taps a baker loses by pressing New Cake.
+ * Protecting it would mean gating the rail's teardown for every destination; a grid does not need a
+ * draft, because one tap IS the change and tapping again is the undo.
+ *
+ * ⚠️ THE PUT CARRIES THE WHOLE CATALOGUE, INCLUDING TEMPLATES THIS SCREEN DOES NOT SHOW. The route
+ * replaces the set rather than taking a delta, so the baker's OWN offered designs have to travel with
+ * every save from here or this screen would silently empty their half. That is why `offered` holds
+ * every id from the fetch and only the DISPLAY is filtered to `source === 'spattoo'`.
+ */
+/* `onPickTemplate` — start a cake from this design. Supplied by CakeDesigner, which owns the canvas;
+   it is the SAME function the Catalogue flyout picks with, so "start from a template" has one
+   implementation rather than two that drift. Absent (a host that only manages a catalogue) means the
+   tiles are not pickable, and TemplateGrid then drops the pointer cursor by itself. */
+export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate, pickingId = null, primaryColor = INK, accentColor = '#333333' }) {
+  const isMobile = useIsMobile();
+  const [rows,    setRows]    = useState(null);
+  const [offered, setOffered] = useState(() => new Set());
+  const [loading, setLoading] = useState(false);
+  const [busy,    setBusy]    = useState(false);
+  const [error,   setError]   = useState(null);
+  const [query,   setQuery]   = useState('');
+  /* Which of the baker's OWN designs is being confirmed for deletion, and whether that call is out.
+     ⚠️ Deleting is the one action here that tapping again cannot undo, so it is the one action that
+     asks first — everything else on this screen saves silently on the tap. */
+  const [pending,  setPending]  = useState(null);
+  const [removing, setRemoving] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+    /* A host running an older build has no `fetchBakerCatalogue` — the route is newer than the
+       released baker app. Render the empty state rather than failing on a method that is not there,
+       the same guard `fetchMyTemplates` already carries in TemplatesPanel. */
+    if (!apiClient.fetchBakerCatalogue) { setRows([]); return; }
+    setLoading(true);
+    apiClient.fetchBakerCatalogue()
+      .then(list => {
+        const arr = Array.isArray(list) ? list : [];
+        setRows(arr);
+        setOffered(new Set(arr.filter(t => t.offered).map(t => t.id)));
+      })
+      .catch(e => { setError(e.message); setRows([]); })
+      .finally(() => setLoading(false));
+  }, [open]);
+
+  /* ── WHAT IS NOT IN THE CATALOGUE — one place, never two ──────────────────────────────────────
+   * Both sources, Spattoo's cakes and the baker's own, but only the ones they have NOT chosen yet.
+   * Sandeep's rule, and it is the whole shape of these two screens:
+   *
+   *   "a template should appear either in library or in catalogue at a given time."
+   *
+   * So adding a cake REMOVES it from this grid — the tile leaves, and appears in the Catalogue. That
+   * is why there is no chosen-outline here any more: nothing on this shelf is in the catalogue, so an
+   * outline could only ever draw on nothing. Taking one back out is the Catalogue's job.
+   *
+   * ⚠️ FILTERED BY `offered`, NEVER BY `source`. Both kinds share this shelf — "library becomes
+   * spattoo designs+baker designs" — and filtering by source is what put the baker's own designs on a
+   * separate page, where a design switched off existed in the database and appeared on no screen.
+   *
+   * ⚠️ Memoised because TemplateGrid's reveal hook resets on array IDENTITY — a fresh array every
+   * render would restart the grid at the top on every tap. */
+  /* ⚠️ TWO LISTS, BECAUSE THE COUNT AND THE GRID ANSWER DIFFERENT QUESTIONS. `unchosen` is the
+     SHELF — what "to choose from" means — and must not shrink because somebody typed; `shown` is
+     what the grid draws. Filtering one list for both would silently turn "48 to choose from" into
+     "6 to choose from", which is a different claim about the bakery. */
+  const unchosen = useMemo(() => (rows ?? []).filter(t => !offered.has(t.id)), [rows, offered]);
+  const shown = useMemo(
+    () => (query.trim() ? unchosen.filter(t => matchesTemplateSearch(t, query)) : unchosen),
+    [unchosen, query],
+  );
+
+  /* Optimistic, then reconciled. The tile leaves on the tap — a grid that waits for a round trip
+     before showing anything reads as a dead control — and the previous set is restored if the call
+     fails, so the screen never claims something the server did not accept.
+
+     ⚠️ ADD-ONLY, and that is not a simplification: a cake already in the catalogue is not on this
+     screen to tap. Removing is the Catalogue's affordance ("catalogue should have option to move to
+     library"), which is the other half of one template being in one place at a time. */
+  async function addToCatalogue(t) {
+    if (!apiClient.updateBakerCatalogue) return;
+    const before = offered;
+    const next = new Set(before).add(t.id);
+    setOffered(next);
+    setBusy(true); setError(null);
+    try {
+      await apiClient.updateBakerCatalogue([...next]);
+    } catch (e) {
+      setOffered(before);
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /* Delete one of the baker's OWN designs. Optimistic only AFTER the server says yes — a tile that
+     vanishes and comes back is worse than one that takes a moment to go. It also leaves the offered
+     set, because a deleted design cannot be in a catalogue. */
+  async function removeMine(id) {
+    if (!apiClient.deleteBakerTemplate) return;
+    setRemoving(true); setError(null);
+    try {
+      await apiClient.deleteBakerTemplate(id);
+      setRows(prev => (prev ?? []).filter(t => t.id !== id));
+      setOffered(prev => { const next = new Set(prev); next.delete(id); return next; });
+      setPending(null);
+    } catch (e) {
+      setError(e.message);
+      setPending(null);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  if (!open) return null;
+
+  /* What is left to choose from, which is what this screen now holds. `offered.size` is the other
+     side of the same coin — the Catalogue's count — and says where the rest went. */
+  // The SHELF's size, not the search result's — see the two lists above.
+  const available = unchosen.length;
+  const searching = query.trim().length > 0;
+
+  return (
+    <>
+      <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+
+      {/* A page beside the rail, not a layer over the designer — see dockedPage. */}
+      <div style={{
+        ...dockedPage(isMobile),
+        display: 'flex', flexDirection: 'column',
+        fontFamily: "'Quicksand', sans-serif",
+        background: '#F4F8F5',
+      }}>
+
+        <div style={{
+          padding: isMobile ? '16px 20px' : '20px 28px',
+          ...dockedBleed(isMobile, 28),
+          background: `linear-gradient(135deg, ${primaryColor} 0%, ${accentColor} 100%)`,
+          flexShrink: 0, display: 'flex', alignItems: 'center', gap: 14,
+        }}>
+          {isMobile && <PanelBackArrow onClick={onClose} />}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Library</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+              Tap a cake to open it · “Move to catalogue” to offer it
+            </div>
+          </div>
+          {!isMobile && <PanelDismiss onClick={onClose} />}
+        </div>
+
+        <div style={{ flex: 1, overflowY: 'auto', padding: isMobile ? '16px' : '24px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', paddingTop: 60, color: '#9BB5A2', fontSize: 14 }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%', border: '2.5px solid #C5D4C8', borderTopColor: '#2C4433', animation: 'spin 0.7s linear infinite', marginRight: 10 }} />
+              Loading templates…
+            </div>
+          )}
+
+          {/* One error surface for every tap, which is what immediate saving costs. It sits ABOVE the
+              grid rather than on a tile: the tap that failed has already reverted, so what a baker
+              needs is the reason, not which square it was. */}
+          {error && (
+            <div style={{ padding: '14px 18px', borderRadius: 12, background: '#FEE2E2', color: '#991B1B', fontSize: 13, fontWeight: 600 }}>
+              {error}
+            </div>
+          )}
+
+          {rows && !loading && (
+            <>
+              {/* ⚠️ SEARCH HERE MATCHES MORE THAN NAMES, WHICH IS THE ONLY REASON IT EXISTS. This
+                  file argued against a search box over the names — 34 rows carry 23 distinct names,
+                  `football` six times, `dino` and `love` three each — and that objection stands. It
+                  is answered by what is matched, not by the box: tags and `search_slugs` (the
+                  decorations on the cake and the words piped on it) come from the route now, so
+                  "rainbow" finds a cake called "kids birthday cake" and the six Footballs are told
+                  apart by what is on them. Same placement and same wording as the Catalogue
+                  flyout's, so the two shelves are searched the same way. */}
+              {/* ⚠️ ITS OWN BOTTOM MARGIN, NOT THE CONTAINER'S GAP. Sandeep: "in library search box is
+                  touching the cake tiles." The page body already sets `gap: 12`, but 12px between a
+                  bare input and a row of bordered tiles reads as touching — the tile's own edge
+                  starts where the gap ends, so there is no visual breathing space at all. Widening
+                  the container gap would move every other pair on this page; this row is the one
+                  that needs the room, so it asks for it itself. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20,
+                            flexWrap: 'wrap', marginBottom: 10 }}>
+                <input
+                  value={query}
+                  onChange={e => setQuery(e.target.value)}
+                  placeholder="Search templates…"
+                  aria-label="Search your library"
+                  style={{ flex: '1 1 220px', maxWidth: 340, minWidth: 0, padding: '6px 10px',
+                           border: '1.5px solid #999999', borderRadius: 8, fontSize: 12,
+                           fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none',
+                           boxSizing: 'border-box', background: '#ffffff' }}
+                />
+                <span style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
+                  {searching
+                    ? `${shown.length} of ${available} match · ${offered.size} in your catalogue`
+                    : `${available} to choose from · ${offered.size} in your catalogue`}
+                </span>
+                {busy && (
+                  <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    <span style={{ width: 11, height: 11, borderRadius: '50%', border: '2px solid #C5D4C8', borderTopColor: '#2C4433', animation: 'spin 0.7s linear infinite', display: 'inline-block' }} />
+                    Saving
+                  </span>
+                )}
+              </div>
+
+              {/* Two very different emptinesses, and saying the wrong one is alarming. Everything
+                  chosen is success; nothing to choose is a new bakery waiting on us. */}
+              {/* ⚠️ THREE EMPTINESSES NOW, AND SAYING THE WRONG ONE IS ALARMING. "Everything is
+                  chosen" is success and "nothing here yet" is a new bakery — but a search that
+                  matches nothing is neither, and telling a baker with 48 cakes that their library is
+                  empty because they mistyped would be the worst of the three. The search case is
+                  tested FIRST for that reason, and it offers the way back rather than just the bad
+                  news. */}
+              {shown.length === 0 && (
+                searching ? (
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600,
+                                 display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    Nothing here matches “{query.trim()}”.
+                    <button
+                      type="button"
+                      onClick={() => setQuery('')}
+                      style={{ border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '3px 9px',
+                               background: '#fff', font: 'inherit', fontSize: 11.5, fontWeight: 800,
+                               color: '#2C4433', cursor: 'pointer' }}
+                    >Clear search</button>
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: '#6B7280', fontWeight: 600 }}>
+                    {offered.size > 0
+                      ? 'Every design is in your catalogue. Move one back here from Catalogue to set it aside.'
+                      : 'Nothing in your library yet. Spattoo’s cakes appear here as we publish them, and your own saved designs join them.'}
+                  </span>
+                )
+              )}
+
+              {/* ⚠️ NO `selectedIds`, DELIBERATELY. Every tile here is un-chosen by definition, so an
+                  outline would draw on all of them or none — it carried meaning only while this shelf
+                  showed both states. The same tile the Catalogue flyout uses, where a tap loads a
+                  design instead; the grid knows nothing about catalogues, and what a tap MEANS is
+                  this screen's business. */}
+              <TemplateGrid
+                templates={shown}
+                isMobile={isMobile}
+                /* The wait belongs to CakeDesigner (it owns the canvas and the fetch), so the id
+                   comes in rather than being tracked twice. */
+                busyId={pickingId}
+                /* ⚠️ A TAP OPENS THE DESIGN — IT DOES NOT STOCK THE SHOP. Sandeep asked for both
+                   halves of this, a day apart, and together they are coherent rather than a reversal:
+
+                     "even clicking by mistake will add it to catalogue. it should be a deliberate
+                      action. add button like 'Move to catalogue' for each template."
+                     "user should be able to load the template to canvas when clicking on the
+                      template. they want to customise an existing one and create a new one out of it."
+
+                   The asymmetry is the whole point. Loading a design onto the canvas costs nothing
+                   and a new cake undoes it; publishing one to strangers has no undo, and stays a
+                   named button. So the tile is pickable again, and the picture means "show me this
+                   cake", exactly as it does in the Catalogue flyout — the same handler, passed in. */
+                onPick={onPickTemplate}
+                overlay={(t) => (
+                  <>
+                    {/* ⚠️ AN ICON, TOP RIGHT — Sandeep asked for it there. It frees the bottom row for
+                        the one control that needs words, and the corner is genuinely free on this
+                        screen: Premium sits top-LEFT, and the ⤢ preview that owns top-right in the
+                        flyout is never drawn here (no `onPreview` is passed). The label lives in
+                        `aria-label`, so the action is still announced and still testable. */}
+                    {apiClient.deleteBakerTemplate && t.source === 'mine' && (
+                      <button
+                        type="button"
+                        aria-label={`Delete ${t.name}`}
+                        title={`Delete ${t.name}`}
+                        onClick={(e) => { e.stopPropagation(); setPending(t); }}
+                        style={{
+                          position: 'absolute', top: 6, right: 6, zIndex: 2,
+                          width: 26, height: 26, borderRadius: 8,
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          border: '1.5px solid #FBCFCF',
+                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                          color: '#B91C1C', padding: 0,
+                          cursor: removing ? 'not-allowed' : 'pointer',
+                          WebkitTapHighlightColor: 'transparent',
+                        }}
+                      ><TrashIcon size={14} /></button>
+                    )}
+
+                    {/* The one action that needs words, alone along the bottom now. */}
+                    {apiClient.updateBakerCatalogue && (
+                      <button
+                        type="button"
+                        aria-label={`Move ${t.name} to catalogue`}
+                        disabled={busy}
+                        onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
+                        style={{
+                          position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
+                          border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
+                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                          fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
+                          cursor: busy ? 'progress' : 'pointer',
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        }}
+                      >Move to catalogue</button>
+                    )}
+                  </>
+                )}
+              />
+
+              {/* Says what the buttons do, once, under the grid — the tiles carry no caption. */}
+              {shown.length > 0 && (
+                <div style={{ fontSize: 11, color: '#9CA3AF', lineHeight: 1.5, paddingTop: 4 }}>
+                  Tap a cake to open it on the canvas and make your own version of it.
+                  “Move to catalogue” starts offering it to your customers and moves it out of this
+                  list — that saves straight away, and you can move it back from Catalogue. Your own
+                  designs can be deleted; Spattoo’s always stay available here.
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+
+      {/* THE shared confirmation (shared/Panel.jsx) — three hand-rolled ones had already drifted to
+          three widths and three greys before it existed. Deleting is the one action on this screen
+          that tapping again cannot undo, so it is the one that asks first. */}
+      <ConfirmPanel
+        open={!!pending}
+        isMobile={isMobile}
+        title="Delete this design?"
+        message={pending
+          ? `“${pending.name}” will be deleted from your library and will stop appearing to your customers. This cannot be undone. Orders already placed from it are not affected.`
+          : ''}
+        confirmLabel={removing ? 'Deleting…' : 'Delete'}
+        cancelLabel="Keep it"
+        danger
+        busy={removing}
+        onConfirm={() => pending && removeMine(pending.id)}
+        onCancel={() => setPending(null)}
+      />
+    </>
+  );
+}

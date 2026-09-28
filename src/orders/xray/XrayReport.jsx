@@ -475,8 +475,13 @@ export default function XrayReport({ order, apiClient, onClose }) {
             {coverage?.unidentified?.length > 0 && (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 3, marginTop: 2 }}>
                 <span style={{ fontSize: 12, fontWeight: 800, color: '#4A3D66' }}>
-                  {coverage.unidentified.length} thing{coverage.unidentified.length > 1 ? 's' : ''} on the
-                  photo could not be identified — they are NOT in the list below:
+                  {/* ⚠️ THE CONSEQUENCE, NOT THE MECHANISM. "Could not be identified" describes
+                      something that happened inside our matcher; what a baker has to know is that
+                      the cake drawn below is incomplete, so the picture is not the whole brief.
+                      Paired with the card's own "From your photo" — the two used to say the same
+                      thing in two vocabularies, neither of them the baker's. */}
+                  {coverage.unidentified.length} thing{coverage.unidentified.length > 1 ? 's are' : ' is'} in the
+                  photo but not on the cake below:
                 </span>
                 {coverage.unidentified.map((u, i) => (
                   <span key={i} style={{ fontSize: 12, color: '#4A3D66' }}>

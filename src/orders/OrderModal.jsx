@@ -267,6 +267,11 @@ export default function OrderModal({
   mode = 'baker',   // 'baker' (search for the customer) | 'customer' (self-serve; identity from session)
   manual = false,   // baker's "New Order" — no 3D design; collect reference photo(s) instead
   initialDeliveryDate = null,   // 'YYYY-MM-DD' when started from a day in the Orders calendar
+  /* Reference photos the caller already has, as [{ key, preview }] — the SAME shape the uploader
+     produces, so the gallery, the remove button and the submit need no special case. Used by "create
+     order for a customer" on a catalogue photo: that picture is already in R2, so re-uploading a
+     copy of it would be a second object for one cake. */
+  initialReferenceKeys = [],
   legalBase = DEFAULT_LEGAL_BASE,   // host's marketing origin — where /terms + /privacy are served
 }) {
   const isMobile = useNarrow(600);
@@ -301,7 +306,9 @@ export default function OrderModal({
   const [quoteEmail, setQuoteEmail] = useState('');
 
   // Reference photos (manual orders only) — [{ key, preview }]; only `key` is sent.
-  const [referenceKeys, setReferenceKeys] = useState([]);
+  // Seeded, not forced: a baker who opened this from a catalogue photo can still remove it and
+  // attach something else, because the photo is a starting point rather than the order's identity.
+  const [referenceKeys, setReferenceKeys] = useState(initialReferenceKeys);
 
   // Step: 0=customer, 1=details, 2=delivery
   const [step, setStep] = useState(0);

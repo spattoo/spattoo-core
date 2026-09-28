@@ -2,7 +2,7 @@ import { useMemo, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildGarnishGeometry } from '../geometry/garnishPiece.js';
-import { buildPanelGeometry, panelsFrom } from '../geometry/garnishPanel.js';
+import { buildPanelsGeometry } from '../geometry/garnishPanel.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { wrapToWall } from '../geometry/garnishWall.js';
 import { tierShape, isRoundWall, boxHit } from '../geometry/surface.js';
@@ -102,12 +102,16 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
        acetate, so physically it is the same object a cut piece is — an outline with a thickness —
        and it must build the same way. Sweeping it as a piped path would give a fat line following
        the spine and throw away the shape the spatula made, which is the entire piece. */
+    /* ⚠️ EVERY SHAPE ON THE PLATE, NOT THE FIRST ONE. This took `const [panel] = panelsFrom(rings)`
+       and built that alone, reasoning that a piece is one piece of chocolate — so a baker who
+       brushed three petals and pressed "Use it on the cake" got one, with nothing to say the other
+       two had gone. Reported from dev: *"if i select multiple elements … only one is adding to
+       cake."* And it was not only a multi-shape plate: `Feathered pull` lays three ribbons from a
+       single tap and `Wide fan` four, so two of the five brush presets were losing most of
+       themselves on their own. See buildPanelsGeometry for why merging is the right answer. */
     if ((g.kind === 'cut' || g.kind === 'brushed') && g.rings?.length) {
       const scale = world / (g.plate ?? 420);
-      // Only the first panel: a piece is ONE piece of chocolate. Two separate outlines are two
-      // garnishes, and quietly merging them would place something nobody made.
-      const [panel] = panelsFrom(g.rings);
-      return panel ? buildPanelGeometry([panel.outline, ...panel.holes], { scale }) : null;
+      return buildPanelsGeometry(g.rings, { scale });
     }
     return buildGarnishGeometry(g.paths, { rope: g.rope ?? 6, plateSize: g.plate ?? 420, worldSize: world });
   }, [g.kind, g.rings, g.paths, g.parts, g.rope, g.plate, g.scale, cake.radius]);
@@ -209,8 +213,8 @@ function Garnish({ g, cake, onSelect, onMove, onOrbitEnable, selected }) {
 function buildPart(part, g, world, frame = null) {
   if ((g.kind === 'cut' || g.kind === 'brushed') && part.rings?.length) {
     const scale = world / (g.plate ?? 420);
-    const [panel] = panelsFrom(part.rings);
-    const built = panel && buildPanelGeometry([panel.outline, ...panel.holes], { scale, frame });
+    // Every panel in THIS colour — see the note at the single-colour call above.
+    const built = buildPanelsGeometry(part.rings, { scale, frame });
     return built ? { built } : null;
   }
   const built = buildGarnishGeometry(part.paths, {

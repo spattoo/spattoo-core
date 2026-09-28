@@ -26,6 +26,7 @@ import { SECOND_CREAM_DEFAULTS, SECOND_CREAM_PRESETS } from '../geometry/secondC
 import { GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
 import { STRIPE_DEFAULTS } from '../shared/color/stripeMaterial.js';
 import { pickTierFields, writingsOf } from '../utils/designSnapshot.js';
+import { elementWire } from '../geometry/elementWire.js';
 import { elementStick } from '../geometry/elementStick.js';
 
 export { TIER_RADII };   // re-export so existing imports from this file keep working
@@ -1120,12 +1121,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
           rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
-          tiltAngle:     seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
+          /* ⚠️ `extra` WINS, LIKE IT DOES FOR SCALE AND yOffset ABOVE — and it did not, which made a
+             lean impossible to place with and therefore impossible to look at. That is not academic:
+             the wire was drawn inside this element's tilt groups, so a leaning butterfly swung its
+             buried end out across the board, and a harness that passed `tiltAngle` and had it
+             silently dropped rendered five identical pictures that appeared to prove the bug fixed.
+             Every other positional field here honours `extra`; these two were the exception. */
+          tiltAngle:     extra.tiltAngle ?? seatTilt,       // perch: seated straddle-lean; verge: outward recline; insert modifier: lean±jitter
           // The OTHER lean axis: tiltAngle tips an element front/back, rollAngle tips it left/right
           // (and on a wall, spins it in the plane of that wall — a jersey sitting diagonally). Always
           // starts upright: no placement mode seeds a sideways lean, and a config that wanted one
           // would seed it here beside seatTilt.
-          rollAngle:     0,
+          rollAngle:     extra.rollAngle ?? 0,
           // Insert modifier: fraction of the element's LENGTH sunk into the surface (render scales by
           // measured length), and the RENDER'S "is inserted" signal — non-null iff the zone carried an
           // insert modifier (0 is valid: buried-but-flush). null otherwise. See placement.js zoneInsert
@@ -1179,8 +1186,24 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              — it spreads nothing, so a caller passing an unread key gets silence. Placing WITH a
              stick already on is what the admin preview needs to show the capability at all, and
              what a paste or a re-place of a stuck element needs to keep one. */
+          /* ⚠️ THE WHOLE ROD, NOT JUST ITS DEPTH. Seeding `bury` alone left length and thickness to
+             be re-resolved from the row on every render, so an instance could not carry a baker's
+             own — and both are controls on the card now (Sandeep: *"stick length should be
+             dynamic"*, *"add a control for the stick thickness"*). Spread, so a number added to
+             `elementStick` in future arrives here without this line being edited again. */
           stick: extra.stick ?? (element.allowed_actions?.stick === true
-            ? { on: false, bury: elementStick(element.placement_config, element.allowed_actions).bury }
+            ? (({ offered, finish, ...rod }) => ({ on: false, ...rod }))(
+                elementStick(element.placement_config, element.allowed_actions))
+            : null),
+          /* ⚠️ THE SAME SHAPE AS THE STICK ABOVE, AND IT HAS TO BE SEEDED HERE OR IT DOES NOT EXIST.
+             This function builds an instance field by field rather than spreading `extra`, so a key
+             nobody lists is silently dropped — which is exactly what happened on the wire's first
+             render: the harness passed `extra.wire`, the canvas read `sticker.wire`, and the piece
+             sat flat on the icing with no wire and no error. Spread, so a number added to
+             `elementWire` later arrives without this line being edited again. */
+          wire: extra.wire ?? (element.allowed_actions?.wire === true
+            ? (({ offered, finish, ...stem }) => ({ on: false, ...stem }))(
+                elementWire(element.placement_config, element.allowed_actions))
             : null),
           // GLB material finish, config-driven (placement_config.roughness/metalness). null = keep the
           // GLB's own baked material. Lets one sphere read as metallic (low roughness / high metalness)
@@ -1229,6 +1252,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
                does not silently grow a pick. The DEPTH that goes with it is not a capability — it
                is a number, and lives in placement_config.stick (see geometry/elementStick.js). */
             stick:     element.allowed_actions?.stick     ?? false,
+            /* May this element float on a bendable wire. A separate capability from `stick` rather
+               than a mode of it, because the two are alternatives a row chooses between: a butterfly
+               offers a wire, a fondant heart offers a pick, and an element offering both would be
+               asking a customer a question with no good answer. */
+            wire:      element.allowed_actions?.wire      ?? false,
           },
         }],
       };

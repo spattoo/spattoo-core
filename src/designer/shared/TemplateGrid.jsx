@@ -1,0 +1,294 @@
+import { useRef } from 'react';
+import useRevealOnScroll from '../../shared/useRevealOnScroll.js';
+import Spinner from '../../shared/Spinner.jsx';
+
+/* ── THE grid of cake templates ──────────────────────────────────────────────────────────────────
+ *
+ * Square, picture-only tiles that reveal a page at a time as you near the bottom. One component for
+ * every DESIGNER-SIDE surface that shows templates:
+ *
+ *   the rail's Templates flyout     browse the catalogue to start a cake     onPick loads it
+ *   Settings → Spattoo templates    browse the library to stock the shop     overlay adds it
+ *   the catalogue's Edit mode       take one out of the shop                 overlay removes it
+ *
+ * Extracted from `CakeDesigner.jsx`, where it was inline JSX inside a 14,800-line file, because
+ * `plans/baker-catalogue.md` needs a third use of it and there were already two. A third copy is how
+ * a hand-rolled chip got committed while `src/shared/Chip.jsx` sat unused.
+ *
+ * ⚠️ NOT THE STOREFRONT'S GALLERY, DELIBERATELY. `storefront/facets/DesignFacet.jsx` has its own —
+ * 118px captioned cards with a selected state, its own loading/error/empty copy, and the BAKER's
+ * warm palette rather than the app's chrome. That is a decision, not drift: "this is the CUSTOMER's
+ * storefront, which wears the BAKER's colours. Putting app furniture here would be the same mistake
+ * as styling a baker's storefront in Spattoo green." Folding the two together would have to absorb
+ * two palettes, caption-or-not, and click-loads versus click-selects. Left alone on purpose.
+ *
+ * ── WHAT IT OWNS AND WHAT IT ASKS FOR ──────────────────────────────────────────────────────────
+ * Owns everything about how a template LOOKS and how the grid GROWS. Asks the caller only for what
+ * a tap means, because that is the one thing genuinely different on each surface: the flyout loads a
+ * design, the browser adds to a catalogue.
+ */
+
+// Both thumbnail shapes, because the list route and the full row name it differently.
+const thumbSrc = (item) => item?.thumb_key ?? item?.thumbnail_url ?? null;
+
+// Hide a thumbnail that fails to load so the tile shows its neutral background instead of the
+// browser's broken-image icon.
+const onThumbError = (e) => { e.currentTarget.style.display = 'none'; };
+
+const s = {
+  /* ⚠️ A GRID THAT COUNTS ITS OWN COLUMNS, and it runs on desktop too. This was `display: flex`
+   * applied only when `isMobile`, so a phone got two columns and a desktop got none — every template
+   * stacked in a single 200px lane, a worse use of a large screen than of a small one. `auto-fill` +
+   * `minmax` means the count follows the width instead of being asserted per breakpoint: two columns
+   * on a phone, three in the widened flyout, without either number appearing anywhere. */
+  grid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fill, minmax(165px, 1fr))',
+    gap: 10,
+  },
+  /* ⚠️ THE PICTURE IS THE WHOLE CARD — no caption row, so no bottom padding and no gap to hold one.
+   * Square because the stored thumbnails ARE square: the capture canvas is a fixed 400x400, so a 3:2
+   * box showed every cake letterboxed with a dead gutter down each side. */
+  card: {
+    border: '1.5px solid #999999', borderRadius: 12,
+    overflow: 'hidden',
+    display: 'flex', flexDirection: 'column',
+    padding: 0,
+    transition: 'all 0.15s',
+    flexShrink: 0,
+    position: 'relative',   // anchors the badge, the ⤢ button and any overlay
+  },
+  cardOn: { borderColor: '#333333', boxShadow: '0 0 0 2px rgba(51,51,51,0.14)' },
+  placeholder: {
+    width: '100%', aspectRatio: '1 / 1',
+    background: '#FAFAF8', display: 'flex',
+    alignItems: 'center', justifyContent: 'center',
+    fontSize: 32,
+  },
+  /* ⚠️ ON the picture, not beside a name — there is no name to sit beside. Top LEFT, because the ⤢
+   * preview button owns the top right on a phone, and two chips in one corner is a collision that
+   * would only show up on the one device that cannot hover. */
+  /* The same chip as Premium, in the opposite corner and in the quieter tone — it names what a
+     tile IS rather than what it costs, so it must not out-shout the picture it sits on. */
+  photoBadge: {
+    position: 'absolute', bottom: 6, right: 6, zIndex: 1,
+    fontSize: 9, color: '#555', fontWeight: 700,
+    background: 'rgba(255,255,255,0.92)', border: '1px solid #BBB',
+    borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+  },
+  badge: {
+    position: 'absolute', top: 6, left: 6, zIndex: 1,
+    fontSize: 9, color: '#333', fontWeight: 700,
+    background: 'rgba(255,255,255,0.92)', border: '1px solid #999999',
+    borderRadius: 4, padding: '1px 5px', letterSpacing: 0.3,
+    boxShadow: '0 1px 3px rgba(0,0,0,0.12)',
+  },
+  previewBtn: {
+    position: 'absolute', top: 6, right: 6,
+    width: 26, height: 26, borderRadius: 8,
+    border: 'none', background: 'rgba(255,255,255,0.92)',
+    boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+    fontSize: 13, lineHeight: 1, color: '#333', cursor: 'pointer',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    WebkitTapHighlightColor: 'transparent',
+  },
+  tail: {
+    fontSize: 10.5, color: '#C3CBC6', fontWeight: 600,
+    textAlign: 'center', padding: '10px 0 2px',
+  },
+};
+
+/**
+ * templates     the filtered list. ⚠️ MUST BE A STABLE ARRAY — `useRevealOnScroll` resets on array
+ *               IDENTITY, because a new array means a new question (a filter changed, a word was
+ *               typed) and the grid must start at the top. A caller rebuilding it every render would
+ *               reset every render and reveal nothing. Pass a `useMemo`.
+ * isMobile      touch has no hover, so the preview needs an explicit control instead
+ * onPick        what a tap MEANS on this surface — load the design, or add to a catalogue
+ * onPreview     ({ src, name, tiers, rect }) — show the enlarged picture. `rect` is the tile's
+ *               bounding box on desktop (anchor beside it) and null from the ⤢ button (centre it).
+ *               The overlay itself stays with the caller: it is portalled past the panel's clipping,
+ *               which is not this component's business.
+ * onPreviewEnd  the pointer left — clear it
+ * overlay       optional (t) => node, rendered over the tile. The seam for "remove from catalogue"
+ *               and "add to catalogue". ⚠️ Its own control must stopPropagation, or picking is
+ *               indistinguishable from acting on the tile.
+ * selectedIds   optional Set of ids to draw as chosen — the Spattoo browser showing what is already
+ *               in the catalogue
+ * busyId        the tile whose pick is in flight. ⚠️ A TAP HERE COSTS A ROUND TRIP: the list row
+ *               carries no `design` (lib/templateList.js dropped it so browsing does not ship N
+ *               designs for the ONE somebody opens), so picking fetches by id — about a second.
+ *               Sandeep: "its taking a second to load on the canvas- but there is no indication of
+ *               loading." Unmarked, that second is indistinguishable from a dead control, and a
+ *               second tap fires a second fetch. The spinner sits ON the tapped tile rather than
+ *               over the panel, because WHICH cake is loading is the useful half, and picks are
+ *               ignored while one is in flight.
+ * page          how many appear at a time (the hook's default is 24)
+ */
+export default function TemplateGrid({
+  templates,
+  isMobile = false,
+  onPick,
+  onPreview,
+  onPreviewEnd,
+  overlay,
+  selectedIds,
+  busyId = null,
+  page = 24,
+}) {
+  const { visible, sentinelRef, done } = useRevealOnScroll(templates, { page });
+  const total = templates?.length ?? 0;
+
+  /* A short delay before the hover preview, so running the cursor down the list does not strobe.
+   *
+   * ⚠️ A REF, NOT A LOCAL. The first cut of this extraction wrote `let timer = null` in the function
+   * body and a comment arguing it was enough. It is not: the variable is re-created on every render,
+   * so any re-render between mouseenter and mouseleave — and `onPreview` causes one in the caller —
+   * leaves `hoverOut` clearing a fresh `null` while the pending timeout from the previous render
+   * still fires. The result is a preview that appears after the pointer has gone. CakeDesigner used
+   * `tplPreviewTimer.current` for exactly this reason; keeping a ref keeps that fix. */
+  const timer = useRef(null);
+  const hoverIn = (t, e) => {
+    const src = thumbSrc(t);
+    if (!src) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    clearTimeout(timer.current);
+    timer.current = setTimeout(
+      /* `template` rides along so the enlarged view can tell a PHOTO from a design and offer the
+         action that belongs to it. Without the row it only had a src, a name and a tier count —
+         none of which distinguish a picture you can order from a design you can open. */
+      () => onPreview?.({ src, name: t.name, tiers: t.tier_count, rect, template: t }), 180);
+  };
+  const hoverOut = () => { clearTimeout(timer.current); onPreviewEnd?.(); };
+
+  return (
+    <>
+      <div style={s.grid}>
+        {visible.map(t => {
+          const src = thumbSrc(t);
+          const on = selectedIds?.has?.(t.id) ?? false;
+          const busy = busyId != null && busyId === t.id;
+          // Any pick in flight blocks the rest: two overlapping loads would race to loadDesign and
+          // the loser would quietly win the canvas.
+          const blocked = busyId != null;
+          return (
+            <div
+              key={t.id}
+              /* ⚠️ THE CURSOR FOLLOWS WHETHER A TAP DOES ANYTHING. Rule 7 read backwards: a tile
+                 that only HOLDS controls must not present itself as one. Library stopped picking on
+                 tap — Sandeep: "even clicking by mistake will add it to catalogue. it should be a
+                 deliberate action" — so there the picture is a picture and the buttons are the
+                 controls. The flyout still picks, and still points. */
+              /* A photo always points, even where `onPick` is absent: its tap opens the picture
+                 large, which is an action, and rule 7 says that must be legible before the tap. */
+              style={{ ...s.card,
+                       cursor: blocked ? 'progress' : (onPick || t.type === 'photo') ? 'pointer' : 'default',
+                       ...(on ? s.cardOn : null) }}
+              /* Desktop only: touch has no hover, and the two substitutes both break here —
+                 long-press fights the panel's own scrolling, and a tap already picks the template. */
+              onMouseEnter={isMobile ? undefined : (e) => hoverIn(t, e)}
+              onMouseLeave={isMobile ? undefined : hoverOut}
+              /* ⚠️ A PHOTO IS OPENED, NEVER PICKED, AND BEFORE THIS IT WAS A DEAD TILE. `onPick` runs
+                 `startFromTemplate`, which fetches the design by id and returns early on
+                 `if (!templateDesign) return` — and a photo has no design by construction (migration
+                 116's CHECK). So tapping one did nothing at all, silently. It now opens the enlarged
+                 view, which is where the action for a photograph lives. */
+              onClick={() => {
+                if (blocked) return;
+                /* ⚠️ CANCEL THE PENDING HOVER, or it lands AFTER the click and overwrites it. The
+                   hover preview is armed on a 180ms timer; clicking inside that window left the
+                   timer to fire into a preview the click had already opened — replacing the centred
+                   backdrop view with the small anchored one, which the next `mouseleave` then
+                   dismisses. Same class of bug as the one the ref above was introduced to fix. */
+                clearTimeout(timer.current);
+                if (t.type === 'photo') {
+                  onPreview?.({ src, name: t.name, tiers: t.tier_count, rect: null, template: t });
+                  return;
+                }
+                onPick?.(t);
+              }}
+            >
+              {src
+                /* ⚠️ `height: 'auto'` IS LOAD-BEARING. The width/height ATTRIBUTES reserve the tile
+                   before the picture arrives (no reflow as the grid fills), but they are
+                   presentational hints — and with no author height, `height=180` BEATS
+                   `aspect-ratio`: measured 171x180 instead of 171x171, a tile that was square in the
+                   stylesheet and not on the screen. */
+                ? <img src={src} alt={t.name} width={180} height={180} loading="lazy" decoding="async"
+                       onError={onThumbError}
+                       style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1', objectFit: 'contain',
+                                borderRadius: 8, background: '#FAFAF8', display: 'block' }} />
+                : <div style={s.placeholder} />
+              }
+
+              {/* Mobile's stand-in for hover. An explicit control, not a gesture: tapping the card
+                  picks the template, so the preview needs a target of its own. */}
+              {isMobile && src && (
+                <button type="button" aria-label={`Preview ${t.name}`} style={s.previewBtn}
+                  onClick={(e) => {
+                    e.stopPropagation();          // never pick from this button
+                    onPreview?.({ src, name: t.name, tiers: t.tier_count, rect: null, template: t });
+                  }}
+                >⤢</button>
+              )}
+
+              {/* ⚠️ NO NAME ON THE CARD, AND NO CAPTION AT ALL. Sandeep: "we can actually skip
+                  showing the name. its difficult to name a lot of templates. thumbnail speaks. just
+                  the way canva app does." The catalogue showed the label failing at the one job it
+                  had — two cards read "Football" and two read "Dino" — so it was width spent on a
+                  word that distinguished nothing.
+
+                  ⚠️ THE NAME IS STILL HERE, IT IS JUST NOT DRAWN. It is the img's `alt` and the
+                  preview button's label, so a screen reader still says which cake this is, and
+                  `matchesTemplateSearch` still finds a template by a name nobody can see. Taking it
+                  out of the DOM would leave a grid of pictures nothing can name. It stays READABLE
+                  in the enlarged preview, which is how you tell those two Footballs apart. */}
+              {t.offering === 'premium' && <span style={s.badge}>Premium</span>}
+
+              {/* ⚠️ THE PHOTO IS THE ONE THAT BEHAVES DIFFERENTLY, so it is the one that is marked.
+                  Sandeep suggested labelling the 3D designs instead — the argument for flipping it
+                  is that almost every tile is a design, so marking those marks nearly everything
+                  and says nothing. A photograph cannot be opened on the canvas: tapping it shows
+                  the picture and offers a quote, where tapping a design loads it. That difference
+                  has to be legible BEFORE the tap, which is rule 7.
+                  Bottom-right: Premium owns top-left, the ⤢ preview owns top-right on a phone, and
+                  the move/delete controls live along the bottom-left of the two managing screens. */}
+              {t.type === 'photo' && <span style={s.photoBadge}>Photo</span>}
+
+              {/* ⚠️ OVER THE PICTURE, ON THE TILE THAT WAS TAPPED. INVARIANTS #11 — the control and
+                  what it changes, visible together: the answer to "did my tap register?" belongs on
+                  the thing tapped, not in a corner of the panel. Scrimmed so the ring reads against
+                  any thumbnail, and `pointerEvents: none` so it never eats the tap it is reporting. */}
+              {busy && (
+                <div style={{
+                  position: 'absolute', inset: 0, zIndex: 3,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  background: 'rgba(255,255,255,0.72)', borderRadius: 12,
+                  pointerEvents: 'none',
+                }}>
+                  <Spinner size={24} label={null} />
+                </div>
+              )}
+
+              {overlay?.(t)}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── The next page, before you get to the edge ──────────────────────────────────────────
+          An empty element the observer watches. It sits AFTER the grid and inside the same scroller,
+          so an ancestor that scrolls clips the intersection and this reads correctly in the desktop
+          flyout and the phone sheet without being told which. Nothing is fetched when it fires. */}
+      {!done && <div ref={sentinelRef} style={{ height: 1 }} aria-hidden="true" />}
+
+      {/* ⚠️ SAID ONCE, AT THE END. A grid that simply stops reads as a grid that gave up. Only worth
+          saying when there was more than one page to scroll through; on a short list the end is
+          obvious and a line about it is noise. */}
+      {done && total > page && (
+        <div style={s.tail}>That&rsquo;s all {total} templates.</div>
+      )}
+    </>
+  );
+}

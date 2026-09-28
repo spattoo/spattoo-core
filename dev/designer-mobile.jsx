@@ -196,6 +196,60 @@ CAT_ELEMENTS.push({
   default_color: '#C86B8A', sort_order: 10,
 });
 
+/* ⚠️ AN ELEMENT THAT CAN GO ON A PICK, which nothing here could express — and the gap that hid a
+ * shipped bug for a release. `allowed_actions.stick` is the capability an admin ticks ("Can add a
+ * stick"); the fondant heart has it in the real catalogue, and the designer showed no stick control
+ * anywhere on the heart's card, because the only one built lived in the COLOUR SHEET's tabs. A
+ * fixture that ticks the box is how that surface gets looked at.
+ *
+ * Deliberately a PLAIN scatterable GLB (no `scatter`, no `single_per_slot`) — the shape the real
+ * fondant heart is — so it takes the ordinary sticker-card path, which is the path that was wrong. */
+CAT_ELEMENTS.push({
+  id: 'e26', name: 'Heart on a pick', description: 'a stick-capable GLB',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#c41c1c'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  // `stick.bury` is the STARTING depth the row authors; the card's stepper moves it from there.
+  placement_config: { r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'stand', side: 'hug', stick: { bury: 0.4 } },
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, stick: true, duplicate: true },
+  default_color: '#c41c1c', sort_order: 26,
+});
+
+/* ⚠️ AN ELEMENT THAT FLOATS ON A WIRE, for exactly the reason the pick's fixture above exists: a
+ * capability nothing here can express is a surface nobody looks at, and that is how the pick's
+ * control shipped in the wrong place for a release. `allowed_actions.wire` is the second capability
+ * an admin can tick ("Can add a wire"), and it is what butterflies use.
+ *
+ * ⚠️ A 2D IMAGE, NOT A GLB, AND THAT IS THE POINT OF THIS ONE. The pick's fixture is a GLB because
+ * the fondant heart is; the wire's must not be, because a 2D element measures itself down a
+ * completely different path (`StickerTexture`, not `StickerModel`) and until recently that path
+ * reported no box at all — so a stick or a wire on an image element drew nothing, silently.
+ *
+ * `foldable` too, because a standing butterfly hinges its wings into a V and the wire then has to
+ * meet the SPINE rather than where a flat wingtip would have been. Sandeep: *"butterfly can be
+ * folded in core. so need to adjust wire accordingly."*
+ *
+ * ⚠️ IT ALSO TICKS `stick`, WHICH A REAL ROW SHOULD NOT. Admin warns when both are on, because they
+ * are alternatives — but a row that offers both must still behave, and the card is where that is
+ * resolved: turning the wire on puts the pick away. A fixture that offers only one could never show
+ * whether it does. */
+CAT_ELEMENTS.push({
+  id: 'e27', name: 'Butterfly on a wire', description: 'a wire-capable 2D image',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/cdn/elements/files/2D/768e80bd-dc9c-4eb4-8165-ce85666e14b3.png',
+  thumbnail_url: CAT_THUMB('#e05a9c'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  /* The row authors where each dial STARTS; the card moves it from there. Same arrangement as `r`
+     for size and `fold` for the fold angle — see geometry/elementWire.js for what each one does. */
+  placement_config: {
+    r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'stand', side: 'hug',
+    foldable: true, fold: 34,
+    wire: { length: 6, bend: 0.35, sweep: 35 },
+  },
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, wire: true, stick: true, duplicate: true },
+  default_color: '#e05a9c', sort_order: 27,
+});
+
 /* ⚠️ A NUMBER TOPPER ROW, so `design.ages` can be non-empty and the AGE CARD exists at all.
  * Without one, addAge is never called here, design.ages stays [], and the age card — its Duplicate,
  * its finish chooser and its remove button — could not be looked at in this harness. Same gap this
@@ -480,6 +534,57 @@ CAT_ELEMENTS.push({
   default_color: '#5aa83c', sort_order: 20,
 });
 
+/* ⚠️ THE CHOCOLATE GARNISH STUDIO'S OWN DOOR, which this harness did not have — so the one seam
+ * between the studio and the cake (`onSave` → `addGarnish` → the Garnishes renderer) could only be
+ * reasoned about, never driven. `dev/garnish-studio.html` proves what the studio SENDS and
+ * `dev/garnish-on-cake.html` proves what the cake DRAWS; neither could catch a piece being dropped
+ * in between, and one was. Same `procedural` routing as grass above — the value, not a nested key. */
+CAT_ELEMENTS.push({
+  id: 'e27', name: 'Chocolate garnish', description: 'piped or brushed off the cake, then placed',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: CAT_THUMB('#4A2C1B'), thumbnail_url: CAT_THUMB('#4A2C1B'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { procedural: 'chocolate_garnish' },
+  default_color: '#4A2C1B', sort_order: 27,
+});
+
+/* ⚠️ A COLOURABLE HERO (`single_per_slot`) — the card type this harness could not make, and the one
+ * the whole-element colour swatch was written FOR. `c` is `{}` on a decorEl card, so its swatch is
+ * gated on the ELEMENT rather than on a placed instance's `allowedActions`; with no fixture, that
+ * branch could only be reasoned about. It is also the card whose swatch must RE-SELECT as a decorEl
+ * before opening the wheel — its card stands for every instance of the element on the cake.
+ *
+ * ⚠️ `single_per_slot` is what makes it a decorEl card, NOT the element type. A hero places one
+ * instance per (tier × surface) through the chooser's checkboxes. */
+CAT_ELEMENTS.push({
+  id: 'e28', name: 'Fondant crown hero', description: 'a colourable single-per-slot hero',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#E3C46A'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: { single_per_slot: true, r: 0.7, top_surface: 'stand', side: 'hug' },
+  default_color: '#E3C46A', sort_order: 28,
+});
+
+/* ⚠️ A SEGMENTED GLB — a model whose colours ARE its part groups (`_model.groups`, admin's GLB
+ * Studio). It gets the named "Customise colours" swatches and must get NO whole-model wheel beside
+ * them: two controls fighting over the same mesh, and the per-part one is the better answer. The
+ * catalogue has nothing with both today, which is exactly why a fixture has to carry the rule —
+ * otherwise the only thing protecting it is a comment. */
+CAT_ELEMENTS.push({
+  id: 'e29', name: 'Two-part rosette', description: 'a GLB with recolourable part groups',
+  element_type_id: 'et-scatter', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#C86B8A'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { r: 0.6, top_surface: 'lay', side: 'hug', _model: { groups: [
+    { key: 'petals', label: 'Petals', editable: true, default: '#C86B8A' },
+    { key: 'centre', label: 'Centre', editable: true, default: '#F0D89B' },
+  ] } },
+  default_color: '#C86B8A', sort_order: 29,
+});
+
 /* ⚠️ AN EDGE-SEATED FIGURE, which nothing here could make. Every row above seats on the top surface
  * or hugs a wall, so the `perch`/`verge` modes — and with them `edgeSeatSeed`, the shared front-edge
  * seed both the add path and the chooser's move path call — were unreachable without a database.
@@ -701,6 +806,21 @@ const reloadDesign = PARAMS.has('reload')
   ? (() => { try { return JSON.parse(localStorage.getItem(RELOAD_KEY) || 'null'); } catch { return null; } })()
   : null;
 
+/* ── A cake with something ON it, so the ELEMENT STACK opens ────────────────────────────────────
+ *
+ * `?stack=1`. The stack lists what is on the cake, and this harness's catalogue panel is empty — so
+ * there was no way to open it here at all, and the desktop layout it drives (the canvas inset, the
+ * colour wheel's dodge, the collapse handle) could not be looked at. A writing is the cheapest thing
+ * that populates it: no element row, no asset, no catalogue.
+ */
+const stackDesign = PARAMS.has('stack') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  writings: [{
+    id: 'w1', style: 'acrylic', text: 'Happy Birthday', font: 'parisienne',
+    surface: 'side', sideY: 1.0, fit: 0.9, acrylicFinish: 'gold', color: '#ffffff',
+  }],
+} : null;
+
 const STRIPE_KEY = PARAMS.get('stripes');
 const stripedDesign = STRIPE_KEY ? {
   tiers: [{
@@ -732,5 +852,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

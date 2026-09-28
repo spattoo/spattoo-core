@@ -47,6 +47,13 @@ export default function Chip({
            you CANNOT pick, never for what has been picked for you. */
         opacity: disabled && !active ? 0.5 : 1,
         fontFamily: "'Quicksand', sans-serif",
+        /* ⚠️ A PILL NEVER BREAKS ITS OWN LABEL, and never shrinks below it. In a row that scrolls
+           sideways instead of wrapping (`ScrollFadeRow`, flex-nowrap) a chip is a shrinkable flex
+           child like any other, so "On a stick" came out stacked as three lines in a squashed
+           lozenge on the decoration card. Wrapping is the ROW's job — the chip is one word-shaped
+           thing or it is not a chip. */
+        whiteSpace: 'nowrap',
+        flexShrink: 0,
         transition: 'all 0.15s',
       }}
     >

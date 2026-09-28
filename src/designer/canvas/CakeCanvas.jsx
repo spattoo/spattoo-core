@@ -15,6 +15,7 @@ import CakeTier from './CakeTier';
 import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
+import { wireFor, wireLift } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
 import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -682,6 +683,10 @@ function scanContentV(img, spine, rise) {
   const d = ctx.getImageData(0, 0, w, h).data;          // throws if the canvas is CORS-tainted
   const xh = STICKER_SIZE * (spine - 0.5);
   let minSeatY = Infinity, minY = Infinity, maxY = -Infinity;
+  /* ⚠️ HORIZONTAL EXTENT TOO, AND IT IS FREE — the same loop already visits every pixel. It is here
+     so a 2D element can report a BOX rather than only a height, which is what a stick or a wire
+     needs to size itself from. See the `box` in the emit below. */
+  let minX = Infinity, maxX = -Infinity;
   for (let py = 0; py < h; py++) {
     const planeY = STICKER_SIZE * (0.5 - py / h);        // flipY: image top → plane top (+S/2)
     const row = py * w * 4;
@@ -692,11 +697,13 @@ function scanContentV(img, spine, rise) {
         if (y3 < minSeatY) minSeatY = y3;
         if (planeY < minY) minY = planeY;                   // flat content extent
         if (planeY > maxY) maxY = planeY;
+        if (planeX < minX) minX = planeX;
+        if (planeX > maxX) maxX = planeX;
       }
     }
   }
-  if (minY === Infinity) return { seatHalf: half, down: half, up: half };   // fully transparent
-  return { seatHalf: -minSeatY, down: -minY, up: maxY };
+  if (minY === Infinity) return { seatHalf: half, down: half, up: half, left: -half, right: half };   // fully transparent
+  return { seatHalf: -minSeatY, down: -minY, up: maxY, left: minX, right: maxX };
 }
 
 // Load the asset for MEASURING in its own CORS image, so the pixel read can't hit a cache entry
@@ -1116,7 +1123,40 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
     // the already-loaded texture image — no extra fetch (r2.dev rate-limits, so a second download for
     // measuring can fail and fall the seat back to half-plane → constant lift). Only if THIS image is
     // CORS-tainted (e.g. a non-CORS thumbnail poisoned the cache) do we reload clean.
-    const emit = v => { if (!live) return; onSeat?.(Math.max(v.seatHalf, MIN_SEAT)); onVExtent?.({ down: v.down, up: v.up }); };
+    /* ⚠️ A BOX FROM HERE TOO, AND ITS ABSENCE IS WHY A STICK NEVER WORKED ON A 2D ELEMENT. The GLB
+       path (`StickerModel`) has always emitted `box`, and `stickFor`/`wireFor` both return null
+       without one — so an image element could be given "Can add a stick" in admin, have the toggle
+       appear, and draw nothing at all. It went unnoticed because the element it was built for, a
+       fondant heart, is a GLB. Sandeep, on the butterflies: *"butterfly is not glb. its a image
+       element."*
+
+       ⚠️ `halfW` IS DELIBERATELY NOT EMITTED. It is what `glbFoot` tests to decide whether to draw
+       the 3D selection box instead of the flat one, so sending it would silently change how every
+       2D element is outlined — a different feature, and not one being asked for here.
+
+       The content spans -down..+up vertically and left..right horizontally, both measured from the
+       plane's centre, so the box is centred on the CONTENT rather than on the canvas. That matters
+       for exactly the case the seat scan was written for: a wide butterfly on a square PNG. */
+    const emit = v => {
+      if (!live) return;
+      onSeat?.(Math.max(v.seatHalf, MIN_SEAT));
+      const w = (v.right ?? 0) - (v.left ?? 0);
+      const h = (v.up ?? 0) + (v.down ?? 0);
+      onVExtent?.({
+        down: v.down, up: v.up,
+        /* ⚠️ `bottom` IS NOT `cy - h/2` ONCE THE PIECE FOLDS, and a butterfly is exactly the piece
+           that folds. Standing, its wings hinge up into a V from the spine, so the lowest point
+           stops being a wingtip and becomes the body — which is higher. `down` and `up` are the
+           FLAT extents and say nothing about that; `seatHalf` is the scan's answer for the folded
+           shape and is what the sticker is already seated on. A stick or a wire hung from the flat
+           bottom would start in the air below a folded butterfly's spine. Sandeep: *"butterfly can
+           be folded in core. so need to adjust wire accordingly."* */
+        box: h > 0 ? {
+          w, h, d: 0, cy: (v.up - v.down) / 2, cz: 0,
+          bottom: -(seatRise > 0 ? Math.max(v.seatHalf, MIN_SEAT) : v.down),
+        } : null,
+      });
+    };
     const img = texture?.image;
     if (img && (img.naturalWidth || img.width)) {
       try { emit(scanContentV(img, seatSpine, seatRise)); return () => { live = false; }; }
@@ -1705,8 +1745,15 @@ function CalendarFace({ calendar, calendarValues, calendarLayout = null, printFi
  * is the same object. A metallic stem belongs to a piece CUT from one sheet (`stickStock`); an
  * element pushed onto a bought pick is not that, so there is no finish branch here.
  *
- * Drawn from the element's SEAT downwards: the rod's top tucks up behind the artwork and the rest
+ * Drawn from the element's BOTTOM downwards: the rod's top tucks up behind the artwork and the rest
  * hangs below, exactly as it does under a card.
+ *
+ * ⚠️ `stick.baseY`, NOT `-stick.len`, AND THAT WAS THE FLOATING BUG. This group's origin is the
+ * element's CENTRE, while `topperStick` measures the rod from the box's BOTTOM edge — so hanging it
+ * a bare `len` below the origin left it half the element's height too high, and the heart's pick
+ * stopped in mid-air above the icing at any depth under about 0.63. Sandeep: *"stick is floating."*
+ * Both numbers were right in their own frame, which is why nothing caught it; `stickFor` now does
+ * the conversion once and hands down a single offset.
  */
 function ElementStick({ stick }) {
   const geo = useMemo(() => {
@@ -1720,8 +1767,43 @@ function ElementStick({ stick }) {
   useEffect(() => () => geo?.dispose(), [geo]);
   if (!geo) return null;
   return (
-    <mesh geometry={geo} position={[0, -(stick.len), 0]} castShadow receiveShadow raycast={() => {}}>
+    <mesh geometry={geo} position={[0, stick.baseY, 0]} castShadow receiveShadow raycast={() => {}}>
       <meshStandardMaterial color="#D8BE93" roughness={0.85} metalness={0} />
+    </mesh>
+  );
+}
+
+/* ── The bendable wire a catalogue element floats on ─────────────────────────────────────────────
+ *
+ * A butterfly hovering off the icing on a thin white stem. Sandeep, with two reference photographs:
+ * *"if you see these butterflies are standing on a white color bendable wire."*
+ *
+ * ⚠️ A SECOND COMPONENT, NOT A BRANCH INSIDE `ElementStick`, AND THE GEOMETRY IS WHY. A pick is one
+ * cylinder about one axis; a wire is a tube swept along a curve that bows perpendicular to its own
+ * lean. Nothing but the material is shared, and a single component carrying both would be a branch
+ * on kind in the middle of a `useMemo` — INVARIANTS #1 in the place it is least visible.
+ *
+ * ⚠️ THE PATH COMES FROM `elementWire`, NOT FROM HERE. The same split `rainbow.js` uses: geometry
+ * answers "where does the wire go", this answers "what does a wire look like". Tests can assert the
+ * first, the build guide can measure it, and only this file needs three.js to draw it.
+ *
+ * ⚠️ WHITE AND BARELY SHINY. A florist's stem wire is paper-wrapped, so it is matte — a metallic
+ * one reads as jewellery wire and catches light the reference photographs do not show. The tube is
+ * thin enough that it disappears at low roughness.
+ */
+function ElementWire({ wire }) {
+  const geo = useMemo(() => {
+    if (!wire?.points?.length) return null;
+    const curve = new THREE.CatmullRomCurve3(wire.points.map(p => new THREE.Vector3(p.x, p.y, p.z)));
+    /* Six radial segments: at this radius the tube is a couple of pixels wide on a phone, and the
+       difference between six sides and sixteen is invisible at twenty butterflies a cake. */
+    return new THREE.TubeGeometry(curve, wire.points.length - 1, wire.radius, 6, false);
+  }, [wire]);
+  useEffect(() => () => geo?.dispose(), [geo]);
+  if (!geo) return null;
+  return (
+    <mesh geometry={geo} castShadow raycast={() => {}}>
+      <meshStandardMaterial color="#F4F2ED" roughness={0.72} metalness={0} />
     </mesh>
   );
 }
@@ -2025,7 +2107,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const [seatHalf, setSeatHalf] = useState(null);
   // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
   const [glbHalfW, setGlbHalfW] = useState(null);
-  const [glbBox, setGlbBox] = useState(null);   // rendered 3D bounds → 3D selection box
+  /* ⚠️ `artBox`, NOT `glbBox`, AND THE OLD NAME WAS A CLAIM THAT TURNED OUT TO BE FALSE. It held
+     the measured bounds of whatever the element actually is: a GLB's Box3, or — since the texture
+     path started emitting one — a 2D image's opaque content. Everything that sizes itself from the
+     artwork reads this: the 3D selection box, the pick, and now the wire. */
+  const [artBox, setArtBox] = useState(null);
   // How far the element stands proud of its hit plane (see DraggableSideSticker).
   const [depth, setDepth] = useState(0);
   // Verge seat anchor is config-driven (placement_config.verge.seat → instance.vergeSeat): 'center'
@@ -2047,8 +2133,13 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   /* No row here, and none needed: the authored depth is baked onto the instance when the element is
      placed (useCakeDesign), so what reaches the canvas already carries the number. The renderer's
      own fallback covers a design saved before this existed. */
-  const stick = stickFor(glbBox, sticker.stick, null);
-  const lift = stickLift(stick) * effScale;
+  const stick = stickFor(artBox, sticker.stick, null);
+  /* ⚠️ A WIRE AND A PICK ARE ALTERNATIVES, NOT A PAIR. Both answer "what holds this piece off the
+     icing", so an element carrying both would be drawn on two supports at once. The wire wins when
+     it is on, because it is the more specific statement — a row authors a wire deliberately, where
+     a stick is the general default. */
+  const wire = sticker.wire?.on ? wireFor(artBox, sticker.wire, null) : null;
+  const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
   const py = topY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
@@ -2067,16 +2158,20 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const innerContent = (e_onDown) => (
     <>
       {/* Drawn FIRST, so the element's own artwork covers the tuck — the same order Toppers uses,
-          and for the same reason: the overlap is the attachment and nothing should be seen joining. */}
-      <ElementStick stick={stick} />
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setGlbBox(v?.box ?? null); }} onDepth={setDepth} />
+          and for the same reason: the overlap is the attachment and nothing should be seen joining.
+
+          ⚠️ THE WIRE IS NOT HERE. It is a sibling of this whole subtree, outside the tilt, the yaw
+          and the billboard — see the group below. A pick is short enough that leaning it with its
+          decoration is defensible; a wire is not, and it was visibly broken. */}
+      {wire ? null : <ElementStick stick={stick} />}
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the
           same bounds the edit popup's SizeDial uses (capability-gated on allowed_actions.resize). */}
-      {selected && (glbFoot && glbBox
-        ? <SelectionBox width={glbBox.w} height={glbBox.h} centerY={glbBox.cy} depth={glbBox.d} centerZ={glbBox.cz} />
+      {selected && (glbFoot && artBox
+        ? <SelectionBox width={artBox.w} height={artBox.h} centerY={artBox.cy} depth={artBox.d} centerZ={artBox.cz} />
         : <SelectionBox width={hitBox.width} height={hitBox.height} centerY={hitBox.centerY} z={depth} />)}
       {selected && resize && sticker.allowedActions?.resize !== false && (() => {
         const c = resize.controlFor(sticker);
@@ -2265,18 +2360,42 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     );
     return (
       <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+        {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
+            ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
+            CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
+            the wire in there rotates the whole stem about the piece, so tilting the butterfly swung
+            the buried end out across the board and left it hanging in mid-air beside the cake.
+            Reported with a picture of exactly that.
+
+            The wire is not part of the decoration. It is a thing standing in the icing that the
+            decoration happens to sit on top of, so it belongs in the frame the cake is in — this
+            group, which carries only the placed position and the scale. The butterfly leans; the
+            stem stays put. Every reference photograph shows that, and none shows otherwise.
+
+            ⚠️ IT ALSO TAKES `sweep` BACK OFF THE CAMERA. A 2D sticker is billboarded about Y so its
+            artwork always faces the viewer, and inside that wrapper the bow's compass bearing was
+            measured from the CAMERA — so a cake of butterflies bowed identically from every angle,
+            which is the exact opposite of what that control is for. Out here the bearing is the
+            cake's, and turning the cake turns the bows with it.
+
+            Drawn before `inner` so the artwork still covers the tuck. */}
+        {wire && <ElementWire wire={wire} />}
         {(isGlb2d || isVerge || isInsert) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }
   // Flat mode (sticker laid horizontal on top surface)
   return (
-    <group
-      position={[sticker.x, py, sticker.z]}
-      rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}
-      scale={effScale}
-    >
-      {innerContent(onDown)}
+    <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+      {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
+          the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
+          A flat decal has little use for one, but "little use" is not "cannot happen", and a
+          capability that draws something absurd in a pose nobody checked is how this class of bug
+          arrives. */}
+      {wire && <ElementWire wire={wire} />}
+      <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
+        {innerContent(onDown)}
+      </group>
     </group>
   );
 }

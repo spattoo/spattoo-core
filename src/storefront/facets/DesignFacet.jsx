@@ -28,6 +28,35 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
   if (door === 'template') {
     return <TemplateGallery api={api} bakerName={bakerName} onBack={() => setDoor(null)}
                             selectedId={draft.design.templateId}
+                            /* ── A PHOTOGRAPH IS ORDERED, NOT OPENED ──────────────────────────────
+                             * Sandeep: "on tap- show the picture big with a 'Request quote' button
+                             * (customer view)."
+                             *
+                             * A photo has no design (migration 116's CHECK), so it cannot fill the
+                             * design slot the way a template does. It fills the REFERENCE slot
+                             * instead — `kind: 'photo'`, the same kind the photo door produces —
+                             * and its R2 key travels as `photoKeys`, which `toOrderPayload` sends
+                             * as `referenceKeys`. The API mirrors the first reference key into
+                             * `design_thumbnail_url`, so the baker sees the actual cake in their
+                             * Orders list, in the email, everywhere.
+                             *
+                             * ⚠️ NO `tier_count` IS WRITTEN. A photo's is null on purpose — nobody
+                             * counted the tiers in a photograph — and passing it to `setTierCount`
+                             * would seed the flavour facet with a guess the customer never made.
+                             *
+                             * ⚠️ AND NO SNAPSHOT, so `validateOrderBody` treats this as an enquiry
+                             * rather than a cake order, which is exactly right: the baker has to
+                             * read the picture and quote it. That is the path Sandeep named —
+                             * "it should take the same existing path (reference image) order path". */
+                            onPickPhoto={(t) => {
+                              patch({ design: { kind: 'photo', templateId: t.id,
+                                                templateName: t.name, thumbnailUrl: t.thumbnail_url,
+                                                shape: null, photos: [],
+                                                photoKeys: t.thumbnail_key ? [t.thumbnail_key] : [],
+                                                snapshot: null,
+                                                minWeightKg: t.attrs?.min_weight_kg ?? null } });
+                              close();
+                            }}
                             onPick={(t) => {
                               patch({ design: { kind: 'template', templateId: t.id,
                                                 templateName: t.name, thumbnailUrl: t.thumbnail_url,
@@ -100,8 +129,11 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
 // route does not serve it: it is what a browsing customer least needs and a competitor most wants.
 // Whoever actually starts from one asks for it by id.
 
-function TemplateGallery({ api, bakerName, onBack, onPick, selectedId }) {
+function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selectedId }) {
   const [state, setState] = useState({ loading: true, templates: [], error: null });
+  /* The photograph being looked at, large. Null is the grid. Local rather than lifted because
+     nothing outside this door needs to know a customer is squinting at a picture. */
+  const [photo, setPhoto] = useState(null);
 
   useEffect(() => {
     let alive = true;
@@ -122,8 +154,14 @@ function TemplateGallery({ api, bakerName, onBack, onPick, selectedId }) {
     );
   }
 
-  // A baker with nothing to show must not get an empty grid and no explanation. This is a real
-  // state — a new baker who has excluded the global library and not yet made their own.
+  // A baker with nothing to show must not get an empty grid and no explanation.
+  //
+  // ⚠️ THIS IS NOW THE DEFAULT STATE, NOT A RARE ONE. It used to describe a baker who had switched
+  // off the global library and made none of their own — unusual, because everything was offered
+  // until excluded. Since the storefront cut over to the opt-IN catalogue (2026-09-28) the polarity
+  // is reversed: nothing is offered until the baker adds it, and migration 115 seeded no rows, so
+  // EVERY baker lands here until they curate. The copy below is still true and still the right
+  // thing to say; what changed is how often a customer will read it.
   if (!state.templates.length) {
     return (
       <div style={s.note}>
@@ -131,6 +169,41 @@ function TemplateGallery({ api, bakerName, onBack, onPick, selectedId }) {
         <p style={s.soonBody}>Try one of the other ways in — a photo, or design one yourself.</p>
         <button type="button" style={s.back} onClick={onBack}>← Back</button>
       </div>
+    );
+  }
+
+  /* ── The photograph, large, with the one thing you can do with it ─────────────────────────────
+   * Replaces the grid rather than floating over it: this is a phone-first surface, and a lightbox
+   * at 375px is a picture with no room for the button that gives it a purpose. Back returns to the
+   * grid, so nothing is lost by tapping one.
+   *
+   * ⚠️ The caption says what it IS. A customer who cannot tell a photograph of finished work from a
+   * design they could have opened will read a 3D cake as a promise of that exact cake. */
+  if (photo) {
+    return (
+      <>
+        <div style={s.galleryHead}>
+          <button type="button" style={s.back} onClick={() => setPhoto(null)}>← Back</button>
+          <span style={s.galleryHint}>A cake {bakerName} has made</span>
+        </div>
+
+        <div style={s.bigWrap}>
+          {photo.thumbnail_url
+            ? <img src={photo.thumbnail_url} alt={photo.name} style={s.bigImg} />
+            : <div style={s.noThumb} aria-hidden="true">🎂</div>}
+        </div>
+        <div style={s.bigName}>{photo.name}</div>
+
+        {/* A photograph cannot be priced from its pixels — the baker reads it and answers. So the
+            words promise a conversation, not a number. */}
+        <p style={s.soonBody}>
+          {bakerName} will look at this and send you a price. You can say the size, flavour and date
+          next.
+        </p>
+        <button type="button" style={s.quoteBtn} onClick={() => onPickPhoto?.(photo)}>
+          Request quote
+        </button>
+      </>
     );
   }
 
@@ -143,19 +216,29 @@ function TemplateGallery({ api, bakerName, onBack, onPick, selectedId }) {
       </div>
 
       <div style={s.grid}>
-        {state.templates.map(t => (
-          <button key={t.id} type="button" onClick={() => onPick(t)}
-                  style={{ ...s.card, ...(t.id === selectedId ? s.cardOn : null) }}
-                  aria-pressed={t.id === selectedId}>
-            <div style={s.thumbWrap}>
-              {t.thumbnail_url
-                ? <img src={t.thumbnail_url} alt="" loading="lazy" style={s.thumb} />
-                : <div style={s.noThumb} aria-hidden="true">🎂</div>}
-            </div>
-            <span style={s.cardName}>{t.name}</span>
-            {t.tier_count > 1 && <span style={s.cardMeta}>{t.tier_count} tiers</span>}
-          </button>
-        ))}
+        {state.templates.map(t => {
+          const isPhoto = t.type === 'photo';
+          return (
+            /* ⚠️ A PHOTO OPENS, A DESIGN PICKS, and the two must not be one gesture. Picking a
+               design fills the design slot and closes the facet; a photograph has no design to
+               fill it with, so tapping one the same way produced an order carrying nothing — the
+               bug that kept photos off this gallery entirely until now. */
+            <button key={t.id} type="button"
+                    onClick={() => (isPhoto ? setPhoto(t) : onPick(t))}
+                    style={{ ...s.card, ...(t.id === selectedId ? s.cardOn : null) }}
+                    aria-pressed={t.id === selectedId}>
+              <div style={s.thumbWrap}>
+                {t.thumbnail_url
+                  ? <img src={t.thumbnail_url} alt="" loading="lazy" style={s.thumb} />
+                  : <div style={s.noThumb} aria-hidden="true">🎂</div>}
+                {/* Legible BEFORE the tap (rule 7): these two tiles do different things. */}
+                {isPhoto && <span style={s.photoTag}>Photo</span>}
+              </div>
+              <span style={s.cardName}>{t.name}</span>
+              {t.tier_count > 1 && <span style={s.cardMeta}>{t.tier_count} tiers</span>}
+            </button>
+          );
+        })}
       </div>
     </>
   );
@@ -179,8 +262,20 @@ const s = {
   card: { display: 'flex', flexDirection: 'column', gap: 5, padding: 8, cursor: 'pointer',
           borderRadius: 12, border: '1.5px solid #EDE5DB', background: '#fff', font: 'inherit' },
   cardOn: { borderColor: '#2C4433', boxShadow: '0 0 0 2px rgba(44,68,51,0.12)' },
-  thumbWrap: { aspectRatio: '1 / 1', borderRadius: 9, background: '#FAF6F0', overflow: 'hidden',
-               display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  thumbWrap: { position: 'relative', aspectRatio: '1 / 1', borderRadius: 9, background: '#FAF6F0',
+               overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' },
+  photoTag: { position: 'absolute', right: 4, bottom: 4, fontSize: 9, fontWeight: 800,
+              letterSpacing: 0.3, color: '#fff', background: 'rgba(42,36,31,0.72)',
+              borderRadius: 5, padding: '2px 5px', pointerEvents: 'none' },
+
+  // The enlarged photograph. `contain`, never `cover` — a cropped cake is a different cake.
+  bigWrap: { borderRadius: 12, background: '#FAF6F0', overflow: 'hidden', display: 'flex',
+             alignItems: 'center', justifyContent: 'center', maxHeight: '52vh' },
+  bigImg:  { width: '100%', height: 'auto', maxHeight: '52vh', objectFit: 'contain', display: 'block' },
+  bigName: { fontSize: 14.5, fontWeight: 800, color: '#2A241F', marginTop: 10 },
+  quoteBtn: { width: '100%', padding: '13px 16px', borderRadius: 12, border: 'none',
+              background: '#2C4433', color: '#fff', font: 'inherit', fontSize: 14.5,
+              fontWeight: 800, cursor: 'pointer' },
   thumb:   { width: '100%', height: '100%', objectFit: 'contain' },
   noThumb: { fontSize: 26, opacity: 0.35 },
   cardName: { fontSize: 12, fontWeight: 700, color: '#2A241F', lineHeight: 1.3, textAlign: 'center' },

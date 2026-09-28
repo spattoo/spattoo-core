@@ -220,7 +220,13 @@ export function splitName(full) {
  */
 export function toOrderPayload(draft, bakerSlug, { referenceKeys } = {}) {
   const d = draft.details;
-  const keys = referenceKeys ?? draft.design.photoKeys;
+  /* ⚠️ `?.length`, NOT `??`, AND THAT WAS A REAL BUG. `uploadPhotos` returns `[]` when the customer
+     uploaded nothing — and `[]` is not nullish, so `??` never fell through to the draft's own keys.
+     Every path except the photo door passed `[]` and the fallback was unreachable. It went unnoticed
+     while `photoKeys` was only ever filled BY that upload; it broke the moment a catalogue photo put
+     a key there without uploading anything. An empty upload result must mean "nothing was uploaded",
+     not "there are no keys". */
+  const keys = (referenceKeys?.length ? referenceKeys : draft.design.photoKeys) ?? [];
   return {
     bakerSlug: bakerSlug ?? draft.bakerSlug,
     customer: {

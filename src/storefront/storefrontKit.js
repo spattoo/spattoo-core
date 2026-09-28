@@ -20,8 +20,51 @@ export function mix(hex, target, t) {
 export const lighten = (hex, t) => mix(hex, '#ffffff', t);
 export const darken  = (hex, t) => mix(hex, '#000000', t);
 export function alpha(hex, a) { const [r, g, b] = parse(hex); return `rgba(${r}, ${g}, ${b}, ${a})`; }
+/* ⚠️ NOT RELATIVE LUMINANCE. This is a weighted average of the RAW sRGB bytes with no gamma, so it
+   overstates mid-tones badly — `#FF851B` scores 0.59 here and 0.36 by the real measure. It is kept
+   unchanged because `doorInk` (facets/FacetShell.jsx) thresholds on it at 0.6 to decide whether a
+   border would vanish, and quietly changing what this returns would move every door outline on
+   every storefront. Use `relLum` for anything that must be READ, and this only for "is this colour
+   roughly light". */
 export function lum(hex) { const [r, g, b] = parse(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
-export const onColor = hex => (lum(hex) > 0.6 ? '#241a1d' : '#ffffff');
+
+// WCAG relative luminance — gamma-expanded, which is what a contrast ratio is defined on.
+export function relLum(input) {
+  const [r, g, b] = parse(input).map(v => {
+    const c = v / 255;
+    return c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/** WCAG contrast ratio between two colours, 1 (identical) to 21 (black on white). */
+export function contrast(a, b) {
+  const la = relLum(a), lb = relLum(b);
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+export const INK_ON_LIGHT = '#241a1d';
+
+/* ── The ink that goes ON a baker's colour ───────────────────────────────────────────────────────
+ *
+ * ⚠️ THIS WAS A LIGHTNESS FLIP AND IT FAILED ON MID-TONES. `lum(hex) > 0.6 ? dark : white` asks
+ * "is this colour light", which is not the question — the question is "which ink can actually be
+ * READ on it". Measured across 18 plausible brand colours, the old rule shipped an ink below AA on
+ * four of them: #8E7CC3 3.61:1, #3D9970 3.51:1, #FF851B 2.44:1, #4A90D9 3.34:1. Every one is a
+ * perfectly reasonable thing for a baker to choose.
+ *
+ * Sandeep: "dont measure it against the green color on this screen. its a storefront color choosen
+ * by baker. other baker might choose another color." So the rule is measured, not thresholded.
+ *
+ * ⚠️ IT CAN NEVER BE WORSE THAN WHAT IT REPLACED. It picks whichever of the two inks has the higher
+ * contrast, so where the old rule was already right nothing moves. Of those 18 colours, 4 change
+ * ink and all 4 improve (to 4.69, 4.83, 6.95, 5.06); the other 14 are untouched — including
+ * #9FA28B, which was never the one at fault.
+ *
+ * ⚠️ Still only these two inks. A third, brand-tinted ink would read as a colour choice the baker
+ * did not make, and the storefront already has one dark and one light for exactly this. */
+export const onColor = hex =>
+  (contrast('#ffffff', hex) >= contrast(INK_ON_LIGHT, hex) ? '#ffffff' : INK_ON_LIGHT);
 
 // SEC-16 — allow only http(s) at an href sink for a stored, baker-controlled URL (e.g. website_url).
 // React escapes the string but does NOT block dangerous schemes, so `javascript:`/`data:`/`vbscript:`

@@ -39,6 +39,19 @@ import { topperStick } from './topperPiece.js';
 export const ELEMENT_STICK_DEFAULTS = Object.freeze({
   // Half in, half out: the stick reads as a stick, and the element clears the icing.
   bury: 0.5,
+  /* ⚠️ LENGTH AND THICKNESS ARE MULTIPLIERS, NOT LENGTHS. `topperStick` sizes the rod from the
+     element's own measured box, which is what keeps a stick proportional through a resize; these
+     scale that answer. A number in world units here would be INVARIANTS #8 — a hardcoded world
+     dimension that is wrong the moment a cake is a different size.
+
+     ⚠️ AND THE DEFAULTS ARE NOT 1. A card topper is a large flat thing whose height is a fair guide
+     to its pick; a catalogue element is small and solid, and the card's proportions give it a stub
+     too short to reach the icing and a rod too fine to see. Sandeep, on the fondant heart: *"stick
+     length should be dynamic"* and *"add a control for the stick thickness. its too thin now."*
+     2.2× and 2.6× are what a real pick reads as under a heart — see dev/element-stick.html, which
+     is where they were chosen rather than guessed. */
+  length: 2.2,
+  thickness: 2.6,
   // A wooden pick unless a row says otherwise. Metallic stems belong to pieces CUT from one sheet
   // (see stickStock) — an element pushed onto a bought pick is not that.
   finish: null,
@@ -62,11 +75,22 @@ const num01 = (v, fallback) =>
 export function elementStick(placementConfig, allowedActions) {
   const cfg = placementConfig?.stick ?? {};
   return {
-    offered: allowedActions?.stick === true,
-    bury:    num01(cfg.bury, ELEMENT_STICK_DEFAULTS.bury),
-    finish:  typeof cfg.finish === 'string' ? cfg.finish : ELEMENT_STICK_DEFAULTS.finish,
+    offered:   allowedActions?.stick === true,
+    bury:      num01(cfg.bury, ELEMENT_STICK_DEFAULTS.bury),
+    length:    inRange(cfg.length, ELEMENT_STICK_DEFAULTS.length),
+    thickness: inRange(cfg.thickness, ELEMENT_STICK_DEFAULTS.thickness),
+    finish:    typeof cfg.finish === 'string' ? cfg.finish : ELEMENT_STICK_DEFAULTS.finish,
   };
 }
+
+/** The range a length or a thickness multiplier may take — the same bounds `topperStick` clamps to,
+ *  named once so the card's steppers and the row's authored value cannot disagree about them. */
+export const STICK_SCALE = Object.freeze({ min: 0.25, max: 6, step: 0.2 });
+
+const inRange = (v, fallback) =>
+  (typeof v === 'number' && Number.isFinite(v)
+    ? Math.max(STICK_SCALE.min, Math.min(STICK_SCALE.max, v))
+    : fallback);
 
 /**
  * The stick to DRAW for a placed instance, or null.
@@ -81,7 +105,21 @@ export function elementStick(placementConfig, allowedActions) {
 export function stickFor(box, instanceStick, rowStick) {
   if (!instanceStick?.on || !box) return null;
   const bury = num01(instanceStick.bury, rowStick?.bury ?? ELEMENT_STICK_DEFAULTS.bury);
-  return topperStick(box, { on: true, bury });
+  const rod = topperStick(box, {
+    on: true,
+    bury,
+    lengthScale: inRange(instanceStick.length,    rowStick?.length    ?? ELEMENT_STICK_DEFAULTS.length),
+    radiusScale: inRange(instanceStick.thickness, rowStick?.thickness ?? ELEMENT_STICK_DEFAULTS.thickness),
+  });
+  if (!rod) return null;
+  /* ⚠️ WHERE THE ROD'S LOWER END SITS, RELATIVE TO THE ELEMENT'S CENTRE — and its absence is the
+     whole of the "stick is floating" bug. `topperStick` answers in the BOX's frame (`bottomY` is
+     measured from the box's bottom edge), and the renderer drew the rod at a bare `-len` from the
+     group origin, which for a placed element is its CENTRE. So every rod hung `h/2` too high: at
+     bury 0.5 the heart's pick stopped a tenth of its own height ABOVE the icing, in mid-air.
+     Nothing errored, every test passed, and the numbers were each correct in their own frame.
+     Derived here so one function owns the conversion and the renderer reads a single number. */
+  return { ...rod, baseY: rod.bottomY - (box.cy ?? 0), tipY: rod.topY - (box.cy ?? 0) };
 }
 
 /**
