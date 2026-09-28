@@ -58,10 +58,11 @@ const shape = Object.fromEntries(Object.entries({
    takes a real element's url. */
 const TEST_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAHgAAAB4CAYAAAA5ZDbSAAAB+ElEQVR4nO3Ry3FCMRAFUcJ0FA6XdOyCBRuK30Ojlu50V929NOd0MjMzMzMzM7PYzj+/f/Qb7EAXuNGj/9S6ClDB4QhUsYujIcUuikYTuigaSeiiaBShC6MhRC6KPr7QhdEHF7kw+tAiF0Ufd6XRFsOjD7riaJNh0YdcebTN19EH3GG00eHow+002urj6IPtONrs7ehD7Tza7mX0gRJGGz6NPk7CaMOH0YdJGm15F32QxNGmt+hDJI+2vUYfIXm0rbjJyPTHO03g8InbYAKHT9wGEzh84jaYwOETOHziNpjA4RM4fOI2mMDhEzh8AodP3AYTOHwCh0/g8AkcPoHDJ3D4BA6fwOETOHziNpjIwfsaV+C1J3D4BA6fwOETOHwCh0/g8AkcPoHDNwRY5DU3DFfgNSdw+AQO31BgkdfacFyB15rA4SsBFnmNleEKvMYEDl8psMjhuAI3ABY5HFfgBsAih+MK3ABY5HBckRvgXqKPkDza9hZ9iMTRpnfRB0kabfkw+jAJow2fRh8nYbThy+gD7Tza7u3oQ+042uzj6IPtNNrqcPThdhht9HX0AVcebTMs+pArjjYZHn3QlUZblEYfV9gJ0YcWd0L0wcWdFH18YSdEQ4g7KRpF2EnRSMJOikYTdmI0pKgTE7VZgto14czMzMzMzFr3D78xf7bvIjwlAAAAAElFTkSuQmCC';
 const IMG = q.get('img');
+const FOLD = q.get('fold') === '1';
 const ART = q.get('glb') ?? (IMG === '1' ? TEST_PNG : IMG) ?? '/cdn/elements/files/3D/5c642a4f-231c-4a0a-a7c8-372415863cfa.glb';
 
 const PIECE = {
-  id: `wire-${JSON.stringify(shape)}-${WIRE}-${ART.slice(-24)}`,
+  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLD}-${ART.slice(-24)}`,
   name: 'element on a wire',
   image_url: ART,
   allowed_zones: ['top_surface'],
@@ -70,6 +71,11 @@ const PIECE = {
     r: 2, scale: { max: 6, min: 0.5, step: 0.25 },
     metalness: 0.0015, roughness: 0.3876,
     top_surface: { modes: ['stand'] },
+    /* ⚠️ `?fold=1` IS THE CASE THE BUTTERFLIES ACTUALLY USE. Standing, a foldable sticker hinges its
+       wings up into a V from the spine — so the lowest point stops being a wingtip and becomes the
+       body, and a wire hung from the flat bottom starts in mid-air below it. Sandeep: *"butterfly
+       can be folded in core. so need to adjust wire accordingly."* */
+    ...(FOLD ? { foldable: true } : {}),
     wire: shape,
   },
   // The capability is what offers the wire; without it the designer shows no toggle at all.

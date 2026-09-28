@@ -1144,7 +1144,17 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
       const h = (v.up ?? 0) + (v.down ?? 0);
       onVExtent?.({
         down: v.down, up: v.up,
-        box: h > 0 ? { w, h, d: 0, cy: (v.up - v.down) / 2, cz: 0 } : null,
+        /* ⚠️ `bottom` IS NOT `cy - h/2` ONCE THE PIECE FOLDS, and a butterfly is exactly the piece
+           that folds. Standing, its wings hinge up into a V from the spine, so the lowest point
+           stops being a wingtip and becomes the body — which is higher. `down` and `up` are the
+           FLAT extents and say nothing about that; `seatHalf` is the scan's answer for the folded
+           shape and is what the sticker is already seated on. A stick or a wire hung from the flat
+           bottom would start in the air below a folded butterfly's spine. Sandeep: *"butterfly can
+           be folded in core. so need to adjust wire accordingly."* */
+        box: h > 0 ? {
+          w, h, d: 0, cy: (v.up - v.down) / 2, cz: 0,
+          bottom: -(seatRise > 0 ? Math.max(v.seatHalf, MIN_SEAT) : v.down),
+        } : null,
       });
     };
     const img = texture?.image;

@@ -134,3 +134,38 @@ describe('every default leaves room to move in both directions', () => {
     expect(ELEMENT_WIRE_DEFAULTS.bury).toBeLessThan(1);
   });
 });
+
+/* ⚠️ TWO DATUM BUGS, NEITHER OF WHICH THE TESTS ABOVE COULD SEE, because they all used a box
+   centred on the origin with no fold — the one shape where `-h/2` happens to be right. */
+describe('the wire hangs from the element\'s real bottom', () => {
+  it('honours an off-centre box, which is most real artwork', () => {
+    /* Opaque content sitting high in its canvas: the box's middle is above the group origin. */
+    const w = wireFor({ h: 0.1, cy: 0.06 }, { on: true, bend: 0 }, null);
+    const tip = w.points[w.points.length - 1];
+    expect(tip.y).toBeCloseTo(0.06 - 0.05 + 0.1 * 0.04, 6);
+  });
+
+  it('starts at the spine when the piece is folded, not at the flat wingtip', () => {
+    /* A standing butterfly hinges its wings up, so the renderer reports a bottom HIGHER than the
+       flat extent. A wire ignoring it would begin in the air below the body. */
+    const flat = wireFor({ h: 0.1, cy: 0, bottom: -0.05 }, { on: true, bend: 0 }, null);
+    const folded = wireFor({ h: 0.1, cy: 0, bottom: -0.02 }, { on: true, bend: 0 }, null);
+    const tipOf = x => x.points[x.points.length - 1].y;
+    expect(tipOf(folded)).toBeGreaterThan(tipOf(flat));
+    expect(tipOf(folded)).toBeCloseTo(-0.02 + 0.1 * 0.04, 6);
+  });
+
+  it('falls back to the centred arithmetic when no bottom is reported', () => {
+    const a = wireFor({ h: 0.1, cy: 0 }, { on: true, bend: 0 }, null);
+    const b = wireFor({ h: 0.1, cy: 0, bottom: -0.05 }, { on: true, bend: 0 }, null);
+    const tipOf = x => x.points[x.points.length - 1].y;
+    expect(tipOf(a)).toBeCloseTo(tipOf(b), 6);
+  });
+
+  it('still runs the full length below whatever that bottom is', () => {
+    const w = wireFor({ h: 0.1, cy: 0, bottom: -0.02 }, { on: true, bend: 0, length: 4 }, null);
+    const tip = w.points[w.points.length - 1].y;
+    expect(tip - w.points[0].y).toBeCloseTo(w.len, 6);
+    expect(w.len).toBeCloseTo(0.4, 6);
+  });
+});

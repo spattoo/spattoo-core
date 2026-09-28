@@ -164,9 +164,22 @@ export function wireFor(box, instanceWire, rowWire) {
      precisely because that reasoning is seductive and wrong. */
   const radius = box.h * WIRE_GAUGE * thickness;
 
-  /* The tip sits just inside the element's bottom edge, so the wire disappears behind the artwork
-     rather than stopping short of it in mid-air. */
-  const tipY = -box.h / 2 + box.h * 0.04;
+  /* ⚠️ THE ELEMENT'S BOTTOM, WHICH IS NOT `-h/2`, FOR TWO SEPARATE REASONS.
+ 
+     A box is not centred on the group origin — `box.cy` says where its middle sits, and stickFor
+     already converts through it (`rod.bottomY - box.cy`). Ignoring it hangs the wire from the wrong
+     height on any artwork whose opaque content is off-centre in its canvas, which is most artwork.
+ 
+     And a FOLDED piece has a different bottom again. A butterfly standing on a cake hinges its wings
+     up into a V from the spine, so the lowest point stops being a wingtip and becomes the body. The
+     renderer reports that as `box.bottom`; the flat extents know nothing about it, and a wire hung
+     from them starts in the air below the butterfly it is supposed to carry.
+ 
+     `box.bottom` when the renderer supplies one, the centred arithmetic when it does not — so a
+     caller that predates this, or a shape with no fold, behaves exactly as before. */
+  const bottom = Number.isFinite(box.bottom) ? box.bottom : (box.cy ?? 0) - box.h / 2;
+  /* Just inside it, so the wire disappears behind the artwork rather than stopping short in mid-air. */
+  const tipY = bottom + box.h * 0.04;
 
   /* ⚠️ THE BASE IS DIRECTLY BELOW THE TIP, AND THE FIRST VERSION LEANED IT — WHICH PUT THE WIRE'S
      ROOT OUTSIDE THE CAKE. Leaning the base away by `len·sin(lean)` looked right in the reference
