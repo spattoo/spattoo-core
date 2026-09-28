@@ -206,7 +206,14 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                   "rainbow" finds a cake called "kids birthday cake" and the six Footballs are told
                   apart by what is on them. Same placement and same wording as the Catalogue
                   flyout's, so the two shelves are searched the same way. */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20, flexWrap: 'wrap' }}>
+              {/* ⚠️ ITS OWN BOTTOM MARGIN, NOT THE CONTAINER'S GAP. Sandeep: "in library search box is
+                  touching the cake tiles." The page body already sets `gap: 12`, but 12px between a
+                  bare input and a row of bordered tiles reads as touching — the tile's own edge
+                  starts where the gap ends, so there is no visual breathing space at all. Widening
+                  the container gap would move every other pair on this page; this row is the one
+                  that needs the room, so it asks for it itself. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20,
+                            flexWrap: 'wrap', marginBottom: 10 }}>
                 <input
                   value={query}
                   onChange={e => setQuery(e.target.value)}
