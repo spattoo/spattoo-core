@@ -49,10 +49,14 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
      should be from the configured value in manage elements."* This number exists so a blank field
      renders something sensible, not so it decides anything. */
   length: 4.0,
-  /* Multiplier on WIRE_GAUGE below. 1 is the gauge that reads as florist wire in
-     dev/element-wire.html; the control exists because a heavy butterfly wants a visibly stiffer
-     stem than a paper one. */
-  thickness: 1,
+  /* Multiplier on WIRE_GAUGE below.
+
+     ⚠️ 2.5, NOT 1, BECAUSE "TRUE TO LIFE" WAS THE WRONG TARGET. Real florist wire is meant to
+     disappear, and at 1 it duly did — Sandeep, looking at two butterflies on a cake: *"wire is
+     barely visible."* A stem a baker cannot see is a control they will believe is broken, and on a
+     phone at arm's length it is a couple of pixels. The render is not a photograph; it has to SAY
+     "there is a wire here" at the size the cake is actually looked at. */
+  thickness: 2.5,
   /* How far the wire bows away from the straight line between its two ends, as a fraction of its
      own length. Zero is a pin.
 

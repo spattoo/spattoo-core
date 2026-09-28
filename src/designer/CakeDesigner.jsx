@@ -9268,13 +9268,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              `stick` would clear a pick every time a baker nudged the bend. */
           ...(patch.on === true && sticker.stick?.on ? { stick: { ...sticker.stick, on: false } } : {}),
         });
+        /* ⚠️ SizeDial, NOT A −/value/+ STEPPER, AND IT IS THE SHARED CONTROL DOING ITS JOB. CLAUDE.md
+           names it "THE size control", and it is already the control for pen thickness, grass
+           density and dust glow — it decides nothing about range, only how a bounded number is
+           dragged. Five steppers is twenty elements in one scrolling row; five dials is ten, and the
+           row stopped being legible at the first count. Sandeep, with a picture of the arrows
+           colliding with the numbers: *"can we make these as dialers?"*
+
+           `fmt` carries the units, which is the whole reason that prop exists — a dial that printed
+           `toFixed(1)` would read "0.4" for a bend that means 35%, and a control whose number does
+           not say what it is is worse than the stepper it replaced. */
         const dial = (key, label, value, fmt, set, lo, hi, step) => ([
           <span key={`${key}-lbl`} style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>{label}</span>,
-          <button key={`${key}-`} style={s.tbIconBtn}
-            onClick={() => set(Math.max(lo, +(value - step).toFixed(2)))}>−</button>,
-          <span key={`${key}-val`} style={{ ...s.tbSizeLabel, minWidth: 28 }}>{fmt(value)}</span>,
-          <button key={`${key}+`} style={s.tbIconBtn}
-            onClick={() => set(Math.min(hi, +(value + step).toFixed(2)))}>+</button>,
+          <SizeDial key={key} size={value} min={lo} max={hi} step={step} onChange={set} fmt={fmt} />,
         ]);
         groups.push({ key: 'wire', divider: true, scroll: true, controls: [
           <Chip key="wire-on" label="On a wire" active={!!wr.on} isMobile={isMobile}
@@ -9290,9 +9296,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
             /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them
                looking like a row of flags — the reference photographs have every one facing
-               differently. Wraps rather than clamps, because 0 and 360 are the same bearing. */
+               differently.
+
+               ⚠️ 0-360 AND NO WRAP, WHICH THE STEPPER DID NOT NEED. A −/+ pair can carry a value
+               past its own ends and fold it back, so this ran −360..720 and wrapped in the setter.
+               A dial cannot: its arc IS the range, so those bounds would spread one bearing across a
+               third of the travel and start 35° somewhere near the left stop. The arc is the circle
+               now, which is what a bearing wanted in the first place. */
             ...dial('wsweep', 'Turn', wr.sweep ?? row.sweep, v => `${Math.round(v)}°`,
-                    v => setWire({ sweep: ((v % 360) + 360) % 360 }), -360, 720, WIRE_SWEEP.step),
+                    v => setWire({ sweep: v }), WIRE_SWEEP.min, WIRE_SWEEP.max, WIRE_SWEEP.step),
             ...dial('wbury', 'In', wr.bury ?? row.bury, v => `${Math.round(v * 100)}%`,
                     v => setWire({ bury: v }), 0, 1, 0.05),
             ...dial('wthk', 'Thick', wr.thickness ?? row.thickness, v => `${v.toFixed(1)}×`,
@@ -12163,8 +12175,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 performed here, which is why the word is "Choose" rather than "Add" — the latter
                 implies it happens in place. */}
             {(hasCap('store:manage') || (hasCap('template:manage') && apiClient?.uploadCataloguePhoto)) && (
-              <div style={{ display: 'flex', gap: 8, flexShrink: 0, paddingTop: 9, marginTop: 2,
-                            borderTop: '1px solid rgba(0,0,0,0.10)' }}>
+              /* ⚠️ A BORDERED GROUP WITH ITS OWN HEADING, and the heading is Sandeep's words:
+                 "these two buttons need to have a border with a heading — 'Add cake designs to your
+                 catalogue'". Two buttons sitting loose at the foot of a panel read as leftovers of
+                 the grid above them; a titled box says they are one thing, and says what that thing
+                 is before either is pressed.
+
+                 ⚠️ THE OLD `borderTop` IS GONE, NOT KEPT. It separated these from the scrolling grid,
+                 which is the job this box's own top edge now does — leaving both would draw two
+                 hairlines 9px apart, which looks like a mistake rather than a division. */
+              <div style={{ flexShrink: 0, marginTop: 4, padding: '9px 10px 10px',
+                            border: '1px solid rgba(0,0,0,0.12)', borderRadius: 11,
+                            background: 'rgba(255,255,255,0.55)' }}>
+                {/* Small and quiet: it names the group, it is not competing with the buttons in it. */}
+                <div style={{ fontSize: 11, fontWeight: 800, color: '#6B7280', letterSpacing: 0.2,
+                              marginBottom: 7 }}>
+                  Add cake designs to your catalogue
+                </div>
+                <div style={{ display: 'flex', gap: 8 }}>
                 {hasCap('store:manage') && (
                   <button
                     type="button"
@@ -12204,6 +12232,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     />
                   </label>
                 )}
+                </div>
               </div>
             )}
           </div>
