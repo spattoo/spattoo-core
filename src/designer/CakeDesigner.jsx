@@ -11987,8 +11987,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               templates={shownTemplates}
               isMobile={isMobile}
               busyId={pickingId}
-              onPreview={setTplPreview}
-              onPreviewEnd={() => setTplPreview(null)}
+              /* ⚠️ A HOVER MUST NOT REPLACE AN OPEN TAP PREVIEW. Two previews share this one state:
+                 the small ANCHORED card a hover opens beside a tile (it carries that tile's `rect`,
+                 and is drawn `position: fixed`, z-index 320), and the centred BACKDROP view a tap
+                 opens (`rect: null`). Moving the pointer away from the photo tile crosses its
+                 neighbours, each arming `hoverIn`'s 180ms timer — so a hover landed AFTER the tap
+                 and swapped the enlarged view for a small card floating over it. Measured in the
+                 browser: `elementFromPoint` at the button's centre returned a fixed, z-320 div,
+                 which is why the button could be seen and never clicked.
+                 While a tap preview is open, hover is ignored; it resumes once that is dismissed. */
+              onPreview={p => setTplPreview(cur => (cur && !cur.rect && p?.rect) ? cur : p)}
+              /* ⚠️ ONLY A HOVER PREVIEW IS CLEARED BY THE POINTER LEAVING. This was
+                 `() => setTplPreview(null)` and it made the photo tap do NOTHING on desktop, every
+                 time: the tap opens the backdrop preview, the backdrop is a full-screen portal that
+                 lands under the cursor, so the tile beneath it fires `mouseleave` — and that cleared
+                 the preview in the same breath it opened. Sandeep: "when i click on it it does not
+                 show the bigger view... nothing happens on click."
+                 The two kinds are already distinguishable in the data: a HOVER preview carries the
+                 tile's `rect` (it is positioned beside it), a CLICK or tap passes `rect: null` and
+                 is drawn centred on a backdrop. So leaving the tile dismisses the first and must not
+                 touch the second — which the ✕/backdrop click owns. */
+              onPreviewEnd={() => setTplPreview(p => (p && p.rect ? null : p))}
               /* ⚠️ ONLY FOR SOMEBODY WHO MAY STOCK THE SHOP. `PUT /baker/catalogue` is gated
                  `store:manage` server-side, so on a customer this control could only ever 403 —
                  and this same flyout is what a customer browses. Bottom-left: Premium owns
@@ -12034,7 +12053,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   })()
                 : (
                   <div style={s.templatePreviewBackdrop} onClick={() => setTplPreview(null)}>
-                    <div style={{ ...s.templatePreview, position: 'relative', width: 'min(92vw, 420px)' }}
+                    {/* ⚠️ `pointerEvents: 'auto'` IS LOAD-BEARING, AND ITS ABSENCE MADE THE BUTTON
+                        DEAD. This spreads `s.templatePreview`, which sets `pointerEvents: 'none'` —
+                        right for the ANCHORED hover card, which must never swallow a click meant for
+                        the tile under it, and inherited by every child here. So the "Create order for
+                        a customer" button rendered, looked perfect, and could not be clicked: the
+                        hit test fell straight through it. Measured in a browser — `elementFromPoint`
+                        at the button's centre never returned the BUTTON.
+                        The hover card and this share a style object but not a purpose: that one is
+                        decoration, this one holds a control. */}
+                    <div style={{ ...s.templatePreview, position: 'relative', pointerEvents: 'auto',
+                                  width: 'min(92vw, 420px)' }}
                       onClick={(e) => e.stopPropagation()}>
                       <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
                       <div style={s.templatePreviewCaption}>

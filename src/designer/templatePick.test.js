@@ -153,6 +153,43 @@ describe('a photograph is opened, never picked', () => {
   });
 });
 
+/* ── The enlarged view must SURVIVE being opened ─────────────────────────────────────────────────
+ *
+ * Sandeep, on 0.1.611: "i uploaded an image, when i click on it it does not show the bigger view and
+ * 'request quote'/'order for customer' buttons. nothing happens on click."
+ *
+ * ⚠️ THE SUITE WAS GREEN — 2353 PASSING — WHILE THIS WAS COMPLETELY DEAD ON DESKTOP. Three faults
+ * stacked, and not one of them is visible to a source-pinning test unless it is pinned on purpose,
+ * because each is about how two features INTERACT at runtime. That is what these assertions are for.
+ * All three were measured in a real browser (playwright, dev/rail.html), not reasoned about.
+ */
+describe('a tap preview is not destroyed by the pointer', () => {
+  it('leaving the tile clears only a HOVER preview', () => {
+    /* The tap opens a full-screen backdrop, which lands UNDER the cursor — so the tile beneath fires
+       mouseleave, and an unconditional `setTplPreview(null)` killed the view in the same breath it
+       opened. The two kinds are told apart by `rect`: a hover carries the tile's, a tap passes null. */
+    expect(designer).toMatch(/setTplPreview\(p => \(p && p\.rect \? null : p\)\)/);
+  });
+
+  it('a hover cannot replace an open tap preview', () => {
+    /* Moving the pointer away crosses neighbouring tiles, each arming hoverIn's 180ms timer — so a
+       hover landed AFTER the tap and swapped the enlarged view for the small anchored card, which
+       then floated over the button. `elementFromPoint` returned a fixed, z-320 div. */
+    expect(designer).toMatch(/cur && !cur\.rect && p\?\.rect/);
+  });
+
+  it('the tap preview re-enables pointer events', () => {
+    /* ⚠️ THE ONE THAT MADE THE BUTTON DEAD RATHER THAN MISSING. It spreads `s.templatePreview`,
+       which sets `pointerEvents: 'none'` — correct for the hover card, inherited by every child
+       here — so the button rendered, looked right, and could never be clicked. */
+    expect(designer).toMatch(/pointerEvents: 'auto'/);
+  });
+
+  it('a click cancels the hover timer it may have armed', () => {
+    expect(grid).toMatch(/clearTimeout\(timer\.current\);\s*\n\s*if \(t\.type === 'photo'\)/);
+  });
+});
+
 describe('the overlay does not eat the tap it is reporting', () => {
   /* Drawn over the picture, so it must not become the click target — and it sits ON the tile rather
      than over the panel because WHICH cake is loading is the useful half (INVARIANTS #11: the

@@ -139,11 +139,34 @@ const TEMPLATES_FULL = [
    look identical. One Spattoo cake and one of the baker's own are in it, so both screens have
    something to show at rest: the flyout draws these two, Library draws the other 48. */
 const OFFERED_IDS = new Set(['t1', 'own-1']);
-const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => ({
-  ...t,
-  source:  t.id.startsWith('own-') ? 'mine' : 'spattoo',
-  offered: OFFERED_IDS.has(t.id),
-}));
+const TEMPLATES_STUB = [
+  ...TEMPLATES_FULL.map(({ design, ...t }) => ({
+    ...t,
+    source:  t.id.startsWith('own-') ? 'mine' : 'spattoo',
+    offered: OFFERED_IDS.has(t.id),
+  })),
+  /* ⚠️ A PHOTOGRAPH IN THE CATALOGUE AT REST, because without one this harness cannot reach the
+     photo paths at all — and those are the ones that were broken. A photo tile OPENS (enlarged
+     view + "Request quote" / "Create order for a customer"); a design tile PICKS. The two gestures
+     are different code, and a stub catalogue of designs only exercises half of it.
+
+     `offered: true` is load-bearing: the flyout filters on it, so an un-offered photo would sit in
+     Library and never appear on the surface being tested.
+
+     ⚠️ `thumbnail_key` MUST BE HERE. The baker's "create order for a customer" seeds the order from
+     `t.thumbnail_key` (the picture is already in R2, so it is referenced rather than re-uploaded).
+     Without it the code still opens the order — deliberately — but with no photo attached, so a
+     harness missing this field would exercise the degraded path and look like it passed.
+
+     No `design`, matching migration 116's CHECK: a photo has none, which is exactly why tapping one
+     used to fall through `startFromTemplate`'s early return and do nothing. */
+  {
+    id: 'photo-1', name: 'Isomalt shard cake', type: 'photo',
+    tier_count: null, thumbnail_url: '/sample-cake-3.png',
+    thumbnail_key: 'catalogue/photos/stub-isomalt.webp',
+    attrs: null, offering: 'standard', source: 'mine', offered: true,
+  },
+];
 /* ⚠️ `fetchTemplate` HAS TO BE STUBBED NOW. The Proxy below answers anything unstubbed with
    `async () => null`, so without this the card's by-id fallback resolves null, `templateDesign`
    stays null, and CLICKING A TEMPLATE SILENTLY DOES NOTHING — no error, no log, just a flyout that
@@ -165,6 +188,12 @@ const TEMPLATES_STUB = TEMPLATES_FULL.map(({ design, ...t }) => ({
 let CATALOGUE_STUB = TEMPLATES_STUB.map(t => ({
   id: t.id, name: t.name, thumbnail_url: t.thumbnail_url, tier_count: t.tier_count,
   offering: t.offering ?? 'standard', source: t.source, offered: t.offered,
+  /* ⚠️ `type` AND `thumbnail_key` TRAVEL, because `GET /api/baker/catalogue` returns both and this
+     stub stands in for that route. Dropping them here would make Library unable to tell a photo
+     from a design — and a photo opened from the Library shelf would have a picture and no key to
+     order from, which is a real bug the real route was changed to prevent. A stub that is kinder
+     than the API hides exactly the failures it exists to surface. */
+  type: t.type ?? 'basic', thumbnail_key: t.thumbnail_key ?? null,
 }));
 const MY_TEMPLATES_STUB = CATALOGUE_STUB.filter(t => t.source === 'mine')
   .map(({ source, offered, ...t }) => ({ ...t, created_at: '2026-09-22T10:00:00Z' }));
@@ -204,6 +233,15 @@ const templatesOverride = {
       tier_count: null, offering: 'standard', source: 'mine', offered: true, type: 'photo',
     }];
     return { ok: true };
+  },
+  /* ⚠️ WITHOUT THIS THE "CREATE ORDER FOR A CUSTOMER" BUTTON DOES NOT APPEAR — same trap as
+     `uploadCataloguePhoto` above. It is gated on `hasCap('order:manage') && apiClient
+     ?.createManualOrder`, and `hasCap` reads null capabilities as allow-everything here, so the
+     METHOD is the half that decides. An unstubbed harness shows a photo preview with no button and
+     looks like the feature was never built — which is indistinguishable from the bug being fixed. */
+  createManualOrder: async (payload) => {
+    console.log('[harness] POST /orders/manual', payload);
+    return { id: 'ord-stub-1', orderId: 'ord-stub-1' };
   },
   fetchBakerCatalogue:  async () => CATALOGUE_STUB,
   fetchMyTemplates:     async () => MY_TEMPLATES_STUB,

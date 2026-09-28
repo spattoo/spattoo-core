@@ -196,6 +196,12 @@ export default function TemplateGrid({
                  view, which is where the action for a photograph lives. */
               onClick={() => {
                 if (blocked) return;
+                /* ⚠️ CANCEL THE PENDING HOVER, or it lands AFTER the click and overwrites it. The
+                   hover preview is armed on a 180ms timer; clicking inside that window left the
+                   timer to fire into a preview the click had already opened — replacing the centred
+                   backdrop view with the small anchored one, which the next `mouseleave` then
+                   dismisses. Same class of bug as the one the ref above was introduced to fix. */
+                clearTimeout(timer.current);
                 if (t.type === 'photo') {
                   onPreview?.({ src, name: t.name, tiers: t.tier_count, rect: null, template: t });
                   return;
