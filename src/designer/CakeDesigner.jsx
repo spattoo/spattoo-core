@@ -39,7 +39,7 @@ const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -127,7 +127,6 @@ import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
 // THE row that opens something (root CLAUDE.md rule 7). First use inside the designer: the tier
 // panel had no "press this and a card opens" affordance before the Cream layer row below.
-import { NavRow } from '../shared/NavRow.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig, frostingDef } from './frostings.js';
 import { applyDecorMaterialConfig } from './materials.js';
 import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
@@ -13290,9 +13289,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     * (Cream Wave has Depth and Waviness). No style has several per tier, a torn
                     * edge you paint while the cake spins, an anchor, or a gold-leaf rim.
                     *
-                    * ⚠️ NavRow, NOT Chip. Everything else in this section is a single-select that
-                    * changes the wall; a chip that opens a card would read as a fifth wall style,
-                    * which is the exact confusion this row exists to end.
+                    * ⚠️ THE CARD'S OWN BUTTON (`s.neutralBtn`), NOT `NavRow` AND NOT A CHIP.
+                    *
+                    * Sandeep: *"'cream layer' option looks like a note. not like an actionable
+                    * thing."* He was right, and it was two mistakes of mine stacked. `NavRow` is a
+                    * SETTINGS-LIST row — white fill, a 1px #E6EBE7 hairline, an #B4C3B8 chevron —
+                    * and its only other use is TopUpsSection, several rows on a tinted page. Here it
+                    * sat alone on a sheet that is itself `rgba(255,255,255,0.55)`: white on white,
+                    * with the hover and press states that sell it as pressable unreachable on a
+                    * phone (root CLAUDE.md rule 7 — judged AT REST). And the hint I wrote ran to
+                    * three lines, so the biggest thing in the box was grey prose: the shape of a
+                    * callout, not a control.
+                    *
+                    * `neutralBtn` is what this card already uses for a real action — it spreads
+                    * `cardBtnBase`, so the geometry stays shared. Full width, like the cream card's
+                    * own "+ Add band". The chevron stays, because this DOES open something; the band
+                    * count sits beside it when there is one.
+                    *
+                    * ⚠️ BUT ITS TONE WAS TOO QUIET AND I ASSERTED OTHERWISE BEFORE MEASURING. The
+                    * comment here claimed "a 1.5px LINE border"; the computed style was 1px #dddddd
+                    * at 34px — lighter AND shorter than the Chip right above it (#999999, 44px).
+                    * A control quieter than its own neighbour is exactly what "looks like a note"
+                    * means, so the override below copies Chip's resting values verbatim. Both
+                    * DECLARE 1.5px and both RENDER 1px, so the width was never the difference —
+                    * see the measured note on the override itself.
+                    *
+                    * ⚠️ NOT A CHIP, still. Everything else in this section is a single-select that
+                    * changes the wall, and a chip that opened a card would read as a fifth wall
+                    * style — the confusion this control exists to end.
+                    *
+                    * ⚠️ NO HINT. The card this opens leads with "A raised second buttercream band
+                    * with a torn edge…", so the explanation is one tap away instead of impersonating
+                    * a control.
                     *
                     * ⚠️ NAMED "Cream layer", matching the element the baker already knows from the
                     * decorations drawer. One thing, one name.
@@ -13305,10 +13333,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     * at, which this row cannot do, and both call addCreamToTier — one function,
                     * three affordances, so there is no second implementation to drift. */}
                   {creamElement && isRoundWall(tierShape(tier)) && (
-                    <NavRow
-                      label="Cream layer"
-                      hint="A raised second band with a torn edge. Sits over this style, not instead of it."
-                      value={tier?.creamLayers?.length || null}
+                    <button
+                      type="button"
+                      /* ⚠️ THE CHIP'S RESTING WEIGHT, MATCHED AND THEN MEASURED. Sandeep chose "match
+                         the chips" after: *"'cream layer' option looks like a note. not like an
+                         actionable thing."*
+                         `neutralBtn` alone measured 1px #dddddd at 34px against the "Scraped edge"
+                         chip's #999999 at 44px — lighter AND shorter than its own neighbour, which
+                         is what "looks like a note" means. These are Chip's own resting values.
+                         ⚠️ THE WIDTH IS DECLARED 1.5px AND RENDERS 1px — for the chip too, so the
+                         two match exactly (verified: identical computed border, background, colour
+                         and height). The real difference was never the width I kept citing; it was
+                         the COLOUR (#999999 vs #dddddd) and the HEIGHT (44 vs 34). */
+                      style={{ ...s.neutralBtn, width: '100%', justifyContent: 'space-between', gap: 8,
+                               minHeight: 44, background: 'transparent', color: '#666',
+                               border: '1.5px solid #999999' }}
                       onClick={() => {
                         focusEditor('decoration');
                         /* First press seeds a band so something appears immediately — the tap and
@@ -13318,7 +13357,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         else addCreamToTier(selectedEl.index);
                         selectExclusive({ type: 'cream', elementId: creamElement.id });
                       }}
-                    />
+                    >
+                      <span>Cream layer</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#8a7a80' }}>
+                        {tier?.creamLayers?.length ? (
+                          <span style={{ fontWeight: 800, color: INK }}>{tier.creamLayers.length}</span>
+                        ) : null}
+                        <ChevronRightIcon size={16} />
+                      </span>
+                    </button>
                   )}
                 </>
               ) });
