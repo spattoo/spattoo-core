@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SPIRAL_DEFAULTS, spiralField, makeSwirlField, grooveProfile } from './topSpiral.js';
+import { SPIRAL_DEFAULTS, spiralField, makeSwirlField, ridgeProfile } from './topSpiral.js';
 import { buildTopSurface, buildTopCavity } from './topCavity.js';
 
 const ROUND = { kind: 'round', radius: 1.1 };
@@ -14,30 +14,34 @@ function ys(geo) {
 }
 
 describe('the spiral field', () => {
-  it('never lifts the surface — a knife takes cream away', () => {
+  /* ⚠️ THE SPIRAL STANDS UP, and both earlier versions had it upside down on tidy-sounding
+     reasoning: a knife takes cream away, so its mark must be below the surface. Sandeep: *"spiral
+     is a projection upwards. you did it opposite."* A knife on a spinning cake PLOUGHS — it gathers
+     cream ahead of itself and leaves it heaped along its path. */
+  it('never digs into the surface — the knife ploughs cream into a heap', () => {
     const f = spiralField({}, 1, H);
     for (let r = 0; r <= 1; r += 0.02)
       for (let a = 0; a < 6.28; a += 0.3)
-        expect(f(r * Math.cos(a), r * Math.sin(a))).toBeLessThanOrEqual(1e-9);
+        expect(f(r * Math.cos(a), r * Math.sin(a))).toBeGreaterThanOrEqual(-1e-9);
   });
 
-  it('cuts to the full depth somewhere, so the groove is actually there', () => {
+  it('reaches its full height somewhere, so the ridge is actually there', () => {
     const depth = 0.02;
     const f = spiralField({ depth, wander: 0 }, 1, H);
-    let deepest = 0;
-    for (let r = 0; r <= 1; r += 0.005) deepest = Math.min(deepest, f(r, 0));
-    /* The fade near the rim means the deepest point is inland, but it must reach essentially all
-       the way down somewhere or `depth` is not the depth. */
-    expect(deepest).toBeLessThan(-depth * H * 0.9);
+    let tallest = 0;
+    for (let r = 0; r <= 1; r += 0.005) tallest = Math.max(tallest, f(r, 0));
+    /* The fade near the rim means the tallest point is inland, but it must reach essentially all
+       the way up somewhere or `depth` is not the height. */
+    expect(tallest).toBeGreaterThan(depth * H * 0.9);
   });
 
-  it('goes flat at the outer edge, so the groove never notches the rim', () => {
+  it('goes flat at the outer edge, so the ridge never rides over the rim', () => {
     const f = spiralField({ depth: 0.02, wander: 0 }, 1, H);
     for (let a = 0; a < 6.28; a += 0.2)
       expect(Math.abs(f(Math.cos(a), Math.sin(a)))).toBeLessThan(1e-9);
   });
 
-  it('crosses `turns` grooves between the middle and the edge', () => {
+  it('crosses `turns` ridges between the middle and the edge', () => {
     for (const turns of [3, 4, 7]) {
       const f = spiralField({ turns, depth: 0.02, wander: 0, fade: 0.001 }, 1, H);
       /* Count sign changes in the slope along one radius: one minimum per turn. */
@@ -74,14 +78,14 @@ describe('the spiral field', () => {
      any radius it sweeps its full depth with angle, wander or no wander. That is what makes it a
      spiral rather than a stack of circles. The control that actually isolates the wander is whether
      the RINGS THEMSELVES move — measured as where the groove falls, not how deep it is. */
-  it('with wander off, the grooves land at the same radius all the way round — the control', () => {
+  it('with wander off, the ridges land at the same radius all the way round — the control', () => {
     const trough = f => {
-      /* The radius of the first groove along a given angle. */
+      /* The radius of the tallest ridge along a given angle. */
       return a => {
-        let best = 0, bestV = Infinity;
+        let best = 0, bestV = -Infinity;
         for (let r = 0.05; r < 0.8; r += 0.002) {
           const v = f(r * Math.cos(a), r * Math.sin(a));
-          if (v < bestV) { bestV = v; best = r; }
+          if (v > bestV) { bestV = v; best = r; }
         }
         return best;
       };
@@ -100,29 +104,29 @@ describe('the spiral field', () => {
      of every turn going down and half coming back up, so each ring is a fat wave and the top rolls
      like water — Sandeep, with the pink cake beside it: *"spirals should not this much thick."* Both
      photographs show a flat top with a thin line cut in it. */
-  it('cuts a NARROW groove: mostly flat land, a little cut', () => {
+  it('raises a NARROW ridge: mostly flat, a little crest', () => {
     const w = SPIRAL_DEFAULTS.width;
-    let cut = 0, n = 0;
-    for (let ph = 0; ph < 4; ph += 0.001) { if (grooveProfile(ph, w) > 0.5) cut++; n++; }
-    /* The fraction of each turn spent in the groove is the width, near enough — and it is well under
+    let up = 0, n = 0;
+    for (let ph = 0; ph < 4; ph += 0.001) { if (ridgeProfile(ph, w) > 0.5) up++; n++; }
+    /* The fraction of each turn spent on the ridge is the width, near enough — and it is well under
        the half a cosine would give. */
-    expect(cut / n).toBeGreaterThan(w * 0.4);
-    expect(cut / n).toBeLessThan(w * 1.3);
-    expect(cut / n).toBeLessThan(0.35);
+    expect(up / n).toBeGreaterThan(w * 0.4);
+    expect(up / n).toBeLessThan(w * 1.3);
+    expect(up / n).toBeLessThan(0.35);
   });
 
-  it('is deepest on the groove and flat between two of them', () => {
+  it('is tallest on the ridge and flat between two of them', () => {
     const w = SPIRAL_DEFAULTS.width;
     for (const k of [0, 1, 2, -3]) {
-      expect(grooveProfile(k, w)).toBeCloseTo(1, 6);
-      expect(grooveProfile(k + 0.5, w)).toBeCloseTo(0, 6);
+      expect(ridgeProfile(k, w)).toBeCloseTo(1, 6);
+      expect(ridgeProfile(k + 0.5, w)).toBeCloseTo(0, 6);
     }
   });
 
   it('a narrower width leaves more of the top untouched', () => {
     const land = w => {
       let flat = 0, n = 0;
-      for (let ph = 0; ph < 4; ph += 0.001) { if (grooveProfile(ph, w) < 0.02) flat++; n++; }
+      for (let ph = 0; ph < 4; ph += 0.001) { if (ridgeProfile(ph, w) < 0.02) flat++; n++; }
       return flat / n;
     };
     expect(land(0.14)).toBeGreaterThan(land(0.30));

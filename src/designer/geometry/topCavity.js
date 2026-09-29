@@ -175,9 +175,9 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
    *
    * ⚠️ AND IT IS ALSO WHAT A CAKE IS. A scraper cannot take the top below the sponge; it pushes
    * cream UP at the rim and leaves the middle thin. So the surface is lifted until its lowest point
-   * is the cake's own top: the spiral's troughs come down to y = 0, the floor sits a groove's depth
-   * above them, and the ridge stands over both. The dip a baker sees is the drop from the rim to the
-   * middle — which is what they asked for — not a hole cut in the sponge.
+   * is the cake's own top: the floor rests at y = 0, the rim stands over it, and the spiral's ridges
+   * stand over the floor. The dip a baker sees is the drop from the rim to the middle — which is
+   * what they asked for — not a hole cut in the sponge.
    */
   /* ⚠️ THE SPIRAL IS A ROUND-TIER MARK, AND THAT IS A FACT ABOUT THE TOOL, NOT A LIMIT OF THE MESH.
      It is made by spinning a turntable under a knife, and a rectangle cannot be spun — so no sheet
@@ -192,8 +192,9 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
      feature. The caller's choice is remembered on the tier either way, so it comes back the moment
      the shape is round again. */
   if (!band && !swirl) return null;
-  const grooves = swirl ? Math.max(0, (swirl.depth ?? SPIRAL_DEFAULTS.depth) * height) : 0;
-  const rise = dish + grooves;
+  /* ⚠️ THE SPIRAL RISES, so it needs no room made for it underneath — its flat IS the floor and its
+     crests stand over it. Only the dish has to be lifted clear of the tier's own cap. */
+  const rise = dish;
   /* The band's width against the shape's own smallest half-span, so a wide sheet cake and a small
      round get a lip in the same proportion to themselves. */
   const span = shape.kind === 'rect'

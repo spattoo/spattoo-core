@@ -5,8 +5,8 @@ const TAU = Math.PI * 2;
 /* ── The turntable spiral on a cake's top ────────────────────────────────────────────────────────
  *
  * A palette knife is set down in the middle of a smoothed top and the turntable is spun; the knife
- * is drawn outward as it goes, so it leaves one continuous groove coiling from the centre to the
- * rim. Sandeep, pointing at it in the reference photograph: *"spiral is a separate thing"* — and
+ * is drawn outward as it goes, ploughing cream into one continuous raised coil that runs from the
+ * centre to the rim. Sandeep, pointing at it in the reference photograph: *"spiral is a separate thing"* — and
  * then, as its own feature: *"so spiral is an option user can select separately. so both edge
  * elevation, spiral can individually be selected."*
  *
@@ -44,21 +44,26 @@ export function makeSwirlField({ turns, rOut }) {
   return (r, theta) => 0.5 - 0.5 * Math.cos(TAU * phase(r, theta));
 }
 
-/* How much of ONE TURN'S spacing the groove itself takes up: 1 in the cut, 0 on the flat between.
+/* How much of ONE TURN'S spacing the raised ridge takes up: 1 on the crest, 0 on the flat between.
  *
- * ⚠️ A COSINE IS THE WRONG SECTION FOR A KNIFE, and this is what came back from the first render.
- * `0.5 - 0.5cos` spends half of every turn going down and half coming back up, so each ring is a fat
- * wave and the whole top rolls like water. Sandeep, with the pink cake beside it: *"spirals should
- * not this much thick. see the reference image."* Both references show the same thing — a flat top
- * with a THIN line incised in it, land far wider than cut. That is what a knife tip does; the cosine
- * is what a whole spatula face would do.
+ * ⚠️ THE SPIRAL STANDS UP — IT IS NOT A CUT, AND THE FIRST TWO VERSIONS BOTH HAD IT UPSIDE DOWN.
+ * Sandeep: *"spiral is a projection upwards. you did it opposite."* The reasoning that produced the
+ * error was tidy and wrong: a knife takes cream away, so the mark it leaves must be below the
+ * surface. What a knife actually does on a spinning cake is PLOUGH — it gathers cream ahead of
+ * itself and leaves it heaped along the line it travelled. Every ring in both photographs catches
+ * the light on top and shadows beneath, which is a ridge; a trench does the opposite.
  *
- * ⚠️ AND THE COSINE STAYS WHERE IT IS. The piped lid's soft ripple was chosen and approved on its
- * own cake, where a rope-piped wall meets a gently rippled top. Only the phase is shared.
+ * ⚠️ AND THE SECTION IS NARROW. `0.5 - 0.5cos` spends half of every turn rising and half falling, so
+ * each ring is as wide as the flat beside it and the top rolls like water — Sandeep, on that
+ * version: *"spirals should not this much thick."* A thin crest with wide flat between is what both
+ * references show.
+ *
+ * ⚠️ THE COSINE STAYS WHERE IT IS. The piped lid's soft ripple was chosen and approved on its own
+ * cake, where a rope-piped wall meets a gently rippled top. Only the phase is shared.
  */
-export function grooveProfile(phase, width) {
-  /* Distance from the nearest groove centre, as a fraction of half the spacing: 0 in a cut, 1 midway
-     between two. */
+export function ridgeProfile(phase, width) {
+  /* Distance from the nearest ridge's crest, as a fraction of half the spacing: 0 on the crest, 1
+     midway between two of them. */
   const d = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2;
   const t = Math.min(1, d / Math.max(1e-4, width));
   return 1 - t * t * (3 - 2 * t);
@@ -71,23 +76,23 @@ export const SPIRAL_DEFAULTS = Object.freeze({
      piped lid defaults to 7, which is a different look on a different cake (a coiled rope, read from
      directly above) and is not evidence for this one. */
   turns: 4,
-  /* How deep the groove cuts, as a fraction of the tier's HEIGHT — never a world number
+  /* How high the ridge stands, as a fraction of the tier's HEIGHT — never a world number
      (INVARIANTS #8).
      ⚠️ SWEPT AGAINST THE PHOTOGRAPH, AND THE REASONED NUMBER WAS 2.5× TOO SHALLOW. The first value
      was argued from the cavity beside it — the dish is 0.018 of the height, the ripple looks like a
-     third of that, so 0.006 — and on screen that is a groove you have to be told is there. Depth
-     read off a render does not follow depth reasoned off a neighbouring parameter, because what the
-     eye picks up is the shading across the groove's WALL, not how far down its floor is. 0.010 is
-     still faint; 0.022 starts to read as carved. */
+     third of that, so 0.006 — and on screen that is a ridge you have to be told is there. Relief
+     read off a render does not follow relief reasoned off a neighbouring parameter, because what the
+     eye picks up is the shading down the ridge's FLANK, not how tall its crest is. 0.010 is still
+     faint; 0.022 starts to read as moulded. */
   depth: 0.015,
-  /* How much of the floor's outer edge the groove fades out over, as a fraction of the radius.
+  /* How much of the floor's outer edge the ridge fades out over, as a fraction of the radius.
      ⚠️ THE KNIFE LIFTS BEFORE THE EDGE. In the photograph the outermost ring stops with a clear
      band of smooth cream between it and the rim; run out to the boundary instead and the spiral
-     notches the lip, which turns a scraped edge into a milled one. */
+     rides up over the lip, which turns a scraped edge into a moulded one. */
   fade: 0.15,
-  /* How wide the cut is against the space between two cuts, 0..1 — a half would be the old cosine.
-     ⚠️ MEASURED OFF BOTH PHOTOGRAPHS: the land between two grooves is three or four times the groove
-     itself, so the top reads as flat cream with a line drawn in it rather than as ripples. Swept
+  /* How wide the ridge is against the space between two ridges, 0..1 — a half would be the cosine.
+     ⚠️ MEASURED OFF BOTH PHOTOGRAPHS: the flat between two ridges is three or four times the ridge
+     itself, so the top reads as flat cream with a raised line on it rather than as ripples. Swept
      beside the pink cake at 0.16 / 0.20 / 0.24: by 0.24 the ring is broadening back towards a wave,
      and 0.5 IS the old cosine. */
   width: 0.18,
@@ -119,8 +124,8 @@ const WANDER_N = 160;
  * @param rOut  the radius the groove runs out to — the floor's own outer edge, so the spiral fills
  *              whatever room the rim leaves it rather than assuming the tier's full radius
  * @param height the tier's height, which `depth` is a fraction of
- * @returns (x, z) => y, a DROP below the floor (never positive: a knife removes cream, it does not
- *          add it — so the floor it is applied to stays the high-water mark)
+ * @returns (x, z) => y, a LIFT above the floor (never negative — the knife ploughs cream into a
+ *          heap along its path, so the floor it is applied to is the low-water mark)
  */
 export function spiralField(cfg, rOut, height) {
   const c = { ...SPIRAL_DEFAULTS, ...cfg };
@@ -138,12 +143,12 @@ export function spiralField(cfg, rOut, height) {
        the groove arrives early on one side of the cake and late on the other. */
     const i = Math.floor(((theta / TAU + 1) % 1) * WANDER_N) % WANDER_N;
     const rEff = r * (1 + c.wander * wob[i]);
-    /* 1 inside the cut, 0 on the flat between two cuts. */
-    const cut = grooveProfile(phase(rEff, theta), c.width);
+    /* 1 on the crest, 0 on the flat between two ridges. */
+    const crest = ridgeProfile(phase(rEff, theta), c.width);
     /* The knife lifting near the edge. `fade` is measured from the outside in, so the taper lands on
        the last ring rather than being spread across all of them. */
     const t = Math.min(1, Math.max(0, (1 - r / rOut) / Math.max(1e-4, c.fade)));
-    const lift = t * t * (3 - 2 * t);
-    return -depth * cut * lift;
+    const ease = t * t * (3 - 2 * t);
+    return depth * crest * ease;
   };
 }
