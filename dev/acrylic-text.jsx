@@ -90,6 +90,14 @@ function App() {
     tracking: qTrack ?? faceFit(q.get('face') ?? 'great_vibes'),
     surface: q.get('surface') ?? 'side', sideAngle: 0, sideY: 1.0,
     fit: q.has('fit') ? Number(q.get('fit')) : 0.55,
+    /* ⚠️ THE STANDING-UP NUMBERS, which nothing here could express and so nothing here could show.
+       The studio has authored `legs`, `legLen` and `bury` since it was built and `acrylicCfg` reads
+       all three, but the Texts card filtered them out — so the one page that mounts the real
+       AcrylicWriting could not be asked for one leg instead of two. Same gap as the wire's, for the
+       same reason: a state that cannot be reached hides every bug in it. */
+    ...(q.has('legs')   ? { legs:   Number(q.get('legs')) }   : {}),
+    ...(q.has('leglen') ? { legLen: Number(q.get('leglen')) } : {}),
+    ...(q.has('bury')   ? { bury:   Number(q.get('bury')) }   : {}),
     color: '#ffffff', finish: 'cream',
   });
   const set = (c) => setW(p => ({ ...p, ...c }));

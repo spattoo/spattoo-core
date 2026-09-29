@@ -125,6 +125,9 @@ import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
+// THE row that opens something (root CLAUDE.md rule 7). First use inside the designer: the tier
+// panel had no "press this and a card opens" affordance before the Cream layer row below.
+import { NavRow } from '../shared/NavRow.jsx';
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig, frostingDef } from './frostings.js';
 import { applyDecorMaterialConfig } from './materials.js';
 import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
@@ -136,7 +139,7 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
-import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
+import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS } from './geometry/acrylicConfig.js';
 import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
@@ -9769,6 +9772,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 fmt: v => (v === 0 ? 'normal' : `+${Math.round(v * 100)}%`),
                 set: v => setWriting({ letterSpacing: v }) },
             ] : []),
+            /* ── Standing up: the legs a topper is pushed in on ──────────────────────────────────
+               ⚠️ AUTHORED IN THE STUDIO, READ BY THE RENDERER, AND REACHABLE BY NOBODY IN BETWEEN.
+               The Acrylic Topper Studio has offered Base bar, Legs, leg length and buried since it
+               was built; `acrylicCfg` reads every one of them. The Texts card filtered the whole
+               Adjust row down to Size and Rotate for acrylic, so a customer typing their own
+               message got whatever the defaults said and could not change it. Sandeep: *"we have
+               actually done a poc in admin to hav 1 leg or 2 legs. some of those settings are
+               missing when we merged that in to the texts."*
+
+               ⚠️ STANDING ONLY, WHICH IS THE POSE AND NOT THE ZONE. `acrylicCfg` already returns
+               `legs: 0` for a flat piece — a plaque against a wall has nothing to push into and
+               prongs would point at the customer. Offering the dial there would move a number the
+               builder discards, which is the "picker that visibly does nothing" this file warns
+               about elsewhere.
+
+               These three and no more. Bridge and the sheet thickness are cuttability, calibrated
+               per face against a cutter's minimum detail — topperFaces.js records a Parisienne
+               topper reading "Bithday", correct by every measure and unreadable. That is not a
+               taste, and a customer dragging it would be dragging a manufacturing tolerance. */
+            ...(w.style === 'acrylic' && surface !== 'side' ? [
+              { k: 'Legs', dial: 'size', v: w.legs ?? ACRYLIC_DEFAULTS.legs, min: 0, max: 4, step: 1,
+                fmt: v => (Math.round(v) === 0 ? 'none' : `${Math.round(v)}`),
+                set: v => setWriting({ legs: Math.round(v) }) },
+              ...((w.legs ?? ACRYLIC_DEFAULTS.legs) > 0 ? [
+                { k: 'Leg length', dial: 'size', v: w.legLen ?? ACRYLIC_DEFAULTS.legLen,
+                  min: 0.15, max: 0.9, step: 0.02, fmt: v => v.toFixed(2),
+                  set: v => setWriting({ legLen: v }) },
+                /* How far the legs go IN. Not a manufacturing number despite looking like one: it
+                   decides how high the word rides above the icing, which is the whole reason a
+                   baker reaches for a longer leg. Bounded by the leg itself in the builder, so a
+                   word can never be buried past its own prongs. */
+                { k: 'Buried', dial: 'size', v: w.bury ?? ACRYLIC_DEFAULTS.bury,
+                  min: 0, max: 0.9, step: 0.01, fmt: v => `${Math.round(v * 100)}%`,
+                  set: v => setWriting({ bury: v }) },
+              ] : []),
+            ] : []),
             /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
                from a sheet; bending the baseline is a piped-writing idea. */
             ...(surface !== 'side' && w.style !== 'acrylic' ? [
@@ -12804,6 +12843,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       params={userParams}
                       values={resolveStyleParams(style, tier?.styleParams)}
                       onChange={(key, value) => setTierStyleParam(selectedEl.index, key, value)}
+                    />
+                  )}
+                  {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
+                    *
+                    * Sandeep: "cream layer is sitting in finish category. its actually a cream
+                    * finish. so it should sit in style here."
+                    *
+                    * ⚠️ IT CANNOT BE A STYLE CHIP, and that is not a filing opinion — the two
+                    * COMPOSE. CakeCanvas hands the tier `frostingStyle` and `creamLayers` as
+                    * separate props and CakeTier renders SecondCreamLayers over the wall, so a
+                    * chip in the single-select Style row would make "ribbed wall" and "cream
+                    * band" mutually exclusive and delete a combination that works today.
+                    *
+                    * ⚠️ AND IT KEEPS ITS CARD. Sandeep's own objection — "it comes with few
+                    * settings" — is true but understates it: the discriminator is INSTANCES, not
+                    * the count of controls. Every style already reveals its own params here
+                    * (Cream Wave has Depth and Waviness). No style has several per tier, a torn
+                    * edge you paint while the cake spins, an anchor, or a gold-leaf rim.
+                    *
+                    * ⚠️ NavRow, NOT Chip. Everything else in this section is a single-select that
+                    * changes the wall; a chip that opens a card would read as a fifth wall style,
+                    * which is the exact confusion this row exists to end.
+                    *
+                    * ⚠️ NAMED "Cream layer", matching the element the baker already knows from the
+                    * decorations drawer. One thing, one name.
+                    *
+                    * ⚠️ ROUND WALLS ONLY — SecondCreamLayers renders on round walls, so the row is
+                    * ABSENT on a square tier rather than present and dead. `isRoundWall`, never a
+                    * shape-name test (see the packer's note on the same trap).
+                    *
+                    * The drag-to-place tile stays in the drawer: it drops onto the tier you aimed
+                    * at, which this row cannot do, and both call addCreamToTier — one function,
+                    * three affordances, so there is no second implementation to drift. */}
+                  {creamElement && isRoundWall(tierShape(tier)) && (
+                    <NavRow
+                      label="Cream layer"
+                      hint="A raised second band with a torn edge. Sits over this style, not instead of it."
+                      value={tier?.creamLayers?.length || null}
+                      onClick={() => {
+                        focusEditor('decoration');
+                        /* First press seeds a band so something appears immediately — the tap and
+                           drag paths both do this. Later presses only REOPEN the card on this tier:
+                           seeding again would quietly add a fourth band to a tier that has three. */
+                        if (tier?.creamLayers?.length) { setCreamTier(selectedEl.index); setCreamSel(0); }
+                        else addCreamToTier(selectedEl.index);
+                        selectExclusive({ type: 'cream', elementId: creamElement.id });
+                      }}
                     />
                   )}
                 </>
