@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wireFor, wireLift, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP, WIRE_WAVES, WIRE_TWIST } from './elementWire.js';
+import { wireFor, wireLift, wireStandoff, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP, WIRE_WAVES, WIRE_TWIST } from './elementWire.js';
 
 const box = { h: 0.1, cy: 0 };
 const on = (extra = {}) => wireFor(box, { on: true, ...extra }, null);
@@ -217,5 +217,75 @@ describe('the wire hangs from the element\'s real bottom', () => {
     const tip = w.points[w.points.length - 1].y;
     expect(tip - w.points[0].y).toBeCloseTo(w.len, 6);
     expect(w.len).toBeCloseTo(0.4, 6);
+  });
+});
+
+/* ⚠️ THREE POSES, THREE DIRECTIONS, ONE CURVE. The shape is identical in all of them — same bow,
+   same kinks, same twist — and only the frame differs. A second copy of the curve per pose is how
+   they drift apart, so the axis is data and these check the data. */
+describe('the wire runs the way the pose needs', () => {
+  const runOf = w => {
+    const a = w.points[0], b = w.points[w.points.length - 1];
+    return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  };
+
+  it('runs straight down on the top surface', () => {
+    const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'down' }));
+    expect(r.y).toBeGreaterThan(0);          // the tip is above the buried end
+    expect(Math.abs(r.x)).toBeCloseTo(0, 6);
+    expect(Math.abs(r.z)).toBeCloseTo(0, 6);
+  });
+
+  it('runs horizontally into a wall', () => {
+    const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'out' }));
+    expect(r.z).toBeGreaterThan(0);          // the tip stands proud of the buried end
+    expect(Math.abs(r.y)).toBeCloseTo(0, 6);
+  });
+
+  /* ⚠️ THE RIM LEANS BACK, WHICH THE TOP SURFACE MUST NOT. A verge piece is cantilevered out over
+     the lip, so a vertical stem drops past the cake and runs down the outside of the wall — which
+     it did, for its whole length. Leaning puts the buried end back in the top surface. */
+  it('runs down AND back from the rim', () => {
+    const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'lip' }));
+    expect(r.y).toBeGreaterThan(0);
+    expect(r.z).toBeGreaterThan(0);
+  });
+
+  it('gives every axis the same run length and the same reach', () => {
+    const len = w => Math.hypot(...Object.values(runOf(w)));
+    const reach = w => {
+      const a = w.points[0], b = w.points[w.points.length - 1];
+      return Math.max(...w.points.map(p => {
+        const t = { x: p.x - a.x, y: p.y - a.y, z: p.z - a.z };
+        const d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+        const dl = Math.hypot(d.x, d.y, d.z);
+        const proj = (t.x * d.x + t.y * d.y + t.z * d.z) / (dl * dl);
+        return Math.hypot(t.x - d.x * proj, t.y - d.y * proj, t.z - d.z * proj);
+      }));
+    };
+    const made = axis => wireFor(box, { on: true, bend: 0.3, waves: 1, twist: 0 }, null, { axis });
+    for (const axis of ['out', 'lip']) {
+      expect(len(made(axis))).toBeCloseTo(len(made('down')), 6);
+      expect(reach(made(axis))).toBeCloseTo(reach(made('down')), 6);
+    }
+  });
+
+  /* ⚠️ THE LIFT IS A VECTOR ONCE THE WIRE CAN RUN DIAGONALLY. Whatever did not go in has to
+     displace the piece — up on the top, out on a wall, and both on the rim. One scalar was fine
+     while every wire was vertical; on `lip` it would float the piece above where its stem ends. */
+  it('splits what stayed out between height and standoff, per pose', () => {
+    const on = axis => wireFor(box, { on: true, bury: 0.5 }, null, { axis });
+    const out = on('down').len * 0.5;
+
+    expect(wireLift(on('down'))).toBeCloseTo(out, 6);
+    expect(wireStandoff(on('down'))).toBeCloseTo(0, 6);
+
+    expect(wireLift(on('out'))).toBeCloseTo(0, 6);
+    expect(wireStandoff(on('out'))).toBeCloseTo(out, 6);
+
+    const lip = on('lip');
+    expect(wireLift(lip)).toBeGreaterThan(0);
+    expect(wireStandoff(lip)).toBeGreaterThan(0);
+    expect(Math.hypot(wireLift(lip), wireStandoff(lip))).toBeCloseTo(out, 6);
   });
 });

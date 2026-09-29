@@ -99,15 +99,23 @@ const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUT
 const FOLDED = ART === BUTTERFLY ? q.get('fold') !== '0' : FOLD;
 
 const PIECE = {
-  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${SPIN}-${q.get('face')}-${ART.slice(-24)}`,
+  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${SPIN}-${q.get('face')}-${q.get('zone')}-${ART.slice(-24)}`,
   name: 'element on a wire',
   image_url: ART,
-  allowed_zones: ['top_surface'],
+  allowed_zones: ['top_surface', 'side', 'rim'],
   default_color: '#c9b6e4',
   placement_config: {
     r: 2, scale: { max: 6, min: 0.5, step: 0.25 },
     metalness: 0.0015, roughness: 0.3876,
     top_surface: { modes: ['stand'] },
+    /* `?zone=side` puts it on the WALL, which is a different renderer (DraggableSideSticker) and
+       a wire that runs horizontally into the icing rather than down into it. */
+    side: 'hug',
+    /* `?zone=rim` is the EDGE tile — mode `verge`, "rests its base on the rim lip and reclines
+       radially outward… (butterflies, flowers)". It renders through the TOP component, so the wire
+       is already mounted there; whether a downward stem is right for a piece cantilevered over the
+       lip is the question this case exists to answer. */
+    rim: 'verge',
     /* ⚠️ `?fold=1` IS THE CASE THE BUTTERFLIES ACTUALLY USE. Standing, a foldable sticker hinges its
        wings up into a V from the spine — so the lowest point stops being a wingtip and becomes the
        body, and a wire hung from the flat bottom starts in mid-air below it. Sandeep: *"butterfly
@@ -126,7 +134,9 @@ createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%' }}>
     {/* ⚠️ OFF AT PLACEMENT, like the pick — "can add a wire", so a baker decides. Previewing it
         means saying so explicitly, exactly as the card's toggle does. */}
-    <ElementPreview element={PIECE} zone="top_surface" mode="stand" autoRotate={false}
+    <ElementPreview element={PIECE}
+                    zone={{ side: 'side', rim: 'rim' }[q.get('zone')] ?? 'top_surface'}
+                    mode={{ side: 'hug', rim: 'verge' }[q.get('zone')] ?? 'stand'} autoRotate={false}
                     extra={{
                       ...(WIRE ? { wire: { on: true, ...shape } } : {}),
                       ...(TILT ? { tiltAngle: TILT } : {}),

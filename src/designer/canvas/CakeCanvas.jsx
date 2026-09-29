@@ -15,7 +15,7 @@ import CakeTier from './CakeTier';
 import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
-import { wireFor, wireLift } from '../geometry/elementWire.js';
+import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
 import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -1906,7 +1906,13 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
   // Insert sinks the base into the wall by `depth` of its size (fraction of the live sticker size — #8).
   const insertSink = isInsert ? insertDepthFrac * STICKER_SIZE * effScale : 0;
-  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink;
+  /* ⚠️ THE WIRE PUSHES THE PIECE OFF THE WALL, exactly as it lifts one off the top — the same
+     `len - buried`, just along the wall's normal instead of up. Without this the butterfly sits
+     flat against the icing with a stem drawn behind it, which reads as a printed shadow.
+     Sandeep: *"When the butterfly is on the side of the cake, wire is not applying."* */
+  const wire = sticker.wire?.on ? wireFor(vext?.box, sticker.wire, null, { axis: 'out' }) : null;
+  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink
+               + wireStandoff(wire) * effScale;
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
@@ -1954,6 +1960,12 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       {/* Both lean axes. X leans the pick up (+) or down (−) along the cake side; Z rolls it in the
           PLANE of the wall, which is how a jersey ends up sitting diagonally — the one thing the wall
           had no control for at all. One Euler, so a combined lean is a single predictable rotation. */}
+      {/* ⚠️ OUTSIDE THE LEAN, for the reason the top surface learned the hard way: the stem stands in
+          the icing and the decoration sits on it, so leaning the butterfly must not swing the buried
+          end out of the wall. There it tore the wire across the board; here it would pull it out of
+          the cake sideways. Same rule, same place in the tree — the group that carries only where
+          the piece was put. */}
+      {wire && <ElementWire wire={wire} />}
       <group rotation={[sticker.tiltAngle ?? 0, 0, sticker.rollAngle ?? 0]}>
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
@@ -2138,7 +2150,13 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
      icing", so an element carrying both would be drawn on two supports at once. The wire wins when
      it is on, because it is the more specific statement — a row authors a wire deliberately, where
      a stick is the general default. */
-  const wire = sticker.wire?.on ? wireFor(artBox, sticker.wire, null) : null;
+  /* ⚠️ THE RIM GETS ITS OWN AXIS. A verge piece reclines OUT over the lip, so a vertical stem drops
+     past the cake and runs down the outside of the wall for its whole length — which is what it did.
+     `lip` leans it back into the top surface. Perch straddles the edge rather than clearing it, so
+     it keeps the plain vertical drop. */
+  const wire = sticker.wire?.on
+    ? wireFor(artBox, sticker.wire, null, { axis: isVerge ? 'lip' : 'down' })
+    : null;
   const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
   const py = topY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried

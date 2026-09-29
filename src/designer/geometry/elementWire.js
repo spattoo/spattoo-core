@@ -155,6 +155,39 @@ export function elementWire(placementConfig, allowedActions) {
   };
 }
 
+/* ── Which way the wire runs, and the two directions its bow may use ────────────────────────────
+ *
+ * ⚠️ A WIRE IS NOT ALWAYS VERTICAL, WHICH THE FIRST VERSION ASSUMED THROUGHOUT. On the cake top it
+ * goes down into the icing; on the WALL it goes horizontally into it, and the piece floats out from
+ * the side rather than above. Sandeep: *"When the butterfly is on the side of the cake, wire is not
+ * applying. we should be able to insert from sidewise as well."*
+ *
+ * The shape is identical in both — same bow, same kinks, same twist — so only the FRAME differs:
+ * a direction to run in, and two perpendicular axes for the bow to swing through. Written as data
+ * rather than a branch, because a second copy of the curve is how the two drift apart.
+ *
+ *   down   the top surface. Runs from the piece's bottom edge into the icing; bows in the horizontal
+ *          plane, so `sweep` is a compass bearing.
+ *   out    a wall. Runs backwards into it from the piece's own plane; bows in the plane of the wall,
+ *          so `sweep` chooses between up-and-down and side-to-side.
+ *   lip    the rim. Runs down AND BACK, because a verge piece is cantilevered OUT over the edge —
+ *          straight down from there misses the cake entirely and the wire hangs on the outside of
+ *          the wall for its whole length. Leaning it back puts the buried end in the top surface
+ *          just inside the rim, which is where a decorator would actually push it.
+ *
+ * ⚠️ A LEAN IS RIGHT HERE AND WRONG ON THE TOP SURFACE, WHICH LOOKS LIKE AN INCONSISTENCY AND IS
+ * NOT. On the top the piece sits over its own anchor, so leaning the base moves it OFF the cake —
+ * that shipped once and hung a wire in mid-air beside the board. On the rim the piece is already
+ * past the edge, so leaning the base moves it BACK ON. Same change, opposite sign, because the two
+ * poses start on opposite sides of the cake's edge.
+ */
+const DIAG = Math.hypot(1, 0.6);
+const AXES = {
+  down: { dir: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+  out:  { dir: [0, 0, -1], u: [1, 0, 0], v: [0, 1, 0] },
+  lip:  { dir: [0, -1 / DIAG, -0.6 / DIAG], u: [1, 0, 0], v: [0, 0.6 / DIAG, -1 / DIAG] },
+};
+
 /* How many points describe the curve. Enough that a TubeGeometry reads smooth at the bend's tight
    end; few enough that a cake carrying twenty butterflies is not paying for four thousand. */
 /* ⚠️ ODD, SO THERE IS A SAMPLE AT THE APEX. The bow is `sin(pi·t)` and its deepest point is exactly
@@ -176,7 +209,7 @@ const SAMPLES = 25;
  * @returns {{ points: {x,y,z}[], radius: number, len: number, buried: number,
  *             tip: {x,y,z}, baseY: number } | null}
  */
-export function wireFor(box, instanceWire, rowWire) {
+export function wireFor(box, instanceWire, rowWire, { axis = 'down' } = {}) {
   if (!instanceWire?.on || !box || !(box.h > 0)) return null;
 
   const row = rowWire ?? ELEMENT_WIRE_DEFAULTS;
@@ -208,6 +241,8 @@ export function wireFor(box, instanceWire, rowWire) {
      precisely because that reasoning is seductive and wrong. */
   const radius = box.h * WIRE_GAUGE * thickness;
 
+  const frame = AXES[axis] ?? AXES.down;
+
   /* ⚠️ THE ELEMENT'S BOTTOM, WHICH IS NOT `-h/2`, FOR TWO SEPARATE REASONS.
  
      A box is not centred on the group origin — `box.cy` says where its middle sits, and stickFor
@@ -238,8 +273,18 @@ export function wireFor(box, instanceWire, rowWire) {
  
      So the element stays exactly where it was put, the wire runs straight down from it into the
      cake, and ALL the character comes from the bow. */
-  const base = { x: 0, y: tipY - len, z: 0 };
-  const tip = { x: 0, y: tipY, z: 0 };
+  /* ⚠️ ON A WALL THE TIP IS THE PIECE'S MIDDLE, NOT ITS BOTTOM EDGE. Running down, the wire has to
+     reach the icing, so it leaves from the lowest point of the artwork. Running out of a wall there
+     is no icing below it — the stem goes in behind the piece, and behind its bottom corner it would
+     be visibly off-centre. `cy` rather than `bottom`, and the same `box` answers both. */
+  const tip = axis === 'out'
+    ? { x: 0, y: box.cy ?? 0, z: 0 }
+    : { x: 0, y: tipY, z: 0 };
+  const base = {
+    x: tip.x + frame.dir[0] * len,
+    y: tip.y + frame.dir[1] * len,
+    z: tip.z + frame.dir[2] * len,
+  };
 
   /* ⚠️ THE BOW IS HORIZONTAL, AND `sweep` ONLY CHOOSES ITS COMPASS DIRECTION. A vertical run bulging
      sideways is what hand-bent florist wire does; `sin(pi·t)` puts the deepest part at the middle
@@ -262,14 +307,24 @@ export function wireFor(box, instanceWire, rowWire) {
     /* The bow's plane turns as the wire climbs. A planar curve is a drawing of a bent wire; this is
        what makes the S seen from the front a different S from the side. */
     const a = phi + twistRad * t;
+    const ku = Math.cos(a) * k, kv = Math.sin(a) * k;
     points.push({
-      x: Math.cos(a) * k,
-      y: base.y + (tip.y - base.y) * t,
-      z: Math.sin(a) * k,
+      x: base.x + (tip.x - base.x) * t + frame.u[0] * ku + frame.v[0] * kv,
+      y: base.y + (tip.y - base.y) * t + frame.u[1] * ku + frame.v[1] * kv,
+      z: base.z + (tip.z - base.z) * t + frame.u[2] * ku + frame.v[2] * kv,
     });
   }
 
-  return { points, radius, len, buried, bury, tip, baseY: base.y };
+  /* ⚠️ THE LIFT IS A VECTOR, NOT A LENGTH, once the wire can run diagonally. Whatever did not go
+     into the cake has to displace the piece — upward on the top, outward on a wall, and BOTH on the
+     rim. A single scalar was fine while every wire was vertical; on the `lip` axis, treating the
+     whole run as height floats a butterfly well above where its own stem ends. Each caller takes
+     the component its pose can actually move in. */
+  const out = len - buried;
+  return {
+    points, radius, len, buried, bury, tip, axis, baseY: base.y,
+    lift: { y: Math.max(0, -frame.dir[1] * out), out: Math.max(0, -frame.dir[2] * out) },
+  };
 }
 
 /**
@@ -282,5 +337,11 @@ export function wireFor(box, instanceWire, rowWire) {
  * without a wire, so a caller can add it unconditionally.
  */
 export function wireLift(wire) {
-  return wire ? Math.max(0, wire.len - wire.buried) : 0;
+  return wire?.lift ? wire.lift.y : 0;
+}
+
+/** How far the element stands OFF the surface it is pushed into — the same leftover run, along the
+ *  other axis. A wall wire displaces the piece entirely this way; a rim wire does a bit of both. */
+export function wireStandoff(wire) {
+  return wire?.lift ? wire.lift.out : 0;
 }
