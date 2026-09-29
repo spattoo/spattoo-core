@@ -5713,6 +5713,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // the canvas changes the selection, and piping ends on "Done piping".
     if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     closeAllPopups();
+    /* ⚠️ THE TIER PANEL NOW READS THE CATALOGUE, so it has to be loaded before the panel opens.
+     * Its Frosting section offers "Cream layer", guarded on `creamElement` — found by scanning
+     * `elementById` for `placement_config.second_cream`. That map is filled LAZILY: nothing loads it
+     * until the Decorations drawer is opened, a search runs, or a loaded design already has piping
+     * or stickers. So on a fresh cake the row was simply ABSENT, and appeared later once the baker
+     * had been somewhere else entirely — a control whose existence depended on unrelated
+     * navigation. Found by driving it (scripts/shoot-cream-doorway.mjs); invisible to source review
+     * and to the suite, which never mounts this component.
+     *
+     * Same reasoning as the eager load above for piping and placed stickers — "placed stickers need
+     * their source element resolvable before the panel opens" — now true of the tier panel too.
+     * `loadElementsIfNeeded` short-circuits on `allElementsLoaded`, so this is one fetch per session,
+     * and it is the fetch the Decorations drawer would have made anyway.
+     *
+     * ⚠️ NOT AWAITED. Selection must not wait on a network call; the row appears when the catalogue
+     * lands, which is the same behaviour every other catalogue-backed control already has. */
+    loadElementsIfNeeded();
     // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
     const isSame = selectedEl?.type === 'tier' && selectedEl.index === i;
     selectExclusive(isSame ? null : { type: 'tier', index: i });

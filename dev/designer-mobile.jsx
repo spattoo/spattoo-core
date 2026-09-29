@@ -665,14 +665,41 @@ const STUBS = {
    *
    * allowed_zones includes `board`; allowed_actions has resize TRUE and tilt FALSE. The panel showed
    * the opposite of both. Only a placed element can settle why. */
-  fetchElementTypes:   async () => (PARAMS.has('catalog') ? CAT_TYPES : PARAMS.has('football') ? [{
+  fetchElementTypes:   async () => (PARAMS.has('cream') ? [{
+    id: 'et-cream', slug: 'cream_layer', name: 'Cream layer', sort_order: 0,
+    placement_rules: { zones: ['side'], per_tier: true, max_per_zone: 4, top_tier_only: false, requires_frosting: true },
+    default_allowed_actions: { move: false, color: true, style: false, delete: true, resize: false, duplicate: false },
+  }] : PARAMS.has('catalog') ? CAT_TYPES : PARAMS.has('football') ? [{
     id: 'et-topper', slug: 'topper', name: 'Cake Topper', sort_order: 0,
     placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 1, top_tier_only: true, requires_frosting: false },
     default_allowed_actions: { move: true, color: true, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
   }] : []),
-  fetchElementCategories: async () => ((PARAMS.has('football') || PARAMS.has('catalog'))
+  fetchElementCategories: async () => (PARAMS.has('cream')
+    ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
+    : (PARAMS.has('football') || PARAMS.has('catalog'))
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
-  fetchElements:       async () => (PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
+  /* ⚠️ `?cream=1` — THE CREAM LAYER ELEMENT, because an empty catalogue hides a feature rather than
+   * breaking it, and that is the worse failure. The tier panel's "Cream layer" row is guarded on
+   * `creamElement` (found by scanning loaded elements for `placement_config.second_cream`), so with
+   * `fetchElements` returning [] the row is correctly absent — and a verification script then
+   * "passes" its round-tier AND square-tier cases for the same wrong reason. That happened, on
+   * 2026-09-29, to the script written to prove the round/square gate; the rect result was worthless
+   * and would have been reported as evidence.
+   *
+   * ⚠️ THE CONFIG MIRRORS THE KEYS THE CODE READS, not a row copied from production — `second_cream`
+   * lives only in the dev database (no migration or API source defines it). `addCreamToTier` seeds
+   * `lift`/`noise`/`height`/`fill_side` and the card reads `height_range`; anything absent falls back
+   * to SECOND_CREAM_DEFAULTS, which is the point of seeding only what the admin authored. */
+  fetchElements:       async () => (PARAMS.has('cream') ? [{
+    id: 'cream-el-1', name: 'Cream layer',
+    image_url: null, thumbnail_url: null, thumb_key: null,
+    element_type_id: 'et-cream', category_id: 'cat-finishes',
+    allowed_zones: ['side'],
+    allowed_actions: { move: false, color: true, delete: true, resize: false, duplicate: false },
+    placement_config: { second_cream: { lift: 0.04, noise: 0.05, fill_side: 'below', height: 0.5,
+                                        height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
+    default_color: '#D98BA6', sort_order: 0,
+  }] : PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,
