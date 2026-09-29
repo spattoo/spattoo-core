@@ -195,8 +195,12 @@ CAT_ELEMENTS.push({
      harness that shows 2.6 proves the CONFIG is being read rather than the fallback. And
      `scale.max: 1.0` makes the clamp actually bite: 0.45 × 2.6 = 1.17, so a big one comes out at
      1.0, not 1.17. Without a tight max the clamp would be a line nothing ever exercised. */
+  /* ⚠️ `scatter_mix` IS DELIBERATELY NOT THE CODE DEFAULT either — four colours, not six, and none
+     of them the seeded set. A harness showing THESE four proves the element row is being read
+     rather than the fallback, exactly as 2.6 does for `scatter_big` above. */
   placement_config: { scatter: true, r: 0.45, scatter_big: 2.6,
                       scale: { min: 0.15, max: 1.0, step: 0.05 },
+                      scatter_mix: ['#1B9AAA', '#EF476F', '#FFC43D', '#06D6A0'],
                       top_surface: 'lay', side: 'hug' },
   allowed_actions: { move: true, color: true, delete: true, resize: true },
   default_color: '#C86B8A', sort_order: 10,

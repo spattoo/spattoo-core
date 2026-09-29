@@ -6478,10 +6478,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      ⚠️ SO A PROBE CAN DRIVE THE REAL PATH. The alternative was a dev hook repeating these two
      writes, which would have tested the hook rather than the dial — and a copy that agrees with
      itself is exactly how a resize bug survives a green check. One implementation, two callers.
-     Smalls take the value; bigs take the clamped multiple, so the mix survives a resize. */
-  function setScatterSize(elementId, v) {
+     Smalls take the value; bigs take the clamped multiple, so the mix survives a resize.
+
+     ⚠️ PER SURFACE, like Count and Big ones. Sandeep: "there is only one size control. user can
+     select diff sizes for top and side." The instances always COULD differ — `scale` is per sticker
+     and `buildDesignSnapshot` stores them wholesale — so nothing new is persisted here and no old
+     design reads back differently. The card's single dial was the only thing insisting on one size,
+     because this function filtered on `elementId` alone and fanned every write across both
+     surfaces. Same group filter `setScatterBigCount` already uses, three hundred lines up.
+
+     ⚠️ `zone` IS OPTIONAL AND null MEANS BOTH. `toggleScatterSurface` seeds a new surface from
+     `scatterBaseScaleOf(all, el)` — deliberately spanning both groups, per its own note — so a
+     caller that wants the old fan-everything behaviour still has it, and the dial simply never
+     asks for it. */
+  function setScatterSize(elementId, zone, v) {
     const el = elementById.get(elementId);
-    const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
+    const grp = zone == null ? null : (isSideZoneName(zone) ? 'side' : 'top');
+    const all = design.stickers.filter(s => s.elementId === elementId && s.scatter
+      && (grp == null || scatterGroupOf(s) === grp));
     if (!el || !all.length) return;
     const smalls = all.filter(x => !x.scatterBig).map(x => x.id);
     const bigs   = all.filter(x => x.scatterBig).map(x => x.id);
@@ -6547,6 +6561,66 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!palette.length) return;
     design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
+  }
+  /* ── One colour, or a mix ─────────────────────────────────────────────────────────────────────
+   *
+   * Sandeep, on the rainbow band: "it ll be diffficult for the user to remember the colors in the
+   * multi color band. need to have a option for multi color? may be near the color selector."
+   *
+   * The Colours row could always hold several colours, but getting there meant pressing + and
+   * picking each one — and then REMEMBERING what you picked, because nothing named the mix. This is
+   * the named state: one colour, or a mix, switched deliberately.
+   *
+   * ⚠️ THE MODE IS DERIVED, NOT STORED. `scatterIsMulti` counts the distinct colours on the cake,
+   * exactly as `scatterPaletteOf` and `scatterIsBand` derive theirs — a stored flag and the cake can
+   * disagree, and the cake is the truth. So an old design with three hand-picked colours reads back
+   * as a mix by itself, with nothing migrated.
+   *
+   * ⚠️ BUT SWITCHING BACK MUST NOT LOSE WHAT YOU HAD, which derivation alone cannot give: once every
+   * instance is one colour the mix is gone from the cake, and there is nowhere to read it from. So
+   * each instance carries its OTHER colour in a stash — `scatterSolo` while it is in the mix,
+   * `scatterMix` while it is back on one colour. Per instance, so `buildDesignSnapshot` (which
+   * stores `stickers` wholesale) round-trips both for free, and so re-entering the mix restores the
+   * exact colour each sprinkle had rather than re-cycling a palette over shuffled seats.
+   *
+   * ⚠️ THE SEED MIX IS SEEDED IN CODE AND OVERLAID FROM CONFIG (root CLAUDE.md rule 3), same shape
+   * as `scatterBigMulFor` and `scatterBandFracFor`. An admin retunes a sprinkle's mix on the element
+   * row; nobody needs a deploy. Only used the FIRST time a mix is asked for — after that the stash
+   * answers, so a baker's own edits are never overwritten by the preset (presets are a starting
+   * point, never forced). */
+  const SCATTER_MIX = Object.freeze(['#E8657F', '#F2C14E', '#7FC46B', '#5BA8D4', '#B07FD4', '#F09A5B']);
+  function scatterMixFor(element) {
+    const m = element?.placement_config?.scatter_mix;
+    return Array.isArray(m) && m.length > 1 && m.every(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c))
+      ? m : SCATTER_MIX;
+  }
+  function scatterIsMulti(elementId) {
+    return scatterPaletteOf(elementId).length > 1;
+  }
+  function setScatterMulti(elementId, on) {
+    const el = elementById.get(elementId);
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter)
+      .sort((a, b) => a.id - b.id);
+    if (!el || !instances.length || scatterIsMulti(elementId) === !!on) return;
+    if (on) {
+      /* Prefer each instance's own stashed mix colour; fall back to cycling the seed mix. The stash
+         is what makes a second visit identical to the first rather than merely similar. */
+      const mix = scatterMixFor(el);
+      instances.forEach((s, i) => updateSticker(s.id, {
+        scatterSolo: s.color ?? null,
+        color: s.scatterMix ?? mix[i % mix.length],
+        scatterMix: null,
+      }));
+    } else {
+      /* Back to one colour: the stashed solo if there is one, else the first colour in the mix —
+         which is what a baker who never had a single colour would expect to land on. */
+      const solo = instances.find(s => s.scatterSolo)?.scatterSolo ?? instances[0].color;
+      instances.forEach(s => updateSticker(s.id, {
+        scatterMix: s.color ?? null,
+        color: solo,
+        scatterSolo: null,
+      }));
+    }
   }
 
   // The cluster's CURRENT finish = the material override its balls share (every member carries the
@@ -6739,7 +6813,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        surface. Each calls the SAME function the card does, never a re-implementation: a hook that
        repeated the logic would agree with itself and prove nothing. Without these, "the mix survives
        a resize", "big ones survive a Count change" and the SIDE surface at all were unreachable. */
-    window.__setScatterSize    = (elementId, v)       => { setScatterSize(elementId, v); return true; };
+    /* ⚠️ THE ZONE IS PART OF THE SIGNATURE NOW. Size is per surface, so a probe that could only say
+       "set the size" could no longer express what the dial does — and a hook whose shape has drifted
+       from the control is a hook that proves the wrong thing. Pass null for the old both-surfaces
+       write, which is still what seeding a new surface uses. */
+    window.__setScatterSize    = (elementId, zone, v) => { setScatterSize(elementId, zone, v); return true; };
+    window.__scatterSizeOf     = (elementId, group) => {
+      const el = elementById.get(elementId);
+      const set = design.stickers.filter(s => s.elementId === elementId && s.scatter
+        && (group == null || scatterGroupOf(s) === group));
+      return set.length ? scatterBaseScaleOf(set, el) : null;
+    };
+    /* The colour MODE, through the card's own writers. Same argument as `__setScatterPalette` right
+       below: the mode is derived from the instances, so a probe that set colours directly would be
+       asserting on its own arithmetic rather than on what the toggle does. */
+    window.__setScatterMulti   = (elementId, on) => { setScatterMulti(elementId, on); return true; };
+    window.__scatterIsMulti    = (elementId) => scatterIsMulti(elementId);
     window.__setScatterDensity = (elementId, zone, n) => { setScatterDensity(elementId, zone, n); return true; };
     window.__scatterSurface    = (elementId, zone, on) => { toggleScatterSurface(elementId, zone, on); return true; };
     /* The base band, through the card's own function — a Chip is clickable from a script, but the
@@ -8337,16 +8426,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   // The scatter card body: a density-managed set of packed instances (sprinkles). Density slider
-  // (add/remove instances, never regenerate), one shared Size, one shared Colour (if the element
-  // allows it), and Remove all. Reuses SizeDial + the colour wheel; no parallel renderer.
+  // (add/remove instances, never regenerate), Count/Big ones/Size PER SURFACE, one shared palette
+  // (if the element allows colour), and Remove all. Reuses SizeDial + the colour wheel; no parallel
+  // renderer.
   function renderScatterBody(card) {
     const all = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
     if (!all.length) return null;
-    /* The SMALL size, shared across surfaces (Size + Colour are one set).
-       ⚠️ NOT `all[0].scale` any more. With big ones on, the first instance may BE a big one — the
-       dial would then show the large size as "the" size, and the next nudge would flatten every
-       sprinkle to it. Same first-instance trap the colour and density paths each hit once already. */
-    const size = scatterBaseScaleOf(all, elementById.get(card.elementId));
+    /* ⚠️ NO SHARED `size` HERE ANY MORE. It used to read the base scale across BOTH surfaces and
+       hand it to one dial; each surface row now derives its own (`suSize`), because the top and the
+       side can differ. A single const would have gone on quietly showing whichever surface happened
+       to sort first — the first-instance trap one level up. */
     const canColor = !!caps?.color;
     const el = elementById.get(card.elementId);
     const scR = scaleRangeOf(el, 0.1, 4, 0.05);   // dial bounds + increment from config
@@ -8373,17 +8462,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 way we did for piping elements". Third instance of one shape, so it reuses the style
                 rather than growing a third copy.
                 ⚠️ No active-tile border here: unlike piping and placement, NOTHING below follows a
-                selection — Count is listed per active surface and Size/Colour are shared. A selected
-                look would promise a focus this card does not have. */}
+                selection — each active surface gets its OWN row of dials, so there is nothing for a
+                selected tile to point at. A selected look would promise a focus this card does not
+                have. */}
             <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {surfaces.map(su => {
               const on = all.some(s => scatterGroupOf(s) === su.group);
+              /* ⚠️ THIS SURFACE'S OWN SIZE, and the tile is why deleting the shared `size` const was
+                 not merely a tidy-up. It used to read one base scale across BOTH surfaces, so once
+                 the top and the side could differ, every preview would have drawn at whichever
+                 surface sorted first. An unticked surface has no instances yet, so it falls back to
+                 the element's configured size — which is what it will actually be seeded at.
+
+                 ⚠️ AND IT BUILT CLEAN WITH THE CONST GONE. `npm run build` passed, `check:bindings`
+                 passed, and the dead reference would still have thrown a ReferenceError the moment a
+                 baker opened a sprinkles card — the JSX closure is only evaluated on render. Rule 6,
+                 demonstrated on my own change: a green build is not a working screen. */
+              const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+              const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
               return (
                 <div key={su.zone} style={{ ...s.previewTile, cursor: 'default' }}>
                 <PreviewTile checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
                   locked={false}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
-                  <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
+                  <TopperPreview parts={scatterPreviewParts(el, su.zone, suSize)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
                 </PreviewTile>
                 </div>
               );
@@ -8418,86 +8520,87 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             )}
           </div>
         )}
-        {/* ── Every dial on ONE row ───────────────────────────────────────────────────────────────
-            Sandeep, looking at this card: "see the alignment of dialers - can you fix it. we can put
-            them in one row actually."
+        {/* ── ONE ROW PER SURFACE ─────────────────────────────────────────────────────────────────
+            Sandeep: "dial controls - lets keep top and side in two rows. and there is only one size
+            control. user can select diff sizes for top and side."
 
-            It had grown THREE alignments in one card — Count and Big ones each in a left-labelled
-            column with the dial floating centre, and Size on a row with its label beside it — and
-            the labels were printed twice over, because `DialCell` already captions itself
-            (`ControlCell`) and each block added a heading saying the same word above it.
+            THE PREVIOUS SHAPE was every dial in ONE scroller — his earlier ask, "we can put them in
+            one row actually", which was right when a surface owned only Count and Big ones. Adding a
+            per-surface Size makes it six cells on one line, and six cells scroll: the baker would
+            have had to drag sideways to reach the thing they were looking for, on the axis the cake
+            is not on. A row per surface is three cells each, which fits a 375px phone without
+            scrolling at all.
 
-            ⚠️ THE SAME ROW `StripeControls` AND THE CREAM CARD USE: `ScrollFadeRow` over
-            `s.previewRow`, `DialCell`s inside it, no heading above. `ControlCell`'s own header says
-            why the caption belongs below and INSIDE the scroller — a pinned heading beside a
-            scrolling row "opens with 'Colour' and then shows whatever happens to be in view" — and
-            its `minHeight: 46` is what keeps every cell on one baseline. Fourth use of one shape,
-            so it reuses it rather than growing a fourth copy.
+            ⚠️ AND IT FIXES THE CAPTIONS. With one row every cell had to name its surface — "Count
+            Top · Big Top · Count Side · Big Side" — because nothing else said which was which. A
+            row that IS the surface carries that in one label at its head, so the cells go back to
+            plain nouns: Count, Big ones, Size. Same words on both rows, which is what makes them
+            comparable at a glance.
 
-            ⚠️ SIZE IS A `DialCell` NOW, not a bare `SizeDial` glued to a left-hand label. That was
-            the third alignment, and it is the one that made the card look broken rather than merely
-            loose.
+            ⚠️ STILL `ScrollFadeRow` OVER `s.previewRow`, per surface. Three cells will not overflow
+            on any phone, but the row keeps its own fade rather than my asserting a width it will
+            never exceed — and `ControlCell`'s `minHeight: 46` is what holds both rows on the same
+            baseline as each other.
 
-            ⚠️ EVERY CAPTION NAMES ITSELF. With both surfaces ticked this row is five cells, and
-            captions of "Top · Side · Top · Side · Size" would say nothing about WHICH pair is which
-            once the heading above them was gone. So each cell carries its own noun, narrowed by the
-            surface only when there is more than one.
+            ⚠️ THE HEADING IS THE SURFACE, and it only appears when there are two. One surface ticked
+            means one row, and a row labelled "Top" above dials that could only ever be top is noise.
 
-            Colours stays out of this row deliberately: it is a swatch grid, not a dial, and pairing
-            them would put two kinds of control on one baseline — the exact raggedness being fixed. */}
-        {onSurfaces.length > 0 && (
-          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
-            {onSurfaces.map(su => {
-              const c = all.filter(x => scatterGroupOf(x) === su.group).length;
-              // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the dial.
-              /* ⚠️ THE BAND'S OWN CEILING. A band is roughly a quarter of the wall, so a cap derived
-                 from the whole side would let Count run four times past what the strip can hold and
-                 pack the seats solid — the dial's maximum has to mean the same thing in both modes. */
-              const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el),
-                scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
-              return (
-                /* Count is per ACTIVE SURFACE — a denser top than side is a real choice — while Size
-                   and Colour are shared. A count, so integer fmt and rounded on write. */
-                <DialCell key={`count-${su.group}`}
-                  label={onSurfaces.length > 1 ? `Count ${su.label}` : 'Count'}
+            Colours stays out of these rows deliberately: it is a swatch grid, not a dial, and it is
+            shared across both surfaces — putting it on one of them would say otherwise. */}
+        {onSurfaces.map(su => {
+          const c = all.filter(x => scatterGroupOf(x) === su.group).length;
+          // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the dial.
+          /* ⚠️ THE BAND'S OWN CEILING. A band is roughly a quarter of the wall, so a cap derived
+             from the whole side would let Count run four times past what the strip can hold and
+             pack the seats solid — the dial's maximum has to mean the same thing in both modes. */
+          const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el),
+            scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
+          const inSet = c;
+          /* ⚠️ THIS SURFACE'S OWN BASE SIZE, not the element's. `scatterBaseScaleOf` over the whole
+             set would show the top's size on the side's dial the moment the two differ — which is
+             the entire point of the change. Same "never the first instance" rule applies within the
+             group: with big ones on, `[0]` may itself be big. */
+          const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+          const suSize = scatterBaseScaleOf(suSet, el);
+          return (
+            <div key={`dials-${su.group}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {onSurfaces.length > 1 && <span style={s.editPanelLabel}>{su.label}</span>}
+              <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+                {/* Count is per ACTIVE SURFACE — a denser top than side is a real choice.
+                    A count, so integer fmt and rounded on write. */}
+                <DialCell label="Count"
                   value={Math.min(c, maxCount)} min={1} max={maxCount} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterDensity(card.elementId, su.zone, Math.round(v))} />
-              );
-            })}
-            {onSurfaces.map(su => {
-              const inSet = all.filter(x => scatterGroupOf(x) === su.group).length;
-              return (
-                /* ── Big ones ──────────────────────────────────────────────────────────────────
-                   A few larger sprinkles mixed through the small ones — the pearls among the dots.
+                {/* ── Big ones ──────────────────────────────────────────────────────────────────
+                    A few larger sprinkles mixed through the small ones — the pearls among the dots.
 
-                   ⚠️ DEFAULT 0, AND THAT IS THE WHOLE CONTRACT. "default option is the existing
-                   behaviour. the new change is only as an option." At zero nothing is written, no
-                   instance carries `scatterBig`, and the scatter is identical to what it has always
-                   been — including every cake saved before this existed.
+                    ⚠️ DEFAULT 0, AND THAT IS THE WHOLE CONTRACT. "default option is the existing
+                    behaviour. the new change is only as an option." At zero nothing is written, no
+                    instance carries `scatterBig`, and the scatter is identical to what it has always
+                    been — including every cake saved before this existed.
 
-                   ⚠️ A COUNT, NOT A PROPORTION: "count is safe i believe. user would have control."
-                   Adding more sprinkles does not quietly multiply the big ones.
-
-                   ⚠️ PER SURFACE, like Count and unlike Size/Colour, so "two big ones on top, none
-                   on the side" is expressible. */
-                <DialCell key={`big-${su.group}`}
-                  label={onSurfaces.length > 1 ? `Big ${su.label}` : 'Big ones'}
+                    ⚠️ A COUNT, NOT A PROPORTION: "count is safe i believe. user would have control."
+                    Adding more sprinkles does not quietly multiply the big ones. */}
+                <DialCell label="Big ones"
                   value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
                   min={0} max={inSet} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterBigCount(card.elementId, su.zone, Math.round(v))} />
-              );
-            })}
-            {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
-                instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
-                was uniform and would silently WIPE a mix now — one nudge and every pearl becomes a
-                dot. `setScatterSize` writes the base to the smalls and the clamped large size to the
-                bigs, so the mix survives a resize and stays proportional. */}
-            <DialCell label="Size" value={size} min={scR.min} max={scR.max} step={scR.step}
-              onChange={v => setScatterSize(card.elementId, v)} />
-          </ScrollFadeRow>
-        )}
+                {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
+                    instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
+                    was uniform and would silently WIPE a mix now — one nudge and every pearl becomes a
+                    dot. `setScatterSize` writes the base to the smalls and the clamped large size to the
+                    bigs, so the mix survives a resize and stays proportional.
+
+                    ⚠️ AND IT IS SCOPED TO THIS SURFACE now — the zone goes in, so dialling the side
+                    leaves the top where the baker put it. */}
+                <DialCell label="Size" value={suSize} min={scR.min} max={scR.max} step={scR.step}
+                  onChange={v => setScatterSize(card.elementId, su.zone, v)} />
+              </ScrollFadeRow>
+            </div>
+          );
+        })}
         {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
             One wheel here set every instance to the same colour, because the write fanned it across
             the whole group. But each scatter instance is its own sticker record with its own `color`,
@@ -8512,9 +8615,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {canColor && (() => {
           const palette = scatterPaletteOf(card.elementId);
           const pal = palette.length ? palette : ['#ffffff'];
+          const isMulti = scatterIsMulti(card.elementId);
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <span style={s.editPanelLabel}>Colours</span>
+              {/* ── One colour, or a mix ──────────────────────────────────────────────────────────
+                  Sandeep: "it ll be diffficult for the user to remember the colors in the multi
+                  color band. need to have a option for multi color? may be near the color selector."
+
+                  ⚠️ BESIDE THE LABEL, which is where he asked for it and also the only place it
+                  reads as being ABOUT the swatches below rather than about the band above.
+
+                  ⚠️ A `Chip`, matching "Band at the base" a few lines up and the "Scraped edge"
+                  toggle in the tier sheet. This is on/off, and Chip brings aria-pressed, focus and
+                  the phone hit-target with it. Two chips (One colour | Multi) would have been a
+                  radio group wearing a toggle's clothes; one pressed state says the same thing.
+
+                  ⚠️ THE SWATCHES STILL SHOW EVERY COLOUR, which is the actual answer to "difficult
+                  to remember" — the mix is never hidden behind the mode. Tapping it fills them in
+                  for you; editing, removing and + all still work exactly as before, so the preset is
+                  a starting point rather than a thing you are locked into.
+
+                  ⚠️ AND `+` STILL IMPLIES THE MODE. The chip is derived from the palette, so adding
+                  a second colour by hand lights it up and removing back to one clears it. One source
+                  of truth, no way for the toggle and the cake to disagree. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={s.editPanelLabel}>Colours</span>
+                <Chip label="Multi colour" isMobile={isMobile}
+                      active={isMulti}
+                      onClick={() => setScatterMulti(card.elementId, !isMulti)} />
+              </div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
                 {pal.map((c, i) => (
                   <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
