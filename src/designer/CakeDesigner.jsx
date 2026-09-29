@@ -143,6 +143,7 @@ import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS } from './geom
 import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
+import { CAVITY_DEFAULTS } from './geometry/topCavity.js';
 import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
@@ -1910,7 +1911,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -12892,6 +12893,60 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       onChange={(key, value) => setTierStyleParam(selectedEl.index, key, value)}
                     />
                   )}
+                  {/* ── Top edge: a dished top with a scraped cream lip ──────────────────────────
+                    *
+                    * Sandeep: *"it should go under STYLE i think. thoughts?"* — and the answer is
+                    * the one the Cream layer below already established, for the same reason.
+                    *
+                    * ⚠️ IT CANNOT BE A STYLE CHIP, BECAUSE THE TWO COMPOSE. `frostingStyle` is ONE
+                    * string per tier: Smooth, Cream Wave, Ribbed and Vertical Piping are mutually
+                    * exclusive ways the WALL is finished. A dished top goes with every one of them
+                    * — a ribbed wall under a scraped rim is a cake somebody makes. A fifth chip
+                    * would mean choosing the cavity INSTEAD of Ribbed and would delete that.
+                    *
+                    * ⚠️ AND IT IS A DIFFERENT SURFACE. Style finishes the wall; this finishes the
+                    * top. Same section, because both answer "how is the cream worked"; own
+                    * heading, because they are not the same question.
+                    *
+                    * ⚠️ INLINE, NOT A NavRow — which is where it parts company with Cream layer.
+                    * That one earned a card: several bands per tier, an edge you paint while the
+                    * cake spins, an anchor, a gold rim. This is two controls, fewer than Cream
+                    * Wave's Depth and Waviness, which render inline right here. A row that opens a
+                    * card holding two dials is a door in front of a cupboard.
+                    *
+                    * ⚠️ HEIGHT ON A DIAL, IRREGULARITY ON A BUTTON. Height is a quantity with a
+                    * direction and a baker knows which way they want it. The irregularity is not —
+                    * nobody wants seed 7 over seed 8, they want to see another one, and a dial over
+                    * a seed is a control whose numbers carry no meaning.
+                    *
+                    * Width, crest, swells and wobble stay out: each was chosen against the
+                    * reference photographs and they are what make it read as cream rather than as a
+                    * moulding. They belong to an admin row, the way the acrylic topper's sheet and
+                    * bridge do. */}
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                                textTransform: 'uppercase', marginTop: 10 }}>Top edge</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <Chip label="Scraped rim" isMobile={isMobile}
+                          active={!!tier?.topCavity?.on}
+                          onClick={() => setTierCavity(selectedEl.index,
+                            tier?.topCavity?.on ? { on: false } : { on: true })} />
+                    {tier?.topCavity?.on && (<>
+                      <SizeDial size={tier.topCavity.lip ?? CAVITY_DEFAULTS.lip}
+                        min={0} max={0.18} step={0.005}
+                        fmt={v => (v === 0 ? 'flat' : `${Math.round(v * 1000) / 10}`)}
+                        onChange={v => setTierCavity(selectedEl.index, { lip: v })} />
+                      <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                      {/* ⚠️ THE SEED IS STORED, or Shuffle is a preview toy — a design that cannot
+                          reproduce the rim a baker chose has not saved their work. A fresh number
+                          rather than the next one: "seed 8 after seed 7" invites the idea they are
+                          ordered and that further along is a better one. They are different hands. */}
+                      <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                        onClick={() => setTierCavity(selectedEl.index,
+                          { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
+                      <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                    </>)}
+                  </div>
+
                   {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
                     *
                     * Sandeep: "cream layer is sitting in finish category. its actually a cream

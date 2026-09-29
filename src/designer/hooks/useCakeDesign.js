@@ -161,6 +161,7 @@ export function toCanvasConfig(design) {
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
+        topCavity:     t.topCavity ?? null,   // scraped rim: cream heaped at the top edge, dished in the middle
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -391,6 +392,29 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, styleParams: { ...(t.styleParams ?? {}), [key]: value } }
+        : t),
+    }));
+  }
+
+  /* ── The dished top with its scraped cream lip ─────────────────────────────────────────────────
+   *
+   * ⚠️ NOT A `frostingStyle`, AND THAT IS THE SAME ARGUMENT THE CREAM LAYER ALREADY WON. `style` is
+   * one string per tier — Smooth, Cream Wave, Ribbed, Vertical Piping are mutually exclusive ways
+   * the WALL is finished. A dished top COMPOSES with every one of them: a ribbed wall under a
+   * scraped rim is a cake somebody makes. Filing it as a fifth chip would delete that combination,
+   * which is what CakeDesigner's cream-layer note says in so many words.
+   *
+   * Sparse, like `styleParams`: absent means no cavity, so nothing in the catalogue or in a saved
+   * design changes until somebody switches it on.
+   *
+   * ⚠️ THE SEED LIVES HERE RATHER THAN IN THE COMPONENT, or Shuffle is a preview toy. The edge is
+   * random; a design that cannot reproduce the exact rim a baker chose has not saved their work.
+   */
+  function setTierCavity(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, topCavity: changes === null ? undefined : { ...(t.topCavity ?? {}), ...changes } }
         : t),
     }));
   }
@@ -1601,7 +1625,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,

@@ -35,6 +35,7 @@ import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
  * geometry file cannot import this one without a cycle. Re-exported so every existing importer
  * (previewCake) keeps its path. */
 import { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism, insetPolygon } from '../geometry/prism.js';
+import { buildTopCavity } from '../geometry/topCavity.js';
 export { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism };
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
@@ -1496,6 +1497,10 @@ export default function CakeTier({
   topPiping = null,
   bottomPiping = null,
   creamLayers = null,   // raised two-tone bands (second cream layer) — round tiers only
+  /* The dished top with its scraped cream lip: { on, lip, seed, … } or null. A PROP, not a `tier`
+     lookup — this component takes the tier flattened, the way `creamLayers` and `styleParams` do,
+     so reaching for a tier object here would be the only place in the file that did. */
+  topCavity = null,
 
   // Element id of the piping whose card is expanded — every ring of that element is
   // highlighted on the cake. Legacy single-piping callers fall back to the booleans.
@@ -1612,6 +1617,15 @@ export default function CakeTier({
         :  0),
     [shp],
   );
+  /* The cavity's geometry, or null. Absent `topCavity` means every existing tier and every saved
+     design is untouched — the sparse shape the setter writes, read back sparsely. */
+  const cavityGeo = useMemo(() => {
+    if (!topCavity?.on) return null;
+    const g = buildTopCavity(shp, height, topCavity);
+    return g;
+  }, [topCavity, shp, height]);
+  useEffect(() => () => cavityGeo?.dispose(), [cavityGeo]);
+
   // Round fondant tiers get a draped, rounded-edge body (config-driven via the finish's
   // `edge: { kind:'round', frac }`). Other round tiers stay a plain cylinder + lid. null ⇒ cylinder.
   const roundedGeo = useMemo(
@@ -1878,6 +1892,22 @@ export default function CakeTier({
             <meshStandardMaterial color={capColor} roughness={mat.roughness - 0.08} />
           </mesh>
         </>
+      )}
+      {/* ── The dished top with its scraped cream lip ─────────────────────────────────────────────
+          ⚠️ AFTER EVERY BODY BRANCH, NOT INSIDE ONE. The tier has five of them — rounded lathe,
+          plain cylinder, styled wall, prism, stroke wall — and a cavity belongs on the top of all of
+          them. Built from `perimeter(shp)` for the same reason, so a heart's rim follows a heart.
+          See geometry/topCavity.js for why this is a separate piece rather than a dip in the body.
+
+          ⚠️ `capColor` AND `mat`, WHICH IS WHAT MAKES IT THE CAKE'S OWN CREAM. Sandeep's ask was
+          explicit: *"it should build that cavity with same cream color."* The lid a line or two
+          above takes `capColor` for the same reason — under a vertical gradient a frame this shallow
+          cannot show a blend, so it takes the top stop rather than a band of the wrong colour. */}
+      {cavityGeo && (
+        <TierBody position={[0, topY, 0]} color={capColor} surf={mat} grainExtent={null}
+          gradient={null} geoSig={cavityGeo.uuid} castShadow receiveShadow>
+          <primitive key={cavityGeo.uuid} object={cavityGeo} attach="geometry" />
+        </TierBody>
       )}
       {!isPrism && (
         <SecondCreamLayers layers={creamLayers ?? []} radius={radius} yBase={yBase} height={height}
