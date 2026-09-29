@@ -1040,6 +1040,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // renderer only splits/folds when `foldable` is true; fold (deg) / spine (0–1) tune
           // it, falling back to DEFAULT_FOLD_DEG / DEFAULT_SPINE at render. Absent → flat plane.
           foldable:      element.placement_config?.foldable === true,
+          /* ⚠️ DEFAULT TRUE, AND THE INVERSION IS DELIBERATE. A billboard here applies YAW ONLY — `lockX` and `lockZ` are both true — so it turns the
+     piece to face the viewer and leaves Tilt, Roll and Spin to compose on top. It is right for a
+     flat decal whose artwork must never be seen edge-on, and wrong for a butterfly: turn the cake
+     and every one of them swivels to keep facing you, when the reference photographs show them
+     facing every which way. Opting out lets a piece keep the facing it was placed with.
+ 
+             Every element in the catalogue already billboards, so the flag has to be OPT-OUT: absent
+             means on, and only `billboard: false` changes anything. A flag whose absence meant "does
+             not" would silently re-pose the whole catalogue on its next save. */
+          billboard:     element.placement_config?.billboard !== false,
           fold:          element.placement_config?.fold ?? null,
           spine:         element.placement_config?.spine ?? null,
           // Verge seat anchor (placement_config.verge.seat): 'center' (default) rests the mid-spine on
@@ -1119,7 +1129,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
-          rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
+          /* `extra` wins, for the reason the lean fields above now do: every positional field here
+             honours it, and the ones that did not were simply impossible to place WITH — which made
+             them impossible to look at in a harness, and a state that cannot be reached hides every
+             bug in it. */
+          rotation:      extra.rotation ?? seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
           /* ⚠️ `extra` WINS, LIKE IT DOES FOR SCALE AND yOffset ABOVE — and it did not, which made a
              lean impossible to place with and therefore impossible to look at. That is not academic:

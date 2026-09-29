@@ -2380,7 +2380,21 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
 
             Drawn before `inner` so the artwork still covers the tuck. */}
         {wire && <ElementWire wire={wire} />}
-        {(isGlb2d || isVerge || isInsert) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
+        {/* ⚠️ `sticker.billboard === false` IS AN ELEMENT SAYING IT KEEPS ITS OWN FACING, and it
+            joins three poses that already opted out for the same reason.
+ 
+            ⚠️ AND IT DOES NOT AFFECT Tilt OR Spin, WHICH I FIRST WROTE THAT IT DID. `lockX` and
+            `lockZ` are both true, so this billboard applies YAW ONLY and every other rotation
+            composes on top of it — measured by sweeping spin with the flag on and off and getting
+            identical frames. What it changes is the RESTING facing: turn the cake and a billboarded
+            butterfly swivels to keep looking at you, where the reference photographs show a swarm
+            facing every which way. At the default camera angle the two coincide exactly, which is
+            why a fixed-angle harness cannot tell them apart.
+ 
+            Config, never element type (INVARIANTS #1): placement_config.billboard. */}
+        {(isGlb2d || isVerge || isInsert || sticker.billboard === false)
+          ? inner
+          : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }

@@ -84,6 +84,11 @@ const FOLD = q.get('fold') === '1';
    produced a symptom plausible enough to explain. The harness takes degrees because that is what
    the card reads back. */
 const deg = v => (v * Math.PI) / 180;
+/* ⚠️ SPIN IS THE CLEAN TEST FOR THE BILLBOARD, and tilt is not. Rendered from one fixed angle, a
+   billboarded piece and a free one look identical at yaw 0 — they coincide, which is exactly what a
+   billboard at rest means. Spin separates them from the same camera: inside the wrapper it is
+   overruled every frame, outside it the piece turns. */
+const SPIN = q.has('spin') ? deg(Number(q.get('spin'))) : 0;
 const TILT = q.has('tilt') ? deg(Number(q.get('tilt'))) : 0;
 const ROLL = q.has('roll') ? deg(Number(q.get('roll'))) : 0;
 const glb = q.get('glb');
@@ -94,7 +99,7 @@ const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUT
 const FOLDED = ART === BUTTERFLY ? q.get('fold') !== '0' : FOLD;
 
 const PIECE = {
-  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${ART.slice(-24)}`,
+  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${SPIN}-${q.get('face')}-${ART.slice(-24)}`,
   name: 'element on a wire',
   image_url: ART,
   allowed_zones: ['top_surface'],
@@ -108,6 +113,9 @@ const PIECE = {
        body, and a wire hung from the flat bottom starts in mid-air below it. Sandeep: *"butterfly
        can be folded in core. so need to adjust wire accordingly."* */
     ...(FOLDED ? { foldable: true } : {}),
+    /* `?face=0` turns the billboard off — the case that makes Tilt and Spin visibly move a piece
+       rather than foreshorten it. See placement_config.billboard in admin. */
+    ...(q.get('face') === '0' ? { billboard: false } : {}),
     wire: shape,
   },
   // The capability is what offers the wire; without it the designer shows no toggle at all.
@@ -123,6 +131,7 @@ createRoot(document.getElementById('root')).render(
                       ...(WIRE ? { wire: { on: true, ...shape } } : {}),
                       ...(TILT ? { tiltAngle: TILT } : {}),
                       ...(ROLL ? { rollAngle: ROLL } : {}),
+                      ...(SPIN ? { rotation: SPIN } : {}),
                     }}
                     style={{ height: '100%' }} />
   </div>,
