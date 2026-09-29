@@ -13105,8 +13105,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     * reference photographs and they are what make it read as cream rather than as a
                     * moulding. They belong to an admin row, the way the acrylic topper's sheet and
                     * bridge do. */}
+                  {/* 4, not 10: the sheet body already puts its own `gap: 10` above this heading, so
+                      the original margin was buying a 20px break where 14px reads the same — and this
+                      tab is 119px over its visible height with the Cream layer row at the end paying
+                      for it. See ChipPicker's note for the rest of that budget. */}
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
-                                textTransform: 'uppercase', marginTop: 10 }}>Top edge</div>
+                                textTransform: 'uppercase', marginTop: 4 }}>Top edge</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <Chip label="Scraped edge" isMobile={isMobile}
                           active={!!tier?.topCavity?.on}

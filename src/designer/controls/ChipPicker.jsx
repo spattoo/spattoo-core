@@ -32,8 +32,31 @@ export default function ChipPicker({ label, options, value, onChange }) {
   );
 }
 
+/* ⚠️ THE MARGINS ARE TIGHT ON PURPOSE, and this is a partial fix that should not be mistaken for a
+ * complete one. On the tier sheet's Frosting tab at 390×844 the body shows 316px against 459px of
+ * content, so the "Cream layer" row at the end sat 119px below the fold. FROSTING and STYLE are
+ * 122px each — 64% of the section — because four and five chips wrap to two lines.
+ *
+ * ⚠️ WRAPPING IS THE RIGHT BEHAVIOUR AND STAYS. Scrolling the row instead was tried and reverted:
+ * it recovered 104px and then clipped the labels at both edges ("…rcream", "Vertic…"), which is the
+ * one thing `ScrollFadeRow` and `Segmented` both refuse — "a wrapped second row is always better
+ * than a lie". Two honest lines beat one truncated one.
+ *
+ * So what is left to give is spacing, and only this control's own: `section` 14→4 and `label` 10→6
+ * buys 28px across the two rows. Between the Frosting and Style groups that still leaves 14px of
+ * separation, because the sheet body's own `gap: 10` sits on top of this margin — which is also why
+ * the margin could go this low without the groups running together.
+ *
+ * ⚠️ NOT THE BODY'S `gap`. Trimming `s.sheetBody`'s 10px would buy 40px more and reflow every other
+ * tab — Colour, Pattern, Size — to fix a crowding problem that belongs to this one.
+ *
+ * ⚠️ IT DOES NOT CLOSE THE GAP. ~34px against 119px. The row is still reached by scrolling, which
+ * the sheet's double-chevron marker announces. Fixing it properly means one of the two things this
+ * comment rules out or a block leaving this tab — recorded so the next person does not re-try the
+ * scrolling row and rediscover the clipping.
+ */
 const styles = {
-  section: { marginBottom: 14 },
+  section: { marginBottom: 4 },
   label: {
     display: 'block',
     fontSize: 13,
@@ -41,7 +64,7 @@ const styles = {
     color: INK,
     letterSpacing: 1,
     textTransform: 'uppercase',
-    marginBottom: 10,
+    marginBottom: 6,
     fontFamily: "'Quicksand', sans-serif",
   },
   chipRow: { display: 'flex', gap: 8, flexWrap: 'wrap' },
