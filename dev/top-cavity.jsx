@@ -27,6 +27,10 @@ import { buildTopCavity, CAVITY_DEFAULTS } from '../src/designer/geometry/topCav
  *   /top-cavity.html?dish=0&lip=0.09     lip only: a bowl rim with a flat floor
  *   /top-cavity.html?crest=0.6           the ridge pushed inward, away from the very edge
  *   /top-cavity.html?off=1               no cavity at all, the control case
+ *   /top-cavity.html?wobble=0            the machined torus this started as — the control for the
+ *                                        thing that matters most, and the one to keep looking at
+ *   /top-cavity.html?swells=6            fewer, slower passes of the scraper
+ *   /top-cavity.html?seed=3              a different cake with the same settings
  */
 const q = new URLSearchParams(location.search);
 const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
@@ -45,10 +49,13 @@ function Tier() {
     dish:  num('dish',  CAVITY_DEFAULTS.dish),
     width: num('width', CAVITY_DEFAULTS.width),
     crest: num('crest', CAVITY_DEFAULTS.crest),
+    wobble: num('wobble', CAVITY_DEFAULTS.wobble),
+    swells: num('swells', CAVITY_DEFAULTS.swells),
+    seed:   num('seed',   CAVITY_DEFAULTS.seed),
   };
   const cavity = useMemo(
     () => (q.get('off') === '1' ? null : buildTopCavity(SHAPE, HEIGHT, cfg)),
-    [cfg.lip, cfg.dish, cfg.width, cfg.crest],
+    [cfg.lip, cfg.dish, cfg.width, cfg.crest, cfg.wobble, cfg.swells, cfg.seed],
   );
   useEffect(() => () => cavity?.dispose(), [cavity]);
 

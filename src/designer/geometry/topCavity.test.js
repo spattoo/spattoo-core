@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildTopCavity, cavityProfile, CAVITY_DEFAULTS } from './topCavity.js';
+import { buildTopCavity, cavityProfile, CAVITY_DEFAULTS, AROUND, ACROSS } from './topCavity.js';
 
 const round = { kind: 'round', radius: 1 };
 const rect = { kind: 'rect', halfW: 1.4, halfD: 0.9, cornerR: 0.2 };
@@ -70,10 +70,57 @@ describe('every dimension is a fraction of the tier', () => {
     expect(b.lo).toBeCloseTo(a.lo * 2, 5);
   });
 
-  it('puts the ridge above the tier top and the floor below it', () => {
+  /* ⚠️ A RANGE, NOT A HEIGHT, and the exact-height version of this test was right until the ridge
+     started wandering. The lip is nominal now, not actual: the wander carries it above and below,
+     which is the point. Asserting `hi === lip` would pin the very uniformity the wobble exists to
+     destroy — a test that passes only while the feature is broken. */
+  it('puts the ridge above the tier top and the floor below it, within the wander', () => {
     const { lo, hi } = extent(buildTopCavity(round, 1));
-    expect(hi).toBeCloseTo(CAVITY_DEFAULTS.lip, 5);
+    const swing = 1 + CAVITY_DEFAULTS.wobble;
+    expect(hi).toBeGreaterThan(0);
+    expect(hi).toBeLessThanOrEqual(CAVITY_DEFAULTS.lip * swing + 1e-6);
     expect(lo).toBeCloseTo(-CAVITY_DEFAULTS.dish, 5);
+  });
+
+  /* ⚠️ ONE RING, AROUND, NOT EVERY VERTEX ABOVE A THRESHOLD. Two things move `y`: the profile's
+     rise across the lip, and the circumferential wander. Filtering by height mixes them, so a
+     uniform lip "failed" a uniformity test — the spread measured was the profile doing its job.
+     A single ring holds the profile constant and leaves only the wander. */
+  it('is uniform only when asked to be', () => {
+    const ringHeights = (g, j) => {
+      const p = g.attributes.position.array;
+      const out = [];
+      for (let i = 0; i < AROUND; i++) out.push(p[(j * AROUND + i) * 3 + 1]);
+      return out;
+    };
+    const spread = ys => Math.max(...ys) - Math.min(...ys);
+    const crestRing = Math.round(CAVITY_DEFAULTS.crest * ACROSS);
+
+    /* ⚠️ THE MACHINED TORUS IS THE THING TO GUARD AGAINST, so it gets a test of its own. Swept one
+       profile round a contour, the ridge is the same height everywhere — which is what shipped and
+       what Sandeep saw: *"it looks like a regular uniform elevation."* */
+    expect(spread(ringHeights(buildTopCavity(round, 1, { wobble: 0 }), crestRing))).toBeCloseTo(0, 6);
+
+    const scraped = ringHeights(buildTopCavity(round, 1, { wobble: 0.35 }), crestRing);
+    expect(spread(scraped)).toBeGreaterThan(CAVITY_DEFAULTS.lip * 0.1);
+  });
+
+  /* ⚠️ HEIGHT AND WIDTH MUST NOT MOVE TOGETHER. One noise ring driving both makes the ridge tallest
+     exactly where it is widest — a regularity of its own, and a more obvious one than the uniform
+     lip it replaced. */
+  it('wanders in width independently of height', () => {
+    const g = buildTopCavity(round, 1);
+    const p = g.attributes.position.array;
+    /* The innermost ring is the one pushed furthest in; its radius varies iff the width wanders. */
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < p.length; i += 3) {
+      const y = p[i + 1];
+      if (y > -CAVITY_DEFAULTS.dish + 1e-6) continue;   // only the floor ring
+      const r = Math.hypot(p[i], p[i + 2]);
+      if (r < 1e-6) continue;                            // skip the centre vertex
+      lo = Math.min(lo, r); hi = Math.max(hi, r);
+    }
+    expect(hi - lo).toBeGreaterThan(0);
   });
 
   /* ⚠️ THE LIP IS A BAND, NOT A LINE, and a fat one — both photographs show a scraped ridge rather

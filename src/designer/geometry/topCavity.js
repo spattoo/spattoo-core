@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { perimeter } from './surface.js';
+import { ringNoise } from '../utils/random.js';
 
 /* ── A dished top with a raised cream lip ───────────────────────────────────────────────────────
  *
@@ -44,14 +45,35 @@ export const CAVITY_DEFAULTS = Object.freeze({
   /* Where the crest sits across the lip, 0 at the rim and 1 at the inner edge. Under a third,
      because a scraper drags the cream UP at the very edge and it falls away inward. */
   crest: 0.3,
+  /* ── How uneven the ridge is ───────────────────────────────────────────────────────────────
+   *
+   * ⚠️ A UNIFORM LIP IS THE ONE THING THIS CANNOT BE. The first version swept one profile round the
+   * contour and produced a machined torus — Sandeep: *"it looks like a regular uniform elevation.
+   * thats not the case in reality. look at the reference images. since its cream and this cavity is
+   * done manually, it wont be unform."* A scraper is dragged round by hand: it rides up, it drops,
+   * the ridge fattens where it hesitated. Neither photograph has two matching inches of rim.
+   *
+   * `wobble` is how far the ridge strays from its nominal height and width, as a fraction of each.
+   * It moves BOTH — a ridge that varied only in height reads as a wave rather than as cream, since
+   * the part a scraper pushes about is how much of it there is. */
+  wobble: 0.35,
+  /* How many slow swells around the cake. The torn cream band uses 48, which is right for tearing;
+     a scraped rim is a dozen unhurried passes of a hand, not fifty nicks. */
+  swells: 13,
+  /* So one cake is not every cake. Two tiers with the same settings should not be stamped from the
+     same die, which is the failure this whole block exists to avoid. */
+  seed: 7,
 });
 
 /* How finely the ring is sampled around the cake. The lip is a silhouette seen edge-on against the
    sky in most views, so it shows faceting sooner than a wall does. */
-const AROUND = 160;
+/* Exported so a test can pull one ring out of the buffer. Circumferential wander and the profile's
+   own rise across the lip both change `y`, so a test that filters by height alone measures the two
+   together — which is how a uniform-lip assertion came to fail on a uniform lip. */
+export const AROUND = 160;
 /* How many rings across the lip's width. The profile is a curve, and four segments read as a
    chamfer rather than a scrape. */
-const ACROSS = 10;
+export const ACROSS = 10;
 
 const clamp01 = v => Math.max(0, Math.min(1, v));
 
@@ -98,19 +120,31 @@ export function buildTopCavity(shape, height, cfg = {}) {
     : (shape.radius ?? Math.max(1e-3, perim.length / (2 * Math.PI)));
   const width = c.width * span;
 
+  /* ⚠️ TWO NOISE RINGS, NOT ONE, AND OFFSET SEEDS. Driving height and width from the same wander
+     makes the ridge tallest exactly where it is widest, every time — a regularity of its own, and a
+     more obvious one than the uniform lip it replaced. Independent rings let it be tall and thin in
+     one place and low and fat in another, which is what a hand does. */
+  const hN = ringNoise(AROUND, c.swells, c.seed);
+  const wN = ringNoise(AROUND, c.swells, c.seed + 101);
+
   const pos = [];
   const idx = [];
   const ringOf = [];
 
   for (let j = 0; j <= ACROSS; j++) {
     const u = j / ACROSS;
-    const y = cavityProfile(u, { lip, dish, crest: c.crest });
     const start = pos.length / 3;
     for (let i = 0; i < AROUND; i++) {
       const p = perim.at((i / AROUND) * perim.length);
+      /* ⚠️ THE WANDER IS PER-SAMPLE, SO THE PROFILE IS RESOLVED INSIDE THIS LOOP rather than once
+         per ring. That is the whole difference between a swept solid of revolution and a scraped
+         edge: the cross-section is no longer the same all the way round. */
+      const lipHere = lip * (1 + c.wobble * hN[i]);
+      const wHere = width * (1 + c.wobble * 0.6 * wN[i]);
+      const y = cavityProfile(u, { lip: lipHere, dish, crest: c.crest });
       /* Inward along the contour's own outward normal — the one thing every perimeter reports,
          which is what makes a heart inset like a heart rather than like the circle round it. */
-      pos.push(p.x - p.nx * width * u, y, p.z - p.nz * width * u);
+      pos.push(p.x - p.nx * wHere * u, y, p.z - p.nz * wHere * u);
     }
     ringOf.push(start);
   }
