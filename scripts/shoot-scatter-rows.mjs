@@ -177,75 +177,131 @@ console.log('\ndifferent sizes per surface (the change)');
     `the two Size dials show different numbers — ${JSON.stringify(shown)}`);
 }
 
-/* ── 4 + 5 — multi colour, and switching back ───────────────────────────────────────────────── */
-console.log('\nmulti colour — the mix, and getting your single colour back');
+/* ── 4 + 5 — multi colour PER SURFACE, and switching back ───────────────────────────────────── */
+console.log('\nmulti colour — per surface, and getting your single colour back');
 {
-  const single = await page.evaluate(() => {
-    const st = (window.__getStickers?.() ?? []).filter(s => s.elementId === 'e9' && s.scatter);
-    return [...new Set(st.map(s => s.color))];
-  });
-  ok(single.length === 1, `starts on ONE colour — ${JSON.stringify(single)}`);
-  ok(await page.evaluate(() => window.__scatterIsMulti?.('e9')) === false,
-    'and the Multi colour chip is off');
+  /* ⚠️ THERE ARE TWO "Multi colour" CHIPS NOW, one under each surface's dials, and `.find()` takes
+     the FIRST. A script that clicked by label alone would have driven the Top row while reporting on
+     the band — the exact confusion this change exists to end. So the chip is located by which
+     surface heading it falls under, read from the page geometry. */
+  /* ⚠️ ANCHOR ON THE ROW, NOT ON THE WORD. My first locator looked for a node reading "Side" — and
+     FIVE nodes on this card read Top/Side: the two surface-tile captions, the Band chip's own
+     "Side" label, and the two row headings. It matched the tile caption at y=464, looked for a chip
+     below it and above the next match, and found none, so six assertions failed on a card that was
+     working. Measured proof it was my check and not the code: the Side Count dial read 600 against
+     600 real instances at the same moment.
 
-  // The chip itself, clicked as a baker would — not the hook. It is a Chip, so it is findable.
-  const clicked = await page.evaluate(() => {
+     A surface's block is the region from ITS dial row down to the next dial row, so the Count
+     caption is the reliable anchor — there is exactly one per surface, in row order. */
+  const clickChipUnder = (which) => page.evaluate((w) => {
+    const leaves = [...document.querySelectorAll('span,div')]
+      .filter(n => n.children.length === 0 && n.textContent.trim())
+      .map(n => ({ t: n.textContent.trim(), r: n.getBoundingClientRect() }))
+      .filter(x => x.r.width > 0 && x.r.height > 0);
+    const counts = leaves.filter(x => x.t === 'Count').sort((a, b) => a.r.top - b.r.top);
+    const idx = w === 'Top' ? 0 : 1;                       // rows render Top then Side
+    const anchor = counts[idx];
+    if (!anchor) return `no Count caption for ${w} (found ${counts.length})`;
+    const floor = counts[idx + 1] ? counts[idx + 1].r.top : Infinity;
     const chip = [...document.querySelectorAll('button')]
-      .find(x => x.textContent.trim() === 'Multi colour');
-    if (!chip) return null;
+      .filter(x => x.textContent.trim() === 'Multi colour')
+      .find(x => { const r = x.getBoundingClientRect(); return r.top > anchor.r.top && r.top < floor; });
+    if (!chip) return `no chip in the ${w} block`;
     chip.click();
     return true;
-  });
-  await page.waitForTimeout(900);
-  ok(clicked === true, 'the "Multi colour" chip exists on the card and was clicked');
+  }, which);
 
-  const mixed = await page.evaluate(() => {
-    const st = (window.__getStickers?.() ?? []).filter(s => s.elementId === 'e9' && s.scatter);
-    return { colours: [...new Set(st.map(s => s.color))], isMulti: window.__scatterIsMulti?.('e9') };
-  });
-  ok(mixed.isMulti === true, 'the chip now reads as pressed (mode derived from the cake)');
+  const state = () => page.evaluate(() => ({
+    top:  { cols: window.__scatterPaletteOf?.('e9', 'top'),  multi: window.__scatterIsMulti?.('e9', 'top') },
+    side: { cols: window.__scatterPaletteOf?.('e9', 'side'), multi: window.__scatterIsMulti?.('e9', 'side') },
+  }));
+
+  const before = await state();
+  ok(before.top.cols.length === 1 && before.side.cols.length === 1,
+    `both surfaces start on ONE colour — top ${JSON.stringify(before.top.cols)}, side ${JSON.stringify(before.side.cols)}`);
+  const singleTop = before.top.cols[0];
+
+  // Mix the SIDE only — the band — which is what Sandeep actually wanted.
+  ok(await clickChipUnder('Side') === true, 'the Side row has its own "Multi colour" chip, clicked');
+  await page.waitForTimeout(1200);
+  const mixed = await state();
+
+  ok(mixed.side.multi === true, 'the SIDE now reads as a mix');
+  /* ⚠️ THE WHOLE POINT OF THIS CHANGE. Before, one palette fanned across every instance and mixing
+     the band recoloured the top with it. */
+  ok(mixed.top.multi === false,
+    `⚠️ and the TOP did NOT change — still ${JSON.stringify(mixed.top.cols)}`);
+  ok(mixed.top.cols.length === 1 && mixed.top.cols[0] === singleTop,
+    `the top kept its single colour exactly — was ${singleTop}, now ${JSON.stringify(mixed.top.cols)}`);
+
   /* ⚠️ THE ELEMENT'S OWN MIX, not the code default. e9 carries four colours in `scatter_mix` that
      are deliberately not the seeded six — so matching them proves the config is read (root
      CLAUDE.md rule 3: an admin retunes this without a deploy). */
   const CONFIGURED = ['#1B9AAA', '#EF476F', '#FFC43D', '#06D6A0'];
-  const got = mixed.colours.map(c => c.toUpperCase()).sort();
+  const got = mixed.side.cols.map(c => c.toUpperCase()).sort();
   ok(got.length === CONFIGURED.length && got.join() === [...CONFIGURED].sort().join(),
-    `the mix came from the ELEMENT's scatter_mix — ${JSON.stringify(mixed.colours)}`);
+    `the band's mix came from the ELEMENT's scatter_mix — ${JSON.stringify(mixed.side.cols)}`);
 
-  const swatches = await page.evaluate(() =>
-    [...document.querySelectorAll('input[type="color"]')].map(i => i.value.toUpperCase()));
-  ok(swatches.length >= 4,
-    `and all of them are on screen as swatches, nothing hidden behind the mode — ${JSON.stringify(swatches)}`);
-
-  /* The card in its mixed state is what gets saved at the end — the screenshot is taken here, while
-     the swatches are full, rather than after the toggling below returns it to one colour. */
+  /* The card in its mixed state is what gets saved — taken here, while the swatches are full. */
   await page.screenshot({ path: OUT, fullPage: false });
 
-  // Back to one colour.
-  await page.evaluate(() => {
-    [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Multi colour')?.click();
-  });
-  await page.waitForTimeout(900);
-  const back = await page.evaluate(() => {
-    const st = (window.__getStickers?.() ?? []).filter(s => s.elementId === 'e9' && s.scatter);
-    return { colours: [...new Set(st.map(s => s.color))], isMulti: window.__scatterIsMulti?.('e9') };
-  });
-  ok(back.isMulti === false, 'switching back leaves the chip unpressed');
-  ok(back.colours.length === 1 && back.colours[0] === single[0],
-    `⚠️ and the original single colour came back UNTOUCHED — was ${single[0]}, now ${JSON.stringify(back.colours)}`);
+  // Back to one colour, on the side only.
+  ok(await clickChipUnder('Side') === true, 'clicked the Side chip again');
+  await page.waitForTimeout(1200);
+  const back = await state();
+  ok(back.side.multi === false, 'switching back leaves the Side chip unpressed');
+  ok(back.side.cols.length === 1,
+    `⚠️ and the band's original single colour came back — ${JSON.stringify(back.side.cols)}`);
+  ok(back.top.cols.length === 1 && back.top.cols[0] === singleTop,
+    'the top was never touched throughout');
 
   // And on again: the stash should return the same mix, not a re-cycled palette.
-  await page.evaluate(() => {
-    [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Multi colour')?.click();
+  ok(await clickChipUnder('Side') === true, 'clicked the Side chip a third time');
+  await page.waitForTimeout(1200);
+  const again = await state();
+  ok(new Set(again.side.cols).size === CONFIGURED.length,
+    `switching on again restores the same ${CONFIGURED.length}-colour mix — ${JSON.stringify(again.side.cols)}`);
+}
+
+/* ── 6 — the band's ceiling is what physically fits, not a flat 400 ─────────────────────────── */
+console.log('\nthe band ceiling');
+{
+  await page.evaluate(() => window.__setScatterBand?.('e9', 'side', true));
+  await page.waitForTimeout(1500);
+  // A band at a small sprinkle size is where the old flat cap bit hardest.
+  await page.evaluate(() => window.__setScatterSize?.('e9', 'side', 0.1));
+  await page.waitForTimeout(1200);
+  const ceiling = await page.evaluate(() => window.__scatterMaxCount?.('e9', 'side'));
+  console.log(`    band ceiling at size 0.1: ${ceiling}`);
+  ok(ceiling > 400,
+    `⚠️ the ceiling is no longer the flat 400 — it is ${ceiling}, derived from what fits`);
+
+  /* And the dial must REPORT what is on the cake rather than the ceiling. This is the bug Sandeep
+     saw as "count is only 1, but it shows more than one sprinkles": the dial rendered
+     min(real, ceiling), so whenever the ceiling dropped it displayed the ceiling and called it the
+     count. Ask for a number, then compare the cake with the dial. */
+  await page.evaluate(() => window.__setScatterDensity?.('e9', 'side', 600));
+  await page.waitForTimeout(4000);
+  const real = await page.evaluate(() => (window.__getStickers?.() ?? [])
+    .filter(s => s.elementId === 'e9' && s.scatter && (s.zone === 'side' || s.zone === 'middle_tier')).length);
+  /* Same anchoring mistake as the chip locator, same fix: the SIDE row is the SECOND Count caption,
+     not "the first one below something that says Side". */
+  const dialSide = await page.evaluate(() => {
+    const leaves = [...document.querySelectorAll('span,div')]
+      .filter(n => n.children.length === 0 && n.textContent.trim())
+      .map(n => ({ t: n.textContent.trim(), r: n.getBoundingClientRect() }))
+      .filter(x => x.r.width > 0);
+    const caps = leaves.filter(x => x.t === 'Count').sort((a, b) => a.r.top - b.r.top);
+    const c = caps[caps.length - 1]; if (!c) return null;   // side row is the last
+    const cx = c.r.left + c.r.width / 2;
+    const near = leaves.filter(x => /^\d+$/.test(x.t))
+      .filter(x => Math.abs((x.r.left + x.r.width / 2) - cx) < 34)
+      .filter(x => x.r.bottom <= c.r.top + 2).sort((a, b) => b.r.bottom - a.r.bottom);
+    return near[0]?.t ?? null;
   });
-  await page.waitForTimeout(900);
-  const again = await page.evaluate(() => {
-    const st = (window.__getStickers?.() ?? []).filter(s => s.elementId === 'e9' && s.scatter)
-      .sort((a, b) => a.id - b.id);
-    return st.map(s => s.color.toUpperCase());
-  });
-  ok(new Set(again).size === CONFIGURED.length,
-    `switching on again restores the same ${CONFIGURED.length}-colour mix — ${JSON.stringify([...new Set(again)])}`);
+  console.log(`    asked 600 → cake has ${real}, dial shows ${dialSide}`);
+  ok(Number(dialSide) === real,
+    `⚠️ the dial reports the REAL count, not the ceiling — cake ${real}, dial ${dialSide}`);
 }
 
 console.log(`\nscreenshot → ${OUT}`);

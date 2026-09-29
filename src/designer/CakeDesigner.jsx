@@ -6120,7 +6120,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tierH = (tier?.height ?? BOTTOM_H) * (bandFrac != null ? bandFrac : 1);
     const area = isSideZoneName(zone) ? (2 * Math.PI * R * tierH) : (Math.PI * (R * 0.82) ** 2);
     const footprint = (STICKER_SIZE * scale) ** 2;
-    return Math.max(12, Math.min(400, Math.floor((area / footprint) * 0.7)));
+    /* ⚠️ NO FLAT CEILING ANY MORE. Sandeep, on a band that would not fill: "count 400 is too less in
+       case of band. band can be very thick." The 400 was arbitrary — it was never derived from
+       anything, and at the sizes a band actually uses it sits at roughly a SEVENTH of what fits
+       (measured: 2733 at size 0.1, 1214 at 0.15, 683 at 0.2). The area maths is the real ceiling and
+       it already scales with Size, so it is now the only one: the dial's maximum means "as full as
+       this strip gets", in both modes, at whatever size the baker chose. */
+    return Math.max(12, Math.floor((area / footprint) * 0.7));
   }
   // The count a NEW scatter seeds with — the element's admin-authored default
   // (placement_config.scatter_count), falling back to SCATTER_DEFAULT_COUNT. Config-driven, never a
@@ -6521,7 +6527,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!instances.length || scatterIsBand(elementId, grp) === !!on) return;
     const count   = instances.length;
     const scale   = scatterBaseScaleOf(instances, el);
-    const palette = scatterPaletteOf(elementId);
+    // The SIDE's own palette — banding the side must not reach the top's colours.
+    const palette = scatterPaletteOf(elementId, grp);
     const bigs    = scatterBigCountOf(elementId, grp);
     const tierIndex = instances[0].tierIndex ?? scatterTierForZone(zone);
     instances.forEach(s => removeSticker(s.id));
@@ -6549,17 +6556,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     setSelectedStickerIds(new Set());
     setSelectedEl({ type: 'scatter', elementId });
   }
-  function scatterPaletteOf(elementId) {
+  /* ⚠️ PER SURFACE, and my earlier question was the wrong one to ask. I offered "shared or split?"
+     as a preference; Sandeep picked shared and then hit what that actually means: "i actually wanted
+     color sprinkles only for the band. but on the top also colors changing... i know you asked this
+     question while building it, i preferred shared. but that should not be it."
+
+     It was never a preference. A band round the foot and a scatter across the top are two
+     decorations that happen to share an element row — colouring them together is a bug wearing a
+     setting's clothes, and offering it as a choice put the cost of my own design question onto him.
+     Scoped by group like Count, Big ones and Size, so the rainbow band leaves the top alone.
+
+     `group` is optional and null still means every instance, which is what seeding a brand-new
+     surface reads (it has no colours of its own to derive from yet). */
+  function scatterPaletteOf(elementId, group = null) {
     const out = [];
-    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+    design.stickers.filter(s => s.elementId === elementId
+        && (group == null || scatterGroupOf(s) === group))
+      .sort((a, b) => a.id - b.id)
       .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
     return out;
   }
+  /* The palette a NEWLY ticked surface should come up in: its own if it somehow has one, otherwise
+     the element's, so ticking Side on after mixing the Top still carries the mix across rather than
+     arriving grey. Ticking a surface on is the one moment the two surfaces are deliberately linked
+     — after that they are independent. */
+  function scatterSeedPaletteOf(elementId, group) {
+    const own = scatterPaletteOf(elementId, group);
+    return own.length ? own : scatterPaletteOf(elementId);
+  }
   // Cycle the customer's palette across the instances, in placement order. `i % length` is what makes
   // a 3-colour palette read as a repeating mix rather than three blocks.
-  function setScatterPalette(elementId, palette) {
+  function setScatterPalette(elementId, group, palette) {
     if (!palette.length) return;
-    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+    design.stickers.filter(s => s.elementId === elementId
+        && (group == null || scatterGroupOf(s) === group))
+      .sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
   }
   /* ── One colour, or a mix ─────────────────────────────────────────────────────────────────────
@@ -6594,14 +6625,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return Array.isArray(m) && m.length > 1 && m.every(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c))
       ? m : SCATTER_MIX;
   }
-  function scatterIsMulti(elementId) {
-    return scatterPaletteOf(elementId).length > 1;
+  function scatterIsMulti(elementId, group = null) {
+    return scatterPaletteOf(elementId, group).length > 1;
   }
-  function setScatterMulti(elementId, on) {
+  function setScatterMulti(elementId, group, on) {
     const el = elementById.get(elementId);
-    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter)
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter
+        && (group == null || scatterGroupOf(s) === group))
       .sort((a, b) => a.id - b.id);
-    if (!el || !instances.length || scatterIsMulti(elementId) === !!on) return;
+    if (!el || !instances.length || scatterIsMulti(elementId, group) === !!on) return;
     if (on) {
       /* Prefer each instance's own stashed mix colour; fall back to cycling the seed mix. The stash
          is what makes a second visit identical to the first rather than merely similar. */
@@ -6727,7 +6759,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          wall must keep filling the foot as Count grows, not revert to the whole side. Same shape as
          the palette and the base scale above — state the set already carries, which the generator
          cannot re-derive on its own. */
-      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, scatterBaseScaleOf(instances, el), takenSeatsOf(instances), scatterPaletteOf(elementId), scatterIsBand(elementId, grp));
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, scatterBaseScaleOf(instances, el), takenSeatsOf(instances), scatterPaletteOf(elementId, grp), scatterIsBand(elementId, grp));
     } else {
       /* Drop the newest (highest id) instances first — dragged positions survive that way.
        *
@@ -6772,7 +6804,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // first instance's colour.
       // Carries the band too: ticking Side back on after setting a base band should return the band,
       // not a fresh scatter up the whole wall.
-      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId), scatterIsBand(elementId, grp));
+      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterSeedPaletteOf(elementId, grp), scatterIsBand(elementId, grp));
     } else {
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }
@@ -6827,8 +6859,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     /* The colour MODE, through the card's own writers. Same argument as `__setScatterPalette` right
        below: the mode is derived from the instances, so a probe that set colours directly would be
        asserting on its own arithmetic rather than on what the toggle does. */
-    window.__setScatterMulti   = (elementId, on) => { setScatterMulti(elementId, on); return true; };
-    window.__scatterIsMulti    = (elementId) => scatterIsMulti(elementId);
+    /* ⚠️ THE GROUP IS PART OF THESE NOW. The palette is per surface, so a probe that could only say
+       "make it multi" could not express the thing that was wrong — the top recolouring with the
+       band. Pass null for every instance of the element, which is what the old behaviour was. */
+    window.__setScatterMulti   = (elementId, group, on) => { setScatterMulti(elementId, group, on); return true; };
+    window.__scatterIsMulti    = (elementId, group) => scatterIsMulti(elementId, group ?? null);
+    window.__scatterPaletteOf  = (elementId, group) => scatterPaletteOf(elementId, group ?? null);
+    /* The ceiling the Count dial offers, so "400 is too few for a band" is checkable as a number
+       rather than by eye. Takes the LIVE size, which is what the card now passes. */
+    window.__scatterMaxCount   = (elementId, group) => {
+      const el = elementById.get(elementId);
+      const zone = group === 'side' ? ZONES.SIDE : ZONES.TOP_SURFACE;
+      const set = design.stickers.filter(s => s.elementId === elementId && s.scatter
+        && scatterGroupOf(s) === group);
+      const scale = set.length ? scatterBaseScaleOf(set, el) : scatterScaleFor(el);
+      return scatterMaxCount(zone, scatterTierForZone(zone), scale,
+        scatterIsBand(elementId, group) ? scatterBandFracFor(el) : null);
+    };
     window.__setScatterDensity = (elementId, zone, n) => { setScatterDensity(elementId, zone, n); return true; };
     window.__scatterSurface    = (elementId, zone, on) => { toggleScatterSurface(elementId, zone, on); return true; };
     /* The base band, through the card's own function — a Chip is clickable from a script, but the
@@ -6838,7 +6885,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     /* The palette, through the card's own writer. Driving the `<input type="color">` swatches from a
        script means synthesising change events on a native picker, and the rainbow is the whole point
        of the base band — untested, "multi-colour works" would have been a guess. */
-    window.__setScatterPalette = (elementId, colours) => { setScatterPalette(elementId, colours); return true; };
+    window.__setScatterPalette = (elementId, group, colours) => { setScatterPalette(elementId, group ?? null, colours); return true; };
     window.__scatterIsBand     = (elementId, group) => scatterIsBand(elementId, group);
     window.__getSelection = () => [...selectedStickerIds];
     /* What is selected, as a fact rather than an inference from what is on screen. Added while
@@ -8545,31 +8592,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ⚠️ THE HEADING IS THE SURFACE, and it only appears when there are two. One surface ticked
             means one row, and a row labelled "Top" above dials that could only ever be top is noise.
 
-            Colours stays out of these rows deliberately: it is a swatch grid, not a dial, and it is
-            shared across both surfaces — putting it on one of them would say otherwise. */}
+            COLOURS SITS IN THIS BLOCK TOO, under the surface it belongs to — see the note on it
+            below. It is a swatch grid rather than a dial, so it goes under the row, not in it. */}
         {onSurfaces.map(su => {
           const c = all.filter(x => scatterGroupOf(x) === su.group).length;
-          // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the dial.
           /* ⚠️ THE BAND'S OWN CEILING. A band is roughly a quarter of the wall, so a cap derived
              from the whole side would let Count run four times past what the strip can hold and
-             pack the seats solid — the dial's maximum has to mean the same thing in both modes. */
-          const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el),
+             pack the seats solid — the dial's maximum has to mean the same thing in both modes.
+
+             ⚠️ AND FROM THE LIVE SIZE, NOT THE CONFIGURED ONE. This read `scatterScaleFor(el)` — the
+             size an admin authored — so shrinking the sprinkles never bought you room for more of
+             them. That is the other half of "count 400 is too less in case of band": at the
+             element's configured 0.45 the ceiling computed 134, while the same band at the size the
+             baker had actually set (0.1) holds 2733. The old comment justified it as stopping the
+             dial "jogging" on resize; a ceiling that is wrong by a factor of twenty is the worse of
+             the two, and now that the dial shows the REAL count the jog only moves the maximum. */
+          const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+          const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
+          const maxCount = scatterMaxCount(su.zone, su.tierIndex, suSize,
             scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
           const inSet = c;
-          /* ⚠️ THIS SURFACE'S OWN BASE SIZE, not the element's. `scatterBaseScaleOf` over the whole
-             set would show the top's size on the side's dial the moment the two differ — which is
-             the entire point of the change. Same "never the first instance" rule applies within the
-             group: with big ones on, `[0]` may itself be big. */
-          const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
-          const suSize = scatterBaseScaleOf(suSet, el);
+          /* `suSet`/`suSize` are declared with the ceiling above — THIS SURFACE'S OWN BASE SIZE, not
+             the element's. `scatterBaseScaleOf` over the whole set would show the top's size on the
+             side's dial the moment the two differ, which is the entire point of the change. The same
+             "never the first instance" rule applies within the group: with big ones on, `[0]` may
+             itself be big. */
           return (
             <div key={`dials-${su.group}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {onSurfaces.length > 1 && <span style={s.editPanelLabel}>{su.label}</span>}
               <ScrollFadeRow style={s.previewRow} fade="255,255,255">
                 {/* Count is per ACTIVE SURFACE — a denser top than side is a real choice.
-                    A count, so integer fmt and rounded on write. */}
+                    A count, so integer fmt and rounded on write.
+
+                    ⚠️ IT SHOWS THE REAL COUNT. This was `Math.min(c, maxCount)`, so whenever the
+                    ceiling dropped below what was actually on the cake the dial quietly displayed
+                    the CEILING and called it the count. Measured: with the band on I asked for 400,
+                    got 400 instances, and the dial said 134 — a control disagreeing with the cake it
+                    controls, which is how "count is only 1, but it shows more than one sprinkles"
+                    looks from the baker's side. The ceiling now limits only what you can SET; `max`
+                    opens up to the current count so a set that is already past it can still be
+                    dialled DOWN rather than being stuck off the end of its own scale. */}
                 <DialCell label="Count"
-                  value={Math.min(c, maxCount)} min={1} max={maxCount} step={1}
+                  value={c} min={1} max={Math.max(c, maxCount)} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterDensity(card.elementId, su.zone, Math.round(v))} />
                 {/* ── Big ones ──────────────────────────────────────────────────────────────────
@@ -8598,69 +8662,59 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <DialCell label="Size" value={suSize} min={scR.min} max={scR.max} step={scR.step}
                   onChange={v => setScatterSize(card.elementId, su.zone, v)} />
               </ScrollFadeRow>
+              {/* ── Colours, not Colour — and PER SURFACE ──────────────────────────────────────
+                  Sandeep: "i actually wanted color sprinkles only for the band. but on the top also
+                  colors changing. i think we should keep the colors separaetly. i know you asked
+                  this question while building it, i preferred shared. but that should not be it."
+
+                  ⚠️ I ASKED THE WRONG QUESTION AND HE PAID FOR IT. I offered "shared or split?" as a
+                  preference. It is not one: a band round the foot and a scatter across the top are
+                  two decorations that happen to share an element row, so one palette across both
+                  was a bug wearing a setting's clothes. Measured before this: turning the mix on
+                  recoloured all 412 instances, top included. Scoped by group now, like Count, Big
+                  ones and Size — the surface owns its colours, and this row sits UNDER that
+                  surface's dials so which set it acts on is a matter of position, not memory.
+
+                  Each instance is its own sticker with its own `color`, and the palette is DERIVED
+                  from them (`scatterPaletteOf`), so nothing new is persisted and an old design reads
+                  back as a one-swatch palette by itself.
+
+                  ⚠️ A `Chip` for the mix, matching "Band at the base" above and "Scraped edge" in
+                  the tier sheet: on/off, with aria-pressed, focus and the phone hit-target for free.
+                  The swatches always show every colour — the mix is never hidden behind the mode —
+                  and `+` still implies it, because the chip is derived from the palette. */}
+              {canColor && (() => {
+                const palette = scatterPaletteOf(card.elementId, su.group);
+                const pal = palette.length ? palette : ['#ffffff'];
+                const isMulti = scatterIsMulti(card.elementId, su.group);
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={s.editPanelLabel}>Colours</span>
+                      <Chip label="Multi colour" isMobile={isMobile}
+                            active={isMulti}
+                            onClick={() => setScatterMulti(card.elementId, su.group, !isMulti)} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {pal.map((col, i) => (
+                        <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
+                          <input type="color" value={col} style={s.paletteSwatch}
+                            onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, su.group, next); }} />
+                          {pal.length > 1 && (
+                            <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, su.group, pal.filter((_, j) => j !== i))}
+                              style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
+                          )}
+                        </span>
+                      ))}
+                      <button title="Add colour" onClick={() => setScatterPalette(card.elementId, su.group, [...pal, nextPaletteColour(pal[pal.length - 1])])}
+                        style={{ ...s.paletteSwatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
-        {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
-            One wheel here set every instance to the same colour, because the write fanned it across
-            the whole group. But each scatter instance is its own sticker record with its own `color`,
-            so a mix was always storable — the card was the only thing insisting on uniformity.
-
-            The same row the cluster card uses, and deliberately so: a cluster packs into a heap and a
-            scatter spreads across a surface, but "which colours is this group made of" is one
-            question and should not have two answers that drift apart.
-
-            The palette is DERIVED from the instances (scatterPaletteOf), so nothing new is persisted
-            and an old single-colour design reads back as a one-swatch palette by itself. */}
-        {canColor && (() => {
-          const palette = scatterPaletteOf(card.elementId);
-          const pal = palette.length ? palette : ['#ffffff'];
-          const isMulti = scatterIsMulti(card.elementId);
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              {/* ── One colour, or a mix ──────────────────────────────────────────────────────────
-                  Sandeep: "it ll be diffficult for the user to remember the colors in the multi
-                  color band. need to have a option for multi color? may be near the color selector."
-
-                  ⚠️ BESIDE THE LABEL, which is where he asked for it and also the only place it
-                  reads as being ABOUT the swatches below rather than about the band above.
-
-                  ⚠️ A `Chip`, matching "Band at the base" a few lines up and the "Scraped edge"
-                  toggle in the tier sheet. This is on/off, and Chip brings aria-pressed, focus and
-                  the phone hit-target with it. Two chips (One colour | Multi) would have been a
-                  radio group wearing a toggle's clothes; one pressed state says the same thing.
-
-                  ⚠️ THE SWATCHES STILL SHOW EVERY COLOUR, which is the actual answer to "difficult
-                  to remember" — the mix is never hidden behind the mode. Tapping it fills them in
-                  for you; editing, removing and + all still work exactly as before, so the preset is
-                  a starting point rather than a thing you are locked into.
-
-                  ⚠️ AND `+` STILL IMPLIES THE MODE. The chip is derived from the palette, so adding
-                  a second colour by hand lights it up and removing back to one clears it. One source
-                  of truth, no way for the toggle and the cake to disagree. */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={s.editPanelLabel}>Colours</span>
-                <Chip label="Multi colour" isMobile={isMobile}
-                      active={isMulti}
-                      onClick={() => setScatterMulti(card.elementId, !isMulti)} />
-              </div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                {pal.map((c, i) => (
-                  <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
-                    <input type="color" value={c} style={s.paletteSwatch}
-                      onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, next); }} />
-                    {pal.length > 1 && (
-                      <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, pal.filter((_, j) => j !== i))}
-                        style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
-                    )}
-                  </span>
-                ))}
-                <button title="Add colour" onClick={() => setScatterPalette(card.elementId, [...pal, nextPaletteColour(pal[pal.length - 1])])}
-                  style={{ ...s.paletteSwatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-              </div>
-            </div>
-          );
-        })()}
         {/* Always offered. See the note on `delete` in the toolbar's actions below: a decoration a
             customer cannot take off their own cake is not a capability, it is a trap. */}
         {true && (
