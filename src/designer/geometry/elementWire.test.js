@@ -236,11 +236,18 @@ describe('the wire runs the way the pose needs', () => {
     expect(Math.abs(r.z)).toBeCloseTo(0, 6);
   });
 
-  it('runs horizontally into a wall', () => {
+  /* ⚠️ A WALL WIRE RISES, AND THIS TEST USED TO ASSERT THAT IT DID NOT — `abs(r.y)` close to zero
+     pinned the exact fault Sandeep photographed: *"its inserting horizontally. thats not how its
+     done."* A stem that leaves the icing level holds the butterfly at the height of its own hole,
+     scraping the wall it is meant to stand off. In every reference the wire goes in LOW and the
+     piece rides high and clear. Still mostly OUT, though — that is what separates it from `lip`. */
+  it('runs out AND up from a wall', () => {
     const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'out' }));
     expect(r.z).toBeGreaterThan(0);          // the tip stands proud of the buried end
-    expect(Math.abs(r.y)).toBeCloseTo(0, 6);
+    expect(r.y).toBeGreaterThan(0);          // and above it
+    expect(r.z).toBeGreaterThan(r.y);        // but it is a wall wire, not a rim wire
   });
+
 
   /* ⚠️ THE RIM LEANS BACK, WHICH THE TOP SURFACE MUST NOT. A verge piece is cantilevered out over
      the lip, so a vertical stem drops past the cake and runs down the outside of the wall — which
@@ -280,8 +287,14 @@ describe('the wire runs the way the pose needs', () => {
     expect(wireLift(on('down'))).toBeCloseTo(out, 6);
     expect(wireStandoff(on('down'))).toBeCloseTo(0, 6);
 
-    expect(wireLift(on('out'))).toBeCloseTo(0, 6);
-    expect(wireStandoff(on('out'))).toBeCloseTo(out, 6);
+    /* ⚠️ A WALL WIRE NOW SPLITS IT TOO, and this used to assert lift ≈ 0 — the same horizontal run
+       Sandeep photographed. Leaving the vertical component out of the caller is what draws a stem
+       climbing away from a butterfly that stayed where it was, hanging off the middle of its own
+       wire. Mostly standoff, because it is a wall; some lift, because it climbs. */
+    const wall = on('out');
+    expect(wireLift(wall)).toBeGreaterThan(0);
+    expect(wireStandoff(wall)).toBeGreaterThan(wireLift(wall));
+    expect(Math.hypot(wireLift(wall), wireStandoff(wall))).toBeCloseTo(out, 6);
 
     const lip = on('lip');
     expect(wireLift(lip)).toBeGreaterThan(0);

@@ -181,10 +181,23 @@ export function elementWire(placementConfig, allowedActions) {
  * past the edge, so leaning the base moves it BACK ON. Same change, opposite sign, because the two
  * poses start on opposite sides of the cake's edge.
  */
-const DIAG = Math.hypot(1, 0.6);
+/* How steeply a wall wire climbs: the rise over the run, so 0.6 is about 31° above horizontal.
+   ⚠️ CHOSEN OFF THE REFERENCE, not picked for being a round number. The butterflies on a real wired
+   cake are held clear of the icing at a shallow angle — steep enough that the piece is obviously
+   above its own stem, shallow enough that it still reads as standing OUT from the wall rather than
+   as a second tier of toppers. `lip` uses the same pair the other way round, which is what makes a
+   rim wire mostly-down and a wall wire mostly-out. */
+const RISE = 0.6;
+const DIAG = Math.hypot(1, RISE);
 const AXES = {
   down: { dir: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
-  out:  { dir: [0, 0, -1], u: [1, 0, 0], v: [0, 1, 0] },
+  /* ⚠️ A WALL WIRE RISES; IT DOES NOT STICK OUT LIKE A FLAGPOLE. This ran dead horizontal — the
+     butterfly hung level with the hole it came from — and Sandeep, with a photograph of the real
+     thing: *"its inserting horizontally. thats not how its done."* In every reference the stem goes
+     into the icing LOW and the piece rides high and clear of the cake, so the wing does not scrape
+     the wall it is standing off. `dir` runs from the piece toward the buried end, so it points down
+     as well as in, and the piece ends up above and outside its own entry point. */
+  out:  { dir: [0, -RISE / DIAG, -1 / DIAG], u: [1, 0, 0], v: [0, 1 / DIAG, -RISE / DIAG] },
   lip:  { dir: [0, -1 / DIAG, -0.6 / DIAG], u: [1, 0, 0], v: [0, 0.6 / DIAG, -1 / DIAG] },
 };
 

@@ -1913,6 +1913,12 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const wire = sticker.wire?.on ? wireFor(vext?.box, sticker.wire, null, { axis: 'out' }) : null;
   const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink
                + wireStandoff(wire) * effScale;
+  /* ⚠️ AND IT LIFTS THE PIECE AS WELL AS PUSHING IT OUT, because a wall wire climbs. While the axis
+     ran dead horizontal the standoff was the whole story and this line did not exist; the moment the
+     wire rose, leaving it out meant the stem went up and the butterfly stayed where it was, hanging
+     off the middle of its own wire. `wireLift` already answered per axis — the vector was there
+     before there was a caller that needed it. */
+  const wireUp = wireLift(wire) * effScale;
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
@@ -1953,7 +1959,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
 
   return (
     <group
-      position={[cx, posY, cz]}
+      position={[cx, posY + wireUp, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
