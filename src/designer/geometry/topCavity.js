@@ -35,16 +35,28 @@ import { ringNoise } from '../utils/random.js';
 export const CAVITY_DEFAULTS = Object.freeze({
   /* How far the lip stands proud of the top, as a fraction of the tier's HEIGHT — never a world
      number (INVARIANTS #8), or it is right on one cake and wrong on the next. */
-  lip: 0.045,
+  /* ⚠️ THESE WERE CHOSEN AGAINST THE PHOTOGRAPH, IN THE SHEET, AND IT TOOK THREE PASSES. The first
+     set — 0.045 over a 0.20 band, 13 slow swells — was a broad gentle dune. Sandeep, with it beside
+     the reference: *"not really impressive, its not even close."* The second overcorrected into a
+     jagged crown: narrow, tall, 36 ruffles, reading as torn rather than scraped.
+ 
+     ⚠️ AND NEITHER MISS WAS VISIBLE UNTIL THE REFERENCE WAS IN THE SAME PICTURE. Two rounds of
+     "closer now" went by while the photograph sat in another window at another scale. The project
+     memory says exactly this — wire the reference into the harness — and `REF=` in
+     scripts/shoot-cavity.mjs is that, finally.
+ 
+     What the references actually show: a soft rounded lip, gently uneven, standing a little proud
+     of a top that dips inside it. Not a dune, not a crown. */
+  lip: 0.06,
   /* How wide the lip is, as a fraction of the tier's smallest half-span. The scraped ridge in both
      photographs is a fat band, not a piped line. */
-  width: 0.20,
+  width: 0.08,
   /* How far the middle sinks, again against the height. Deliberately smaller than the lip: the look
      is mostly a raised edge, and a deep well would swallow the decorations that go in it. */
   dish: 0.018,
   /* Where the crest sits across the lip, 0 at the rim and 1 at the inner edge. Under a third,
      because a scraper drags the cream UP at the very edge and it falls away inward. */
-  crest: 0.3,
+  crest: 0.45,
   /* ── How uneven the ridge is ───────────────────────────────────────────────────────────────
    *
    * ⚠️ A UNIFORM LIP IS THE ONE THING THIS CANNOT BE. The first version swept one profile round the
@@ -56,10 +68,13 @@ export const CAVITY_DEFAULTS = Object.freeze({
    * `wobble` is how far the ridge strays from its nominal height and width, as a fraction of each.
    * It moves BOTH — a ridge that varied only in height reads as a wave rather than as cream, since
    * the part a scraper pushes about is how much of it there is. */
-  wobble: 0.35,
+  wobble: 0.4,
   /* How many slow swells around the cake. The torn cream band uses 48, which is right for tearing;
      a scraped rim is a dozen unhurried passes of a hand, not fifty nicks. */
-  swells: 13,
+  /* ⚠️ 26 — and both 13 and 36 were wrong, in opposite directions. A dozen slow passes reads as a
+     moulded wave; three dozen reads as torn. The count is what decides whether the eye sees a
+     surface that was worked or a surface that was cast, and neither extreme looks like cream. */
+  swells: 26,
   /* So one cake is not every cake. Two tiers with the same settings should not be stamped from the
      same die, which is the failure this whole block exists to avoid. */
   seed: 7,
