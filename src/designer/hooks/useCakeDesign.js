@@ -1181,6 +1181,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // presents the set as ONE card (members abstracted) and they move/remove together — a
           // distinct unit from a user group (groupId) or a decor_pattern (patternId).
           clusterId:     extra.clusterId ?? null,
+          /* A scatter instance the baker asked to be LARGE — a few pearls among the dots.
+             ⚠️ DECLARED BY NAME, because `extra` is not spread onto the sticker. Every field here is
+             read explicitly, and the `wire` note below records what happens otherwise: the value was
+             passed, never read here, and the piece silently rendered without it — indistinguishable
+             from a broken feature.
+             ⚠️ ABSENT MEANS SMALL, which is every sprinkle ever placed before this existed and every
+             one placed today unless the baker turns big ones on. That is what keeps the default
+             behaviour byte-identical and old saved cakes reloading unchanged. */
+          scatterBig:    extra.scatterBig === true,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
           // with a persistent zone chooser — like a piping element. `patternDeletable` keeps the

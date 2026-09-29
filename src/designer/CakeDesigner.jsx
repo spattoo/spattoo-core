@@ -6044,6 +6044,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function scatterScaleFor(element) {
     return element?.placement_config?.r ?? 0.5;
   }
+  /* ── "Big ones": a few larger sprinkles mixed through the small ones ──────────────────────────
+   *
+   * Sandeep, with a reference photo of pearls scattered among dots: "we have a sprinkles procedural
+   * element in core… it should be able to add some biegger size sprinkles in the middle" — and then
+   * the constraint that shapes the whole design: "default option is the existing behaviour. the new
+   * change is only as an option."
+   *
+   * ⚠️ A MULTIPLIER, NOT AN AUTHORED ABSOLUTE SIZE. The card's Size dial moves the whole scatter, so
+   * a big one has to stay proportional to whatever the baker set. An absolute would be correct once
+   * and then stop tracking the moment the dial moved.
+   *
+   * ⚠️ CLAMPED TO THE ELEMENT'S OWN RANGE. `scaleRangeOf(...).max` is the ceiling an admin authored
+   * for this element; a "big" sprinkle has no business exceeding it just because a multiplier said
+   * so. With the harness fixture (r 0.45, max 1.0, ×2.6) the clamp is what actually bites. */
+  const SCATTER_BIG_MUL = 2.4;
+  function scatterBigMulFor(element) {
+    const m = element?.placement_config?.scatter_big;
+    return Number.isFinite(m) && m > 1 ? m : SCATTER_BIG_MUL;
+  }
+  function scatterBigScaleFor(element, baseScale) {
+    return Math.min(baseScale * scatterBigMulFor(element), scaleRangeOf(element, 0.1, 4, 0.05).max);
+  }
+  /* The base (small) size of a surface's scatter. ⚠️ NEVER `instances[0].scale` — with a mix the
+     first instance may itself be big, and reading it would make one big sprinkle redefine "small"
+     for the whole set the next time anything resized. */
+  function scatterBaseScaleOf(instances, el) {
+    return instances.find(s => !s.scatterBig)?.scale ?? scatterScaleFor(el);
+  }
   const isSideZoneName = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
   // The cake's actual top tier (top decor belongs there); side defaults to the bottom tier.
   function scatterTierForZone(zone) {
@@ -6348,6 +6376,72 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // and every design saved before this reads back as a one-colour palette on its own. A stored field
   // would have had to survive the design jsonb, the template snapshot and the order snapshot, and
   // every existing design would have needed a default.
+  /* How many of a surface's sprinkles are big. DERIVED by counting them, never held as a separate
+     setting — exactly the choice `scatterPaletteOf` makes below, and for the same reason: a stored
+     number and the cake could disagree, and the cake is the truth. */
+  function scatterBigCountOf(elementId, group) {
+    return design.stickers.filter(s => s.elementId === elementId && s.scatter
+      && scatterGroupOf(s) === group && s.scatterBig).length;
+  }
+  /* Choose WHICH instances are big, then resize them.
+   *
+   * ⚠️ FARTHEST-POINT SAMPLING OVER THE SEATS, not placement order. `setScatterPalette` cycles
+   * colours by index and that is right for colour — a repeating mix reads as a mix wherever it
+   * lands. Size is different: two big ones side by side read as a mistake, and index order says
+   * nothing about where a seat actually is, because `randomScatterSeat` places at random. So: take
+   * one, then repeatedly take whichever instance is furthest from every big already chosen.
+   * Deterministic for a given set of seats, and it degrades gracefully — asking for as many bigs as
+   * there are sprinkles simply makes them all big.
+   *
+   * ⚠️ IT ALSO RESETS. An instance that is no longer chosen goes back to the base size, so dialling
+   * Big ones down actually removes them rather than leaving orphans at the large size. */
+  function setScatterBigCount(elementId, zone, target) {
+    const group = isSideZoneName(zone) ? 'side' : 'top';
+    const el = elementById.get(elementId);
+    const instances = design.stickers
+      .filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === group)
+      .sort((a, b) => a.id - b.id);
+    if (!el || !instances.length) return;
+    const n = Math.max(0, Math.min(Math.round(target), instances.length));
+    const base = scatterBaseScaleOf(instances, el);
+    const bigScale = scatterBigScaleFor(el, base);
+    // Each surface in its OWN coordinates: the wall is (angle, height), the top is (x, z). Comparing
+    // across the two would be meaningless, which is why the group is resolved before any of this.
+    const pos = s => (isSideZoneName(s.zone) ? { a: s.theta ?? 0, b: s.y ?? 0 } : { a: s.x ?? 0, b: s.z ?? 0 });
+    const d2 = (p, q) => ((p.a - q.a) ** 2 + (p.b - q.b) ** 2);
+    const chosen = [];
+    while (chosen.length < n) {
+      let best = null, bestD = -1;
+      for (const s of instances) {
+        if (chosen.some(c => c.id === s.id)) continue;
+        const p = pos(s);
+        const d = chosen.length ? Math.min(...chosen.map(c => d2(p, pos(c)))) : 0;
+        if (d > bestD) { bestD = d; best = s; }
+      }
+      if (!best) break;
+      chosen.push(best);
+    }
+    const bigIds = new Set(chosen.map(s => s.id));
+    instances.forEach(s => {
+      const big = bigIds.has(s.id);
+      if (!!s.scatterBig === big) return;                       // already right — no needless write
+      updateSticker(s.id, { scatterBig: big, scale: big ? bigScale : base });
+    });
+  }
+  /* The card's Size dial, as a named function rather than a closure inside the JSX.
+     ⚠️ SO A PROBE CAN DRIVE THE REAL PATH. The alternative was a dev hook repeating these two
+     writes, which would have tested the hook rather than the dial — and a copy that agrees with
+     itself is exactly how a resize bug survives a green check. One implementation, two callers.
+     Smalls take the value; bigs take the clamped multiple, so the mix survives a resize. */
+  function setScatterSize(elementId, v) {
+    const el = elementById.get(elementId);
+    const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
+    if (!el || !all.length) return;
+    const smalls = all.filter(x => !x.scatterBig).map(x => x.id);
+    const bigs   = all.filter(x => x.scatterBig).map(x => x.id);
+    if (smalls.length) scaleStickers(smalls, v);
+    if (bigs.length)   scaleStickers(bigs, scatterBigScaleFor(el, v));
+  }
   function scatterPaletteOf(elementId) {
     const out = [];
     design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
@@ -6459,10 +6553,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (!el) return;
       // ⚠️ The PALETTE, not `ref.color`. This passed the first instance's colour, so growing a
       // mixed scatter gave a correctly mixed original batch followed by a block of one colour.
-      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), scatterPaletteOf(elementId));
+      /* ⚠️ AND THE BASE SCALE, NOT `ref.scale` — the same first-instance trap as the colour above,
+         one line apart. With big ones on, `instances[0]` may BE a big one, and every sprinkle added
+         from then on would have come in at the large size. */
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, scatterBaseScaleOf(instances, el), takenSeatsOf(instances), scatterPaletteOf(elementId));
     } else {
-      // Drop the newest (highest id) instances first.
-      const remove = [...instances].sort((a, b) => b.id - a.id).slice(0, cur - target).map(s => s.id);
+      /* Drop the newest (highest id) instances first — dragged positions survive that way.
+       *
+       * ⚠️ BUT SMALLS BEFORE BIGS, or a shrink silently eats the big ones the baker asked for.
+       * Measured before this: 3 big in 20, dialled down to 6, came back with 2. Newest-first alone
+       * is blind to size.
+       *
+       * ⚠️ AND THIS IS WHY THERE IS NO RE-SPREAD AFTERWARDS. The first version of this fixed it by
+       * re-applying the big count once the removal was done — which read `design.stickers` while
+       * `removeSticker`'s state update was still pending, so it re-spread across the PRE-removal set
+       * and the removal won. Ordering the removal is the same fix without the stale read: growing
+       * adds only smalls (so the count already holds), and shrinking now keeps every big until the
+       * target is smaller than their number, at which point losing some is arithmetic. */
+      const newestFirst = (a, b) => b.id - a.id;
+      const remove = [
+        ...instances.filter(s => !s.scatterBig).sort(newestFirst),
+        ...instances.filter(s => s.scatterBig).sort(newestFirst),
+      ].slice(0, cur - target).map(s => s.id);
       remove.forEach(id => removeSticker(id));
     }
   }
@@ -6477,9 +6589,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
     if (on) {
       if (all.some(s => scatterGroupOf(s) === grp)) return;   // already present
-      const ref = all[0];                                     // share size/colour with the existing set
       const tierIndex = scatterTierForZone(zone);
-      const scale = ref?.scale ?? scatterScaleFor(el);
+      /* ⚠️ THE BASE SIZE, NOT `all[0].scale`. The third and last call site of the first-instance
+         trap the comment below already records for colour — and the one I missed when fixing the
+         other two. `all` spans BOTH surfaces, so with big ones on the top, `all[0]` could be a big
+         one, and ticking Side on seeded the entire side set at the LARGE size. Measured before the
+         fix: 12 side instances at 0.78 instead of 0.3, and their "big" ones then went to 1.0 on top
+         of that. */
+      const scale = scatterBaseScaleOf(all, el);
       // Same reason: a scatter ticked onto a second surface should carry the whole mix, not the
       // first instance's colour.
       scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId));
@@ -6513,6 +6630,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Big-sprinkle mix. The control is a DialCell — a drag, which a script cannot aim precisely —
+       and `setScatterBigCount` is otherwise unreachable from the page, so the one thing most likely
+       to be wrong (which instances turn big, at what size, and whether 0 truly changes nothing)
+       could not be looked at. Same argument as `__tapElementById`. */
+    window.__setScatterBig   = (elementId, zone, n) => { setScatterBigCount(elementId, zone, n); return true; };
+    window.__scatterBigCount = (elementId, group) => scatterBigCountOf(elementId, group);
+    /* The other three paths a size mix can be destroyed on — resize, density, and ticking a second
+       surface. Each calls the SAME function the card does, never a re-implementation: a hook that
+       repeated the logic would agree with itself and prove nothing. Without these, "the mix survives
+       a resize", "big ones survive a Count change" and the SIDE surface at all were unreachable. */
+    window.__setScatterSize    = (elementId, v)       => { setScatterSize(elementId, v); return true; };
+    window.__setScatterDensity = (elementId, zone, n) => { setScatterDensity(elementId, zone, n); return true; };
+    window.__scatterSurface    = (elementId, zone, on) => { toggleScatterSurface(elementId, zone, on); return true; };
     window.__getSelection = () => [...selectedStickerIds];
     /* What is selected, as a fact rather than an inference from what is on screen. Added while
      * proving the foil tap-to-reopen fix: a tap that MISSED a flake and a tap that HIT it but
@@ -8104,7 +8234,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function renderScatterBody(card) {
     const all = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
     if (!all.length) return null;
-    const size = all[0]?.scale ?? 1;        // shared across surfaces (Size + Colour are one set)
+    /* The SMALL size, shared across surfaces (Size + Colour are one set).
+       ⚠️ NOT `all[0].scale` any more. With big ones on, the first instance may BE a big one — the
+       dial would then show the large size as "the" size, and the next nudge would flatten every
+       sprinkle to it. Same first-instance trap the colour and density paths each hit once already. */
+    const size = scatterBaseScaleOf(all, elementById.get(card.elementId));
     const canColor = !!caps?.color;
     const el = elementById.get(card.elementId);
     const scR = scaleRangeOf(el, 0.1, 4, 0.05);   // dial bounds + increment from config
@@ -8170,11 +8304,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             })}
           </div>
         )}
+        {/* ── Big ones ────────────────────────────────────────────────────────────────────────────
+            A few larger sprinkles mixed through the small ones — the pearls among the dots in
+            Sandeep's reference photo.
+
+            ⚠️ DEFAULT 0, AND THAT IS THE WHOLE CONTRACT. "default option is the existing behaviour.
+            the new change is only as an option." At zero this writes nothing, no instance carries
+            `scatterBig`, and the scatter is byte-identical to what it has always been — including
+            every cake saved before this existed.
+
+            ⚠️ A COUNT, NOT A PROPORTION, at Sandeep's call: "count is safe i believe. user would have
+            control." It also means adding more sprinkles does not quietly multiply the big ones — ask
+            for three and you keep three.
+
+            ⚠️ PER SURFACE, like Count and unlike Size/Colour — top and side are independent sets, so
+            "two big ones on top, none on the side" has to be expressible. */}
+        {onSurfaces.length > 0 && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={s.editPanelLabel}>Big ones</span>
+            {onSurfaces.map(su => {
+              const inSet = all.filter(x => scatterGroupOf(x) === su.group).length;
+              return (
+                <DialCell key={su.group}
+                  label={onSurfaces.length > 1 ? su.label : 'Big ones'}
+                  value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
+                  min={0} max={inSet} step={1}
+                  fmt={v => String(Math.round(v))}
+                  onChange={v => setScatterBigCount(card.elementId, su.zone, Math.round(v))} />
+              );
+            })}
+          </div>
+        )}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={s.editPanelLabel}>Size</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
+            {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
+                instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
+                was uniform and would silently WIPE a mix now — one nudge of this dial and every pearl
+                becomes a dot. Two writes instead: the base to the smalls, the clamped large size to
+                the bigs, so the mix survives a resize and stays proportional. */}
             <SizeDial size={size} min={scR.min} max={scR.max} step={scR.step}
-              onChange={v => scaleStickers(all.map(s => s.id), v)} />
+              onChange={v => setScatterSize(card.elementId, v)} />
           </div>
         </div>
         {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
