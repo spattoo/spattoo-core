@@ -147,7 +147,7 @@ function Panel({ lip, onLip, seed, onShuffle, rim, onRim, spiral, onSpiral, turn
                   fontFamily: "'Quicksand',system-ui,sans-serif" }}>
       <div style={{ ...cap, marginBottom: 14 }}>The top</div>
 
-      <Switch on={rim} onChange={onRim} label="Scraped rim" hint="cream heaped at the edge" />
+      <Switch on={rim} onChange={onRim} label="Scraped edge" hint="cream heaped at the edge" />
       {/* ⚠️ THE SWITCH TELLS THE TRUTH ABOUT THE SHAPE. A turntable cannot spin a rectangle, so the
           spiral is round-tier only — and a control that can be turned on while nothing happens is
           worse than one that says why it cannot be (rule 7: if it does something, it must look like

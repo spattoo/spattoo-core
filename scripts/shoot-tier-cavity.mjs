@@ -33,7 +33,7 @@ await page.waitForTimeout(1500);
 console.log('  ' + (await page.locator('body').innerText()).replace(/\n+/g, ' | ').slice(0, 300));
 await grab('tier sheet');
 
-if (await tap('Scraped rim')) {
+if (await tap('Scraped edge')) {
   await grab('rim on, default height');
 
   /* ⚠️ DRIVEN TO THE TOP OF ITS RANGE, because the default is a few PIXELS on a cake this size seen

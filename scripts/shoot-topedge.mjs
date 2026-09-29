@@ -1,0 +1,13 @@
+import { chromium } from 'playwright';
+const b = await chromium.launch();
+const page = await b.newPage({ viewport: { width: 1280, height: 820 }, deviceScaleFactor: 2 });
+const errs = [];
+page.on('pageerror', e => errs.push('PAGE ERROR: ' + e.message));
+page.on('console', m => { if (m.type() === 'error') errs.push('console: ' + m.text().slice(0, 200)); });
+await page.goto('http://localhost:5174/elements/top-edge', { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(6000);
+await page.screenshot({ path: process.env.HOME + '/Downloads/admin-top-edge.png' });
+console.log('errors:', errs.length ? errs.join('\n  ') : 'none');
+console.log('has canvas:', await page.locator('canvas').count());
+console.log('title:', (await page.locator('h1').first().textContent().catch(() => '—')));
+await b.close();

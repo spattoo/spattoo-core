@@ -12926,7 +12926,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
                                 textTransform: 'uppercase', marginTop: 10 }}>Top edge</div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                    <Chip label="Scraped rim" isMobile={isMobile}
+                    <Chip label="Scraped edge" isMobile={isMobile}
                           active={!!tier?.topCavity?.on}
                           onClick={() => setTierCavity(selectedEl.index,
                             tier?.topCavity?.on ? { on: false } : { on: true })} />
