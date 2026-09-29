@@ -8283,70 +8283,82 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </ScrollFadeRow>
           </div>
         )}
-        {/* Count is per active surface (denser top than side if you like); Size + Colour are shared. */}
+        {/* ── Every dial on ONE row ───────────────────────────────────────────────────────────────
+            Sandeep, looking at this card: "see the alignment of dialers - can you fix it. we can put
+            them in one row actually."
+
+            It had grown THREE alignments in one card — Count and Big ones each in a left-labelled
+            column with the dial floating centre, and Size on a row with its label beside it — and
+            the labels were printed twice over, because `DialCell` already captions itself
+            (`ControlCell`) and each block added a heading saying the same word above it.
+
+            ⚠️ THE SAME ROW `StripeControls` AND THE CREAM CARD USE: `ScrollFadeRow` over
+            `s.previewRow`, `DialCell`s inside it, no heading above. `ControlCell`'s own header says
+            why the caption belongs below and INSIDE the scroller — a pinned heading beside a
+            scrolling row "opens with 'Colour' and then shows whatever happens to be in view" — and
+            its `minHeight: 46` is what keeps every cell on one baseline. Fourth use of one shape,
+            so it reuses it rather than growing a fourth copy.
+
+            ⚠️ SIZE IS A `DialCell` NOW, not a bare `SizeDial` glued to a left-hand label. That was
+            the third alignment, and it is the one that made the card look broken rather than merely
+            loose.
+
+            ⚠️ EVERY CAPTION NAMES ITSELF. With both surfaces ticked this row is five cells, and
+            captions of "Top · Side · Top · Side · Size" would say nothing about WHICH pair is which
+            once the heading above them was gone. So each cell carries its own noun, narrowed by the
+            surface only when there is more than one.
+
+            Colours stays out of this row deliberately: it is a swatch grid, not a dial, and pairing
+            them would put two kinds of control on one baseline — the exact raggedness being fixed. */}
         {onSurfaces.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={s.editPanelLabel}>Count</span>
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {onSurfaces.map(su => {
-              const c = all.filter(s => scatterGroupOf(s) === su.group).length;
-              // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the slider.
+              const c = all.filter(x => scatterGroupOf(x) === su.group).length;
+              // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the dial.
               const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el));
               return (
-                /* One cell per ACTIVE SURFACE, captioned with the surface when there is more than
-                   one — count is per surface (a denser top than side is a real choice), while Size
+                /* Count is per ACTIVE SURFACE — a denser top than side is a real choice — while Size
                    and Colour are shared. A count, so integer fmt and rounded on write. */
-                <DialCell key={su.group}
-                  label={onSurfaces.length > 1 ? su.label : 'Count'}
+                <DialCell key={`count-${su.group}`}
+                  label={onSurfaces.length > 1 ? `Count ${su.label}` : 'Count'}
                   value={Math.min(c, maxCount)} min={1} max={maxCount} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterDensity(card.elementId, su.zone, Math.round(v))} />
               );
             })}
-          </div>
-        )}
-        {/* ── Big ones ────────────────────────────────────────────────────────────────────────────
-            A few larger sprinkles mixed through the small ones — the pearls among the dots in
-            Sandeep's reference photo.
-
-            ⚠️ DEFAULT 0, AND THAT IS THE WHOLE CONTRACT. "default option is the existing behaviour.
-            the new change is only as an option." At zero this writes nothing, no instance carries
-            `scatterBig`, and the scatter is byte-identical to what it has always been — including
-            every cake saved before this existed.
-
-            ⚠️ A COUNT, NOT A PROPORTION, at Sandeep's call: "count is safe i believe. user would have
-            control." It also means adding more sprinkles does not quietly multiply the big ones — ask
-            for three and you keep three.
-
-            ⚠️ PER SURFACE, like Count and unlike Size/Colour — top and side are independent sets, so
-            "two big ones on top, none on the side" has to be expressible. */}
-        {onSurfaces.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={s.editPanelLabel}>Big ones</span>
             {onSurfaces.map(su => {
               const inSet = all.filter(x => scatterGroupOf(x) === su.group).length;
               return (
-                <DialCell key={su.group}
-                  label={onSurfaces.length > 1 ? su.label : 'Big ones'}
+                /* ── Big ones ──────────────────────────────────────────────────────────────────
+                   A few larger sprinkles mixed through the small ones — the pearls among the dots.
+
+                   ⚠️ DEFAULT 0, AND THAT IS THE WHOLE CONTRACT. "default option is the existing
+                   behaviour. the new change is only as an option." At zero nothing is written, no
+                   instance carries `scatterBig`, and the scatter is identical to what it has always
+                   been — including every cake saved before this existed.
+
+                   ⚠️ A COUNT, NOT A PROPORTION: "count is safe i believe. user would have control."
+                   Adding more sprinkles does not quietly multiply the big ones.
+
+                   ⚠️ PER SURFACE, like Count and unlike Size/Colour, so "two big ones on top, none
+                   on the side" is expressible. */
+                <DialCell key={`big-${su.group}`}
+                  label={onSurfaces.length > 1 ? `Big ${su.label}` : 'Big ones'}
                   value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
                   min={0} max={inSet} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterBigCount(card.elementId, su.zone, Math.round(v))} />
               );
             })}
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={s.editPanelLabel}>Size</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
             {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
                 instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
-                was uniform and would silently WIPE a mix now — one nudge of this dial and every pearl
-                becomes a dot. Two writes instead: the base to the smalls, the clamped large size to
-                the bigs, so the mix survives a resize and stays proportional. */}
-            <SizeDial size={size} min={scR.min} max={scR.max} step={scR.step}
+                was uniform and would silently WIPE a mix now — one nudge and every pearl becomes a
+                dot. `setScatterSize` writes the base to the smalls and the clamped large size to the
+                bigs, so the mix survives a resize and stays proportional. */}
+            <DialCell label="Size" value={size} min={scR.min} max={scR.max} step={scR.step}
               onChange={v => setScatterSize(card.elementId, v)} />
-          </div>
-        </div>
+          </ScrollFadeRow>
+        )}
         {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
             One wheel here set every instance to the same colour, because the write fanned it across
             the whole group. But each scatter instance is its own sticker record with its own `color`,
