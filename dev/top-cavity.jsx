@@ -6,7 +6,9 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import './scene.js';
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
-import { buildTopCavity, CAVITY_DEFAULTS } from '../src/designer/geometry/topCavity.js';
+import { buildTopSurface, CAVITY_DEFAULTS } from '../src/designer/geometry/topCavity.js';
+import { SPIRAL_DEFAULTS } from '../src/designer/geometry/topSpiral.js';
+import { isRoundWall } from '../src/designer/geometry/surface.js';
 
 /* ── A dished cake top with a raised cream lip ───────────────────────────────────────────────────
  *
@@ -33,6 +35,18 @@ import { buildTopCavity, CAVITY_DEFAULTS } from '../src/designer/geometry/topCav
  *                                        thing that matters most, and the one to keep looking at
  *   /top-cavity.html?swells=6            fewer, slower passes of the scraper
  *   /top-cavity.html?seed=3              a different cake with the same settings
+ *
+ * ── and the spiral, which is a separate choice ──────────────────────────────────────────────────
+ *
+ *   /top-cavity.html?spiral=1            both: the scraped rim with the turntable spiral inside it
+ *   /top-cavity.html?spiral=1&lip=0      the spiral ALONE on a flat top — the combination that
+ *                                        proves they are independent rather than one feature
+ *   /top-cavity.html?spiral=1&turns=8    a tighter coil; the reference has about four
+ *   /top-cavity.html?spiral=1&sdepth=0.02 a groove deep enough to see what it is doing
+ *   /top-cavity.html?spiral=1&swander=0  perfect circles — the machined version, the control for
+ *                                        the thing that matters most
+ *   /top-cavity.html?spiral=1&shape=rect circular turntable rings cut off by a rectangle, which is
+ *                                        what a sheet cake actually gets
  */
 const q = new URLSearchParams(location.search);
 const num = (k, d) => (q.has(k) ? Number(q.get(k)) : d);
@@ -75,6 +89,9 @@ const LOOK_Y = TOTAL_H * 0.62;
 /* The cake's own cream. One colour for the tier and the cavity — see above. */
 const CREAM = q.get('cream') ?? '#b9c8e8';
 
+/* The spiral needs a turntable, and a rectangle cannot be spun — see buildTopSurface. */
+const ROUND_TIER = isRoundWall(SHAPE);
+
 /* ── The two controls a baker gets ──────────────────────────────────────────────────────────────
  *
  * Sandeep, once the shape was right: *"there should be 2 options - 1. adjustable height of the
@@ -91,15 +108,54 @@ const CREAM = q.get('cream') ?? '#b9c8e8';
  * over the chance to make it read as something else. They stay authorable in the URL here, and
  * belong to an admin row rather than a customer card when this is wired up.
  */
-function Panel({ lip, onLip, seed, onShuffle }) {
+/* ── Two independent choices, not one ───────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"so spiral is an option user can select separately. so both edge elevation, spiral can
+ * individually be selected."* So the panel has two switches, and all four states are reachable —
+ * including spiral-with-no-rim, which is the one that proves they are not secretly one feature.
+ *
+ * ⚠️ THEY ARE ONE MESH UNDERNEATH, and that is not a contradiction. See buildTopSurface: separately
+ * SELECTABLE, jointly BUILT, because they are two tools on one sheet of cream.
+ */
+function Switch({ on, onChange, label, hint, disabled = false }) {
+  return (
+    <button type="button" onClick={() => !disabled && onChange(!on)} aria-pressed={on}
+      disabled={disabled}
+      style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', textAlign: 'left',
+               padding: '9px 11px', marginBottom: 10, borderRadius: 10,
+               cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.45 : 1,
+               fontFamily: 'inherit',
+               border: `1.5px solid ${on ? '#2C4433' : '#D8D3CA'}`,
+               background: on ? '#2C4433' : '#fff' }}>
+      <span style={{ width: 15, height: 15, borderRadius: 4, flexShrink: 0,
+                     border: `1.5px solid ${on ? '#fff' : '#B9B3A8'}`,
+                     background: on ? '#fff' : 'transparent' }} />
+      <span>
+        <span style={{ display: 'block', fontSize: 13, fontWeight: 800, color: on ? '#fff' : '#2C4433' }}>{label}</span>
+        <span style={{ display: 'block', fontSize: 10.5, color: on ? '#C9D6CE' : '#8a8a8a' }}>{hint}</span>
+      </span>
+    </button>
+  );
+}
+
+function Panel({ lip, onLip, seed, onShuffle, rim, onRim, spiral, onSpiral, turns, onTurns }) {
   const row = { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 };
   const cap = { fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.4, textTransform: 'uppercase' };
   return (
     <div style={{ width: 210, padding: 20, borderRight: '1.5px solid #E8E4DC', background: '#fff',
                   fontFamily: "'Quicksand',system-ui,sans-serif" }}>
-      <div style={{ ...cap, marginBottom: 14 }}>Top cavity</div>
+      <div style={{ ...cap, marginBottom: 14 }}>The top</div>
 
-      <div style={row}>
+      <Switch on={rim} onChange={onRim} label="Scraped rim" hint="cream heaped at the edge" />
+      {/* ⚠️ THE SWITCH TELLS THE TRUTH ABOUT THE SHAPE. A turntable cannot spin a rectangle, so the
+          spiral is round-tier only — and a control that can be turned on while nothing happens is
+          worse than one that says why it cannot be (rule 7: if it does something, it must look like
+          it does something — and the converse). */}
+      <Switch on={spiral && ROUND_TIER} onChange={onSpiral} disabled={!ROUND_TIER}
+              label="Spiral" hint={ROUND_TIER ? 'the turntable knife mark' : 'needs a round tier'} />
+
+      <div style={{ ...cap, marginTop: 18, marginBottom: 12, opacity: rim ? 1 : 0.35 }}>Rim</div>
+      <div style={{ ...row, opacity: rim ? 1 : 0.35, pointerEvents: rim ? 'auto' : 'none' }}>
         {/* The shared dial, not a range input — CLAUDE.md names it "THE size control", and using it
             here is also a preview of what the real control would feel like. */}
         <SizeDial size={lip} min={0} max={0.18} step={0.005} onChange={onLip}
@@ -107,6 +163,17 @@ function Panel({ lip, onLip, seed, onShuffle }) {
         <div>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Height</div>
           <div style={{ fontSize: 11, color: '#8a8a8a' }}>how proud the rim stands</div>
+        </div>
+      </div>
+
+      <div style={{ ...cap, marginTop: 4, marginBottom: 12, opacity: spiral && ROUND_TIER ? 1 : 0.35 }}>Spiral</div>
+      <div style={{ ...row, opacity: spiral && ROUND_TIER ? 1 : 0.35,
+                    pointerEvents: spiral && ROUND_TIER ? 'auto' : 'none' }}>
+        <SizeDial size={turns} min={2} max={10} step={1} onChange={onTurns}
+                  fmt={v => `${v}`} />
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Turns</div>
+          <div style={{ fontSize: 11, color: '#8a8a8a' }}>rings from the middle out</div>
         </div>
       </div>
 
@@ -118,7 +185,7 @@ function Panel({ lip, onLip, seed, onShuffle }) {
         </button>
         <div>
           <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Irregularity</div>
-          <div style={{ fontSize: 11, color: '#8a8a8a' }}>another hand&rsquo;s pass &middot; #{seed}</div>
+          <div style={{ fontSize: 11, color: '#8a8a8a' }}>one Shuffle moves both &middot; #{seed}</div>
         </div>
       </div>
 
@@ -130,8 +197,8 @@ function Panel({ lip, onLip, seed, onShuffle }) {
   );
 }
 
-function Tier({ lip, seed, shape, height, y }) {
-  const cfg = {
+function Tier({ lip, seed, rim, spiral, turns, shape, height, y }) {
+  const cav = {
     lip,
     seed,
     dish:   num('dish',   CAVITY_DEFAULTS.dish),
@@ -140,9 +207,24 @@ function Tier({ lip, seed, shape, height, y }) {
     wobble: num('wobble', CAVITY_DEFAULTS.wobble),
     swells: num('swells', CAVITY_DEFAULTS.swells),
   };
+  /* ⚠️ THE SAME SEED RUNS BOTH. Shuffling should give another cake, not another rim on the same
+     spiral — two independent Shuffles would be two ways to ask one question. Offset so the rim's
+     wander and the spiral's are different hands, not the same one twice. */
+  const spi = {
+    seed:   seed + 511,
+    turns,
+    depth:  num('sdepth',  SPIRAL_DEFAULTS.depth),
+    fade:   num('sfade',   SPIRAL_DEFAULTS.fade),
+    wander: num('swander', SPIRAL_DEFAULTS.wander),
+    swells: num('sswells', SPIRAL_DEFAULTS.swells),
+  };
   const cavity = useMemo(
-    () => (q.get('off') === '1' || lip <= 0 ? null : buildTopCavity(shape, height, cfg)),
-    [shape, height, cfg.lip, cfg.dish, cfg.width, cfg.crest, cfg.wobble, cfg.swells, cfg.seed],
+    () => (q.get('off') === '1' ? null : buildTopSurface(shape, height, {
+      cavity: rim && lip > 0 ? cav : null,
+      spiral: spiral ? spi : null,
+    })),
+    [shape, height, rim, spiral, cav.lip, cav.dish, cav.width, cav.crest, cav.wobble, cav.swells,
+     cav.seed, spi.turns, spi.depth, spi.fade, spi.wander, spi.swells, spi.seed],
   );
   useEffect(() => () => cavity?.dispose(), [cavity]);
 
@@ -166,6 +248,9 @@ function Tier({ lip, seed, shape, height, y }) {
 
 function App() {
   const [lip, setLip] = useState(num('lip', CAVITY_DEFAULTS.lip));
+  const [rim, setRim] = useState(q.get('rim') !== '0');
+  const [spiral, setSpiral] = useState(q.get('spiral') === '1');
+  const [turns, setTurns] = useState(num('turns', SPIRAL_DEFAULTS.turns));
   /* A fresh number, not the next one. "Seed 8 after seed 7" invites the idea that they are ordered
      and that somewhere further along is a better one; they are just different hands. */
   const [seed, setSeed] = useState(num('seed', CAVITY_DEFAULTS.seed));
@@ -179,6 +264,8 @@ function App() {
   return (
     <div style={{ height: '100%', display: 'flex' }}>
       <Panel lip={lip} onLip={setLip} seed={seed}
+             rim={rim} onRim={setRim} spiral={spiral} onSpiral={setSpiral}
+             turns={turns} onTurns={setTurns}
              onShuffle={() => setSeed(1 + Math.floor(Math.random() * 9999))} />
     <Canvas shadows camera={{ position: [0, EYE_Y, EYE_D], fov: 32 }} style={{ height: '100%' }}>
       <SceneLights />
@@ -187,7 +274,8 @@ function App() {
           one thing a hand-scraped rim never does, and more obviously wrong than the uniform ring
           this whole feature started as. */}
       {STACK.map((t, i) => (
-        <Tier key={i} lip={lip} seed={seed + i * 37} shape={t.shape} height={t.height} y={BASE_Y[i]} />
+        <Tier key={i} lip={lip} seed={seed + i * 37} rim={rim} spiral={spiral} turns={turns}
+              shape={t.shape} height={t.height} y={BASE_Y[i]} />
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <circleGeometry args={[3, 64]} />

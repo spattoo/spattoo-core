@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { perimeter } from './surface.js';
+import { perimeter, isRoundWall } from './surface.js';
 import { ringNoise } from '../utils/random.js';
+import { spiralField, SPIRAL_DEFAULTS } from './topSpiral.js';
 
 /* ── A dished top with a raised cream lip ───────────────────────────────────────────────────────
  *
@@ -113,21 +114,86 @@ export function cavityProfile(u, { lip, dish, crest }) {
     : lip + (-dish - lip) * smooth((t - c) / (1 - c));
 }
 
+/* The floor's outer radius: how far the spiral has to reach. Taken off the ring the floor actually
+   starts from rather than from the shape, because the lip eats into it by a wobbling amount — and on
+   a rectangle "radius" is the corner, which is where a turntable ring would run out. */
+function outerR(pos, ring) {
+  let r = 0;
+  for (let i = 0; i < AROUND; i++) {
+    const o = (ring + i) * 3;
+    r = Math.max(r, Math.hypot(pos[o], pos[o + 2]));
+  }
+  return r;
+}
+
 /**
- * The cavity for a tier, as one geometry sitting at the tier's top.
+ * The cavity for a tier — the scraped rim on its own, with a flat floor inside it.
  *
- * @param shape  the tier's footprint — anything `perimeter()` understands
- * @param height the tier's height, which every fraction above is measured against
- * @param cfg    overrides on CAVITY_DEFAULTS
- * @returns THREE.BufferGeometry in the tier's own frame, with y = 0 at the flat top
+ * Kept as the name the rim is known by; `buildTopSurface` is the general one.
  */
 export function buildTopCavity(shape, height, cfg = {}) {
-  const c = { ...CAVITY_DEFAULTS, ...cfg };
+  return buildTopSurface(shape, height, { cavity: cfg });
+}
+
+/**
+ * A tier's top surface: the scraped rim, the turntable spiral, either, or both.
+ *
+ * ⚠️ ONE GEOMETRY FOR BOTH, AND IT IS NOT A TIDINESS PREFERENCE. Sandeep asked for them to be
+ * separately selectable, which reads like two features and two meshes. They are two TOOLS on one
+ * sheet of cream: the spiral is a groove in the floor the rim encloses. Built apart, the spiral's
+ * disc and the cavity's floor would sit at the same depth and z-fight wherever both were chosen, and
+ * the spiral could not meet the rim's inner edge without gaps, because that edge wobbles by design
+ * and a disc does not. Separately SELECTABLE, jointly BUILT.
+ *
+ * @param shape  the tier's footprint — anything `perimeter()` understands
+ * @param height the tier's height, which every fraction is measured against
+ * @param opts.cavity  overrides on CAVITY_DEFAULTS, or null/false for no rim
+ * @param opts.spiral  overrides on SPIRAL_DEFAULTS, or null/false for no spiral
+ * @returns THREE.BufferGeometry in the tier's own frame, with y = 0 at the flat top, or null when
+ *          neither was asked for — there is then nothing to draw and the tier's own cap is correct
+ */
+export function buildTopSurface(shape, height, { cavity = null, spiral = null } = {}) {
   const perim = perimeter(shape);
   if (!perim?.length || !(height > 0)) return null;
+  if (!cavity && !spiral) return null;
 
-  const lip = c.lip * height;
-  const dish = c.dish * height;
+  const c = { ...CAVITY_DEFAULTS, ...(cavity || {}) };
+  /* ⚠️ NO RIM MEANS NO BAND, NOT A BAND OF ZERO WIDTH. Collapsing it leaves ACROSS coincident rings
+     at the perimeter: degenerate triangles, NaN normals, and a floor that starts from a seam it
+     cannot see. The floor simply starts at the contour instead. */
+  const band = !!cavity;
+  const lip = band ? c.lip * height : 0;
+  const dish = band ? c.dish * height : 0;
+
+  /* ── Everything sits ON the cake, never in it ──────────────────────────────────────────────────
+   *
+   * ⚠️ THE DISH WAS INVISIBLE FOR AS LONG AS IT EXISTED, and the spiral would have been too. The
+   * floor was placed at `-dish`, below y = 0 — which is not "a dip in the top", it is INSIDE the
+   * tier, behind the tier's own opaque cap. Swept in the harness, `dish=0.0001` and `dish=0.30` (a
+   * third of the whole tier's height, a deep bowl) came out pixel-for-pixel the same picture. A
+   * parameter that has never once changed a frame reads in the source exactly like one that works.
+   *
+   * ⚠️ AND IT IS ALSO WHAT A CAKE IS. A scraper cannot take the top below the sponge; it pushes
+   * cream UP at the rim and leaves the middle thin. So the surface is lifted until its lowest point
+   * is the cake's own top: the spiral's troughs come down to y = 0, the floor sits a groove's depth
+   * above them, and the ridge stands over both. The dip a baker sees is the drop from the rim to the
+   * middle — which is what they asked for — not a hole cut in the sponge.
+   */
+  /* ⚠️ THE SPIRAL IS A ROUND-TIER MARK, AND THAT IS A FACT ABOUT THE TOOL, NOT A LIMIT OF THE MESH.
+     It is made by spinning a turntable under a knife, and a rectangle cannot be spun — so no sheet
+     cake in any reference has one. Forced onto one it also LOOKS made-up: `rOut` becomes the corner
+     distance, so the rings never reach the long sides and a tight coil sits marooned in the middle
+     of a flat field. The rim above it is different and stays on every shape, because a scraper
+     genuinely does walk any perimeter. `isRoundWall` is this codebase's existing predicate for the
+     distinction (INVARIANTS #1 — never a test on a shape's NAME). */
+  const swirl = spiral && isRoundWall(shape) ? spiral : null;
+  /* A spiral asked for on a sheet cake, with no rim beside it, leaves nothing to draw — and drawing
+     it anyway would lay a flat sheet exactly on the tier's own cap, which is a z-fight rather than a
+     feature. The caller's choice is remembered on the tier either way, so it comes back the moment
+     the shape is round again. */
+  if (!band && !swirl) return null;
+  const grooves = swirl ? Math.max(0, (swirl.depth ?? SPIRAL_DEFAULTS.depth) * height) : 0;
+  const rise = dish + grooves;
   /* The band's width against the shape's own smallest half-span, so a wide sheet cake and a small
      round get a lip in the same proportion to themselves. */
   const span = shape.kind === 'rect'
@@ -146,7 +212,7 @@ export function buildTopCavity(shape, height, cfg = {}) {
   const idx = [];
   const ringOf = [];
 
-  for (let j = 0; j <= ACROSS; j++) {
+  for (let j = 0; j <= (band ? ACROSS : 0); j++) {
     const u = j / ACROSS;
     const start = pos.length / 3;
     for (let i = 0; i < AROUND; i++) {
@@ -159,13 +225,13 @@ export function buildTopCavity(shape, height, cfg = {}) {
       const y = cavityProfile(u, { lip: lipHere, dish, crest: c.crest });
       /* Inward along the contour's own outward normal — the one thing every perimeter reports,
          which is what makes a heart inset like a heart rather than like the circle round it. */
-      pos.push(p.x - p.nx * wHere * u, y, p.z - p.nz * wHere * u);
+      pos.push(p.x - p.nx * wHere * u, rise + y, p.z - p.nz * wHere * u);
     }
     ringOf.push(start);
   }
 
   /* The band: one quad per sample per step, closed around. */
-  for (let j = 0; j < ACROSS; j++) {
+  for (let j = 0; j < ringOf.length - 1; j++) {
     const a = ringOf[j], b = ringOf[j + 1];
     for (let i = 0; i < AROUND; i++) {
       const n = (i + 1) % AROUND;
@@ -174,15 +240,50 @@ export function buildTopCavity(shape, height, cfg = {}) {
     }
   }
 
-  /* The floor inside the lip: a fan to the middle, at the dish's depth. Flat, because the dish in
-     both photographs is flat with the ripple of the scraper across it — the ripple is a surface
-     finish, not geometry, and belongs to whatever texture the tier already wears. */
+  /* ── The floor inside the lip ──────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ NESTED CONTOURS, NOT A FAN, AND THE REASON IS WORTH KEEPING. A fan is centre-plus-one-ring:
+   * every vertex but one sits on the boundary, so there is nothing in between to displace and a
+   * height field applied to it gives a flat floor with a wavy edge. creamWall's `polarDisc` carries
+   * the same warning for the same reason. With the spiral off this is one ring and a centre — the
+   * old fan exactly, at the same cost — so the cheap case stays cheap.
+   *
+   * ⚠️ AND THEY ARE THE SHAPE'S OWN CONTOUR SCALED INWARD, not a polar disc. `polarDisc` is round
+   * by construction; scaling the lip's inner edge toward the middle is "one path, every shape"
+   * again, it meets the lip exactly because it STARTS as the lip's inner ring, and on a sheet cake
+   * it gives what a real one has — circular turntable rings, cut off by a rectangular edge.
+   */
+  const inner = ringOf[ringOf.length - 1];
+  const drop = swirl ? spiralField(swirl, outerR(pos, inner), height) : null;
+  /* The spiral needs enough rings to resolve its own grooves; without it, one. */
+  const DOWN = drop ? Math.max(40, Math.round((swirl.turns ?? SPIRAL_DEFAULTS.turns) * 16)) : 1;
+
+  const floorOf = [inner];
+  for (let j = 1; j < DOWN; j++) {
+    const k = 1 - j / DOWN;
+    const start = pos.length / 3;
+    for (let i = 0; i < AROUND; i++) {
+      const o = (inner + i) * 3;
+      const x = pos[o] * k, z = pos[o + 2] * k;
+      pos.push(x, rise - dish + (drop ? drop(x, z) : 0), z);
+    }
+    floorOf.push(start);
+  }
+  for (let j = 0; j < floorOf.length - 1; j++) {
+    const a = floorOf[j], b = floorOf[j + 1];
+    for (let i = 0; i < AROUND; i++) {
+      const n = (i + 1) % AROUND;
+      idx.push(a + i, b + i, a + n);
+      idx.push(a + n, b + i, b + n);
+    }
+  }
+  /* The middle, where the knife was set down. */
   const centre = pos.length / 3;
-  pos.push(0, -dish, 0);
-  const inner = ringOf[ACROSS];
+  pos.push(0, rise - dish + (drop ? drop(0, 0) : 0), 0);
+  const last = floorOf[floorOf.length - 1];
   for (let i = 0; i < AROUND; i++) {
     const n = (i + 1) % AROUND;
-    idx.push(centre, inner + n, inner + i);
+    idx.push(centre, last + n, last + i);
   }
 
   const g = new THREE.BufferGeometry();

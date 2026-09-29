@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makeSwirlField } from './topSpiral.js';
 import { displaceCreamWaveCylinder, creamWaveFieldFor } from '../shared/textures/creamWaveTexture.js';
 import { makeWeaveField, weaveTiles } from '../shared/textures/weaveStencilTexture.js';
 import { buildPipingStroke, mergePenGeometries, NOZZLE_BY_KEY, DEFAULT_NOZZLE } from './creamPen.js';
@@ -963,14 +964,18 @@ export function makeWallReliefSampler(wall, radius, params = {}, wallHeight = ra
  *
  * So the top is a DISC with a shallow ripple: the spiral is a pattern IN a flat surface, an order of
  * magnitude shallower than a rope, and it carries no tip profile at all because no tip touched it.
+ *
+ * ⚠️ THE FIELD ITSELF NOW LIVES IN topSpiral.js, and it moved because a second cake wanted it. The
+ * marks are the same marks whatever the wall was piped with, so gating them behind `top: 'spiral'`
+ * meant a smooth or waved tier could not have the top its own reference photograph shows. The piped
+ * lid is now one caller of a shared field rather than its owner. Re-exported here because this is
+ * where it has been imported from since it was written.
+ *
+ * ⚠️ IMPORTED AS WELL AS RE-EXPORTED. `export { x } from './y'` forwards the name to this module's
+ * consumers WITHOUT binding it in this module's own scope, so `buildStyledTop` below — which calls
+ * it — died with "makeSwirlField is not defined" while every import of it elsewhere kept working.
  */
-export function makeSwirlField({ turns, rOut }) {
-  return (r, theta) => {
-    // One Archimedean coordinate: a turn inward per revolution, `turns` of them from rim to middle.
-    const sp = turns * (1 - Math.min(1, r / rOut)) + theta / TAU;
-    return 0.5 - 0.5 * Math.cos(TAU * sp);
-  };
-}
+export { makeSwirlField };
 
 /* A flat disc as a dense polar GRID.
  *

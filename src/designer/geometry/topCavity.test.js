@@ -74,12 +74,18 @@ describe('every dimension is a fraction of the tier', () => {
      started wandering. The lip is nominal now, not actual: the wander carries it above and below,
      which is the point. Asserting `hi === lip` would pin the very uniformity the wobble exists to
      destroy — a test that passes only while the feature is broken. */
-  it('puts the ridge above the tier top and the floor below it, within the wander', () => {
+  /* ⚠️ THIS TEST USED TO ASSERT THE BUG. It read `lo ≈ -dish` — the floor sitting BELOW the tier's
+     top — and passed happily for as long as the floor was invisible, because below the top is inside
+     the cake, behind its own opaque cap. Swept in the harness, a dish of 0.0001 and one of 0.30 were
+     the same picture. The surface is lifted to rest ON the cake now, so the floor is the datum and
+     nothing may go under it. */
+  it('puts the ridge above the tier top and rests the floor ON it', () => {
     const { lo, hi } = extent(buildTopCavity(round, 1));
     const swing = 1 + CAVITY_DEFAULTS.wobble;
-    expect(hi).toBeGreaterThan(0);
-    expect(hi).toBeLessThanOrEqual(CAVITY_DEFAULTS.lip * swing + 1e-6);
-    expect(lo).toBeCloseTo(-CAVITY_DEFAULTS.dish, 5);
+    expect(lo).toBeCloseTo(0, 5);
+    /* The rim's outer edge sits a dish's depth up, so the crest clears that as well as zero. */
+    expect(hi).toBeGreaterThan(CAVITY_DEFAULTS.dish);
+    expect(hi).toBeLessThanOrEqual(CAVITY_DEFAULTS.dish + CAVITY_DEFAULTS.lip * swing + 1e-6);
   });
 
   /* ⚠️ ONE RING, AROUND, NOT EVERY VERTEX ABOVE A THRESHOLD. Two things move `y`: the profile's
@@ -115,7 +121,7 @@ describe('every dimension is a fraction of the tier', () => {
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < p.length; i += 3) {
       const y = p[i + 1];
-      if (y > -CAVITY_DEFAULTS.dish + 1e-6) continue;   // only the floor ring
+      if (y > 1e-6) continue;                            // only the floor ring, now the datum
       const r = Math.hypot(p[i], p[i + 2]);
       if (r < 1e-6) continue;                            // skip the centre vertex
       lo = Math.min(lo, r); hi = Math.max(hi, r);
