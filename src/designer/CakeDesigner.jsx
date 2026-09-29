@@ -7925,7 +7925,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const painting = creamPaint?.tierIndex === creamTier && creamPaint?.layerId === band?.layerId;
     /* ⚠️ BLACK, NOT GREEN. Sandeep: "buttons in black" — which also settles the question left open
        on the foil card ("see the buttons are in green color"). #1a1a1a is what "active" already
-       means everywhere else in this app (doneBtn, the toolbar's pressed state, editTabOn), so the
+       means everywhere else in this app (doneBtn, the toolbar's pressed state), so the
        finish cards now agree with every other card instead of carrying their own tone. */
     const chip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
       border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE, color: active ? SURFACE : INK });
@@ -12761,10 +12761,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                a baker taps to find empty — which is the usual argument against splitting it out. */
             if (((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen)
                 && stopsEligible && !hasActiveGroup) {
-              // "Gradient", not "Blend". Blend was a width compromise from when Shape made four tabs;
-              // three fit the real word, and the panel inside this tab has always called it a
-              // gradient — a tab whose label disagrees with its own contents is a small lie.
-              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Colours' : 'Gradient', node: (
+              /* ⚠️ "Pattern" ON A TIER, "Gradient" ON A STICKER — each accurate to what is inside.
+               *
+               * Sandeep: "but other two tabs are 'color' and 'colors' these are confusing". They
+               * were: "Colours" sat one letter from "Colour" in the same strip.
+               *
+               * ⚠️ AND THAT WAS A SILENT REGRESSION, not a taste call. This shipped as "Blend" (a
+               * width compromise from when Shape made four tabs), was restored to "Gradient" on
+               * 2026-08-07 — "a tab whose label disagrees with its own contents is a small lie" —
+               * and a later edit then added `isTierGradient ? 'Colours'`. Since `isTierGradient` is
+               * merely `selectedEl?.type === 'tier'`, that made the 'Gradient' branch UNREACHABLE
+               * for tiers: the exact case the 2026-08-07 change was about. Two doc entries in
+               * mobile-navigation.md still described the old, correct label.
+               *
+               * ⚠️ WHY NOT SIMPLY RESTORE "Gradient": the panel stopped being only a gradient. On a
+               * tier it offers Solid / Ombre / STRIPES, and stripes are not a gradient — the same
+               * "small lie" pointing the other way. A STICKER really does only get a gradient (the
+               * treatment row is gated on `isTierGradient`), so it keeps the accurate word. */
+              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Pattern' : 'Gradient', node: (
                 <>
                 {/* ⚠️ On the COLOUR axis, not under Style. Style is documented as geometry only and is
                     single-select, so putting stripes there would make "ribbed AND striped" —
@@ -12995,17 +13009,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   }}>{isMobile ? 'Done' : '✕'}</button>
                 </div>
 
+                {/* ⚠️ THE SHARED `Segmented`, NOT A FOURTH HAND-ROLLED STRIP.
+                  *
+                  * Sandeep, looking at this row on a phone: "when i click on cake (tier) it only
+                  * opens the color options. i cant choose the cream vs fondant or the style option
+                  * that i can choose in desktop" — then, asked what happened when he tapped
+                  * Frosting: "I didn't notice it was a tab."
+                  *
+                  * Nothing was broken. Measured at 390 and 360px the strip does not overflow and
+                  * every tab is on screen and tappable; on DESKTOP all sections stack at once, on a
+                  * phone only the active one mounts, so the tabs are the sole way through — and
+                  * they did not read as a way through. The old row was `border: 'none'` over a 5%
+                  * black fill, so the unselected tabs looked like inert background beside one solid
+                  * black pill, which reads as a heading with two disabled things next to it.
+                  *
+                  * `Segmented` is the component this app already extracted for exactly this — a
+                  * tinted track, a hairline, a raised white selection, a focus ring, arrow-key
+                  * navigation and real tablist ARIA — and it was ALREADY imported in this file and
+                  * used eight times in it while this strip hand-rolled its own. Its own header calls
+                  * a fourth copy out by name: "the visual drift is what you notice, and the
+                  * accessibility is what silently never arrives."
+                  *
+                  * `equal` because these are a few short labels that must not reflow as the section
+                  * list changes (Shape appears only on a square tier). */}
                 {showTabs && (
-                  <div style={s.editTabs} role="tablist">
-                    {sections.map(sec => (
-                      <button key={sec.id} role="tab" aria-selected={sec.id === active.id}
-                              style={{ ...s.editTab, ...(sec.id === active.id ? s.editTabOn : {}) }}
-                              // The drag is an override of THIS view, so switching view drops it and
-                              // the next tab sizes to its own content.
-                              onClick={() => { setEditTab(sec.id); setEditDragH(null); }}>
-                        {sec.label}
-                      </button>
-                    ))}
+                  <div style={{ width: '100%', paddingBottom: 10, flexShrink: 0 }}>
+                    <Segmented
+                      equal
+                      isMobile
+                      label="What to change"
+                      value={active.id}
+                      items={sections.map(sec => ({ id: sec.id, label: sec.label }))}
+                      // The drag is an override of THIS view, so switching view drops it and the
+                      // next tab sizes to its own content.
+                      onChange={id => { setEditTab(id); setEditDragH(null); }}
+                    />
                   </div>
                 )}
 
@@ -15674,20 +15712,13 @@ const s = {
      So: the tabs still divide the width, and `minWidth` on each is what turns the row into a
      scroller the moment there are more than it can seat. Nothing changes today; it degrades
      gracefully the day a sixth section appears. */
-  editTabs: {
-    display: 'flex', gap: 4, padding: '0 0 10px', flexShrink: 0, width: '100%',
-    overflowX: 'auto', scrollbarWidth: 'none',
-  },
-  editTab: {
-    flex: '1 1 0', minWidth: 72, minHeight: 44, padding: '9px 6px', borderRadius: 9, border: 'none',
-    background: 'rgba(0,0,0,0.05)', color: '#6b6b6b', fontSize: 12, fontWeight: 700,
-    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer',
-  },
+  // (`editTabs`/`editTab`/`editTabOn` are gone — the tier sheet's strip is the shared `Segmented`
+  //  now. They were a fourth copy of a control this app had already extracted, and the one copy
+  //  without a focus ring, a keyboard path or tablist ARIA.)
   // #1a1a1a is what "selected" is throughout this app — the toolbar's active button, the rotation
   // slider, and `gradientModeOn`, which is the control sitting inside the very next tab. The brand
   // green belongs to the storefront and the marketing site; using it here made the tab strip the one
   // green thing in a black chrome.
-  editTabOn: { background: INK, color: '#fff' },
   sheetBody: {
     flex: '1 1 auto', minHeight: 0, width: '100%', overflowY: 'auto',
     display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',

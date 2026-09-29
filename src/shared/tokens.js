@@ -22,7 +22,9 @@
 // the two drift apart for good reasons, and a shared constant would force them together.
 
 /** Ink — text, borders at full strength, and the filled state of a primary control.
- *  What "active" already means everywhere: doneBtn, the toolbar's pressed button, editTabOn. */
+ *  What "active" already means everywhere: doneBtn and the toolbar's pressed button. (It named the
+ *  tier sheet's `editTabOn` too, until that strip became the shared `Segmented`, whose selection is
+ *  a raised white tile on a tinted track rather than an ink fill.) */
 export const INK = '#1a1a1a';
 
 /** The field a control sits on when it is not filled. */
