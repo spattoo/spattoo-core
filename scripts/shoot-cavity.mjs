@@ -26,14 +26,14 @@ function findFile(pathish) {
    now" went past without anyone able to say by how much — and the project memory is explicit about
    it: wire the reference into the harness rather than making Sandeep do the comparing. */
 const REF = process.env.REF
-  ? `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${readFileSync(findFile(process.env.REF)).toString('base64')}" style="width:460px;display:block;object-fit:cover"><figcaption style="padding:8px 0;color:#B91C1C">THE REFERENCE</figcaption></figure>`
+  ? `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${readFileSync(findFile(process.env.REF)).toString('base64')}" style="width:700px;display:block;object-fit:cover"><figcaption style="padding:8px 0;color:#B91C1C">THE REFERENCE</figcaption></figure>`
   : '';
 const CASES = (process.env.CASES || 'off=1|lip=0&dish=0.05|dish=0|lip=0.09|').split('|');
 const OUT = `${process.env.HOME}/Downloads/${process.env.NAME || 'cavity'}.png`;
 const b = await chromium.launch();
 const shots = [];
 for (const c of CASES) {
-  const page = await b.newPage({ viewport: { width: 460, height: 420 }, deviceScaleFactor: 2 });
+  const page = await b.newPage({ viewport: { width: 700, height: 460 }, deviceScaleFactor: 2 });
   page.on('pageerror', e => console.error('PAGE ERROR:', e.message));
   await page.goto(`http://localhost:5190/top-cavity.html?${c}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2800);
@@ -43,9 +43,9 @@ for (const c of CASES) {
   await page.close();
   console.log('  shot', c || 'defaults');
 }
-const sheet = await b.newPage({ viewport: { width: 460 * (shots.length + (REF ? 1 : 0)), height: 470 }, deviceScaleFactor: 2 });
+const sheet = await b.newPage({ viewport: { width: 700 * (shots.length + (REF ? 1 : 0)), height: 510 }, deviceScaleFactor: 2 });
 await sheet.setContent(`<body style="margin:0;display:flex;font:600 14px system-ui;background:#fff">
-${REF}${shots.map(s => `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${s.png}" style="width:460px;display:block"><figcaption style="padding:8px 0;color:#2C4433">${s.label}</figcaption></figure>`).join('')}</body>`);
+${REF}${shots.map(s => `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${s.png}" style="width:700px;display:block"><figcaption style="padding:8px 0;color:#2C4433">${s.label}</figcaption></figure>`).join('')}</body>`);
 await sheet.waitForTimeout(400);
 await sheet.screenshot({ path: OUT });
 await b.close();

@@ -28,6 +28,7 @@ import { buildTopCavity, CAVITY_DEFAULTS } from '../src/designer/geometry/topCav
  *   /top-cavity.html?dish=0&lip=0.09     lip only: a bowl rim with a flat floor
  *   /top-cavity.html?crest=0.6           the ridge pushed inward, away from the very edge
  *   /top-cavity.html?off=1               no cavity at all, the control case
+ *   /top-cavity.html?tiers=3             a stack — does a raised rim clear the tier above it?
  *   /top-cavity.html?wobble=0            the machined torus this started as — the control for the
  *                                        thing that matters most, and the one to keep looking at
  *   /top-cavity.html?swells=6            fewer, slower passes of the scraper
@@ -40,6 +41,36 @@ const HEIGHT = 1.0;
 const SHAPE = q.get('shape') === 'rect'
   ? { kind: 'rect', halfW: 1.25, halfD: 0.85, cornerR: 0.22 }
   : { kind: 'round', radius: 1.1 };
+
+/* ── A stack, because one tier cannot answer the question ───────────────────────────────────────
+ *
+ * ⚠️ `?tiers=3` EXISTS BECAUSE NEITHER OF US HAD SEEN IT. Sandeep: *"this works only on the top
+ * tier. for example if its a 3 tier cake"* — then, a minute later: *"sorry, there is nothing wrong
+ * if its applied to a lower tier. its only edge, so not really a proble."* He is almost certainly
+ * right: a tier rests well inside the rim, so a raised edge has nothing to collide with. But "almost
+ * certainly right" about geometry is what a picture is for, and a harness that can only draw one
+ * tier cannot be asked.
+ *
+ * Each tier is 80% of the one below, which is roughly how a real stack steps in.
+ */
+const TIERS = Math.max(1, Math.min(4, Number(q.get('tiers') ?? 1)));
+const STACK = Array.from({ length: TIERS }, (_, i) => ({
+  shape: SHAPE.kind === 'rect'
+    ? { ...SHAPE, halfW: SHAPE.halfW * 0.8 ** i, halfD: SHAPE.halfD * 0.8 ** i, cornerR: SHAPE.cornerR * 0.8 ** i }
+    : { ...SHAPE, radius: SHAPE.radius * 0.8 ** i },
+  /* Lower tiers are shorter, as they are on a real cake — and it keeps the whole stack in frame. */
+  height: HEIGHT * (i === TIERS - 1 ? 1 : 0.8),
+}));
+const BASE_Y = STACK.reduce((y, t, i) => (i === 0 ? [0] : [...y, y[i - 1] + STACK[i - 1].height]), [0]);
+/* ⚠️ THE CAMERA IS FITTED TO THE STACK, NOT NUDGED TOWARDS IT. Adding a fraction of the top tier's
+   height to a hand-picked position framed one tier well, two poorly and a rectangle off the edge of
+   the picture — which is a contact sheet that cannot be compared, the exact failure the reference
+   panel was added to fix. Derived from the stack's own extent instead. */
+const TOTAL_H = BASE_Y[TIERS - 1] + STACK[TIERS - 1].height;
+const SPAN = SHAPE.kind === 'rect' ? Math.max(SHAPE.halfW, SHAPE.halfD) : SHAPE.radius;
+const EYE_Y = num('cam', TOTAL_H * 1.15 + SPAN * 0.7);
+const EYE_D = num('dist', SPAN * 2.0 + TOTAL_H * 0.9);
+const LOOK_Y = TOTAL_H * 0.62;
 
 /* The cake's own cream. One colour for the tier and the cavity — see above. */
 const CREAM = q.get('cream') ?? '#b9c8e8';
@@ -99,7 +130,7 @@ function Panel({ lip, onLip, seed, onShuffle }) {
   );
 }
 
-function Tier({ lip, seed }) {
+function Tier({ lip, seed, shape, height, y }) {
   const cfg = {
     lip,
     seed,
@@ -110,14 +141,15 @@ function Tier({ lip, seed }) {
     swells: num('swells', CAVITY_DEFAULTS.swells),
   };
   const cavity = useMemo(
-    () => (q.get('off') === '1' || lip <= 0 ? null : buildTopCavity(SHAPE, HEIGHT, cfg)),
-    [cfg.lip, cfg.dish, cfg.width, cfg.crest, cfg.wobble, cfg.swells, cfg.seed],
+    () => (q.get('off') === '1' || lip <= 0 ? null : buildTopCavity(shape, height, cfg)),
+    [shape, height, cfg.lip, cfg.dish, cfg.width, cfg.crest, cfg.wobble, cfg.swells, cfg.seed],
   );
   useEffect(() => () => cavity?.dispose(), [cavity]);
 
-  const body = useMemo(() => (SHAPE.kind === 'rect'
-    ? new THREE.BoxGeometry(SHAPE.halfW * 2, HEIGHT, SHAPE.halfD * 2).translate(0, HEIGHT / 2, 0)
-    : new THREE.CylinderGeometry(SHAPE.radius, SHAPE.radius, HEIGHT, 160).translate(0, HEIGHT / 2, 0)), []);
+  const body = useMemo(() => (shape.kind === 'rect'
+    ? new THREE.BoxGeometry(shape.halfW * 2, height, shape.halfD * 2).translate(0, height / 2, 0)
+    : new THREE.CylinderGeometry(shape.radius, shape.radius, height, 160).translate(0, height / 2, 0)),
+  [shape, height]);
 
   /* ⚠️ ONE MATERIAL DESCRIPTOR, TWO MESHES. Two `meshStandardMaterial` tags with the same props are
      two materials, and they drift the moment either is tuned — which is the whole failure mode this
@@ -125,9 +157,9 @@ function Tier({ lip, seed }) {
   const mat = useMemo(() => new THREE.MeshStandardMaterial({ color: CREAM, roughness: 0.82, metalness: 0 }), []);
 
   return (
-    <group>
+    <group position={[0, y, 0]}>
       <mesh geometry={body} material={mat} castShadow receiveShadow />
-      {cavity && <mesh geometry={cavity} material={mat} position={[0, HEIGHT, 0]} castShadow receiveShadow />}
+      {cavity && <mesh geometry={cavity} material={mat} position={[0, height, 0]} castShadow receiveShadow />}
     </group>
   );
 }
@@ -148,15 +180,20 @@ function App() {
     <div style={{ height: '100%', display: 'flex' }}>
       <Panel lip={lip} onLip={setLip} seed={seed}
              onShuffle={() => setSeed(1 + Math.floor(Math.random() * 9999))} />
-    <Canvas shadows camera={{ position: [0, num('cam', 2.5), num('dist', 3.3)], fov: 32 }} style={{ height: '100%' }}>
+    <Canvas shadows camera={{ position: [0, EYE_Y, EYE_D], fov: 32 }} style={{ height: '100%' }}>
       <SceneLights />
       <SceneEnv />
-      <Tier lip={lip} seed={seed} />
+      {/* ⚠️ A DIFFERENT SEED PER TIER, or a three-tier cake wears the same edge three times — the
+          one thing a hand-scraped rim never does, and more obviously wrong than the uniform ring
+          this whole feature started as. */}
+      {STACK.map((t, i) => (
+        <Tier key={i} lip={lip} seed={seed + i * 37} shape={t.shape} height={t.height} y={BASE_Y[i]} />
+      ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <circleGeometry args={[3, 64]} />
         <meshStandardMaterial color="#efe9e2" roughness={1} />
       </mesh>
-      <OrbitControls target={[0, 0.7, 0]} />
+      <OrbitControls target={[0, LOOK_Y, 0]} />
     </Canvas>
     </div>
   );
