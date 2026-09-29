@@ -592,6 +592,12 @@ function collectElementColors(design) {
    `catLabel` prettifies anything missing, so a category authored in admin is readable the day it
    exists rather than rendering as `undefined`. */
 const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
+
+/* How a tier's colour is laid on, as [value, label]. ONE source: the Solid/Ombre/Stripes buttons in
+   the Pattern panel render from this, and the Pattern tab's own note reads the label from it too —
+   two copies would let the tab say "Ombre" while the row underneath showed "Stripes" selected. */
+const TREATMENT_LABELS = [['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']];
+const treatmentLabel = (t) => TREATMENT_LABELS.find(([k]) => k === t)?.[1] ?? null;
 const catLabel = (cat) => CAT_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
 /* ── WHICH CATEGORIES BECOME CHIPS — A SUPPRESSION LIST, NOT A WHITELIST ─────────────────────────
@@ -12778,7 +12784,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                * tier it offers Solid / Ombre / STRIPES, and stripes are not a gradient — the same
                * "small lie" pointing the other way. A STICKER really does only get a gradient (the
                * treatment row is gated on `isTierGradient`), so it keeps the accurate word. */
-              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Pattern' : 'Gradient', node: (
+              /* ⚠️ NO NOTE ON A GLAZE TIER. The Solid/Ombre/Stripes row is gated off there
+                 (`isTierGradient && !isGlazeTier`), so a treatment name would describe a control
+                 that is not in the panel — the tab lying about its own contents, which is the exact
+                 fault the label history above is about. */
+              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Pattern' : 'Gradient',
+                              note: isGlazeTier ? null : treatmentLabel(treatment), node: (
                 <>
                 {/* ⚠️ On the COLOUR axis, not under Style. Style is documented as geometry only and is
                     single-select, so putting stripes there would make "ribbed AND striped" —
@@ -12787,7 +12798,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={s.gradientBlock}>
                     <div style={s.gradientLabel}>How the colour sits</div>
                     <div style={s.treatRow}>
-                      {[['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']].map(([k, lbl]) => (
+                      {TREATMENT_LABELS.map(([k, lbl]) => (
                         <button key={k} onClick={() => setTreatment(k)}
                           style={{ ...s.treatBtn, ...(treatment === k ? s.treatBtnOn : null) }}>{lbl}</button>
                       ))}
@@ -12856,7 +12867,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const opts  = frostingAllowsStyles(type) ? stylesForFrosting(type) : null;
               const style = opts?.some(o => o.value === tier?.frostingStyle) ? tier.frostingStyle : DEFAULT_STYLE;
               const userParams = opts ? userStyleParams(style) : [];
-              sections.push({ id: 'frosting', label: 'Frosting', node: (
+              /* The note says the MATERIAL, not the style — "cream vs fondant" is the thing Sandeep
+                 reported not being able to reach, and it is the decision that governs which styles
+                 are even offered (`frostingAllowsStyles`). One source: the same `frostingDef` the
+                 picker inside this tab renders from, so the tab cannot name a material the panel
+                 disagrees with. */
+              sections.push({ id: 'frosting', label: 'Frosting', note: frostingDef(type).label, node: (
                 <>
                   <FrostingTypePicker
                     value={type}
@@ -13039,7 +13055,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       isMobile
                       label="What to change"
                       value={active.id}
-                      items={sections.map(sec => ({ id: sec.id, label: sec.label }))}
+                      /* ⚠️ THE `note` IS THE FIX FOR "I didn't notice it was a tab". Sandeep, after
+                         the strip already looked like a control: "since most of this section is
+                         covered by the color picker, its easy to miss the other tabs. i am the one
+                         built this app and i myself missed."
+                         Measured: the sheet is 366px (43% of a 844px viewport) and the Colour body
+                         is 212px of it — 58%, the largest block by far. A swatch row + saturation
+                         square + hue strip is a COMPLETE, recognisable object, so the sheet reads as
+                         "a colour picker" and anything above a complete object reads as its title
+                         bar rather than as navigation.
+                         A second line saying what each tab currently holds does three things at
+                         once: it proves the tabs are about DIFFERENT things, it answers "what is
+                         behind there" without a tap, and it gives the strip enough substance to stop
+                         reading as a heading. `Segmented` already supports it — "a second line (an
+                         amount, a count, a state)" — and nothing in the app had used it yet. */
+                      items={sections.map(sec => ({ id: sec.id, label: sec.label, note: sec.note ?? null }))}
                       // The drag is an override of THIS view, so switching view drops it and the
                       // next tab sizes to its own content.
                       onChange={id => { setEditTab(id); setEditDragH(null); }}

@@ -873,7 +873,11 @@ const shapeTier = SHAPE === 'rect' ? { shape: 'rect', width: 2.4, depth: 1.8 }
 const styledDesign = STYLE_KEY ? {
   tiers: [{
     color: '#F1EEDC', height: 1.45, ...shapeTier,
-    frostingType: 'buttercream', frostingStyle: STYLE_KEY,
+    /* ⚠️ `?frosting=` — so the LONGEST tab note is reachable. The tab strip now prints the tier's
+       frosting under the label, and "Chocolate Glaze" is 15 characters in an 85px grid cell whose
+       note span has no overflow guard. Hardcoded to buttercream, this harness could only ever show
+       the shortest-but-one value, so the one case that can actually spill was untestable. */
+    frostingType: PARAMS.get('frosting') || 'buttercream', frostingStyle: STYLE_KEY,
   }],
 } : null;
 
