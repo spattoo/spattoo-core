@@ -5,6 +5,11 @@ import { chromium } from 'playwright';
 import { readFileSync, readdirSync } from 'node:fs';
 import { dirname, basename, join } from 'node:path';
 
+/* Framing knobs, because the one thing being judged — how far the piece stands off a wall — is only
+   visible from beside it, and how far round is a judgement per sheet rather than a constant. */
+const W = Number(process.env.W || 640), H = Number(process.env.H || 560);
+const ORBIT = Number(process.env.ORBIT || 95);
+
 /* macOS screenshot names carry a narrow no-break space (U+202F) before AM/PM, so a path copied out
    of `ls` does not open the file it names. Matched loosely — the same helper shoot-cavity.mjs has. */
 function findFile(pathish) {
@@ -17,13 +22,13 @@ function findFile(pathish) {
 /* ⚠️ THE REFERENCE GOES IN THE SHEET. Judging a wire against a photograph in another window at
    another scale is how the horizontal run survived a whole round of "looks about right". */
 const REF = process.env.REF
-  ? `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${readFileSync(findFile(process.env.REF)).toString('base64')}" style="height:560px;display:block"><figcaption style="padding:8px 0;color:#B91C1C">THE REFERENCE</figcaption></figure>`
+  ? `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${readFileSync(findFile(process.env.REF)).toString('base64')}" style="height:${H}px;display:block"><figcaption style="padding:8px 0;color:#B91C1C">THE REFERENCE</figcaption></figure>`
   : '';
 const CASES = (process.env.CASES || 'zone=side|zone=side&fold=1|zone=side&len=7').split('|');
 const b = await chromium.launch();
 const shots = [];
 for (const c of CASES) {
-  const page = await b.newPage({ viewport: { width: 640, height: 560 }, deviceScaleFactor: 2 });
+  const page = await b.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
   page.on('pageerror', e => console.error('PAGE ERROR:', e.message));
   await page.goto(`http://localhost:5190/element-wire.html?${c}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(2600);
@@ -34,7 +39,7 @@ for (const c of CASES) {
   const cv = await page.locator('canvas').first().boundingBox();
   await page.mouse.move(cv.x + cv.width / 2, cv.y + cv.height / 2);
   await page.mouse.down();
-  await page.mouse.move(cv.x + cv.width / 2 - 95, cv.y + cv.height / 2 + 8, { steps: 12 });
+  await page.mouse.move(cv.x + cv.width / 2 - ORBIT, cv.y + cv.height / 2 + 8, { steps: 12 });
   await page.mouse.up();
   await page.waitForTimeout(900);
   await page.screenshot();                       // discard: the env map lands a frame late
@@ -43,9 +48,9 @@ for (const c of CASES) {
   await page.close();
   console.log('  shot', c);
 }
-const sheet = await b.newPage({ viewport: { width: 640 * (shots.length + (REF ? 1 : 0)), height: 610 }, deviceScaleFactor: 2 });
+const sheet = await b.newPage({ viewport: { width: W * (shots.length + (REF ? 1 : 0)), height: H + 50 }, deviceScaleFactor: 2 });
 await sheet.setContent(`<body style="margin:0;display:flex;font:600 13px system-ui;background:#fff">
-${REF}${shots.map(s => `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${s.png}" style="width:640px;display:block"><figcaption style="padding:8px 0;color:#2C4433">${s.label}</figcaption></figure>`).join('')}</body>`);
+${REF}${shots.map(s => `<figure style="margin:0;text-align:center"><img src="data:image/png;base64,${s.png}" style="width:${W}px;display:block"><figcaption style="padding:8px 0;color:#2C4433">${s.label}</figcaption></figure>`).join('')}</body>`);
 const out = `${process.env.HOME}/Downloads/${process.env.NAME || 'wall-wire'}.png`;
 await sheet.screenshot({ path: out });
 await b.close();
