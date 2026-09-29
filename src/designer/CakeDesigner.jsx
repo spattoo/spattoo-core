@@ -59,7 +59,7 @@ import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
-import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH } from './geometry/elementWire.js';
+import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -9292,6 +9292,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                — layout follows use). */
             ...dial('wbend', 'Bend', wr.bend ?? row.bend, v => `${Math.round(v * 100)}%`,
                     v => setWire({ bend: v }), WIRE_BEND.min, WIRE_BEND.max, WIRE_BEND.step),
+            /* ⚠️ "Kinks", NOT "Bends", BESIDE A CONTROL ALREADY CALLED "Bend". One is how FAR the wire
+               leaves the straight line, the other is HOW MANY times it does — two words a letter
+               apart for two different questions is a label doing harm. A kink is what a bend in a
+               wire is called, which is the word a baker would reach for. */
+            ...dial('wwav', 'Kinks', wr.waves ?? row.waves, v => `${Math.round(v)}`,
+                    v => setWire({ waves: Math.round(v) }), WIRE_WAVES.min, WIRE_WAVES.max, WIRE_WAVES.step),
+            /* How far the bow's plane turns on the way up — what stops an S being a flat squiggle. */
+            ...dial('wtwi', 'Twist', wr.twist ?? row.twist, v => `${Math.round(v)}°`,
+                    v => setWire({ twist: v }), WIRE_TWIST.min, WIRE_TWIST.max, WIRE_TWIST.step),
             ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
                     v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
             /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them

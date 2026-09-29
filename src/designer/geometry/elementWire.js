@@ -66,6 +66,28 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
   /* WHICH WAY it bows, in degrees around the cake's axis. Not a tilt — see `wireFor`. Varying this
      between pieces is what stops a swarm of butterflies looking like a row of pins. */
   sweep: 35,
+  /* ── How many bends, and how much the wire turns as it climbs ────────────────────────────────
+   *
+   * ⚠️ ONE BEND IS A HOOK, NOT A BENT WIRE. `sin(pi·t)` bows out and comes back — a C — which is
+   * what a wire looks like if you bend it once, deliberately, in the middle. Nobody bends florist
+   * wire that way. Sandeep: *"right now there is only one bending. we should also be twisting the
+   * wire. for example like a s shape etc. a slight zig zag is normal in cake decoration."*
+   *
+   * `waves` is the number of half-bends, so the same one line of arithmetic gives all of them:
+   *
+   *     1   a C — one bulge, the old shape
+   *     2   an S — out, back through the axis, out the other way
+   *     3   a zigzag
+   *
+   * ⚠️ AND `twist` IS THE OTHER HALF, WHICH A PLANAR CURVE CANNOT FAKE. Every bend above happens in
+   * ONE plane; real wire bent by hand wanders out of it, so the S you see from the front is a
+   * different S from the side. Turning the bow's plane as the wire climbs costs one term and is the
+   * difference between a drawn squiggle and something that looks bent by fingers.
+   *
+   * 2 and 25° rather than 1 and 0: an S with a little wander is what the reference photographs show,
+   * and a default nobody changes should look like the thing being copied. */
+  waves: 2,
+  twist: 25,
   /* How much of the wire is pushed into the cake. Shares the pick's default so a baker moving an
      element between the two does not find the depth has changed under them. */
   bury: ELEMENT_STICK_DEFAULTS.bury,
@@ -96,6 +118,14 @@ export const WIRE_GAUGE = 0.017;
  *  stem, and the tube starts to self-intersect at the tight end of the curve. */
 export const WIRE_BEND = Object.freeze({ min: 0, max: 0.5, step: 0.02 });
 
+/** How many half-bends the wire carries. Past four it reads as a spring rather than a stem, and the
+ *  tube starts to pinch where the curve doubles back on itself. */
+export const WIRE_WAVES = Object.freeze({ min: 1, max: 4, step: 1 });
+
+/** How far the bow's plane turns between the buried end and the tip, in degrees. A full turn makes
+ *  a corkscrew; a quarter of one is the wander a hand leaves. */
+export const WIRE_TWIST = Object.freeze({ min: 0, max: 180, step: 5 });
+
 /** The bow's direction, all the way round. A full circle so a baker can point it away from
  *  whatever it would otherwise cross. */
 export const WIRE_SWEEP = Object.freeze({ min: 0, max: 360, step: 15 });
@@ -118,6 +148,8 @@ export function elementWire(placementConfig, allowedActions) {
     thickness: clamp(cfg.thickness, STICK_SCALE, ELEMENT_WIRE_DEFAULTS.thickness),
     bend:      clamp(cfg.bend,      WIRE_BEND,   ELEMENT_WIRE_DEFAULTS.bend),
     sweep:     clamp(cfg.sweep,     WIRE_SWEEP,  ELEMENT_WIRE_DEFAULTS.sweep),
+    waves:     clamp(cfg.waves,     WIRE_WAVES,  ELEMENT_WIRE_DEFAULTS.waves),
+    twist:     clamp(cfg.twist,     WIRE_TWIST,  ELEMENT_WIRE_DEFAULTS.twist),
     bury:      clamp(cfg.bury,      { min: 0, max: 1 }, ELEMENT_WIRE_DEFAULTS.bury),
     finish:    typeof cfg.finish === 'string' ? cfg.finish : ELEMENT_WIRE_DEFAULTS.finish,
   };
@@ -154,6 +186,8 @@ export function wireFor(box, instanceWire, rowWire) {
   const thickness = pick('thickness', STICK_SCALE);
   const bend      = pick('bend', WIRE_BEND);
   const sweep     = pick('sweep', WIRE_SWEEP);
+  const waves     = Math.round(pick('waves', WIRE_WAVES));
+  const twist     = pick('twist', WIRE_TWIST);
   const bury      = pick('bury', { min: 0, max: 1 });
 
   /* The run from where the wire leaves the icing to where the element sits. Proportional to the
@@ -212,16 +246,26 @@ export function wireFor(box, instanceWire, rowWire) {
      and returns to zero at both ends, so the wire meets the icing and the butterfly without a kink
      at either. */
   const phi = (sweep * Math.PI) / 180;
-  const bow = len * bend;
+  const twistRad = (twist * Math.PI) / 180;
+  /* ⚠️ THE BOW SHRINKS AS THE BENDS MULTIPLY, and without that an S is twice the excursion of a C
+     at the same setting — so raising `waves` would fling the piece sideways and read as a different
+     control having been moved. Dividing by the count keeps `bend` meaning "how far from straight". */
+  const bow = (len * bend) / waves;
 
   const points = [];
   for (let i = 0; i < SAMPLES; i++) {
     const t = i / (SAMPLES - 1);
-    const k = Math.sin(Math.PI * t) * bow;
+    /* `sin(waves·pi·t)` is zero at both ends whatever the count, so the wire always meets the icing
+       and the butterfly without a kink — and it alternates sign, which is what turns one bulge into
+       an S and then a zigzag. */
+    const k = Math.sin(waves * Math.PI * t) * bow;
+    /* The bow's plane turns as the wire climbs. A planar curve is a drawing of a bent wire; this is
+       what makes the S seen from the front a different S from the side. */
+    const a = phi + twistRad * t;
     points.push({
-      x: Math.cos(phi) * k,
+      x: Math.cos(a) * k,
       y: base.y + (tip.y - base.y) * t,
-      z: Math.sin(phi) * k,
+      z: Math.sin(a) * k,
     });
   }
 

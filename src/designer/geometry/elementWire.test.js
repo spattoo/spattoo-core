@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wireFor, wireLift, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP } from './elementWire.js';
+import { wireFor, wireLift, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP, WIRE_WAVES, WIRE_TWIST } from './elementWire.js';
 
 const box = { h: 0.1, cy: 0 };
 const on = (extra = {}) => wireFor(box, { on: true, ...extra }, null);
@@ -45,14 +45,64 @@ describe('the base sits directly below the tip', () => {
 });
 
 describe('the bow is what makes it read as wire', () => {
-  it('bulges furthest at the middle and nowhere at the ends', () => {
-    const w = on({ bend: 0.3 });
+  /* ⚠️ `waves: 1` IS PINNED, because the apex is only at the middle for a SINGLE bend. The default
+     is an S, whose middle is a zero crossing — a test written against the default would assert the
+     shape of whatever the default happens to be rather than the property it means to check. */
+  it('bulges furthest at the middle of a single bend, and nowhere at the ends', () => {
+    const w = on({ bend: 0.3, waves: 1, twist: 0 });
     const out = w.points.map(p => Math.hypot(p.x, p.z));
     const mid = Math.floor(out.length / 2);
     expect(out[mid]).toBeGreaterThan(0);
     expect(Math.max(...out)).toBeCloseTo(out[mid], 3);
     expect(out[0]).toBeCloseTo(0, 6);
     expect(out[out.length - 1]).toBeCloseTo(0, 6);
+  });
+
+  it('meets the icing and the piece without a kink at any number of bends', () => {
+    for (let waves = WIRE_WAVES.min; waves <= WIRE_WAVES.max; waves++) {
+      const out = on({ bend: 0.4, waves }).points.map(p => Math.hypot(p.x, p.z));
+      expect(out[0]).toBeCloseTo(0, 6);
+      expect(out[out.length - 1]).toBeCloseTo(0, 6);
+    }
+  });
+
+  /* ⚠️ AN S IS NOT TWICE THE EXCURSION OF A C. Without dividing the bow by the count, raising
+     `waves` would fling the piece sideways and read as a different control having been moved. */
+  it('keeps the same reach however many bends it has', () => {
+    const reach = w => Math.max(...w.points.map(p => Math.hypot(p.x, p.z)));
+    const one = reach(on({ bend: 0.4, waves: 1, twist: 0 }));
+    for (const waves of [2, 3, 4]) {
+      expect(reach(on({ bend: 0.4, waves, twist: 0 }))).toBeCloseTo(one / waves, 3);
+    }
+  });
+
+  it('crosses the axis once per extra bend — a C never does, an S does once', () => {
+    /* ⚠️ SIGN FLIPS BETWEEN NEIGHBOURS, WITH A DEAD ZONE, and the naive version was wrong. Comparing
+       samples two apart (`xs[i-1] * xs[i+1] < 0`) counts an exact crossing TWICE, because `sin(pi)`
+       is 1.2e-16 rather than 0 and that tiny value straddles on both sides. A dead zone treats it as
+       the zero it is meant to be. */
+    const crossings = waves => {
+      const xs = on({ bend: 0.4, waves, twist: 0, sweep: 0 }).points.map(p => p.x);
+      let n = 0, prev = 0;
+      for (const x of xs) {
+        const sign = Math.abs(x) < 1e-9 ? 0 : Math.sign(x);
+        if (sign && prev && sign !== prev) n++;
+        if (sign) prev = sign;
+      }
+      return n;
+    };
+    expect(crossings(1)).toBe(0);
+    expect(crossings(2)).toBe(1);
+    expect(crossings(3)).toBe(2);
+  });
+
+  /* The bow's plane turns as the wire climbs, which is what a planar squiggle cannot fake. */
+  it('twist rotates the bow along the wire, and zero twist keeps it in one plane', () => {
+    const flat = on({ bend: 0.4, waves: 1, twist: 0, sweep: 0 });
+    for (const p of flat.points) expect(Math.abs(p.z)).toBeCloseTo(0, 6);
+
+    const turned = on({ bend: 0.4, waves: 1, twist: WIRE_TWIST.max, sweep: 0 });
+    expect(Math.max(...turned.points.map(p => Math.abs(p.z)))).toBeGreaterThan(0);
   });
 
   it('is straight at bend 0 — the control case, and it should look wrong', () => {
@@ -67,8 +117,8 @@ describe('the bow is what makes it read as wire', () => {
   });
 
   it('sweep turns the bow without changing its size', () => {
-    const a = on({ sweep: 0, bend: 0.3 });
-    const b = on({ sweep: 90, bend: 0.3 });
+    const a = on({ sweep: 0, bend: 0.3, waves: 1, twist: 0 });
+    const b = on({ sweep: 90, bend: 0.3, waves: 1, twist: 0 });
     const reach = w => Math.max(...w.points.map(p => Math.hypot(p.x, p.z)));
     expect(reach(a)).toBeCloseTo(reach(b), 6);
     const mid = Math.floor(a.points.length / 2);
@@ -104,13 +154,13 @@ describe('how far the element rides above the icing', () => {
 
 describe('a row authors the starting values, an instance overrides them', () => {
   it('prefers the instance over the row', () => {
-    const w = wireFor(box, { on: true, bend: 0.4 }, { ...ELEMENT_WIRE_DEFAULTS, bend: 0.1 });
+    const w = wireFor(box, { on: true, bend: 0.4, waves: 1, twist: 0 }, { ...ELEMENT_WIRE_DEFAULTS, bend: 0.1 });
     const reach = Math.max(...w.points.map(p => Math.hypot(p.x, p.z)));
     expect(reach).toBeCloseTo(w.len * 0.4, 6);
   });
 
   it('clamps a nonsense value rather than drawing a spring', () => {
-    const w = on({ bend: 99 });
+    const w = on({ bend: 99, waves: 1, twist: 0 });
     expect(Math.max(...w.points.map(p => Math.hypot(p.x, p.z)))).toBeCloseTo(w.len * WIRE_BEND.max, 6);
   });
 });
@@ -120,7 +170,7 @@ describe('a row authors the starting values, an instance overrides them', () => 
    SHORTER — a default with no headroom above it is a control doing half what it appears to. It was
    found by reading, not by a test, which is the wrong way round for arithmetic this mechanical. */
 describe('every default leaves room to move in both directions', () => {
-  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP };
+  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP, waves: WIRE_WAVES, twist: WIRE_TWIST };
   for (const [key, range] of Object.entries(ranges)) {
     it(`${key} sits strictly inside its own range`, () => {
       const v = ELEMENT_WIRE_DEFAULTS[key];

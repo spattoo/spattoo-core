@@ -76,8 +76,16 @@ const FOLD = q.get('fold') === '1';
    element's tilt/yaw/billboard groups, which rotated the whole stem about the piece and swung the
    buried end out across the board. Sweep this against the fix: the butterfly should lean and the
    stem should not move at all. */
-const TILT = q.has('tilt') ? Number(q.get('tilt')) : 0;
-const ROLL = q.has('roll') ? Number(q.get('roll')) : 0;
+/* ⚠️ DEGREES IN, RADIANS OUT, AND THE CONVERSION IS NOT COSMETIC. `tiltAngle` is radians —
+   `leanStep` nudges by 0.1 and `clampLean` caps at 1.2, about 69°. Passing a degree figure straight
+   through sent 23 RADIANS, nearly four full turns, which parks the plane at an arbitrary angle. A
+   sweep built that way showed a butterfly vanishing at "23°" and I came within a sentence of
+   reporting it as a rendering bug: a flat plane really does disappear edge-on, so the wrong numbers
+   produced a symptom plausible enough to explain. The harness takes degrees because that is what
+   the card reads back. */
+const deg = v => (v * Math.PI) / 180;
+const TILT = q.has('tilt') ? deg(Number(q.get('tilt'))) : 0;
+const ROLL = q.has('roll') ? deg(Number(q.get('roll'))) : 0;
 const glb = q.get('glb');
 const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUTTERFLY;
 
