@@ -1190,6 +1190,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              one placed today unless the baker turns big ones on. That is what keeps the default
              behaviour byte-identical and old saved cakes reloading unchanged. */
           scatterBig:    extra.scatterBig === true,
+          /* A side scatter confined to a BAND round the base of the wall — the sprinkle skirt in
+             Sandeep's reference photo, rather than pieces spread over the whole side.
+             ⚠️ DECLARED BY NAME for the same reason as `scatterBig` above: `extra` is not spread.
+             ⚠️ ABSENT MEANS "ALL OVER", which is every side scatter placed before this existed, so
+             the default is untouched and old saved cakes reload exactly as they were. */
+          scatterBand:   extra.scatterBand === true,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
           // with a persistent zone chooser — like a piping element. `patternDeletable` keeps the

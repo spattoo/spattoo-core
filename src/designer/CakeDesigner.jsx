@@ -6072,6 +6072,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function scatterBaseScaleOf(instances, el) {
     return instances.find(s => !s.scatterBig)?.scale ?? scatterScaleFor(el);
   }
+  /* ── The base band: a ring of sprinkles round the foot of the wall ────────────────────────────
+   *
+   * Sandeep, with a photo of a rainbow nonpareil skirt: "at the buttom of the cake, there is a multi
+   * color band of the sprinkles. we should provide this option in the sprinkles card. density should
+   * be adjustable."
+   *
+   * ⚠️ WHAT THIS CAN AND CANNOT BE, measured before building so the result is not a surprise. A
+   * sprinkle is `STICKER_SIZE × scale` across (0.126 world units at the harness's r=0.45) on a
+   * ~7.5-unit circumference, so a 25% band packs to about 183 instances — under the 400 cap, and it
+   * reads as a ring of distinct beads. The photograph's texture needs pieces at r≈0.15, which is
+   * ~1600 instances: clamped to 400 and therefore sparse. A genuinely dense skirt is a GENERATED
+   * band (the `particleFinish` compositor luster dust and gold leaf already bake into), not
+   * instances. This is the instanced option, chosen knowingly.
+   *
+   * ⚠️ THE HEIGHT IS ADMIN-AUTHORED, never a literal here — `placement_config.scatter_band`, as a
+   * fraction of the wall. Config-driven like `scatter_big` beside it.
+   *
+   * ⚠️ DENSITY IS THE EXISTING COUNT DIAL. A band has a smaller area than the whole wall, so the
+   * same count reads far denser; `scatterMaxCount` already derives its ceiling from the area it is
+   * given, which is why the band passes its own height in rather than the tier's. */
+  const SCATTER_BAND_FRAC = 0.28;
+  function scatterBandFracFor(element) {
+    const f = element?.placement_config?.scatter_band;
+    return Number.isFinite(f) && f > 0 && f < 1 ? f : SCATTER_BAND_FRAC;
+  }
+  /* Is this surface's set a band? DERIVED from the instances, like the palette — a stored flag and
+     the cake could disagree, and the cake is the truth. Any instance answers it: the toggle re-seats
+     the whole set together, so they are never mixed. */
+  function scatterIsBand(elementId, group) {
+    const set = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === group);
+    return set.length > 0 && set.every(s => s.scatterBand);
+  }
   const isSideZoneName = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
   // The cake's actual top tier (top decor belongs there); side defaults to the bottom tier.
   function scatterTierForZone(zone) {
@@ -6079,10 +6111,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   // Sensible max instances for a (zone × tier × size): surface area ÷ sprinkle footprint, packed
   // ~70%. So the cap fills the cake and scales with size, instead of an arbitrary number.
-  function scatterMaxCount(zone, tierIndex, scale) {
+  /* ⚠️ `bandFrac` SHRINKS THE AREA, and therefore the ceiling. A band is roughly a quarter of the
+     wall, so a cap derived from the whole wall would let Count run four times past what the strip
+     can hold and pack the seats solid — the dial's maximum has to mean the same thing in both
+     modes. */
+  function scatterMaxCount(zone, tierIndex, scale, bandFrac = null) {
     const tier = canvasConfig.tiers[tierIndex] ?? canvasConfig.tiers[0];
     const R = tier?.radius ?? 1.2;
-    const tierH = tier?.height ?? BOTTOM_H;
+    const tierH = (tier?.height ?? BOTTOM_H) * (bandFrac != null ? bandFrac : 1);
     const area = isSideZoneName(zone) ? (2 * Math.PI * R * tierH) : (Math.PI * (R * 0.82) ** 2);
     const footprint = (STICKER_SIZE * scale) ** 2;
     return Math.max(12, Math.min(400, Math.floor((area / footprint) * 0.7)));
@@ -6119,7 +6155,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   // A random seat within (zone × tier), best-effort ≥ minDist from already-taken seats. Top =
   // a point in the top disk; side = a (theta, y) on the wall. Returns a position for addSticker.
-  function randomScatterSeat(zone, tierIndex, taken, minDist) {
+  function randomScatterSeat(zone, tierIndex, taken, minDist, bandFrac = null) {
     const tier = canvasConfig.tiers[tierIndex] ?? canvasConfig.tiers[0];
     const R = tier?.radius ?? 1.2;
     const tierH = tier?.height ?? BOTTOM_H;
@@ -6127,8 +6163,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const isSide = isSideZoneName(zone);
     let seat = null;
     for (let attempt = 0; attempt < 24; attempt++) {
+      /* ⚠️ `bandFrac` CONFINES THE SIDE SEATS TO THE FOOT OF THE WALL. null = the whole wall, which
+         is every side scatter that existed before the base band and every one placed without it.
+         The band starts at the same 0.08 inset the full-wall case uses (a sprinkle sitting exactly
+         on the board edge reads as spilled), and runs up `bandFrac` of the tier's height. */
+      const span = bandFrac != null
+        ? Math.max(0.02, tierH * bandFrac - 0.08)
+        : Math.max(0.02, tierH - 0.16);
       const cand = isSide
-        ? { theta: Math.random() * 2 * Math.PI - Math.PI, y: baseY + 0.08 + Math.random() * Math.max(0.02, tierH - 0.16) }
+        ? { theta: Math.random() * 2 * Math.PI - Math.PI, y: baseY + 0.08 + Math.random() * span }
         : (() => { const rad = Math.sqrt(Math.random()) * R * 0.82, ang = Math.random() * 2 * Math.PI; return { x: rad * Math.sin(ang), z: rad * Math.cos(ang) }; })();
       const clear = taken.every(t => {
         if (isSide) {
@@ -6147,16 +6190,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // change. Mode comes from the element's config for the zone (renders its art).
   // `palette` — one colour, several, or none. Several cycles across the new instances the way a
   // cluster's does; one behaves exactly as the single `color` argument always did.
-  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], palette) {
+  /* `band` — true confines a SIDE set to the foot of the wall (the base band). It rides on every
+     instance as `scatterBand` so growing the set later keeps filling the band rather than reverting
+     to the whole wall, exactly as the colour cycle had to be carried rather than re-derived. */
+  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], palette, band = false) {
     const pal = Array.isArray(palette) ? palette.filter(Boolean) : (palette ? [palette] : []);
     const mode = zoneMode(el.placement_config, zone, 'hug');
     const minDist = STICKER_SIZE * scale;
+    const bandFrac = (band && isSideZoneName(zone)) ? scatterBandFracFor(el) : null;
     const baseId = Date.now();
     const ids = [];
     for (let i = 0; i < count; i++) {
-      const seat = randomScatterSeat(zone, tierIndex, taken, minDist);
+      const seat = randomScatterSeat(zone, tierIndex, taken, minDist, bandFrac);
       taken.push(seat);
-      const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale });
+      const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale, scatterBand: bandFrac != null });
       // ⚠️ Offset by how many are ALREADY seated, so growing a mixed scatter continues the cycle
       // instead of restarting it. Without this, dragging Count up gives you a correctly mixed first
       // batch followed by a run of whatever colour the palette happens to start on.
@@ -6442,6 +6489,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (smalls.length) scaleStickers(smalls, v);
     if (bigs.length)   scaleStickers(bigs, scatterBigScaleFor(el, v));
   }
+  /* Turn a side set into a base band, or spread it back over the whole wall.
+   *
+   * ⚠️ RE-SEATED, NOT NUDGED. Editing each instance's `y` in place would drop them into the band at
+   * whatever angles they already had, ignoring `minDist` — the spacing is computed against the seats
+   * taken so far, so a half-moved set collides with itself. Remove and re-place is the only way the
+   * packer's own rule still holds, and it is what `scatterInstances` exists to do.
+   *
+   * ⚠️ IT CARRIES THE PALETTE, THE BASE SIZE AND THE BIG COUNT FORWARD. Three separate bugs in this
+   * card came from a re-place that dropped one of them (a block of one colour, a whole surface at
+   * the large size, a shrink eating the big ones), so all three are read BEFORE the removal and
+   * restored after. */
+  function setScatterBand(elementId, zone, on) {
+    const el = elementById.get(elementId);
+    if (!el || !isSideZoneName(zone)) return;
+    const grp = 'side';
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
+    if (!instances.length || scatterIsBand(elementId, grp) === !!on) return;
+    const count   = instances.length;
+    const scale   = scatterBaseScaleOf(instances, el);
+    const palette = scatterPaletteOf(elementId);
+    const bigs    = scatterBigCountOf(elementId, grp);
+    const tierIndex = instances[0].tierIndex ?? scatterTierForZone(zone);
+    instances.forEach(s => removeSticker(s.id));
+    const ids = scatterInstances(el, zone, tierIndex, count, scale, [], palette, !!on);
+    /* ⚠️ MARK THE BIG ONES ON THE RETURNED IDS, NOT BY CALLING setScatterBigCount.
+     *
+     * That is what the first version did, and it silently lost them: `setScatterBigCount` re-reads
+     * `design.stickers`, which still holds the PRE-removal set while `removeSticker`'s update is
+     * pending — the identical stale-state bug already fixed once today in `setScatterDensity`, and
+     * reintroduced here a few hundred lines away. Measured before this fix: 3 big ones went in, 0
+     * came out. `scatterInstances` returns the new ids, so this writes against ids it holds rather
+     * than querying state that has not settled.
+     *
+     * ⚠️ AND THE SPREAD IS BY INDEX HERE, not farthest-point. Choosing by seat position would mean
+     * reading the seats back — the same pending state. Every seat is random, so evenly spacing the
+     * bigs through placement order gives a comparable spread, and a re-seat has reshuffled all of
+     * them anyway. The dial's own farthest-point pass still applies the moment it is next used. */
+    if (bigs > 0 && ids.length) {
+      const bigScale = scatterBigScaleFor(el, scale);
+      const step = ids.length / Math.min(bigs, ids.length);
+      for (let i = 0; i < Math.min(bigs, ids.length); i++) {
+        updateSticker(ids[Math.floor(i * step)], { scatterBig: true, scale: bigScale });
+      }
+    }
+    setSelectedStickerIds(new Set());
+    setSelectedEl({ type: 'scatter', elementId });
+  }
   function scatterPaletteOf(elementId) {
     const out = [];
     design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
@@ -6556,7 +6650,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       /* ⚠️ AND THE BASE SCALE, NOT `ref.scale` — the same first-instance trap as the colour above,
          one line apart. With big ones on, `instances[0]` may BE a big one, and every sprinkle added
          from then on would have come in at the large size. */
-      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, scatterBaseScaleOf(instances, el), takenSeatsOf(instances), scatterPaletteOf(elementId));
+      /* ⚠️ AND THE BAND, for the third time in this one call: a side set confined to the foot of the
+         wall must keep filling the foot as Count grows, not revert to the whole side. Same shape as
+         the palette and the base scale above — state the set already carries, which the generator
+         cannot re-derive on its own. */
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, scatterBaseScaleOf(instances, el), takenSeatsOf(instances), scatterPaletteOf(elementId), scatterIsBand(elementId, grp));
     } else {
       /* Drop the newest (highest id) instances first — dragged positions survive that way.
        *
@@ -6599,7 +6697,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const scale = scatterBaseScaleOf(all, el);
       // Same reason: a scatter ticked onto a second surface should carry the whole mix, not the
       // first instance's colour.
-      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId));
+      // Carries the band too: ticking Side back on after setting a base band should return the band,
+      // not a fresh scatter up the whole wall.
+      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId), scatterIsBand(elementId, grp));
     } else {
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }
@@ -6643,6 +6743,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__setScatterSize    = (elementId, v)       => { setScatterSize(elementId, v); return true; };
     window.__setScatterDensity = (elementId, zone, n) => { setScatterDensity(elementId, zone, n); return true; };
     window.__scatterSurface    = (elementId, zone, on) => { toggleScatterSurface(elementId, zone, on); return true; };
+    /* The base band, through the card's own function — a Chip is clickable from a script, but the
+       probe then depends on finding it by label, and the point of these hooks is to drive the real
+       path without the UI in the way. */
+    window.__setScatterBand    = (elementId, zone, on) => { setScatterBand(elementId, zone, on); return true; };
+    /* The palette, through the card's own writer. Driving the `<input type="color">` swatches from a
+       script means synthesising change events on a native picker, and the rainbow is the whole point
+       of the base band — untested, "multi-colour works" would have been a guess. */
+    window.__setScatterPalette = (elementId, colours) => { setScatterPalette(elementId, colours); return true; };
+    window.__scatterIsBand     = (elementId, group) => scatterIsBand(elementId, group);
     window.__getSelection = () => [...selectedStickerIds];
     /* What is selected, as a fact rather than an inference from what is on screen. Added while
      * proving the foil tap-to-reopen fix: a tap that MISSED a flake and a tap that HIT it but
@@ -8281,6 +8390,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               );
             })}
             </ScrollFadeRow>
+            {/* ── Base band ───────────────────────────────────────────────────────────────────────
+                Sandeep, with a photo of a rainbow sprinkle skirt: "at the buttom of the cake, there
+                is a multi color band of the sprinkles. we should provide this option in the sprinkles
+                card. density should be adjustable."
+
+                ⚠️ ONLY WHILE THE SIDE SET EXISTS. A band toggle over an empty side has no instances
+                to re-seat, so it would be a control that does nothing; it appears with the Side tick.
+
+                ⚠️ A Chip, matching the `Scraped edge` toggle in the tier sheet's Frosting tab: this
+                is on/off rather than one-of-many, and Chip brings aria-pressed, focus and the phone
+                hit target with it.
+
+                ⚠️ DENSITY IS THE EXISTING COUNT DIAL, per the ask. A band is about a quarter of the
+                wall's area, so the same Count reads far denser — and `scatterMaxCount` is given the
+                band fraction so the dial's maximum still means "as full as this strip gets".
+
+                ⚠️ MULTI-COLOUR NEEDED NOTHING BUILT. The Colours row below already derives a palette
+                from the instances and cycles it across them, with no cap on how many you add, so a
+                rainbow mix works here exactly as it does on a full-wall scatter. */}
+            {onSurfaces.some(su => su.group === 'side') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={s.editPanelLabel}>Side</span>
+                <Chip label="Band at the base" isMobile={isMobile}
+                      active={scatterIsBand(card.elementId, 'side')}
+                      onClick={() => setScatterBand(card.elementId, ZONES.SIDE, !scatterIsBand(card.elementId, 'side'))} />
+              </div>
+            )}
           </div>
         )}
         {/* ── Every dial on ONE row ───────────────────────────────────────────────────────────────
@@ -8315,7 +8451,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {onSurfaces.map(su => {
               const c = all.filter(x => scatterGroupOf(x) === su.group).length;
               // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the dial.
-              const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el));
+              /* ⚠️ THE BAND'S OWN CEILING. A band is roughly a quarter of the wall, so a cap derived
+                 from the whole side would let Count run four times past what the strip can hold and
+                 pack the seats solid — the dial's maximum has to mean the same thing in both modes. */
+              const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el),
+                scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
               return (
                 /* Count is per ACTIVE SURFACE — a denser top than side is a real choice — while Size
                    and Colour are shared. A count, so integer fmt and rounded on write. */
