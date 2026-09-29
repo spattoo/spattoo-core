@@ -96,8 +96,14 @@ const clamp01 = v => Math.max(0, Math.min(1, v));
 /**
  * The cavity's profile: how high the cream sits at a given distance in from the rim.
  *
- * `u` is 0 at the outer edge and 1 at the inner edge of the lip. Returns a height relative to the
- * tier's flat top — positive on the ridge, negative in the dish.
+ * `u` is 0 at the outer edge and 1 at the inner edge of the lip. Returns a height above the tier's
+ * flat top — zero at the very rim, `lip` at the crest, `dish` on the floor inside it.
+ *
+ * ⚠️ IT STARTS AT ZERO, AND THAT IS THE WHOLE JOIN. The cream on the top is the same cream as on the
+ * side: it comes up over the edge continuously, so the ridge's outer flank has to arrive at the
+ * tier's own rim exactly. Lift the outer edge even slightly and the surface becomes a disc floating
+ * over the cake, with the tier's cap showing under it as a shelf all the way round — which is what
+ * Sandeep circled: *"edge elevation, is not till the edge of the cake."*
  *
  * ⚠️ TWO SMOOTHSTEPS, NOT ONE ARC. A single curve from rim to floor gives a chamfer; the scrape has
  * a crest with a fall on BOTH sides of it, which is what makes the ridge read as cream pushed up
@@ -110,8 +116,8 @@ export function cavityProfile(u, { lip, dish, crest }) {
   return t <= c
     /* Rim to crest: rises from flush to the full lip. */
     ? lip * smooth(t / c)
-    /* Crest to floor: falls past flush and settles at the dish. */
-    : lip + (-dish - lip) * smooth((t - c) / (1 - c));
+    /* Crest to floor: falls back down and settles on the cream left lying in the middle. */
+    : lip + (dish - lip) * smooth((t - c) / (1 - c));
 }
 
 /* The floor's outer radius: how far the spiral has to reach. Taken off the ring the floor actually
@@ -192,9 +198,17 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
      feature. The caller's choice is remembered on the tier either way, so it comes back the moment
      the shape is round again. */
   if (!band && !swirl) return null;
-  /* ⚠️ THE SPIRAL RISES, so it needs no room made for it underneath — its flat IS the floor and its
-     crests stand over it. Only the dish has to be lifted clear of the tier's own cap. */
-  const rise = dish;
+  /* ⚠️ NOTHING IS LIFTED ANY MORE, AND THE LIFT IS WHAT PUT A SHELF ROUND THE CAKE. Raising the whole
+     surface by the dish did make the middle visible — the bug it was added for — but it also carried
+     the band's OUTER edge up with it, so the ring no longer met the tier's rim and the cap showed
+     underneath it as a step all the way round. The profile does the work instead: zero at the rim,
+     up to the crest, back down to the cream lying in the middle. Never below zero, never above it at
+     the edge.
+
+     `SKIM` is for the spiral standing alone, where there is no band to shape the join: a flat sheet
+     exactly on the tier's cap is a z-fight, so it sits one thin layer of cream above it. Small
+     enough that the step it leaves at the rim is a fraction of the one that was there. */
+  const SKIM = 0.004 * height;
   /* The band's width against the shape's own smallest half-span, so a wide sheet cake and a small
      round get a lip in the same proportion to themselves. */
   const span = shape.kind === 'rect'
@@ -226,7 +240,7 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
       const y = cavityProfile(u, { lip: lipHere, dish, crest: c.crest });
       /* Inward along the contour's own outward normal — the one thing every perimeter reports,
          which is what makes a heart inset like a heart rather than like the circle round it. */
-      pos.push(p.x - p.nx * wHere * u, rise + y, p.z - p.nz * wHere * u);
+      pos.push(p.x - p.nx * wHere * u, y, p.z - p.nz * wHere * u);
     }
     ringOf.push(start);
   }
@@ -254,6 +268,9 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
    * again, it meets the lip exactly because it STARTS as the lip's inner ring, and on a sheet cake
    * it gives what a real one has — circular turntable rings, cut off by a rectangular edge.
    */
+  /* Where the flat inside the ridge sits. With a band it is the profile's own landing point,
+     so the two meet without a seam; without one it is the thin skim above the cap. */
+  const floorY = band ? dish : SKIM;
   const inner = ringOf[ringOf.length - 1];
   const drop = swirl ? spiralField(swirl, outerR(pos, inner), height) : null;
   /* The spiral needs enough rings to resolve its own grooves; without it, one. */
@@ -266,7 +283,7 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
     for (let i = 0; i < AROUND; i++) {
       const o = (inner + i) * 3;
       const x = pos[o] * k, z = pos[o + 2] * k;
-      pos.push(x, rise - dish + (drop ? drop(x, z) : 0), z);
+      pos.push(x, floorY + (drop ? drop(x, z) : 0), z);
     }
     floorOf.push(start);
   }
@@ -280,7 +297,7 @@ export function buildTopSurface(shape, height, { cavity = null, spiral = null } 
   }
   /* The middle, where the knife was set down. */
   const centre = pos.length / 3;
-  pos.push(0, rise - dish + (drop ? drop(0, 0) : 0), 0);
+  pos.push(0, floorY + (drop ? drop(0, 0) : 0), 0);
   const last = floorOf[floorOf.length - 1];
   for (let i = 0; i < AROUND; i++) {
     const n = (i + 1) % AROUND;

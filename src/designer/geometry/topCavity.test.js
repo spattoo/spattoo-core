@@ -19,8 +19,21 @@ describe('the profile is a scrape, not a chamfer', () => {
     expect(cavityProfile((1 + cfg.crest) / 2, cfg)).toBeLessThan(cfg.lip);
   });
 
-  it('settles in the dish, below the tier top', () => {
-    expect(cavityProfile(1, cfg)).toBeCloseTo(-cfg.dish, 6);
+  /* ⚠️ THE FLOOR IS ABOVE THE TIER TOP, NOT BELOW IT, and this test used to say the opposite. Below
+     the top is inside the cake, behind its own opaque cap — which is why the dish never rendered.
+     `dish` is now the cream left lying in the middle: low against the ridge, but still cream ON the
+     cake. Nothing in this profile may be negative. */
+  it('settles on the cream in the middle, under the ridge but above the cake', () => {
+    expect(cavityProfile(1, cfg)).toBeCloseTo(cfg.dish, 6);
+    expect(cavityProfile(1, cfg)).toBeLessThan(cfg.lip);
+  });
+
+  /* ⚠️ ZERO AT THE VERY RIM — the join Sandeep circled. The cream on the top is the same cream as on
+     the side and comes up over the edge continuously, so the ridge's outer flank has to land on the
+     tier's own rim exactly. Any offset here and the surface is a disc floating over the cake with
+     the cap showing under it as a shelf: *"edge elevation, is not till the edge of the cake."* */
+  it('starts flush with the tier rim, so there is no shelf round the cake', () => {
+    expect(cavityProfile(0, cfg)).toBeCloseTo(0, 9);
   });
 
   it('never leaves the band it was given', () => {
