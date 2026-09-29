@@ -129,7 +129,7 @@ export { buildStyledWall, buildStyledTop, displaceByHeightField, makeWallReliefS
 // two tools on one sheet of cream (see topCavity.js); exported so the admin studio tunes against the
 // SAME code CakeTier renders, rather than a prototype copy that then has to be ported back.
 export { buildTopSurface, buildTopCavity, cavityProfile, CAVITY_DEFAULTS } from './designer/geometry/topCavity.js';
-export { spiralField, ridgeProfile, swirlPhase, SPIRAL_DEFAULTS } from './designer/geometry/topSpiral.js';
+export { spiralField, ridgeProfile, swirlPhase, SPIRAL_DEFAULTS, SPIRAL_RISE } from './designer/geometry/topSpiral.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';

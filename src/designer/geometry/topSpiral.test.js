@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SPIRAL_DEFAULTS, spiralField, makeSwirlField, ridgeProfile } from './topSpiral.js';
+import { SPIRAL_DEFAULTS, SPIRAL_RISE, spiralField, makeSwirlField, ridgeProfile } from './topSpiral.js';
 import { buildTopSurface, buildTopCavity } from './topCavity.js';
 
 const ROUND = { kind: 'round', radius: 1.1 };
@@ -26,24 +26,24 @@ describe('the spiral field', () => {
   });
 
   it('reaches its full height somewhere, so the ridge is actually there', () => {
-    const depth = 0.02;
-    const f = spiralField({ depth, wander: 0 }, 1, H);
+    const rise = 0.02;
+    const f = spiralField({ rise, wander: 0 }, 1, H);
     let tallest = 0;
     for (let r = 0; r <= 1; r += 0.005) tallest = Math.max(tallest, f(r, 0));
     /* The fade near the rim means the tallest point is inland, but it must reach essentially all
-       the way up somewhere or `depth` is not the height. */
-    expect(tallest).toBeGreaterThan(depth * H * 0.9);
+       the way up somewhere or `rise` is not the height. */
+    expect(tallest).toBeGreaterThan(rise * H * 0.9);
   });
 
   it('goes flat at the outer edge, so the ridge never rides over the rim', () => {
-    const f = spiralField({ depth: 0.02, wander: 0 }, 1, H);
+    const f = spiralField({ rise: 0.02, wander: 0 }, 1, H);
     for (let a = 0; a < 6.28; a += 0.2)
       expect(Math.abs(f(Math.cos(a), Math.sin(a)))).toBeLessThan(1e-9);
   });
 
   it('crosses `turns` ridges between the middle and the edge', () => {
     for (const turns of [3, 4, 7]) {
-      const f = spiralField({ turns, depth: 0.02, wander: 0, fade: 0.001 }, 1, H);
+      const f = spiralField({ turns, rise: 0.02, wander: 0, fade: 0.001 }, 1, H);
       /* Count sign changes in the slope along one radius: one minimum per turn. */
       let prev = null, dips = 0;
       let last = f(0.0005, 0);
@@ -64,7 +64,7 @@ describe('the spiral field', () => {
      "it looks like a regular uniform elevation"; the same mistake is available here as a set of
      perfect circles. Measured as: at one radius, the depth must differ around the cake. */
   it('is not a set of perfect circles', () => {
-    const f = spiralField({ depth: 0.02 }, 1, H);
+    const f = spiralField({ rise: 0.02 }, 1, H);
     const r = 0.5;
     const at = [];
     for (let a = 0; a < 6.28; a += 0.05) at.push(f(r * Math.cos(a), r * Math.sin(a)));
@@ -95,8 +95,8 @@ describe('the spiral field', () => {
       for (let a = 0; a < 6.28; a += 0.2) at.push(trough(f)(a));
       return Math.max(...at) - Math.min(...at);
     };
-    const straight = spread(spiralField({ depth: 0.02, wander: 0, fade: 0.001 }, 1, H));
-    const wandered = spread(spiralField({ depth: 0.02, fade: 0.001 }, 1, H));
+    const straight = spread(spiralField({ rise: 0.02, wander: 0, fade: 0.001 }, 1, H));
+    const wandered = spread(spiralField({ rise: 0.02, fade: 0.001 }, 1, H));
     expect(wandered).toBeGreaterThan(straight);
   });
 
@@ -146,7 +146,10 @@ describe('the spiral field', () => {
   it('every default sits strictly inside any range a control would offer', () => {
     expect(SPIRAL_DEFAULTS.turns).toBeGreaterThan(2);
     expect(SPIRAL_DEFAULTS.turns).toBeLessThan(10);
-    expect(SPIRAL_DEFAULTS.depth).toBeGreaterThan(0);
+    /* ⚠️ THE DEFAULT MUST SIT STRICTLY INSIDE, not on an end. A default parked on its own ceiling
+       is a control that only goes one way, which the wire's Long dial already shipped once. */
+    expect(SPIRAL_DEFAULTS.rise).toBeGreaterThan(SPIRAL_RISE.min);
+    expect(SPIRAL_DEFAULTS.rise).toBeLessThan(SPIRAL_RISE.max);
     expect(SPIRAL_DEFAULTS.wander).toBeGreaterThan(0);
     expect(SPIRAL_DEFAULTS.width).toBeGreaterThan(0);
     expect(SPIRAL_DEFAULTS.width).toBeLessThan(0.5);   // 0.5 is the cosine this replaced
@@ -164,7 +167,7 @@ describe('the top surface carries both, or either, or neither', () => {
   });
 
   it('draws the spiral with no rim at all', () => {
-    const g = buildTopSurface(ROUND, H, { spiral: { depth: 0.02 } });
+    const g = buildTopSurface(ROUND, H, { spiral: { rise: 0.02 } });
     expect(g).not.toBeNull();
     const v = ys(g);
     expect(Math.max(...v) - Math.min(...v)).toBeGreaterThan(0.01);
@@ -181,7 +184,7 @@ describe('the top surface carries both, or either, or neither', () => {
      rendered as the same picture for as long as the feature existed. Nothing may go below zero. */
   it('never dips below the cake it sits on', () => {
     for (const opts of [{ cavity: {} }, { spiral: {} }, { cavity: {}, spiral: {} },
-                        { cavity: { dish: 0.3 } }, { cavity: {}, spiral: { depth: 0.05 } }]) {
+                        { cavity: { dish: 0.3 } }, { cavity: {}, spiral: { rise: 0.05 } }]) {
       const g = buildTopSurface(ROUND, H, opts);
       expect(Math.min(...ys(g))).toBeGreaterThanOrEqual(-1e-6);
     }

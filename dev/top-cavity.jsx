@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import './scene.js';
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
 import { buildTopSurface, CAVITY_DEFAULTS } from '../src/designer/geometry/topCavity.js';
-import { SPIRAL_DEFAULTS } from '../src/designer/geometry/topSpiral.js';
+import { SPIRAL_DEFAULTS, SPIRAL_RISE } from '../src/designer/geometry/topSpiral.js';
 import { isRoundWall } from '../src/designer/geometry/surface.js';
 
 /* ── A dished cake top with a raised cream lip ───────────────────────────────────────────────────
@@ -43,7 +43,7 @@ import { isRoundWall } from '../src/designer/geometry/surface.js';
  *                                        proves they are independent rather than one feature
  *   /top-cavity.html?spiral=1&turns=8    a tighter coil; both references have about four
  *   /top-cavity.html?spiral=1&swidth=0.5  the fat cosine wave the first version drew, for comparison
- *   /top-cavity.html?spiral=1&sdepth=0.02 a groove deep enough to see what it is doing
+ *   /top-cavity.html?spiral=1&srise=0.03  the tallest coil the dial allows
  *   /top-cavity.html?spiral=1&swander=0  perfect circles — the machined version, the control for
  *                                        the thing that matters most
  *   /top-cavity.html?spiral=1&shape=rect circular turntable rings cut off by a rectangle, which is
@@ -139,7 +139,7 @@ function Switch({ on, onChange, label, hint, disabled = false }) {
   );
 }
 
-function Panel({ lip, onLip, seed, onShuffle, rim, onRim, spiral, onSpiral, turns, onTurns }) {
+function Panel({ lip, onLip, seed, onShuffle, rim, onRim, spiral, onSpiral, turns, onTurns, rise, onRise }) {
   const row = { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 };
   const cap = { fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.4, textTransform: 'uppercase' };
   return (
@@ -178,6 +178,20 @@ function Panel({ lip, onLip, seed, onShuffle, rim, onRim, spiral, onSpiral, turn
         </div>
       </div>
 
+      {/* ⚠️ A NARROW RANGE ON PURPOSE. Sandeep: *"usually there wont be too high spirals, so the
+          range would be small. but adjustable."* SPIRAL_RISE carries the ends, chosen off the same
+          sweep that chose the default — below its floor the ridge is invisible, above its ceiling it
+          reads as a moulding rather than a knife mark. */}
+      <div style={{ ...row, opacity: spiral && ROUND_TIER ? 1 : 0.35,
+                    pointerEvents: spiral && ROUND_TIER ? 'auto' : 'none' }}>
+        <SizeDial size={rise} min={SPIRAL_RISE.min} max={SPIRAL_RISE.max} step={SPIRAL_RISE.step}
+                  onChange={onRise} fmt={v => `${Math.round(v * 1000) / 10}`} />
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 800, color: '#2C4433' }}>Height</div>
+          <div style={{ fontSize: 11, color: '#8a8a8a' }}>how proud the coil stands</div>
+        </div>
+      </div>
+
       <div style={row}>
         <button type="button" onClick={onShuffle}
           style={{ padding: '9px 14px', borderRadius: 9, border: '1px solid #2C4433', background: '#2C4433',
@@ -198,7 +212,7 @@ function Panel({ lip, onLip, seed, onShuffle, rim, onRim, spiral, onSpiral, turn
   );
 }
 
-function Tier({ lip, seed, rim, spiral, turns, shape, height, y }) {
+function Tier({ lip, seed, rim, spiral, turns, rise, shape, height, y }) {
   const cav = {
     lip,
     seed,
@@ -214,7 +228,7 @@ function Tier({ lip, seed, rim, spiral, turns, shape, height, y }) {
   const spi = {
     seed:   seed + 511,
     turns,
-    depth:  num('sdepth',  SPIRAL_DEFAULTS.depth),
+    rise,
     fade:   num('sfade',   SPIRAL_DEFAULTS.fade),
     width:  num('swidth',  SPIRAL_DEFAULTS.width),
     wander: num('swander', SPIRAL_DEFAULTS.wander),
@@ -226,7 +240,7 @@ function Tier({ lip, seed, rim, spiral, turns, shape, height, y }) {
       spiral: spiral ? spi : null,
     })),
     [shape, height, rim, spiral, cav.lip, cav.dish, cav.width, cav.crest, cav.wobble, cav.swells,
-     cav.seed, spi.turns, spi.depth, spi.fade, spi.width, spi.wander, spi.swells, spi.seed],
+     cav.seed, spi.turns, spi.rise, spi.fade, spi.width, spi.wander, spi.swells, spi.seed],
   );
   useEffect(() => () => cavity?.dispose(), [cavity]);
 
@@ -253,6 +267,7 @@ function App() {
   const [rim, setRim] = useState(q.get('rim') !== '0');
   const [spiral, setSpiral] = useState(q.get('spiral') === '1');
   const [turns, setTurns] = useState(num('turns', SPIRAL_DEFAULTS.turns));
+  const [rise, setRise] = useState(num('srise', SPIRAL_DEFAULTS.rise));
   /* A fresh number, not the next one. "Seed 8 after seed 7" invites the idea that they are ordered
      and that somewhere further along is a better one; they are just different hands. */
   const [seed, setSeed] = useState(num('seed', CAVITY_DEFAULTS.seed));
@@ -267,7 +282,7 @@ function App() {
     <div style={{ height: '100%', display: 'flex' }}>
       <Panel lip={lip} onLip={setLip} seed={seed}
              rim={rim} onRim={setRim} spiral={spiral} onSpiral={setSpiral}
-             turns={turns} onTurns={setTurns}
+             turns={turns} onTurns={setTurns} rise={rise} onRise={setRise}
              onShuffle={() => setSeed(1 + Math.floor(Math.random() * 9999))} />
     <Canvas shadows camera={{ position: [0, EYE_Y, EYE_D], fov: 32 }} style={{ height: '100%' }}>
       <SceneLights />
@@ -276,7 +291,7 @@ function App() {
           one thing a hand-scraped rim never does, and more obviously wrong than the uniform ring
           this whole feature started as. */}
       {STACK.map((t, i) => (
-        <Tier key={i} lip={lip} seed={seed + i * 37} rim={rim} spiral={spiral} turns={turns}
+        <Tier key={i} lip={lip} seed={seed + i * 37} rim={rim} spiral={spiral} turns={turns} rise={rise}
               shape={t.shape} height={t.height} y={BASE_Y[i]} />
       ))}
       <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>

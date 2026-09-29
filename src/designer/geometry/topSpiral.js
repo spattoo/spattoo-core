@@ -77,14 +77,16 @@ export const SPIRAL_DEFAULTS = Object.freeze({
      directly above) and is not evidence for this one. */
   turns: 4,
   /* How high the ridge stands, as a fraction of the tier's HEIGHT — never a world number
-     (INVARIANTS #8).
+     (INVARIANTS #8). Named `rise` and not `depth`: it was a depth while the spiral was modelled
+     as a groove cut into the top, and a key that says the opposite of what it does is how a dial
+     labelled "Height" ends up writing to something called depth.
      ⚠️ SWEPT AGAINST THE PHOTOGRAPH, AND THE REASONED NUMBER WAS 2.5× TOO SHALLOW. The first value
      was argued from the cavity beside it — the dish is 0.018 of the height, the ripple looks like a
      third of that, so 0.006 — and on screen that is a ridge you have to be told is there. Relief
      read off a render does not follow relief reasoned off a neighbouring parameter, because what the
      eye picks up is the shading down the ridge's FLANK, not how tall its crest is. 0.010 is still
      faint; 0.022 starts to read as moulded. */
-  depth: 0.015,
+  rise: 0.015,
   /* How much of the floor's outer edge the ridge fades out over, as a fraction of the radius.
      ⚠️ THE KNIFE LIFTS BEFORE THE EDGE. In the photograph the outermost ring stops with a clear
      band of smooth cream between it and the rim; run out to the boundary instead and the spiral
@@ -113,6 +115,16 @@ export const SPIRAL_DEFAULTS = Object.freeze({
   seed: 3,
 });
 
+/** The range the ridge's height may take, as a fraction of the tier's height.
+ *
+ * ⚠️ DELIBERATELY NARROW. Sandeep: *"usually there wont be too high spirals, so the range would be
+ * small. but adjustable."* Both references sit near the middle of this, and the sweep that chose the
+ * default is what fixes the ends: at 0.006 the ridge is something you have to be told is there, and
+ * by 0.030 it has stopped reading as a knife mark and started reading as a moulding. A dial that can
+ * reach a setting no cake has is not more useful, it is a way to get a worse cake.
+ */
+export const SPIRAL_RISE = Object.freeze({ min: 0.006, max: 0.03, step: 0.001 });
+
 /* How finely the wander is sampled around. Matches topCavity's AROUND so the two rings of noise are
    read the same way; it is a lookup by angle, not a mesh resolution. */
 const WANDER_N = 160;
@@ -123,15 +135,15 @@ const WANDER_N = 160;
  * @param cfg   overrides on SPIRAL_DEFAULTS
  * @param rOut  the radius the groove runs out to — the floor's own outer edge, so the spiral fills
  *              whatever room the rim leaves it rather than assuming the tier's full radius
- * @param height the tier's height, which `depth` is a fraction of
+ * @param height the tier's height, which `rise` is a fraction of
  * @returns (x, z) => y, a LIFT above the floor (never negative — the knife ploughs cream into a
  *          heap along its path, so the floor it is applied to is the low-water mark)
  */
 export function spiralField(cfg, rOut, height) {
   const c = { ...SPIRAL_DEFAULTS, ...cfg };
-  if (!(rOut > 0) || !(height > 0) || !(c.depth > 0) || !(c.turns > 0)) return () => 0;
+  if (!(rOut > 0) || !(height > 0) || !(c.rise > 0) || !(c.turns > 0)) return () => 0;
 
-  const depth = c.depth * height;
+  const rise = c.rise * height;
   const phase = swirlPhase({ turns: c.turns, rOut });
   const wob = ringNoise(WANDER_N, c.swells, c.seed);
 
@@ -149,6 +161,6 @@ export function spiralField(cfg, rOut, height) {
        the last ring rather than being spread across all of them. */
     const t = Math.min(1, Math.max(0, (1 - r / rOut) / Math.max(1e-4, c.fade)));
     const ease = t * t * (3 - 2 * t);
-    return depth * crest * ease;
+    return rise * crest * ease;
   };
 }
