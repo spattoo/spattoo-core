@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { SPIRAL_DEFAULTS, spiralField, makeSwirlField } from './topSpiral.js';
+import { SPIRAL_DEFAULTS, spiralField, makeSwirlField, grooveProfile } from './topSpiral.js';
 import { buildTopSurface, buildTopCavity } from './topCavity.js';
 
 const ROUND = { kind: 'round', radius: 1.1 };
@@ -96,11 +96,56 @@ describe('the spiral field', () => {
     expect(wandered).toBeGreaterThan(straight);
   });
 
+  /* ⚠️ A COSINE IS THE WRONG SECTION FOR A KNIFE, and the first version shipped one. It spends half
+     of every turn going down and half coming back up, so each ring is a fat wave and the top rolls
+     like water — Sandeep, with the pink cake beside it: *"spirals should not this much thick."* Both
+     photographs show a flat top with a thin line cut in it. */
+  it('cuts a NARROW groove: mostly flat land, a little cut', () => {
+    const w = SPIRAL_DEFAULTS.width;
+    let cut = 0, n = 0;
+    for (let ph = 0; ph < 4; ph += 0.001) { if (grooveProfile(ph, w) > 0.5) cut++; n++; }
+    /* The fraction of each turn spent in the groove is the width, near enough — and it is well under
+       the half a cosine would give. */
+    expect(cut / n).toBeGreaterThan(w * 0.4);
+    expect(cut / n).toBeLessThan(w * 1.3);
+    expect(cut / n).toBeLessThan(0.35);
+  });
+
+  it('is deepest on the groove and flat between two of them', () => {
+    const w = SPIRAL_DEFAULTS.width;
+    for (const k of [0, 1, 2, -3]) {
+      expect(grooveProfile(k, w)).toBeCloseTo(1, 6);
+      expect(grooveProfile(k + 0.5, w)).toBeCloseTo(0, 6);
+    }
+  });
+
+  it('a narrower width leaves more of the top untouched', () => {
+    const land = w => {
+      let flat = 0, n = 0;
+      for (let ph = 0; ph < 4; ph += 0.001) { if (grooveProfile(ph, w) < 0.02) flat++; n++; }
+      return flat / n;
+    };
+    expect(land(0.14)).toBeGreaterThan(land(0.30));
+    expect(land(0.30)).toBeGreaterThan(land(0.5));
+  });
+
+  /* ⚠️ THE PIPED LID KEEPS ITS COSINE. Only the phase is shared — the soft ripple was chosen and
+     approved on a rope-piped cake, and narrowing it here must not reach across and change that. */
+  it('leaves the piped lid\'s field exactly as it was', () => {
+    const f = makeSwirlField({ turns: 7, rOut: 1 });
+    for (const [r, th] of [[0.3, 0.4], [0.9, 2.1], [0, 0], [1, 5.5]]) {
+      const sp = 7 * (1 - Math.min(1, r)) + th / (Math.PI * 2);
+      expect(f(r, th)).toBeCloseTo(0.5 - 0.5 * Math.cos(Math.PI * 2 * sp), 10);
+    }
+  });
+
   it('every default sits strictly inside any range a control would offer', () => {
     expect(SPIRAL_DEFAULTS.turns).toBeGreaterThan(2);
     expect(SPIRAL_DEFAULTS.turns).toBeLessThan(10);
     expect(SPIRAL_DEFAULTS.depth).toBeGreaterThan(0);
     expect(SPIRAL_DEFAULTS.wander).toBeGreaterThan(0);
+    expect(SPIRAL_DEFAULTS.width).toBeGreaterThan(0);
+    expect(SPIRAL_DEFAULTS.width).toBeLessThan(0.5);   // 0.5 is the cosine this replaced
   });
 
   it('is the same field the piped lid has always used', async () => {

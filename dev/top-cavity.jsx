@@ -41,7 +41,8 @@ import { isRoundWall } from '../src/designer/geometry/surface.js';
  *   /top-cavity.html?spiral=1            both: the scraped rim with the turntable spiral inside it
  *   /top-cavity.html?spiral=1&lip=0      the spiral ALONE on a flat top — the combination that
  *                                        proves they are independent rather than one feature
- *   /top-cavity.html?spiral=1&turns=8    a tighter coil; the reference has about four
+ *   /top-cavity.html?spiral=1&turns=8    a tighter coil; both references have about four
+ *   /top-cavity.html?spiral=1&swidth=0.5  the fat cosine wave the first version drew, for comparison
  *   /top-cavity.html?spiral=1&sdepth=0.02 a groove deep enough to see what it is doing
  *   /top-cavity.html?spiral=1&swander=0  perfect circles — the machined version, the control for
  *                                        the thing that matters most
@@ -215,6 +216,7 @@ function Tier({ lip, seed, rim, spiral, turns, shape, height, y }) {
     turns,
     depth:  num('sdepth',  SPIRAL_DEFAULTS.depth),
     fade:   num('sfade',   SPIRAL_DEFAULTS.fade),
+    width:  num('swidth',  SPIRAL_DEFAULTS.width),
     wander: num('swander', SPIRAL_DEFAULTS.wander),
     swells: num('sswells', SPIRAL_DEFAULTS.swells),
   };
@@ -224,7 +226,7 @@ function Tier({ lip, seed, rim, spiral, turns, shape, height, y }) {
       spiral: spiral ? spi : null,
     })),
     [shape, height, rim, spiral, cav.lip, cav.dish, cav.width, cav.crest, cav.wobble, cav.swells,
-     cav.seed, spi.turns, spi.depth, spi.fade, spi.wander, spi.swells, spi.seed],
+     cav.seed, spi.turns, spi.depth, spi.fade, spi.width, spi.wander, spi.swells, spi.seed],
   );
   useEffect(() => () => cavity?.dispose(), [cavity]);
 

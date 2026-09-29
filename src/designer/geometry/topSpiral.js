@@ -35,11 +35,33 @@ const TAU = Math.PI * 2;
  * reachable only through `top: 'spiral'`. creamWall re-exports it, so its own callers and tests are
  * untouched.
  */
+export function swirlPhase({ turns, rOut }) {
+  return (r, theta) => turns * (1 - Math.min(1, r / rOut)) + theta / TAU;
+}
+
 export function makeSwirlField({ turns, rOut }) {
-  return (r, theta) => {
-    const sp = turns * (1 - Math.min(1, r / rOut)) + theta / TAU;
-    return 0.5 - 0.5 * Math.cos(TAU * sp);
-  };
+  const phase = swirlPhase({ turns, rOut });
+  return (r, theta) => 0.5 - 0.5 * Math.cos(TAU * phase(r, theta));
+}
+
+/* How much of ONE TURN'S spacing the groove itself takes up: 1 in the cut, 0 on the flat between.
+ *
+ * ⚠️ A COSINE IS THE WRONG SECTION FOR A KNIFE, and this is what came back from the first render.
+ * `0.5 - 0.5cos` spends half of every turn going down and half coming back up, so each ring is a fat
+ * wave and the whole top rolls like water. Sandeep, with the pink cake beside it: *"spirals should
+ * not this much thick. see the reference image."* Both references show the same thing — a flat top
+ * with a THIN line incised in it, land far wider than cut. That is what a knife tip does; the cosine
+ * is what a whole spatula face would do.
+ *
+ * ⚠️ AND THE COSINE STAYS WHERE IT IS. The piped lid's soft ripple was chosen and approved on its
+ * own cake, where a rope-piped wall meets a gently rippled top. Only the phase is shared.
+ */
+export function grooveProfile(phase, width) {
+  /* Distance from the nearest groove centre, as a fraction of half the spacing: 0 in a cut, 1 midway
+     between two. */
+  const d = Math.abs(((phase % 1) + 1.5) % 1 - 0.5) * 2;
+  const t = Math.min(1, d / Math.max(1e-4, width));
+  return 1 - t * t * (3 - 2 * t);
 }
 
 export const SPIRAL_DEFAULTS = Object.freeze({
@@ -63,6 +85,12 @@ export const SPIRAL_DEFAULTS = Object.freeze({
      band of smooth cream between it and the rim; run out to the boundary instead and the spiral
      notches the lip, which turns a scraped edge into a milled one. */
   fade: 0.15,
+  /* How wide the cut is against the space between two cuts, 0..1 — a half would be the old cosine.
+     ⚠️ MEASURED OFF BOTH PHOTOGRAPHS: the land between two grooves is three or four times the groove
+     itself, so the top reads as flat cream with a line drawn in it rather than as ripples. Swept
+     beside the pink cake at 0.16 / 0.20 / 0.24: by 0.24 the ring is broadening back towards a wave,
+     and 0.5 IS the old cosine. */
+  width: 0.18,
   /* ── How far the rings stray from being circles ───────────────────────────────────────────────
    *
    * ⚠️ THE UNIFORM VERSION IS THE ONE THING THIS CANNOT BE, and the cavity beside it already paid
@@ -99,7 +127,7 @@ export function spiralField(cfg, rOut, height) {
   if (!(rOut > 0) || !(height > 0) || !(c.depth > 0) || !(c.turns > 0)) return () => 0;
 
   const depth = c.depth * height;
-  const swirl = makeSwirlField({ turns: c.turns, rOut });
+  const phase = swirlPhase({ turns: c.turns, rOut });
   const wob = ringNoise(WANDER_N, c.swells, c.seed);
 
   return (x, z) => {
@@ -110,12 +138,12 @@ export function spiralField(cfg, rOut, height) {
        the groove arrives early on one side of the cake and late on the other. */
     const i = Math.floor(((theta / TAU + 1) % 1) * WANDER_N) % WANDER_N;
     const rEff = r * (1 + c.wander * wob[i]);
-    /* 0 at the trough of the groove, 1 on the land between two of them. */
-    const v = swirl(rEff, theta);
+    /* 1 inside the cut, 0 on the flat between two cuts. */
+    const cut = grooveProfile(phase(rEff, theta), c.width);
     /* The knife lifting near the edge. `fade` is measured from the outside in, so the taper lands on
        the last ring rather than being spread across all of them. */
     const t = Math.min(1, Math.max(0, (1 - r / rOut) / Math.max(1e-4, c.fade)));
     const lift = t * t * (3 - 2 * t);
-    return -depth * (1 - v) * lift;
+    return -depth * cut * lift;
   };
 }
