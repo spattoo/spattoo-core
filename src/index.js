@@ -38,6 +38,15 @@ export { buildPipingStroke, buildPipingHeap, mergePenGeometries, NOZZLES, NOZZLE
  * comment cannot keep. A material recipe is a shader curve, so it belongs in code (see the note in
  * pipingMedia.js) and therefore in ONE copy that both the cake and the studio import. */
 export { MEDIA, DEFAULT_MEDIUM, mediumOf } from './designer/geometry/pipingMedia.js';
+/* The metallic↔matte mapping, so a studio placing a pearl beside piped cream uses the SAME curve the
+ * ball cluster's Finish control writes. One slider drives both PBR params together because a
+ * believable metal needs high metalness AND low roughness — finish.js is the one place that pairing
+ * lives, and a second copy in admin would be a pearl that drifts from the cake's own.
+ *
+ * ⚠️ A LEAF MODULE WITH NO IMPORTS, so unlike pipingMedia.js this cannot reach the env map and needs
+ * no entry in check-env-map's accepted list. Worth stating: that gate fired on the last export in
+ * this file and the difference is exactly this — what a module IMPORTS, not what it does. */
+export { FINISH_METALLIC, FINISH_MATTE, finishToMaterial, finishOf } from './designer/geometry/finish.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to
