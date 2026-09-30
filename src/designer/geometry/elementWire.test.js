@@ -170,7 +170,20 @@ describe('a row authors the starting values, an instance overrides them', () => 
    SHORTER — a default with no headroom above it is a control doing half what it appears to. It was
    found by reading, not by a test, which is the wrong way round for arithmetic this mechanical. */
 describe('every default leaves room to move in both directions', () => {
-  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP, waves: WIRE_WAVES, twist: WIRE_TWIST, angle: WIRE_ANGLE };
+  const ranges = { length: WIRE_LENGTH, sweep: WIRE_SWEEP, waves: WIRE_WAVES, twist: WIRE_TWIST, angle: WIRE_ANGLE };
+
+  /* ⚠️ `bend` IS A NAMED EXCEPTION, NOT AN OVERSIGHT, and naming it here is the point — an exception
+     that is simply dropped from the list is indistinguishable from a default nobody checked.
+     Its floor IS its default: a wire now goes in STRAIGHT and the bow is opt-in. Sandeep, with a
+     butterfly on the side at 65°: *"it should be directly inserting — straight line first. then
+     twisting should be the user choice."* So the dial deliberately only travels one way from rest,
+     which is what "opt-in" means; the rule the others follow — that a default must have room above
+     AND below — would forbid exactly the behaviour that was asked for. */
+  it('bend rests ON its floor, because the bow is opt-in', () => {
+    expect(ELEMENT_WIRE_DEFAULTS.bend).toBe(WIRE_BEND.min);
+    expect(WIRE_BEND.max).toBeGreaterThan(WIRE_BEND.min);   // there is somewhere to go
+  });
+
   for (const [key, range] of Object.entries(ranges)) {
     it(`${key} sits strictly inside its own range`, () => {
       const v = ELEMENT_WIRE_DEFAULTS[key];

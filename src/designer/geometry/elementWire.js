@@ -58,11 +58,22 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
      "there is a wire here" at the size the cake is actually looked at. */
   thickness: 2.5,
   /* How far the wire bows away from the straight line between its two ends, as a fraction of its
-     own length. Zero is a pin.
+     own length. Zero is a straight stem.
 
-     ⚠️ 0.35, and below about 0.2 a white rod simply reads as a skewer however long it is. The bow
-     is not decoration; it is the only thing that says "wire" rather than "pin". */
-  bend: 0.35,
+     ⚠️ 0, AND IT WAS 0.35 — A DELIBERATE CHOICE THAT THE ANGLE CONTROL OVERTURNED. The old note
+     said a straight rod "reads as a skewer, not a wire", and on the cake TOP, where a stem is a
+     short vertical line, that was true. On a WALL it is not: a bow of 0.35 over two kinks is an
+     S-curl, and once the piece can be pushed in at a chosen angle the curl is the only thing the
+     eye reads — the stem no longer points anywhere. Sandeep, with a butterfly on the side at 65°:
+     *"it should be directly inserting — straight line first. then twisting should be the user
+     choice. in this case, i cant make it stand with angle."*
+
+     ⚠️ SO THE BOW BECOMES OPT-IN, WHICH IS ALSO THE RIGHT ORDER. A baker places a piece, sees it
+     go in where they meant, and then bends the wire if they want it bent. A default that arrives
+     pre-curled makes the first thing they see the hardest to reason about, and hides the two
+     controls — Angle and Long — that decide where the piece actually sits. Bend, Kinks and Twist
+     are all still there, one dial away, and they do exactly what they did before. */
+  bend: 0,
   /* WHICH WAY it bows, in degrees around the cake's axis. Not a tilt — see `wireFor`. Varying this
      between pieces is what stops a swarm of butterflies looking like a row of pins. */
   sweep: 35,

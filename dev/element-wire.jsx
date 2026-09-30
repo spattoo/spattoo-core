@@ -15,13 +15,17 @@ import './scene.js';
  *
  * Three things to judge, in order:
  *
- *   1. Does it read as WIRE, or as a pin? The bow is the whole difference. Sweep `bend` and find
- *      where a white rod stops looking like a skewer.
+ *   1. Does it read as WIRE, or as a pin? The bow is the difference — but it is OPT-IN now, so the
+ *      question here is whether a baker who raises `bend` gets something worth having, not whether
+ *      the default looks bare. On a wall a straight stem reading as a stem is the point: Sandeep,
+ *      *"it should be directly inserting — straight line first. then twisting should be the user
+ *      choice."*
  *   2. Is it thin enough? A stem wire is roughly a quarter of a cocktail stick.
  *   3. Does the butterfly sit where a hand would have put it — out and up, clear of the icing?
  *
  *   /element-wire.html                       the defaults
- *   /element-wire.html?bend=0                straight: the control case, should look wrong
+ *   /element-wire.html?bend=0.35              the bow the DEFAULT used to carry — now opt-in, and on
+ *                                            a wall it is a curl that hides the angle the stem went in at
  *   /element-wire.html?bend=0.5              the maximum, where it starts to read as a spring
  *   /element-wire.html?lean=0                vertical, which hand-bent wire never is
  *   /element-wire.html?lean=45&bend=0.3      the reference photographs' look
