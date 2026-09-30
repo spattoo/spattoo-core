@@ -318,7 +318,13 @@ CAT_ELEMENTS.push({
   image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
   allowed_actions: { color: true, delete: true, resize: true },
-  placement_config: { r: 1, bottom_y_adjustable: true },
+  /* ⚠️ `hand_piping` IS WHAT PUTS THIS PIECE IN THE CREAM PATTERN STUDIO, and no fixture carried
+     it before — so the studio's thumbnail grid could only ever render its empty state here, and
+     the one thing worth looking at was unreachable. Ticked on THIS row because it is the only
+     cream_piping fixture whose image_url is a real GLB: the studio stamps that mesh, and a
+     data-URI would hand an SVG to the GLB loader (see the note above). The flag is the admin's
+     per-element judgement that a piece survives being repeated; the pen's own door reads it too. */
+  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true },
   default_color: '#F5E6C8', sort_order: 16,
 });
 

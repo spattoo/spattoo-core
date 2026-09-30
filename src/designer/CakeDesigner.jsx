@@ -7370,6 +7370,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     ...creamPipingEls.filter(el => el.placement_config?.pattern_only !== true),
     ...pipingPatternEls.filter(el => pipingBlockById[el.placement_config?.parts?.[0]?.element_id]?.image_url),
   ];
+  /* ── What the cream pattern studio may pipe with ───────────────────────────────────────────────
+   *
+   * Sandeep: *"elements with placement_config.hand_piping ticked is a good idea."*
+   *
+   * ⚠️ THE SAME FLAG THE PEN'S OWN DOOR READS, and deliberately not a second judgement. `hand_piping`
+   * is ticked per element in admin by whoever calibrated it: a shell or a rosette repeats happily, a
+   * wrap band is ONE pre-formed ring and a drip a procedural curtain, and stamping either along a
+   * line produces something nobody would pipe. Absent means OFF — an element nobody has considered
+   * does not get the feature by default.
+   *
+   * ⚠️ RESOLVED HERE, NOT IN THE STUDIO. `resolvePipingGlbs` needs `pipingBlockById`, which needs the
+   * catalogue; handing the studio a ready list keeps the one copy of that resolution in the file
+   * that owns the catalogue, and keeps the studio ignorant of how a pattern references its blocks.
+   * An element whose GLB does not resolve is dropped rather than offered — a tile that stamps
+   * nothing reads as the studio being broken. */
+  const patternPieceEls = pipingPickerEls
+    .filter(el => el.placement_config?.hand_piping)
+    .map(el => ({
+      id: el.id,
+      name: el.name,
+      glbUrl: resolvePipingGlbs(el).glbUrl,
+      thumb: thumbSrc(el),
+      // How the RING stands this piece up. Without it a shell authored lying on its side is piped
+      // lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
+      rotation: pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
+    }))
+    .filter(p => !!p.glbUrl);
+
+  /* ── The cake the pattern studio pipes on ──────────────────────────────────────────────────────
+   *
+   * ⚠️ `baseY` AND `board` ARE NOT IN `canvasConfig`, AND ASSUMING THEY WERE WOULD HAVE SHIPPED AN
+   * EMPTY STUDIO. `toCanvasConfig` emits neither: CakeCanvas's `cakeScene` stacks `baseY` from a
+   * running total of tier heights and derives the board with `boardOf(bottomTier)`. Passing
+   * `canvasConfig.board` gave `undefined` (no board drawn at all — the very fault this studio was
+   * opened to fix), and a missing `baseY` makes `yBase + height` NaN, which puts every tier and
+   * every catcher nowhere. Nothing would have errored: the same NaN class as the omitted `bury`
+   * that blanked this feature's screen once already, and the build, bindings, three gates and 2440
+   * tests were all green with it in place.
+   *
+   * Stacked the SAME WAY cakeScene stacks it rather than imported, because cakeScene is built inside
+   * the canvas from its own config; this is the one number, computed by the one rule. */
+  const patternTiers = useMemo(() => {
+    let stackY = BOARD_TOP_Y;
+    return (canvasConfig.tiers ?? []).map(t => {
+      const baseY = stackY;
+      stackY += t.height ?? 0;
+      return { ...t, baseY };
+    });
+  }, [canvasConfig.tiers]);
+  /* Shaped the way CakeCanvas hands a board to the pen — `kind` is the board's word for it and
+     `shape` is the renderer's, and 0.1 is the board's own top face (BOARD_TOP_Y). */
+  const patternBoard = useMemo(() => {
+    const bt = patternTiers[0];
+    if (!bt) return null;
+    const b = boardOf(bt);
+    return b ? { shape: b.kind, radius: b.radius, width: b.width, depth: b.depth, y: 0.05 } : null;
+  }, [patternTiers]);
+
   // Drips ride the SAME ring popup as piping, but are their OWN picker group (a chocolate drip is not
   // "cream piping"). dripEls render in a separate labelled card via the shared renderRingPickerCard.
 
@@ -15123,18 +15181,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <ColorWheel color={patternColor} onChange={setPatternColor} width={152} compact={isMobile}
               cakeColors={[...new Set(collectElementColors(design))]} />
           }
+          /* Gated on `hand_piping`, resolved to GLBs above. */
+          pieceElements={patternPieceEls}
+          /* ⚠️ THE BAKER'S OWN CAKE, NOT A STAND-IN. Sandeep, at a studio showing a bare dish: *"its
+             showing only board. it should show cake as well."* A pattern composed on a flat plate has
+             to be transplanted onto a cake that curves, so the plate was solving an easier problem
+             than the one the studio exists for. */
+          tiers={patternTiers}
+          board={patternBoard}
+          /* One definition of the calibrated stamp size — see PIPE_STAMP_THICKNESS. */
+          defaultThickness={PIPE_STAMP_THICKNESS}
           onCancel={() => setPatternStudio(false)}
           onSave={({ pieces }) => {
+            /* ⚠️ NO LONGER RE-SEATED, AND THAT IS THE POINT OF PIPING ON THE CAKE. The plate
+               version composed in plate coordinates and dropped the result on the tier top, which
+               was the only placement where that frame still meant anything. The studio now pipes on
+               the baker's own tiers, so a piece is ALREADY where it belongs — lifting it by a
+               computed `topY` would move it off the wall it was piped on.
+
+               ⚠️ AND THEY ARE STAMPS, THE SAME RECORD THE PEN COMMITS. `kind: 'stamp'` with a
+               `glbUrl` is what "I'll pipe it myself" makes, rendered by StampStroke through
+               stampTransforms — so a block composed in the studio and a run piped by hand are the
+               same object, and `patternId` groups this one for the pattern card to read later. */
             const patternId = crypto.randomUUID();
-            const topY = canvasConfig.tiers?.length
-              ? canvasConfig.tiers.reduce((y, t) => y + (t.height ?? 0), 0.1) : BOTTOM_H;
             (pieces ?? []).forEach(p => {
               addStroke({
-                kind: 'heap', patternId,
-                point: [p.point[0], topY + p.point[1], p.point[2]],
+                kind: 'stamp', patternId,
+                point: p.point,
                 normal: p.normal,
-                nozzle: p.nozzle, thickness: p.thickness, heapHeight: p.heapHeight,
+                glbUrl: p.glbUrl, stampId: p.elId, stampName: p.name ?? null,
+                seed: p.seed, regular: true, rotation: p.rotation ?? null, lean: p.lean ?? 0,
+                thickness: p.thickness,
                 color: p.colour, softness: p.softness, medium: 'cream',
+                tierIndex: p.tierIndex ?? 0,
               });
             });
             setPatternStudio(false);
