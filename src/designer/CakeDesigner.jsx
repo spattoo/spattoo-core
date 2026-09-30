@@ -56,7 +56,7 @@ import GarnishStudio from './garnish/GarnishStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
 import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
-import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
+import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands, springRange } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
 import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './geometry/elementWire.js';
@@ -6888,6 +6888,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        of the base band — untested, "multi-colour works" would have been a guess. */
     window.__setScatterPalette = (elementId, group, colours) => { setScatterPalette(elementId, group ?? null, colours); return true; };
     window.__scatterIsBand     = (elementId, group) => scatterIsBand(elementId, group);
+    /* ⚠️ THE TAP PATH FOR ONE INSTANCE, which nothing could reach. Same argument as
+       `__tapElementById`: a sprinkle on a spinning 3D wall cannot be aimed by a script, so the whole
+       toolbar path — select one, then press its Remove — was unreachable, and that is exactly where
+       Sandeep's "it removed control from the card stack, but did not clear the sprinkles" lives.
+       Calls `handleStickerSelect`, the real handler, never a re-implementation. */
+    window.__tapSticker = (id, ctrlKey = false) => { handleStickerSelect(id, ctrlKey); return true; };
     window.__getSelection = () => [...selectedStickerIds];
     /* What is selected, as a fact rather than an inference from what is on screen. Added while
      * proving the foil tap-to-reopen fix: a tap that MISSED a flake and a tap that HIT it but
@@ -8528,9 +8534,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  demonstrated on my own change: a green build is not a working screen. */
               const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
               const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
+              /* ⚠️ THE WHOLE TILE IS THE CONTROL, and it says so. Sandeep: "looks like sprinkles
+                 control does not have a pointer."
+               *
+               * He is right and it was mine. `bdbfec6f` wrapped this tile in a div to fix the
+               * stack's height and set `cursor: 'default'` on the wrapper — so a 104px tile showing
+               * a cake with sprinkles on it looked inert, while the only thing that actually
+               * responded was `PreviewTile`'s 22px checkbox in the corner. Root CLAUDE.md rule 7,
+               * judged AT REST on a phone: you aim at the picture, because the picture is what the
+               * control is about.
+               *
+               * ⚠️ AND THE OTHER TWO USERS ALREADY DO IT THIS WAY. The placement chooser (`slots`)
+               * and the piping ring stack both put an `onClick` on this same wrapper and keep
+               * `previewTile`'s own `cursor: 'pointer'`. This card was the odd one out — a third
+               * behaviour for one shape, which is the thing the shared style exists to prevent.
+               *
+               * ⚠️ THE LABEL GUARD IS NOT OPTIONAL. Those two wrappers can bubble freely because
+               * their onClick does something DIFFERENT from the checkbox (it selects a slot or a
+               * ring). Mine calls the SAME toggle, and `PreviewTile` stops only `pointerdown`, not
+               * `click` — so without this guard a tap on the checkbox would fire both handlers and
+               * cancel itself out: off, then straight back on. Caught by reading the other two
+               * rather than by the build, which would have been perfectly happy.
+               *
+               * ⚠️ NO `previewTileOn` HERE. `PreviewTile` already draws an INK border when checked;
+               * adding the wrapper's ring too would double it. That style means "the controls below
+               * are editing THIS tile", and on this card every ticked surface has its own row — so
+               * it would be claiming a focus that does not exist. */
               return (
-                <div key={su.zone} style={{ ...s.previewTile, cursor: 'default' }}>
-                <PreviewTile checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
+                <div key={su.zone}
+                     onClick={e => { if (e.target.closest('label')) return; toggleScatterSurface(card.elementId, su.zone, !on); }}
+                     style={s.previewTile}>
+                <PreviewTile checked={on}
+                  onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
                   locked={false}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
                   <TopperPreview parts={scatterPreviewParts(el, su.zone, suSize)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
@@ -11156,6 +11191,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // exists.
   function renderRainbowBody(card) {
     const rb = design.tiers[card.tierIndex]?.rainbows?.find(r => r.id === card.id);
+    /* What the Springs-at dial may offer, or null when it would be dead. The rule lives in
+       rainbow.js beside the geometry it describes, and is measured by its own tests. */
+    const rbSpring = springRange(rb ?? {});
     if (!rb) return null;
     const current = arrangementOf(rb);
     const set = changes => updateTierRainbows(card.tierIndex, cur =>
@@ -11245,7 +11283,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ['Ropes',       'bands',     3,    9,    1,     v => String(Math.round(v)),  true],
             ['Thickness',   'thickness', 0.04, 0.18, 0.005, v => v.toFixed(3),           true],
             ['Press flat',  'flatten',   0,    0.9,  0.05,  v => v.toFixed(2),           true],
-            ['Up the wall', 'spring',    0,    1,    0.02,  v => v.toFixed(2),           (rb.surface ?? 'top') === 'side'],
+            /* ⚠️ IT WAS HIDDEN, NOT MISSING, AND THE FIRST FIX UN-HID IT TOO FAR. Gated to the
+               wall, it could not be reached on a top rainbow at all — Sandeep: *"i think the option
+               'springs at' is not wired. i cant reach it in core."* But showing the whole 0–1.4
+               everywhere puts most of the travel where it does nothing: a foot resting on the cake
+               TOP pins the springing point, so `archY` does not move until spring passes 1. That
+               dead two-thirds is exactly the fault the original gate was protecting against, and
+               the doc had already measured it.
+
+               So the range is asked for rather than assumed — `springRange` reads the feet and the
+               surface, returns only the live part, and returns null when there is none. Its own
+               tests measure the claim against `archY` instead of restating the formula. */
+            ['Springs at', 'spring', rbSpring?.min ?? 0, rbSpring?.max ?? 1.4,
+             rbSpring?.step ?? 0.02, v => v.toFixed(2), !!rbSpring],
           ].filter(([, , , , , , show]) => show).map(([label, key, min, max, step, fmt]) => (
             <DialCell key={key} label={label} value={rb[key] ?? RAINBOW_DEFAULTS[key]}
               min={min} max={max} step={step} fmt={fmt}
