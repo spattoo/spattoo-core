@@ -28,6 +28,16 @@ export { thumbnailFromImage } from './designer/utils/thumbnail.js';
  */
 export { buildPipingStroke, buildPipingHeap, mergePenGeometries, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
   from './designer/geometry/creamPen.js';
+/* What a piped shape is MADE OF, so a studio can dress one in the cake's own cream rather than in a
+ * lookalike. `mediumOf(key).material({ softness }, colour)` is the exact call `CreamPen` makes on
+ * every stroke and heap, and `creamMaterialProps` behind it carries the sheen and roughness curve
+ * that make buttercream read as buttercream.
+ *
+ * ⚠️ EXPORTED RATHER THAN COPIED, and `PipingCalibrator` is why. That studio mirrors CakeTier's
+ * maths locally under three separate "MUST stay identical to spattoo-core" warnings — a promise a
+ * comment cannot keep. A material recipe is a shader curve, so it belongs in code (see the note in
+ * pipingMedia.js) and therefore in ONE copy that both the cake and the studio import. */
+export { MEDIA, DEFAULT_MEDIUM, mediumOf } from './designer/geometry/pipingMedia.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to

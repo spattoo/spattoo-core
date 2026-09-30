@@ -63,6 +63,15 @@ const ACCEPTED = {
     '⚠️ KNOWN GAP — admin mounts this directly and has no assets base to pass. Colour authored here '
     + 'is judged under drei apartment, not the shipped lebombo. See CardCutoutStudio.jsx and '
     + 'INVARIANTS #17. Fixing it needs a VITE_ASSETS_BASE in both admin deployments.',
+  'src/designer/geometry/pipingMedia.js':
+    'NOT A COMPONENT — a material RECIPE table (MEDIA / DEFAULT_MEDIUM / mediumOf). It mounts '
+    + 'nothing, renders nothing and contains no JSX: a caller gets material props for a mesh that '
+    + 'the HOST scene lights, so there is no scene here to configure and nowhere to configure it. '
+    + 'It trips the transitive test only because creamMaterialProps lives in CakeTier.jsx, which '
+    + 'is a component file — the import reaches a FILE that lights a scene, not a scene. The '
+    + 'cleaner fix is to move that pure function out of CakeTier into a plain module, which would '
+    + 'drop this entry and stop pulling the whole tier renderer into any bundle that only wanted a '
+    + 'colour curve. Until then this is a reason, not a gap.',
 };
 
 // ── Which exported modules can reach the env map ────────────────────────────────────────────────
