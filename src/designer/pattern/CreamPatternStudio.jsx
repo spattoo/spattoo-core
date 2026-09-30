@@ -8,6 +8,7 @@ import StampStroke from '../canvas/StampStroke.jsx';
 import { DESIGNER_GROUND } from '../constants.js';
 import { corsUrl } from '../utils/assetUrl.js';
 import { Panel } from '../../shared/Panel.jsx';
+import PlateButton, { UndoGlyph, ClearGlyph } from '../../shared/PlateButton.jsx';
 import { SizeDial } from '../shared/SizeDial.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { INK } from '../../shared/tokens.js';
@@ -174,6 +175,10 @@ export default function CreamPatternStudio({
      what a dense block is. A second convention would make one number mean two things in one app. */
   const [spacing, setSpacing] = useState(0.85);
   const [saving, setSaving] = useState(false);
+  /* Which floating card is open. Only one at a time: both cover the cake, and two at once would
+     leave nothing of the thing being decorated on screen. */
+  const [colorOpen, setColorOpen] = useState(false);
+  const [piecesOpen, setPiecesOpen] = useState(false);
 
   /* An element list that arrives late (the catalogue is fetched per category) must still select
      something — without this the studio opens with no piece on the nozzle and the first press
@@ -444,14 +449,25 @@ export default function CreamPatternStudio({
 
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-start' }}>
         <div style={{ position: 'relative', flex: '1 1 320px', minWidth: 0 }}>
-          {/* ⚠️ THE WHEEL DOES NOT SIT ON THE CAKE, AT ANY WIDTH — and I put it there twice before
-              measuring. The colour control is handed in, never rebuilt (INVARIANTS #3), and
-              GarnishStudio floats it over the drawing because colour is reached for WHILE piping,
-              with the other hand (INVARIANTS #12). Sound reasoning, copied without its context:
-              there the plate is most of a 720px panel, so a 152px wheel is a corner ornament.
-              Here it is not. On a phone the wheel covered the WHOLE canvas, and moving it below only
-              on a phone still left it over 11.4% of the surface at 900px — precisely where a piece
-              piped in that corner would vanish underneath it. Below the canvas, always. */}
+          {/* ⚠️ THE TOOLS FLOAT ON THE CAKE; THEY DO NOT TAKE ROOM FROM IT — and I argued the exact
+              opposite here until Sandeep sent a screenshot of the phone view: *"color picker is
+              taking too much space. just a picker ring should be good enough"*, and *"if there is a
+              draggable card for showing the pipings, that would be nice. its not good to scroll down
+              always to pick the piping style."*
+
+              The old note reasoned that GarnishStudio's overlay was a corner ornament on a 720px
+              panel and could not survive here — so colour went BELOW the canvas, permanently open,
+              with the piece grid in a column below that. On a phone the result was worse than the
+              overlap it avoided: a full-height wheel eating the screen and a picker two scrolls
+              from the cake, which is the pairing INVARIANTS #11 is about, failed by distance rather
+              than by overlap. GarnishStudio was right and the fix was a RING, not a relocation: a
+              34px trigger costs nothing, and the card it opens is dismissed the moment it is used.
+
+              Kept from being wrong the other way: only one card opens at a time, colour closes on
+              pointer-UP (dragging the picker would otherwise snap it shut mid-drag), and the piece
+              card closes on choosing — so the thing you opened it to judge is never the thing it
+              covers. */}
+          <div style={{ position: 'relative' }}>
           <div style={{ width: '100%', aspectRatio: '1 / 1', borderRadius: 12, overflow: 'hidden',
                         background: DESIGNER_GROUND }}>
             {/* `shadows`, because a piece standing off the wall is judged by the shadow it throws
@@ -495,52 +511,100 @@ export default function CreamPatternStudio({
               </Suspense>
             </Canvas>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            {/* ⚠️ `↶ Undo`, THE WORD AND THE GLYPH THE PEN ALREADY USES. A baker meets undo twice in
-                this product and it should be the same control both times, not two conventions.
-                ⚠️ ALWAYS PRESENT, DISABLED WHEN THERE IS NOTHING TO UNDO — GarnishStudio learned
-                this twice: a control that appears only once you have needed it teaches nobody it
-                exists, while a greyed one says "this is where undo lives".
-                ⚠️ DISABLED ON THE HISTORY, NOT ON THE PIECES. A bare cake can still have something
-                to undo — a Clear is exactly that case, and gating on `empty` would grey the button
-                out at the one moment it matters most. */}
-            <button onClick={undo} disabled={!history.length}
-                    style={{ ...btn(false, !history.length), flex: 1 }}>
-              ↶ Undo
-            </button>
-            <button onClick={clearAll} disabled={empty} style={{ ...btn(false, empty), flex: 1 }}>
-              Clear
-            </button>
+          {/* ⚠️ ON THE CAKE, NOT UNDER IT. Undo is reached for the instant a run goes wrong, so it
+              belongs where the mistake just happened — GarnishStudio's own words, and the same two
+              glyphs, so a baker meets ONE undo in this product rather than two conventions.
+              ⚠️ DISABLED ON THE HISTORY, NOT ON THE PIECES. A bare cake can still have something to
+              undo — a Clear is exactly that case, and gating on `empty` would grey the button out at
+              the one moment it matters most. */}
+          <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6, zIndex: 4 }}>
+            <PlateButton label="Undo the last action" disabled={!history.length} onClick={undo}>
+              <UndoGlyph />
+            </PlateButton>
+            <PlateButton label="Clear the cake" danger disabled={empty} onClick={clearAll}>
+              <ClearGlyph />
+            </PlateButton>
           </div>
-          {/* Below the canvas at EVERY width — see the note above it. Gating this on `isMobile` was
-              the third mistake in a row with this one control: it removed the desktop overlay and
-              then rendered nothing in its place, so a wide screen had no colour control at all. An
-              overlap traded for an absence. */}
-          {colorControl && <div style={{ marginTop: 10 }}>{colorControl}</div>}
+
+          {/* The rail: what is reached for WHILE piping, within a thumb's reach of the piping.
+              What is decided once and left — size, spacing, softness, the name — stays in the
+              column beside it. INVARIANTS #12. */}
+          <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 5, display: 'flex',
+                        flexDirection: 'column', gap: 10, alignItems: 'flex-start' }}>
+            {/* ⚠️ THE PIECE'S OWN TILE IS THE TRIGGER, the same picture the grid and the piping card
+                show — so "what is on the nozzle" is answered without opening anything. */}
+            <div style={{ position: 'relative' }}>
+              <button type="button" onClick={() => { setPiecesOpen(o => !o); setColorOpen(false); }}
+                aria-expanded={piecesOpen} aria-label={picked ? `Piece: ${picked.name}` : 'Choose a piece'}
+                title={picked ? picked.name : 'Choose a piece'}
+                style={{ width: 34, height: 34, borderRadius: 9, cursor: 'pointer', padding: 2,
+                         overflow: 'hidden', background: 'rgba(255,255,255,0.92)',
+                         border: `1.5px solid ${piecesOpen ? INK : '#DED8CE'}` }}>
+                {picked?.thumb
+                  ? <img src={corsUrl(picked.thumb)} alt="" crossOrigin="anonymous"
+                      onError={e => { e.currentTarget.style.display = 'none'; }}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 7,
+                               pointerEvents: 'none' }} />
+                  : <span style={{ fontSize: 15, color: '#4A4A4A' }} aria-hidden>+</span>}
+              </button>
+              {piecesOpen && (
+                <div style={{ position: 'absolute', top: 42, left: 0, zIndex: 6, width: 232,
+                              padding: 10, borderRadius: 12, background: '#fff',
+                              border: '1px solid #E3DFD8', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                  {pieceElements.length === 0 ? (
+                    /* ⚠️ SAYS WHY, AND WHERE TO FIX IT. An empty grid with no words reads as a broken
+                       studio, and the cause is an admin decision rather than a fault. */
+                    <div style={{ fontSize: 11.5, color: '#8a8a8a', lineHeight: 1.5 }}>
+                      No piping is marked as repeatable yet. Tick <b>Allow hand piping</b> on a piping
+                      element in admin and it appears here.
+                    </div>
+                  ) : (
+                    <>
+                      <PieceThumbs items={pieceElements} value={elId}
+                        onChange={(id) => { setElId(id); setPiecesOpen(false); }} isMobile={isMobile} />
+                      {picked && (
+                        <div style={{ fontSize: 11, fontWeight: 700, color: INK, marginTop: 8 }}>
+                          {picked.name}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* ⚠️ THE RING IS THE LABEL — GarnishStudio's note, and the reason a wheel is not the
+                trigger: a ring of hues is a control this product has nowhere else, so it reads as a
+                different KIND of thing from the plain colour circles it opens (INVARIANTS #14). */}
+            {colorControl && (
+              <div style={{ position: 'relative' }}>
+                <button type="button" onClick={() => { setColorOpen(o => !o); setPiecesOpen(false); }}
+                  aria-expanded={colorOpen} aria-label="Cream colour" title="Cream colour"
+                  style={{ width: 34, height: 34, borderRadius: '50%', cursor: 'pointer', padding: 0,
+                           background: color,
+                           border: colorOpen ? '2.5px solid #2b6' : '1.5px solid rgba(0,0,0,0.18)',
+                           boxShadow: '0 1px 3px rgba(0,0,0,0.12)' }} />
+                {colorOpen && (
+                  /* Closed on pointer-UP rather than on the colour changing: dragging round the
+                     picker changes it continuously and would snap the card shut mid-drag. */
+                  <div onPointerUp={() => setColorOpen(false)}
+                    style={{ position: 'absolute', top: 42, left: 0, zIndex: 6, width: 236,
+                             padding: 10, borderRadius: 12, background: '#fff',
+                             border: '1px solid #E3DFD8', boxShadow: '0 8px 24px rgba(0,0,0,0.12)' }}>
+                    {colorControl}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+          </div>
         </div>
 
         <div style={{ flex: '1 1 260px', minWidth: 0 }}>
-          <div style={cap}>On the nozzle</div>
-          {pieceElements.length === 0 ? (
-            /* ⚠️ SAYS WHY, AND WHERE TO FIX IT. An empty grid with no words reads as a broken studio,
-               and the cause is an admin decision rather than a fault: nothing in the catalogue has
-               been marked as repeatable yet. */
-            <div style={{ fontSize: 11.5, color: '#8a8a8a', lineHeight: 1.5,
-                          border: '1px dashed #D8D3CA', borderRadius: 9, padding: '10px 11px' }}>
-              No piping is marked as repeatable yet. Tick <b>Allow hand piping</b> on a piping
-              element in admin and it appears here.
-            </div>
-          ) : (
-            <PieceThumbs items={pieceElements} value={elId} onChange={setElId} isMobile={isMobile} />
-          )}
-          {/* The chosen piece NAMED below the grid: a tile is 64px and a name is unreadable on it,
-              while a piece with no name is unsearchable for a baker who wants "the shell". */}
-          {picked && (
-            <div style={{ fontSize: 11.5, fontWeight: 700, color: INK, margin: '8px 0 4px' }}>
-              {picked.name}
-            </div>
-          )}
-
+          {/* ⚠️ THE GRID IS NOT HERE ANY MORE — it is the card on the cake. Sandeep: *"its not good
+              to scroll down always to pick the piping style."* What stays in this column is what is
+              decided once and left; what is reached for while piping is on the canvas (INVARIANTS
+              #12). */}
           <div style={cap}>The piece</div>
           {/* ⚠️ THE RANGE OPENS ABOVE THE CALIBRATED DEFAULT, not just below it. `PIPE_STAMP_THICKNESS`
               lands a stamp on a ring's own footing and is an ESTIMATE — the pen's own note says so —

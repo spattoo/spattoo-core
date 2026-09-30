@@ -16,10 +16,12 @@
  *   1. The studio opens from Decorations (the `cream_pattern` row, e30).
  *   2. A CAKE is in it, not only a board — asserted on the real tier's own geometry reaching the
  *      scene, since a canvas cannot be read from the DOM.
- *   3. The piece grid shows ELEMENT THUMBNAILS (img tags from the catalogue), not drawn nozzle
- *      polygons. Before: 19 <svg><polygon>. After: <img> per eligible element.
- *   4. Only `hand_piping` pieces are offered — e16 is ticked and is the only one, so exactly one
- *      tile, and it is the Shell border.
+ *   3. The controls are ON the cake window — Undo and Clear as ICONS top-right, the colour as a
+ *      34px RING, the piece picker as a trigger — asserted by position inside the canvas wrapper,
+ *      because a control that merely exists somewhere on the panel is what was wrong before. And
+ *      nothing is permanently open: no picker renders until asked.
+ *   4. Tapping the trigger opens the piece card OVER the cake, holding element thumbnails (not
+ *      drawn nozzle polygons), gated on `hand_piping` — e16 is the only ticked one, so one tile.
  *   5. There is no Height dial. A stamp's height comes from its model, so a Height control would
  *      move and change nothing; Size / Spacing / Softness remain.
  *   6. Piping lands a piece: pieces go 0 → ≥1 and the count line says so.
@@ -75,22 +77,109 @@ ok((cake?.tiers ?? 0) >= 1, `a cake is in the studio — ${cake?.tiers ?? 0} tie
 ok(Number.isFinite(cake?.firstBaseY), `the first tier has a real baseY (${cake?.firstBaseY}) — not NaN`);
 ok(!!cake?.board, 'a board is in the studio too');
 
-/* ── 3 + 4. element thumbnails, gated on hand_piping ───────────────────────────────────────────
-   The grid is found by its heading, then its own tiles are counted — img (catalogue thumbnails)
-   against svg polygon (the drawn nozzle openings this replaced). */
-const grid = await page.evaluate(() => {
-  const head = [...document.querySelectorAll('div')]
-    .find(d => d.textContent.trim() === 'On the nozzle' && d.children.length === 0);
-  const box = head?.nextElementSibling;
-  if (!box) return null;
+/* ── 3. THE CONTROLS ARE ON THE CAKE, NOT UNDER IT ──────────────────────────────────────────────
+   Sandeep, at the phone view: *"undo/clear are icons on the cake window, not below it. pls see
+   garnish studio"*, *"color picker is taking too much space. just a picker ring"*, and *"its not
+   good to scroll down always to pick the piping style."*
+
+   Asserted by POSITION, not by presence: a button that exists somewhere on the panel is exactly
+   what was wrong before. So each control is looked for INSIDE the canvas's own wrapper. */
+/* ⚠️ MEASURED AGAINST THE CANVAS RECT, NOT WALKED UP THE DOM — and the first version of this check
+   failed eight claims on a screen that was completely correct. It reached the wrapper with
+   `canvas.parentElement.parentElement`, but R3F renders its OWN div around the <canvas>, so that
+   landed on the aspect box and every control sat one level above it. "On the cake window" is a
+   question about WHERE A THING IS, so it is answered with geometry: a button whose box lies inside
+   the canvas's box is on the cake, whatever divs either of them happens to be wrapped in. */
+const rail = await page.evaluate(() => {
+  /* ⚠️ THE STUDIO'S CANVAS, NOT THE DOCUMENT'S FIRST — and getting this wrong made every verdict
+     below noise. The DESIGNER's own cake canvas is mounted behind the panel, so
+     `querySelector('canvas')` returns a 796×940 rect covering the viewport: Undo fell inside it and
+     "passed" for the wrong reason, the colour ring fell outside it on the left and "failed" for the
+     wrong reason. The studio's canvas is the last one in the document, and it is square. */
+  const all = [...document.querySelectorAll('canvas')];
+  const canvas = all[all.length - 1];
+  if (!canvas) return null;
+  const cr = canvas.getBoundingClientRect();
+  const inside = (el) => {
+    if (!el) return false;
+    const b = el.getBoundingClientRect();
+    return b.width > 0 && b.left >= cr.left - 2 && b.right <= cr.right + 2
+        && b.top >= cr.top - 2 && b.bottom <= cr.bottom + 2;
+  };
+  const byLabel = l => document.querySelector(`button[aria-label="${l}"]`);
+  const undo = byLabel('Undo the last action');
+  /* ⚠️ BY ITS OWN LABEL, NOT BY "the first round button" — the designer is still mounted behind the
+     panel and owns round buttons of its own, so that selector returned one of THOSE (measured at
+     l:54, t:854, nowhere near the rail) and the ring was judged out of bounds for being a different
+     button entirely. Third time in this script that a loose selector reached past the studio. */
+  const round = document.querySelector('button[aria-label="Cream colour"]');
+  const piece = [...document.querySelectorAll('button')].find(b => {
+    const l = b.getAttribute('aria-label') ?? '';
+    return l.startsWith('Piece:') || l === 'Choose a piece';
+  });
   return {
-    tiles: box.querySelectorAll('button').length,
-    imgs: box.querySelectorAll('img').length,
-    polys: box.querySelectorAll('svg polygon').length,
-    names: [...box.querySelectorAll('button')].map(x => x.getAttribute('title')),
+    undo: inside(undo),
+    clear: inside(byLabel('Clear the cake')),
+    // Icons, not words: the button carries an svg and no text of its own.
+    undoIsIcon: !!undo?.querySelector('svg') && (undo.textContent ?? '').trim() === '',
+    colourRing: inside(round),
+    ringPx: round ? round.getBoundingClientRect().width : 0,
+    pieceTrigger: inside(piece),
   };
 });
-ok(!!grid, 'the piece grid is on screen');
+ok(!!rail, 'the canvas is found');
+ok(rail?.undo && rail?.clear, 'Undo and Clear are ON the cake window');
+ok(rail?.undoIsIcon, 'and they are icons, not words');
+ok(rail?.colourRing && rail.ringPx <= 40, `the colour control is a ring — ${Math.round(rail?.ringPx ?? 0)}px`);
+ok(rail?.pieceTrigger, 'the piece picker is a trigger on the cake, not a column to scroll to');
+
+/* ⚠️ AND NOTHING IS PERMANENTLY OPEN. The wheel used to sit below the canvas at every width, which
+   is the space complaint. A closed card renders no HexColorPicker at all. */
+const closed = await page.evaluate(() => document.querySelectorAll('.react-colorful').length);
+ok(closed === 0, `no colour picker is open until asked — ${closed} on screen`);
+
+/* ── 4. the card opens over the cake, holds the thumbnails, gated on hand_piping ───────────────── */
+const card = await page.evaluate(() => {
+  const trigger = [...document.querySelectorAll('button')].find(b => {
+    const l = b.getAttribute('aria-label') ?? '';
+    return l.startsWith('Piece:') || l === 'Choose a piece';
+  });
+  if (!trigger) return false;
+  trigger.click();
+  return true;
+});
+await page.waitForTimeout(500);
+/* The card is the absolutely-positioned box holding thumbnails, and it must OVERLAP the cake —
+   that is the whole point of it floating rather than sitting in a column below the fold. */
+const grid = await page.evaluate(() => {
+  const all = [...document.querySelectorAll('canvas')];
+  const cr = all[all.length - 1].getBoundingClientRect();
+  /* ⚠️ THE CARD IS THE BOX HOLDING TILES, not merely "an absolute div with an img". That looser
+     selector matched an unrelated 240×64 element with ZERO buttons, which is how this reported
+     `1 img` and `0 tiles` in the same breath — two contradictory numbers read off two different
+     elements. A tile is a button carrying a title, so the card is the box that holds one. */
+  /* ⚠️ THE INNERMOST MATCH. The RAIL is absolutely positioned too, holds the trigger (a
+     button[title]) and an img, and is the card's ANCESTOR — so it matched first and reported the
+     rail's three buttons as three tiles. The card is the candidate that contains no other
+     candidate. */
+  const cands = [...document.querySelectorAll('div')]
+    .filter(d => d.style.position === 'absolute'
+              && d.querySelector('button[title]')
+              && d.querySelector('img'));
+  const open = cands.find(d => !cands.some(o => o !== d && d.contains(o)));
+  if (!open) return null;
+  const b = open.getBoundingClientRect();
+  const overlaps = b.left < cr.right && b.right > cr.left && b.top < cr.bottom && b.bottom > cr.top;
+  if (!overlaps) return null;
+  const tiles = [...open.querySelectorAll('button')];
+  return {
+    tiles: tiles.length,
+    imgs: open.querySelectorAll('img').length,
+    polys: open.querySelectorAll('svg polygon').length,
+    names: tiles.map(x => x.getAttribute('title')),
+  };
+});
+ok(!!card && !!grid, 'tapping the trigger opens the piece card over the cake');
 ok((grid?.imgs ?? 0) >= 1, `the tiles are element thumbnails — ${grid?.imgs ?? 0} img`);
 ok((grid?.polys ?? 0) === 0, `no drawn nozzle openings remain — ${grid?.polys ?? 0} svg polygon`);
 ok(grid?.tiles === 1, `only hand_piping pieces are offered — ${grid?.tiles} tile(s)`);

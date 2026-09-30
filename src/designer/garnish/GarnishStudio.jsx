@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { garnishPlacementOptions, garnishSeat } from '../geometry/garnishPlacement.js';
 import { Panel } from '../../shared/Panel.jsx';
+import PlateButton, { UndoGlyph, ClearGlyph } from '../../shared/PlateButton.jsx';
 import Segmented from '../../shared/Segmented.jsx';
 import { useNarrow } from '../../shared/useNarrow.js';
 import { tidyDrawn, fillWorthwhile } from '../geometry/drawnShape.js';
@@ -1122,13 +1123,11 @@ export default function GarnishStudio({
         <div style={{ position: 'absolute', top: 10, right: 10, display: 'flex', gap: 6, zIndex: 4 }}>
             <PlateButton label="Undo the last stroke" disabled={!strokeCount}
               onClick={() => { setStrokes(s2 => s2.slice(0, -1)); setPicked(null); }}>
-              <path d="M4 9h9a5 5 0 1 1 0 10h-3" />
-              <polyline points="7.5 5 3.5 9 7.5 13" />
+              <UndoGlyph />
             </PlateButton>
             <PlateButton label="Clear the plate" danger disabled={!strokeCount}
               onClick={() => { setStrokes([]); setPicked(null); }}>
-              <polyline points="4 6 20 6" />
-              <path d="M9 6V4h6v2M6.5 6l1 14h9l1-14" />
+              <ClearGlyph />
             </PlateButton>
         </div>
 
@@ -1396,22 +1395,6 @@ const miniBtn = { padding: '6px 10px', borderRadius: 8, cursor: 'pointer', fontF
 
 /* A control that sits ON the drawing: small, quiet, and out of the way of the piece being made. The
  * label is the accessible name — an icon with no name is a button nobody can describe. */
-function PlateButton({ label, onClick, danger, disabled, children }) {
-  return (
-    <button type="button" onClick={onClick} aria-label={label} title={label} disabled={disabled}
-      style={{
-        width: 34, height: 34, borderRadius: 9, display: 'grid',
-        cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.4 : 1,
-        placeItems: 'center', background: 'rgba(255,255,255,0.92)',
-        border: `1.5px solid ${danger ? '#E4CFCF' : '#DED8CE'}`,
-      }}>
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="none"
-        stroke={danger ? '#A33' : '#4A4A4A'} strokeWidth="1.9"
-        strokeLinecap="round" strokeLinejoin="round">{children}</svg>
-    </button>
-  );
-}
-
 /* Lighten or darken a colour, for the rim and the highlight of a rope. Works on the hex the picker
  * gives and on the rgba() the in-progress trail uses, which is the only other thing drawn here. */
 function shade(colour, amount) {
