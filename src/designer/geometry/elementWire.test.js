@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wireFor, wireLift, wireStandoff, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP, WIRE_WAVES, WIRE_TWIST } from './elementWire.js';
+import { wireFor, wireLift, wireStandoff, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './elementWire.js';
 
 const box = { h: 0.1, cy: 0 };
 const on = (extra = {}) => wireFor(box, { on: true, ...extra }, null);
@@ -170,7 +170,7 @@ describe('a row authors the starting values, an instance overrides them', () => 
    SHORTER — a default with no headroom above it is a control doing half what it appears to. It was
    found by reading, not by a test, which is the wrong way round for arithmetic this mechanical. */
 describe('every default leaves room to move in both directions', () => {
-  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP, waves: WIRE_WAVES, twist: WIRE_TWIST };
+  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP, waves: WIRE_WAVES, twist: WIRE_TWIST, angle: WIRE_ANGLE };
   for (const [key, range] of Object.entries(ranges)) {
     it(`${key} sits strictly inside its own range`, () => {
       const v = ELEMENT_WIRE_DEFAULTS[key];
@@ -248,6 +248,31 @@ describe('the wire runs the way the pose needs', () => {
     expect(r.z).toBeGreaterThan(r.y);        // but it is a wall wire, not a rim wire
   });
 
+
+  /* ⚠️ THE ANGLE IS A CONTROL, NOT A CONSTANT, and it went through both failures to get here: dead
+     horizontal first, then hard-coded at 31° — which Sandeep still read as horizontal, because the
+     angle only acts on the part of the wire OUTSIDE the cake and at the default burial that is half
+     of it. *"can we have control for the angle with which it needs to be inserted."* */
+  it('climbs by however many degrees it was asked for', () => {
+    for (const angle of [20, 45, 75]) {
+      const r = runOf(wireFor(box, { on: true, bend: 0, angle }, null, { axis: 'out' }));
+      expect((Math.atan2(r.y, r.z) * 180) / Math.PI).toBeCloseTo(angle, 4);
+    }
+  });
+
+  it('a steeper angle lifts the piece more and pushes it out less', () => {
+    const at = angle => wireFor(box, { on: true, angle, bury: 0.5 }, null, { axis: 'out' });
+    expect(wireLift(at(70))).toBeGreaterThan(wireLift(at(30)));
+    expect(wireStandoff(at(70))).toBeLessThan(wireStandoff(at(30)));
+    /* The wire is the same length whichever way it points — the angle spends it, it does not add. */
+    const reach = w => Math.hypot(wireLift(w), wireStandoff(w));
+    expect(reach(at(70))).toBeCloseTo(reach(at(30)), 6);
+  });
+
+  it('clamps an angle outside the range rather than drawing a flagpole', () => {
+    const flat = runOf(wireFor(box, { on: true, bend: 0, angle: 0 }, null, { axis: 'out' }));
+    expect((Math.atan2(flat.y, flat.z) * 180) / Math.PI).toBeCloseTo(WIRE_ANGLE.min, 4);
+  });
 
   /* ⚠️ THE RIM LEANS BACK, WHICH THE TOP SURFACE MUST NOT. A verge piece is cantilevered out over
      the lip, so a vertical stem drops past the cake and runs down the outside of the wall — which

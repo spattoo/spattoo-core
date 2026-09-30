@@ -59,7 +59,7 @@ import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
-import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST } from './geometry/elementWire.js';
+import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -9793,6 +9793,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (sticker) {
         const row  = elementWire(srcEl?.placement_config, srcEl?.allowed_actions);
         const wr   = sticker.wire ?? { on: false, ...row };
+        /* The two zones the wall renderer draws — the same pair DraggableSideSticker is chosen by,
+           so the control appears exactly where the wire it steers actually runs out of a wall. */
+        const onWall = sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER;
         const setWire = patch => updateSticker(el.id, {
           wire: { ...wr, ...patch },
           /* Switching a wire on puts the stick away, and only then — a patch that always wrote
@@ -9834,6 +9837,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     v => setWire({ twist: v }), WIRE_TWIST.min, WIRE_TWIST.max, WIRE_TWIST.step),
             ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
                     v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
+            /* ⚠️ ONLY ON A WALL, BECAUSE ONLY A WALL WIRE HAS A CHOICE. A stem in the top surface
+               goes straight down — that is the only way into a horizontal surface — and a rim wire
+               leans back over its own lip. Offering the dial on those would be a control that moves
+               and changes nothing, which is worse than one that is absent (rule 7, read backwards).
+
+               ⚠️ AND IT IS A CONTROL RATHER THAN A CONSTANT BECAUSE TWO CONSTANTS BOTH FAILED. Dead
+               horizontal was the first — Sandeep: *"its inserting horizontally. thats not how its
+               done."* Hard-coding 31° was the second, and he read the render as still horizontal:
+               the angle only acts on the part of the wire OUTSIDE the cake, and at the default `In`
+               that is half of it, so a reasonable-sounding number is a few pixels of rise. *"can we
+               have control for the angle with which it needs to be inserted."* */
+            ...(onWall ? dial('wang', 'Angle', wr.angle ?? row.angle, v => `${Math.round(v)}°`,
+                    v => setWire({ angle: v }), WIRE_ANGLE.min, WIRE_ANGLE.max, WIRE_ANGLE.step) : []),
             /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them
                looking like a row of flags — the reference photographs have every one facing
                differently.

@@ -28,6 +28,9 @@ import './scene.js';
  *   /element-wire.html?len=6                 a long stem, high above the cake
  *   /element-wire.html?thick=0.6             too fat, for comparison
  *   /element-wire.html?bury=1                pushed right in, the piece down on the icing
+ *   /element-wire.html?zone=side&angle=20    a WALL wire at its shallowest — nearly the flagpole
+ *   /element-wire.html?zone=side&angle=75    and at its steepest, the piece almost over its own hole
+ *   /element-wire.html?zone=side&angle=45&bend=0  the run alone, with no bow to read it through
  *   /element-wire.html?wire=0                no wire — the control
  *
  * ⚠️ `?glb=` TAKES A BUTTERFLY. It defaults to the fondant heart because that is the element this
@@ -43,11 +46,13 @@ const LEAN  = num("sweep", num("lean", undefined));
 const LEN   = num('len', undefined);
 const THICK = num('thick', undefined);
 const BURY  = num('bury', undefined);
+/* How steeply a WALL wire climbs out of the icing. Only `?zone=side` reads it. */
+const ANGLE = num('angle', undefined);
 
 /* Only the keys actually given, so anything absent falls through to ELEMENT_WIRE_DEFAULTS — the
    case worth looking at is what a row that authors nothing gets. */
 const shape = Object.fromEntries(Object.entries({
-  length: LEN, thickness: THICK, bend: BEND, sweep: LEAN, bury: BURY,
+  length: LEN, thickness: THICK, bend: BEND, sweep: LEAN, bury: BURY, angle: ANGLE,
 }).filter(([, v]) => v != null && Number.isFinite(v)));
 
 /* ⚠️ A 2D IMAGE IS A DIFFERENT RENDER PATH, NOT A DIFFERENT FILE EXTENSION, and it is the path the
