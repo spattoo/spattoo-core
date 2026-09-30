@@ -118,12 +118,23 @@ export const SPIRAL_DEFAULTS = Object.freeze({
 /** The range the ridge's height may take, as a fraction of the tier's height.
  *
  * ⚠️ DELIBERATELY NARROW. Sandeep: *"usually there wont be too high spirals, so the range would be
- * small. but adjustable."* Both references sit near the middle of this, and the sweep that chose the
- * default is what fixes the ends: at 0.006 the ridge is something you have to be told is there, and
- * by 0.030 it has stopped reading as a knife mark and started reading as a moulding. A dial that can
- * reach a setting no cake has is not more useful, it is a way to get a worse cake.
+ * small. but adjustable."* Both references sit near the middle of this, and the sweeps that chose
+ * the default fix the ends: at 0.006 the ridge is something you have to be told is there. A dial
+ * that can reach a setting no cake has is not more useful, it is a way to get a worse cake.
+ *
+ * ⚠️ THE CEILING CAME DOWN FROM 0.030 ONCE IT WAS SEEN ON A REAL TIER. The POC judged it on a bare
+ * cylinder at close range, where 0.030 read as bold-but-plausible; on the cake in the designer the
+ * same number is a fat coil that reads as piped rope rather than the drag of a knife, which is the
+ * one thing this is not. Sandeep, on the tier: *"spirals wont go this much elevated. we can reduce
+ * the range."* 0.022 keeps real headroom over the default without reaching the rope.
+ *
+ * ⚠️ AND THE PICTURE THAT PROMPTED IT WAS NOT THIS CONTROL. The render he was looking at had `rise`
+ * forced to 0.25 — a diagnostic, eight times this ceiling, used to prove the mesh was drawing at
+ * all after two harness angles had hidden it. The conclusion happened to be right for the real
+ * ceiling too, but a screenshot taken to answer one question will be read as answering another:
+ * label a forced value in the caption, every time.
  */
-export const SPIRAL_RISE = Object.freeze({ min: 0.006, max: 0.03, step: 0.001 });
+export const SPIRAL_RISE = Object.freeze({ min: 0.006, max: 0.022, step: 0.001 });
 
 /* How finely the wander is sampled around. Matches topCavity's AROUND so the two rings of noise are
    read the same way; it is a lookup by angle, not a mesh resolution. */
