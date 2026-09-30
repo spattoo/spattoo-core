@@ -3,7 +3,7 @@ import {
   RAINBOW_DEFAULTS, rainbowBands, rainbowGuide, bandRadius, bandPath, legFootY, bandGeometry, archCenterX, rainbowBoardReach, requiredStandoff, fitOnTopScale, wrapToWall,
   rainbowFootReach,
   rainbowHandleAt, rainbowDragTo,
-  rainbowPlacedPoints,
+  rainbowPlacedPoints, springRange,
 } from './rainbow.js';
 import { movableContract } from './movableContract.js';
 
@@ -1190,4 +1190,54 @@ movableContract('rainbow', {
     const back = rainbowHandleAt(moved, cake);
     expect(f.label.includes('up the wall') ? back.v : back.u).toBeCloseTo(target, 6);
   },
+});
+
+/* ── What the Springs-at dial may offer ─────────────────────────────────────────────────────────
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE CONTROL WAS HIDDEN, THEN UN-HIDDEN TOO FAR. It was gated to the wall,
+ * so Sandeep could not reach it on a top rainbow at all — *"i think the option 'springs at' is not
+ * wired. i cant reach it in core."* The first fix showed the whole 0–1.4 everywhere, which puts
+ * most of the travel somewhere it does nothing: a foot on the cake top pins the springing point, and
+ * `archY` does not move until spring passes 1. A dead two-thirds of a dial is the fault the original
+ * gate was protecting against, so the rule is now measured here rather than argued in a comment.
+ */
+describe('the springs-at range only offers what moves the arch', () => {
+  const cake = { radius: 1.2, topY: 1.55, boardY: 0.1 };
+  const archTop = params => rainbowBands({ ...RAINBOW_DEFAULTS, ...params }, cake).archY;
+
+  it('starts at 1 when a foot rests on the cake top, because below that nothing moves', () => {
+    const r = springRange({ footLeft: 'top', footRight: 'top', surface: 'top' });
+    expect(r.min).toBe(1);
+    /* The claim, measured rather than asserted from the formula. */
+    expect(archTop({ footLeft: 'top', footRight: 'top', spring: 0.2 }))
+      .toBeCloseTo(archTop({ footLeft: 'top', footRight: 'top', spring: 1 }), 6);
+    expect(archTop({ footLeft: 'top', footRight: 'top', spring: 1.3 }))
+      .toBeGreaterThan(archTop({ footLeft: 'top', footRight: 'top', spring: 1 }));
+  });
+
+  it('starts at 0 when both feet are on the board, where the whole run is live', () => {
+    const r = springRange({ footLeft: 'board', footRight: 'board', surface: 'side' });
+    expect(r.min).toBe(0);
+    expect(archTop({ footLeft: 'board', footRight: 'board', spring: 0.8 }))
+      .toBeGreaterThan(archTop({ footLeft: 'board', footRight: 'board', spring: 0.2 }));
+  });
+
+  /* ⚠️ THE WALL'S CEILING IS THE DRAG'S. There `spring` IS `v`, clamped 0..1 both ways, so a dial
+     that went past 1 would set a value the next drag snapped back — law 5 broken by a control. */
+  it('stops at 1 on the wall and 1.4 over the cake', () => {
+    expect(springRange({ footLeft: 'board', footRight: 'board', surface: 'side' }).max).toBe(1);
+    expect(springRange({ footLeft: 'board', footRight: 'board', surface: 'top' }).max).toBe(1.4);
+  });
+
+  it('offers nothing at all rather than a dead dial', () => {
+    expect(springRange({ footLeft: 'top', footRight: 'board', surface: 'side' })).toBeNull();
+  });
+
+  /* The shipped preset has to sit inside what the dial can reach, or a baker cannot get back to the
+     arrangement they picked after nudging it. */
+  it('can reach the 1.16 the Curled ends arrangement uses', () => {
+    const r = springRange({ footLeft: 'top', footRight: 'curl', surface: 'top' });
+    expect(r.min).toBeLessThanOrEqual(1.16);
+    expect(r.max).toBeGreaterThanOrEqual(1.16);
+  });
 });

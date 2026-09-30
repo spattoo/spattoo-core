@@ -790,6 +790,32 @@ const wrapAngle = a => ((a % TAU) + TAU) % TAU;
  *   on the wall   — round is `theta`, up is `spring`. Those ARE the wall rainbow's two position
  *                   numbers; nothing had to be invented for it.
  */
+/**
+ * The range `spring` can usefully take for a given rainbow — the part of the dial that is ALIVE.
+ *
+ * ⚠️ A FOOT RESTING ON THE CAKE TOP PINS THE SPRINGING POINT, which is the whole reason this is not
+ * a constant. `springAt` is `max(highest foot, board + height × spring)`: with a foot at the cake's
+ * top the first term is already `board + height`, so every spring at or below 1 loses the max and
+ * changes nothing. Measured, not assumed — `archY` is identical at 0.2 and 1.0 in all three
+ * over-the-cake arrangements, and the "Curled ends" preset has to use 1.16 to lift the arch clear.
+ *
+ * ⚠️ AND THE CEILING BELONGS TO THE WALL, not to taste. On `surface: 'side'` this parameter IS the
+ * drag's `v` — `rainbowHandleAt` returns `clamp01(spring)` and `rainbowDragTo` writes `clamp01(v)`
+ * back — so a control offering more than 1 there would set a value the next drag silently snapped
+ * back, breaking law 5 of INVARIANTS #10 (handleAt and dragTo are exact inverses) with a dial.
+ * Over the cake nothing maps it, so it is free to rise above the surface.
+ *
+ * Returns null when there is nothing to offer — floor and ceiling meet — so a caller can drop the
+ * control rather than draw a dead one.
+ */
+export function springRange(params = {}) {
+  const p = { ...RAINBOW_DEFAULTS, ...params };
+  const pinnedOnTop = p.footLeft === 'top' || p.footRight === 'top';
+  const min = pinnedOnTop ? 1 : 0;
+  const max = p.surface === 'side' ? 1 : 1.4;
+  return max > min ? { min, max, step: 0.02 } : null;
+}
+
 export function rainbowHandleAt(params = {}, cake = {}) {
   const p = { ...RAINBOW_DEFAULTS, ...params };
   const R = cake.radius ?? 1;
