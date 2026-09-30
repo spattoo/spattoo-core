@@ -51,6 +51,12 @@ const NOT_DRAGGED = {
   // Same tool, different bag. If the pen ever does become draggable, BOTH of these go at once —
   // they are one code path and splitting them here would be inventing a difference that is not real.
   chocolate_pen: 'freehand strokes follow the hand — there is no placed object to drag',
+  // A pattern is PIPED, not positioned. The studio places pieces and never moves one; what lands on
+  // the cake is `heap` strokes in design.piping, the same objects the pen makes — so sliding one is
+  // already the pen's move mode (updateStrokePoints), reached the same way whoever piped it would.
+  // If a pattern ever becomes a single draggable unit, this entry goes and a registration replaces
+  // it; today there is no pattern object with a position of its own to ask about.
+  cream_pattern: 'piped pieces, not a positioned object — a placed heap is slid by the pen, not by this tool',
 };
 
 const designer = read('src/designer/CakeDesigner.jsx');

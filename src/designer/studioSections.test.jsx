@@ -30,7 +30,7 @@ describe('the split', () => {
   /* The mark rides the entry it describes, so the two cannot be separated by an edit. */
   it('marks the three that open a screen, and only those', () => {
     const block = src.slice(src.indexOf('const PROCEDURAL_TOOLS = {'));
-    for (const key of ['chocolate_pen', 'chocolate_garnish', 'card_topper']) {
+    for (const key of ['chocolate_pen', 'chocolate_garnish', 'card_topper', 'cream_pattern']) {
       expect(block).toMatch(new RegExp(`${key}: opensStudio\\(`));
     }
     for (const key of ['grass', 'rainbow', 'cloud', 'letter_blocks', 'writing',

@@ -53,6 +53,7 @@ import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
+import CreamPatternStudio from './pattern/CreamPatternStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
 import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
@@ -1996,6 +1997,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
   const [topperStudio, setTopperStudio] = useState(false);
+  /* The cream pattern studio: a block piped on a plate, then repeated on the cake. Sits beside the
+     other two because it is the same kind of thing — a screen you leave the cake to work on. */
+  const [patternStudio, setPatternStudio] = useState(false);
+  /* ⚠️ ITS OWN COLOUR, not the garnish studio's. Sharing `garnishColor` meant a studio for CREAM
+     opened on #4A2C1B — chocolate — with every tip thumbnail drawn brown, and its wheel wrote back
+     through `setGarnishColor`, so picking a pattern colour changed what the chocolate studio would
+     draw with next. Two tools coupled by nothing more than wanting the same control. White, because
+     that is what buttercream is before anybody colours it — the same default the pen carries. */
+  const [patternColor, setPatternColor] = useState('#ffffff');
   const [pendingTopper, setPendingTopper] = useState(null);
   const [pendingGarnish, setPendingGarnish] = useState(null);
   /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
@@ -5542,6 +5552,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
       setTopperStudio(true);
     }),
+    /* ⚠️ A PATTERN IS MADE BEFORE IT IS PLACED, which is what makes this a studio rather than a
+       tool. Sandeep: "if i build the pattern as only one building block, i should be able to drag
+       and extend it on the cake" — so what this screen produces is a BLOCK, and repeating it along
+       the cake is the placing half, not the making half.
+
+       ⚠️ NOT THE SAME THING AS PIPING ON THE CAKE. A mane follows a curved wall and stacks on the
+       cream below it; a block is composed flat and laid down over and over. Both are cream and both
+       use the same heap geometry, and they are still two different acts. */
+    cream_pattern: opensStudio(() => setPatternStudio(true)),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -15073,6 +15092,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             setSelectedGarnishId(id);
             setGarnishStudio(false);
             setPendingGarnish(null);
+          }}
+        />
+      )}
+
+      {/* ⚠️ THE PIECES LAND AS `heap` STROKES SHARING ONE `patternId`, not as a new kind of object.
+          A piped blob already has a home on the design — `design.piping`, where every cream-pen tap
+          stores one — with a renderer, a save round-trip and a reload that all work. Inventing a
+          `design.patterns[]` would mean a second copy of each of those. The shared `patternId` is
+          the same grouping `decor_pattern` uses on stickers, and it is what a pattern card will read
+          when it is built.
+
+          ⚠️ SEATED ON THE TOP SURFACE, CENTRED, FOR NOW. The studio composes on a flat plate, so the
+          pieces carry plate coordinates; dropping them on the tier top is the one placement where
+          that frame still means what it meant. Choosing WHERE it goes — and repeating it along a
+          drag, which is the whole point of a block — is the next step, deliberately not faked here
+          with a placement that only looks like a choice. */}
+      {patternStudio && (
+        <CreamPatternStudio
+          apiClient={apiClient}
+          /* ⚠️ ITS OWN COLOUR, NOT THE GARNISH STUDIO'S. Handing in `garnishColor` was wrong twice
+             over: it starts at #4A2C1B — chocolate — so every tip thumbnail came up brown in a
+             studio for CREAM; and the wheel wrote back through `setGarnishColor`, so choosing a
+             pattern colour silently changed what the chocolate studio would draw with next. Two
+             tools sharing one piece of state because they happened to want the same control. */
+          color={patternColor}
+          /* The ONE colour control, handed in rather than rebuilt — INVARIANTS #3, and the same
+             component GarnishStudio is given. */
+          colorControl={
+            <ColorWheel color={patternColor} onChange={setPatternColor} width={152} compact={isMobile}
+              cakeColors={[...new Set(collectElementColors(design))]} />
+          }
+          onCancel={() => setPatternStudio(false)}
+          onSave={({ pieces }) => {
+            const patternId = crypto.randomUUID();
+            const topY = canvasConfig.tiers?.length
+              ? canvasConfig.tiers.reduce((y, t) => y + (t.height ?? 0), 0.1) : BOTTOM_H;
+            (pieces ?? []).forEach(p => {
+              addStroke({
+                kind: 'heap', patternId,
+                point: [p.point[0], topY + p.point[1], p.point[2]],
+                normal: p.normal,
+                nozzle: p.nozzle, thickness: p.thickness, heapHeight: p.heapHeight,
+                color: p.colour, softness: p.softness, medium: 'cream',
+              });
+            });
+            setPatternStudio(false);
+            focusEditor('decoration');
           }}
         />
       )}

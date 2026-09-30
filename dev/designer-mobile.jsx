@@ -448,6 +448,31 @@ CAT_ELEMENTS.push({
   default_color: '#D94F6E', sort_order: 9,
 });
 
+/* ⚠️ THE CREAM PATTERN STUDIO'S OWN ROW. `cream_pattern` is the VALUE of `procedural`, not a nested
+ * key — the same trap the dust, grass and pen rows name, and PROCEDURAL_TOOLS is keyed by
+ * `placement_config.procedural`. An `opensStudio` entry, so tapping it must REPLACE the screen
+ * rather than put anything on the cake; a fixture is the only way to reach that from here, since
+ * __placeElementById goes through handleElementDrop and never consults the table. */
+CAT_ELEMENTS.push({
+  /* ⚠️ `e30`, BECAUSE `e28` IS ALREADY TAKEN — by "Fondant crown hero" further down this file, and
+   * the catalogue merges by id so the LATER row wins. Written as e28 first, and the symptom was not
+   * an error: tapping the row put a sticker on the cake instead of opening the studio, because the
+   * row the designer actually held was the crown — an ordinary single-per-slot element behaving
+   * exactly as it should. The tool table was never consulted because the `procedural` key was not
+   * on the row it looked at.
+   *
+   * ⚠️ AND THIS FILE ALREADY HAS DUPLICATES: `e8` at two places and `e27` at two more. Whichever of
+   * each pair sits later is the one that exists, and the earlier one is dead weight that reads as
+   * live. Not fixed here — it is the other session's file too — but any new row must check first. */
+  id: 'e30', name: 'Cream pattern studio', description: 'pipe a block, then repeat it',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f3d7e2'), thumbnail_url: CAT_THUMB('#f3d7e2'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, delete: true, resize: true, color: true },
+  placement_config: { procedural: 'cream_pattern' },
+  default_color: '#E85A9B', sort_order: 11,
+});
+
 /* ⚠️ A LETTER-BLOCKS ROW — the last card this harness could not open. Routed by `letter_blocks` as
  * the VALUE of `procedural`, like the dust, grass and pen rows, and driven through
  * __tapElementById because handleElementDrop never consults PROCEDURAL_TOOLS.
