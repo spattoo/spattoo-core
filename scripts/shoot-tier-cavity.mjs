@@ -1,4 +1,4 @@
-/* Switch the scraped rim on from the tier sheet and photograph the cake.
+/* Switch the scraped edge and the turntable spiral on from the tier sheet, and photograph the cake.
  *
  * ⚠️ THE CONTROL AND THE CAKE IN ONE FRAME. The POC proved the geometry against a bare cylinder;
  * what this has to show is the control reaching the REAL tier, with the tier's own cream colour and
@@ -23,6 +23,19 @@ const tap = async t => {
   const el = page.getByText(t, { exact: false }).first();
   if (!(await el.count())) { console.log('  MISSING:', t); return false; }
   await el.click(); await page.waitForTimeout(900); return true;
+};
+/* ⚠️ EXACT TEXT AND A COORDINATE CLICK, because the loose `tap` above matched a WRAPPER around the
+   chip and then hung thirty seconds waiting for it to become clickable. The chip itself was on
+   screen and visible the whole time — a harness reporting "MISSING" or timing out on a control that
+   is plainly there is worse than no harness, so this one clicks the middle of its own box. */
+const tapChip = async t => {
+  const el = page.getByText(t, { exact: true }).first();
+  if (!(await el.count().catch(() => 0))) { console.log('  MISSING chip:', t); return false; }
+  const bb = await el.boundingBox({ timeout: 2000 }).catch(() => null);
+  if (!bb) { console.log('  chip has no box:', t); return false; }
+  await page.mouse.click(bb.x + bb.width / 2, bb.y + bb.height / 2);
+  await page.waitForTimeout(900);
+  return true;
 };
 
 await tap('Skip');
@@ -60,6 +73,32 @@ if (await tap('Scraped edge')) {
     await turn.click({ timeout: 2000 }).catch(() => {});
     await page.waitForTimeout(900);
     await grab('shuffled');
+  }
+}
+
+/* ⚠️ THE SPIRAL IS A SECOND CHIP, AND BOTH ON IS THE CASE WORTH PHOTOGRAPHING. They are chosen
+   separately and built as one mesh, so "each alone works" proves less than "both together do not
+   fight" — a z-fight or a seam at the rim's inner edge only appears when both are asked for. */
+if (await tapChip('Spiral')) {
+  /* ⚠️ THE DEFAULT CAMERA, AND AN ORBIT "TO SEE THE TOP BETTER" MADE IT WORSE. Looking nearly
+     straight down, a crest and the flat beside it both face the overhead light and shade almost
+     identically — the spiral vanished completely, from an angle chosen to reveal it. The designer's
+     own three-quarter view is where a customer sees the cake and where the relief actually reads. */
+  await grab('spiral on, with the scraped edge');
+
+  /* The spiral's own Height, at the top of its range — the same reasoning as the rim's: at the
+     default this is a few pixels on a cake seen from across the room. */
+  const dials = page.locator('svg').filter({ has: page.locator('circle') });
+  const n = await dials.count().catch(() => 0);
+  const sd = n ? await dials.nth(n - 1).boundingBox({ timeout: 2000 }).catch(() => null) : null;
+  if (!sd) console.log('  (could not reach the spiral Height dial — the shots above still stand)');
+  if (sd) {
+    await page.mouse.move(sd.x + sd.width / 2, sd.y + sd.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(sd.x + sd.width * 1.4, sd.y - sd.height * 0.2, { steps: 14 });
+    await page.mouse.up();
+    await page.waitForTimeout(900);
+    await grab('spiral height at maximum');
   }
 }
 

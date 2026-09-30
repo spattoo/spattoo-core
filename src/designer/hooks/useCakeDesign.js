@@ -161,7 +161,8 @@ export function toCanvasConfig(design) {
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
-        topCavity:     t.topCavity ?? null,   // scraped rim: cream heaped at the top edge, dished in the middle
+        topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
+        topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -415,6 +416,22 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, topCavity: changes === null ? undefined : { ...(t.topCavity ?? {}), ...changes } }
+        : t),
+    }));
+  }
+
+  /* The turntable spiral on the tier's top. A SEPARATE field from `topCavity`, because Sandeep asked
+     for them to be separately selectable — *"both edge elevation, spiral can individually be
+     selected"* — and a shared one could not express "spiral, no rim".
+
+     ⚠️ SEPARATE HERE, ONE MESH DOWNSTREAM. `buildTopSurface` takes both and returns a single
+     geometry: they are two tools on one sheet of cream, and built apart they z-fight at the floor
+     and cannot meet the rim's wobbling inner edge. Separately SELECTABLE, jointly BUILT. */
+  function setTierSpiral(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, topSpiral: changes === null ? undefined : { ...(t.topSpiral ?? {}), ...changes } }
         : t),
     }));
   }
@@ -1640,7 +1657,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,

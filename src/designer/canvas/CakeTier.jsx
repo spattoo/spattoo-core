@@ -35,7 +35,7 @@ import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
  * geometry file cannot import this one without a cycle. Re-exported so every existing importer
  * (previewCake) keeps its path. */
 import { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism, insetPolygon } from '../geometry/prism.js';
-import { buildTopCavity } from '../geometry/topCavity.js';
+import { buildTopSurface } from '../geometry/topCavity.js';
 export { buildRoundedPrism, buildGlyphPrism, buildOutlinePrism };
 
 // ── Extract the single mesh from a per-style GLB ──────────────────────────────
@@ -1501,6 +1501,7 @@ export default function CakeTier({
      lookup — this component takes the tier flattened, the way `creamLayers` and `styleParams` do,
      so reaching for a tier object here would be the only place in the file that did. */
   topCavity = null,
+  topSpiral = null,
 
   // Element id of the piping whose card is expanded — every ring of that element is
   // highlighted on the cake. Legacy single-piping callers fall back to the booleans.
@@ -1617,13 +1618,20 @@ export default function CakeTier({
         :  0),
     [shp],
   );
-  /* The cavity's geometry, or null. Absent `topCavity` means every existing tier and every saved
-     design is untouched — the sparse shape the setter writes, read back sparsely. */
-  const cavityGeo = useMemo(() => {
-    if (!topCavity?.on) return null;
-    const g = buildTopCavity(shp, height, topCavity);
-    return g;
-  }, [topCavity, shp, height]);
+  /* The tier's worked top — the scraped edge, the turntable spiral, either, or both. Absent fields
+     mean every existing tier and every saved design is untouched: the sparse shape the setters
+     write, read back sparsely.
+
+     ⚠️ ONE GEOMETRY FOR BOTH, AND THAT IS NOT TIDINESS. They are chosen separately and they are two
+     tools on ONE sheet of cream — the spiral runs across the floor the rim encloses. As separate
+     meshes they would sit at the same depth and z-fight wherever both were on, and the spiral could
+     not meet the rim's inner edge without gaps, because that edge wobbles by design and a disc does
+     not. `buildTopSurface` returns null when neither is asked for, and when a spiral is asked for on
+     a shape a turntable cannot spin. */
+  const cavityGeo = useMemo(() => buildTopSurface(shp, height, {
+    cavity: topCavity?.on ? topCavity : null,
+    spiral: topSpiral?.on ? topSpiral : null,
+  }), [topCavity, topSpiral, shp, height]);
   useEffect(() => () => cavityGeo?.dispose(), [cavityGeo]);
 
   // Round fondant tiers get a draped, rounded-edge body (config-driven via the finish's
@@ -1893,7 +1901,7 @@ export default function CakeTier({
           </mesh>
         </>
       )}
-      {/* ── The dished top with its scraped cream lip ─────────────────────────────────────────────
+      {/* ── The worked top: the scraped edge and the turntable spiral ────────────────────────────
           ⚠️ AFTER EVERY BODY BRANCH, NOT INSIDE ONE. The tier has five of them — rounded lathe,
           plain cylinder, styled wall, prism, stroke wall — and a cavity belongs on the top of all of
           them. Built from `perimeter(shp)` for the same reason, so a heart's rim follows a heart.

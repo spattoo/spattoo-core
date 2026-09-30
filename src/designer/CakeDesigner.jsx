@@ -143,6 +143,7 @@ import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
 import { CAVITY_DEFAULTS } from './geometry/topCavity.js';
+import { SPIRAL_DEFAULTS, SPIRAL_RISE } from './geometry/topSpiral.js';
 import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
@@ -1910,7 +1911,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -13470,6 +13471,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
                     </>)}
                   </div>
+
+                  {/* ── The turntable spiral ──────────────────────────────────────────────────────
+                    *
+                    * Sandeep: *"spiral is a separate thing"*, and then *"so spiral is an option user
+                    * can select separately. so both edge elevation, spiral can individually be
+                    * selected."* Hence its own chip beside the scraped edge rather than a setting
+                    * inside it — all four combinations are reachable, including spiral with no rim.
+                    *
+                    * ⚠️ SEPARATELY SELECTABLE, JOINTLY BUILT. Two chips here, one mesh in CakeTier:
+                    * they are two tools on one sheet of cream and the spiral runs across the floor
+                    * the rim encloses. See buildTopSurface.
+                    *
+                    * ⚠️ ROUND TIERS ONLY, AND THE CHIP IS SIMPLY ABSENT ON THE REST. A turntable
+                    * cannot spin a rectangle — no sheet cake in any reference has one, and forced
+                    * onto one the rings never reach the long sides and a coil sits marooned in the
+                    * middle. `isRoundWall`, never a test on a shape's NAME (INVARIANTS #1). Absent
+                    * rather than disabled because this row is a line of chips a baker scans, not a
+                    * form: a permanently dead chip in it is a worse answer than one fewer chip.
+                    * The scraped edge has no such limit — a scraper walks any perimeter. */}
+                  {isRoundWall(tierShape(tier)) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <Chip label="Spiral" isMobile={isMobile}
+                            active={!!tier?.topSpiral?.on}
+                            onClick={() => setTierSpiral(selectedEl.index,
+                              tier?.topSpiral?.on ? { on: false } : { on: true })} />
+                      {tier?.topSpiral?.on && (<>
+                        <SizeDial size={tier.topSpiral.turns ?? SPIRAL_DEFAULTS.turns}
+                          min={2} max={10} step={1} fmt={v => `${Math.round(v)}`}
+                          onChange={v => setTierSpiral(selectedEl.index, { turns: Math.round(v) })} />
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Rings</span>
+                        {/* ⚠️ A NARROW RANGE ON PURPOSE. Sandeep: *"usually there wont be too high
+                            spirals, so the range would be small. but adjustable."* SPIRAL_RISE
+                            carries the ends, chosen off the same sweep as the default. */}
+                        <SizeDial size={tier.topSpiral.rise ?? SPIRAL_DEFAULTS.rise}
+                          min={SPIRAL_RISE.min} max={SPIRAL_RISE.max} step={SPIRAL_RISE.step}
+                          fmt={v => `${Math.round(v * 1000) / 10}`}
+                          onChange={v => setTierSpiral(selectedEl.index, { rise: v })} />
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                        {/* One Shuffle per feature, each storing its own seed: a design that cannot
+                            reproduce the coil a baker chose has not saved their work. */}
+                        <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                          onClick={() => setTierSpiral(selectedEl.index,
+                            { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                      </>)}
+                    </div>
+                  )}
 
                   {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
                     *
