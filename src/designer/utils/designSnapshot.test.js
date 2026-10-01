@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildDesignSnapshot } from './designSnapshot.js';
+import { buildDesignSnapshot , OPTIONAL_TIER_FIELDS} from './designSnapshot.js';
 import { toCanvasConfig, normalizeDesign } from '../hooks/useCakeDesign.js';
 
 // A glaze cake must survive being SAVED (order snapshot / template) and reloaded, and reach the renderer
@@ -57,6 +57,8 @@ describe('a saved design comes back as the same cake', () => {
       frostingType: 'buttercream', frostingStyle: 'wave', styleParams: { depth: 0.4 },
       gradient: { stops: [{ color: '#fff', at: 0 }] },
       stripes: { palette: ['#F1EEDC', '#ABD76B'], count: 16, weights: [1, 1], softness: 0.18, wobble: 0.3 },
+      topCavity: { on: true, lip: 0.07, seed: 42 },
+      topSpiral: { on: true, turns: 5, rise: 0.018, seed: 7 },
       glaze: { colors: ['#2a1810'], flow: 2 },
       dusting: { splashes: [{ u: 0.2, v: 0.4 }], color: '#d4af37' },
       foil: { flakes: [{ u: 0.1, v: 0.3 }], finish: 'gold' },
@@ -117,9 +119,42 @@ describe('a saved design comes back as the same cake', () => {
     expect(toCanvasConfig(roundTrip(FULL))).toEqual(toCanvasConfig(FULL));
   });
 
+  /* ── The guard that does not depend on remembering ──────────────────────────────────────────
+   *
+   * ⚠️ EVERY TEST ABOVE CAN ONLY CHECK A FIELD SOMEBODY PUT IN `FULL`, which is the same act of
+   * remembering that fails in designSnapshot.js — so the round-trip has now missed the loss it was
+   * written to catch, twice in one go: `topCavity` and `topSpiral` reached the renderer, never
+   * reached OPTIONAL_TIER_FIELDS, and every test here passed while a saved template came back plain.
+   * That is five fields lost the same way (glaze, grass, creamLayers, and these two), each followed
+   * by a comment asking the next person to be more careful.
+   *
+   * So this one DERIVES the answer instead. It hands `toCanvasConfig` a tier that records every key
+   * the renderer touches, and asserts the snapshot carries all of them. Add a field to the renderer
+   * and forget the list, and this fails naming the key — without anyone having to extend a fixture.
+   */
+  it('carries every tier field the renderer actually reads', () => {
+    /* Written unconditionally by buildDesignSnapshot, so they need no entry on the optional list. */
+    const ALWAYS = ['color', 'topPipings', 'bottomPipings'];
+
+    const read = new Set();
+    const watch = t => new Proxy(t, {
+      get(o, k) { if (typeof k === 'string') read.add(k); return o[k]; },
+      has(o, k) { if (typeof k === 'string') read.add(k); return k in o; },
+    });
+    /* A tier carrying EVERY key the designer can put on one, so a reader that guards with `?.` or
+       `in` is still seen to have read it. */
+    const everything = { ...FULL.tiers[0] };
+    for (const k of OPTIONAL_TIER_FIELDS) if (!(k in everything)) everything[k] = null;
+    toCanvasConfig({ ...FULL, tiers: [watch(everything)] });
+
+    const carried = new Set([...OPTIONAL_TIER_FIELDS, ...ALWAYS]);
+    const lost = [...read].filter(k => !carried.has(k)).sort();
+    expect(lost).toEqual([]);
+  });
+
   // Named individually as well as in the whole-config check above, so a failure says WHICH element
   // type was lost rather than printing two large objects and leaving you to diff them.
-  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds']) {
+  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds', 'topCavity', 'topSpiral']) {
     it(`tier.${key} survives`, () => {
       expect(roundTrip(FULL).tiers[0][key]).toEqual(FULL.tiers[0][key]);
     });
