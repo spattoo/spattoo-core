@@ -2365,7 +2365,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     // Insert keeps just its own Y-spin (the baked per-instance fan) — no radial auto-face.
     const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
     const yaw   = radialYaw + (sticker.rotation ?? 0);
-    const tiltX = (isVerge || isInsert) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+    /* ⚠️ ONE SIGN FOR EVERY POSE NOW, AND THE STAND USED TO INVERT IT. With `-tiltAngle` here, the
+       up arrow laid a butterfly FLAT and the down arrow stood it up — measured, ↑ held to the limit
+       left 64 lit pixels against 682 at centre. Sandeep, pressing arrows that seemed dead: *"arrows
+       are not working. nothing happening."* They worked; they worked backwards, and the half of the
+       range that did most was behind the arrow nobody presses for that.
+       Verge and insert were already on the un-negated sign and already read correctly, so this is
+       the stand joining them rather than a new convention. ↑ now stands a piece up, ↓ lays it down.
+       ⚠️ EXISTING DESIGNS CARRY THE OLD SENSE, so a stand sticker saved before this leans the other
+       way. scripts/migrate-tilt-sign.mjs negates `tiltAngle` on exactly those — never on verge or
+       insert, which did not move. */
+    const tiltX = (sticker.tiltAngle ?? 0);
     // Left/right lean. It rides INSIDE the base-pivot groups below with tiltX, deliberately: the
     // pivot translates down by seatLift, rotates, translates back, so the element leans about the
     // point where it touches the cake. Rolled outside that, a leaning figure swings a foot into the
