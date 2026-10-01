@@ -149,6 +149,13 @@ export { buildStyledWall, buildStyledTop, displaceByHeightField, makeWallReliefS
 // SAME code CakeTier renders, rather than a prototype copy that then has to be ported back.
 export { buildTopSurface, buildTopCavity, cavityProfile, CAVITY_DEFAULTS } from './designer/geometry/topCavity.js';
 export { spiralField, ridgeProfile, swirlPhase, SPIRAL_DEFAULTS, SPIRAL_RISE } from './designer/geometry/topSpiral.js';
+// The bendable wire a butterfly floats on. The RANGES are exported, not just the defaults, because
+// admin's Manage Elements offers the same numbers on its own form — and a hand-copied `max` there
+// drifted the moment this one moved: core went to 88° and the admin field still read 20–75.
+// One constant, both surfaces (root CLAUDE.md rule 1, and its note that a number on another surface
+// is a dependency to state rather than a value to repeat).
+export { ELEMENT_WIRE_DEFAULTS, WIRE_ANGLE, WIRE_LENGTH, WIRE_BEND, WIRE_WAVES, WIRE_TWIST, WIRE_SWEEP }
+  from './designer/geometry/elementWire.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
