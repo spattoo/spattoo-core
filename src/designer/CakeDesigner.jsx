@@ -795,7 +795,14 @@ function TiltRow({ tiltAngle, rollAngle, onChange }) {
       <button style={s.tbIconBtn} title="Lean forward" onClick={() => onChange({ tiltAngle: leanStep(ta,  0.1) })}>↓</button>
       <button style={s.tbIconBtn} title="Lean left"  onClick={() => onChange({ rollAngle: leanStep(ra, -0.1) })}>←</button>
       <button style={s.tbIconBtn} title="Lean right" onClick={() => onChange({ rollAngle: leanStep(ra,  0.1) })}>→</button>
-      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 46, textAlign: 'center' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>
+      {/* ⚠️ WIDE ENOUGH FOR BOTH SIGNS, AND IT WAS NOT. `leanDeg` always prints a number, so this
+          never shows a dash — yet the card read "69°/-", which is a NEGATIVE roll with its digits
+          clipped off. At minWidth 46 the worst case, "-69°/-69°", needs about 60px, so any lean that
+          went negative lost its value behind the scroll arrow. Sandeep, pressing arrows and watching
+          a readout that never appeared to move: *"for butterfly - arrows are not working. nothing
+          happening."* Both were working; the number saying so was cut in half.
+          `whiteSpace: nowrap` so it is never broken across lines either. */}
+      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 68, textAlign: 'center', whiteSpace: 'nowrap' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>
     </div>
   );
 }

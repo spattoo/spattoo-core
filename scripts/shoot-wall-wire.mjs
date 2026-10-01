@@ -31,7 +31,13 @@ for (const c of CASES) {
   const page = await b.newPage({ viewport: { width: W, height: H }, deviceScaleFactor: 2 });
   page.on('pageerror', e => console.error('PAGE ERROR:', e.message));
   await page.goto(`http://localhost:5190/element-wire.html?${c}`, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2600);
+  /* ⚠️ SETTLE IS A KNOB BECAUSE THE DEFAULT FOOLED ME TWICE IN ONE INVESTIGATION. The env map lands
+     a beat after the mesh, and a frame captured before it is DARK — which shows up as a huge pixel
+     difference between two panels that differ only in lighting. Twice I read that as "this control
+     has a big effect" and twice it was the HDRI arriving. The project memory says to discard the
+     first frame; on a slow machine one discard is not enough. Raise SETTLE when comparing panels,
+     and prefer a measurement the lighting cannot fake — a silhouette, not a mean. */
+  await page.waitForTimeout(Number(process.env.SETTLE || 2600));
   /* ⚠️ ORBIT BEFORE CAPTURING, OR THE FIX IS INVISIBLE. Face-on to the wall the standoff points
      straight at the lens and foreshortens to nothing — the first sheet from here showed a butterfly
      apparently flat against the icing whichever way the wire ran. How far a piece stands OFF a wall
@@ -43,7 +49,7 @@ for (const c of CASES) {
   await page.mouse.up();
   await page.waitForTimeout(900);
   await page.screenshot();                       // discard: the env map lands a frame late
-  await page.waitForTimeout(1200);
+  await page.waitForTimeout(Number(process.env.SETTLE2 || 1200));
   shots.push({ label: c, png: (await page.screenshot()).toString('base64') });
   await page.close();
   console.log('  shot', c);
