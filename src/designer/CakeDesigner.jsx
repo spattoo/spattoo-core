@@ -6965,6 +6965,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ...(t.topPipings    ?? []).map(p => ({ tierIndex: i, zone: 'rim',   cardId: p.cardId, layerId: p.layerId })),
       ...(t.bottomPipings ?? []).map(p => ({ tierIndex: i, zone: 'board', cardId: p.cardId, layerId: p.layerId })),
     ]);
+    /* ── Freehand strokes, and piping one from a script ──────────────────────────────────────────
+     * ⚠️ `__getPiping` CANNOT SEE THESE. It walks `design.tiers` and reports RINGS; every cream-pen
+     * tap, rope and GLB stamp lives in `design.piping`, a different store entirely. So the whole
+     * hand-piping half of this feature was unreadable from a test.
+     *
+     * ⚠️ AND PIPING IS DRIVEN, NOT SYNTHESISED. The pen captures RAW DOM pointer events on the
+     * canvas, so a script would have to aim screen coordinates into a live 3D scene — a test of my
+     * aim rather than of the pen. Same argument `__tapElementById` and `__tapSticker` already make.
+     * `__pipeAt` commits one tap through the SAME stroke shape the pen commits, so what it proves is
+     * what a baker gets. `y` is optional: omitted, it stacks on whatever is already at (x, z). */
+    window.__getStrokes = () => (design.piping ?? []).map(st => ({
+      id: st.id, kind: st.kind ?? 'rope', point: st.point ?? null, normal: st.normal ?? null,
+      glbUrl: st.glbUrl ?? null, thickness: st.thickness, stampId: st.stampId ?? null,
+    }));
+    window.__pipeAt = (x = 0, z = 0, y = null) => {
+      const ps = penStyle;
+      if (!ps?.stampId || !ps?.stampUrl) return false;
+      const tiers = canvasConfig.tiers ?? [];
+      const top = tiers[tiers.length - 1];
+      if (!top) return false;
+      /* Seat on the cream already standing at (x, z) when there is any, else on the tier top —
+         which is exactly what seatAt decides for a real press, expressed in design space. */
+      let seatY = BOARD_TOP_Y + tiers.reduce((h, t) => h + (t.height ?? 0), 0);
+      if (y == null) {
+        for (const st of (design.piping ?? [])) {
+          const p = st.point;
+          if (!p || Math.hypot(p[0] - x, p[2] - z) > (st.thickness ?? 0.03) * 2) continue;
+          seatY = Math.max(seatY, p[1] + (st.thickness ?? 0.03) * 2);
+        }
+      } else seatY = y;
+      addStroke({
+        kind: 'stamp', point: [x, seatY, z], normal: [0, 1, 0],
+        glbUrl: ps.stampUrl, stampId: ps.stampId, stampName: ps.stampName ?? null,
+        seed: Math.floor(Math.random() * 1e6), regular: !!ps.stampRegular,
+        rotation: ps.stampRotation ?? null, lean: ps.stampLean ?? 0,
+        thickness: ps.thickness, color: ps.color, softness: ps.softness, medium: 'cream',
+        tierIndex: tiers.length - 1,
+      });
+      return true;
+    };
     window.__listElements = () => [...elementById.values()].map(e => ({
       id: e.id, name: e.name, mode: zoneMode(e.placement_config, 'top_surface'),
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
@@ -13579,25 +13619,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       for it. See ChipPicker's note for the rest of that budget. */}
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
                                 textTransform: 'uppercase', marginTop: 4 }}>Top edge</div>
+                  {/* ⚠️ A CONTROL AND ITS LABEL ARE ONE THING, AND A WRAPPING ROW SPLIT THEM. These
+                      rows wrap, and `[dial, label]` emitted as siblings let a wrap fall between the
+                      two: with both features on, "Height" landed on the line BELOW the dial it names,
+                      directly under a different dial. A label naming the wrong control is worse than
+                      no label — see INVARIANTS #11, which is about exactly this pairing. So each pair
+                      is an inline-flex of its own and wraps as a unit. */}
+                  {/* ⚠️ THE TWO ROWS NEED A GAP OF THEIR OWN, AND HAD NONE. Each is its own flex row
+                      whose height is exactly the chip's 32px, and nothing separated them: measured in
+                      the sheet, "Scraped edge" ended at 681 and "Spiral" began at 681 — touching to
+                      the pixel, where every other block in this panel sits 14–17px apart. Sandeep:
+                      *"scraped edge, spiral, cream layer chips are overlapping."* They were not
+                      overlapping, which is worse than it sounds: a zero gap is indistinguishable
+                      from a collision and is read as one.
+
+                      A column with a gap rather than a margin on the second row, because the second
+                      row is CONDITIONAL — it disappears on a square tier, and a margin living on the
+                      thing that vanishes leaves the spacing to be re-derived by whatever is next. */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <Chip label="Scraped edge" isMobile={isMobile}
                           active={!!tier?.topCavity?.on}
                           onClick={() => setTierCavity(selectedEl.index,
                             tier?.topCavity?.on ? { on: false } : { on: true })} />
                     {tier?.topCavity?.on && (<>
-                      <SizeDial size={tier.topCavity.lip ?? CAVITY_DEFAULTS.lip}
-                        min={0} max={0.18} step={0.005}
-                        fmt={v => (v === 0 ? 'flat' : `${Math.round(v * 1000) / 10}`)}
-                        onChange={v => setTierCavity(selectedEl.index, { lip: v })} />
-                      <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                      <span style={s.topEdgePair}>
+                        <SizeDial size={tier.topCavity.lip ?? CAVITY_DEFAULTS.lip}
+                          min={0} max={0.18} step={0.005}
+                          fmt={v => (v === 0 ? 'flat' : `${Math.round(v * 1000) / 10}`)}
+                          onChange={v => setTierCavity(selectedEl.index, { lip: v })} />
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                      </span>
                       {/* ⚠️ THE SEED IS STORED, or Shuffle is a preview toy — a design that cannot
                           reproduce the rim a baker chose has not saved their work. A fresh number
                           rather than the next one: "seed 8 after seed 7" invites the idea they are
                           ordered and that further along is a better one. They are different hands. */}
-                      <button type="button" style={s.tbIconBtn} title="Another hand's pass"
-                        onClick={() => setTierCavity(selectedEl.index,
-                          { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
-                      <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                      <span style={s.topEdgePair}>
+                        <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                          onClick={() => setTierCavity(selectedEl.index,
+                            { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                      </span>
                     </>)}
                   </div>
 
@@ -13626,27 +13688,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             onClick={() => setTierSpiral(selectedEl.index,
                               tier?.topSpiral?.on ? { on: false } : { on: true })} />
                       {tier?.topSpiral?.on && (<>
-                        <SizeDial size={tier.topSpiral.turns ?? SPIRAL_DEFAULTS.turns}
-                          min={2} max={10} step={1} fmt={v => `${Math.round(v)}`}
-                          onChange={v => setTierSpiral(selectedEl.index, { turns: Math.round(v) })} />
-                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Rings</span>
+                        <span style={s.topEdgePair}>
+                          <SizeDial size={tier.topSpiral.turns ?? SPIRAL_DEFAULTS.turns}
+                            min={2} max={10} step={1} fmt={v => `${Math.round(v)}`}
+                            onChange={v => setTierSpiral(selectedEl.index, { turns: Math.round(v) })} />
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Rings</span>
+                        </span>
                         {/* ⚠️ A NARROW RANGE ON PURPOSE. Sandeep: *"usually there wont be too high
                             spirals, so the range would be small. but adjustable."* SPIRAL_RISE
                             carries the ends, chosen off the same sweep as the default. */}
-                        <SizeDial size={tier.topSpiral.rise ?? SPIRAL_DEFAULTS.rise}
-                          min={SPIRAL_RISE.min} max={SPIRAL_RISE.max} step={SPIRAL_RISE.step}
-                          fmt={v => `${Math.round(v * 1000) / 10}`}
-                          onChange={v => setTierSpiral(selectedEl.index, { rise: v })} />
-                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                        <span style={s.topEdgePair}>
+                          <SizeDial size={tier.topSpiral.rise ?? SPIRAL_DEFAULTS.rise}
+                            min={SPIRAL_RISE.min} max={SPIRAL_RISE.max} step={SPIRAL_RISE.step}
+                            fmt={v => `${Math.round(v * 1000) / 10}`}
+                            onChange={v => setTierSpiral(selectedEl.index, { rise: v })} />
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                        </span>
                         {/* One Shuffle per feature, each storing its own seed: a design that cannot
                             reproduce the coil a baker chose has not saved their work. */}
-                        <button type="button" style={s.tbIconBtn} title="Another hand's pass"
-                          onClick={() => setTierSpiral(selectedEl.index,
-                            { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
-                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                        <span style={s.topEdgePair}>
+                          <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                            onClick={() => setTierSpiral(selectedEl.index,
+                              { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                        </span>
                       </>)}
                     </div>
                   )}
+                  </div>
 
                   {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
                     *
@@ -16315,6 +16384,12 @@ const s = {
     color:'#333', fontWeight:600, fontFamily:"'Quicksand',sans-serif",
     minWidth:28, textAlign:'center',
   },
+
+  /* ⚠️ A CONTROL AND THE WORD FOR IT WRAP AS ONE. The Top edge rows wrap, and a dial and its label
+     emitted as siblings let the break fall between them — with both features on, "Height" landed on
+     the line below the dial it names, immediately under a DIFFERENT dial. A label naming the wrong
+     control is worse than no label, and INVARIANTS #11 is about exactly this pairing. */
+  topEdgePair: { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' },
   tbSizeLabel: {
     fontSize:13, fontWeight:700, color:'#222', minWidth:26, textAlign:'center',
   },
