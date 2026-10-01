@@ -9933,10 +9933,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <Chip key="wire-on" label="On a wire" active={!!wr.on} isMobile={isMobile}
                 onClick={() => setWire({ on: !wr.on })} />,
           ...(wr.on ? [
-            /* ⚠️ BEND FIRST, WHICH IS NOT THE STICK'S ORDER AND SHOULD NOT BE. A pick has no shape to
-               choose, so its row opens with depth. A wire's bow is the whole of what makes it read as
-               wire rather than a pin, so it is the control a baker reaches for first (INVARIANTS #12
-               — layout follows use). */
+            /* ⚠️ ANGLE AND LONG LEAD, AND BEND USED TO. The old note said the bow "is the whole of
+               what makes it read as wire rather than a pin, so it is the control a baker reaches for
+               first" — true while every wire arrived pre-curled. It does not any more: `bend`
+               defaults to 0 and the bow is opt-in, so leading with three controls that all do
+               nothing until a fourth is touched is the order the features were built in, not the
+               order they are used (INVARIANTS #12).
+
+               What a baker actually reaches for is where the piece SITS: how steeply the stem goes
+               in, and how far out it holds the butterfly. Sandeep: *"angle is most used control, so
+               bring it little front in the row."* Angle first, Long second, the bow family behind
+               them in its own order. */
+            ...(onWall ? dial('wang', 'Angle', wr.angle ?? row.angle, v => `${Math.round(v)}°`,
+                    v => setWire({ angle: v }), WIRE_ANGLE.min, WIRE_ANGLE.max, WIRE_ANGLE.step) : []),
+            ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
+                    v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
             ...dial('wbend', 'Bend', wr.bend ?? row.bend, v => `${Math.round(v * 100)}%`,
                     v => setWire({ bend: v }), WIRE_BEND.min, WIRE_BEND.max, WIRE_BEND.step),
             /* ⚠️ "Kinks", NOT "Bends", BESIDE A CONTROL ALREADY CALLED "Bend". One is how FAR the wire
@@ -9948,21 +9959,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             /* How far the bow's plane turns on the way up — what stops an S being a flat squiggle. */
             ...dial('wtwi', 'Twist', wr.twist ?? row.twist, v => `${Math.round(v)}°`,
                     v => setWire({ twist: v }), WIRE_TWIST.min, WIRE_TWIST.max, WIRE_TWIST.step),
-            ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
-                    v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
-            /* ⚠️ ONLY ON A WALL, BECAUSE ONLY A WALL WIRE HAS A CHOICE. A stem in the top surface
-               goes straight down — that is the only way into a horizontal surface — and a rim wire
-               leans back over its own lip. Offering the dial on those would be a control that moves
-               and changes nothing, which is worse than one that is absent (rule 7, read backwards).
-
-               ⚠️ AND IT IS A CONTROL RATHER THAN A CONSTANT BECAUSE TWO CONSTANTS BOTH FAILED. Dead
-               horizontal was the first — Sandeep: *"its inserting horizontally. thats not how its
-               done."* Hard-coding 31° was the second, and he read the render as still horizontal:
-               the angle only acts on the part of the wire OUTSIDE the cake, and at the default `In`
-               that is half of it, so a reasonable-sounding number is a few pixels of rise. *"can we
-               have control for the angle with which it needs to be inserted."* */
-            ...(onWall ? dial('wang', 'Angle', wr.angle ?? row.angle, v => `${Math.round(v)}°`,
-                    v => setWire({ angle: v }), WIRE_ANGLE.min, WIRE_ANGLE.max, WIRE_ANGLE.step) : []),
+            /* ⚠️ Angle is ONLY ON A WALL, and sits at the head of the row above. A stem in the top
+               surface goes straight down — the only way into a horizontal surface — and a rim wire
+               leans back over its own lip, so the dial would move and change nothing there (rule 7,
+               read backwards). It is a control rather than a constant because two constants both
+               failed: dead horizontal, then a hard-coded 31° that still read as horizontal, because
+               the angle only acts on the part of the wire OUTSIDE the cake. */
             /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them
                looking like a row of flags — the reference photographs have every one facing
                differently.

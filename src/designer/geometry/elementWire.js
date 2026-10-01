@@ -51,12 +51,17 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
   length: 4.0,
   /* Multiplier on WIRE_GAUGE below.
 
-     ⚠️ 2.5, NOT 1, BECAUSE "TRUE TO LIFE" WAS THE WRONG TARGET. Real florist wire is meant to
-     disappear, and at 1 it duly did — Sandeep, looking at two butterflies on a cake: *"wire is
-     barely visible."* A stem a baker cannot see is a control they will believe is broken, and on a
-     phone at arm's length it is a couple of pixels. The render is not a photograph; it has to SAY
-     "there is a wire here" at the size the cake is actually looked at. */
-  thickness: 2.5,
+     ⚠️ 1.1 NOW, AND IT WAS 2.5 — THE SAME PERSON OVERTURNING HIS OWN EARLIER CALL, WITH BETTER
+     EVIDENCE. 2.5 came from a cake carrying two butterflies, where a true-to-life stem did vanish:
+     *"wire is barely visible."* On a cake carrying SIX it is the opposite problem — a rope apiece,
+     and the stems compete with the butterflies they are there to hold up. Sandeep: *"default
+     thinkness should be 1.1."*
+
+     ⚠️ SO THE OLD NOTE WAS NOT WRONG, ITS SAMPLE WAS. "Barely visible" and "too heavy" are both
+     true readings of the same number at different counts, and a default has to serve the busy cake,
+     because that is the one where a wrong default is hardest to undo by hand. The dial still reaches
+     2.5 for a lone butterfly that needs it. */
+  thickness: 1.1,
   /* How far the wire bows away from the straight line between its two ends, as a fraction of its
      own length. Zero is a straight stem.
 
@@ -156,12 +161,19 @@ export const WIRE_SWEEP = Object.freeze({ min: 0, max: 360, step: 15 });
  * only half the wire is outside the cake and 31° over that short a run is a few pixels. *"can we
  * have control for the angle with which it needs to be inserted."*
  *
- * ⚠️ AND THE ENDS EXCLUDE THE LOOK THAT WAS REJECTED. 0 is the flagpole this replaced, so the floor
- * is well above it; past about 75 the wire is diving into the wall and the piece reads as hung from
- * a hook rather than standing off. A dial that can reach a setting no cake has is not more useful.
+ * ⚠️ THE FLOOR EXCLUDES THE LOOK THAT WAS REJECTED. 0 is the flagpole this replaced, so 20 is well
+ * clear of it.
+ *
+ * ⚠️ THE CEILING IS 88, AND I HAD GUESSED 75. The reasoning was that past 75 "the wire is diving
+ * into the wall and the piece reads as hung from a hook" — written at a desk, against no cake.
+ * Sandeep, with a cake of butterflies in front of him: *"we are allowing angle only till 75 degrees.
+ * we should allow till 88 degrees please."* A nearly-vertical stem is a real thing on a wall: the
+ * butterfly climbs straight up the side rather than standing out from it, which is half the
+ * reference photographs. 88 and not 90 because at 90 the stem is exactly vertical and the piece sits
+ * directly over its own entry hole, with the wire edge-on and invisible from the front.
  *
  * Meaningless on the top surface, where the wire runs straight down — see `frameFor`. */
-export const WIRE_ANGLE = Object.freeze({ min: 20, max: 75, step: 5 });
+export const WIRE_ANGLE = Object.freeze({ min: 20, max: 88, step: 5 });
 
 const clamp = (v, { min, max }, fallback) =>
   (typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback);
