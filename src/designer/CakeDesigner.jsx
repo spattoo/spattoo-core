@@ -16,7 +16,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
@@ -776,7 +776,8 @@ function supportsTopAndSide(el) {
 
 // Tilt stepper (−/°/+) — decor-specific (piping has no tilt); paired with the shared SizeDial.
 // Nudge one lean axis, through the shared clamp (placement.js) so this and the chooser's TiltRow
-// cannot end up with different limits.
+// cannot end up with different limits. The STEP comes from there too — see the note beside
+// LEAN_STEP_DEG for why a tap is 10° and not the 0.1 rad that was hard-coded here four times.
 const leanStep = (v, d) => clampLean((v ?? 0) + d);
 const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
 
@@ -788,8 +789,8 @@ const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
  * — and reported it fixed. Two identical controls are one control and a bug waiting to be fixed in
  * the wrong place.
  *
- * ⚠️ AND AN ARROW THAT CANNOT MOVE NOW SAYS SO. `clampLean` caps a lean at ±1.2 rad (±69°), and at
- * the cap the button looked exactly like a live one: Sandeep, parked at +69° pressing ↓, reported
+ * ⚠️ AND AN ARROW THAT CANNOT MOVE NOW SAYS SO. `clampLean` caps a lean at ±70°, and at
+ * the cap the button looked exactly like a live one: Sandeep, parked at the cap pressing ↓, reported
  * *"arrows are not working. nothing happening."* They were working; one of them had nowhere left to
  * go and no way to say it. A control that is spent must read as spent (root CLAUDE.md rule 7).
  *
@@ -806,13 +807,13 @@ function leanArrows(ta, ra, onChange) {
       style={{ ...s.tbIconBtn, ...(dead ? { color: '#cfc9c1', cursor: 'default' } : null) }}>{glyph}</button>
   );
   return [
-    arrow('ta-up',    'Lean back',  '↑', spent(ta, -0.1), () => onChange({ tiltAngle: leanStep(ta, -0.1) })),
-    arrow('ta-down',  'Lean forward', '↓', spent(ta,  0.1), () => onChange({ tiltAngle: leanStep(ta,  0.1) })),
-    arrow('ta-left',  'Lean left',  '←', spent(ra, -0.1), () => onChange({ rollAngle: leanStep(ra, -0.1) })),
-    arrow('ta-right', 'Lean right', '→', spent(ra,  0.1), () => onChange({ rollAngle: leanStep(ra,  0.1) })),
+    arrow('ta-up',    'Lean back',    '↑', spent(ta, -LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta, -LEAN_STEP) })),
+    arrow('ta-down',  'Lean forward', '↓', spent(ta,  LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta,  LEAN_STEP) })),
+    arrow('ta-left',  'Lean left',    '←', spent(ra, -LEAN_STEP), () => onChange({ rollAngle: leanStep(ra, -LEAN_STEP) })),
+    arrow('ta-right', 'Lean right',   '→', spent(ra,  LEAN_STEP), () => onChange({ rollAngle: leanStep(ra,  LEAN_STEP) })),
     /* ⚠️ WIDE ENOUGH FOR BOTH SIGNS. `leanDeg` always prints a number, so this can never show a
        dash — yet the card read "69°/-", which is a NEGATIVE roll with its digits clipped off. At
-       minWidth 46 the worst case "-69°/-69°" needs about 60px, so any lean that went negative lost
+       minWidth 46 the worst case "-70°/-70°" needs about 60px, so any lean that went negative lost
        its value behind the scroll arrow, and both arrows looked inert. */
     <span key="ta-val" style={{ ...s.tbSizeLabel, fontSize: 11, fontWeight: 700, minWidth: 68,
                                 textAlign: 'center', whiteSpace: 'nowrap' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,

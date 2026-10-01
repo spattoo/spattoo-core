@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -571,6 +571,26 @@ describe('clampLean — one limit for both lean axes', () => {
   it('treats a missing value as upright', () => {
     expect(clampLean(undefined)).toBe(0);
     expect(clampLean(null)).toBe(0);
+  });
+
+  /* ⚠️ THE STEP IS PART OF THE CONTROL, NOT A DETAIL OF THE BUTTON. It was a bare `0.1` in the arrow
+     row — 5.7°, twelve taps to the limit — until Sandeep asked why a tap moved so little. These two
+     assert the pair stays usable: a whole number of degrees, and a count of taps a thumb will spend.
+     Anyone who raises the limit without touching the step will fail the second one. */
+  it('steps in whole degrees, so the readout counts 10, 20, 30', () => {
+    expect(LEAN_STEP_DEG).toBe(Math.round(LEAN_STEP_DEG));
+    const deg = v => Math.round(v * 180 / Math.PI);
+    expect(deg(LEAN_STEP)).toBe(LEAN_STEP_DEG);
+    expect(deg(LEAN_LIMIT)).toBe(LEAN_LIMIT_DEG);
+  });
+
+  it('reaches the limit in a handful of taps, from either end', () => {
+    const taps = dir => { let v = 0, n = 0;
+      while (clampLean(v + dir * LEAN_STEP) !== clampLean(v) && n < 100) { v = clampLean(v + dir * LEAN_STEP); n++; }
+      return n; };
+    expect(taps(1)).toBeLessThanOrEqual(8);
+    expect(taps(-1)).toBeLessThanOrEqual(8);
+    expect(clampLean(LEAN_STEP * 7)).toBe(LEAN_LIMIT);
   });
 });
 
