@@ -252,7 +252,13 @@ CAT_ELEMENTS.push({
   /* The row authors where each dial STARTS; the card moves it from there. Same arrangement as `r`
      for size and `fold` for the fold angle — see geometry/elementWire.js for what each one does. */
   placement_config: {
-    r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'stand', side: 'hug',
+    /* ⚠️ THESE TWO POSES ARE COPIED FROM THE REAL CATALOGUE ROW, and they used to be the other way
+       round. The live Butterfly is `{"top_surface": "hug", "side": "stand"}`; this fixture said
+       stand-on-top, which is the ONE difference that mattered — the Tilt arrows were measured
+       working here three times while Sandeep watched them do nothing, because `hug` renders through
+       the Flat path and the Flat path dropped the lean. A fixture that does not match the row it
+       stands in for proves the wrong thing, confidently. */
+    r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'hug', side: 'stand',
     foldable: true, fold: 34,
     wire: { length: 6, bend: 0.35, sweep: 35 },
   },

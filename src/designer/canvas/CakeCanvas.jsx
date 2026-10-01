@@ -2432,17 +2432,50 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       </group>
     );
   }
-  // Flat mode (sticker laid horizontal on top surface)
+  /* ── Flat mode (sticker laid horizontal on top surface) ──────────────────────────────────────
+   *
+   * ⚠️ THE LEAN RIDES HERE TOO, AND FOR A LONG TIME IT DID NOT — which made the Tilt arrows DEAD on
+   * every element whose top_surface pose is `hug`. This return applied `rotation` (Spin) and nothing
+   * else, so `tiltAngle` and `rollAngle` were written, stored, shown in the readout, saved to the
+   * template and then dropped on the floor by the renderer.
+   *
+   * The catalogue Butterfly is exactly that element — `{"top_surface": "hug", "side": "stand"}` with
+   * `tilt: true` — so on the side the arrows worked and on the top they did nothing, which is what
+   * made it look like a build problem. Sandeep, three times: *"arrows are not working. nothing
+   * happening"*, *"arrow marks still not working"*, *"there is no change on the butterfly."*
+   * Measured on the real row: -70° and +70° produced frames identical to 0° down to the pixel.
+   *
+   * ⚠️ IT PIVOTS ON AN EDGE, NOT THE CENTRE, because a flat piece touches the icing with its whole
+   * face. Rotating about the centre puts half the artwork UNDER the surface — INVARIANTS #3b, and
+   * `clipY` would then eat the buried half rather than show it. The pivot is the edge the piece tips
+   * AWAY from, picked from the sign of the lean, so either arrow lifts it rather than burying it.
+   * At zero the rotation is identity, so the pivot flipping sides there moves nothing.
+   *
+   * Both arrows therefore raise it: one brings the far edge up (the face turns toward you), the
+   * other the near edge (it tips over toward you). That is what lifting a flat decoration off a cake
+   * with a palette knife actually does. */
+  const flatHalfZ = seatHalf ?? STICKER_SIZE / 2;
+  const flatHalfX = glbHalfW ?? seatHalf ?? STICKER_SIZE / 2;
+  const flatLeanX = sticker.tiltAngle ?? 0;
+  const flatLeanZ = sticker.rollAngle ?? 0;
+  const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
+  const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
     <group position={[sticker.x, py, sticker.z]} scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
           capability that draws something absurd in a pose nobody checked is how this class of bug
-          arrives. */}
+          arrives. It is OUTSIDE the lean below for that same reason. */}
       {wire && <ElementWire wire={wire} />}
-      <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
-        {innerContent(onDown)}
+      <group position={[flatPivotX, 0, flatPivotZ]}>
+        <group rotation={[flatLeanX, 0, flatLeanZ]}>
+          <group position={[-flatPivotX, 0, -flatPivotZ]}>
+            <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
+              {innerContent(onDown)}
+            </group>
+          </group>
+        </group>
       </group>
     </group>
   );
