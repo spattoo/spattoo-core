@@ -452,14 +452,30 @@ function isWallZone(zone) {
 
 // ── How far an element may lean ─────────────────────────────────────────────────────────────────
 // Two axes, one limit: `tiltAngle` tips an element front/back and `rollAngle` tips it left/right (on
-// a wall, that second one spins it in the plane of the wall — a jersey sitting diagonally). ±1.2 rad
-// is about 69°; past that an element reads as fallen over rather than leaning, and its base starts to
-// lift out of the seat its base-pivot holds it in.
+// a wall, that second one spins it in the plane of the wall — a jersey sitting diagonally). ±70°; past
+// that an element reads as fallen over rather than leaning, and its base starts to lift out of the
+// seat its base-pivot holds it in.
 //
 // Here rather than beside the toolbar because it is a rule about placement, not about a button: the
 // popup control and the chooser's TiltRow both nudge through it, so they cannot drift to different
 // limits.
-export const LEAN_LIMIT = 1.2;
+//
+// ⚠️ THE STEP IS A DECISION TOO, AND FOR A LONG TIME IT WAS NOT ONE. The limit above was reasoned
+// about and written down; the amount ONE TAP moves was a bare `0.1` typed four times in
+// CakeDesigner's arrow row, with no name and no comment. 0.1 rad is 5.7°, so reaching the limit took
+// TWELVE taps and crossing the whole range took twenty-four — on a phone, with the cake half hidden
+// behind the card. Sandeep, told the arrows stepped by 6°: *"why are we only allowing 6 degrees
+// change? why limiting it?"* They were not limiting the range; they were rationing it.
+//
+// Both numbers are kept in DEGREES, because degrees are what the readout beside the arrows shows.
+// 10° a tap into a 70° limit means seven taps to the end and a readout that counts 10, 20, 30 — a
+// number nobody has to interpret. Rounded to 3dp to match what clampLean stores.
+export const LEAN_LIMIT_DEG = 70;
+export const LEAN_STEP_DEG  = 10;
+// DEG_TO_RAD, not a second copy of π/180 — it is already the one conversion this file uses.
+const leanRad = deg => +(deg * DEG_TO_RAD).toFixed(3);
+export const LEAN_LIMIT = leanRad(LEAN_LIMIT_DEG);
+export const LEAN_STEP  = leanRad(LEAN_STEP_DEG);
 export function clampLean(value) {
   return Math.max(-LEAN_LIMIT, Math.min(LEAN_LIMIT, +((value ?? 0)).toFixed(3)));
 }

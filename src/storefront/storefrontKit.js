@@ -165,7 +165,8 @@ export const SERIF = "'Cormorant Garamond', Georgia, serif"; // elegant serif fo
 export const STOREFRONT_TEXT = {
   hero_tagline:      'You design, we bake it',
   hero_subtitle:     'Custom cakes for birthdays, weddings and every sweet occasion — designed by you, baked fresh to order.',
-  creations_heading: 'Our creations',
+  // `creations_heading` retired with the section it titled (2026-09-28). A baker who had edited it
+  // keeps the string on their record harmlessly; nothing reads it.
   story_heading:     'Our story',
   reviews_heading:   'Loved by our customers',
   highlight_heading: 'This week',
@@ -196,11 +197,21 @@ export function applyFontTheme(tokens, fontKey) {
 // storefront_customizations.sections). Hero + footer are always present and not in this list.
 // Absence → DEFAULT_SECTIONS, so already-published bakers render exactly as before (back-compat).
 // A section object is { type, enabled, ...content } — content lives inline so a type can repeat.
-export const SECTION_TYPES = ['gallery', 'highlight', 'story', 'reviews'];
+/* ⚠️ `gallery` IS GONE (2026-09-28) — the "Our creations" section is retired, not hidden.
+   Sandeep: "i am planning to remove the 'our creations' section. let only 'lets make your cake' be
+   highlighted on the screen. having only a few photos dilutes it… having a few here and more inside
+   the 'lets make your cake'. lets keep it clean."
+   A photo here was never orderable — it carried no template, so there was no path from it to an
+   order — while the catalogue behind "Let's make your cake" is the same pictures, orderable, and
+   already curated. A second curated list whose best outcome was to be a worse door into the first
+   one earned neither the baker's upkeep nor the space above the fold.
+   ⚠️ DROPPING THE TYPE IS ALSO THE MIGRATION. `resolveSections` keeps only known types, so a
+   baker's saved section list sheds its `gallery` entry on read — no DB change, and no stored order
+   to clean up. Re-adding the string here would bring the section back for everyone who ever had it. */
+export const SECTION_TYPES = ['highlight', 'story', 'reviews'];
 // Singleton sections present by default. `highlight` is REPEATABLE and add-only (bakers add one or
 // more via the customiser), so it's not in the defaults — a fresh storefront has no highlight.
 export const DEFAULT_SECTIONS = [
-  { type: 'gallery', enabled: true },
   { type: 'story',   enabled: true },
   { type: 'reviews', enabled: true },
 ];

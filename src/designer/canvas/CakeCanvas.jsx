@@ -15,7 +15,7 @@ import CakeTier from './CakeTier';
 import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
-import { wireFor, wireLift } from '../geometry/elementWire.js';
+import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
 import AcrylicWriting from './AcrylicWriting.jsx';
 import AgeNumber from './AgeNumber.jsx';
@@ -1906,7 +1906,19 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // `radialOffset` is the customer's "Depth" nudge — still an absolute world value on top (see #8 TODO).
   // Insert sinks the base into the wall by `depth` of its size (fraction of the live sticker size — #8).
   const insertSink = isInsert ? insertDepthFrac * STICKER_SIZE * effScale : 0;
-  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink;
+  /* ⚠️ THE WIRE PUSHES THE PIECE OFF THE WALL, exactly as it lifts one off the top — the same
+     `len - buried`, just along the wall's normal instead of up. Without this the butterfly sits
+     flat against the icing with a stem drawn behind it, which reads as a printed shadow.
+     Sandeep: *"When the butterfly is on the side of the cake, wire is not applying."* */
+  const wire = sticker.wire?.on ? wireFor(vext?.box, sticker.wire, null, { axis: 'out' }) : null;
+  const off    = sideSeatOffset(radius) + pipingClear + (sticker.radialOffset ?? 0) - insertSink
+               + wireStandoff(wire) * effScale;
+  /* ⚠️ AND IT LIFTS THE PIECE AS WELL AS PUSHING IT OUT, because a wall wire climbs. While the axis
+     ran dead horizontal the standoff was the whole story and this line did not exist; the moment the
+     wire rose, leaving it out meant the stem went up and the butterfly stayed where it was, hanging
+     off the middle of its own wire. `wireLift` already answered per axis — the vector was there
+     before there was a caller that needed it. */
+  const wireUp = wireLift(wire) * effScale;
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
   let cx, cz, yaw, curveRadius;
@@ -1947,13 +1959,19 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
 
   return (
     <group
-      position={[cx, posY, cz]}
+      position={[cx, posY + wireUp, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
       {/* Both lean axes. X leans the pick up (+) or down (−) along the cake side; Z rolls it in the
           PLANE of the wall, which is how a jersey ends up sitting diagonally — the one thing the wall
           had no control for at all. One Euler, so a combined lean is a single predictable rotation. */}
+      {/* ⚠️ OUTSIDE THE LEAN, for the reason the top surface learned the hard way: the stem stands in
+          the icing and the decoration sits on it, so leaning the butterfly must not swing the buried
+          end out of the wall. There it tore the wire across the board; here it would pull it out of
+          the cake sideways. Same rule, same place in the tree — the group that carries only where
+          the piece was put. */}
+      {wire && <ElementWire wire={wire} />}
       <group rotation={[sticker.tiltAngle ?? 0, 0, sticker.rollAngle ?? 0]}>
       <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
@@ -2138,7 +2156,13 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
      icing", so an element carrying both would be drawn on two supports at once. The wire wins when
      it is on, because it is the more specific statement — a row authors a wire deliberately, where
      a stick is the general default. */
-  const wire = sticker.wire?.on ? wireFor(artBox, sticker.wire, null) : null;
+  /* ⚠️ THE RIM GETS ITS OWN AXIS. A verge piece reclines OUT over the lip, so a vertical stem drops
+     past the cake and runs down the outside of the wall for its whole length — which is what it did.
+     `lip` leans it back into the top surface. Perch straddles the edge rather than clearing it, so
+     it keeps the plain vertical drop. */
+  const wire = sticker.wire?.on
+    ? wireFor(artBox, sticker.wire, null, { axis: isVerge ? 'lip' : 'down' })
+    : null;
   const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
   const py = topY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
@@ -2341,7 +2365,17 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     // Insert keeps just its own Y-spin (the baked per-instance fan) — no radial auto-face.
     const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
     const yaw   = radialYaw + (sticker.rotation ?? 0);
-    const tiltX = (isVerge || isInsert) ? (sticker.tiltAngle ?? 0) : -(sticker.tiltAngle ?? 0);
+    /* ⚠️ ONE SIGN FOR EVERY POSE NOW, AND THE STAND USED TO INVERT IT. With `-tiltAngle` here, the
+       up arrow laid a butterfly FLAT and the down arrow stood it up — measured, ↑ held to the limit
+       left 64 lit pixels against 682 at centre. Sandeep, pressing arrows that seemed dead: *"arrows
+       are not working. nothing happening."* They worked; they worked backwards, and the half of the
+       range that did most was behind the arrow nobody presses for that.
+       Verge and insert were already on the un-negated sign and already read correctly, so this is
+       the stand joining them rather than a new convention. ↑ now stands a piece up, ↓ lays it down.
+       ⚠️ EXISTING DESIGNS CARRY THE OLD SENSE, so a stand sticker saved before this leans the other
+       way. scripts/migrate-tilt-sign.mjs negates `tiltAngle` on exactly those — never on verge or
+       insert, which did not move. */
+    const tiltX = (sticker.tiltAngle ?? 0);
     // Left/right lean. It rides INSIDE the base-pivot groups below with tiltX, deliberately: the
     // pivot translates down by seatLift, rotates, translates back, so the element leans about the
     // point where it touches the cake. Rolled outside that, a leaning figure swings a foot into the
@@ -2380,21 +2414,68 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
 
             Drawn before `inner` so the artwork still covers the tuck. */}
         {wire && <ElementWire wire={wire} />}
-        {(isGlb2d || isVerge || isInsert) ? inner : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
+        {/* ⚠️ `sticker.billboard === false` IS AN ELEMENT SAYING IT KEEPS ITS OWN FACING, and it
+            joins three poses that already opted out for the same reason.
+ 
+            ⚠️ AND IT DOES NOT AFFECT Tilt OR Spin, WHICH I FIRST WROTE THAT IT DID. `lockX` and
+            `lockZ` are both true, so this billboard applies YAW ONLY and every other rotation
+            composes on top of it — measured by sweeping spin with the flag on and off and getting
+            identical frames. What it changes is the RESTING facing: turn the cake and a billboarded
+            butterfly swivels to keep looking at you, where the reference photographs show a swarm
+            facing every which way. At the default camera angle the two coincide exactly, which is
+            why a fixed-angle harness cannot tell them apart.
+ 
+            Config, never element type (INVARIANTS #1): placement_config.billboard. */}
+        {(isGlb2d || isVerge || isInsert || sticker.billboard === false)
+          ? inner
+          : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
     );
   }
-  // Flat mode (sticker laid horizontal on top surface)
+  /* ── Flat mode (sticker laid horizontal on top surface) ──────────────────────────────────────
+   *
+   * ⚠️ THE LEAN RIDES HERE TOO, AND FOR A LONG TIME IT DID NOT — which made the Tilt arrows DEAD on
+   * every element whose top_surface pose is `hug`. This return applied `rotation` (Spin) and nothing
+   * else, so `tiltAngle` and `rollAngle` were written, stored, shown in the readout, saved to the
+   * template and then dropped on the floor by the renderer.
+   *
+   * The catalogue Butterfly is exactly that element — `{"top_surface": "hug", "side": "stand"}` with
+   * `tilt: true` — so on the side the arrows worked and on the top they did nothing, which is what
+   * made it look like a build problem. Sandeep, three times: *"arrows are not working. nothing
+   * happening"*, *"arrow marks still not working"*, *"there is no change on the butterfly."*
+   * Measured on the real row: -70° and +70° produced frames identical to 0° down to the pixel.
+   *
+   * ⚠️ IT PIVOTS ON AN EDGE, NOT THE CENTRE, because a flat piece touches the icing with its whole
+   * face. Rotating about the centre puts half the artwork UNDER the surface — INVARIANTS #3b, and
+   * `clipY` would then eat the buried half rather than show it. The pivot is the edge the piece tips
+   * AWAY from, picked from the sign of the lean, so either arrow lifts it rather than burying it.
+   * At zero the rotation is identity, so the pivot flipping sides there moves nothing.
+   *
+   * Both arrows therefore raise it: one brings the far edge up (the face turns toward you), the
+   * other the near edge (it tips over toward you). That is what lifting a flat decoration off a cake
+   * with a palette knife actually does. */
+  const flatHalfZ = seatHalf ?? STICKER_SIZE / 2;
+  const flatHalfX = glbHalfW ?? seatHalf ?? STICKER_SIZE / 2;
+  const flatLeanX = sticker.tiltAngle ?? 0;
+  const flatLeanZ = sticker.rollAngle ?? 0;
+  const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
+  const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
     <group position={[sticker.x, py, sticker.z]} scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
           capability that draws something absurd in a pose nobody checked is how this class of bug
-          arrives. */}
+          arrives. It is OUTSIDE the lean below for that same reason. */}
       {wire && <ElementWire wire={wire} />}
-      <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
-        {innerContent(onDown)}
+      <group position={[flatPivotX, 0, flatPivotZ]}>
+        <group rotation={[flatLeanX, 0, flatLeanZ]}>
+          <group position={[-flatPivotX, 0, -flatPivotZ]}>
+            <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
+              {innerContent(onDown)}
+            </group>
+          </group>
+        </group>
       </group>
     </group>
   );
@@ -3150,6 +3231,7 @@ function CakeContent({ config, scene, edit = null }) {
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
+            topCavity={tier.topCavity ?? null} topSpiral={tier.topSpiral ?? null}
             highlightPipingId={highlightPipingId}
             pipingMovable={isPipingMovable}
             onPipingLayerHeight={onPipingLayerHeight ? (layerId, wallY) => onPipingLayerHeight(i, layerId, wallY) : null}

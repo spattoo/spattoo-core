@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { mulberry32 } from '../utils/random.js';
+import { mulberry32, ringNoise } from '../utils/random.js';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Second cream layer — a second buttercream "skin" applied over part of a cake
@@ -66,19 +66,11 @@ export function sampleProfile(edge, n, noise = 0, seed = 1) {
     }
   }
   if (noise > 0) {
-    // Coherent value-noise: a ring of K random control points, smoothstep-blended,
-    // so the edge looks torn (continuous) rather than spiky (per-vertex random).
-    const K = 48;
-    const rnd = mulberry32(seed >>> 0);
-    const ctrl = Array.from({ length: K }, () => rnd() * 2 - 1);
-    for (let i = 0; i < n; i++) {
-      const t = (i / n) * K;
-      const i0 = Math.floor(t) % K;
-      const i1 = (i0 + 1) % K;
-      const f = t - Math.floor(t);
-      const s = f * f * (3 - 2 * f);
-      out[i] = clamp01(out[i] + (ctrl[i0] * (1 - s) + ctrl[i1] * s) * noise);
-    }
+    /* Coherent value-noise so the edge looks torn (continuous) rather than spiky (per-vertex
+       random). Lifted to utils/random.js when the dished top needed the same kernel — same K, same
+       seed, same blend, so every existing band jitters exactly as it did. */
+    const jitter = ringNoise(n, 48, seed);
+    for (let i = 0; i < n; i++) out[i] = clamp01(out[i] + jitter[i] * noise);
   }
   return out;
 }

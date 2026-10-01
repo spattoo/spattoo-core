@@ -190,8 +190,18 @@ CAT_ELEMENTS.push({
   element_type_id: 'et-scatter', category_id: 'cat-1',
   image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#d8b7c8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
-  // `scatter: true` is what routes a drop through placeScatter; `r` is the per-instance size.
-  placement_config: { scatter: true, r: 0.45, top_surface: 'lay', side: 'hug' },
+  /* `scatter: true` is what routes a drop through placeScatter; `r` is the per-instance size.
+     ⚠️ `scatter_big` AND `scale` ARE BOTH DELIBERATE. 2.6 is not the code default (2.4), so a
+     harness that shows 2.6 proves the CONFIG is being read rather than the fallback. And
+     `scale.max: 1.0` makes the clamp actually bite: 0.45 × 2.6 = 1.17, so a big one comes out at
+     1.0, not 1.17. Without a tight max the clamp would be a line nothing ever exercised. */
+  /* ⚠️ `scatter_mix` IS DELIBERATELY NOT THE CODE DEFAULT either — four colours, not six, and none
+     of them the seeded set. A harness showing THESE four proves the element row is being read
+     rather than the fallback, exactly as 2.6 does for `scatter_big` above. */
+  placement_config: { scatter: true, r: 0.45, scatter_big: 2.6,
+                      scale: { min: 0.15, max: 1.0, step: 0.05 },
+                      scatter_mix: ['#1B9AAA', '#EF476F', '#FFC43D', '#06D6A0'],
+                      top_surface: 'lay', side: 'hug' },
   allowed_actions: { move: true, color: true, delete: true, resize: true },
   default_color: '#C86B8A', sort_order: 10,
 });
@@ -242,7 +252,13 @@ CAT_ELEMENTS.push({
   /* The row authors where each dial STARTS; the card moves it from there. Same arrangement as `r`
      for size and `fold` for the fold angle — see geometry/elementWire.js for what each one does. */
   placement_config: {
-    r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'stand', side: 'hug',
+    /* ⚠️ THESE TWO POSES ARE COPIED FROM THE REAL CATALOGUE ROW, and they used to be the other way
+       round. The live Butterfly is `{"top_surface": "hug", "side": "stand"}`; this fixture said
+       stand-on-top, which is the ONE difference that mattered — the Tilt arrows were measured
+       working here three times while Sandeep watched them do nothing, because `hug` renders through
+       the Flat path and the Flat path dropped the lean. A fixture that does not match the row it
+       stands in for proves the wrong thing, confidently. */
+    r: 1.1, scale: { min: 0.5, max: 2.5, step: 0.05 }, top_surface: 'hug', side: 'stand',
     foldable: true, fold: 34,
     wire: { length: 6, bend: 0.35, sweep: 35 },
   },
@@ -308,7 +324,13 @@ CAT_ELEMENTS.push({
   image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
   allowed_actions: { color: true, delete: true, resize: true },
-  placement_config: { r: 1, bottom_y_adjustable: true },
+  /* ⚠️ `hand_piping` IS WHAT PUTS THIS PIECE IN THE CREAM PATTERN STUDIO, and no fixture carried
+     it before — so the studio's thumbnail grid could only ever render its empty state here, and
+     the one thing worth looking at was unreachable. Ticked on THIS row because it is the only
+     cream_piping fixture whose image_url is a real GLB: the studio stamps that mesh, and a
+     data-URI would hand an SVG to the GLB loader (see the note above). The flag is the admin's
+     per-element judgement that a piece survives being repeated; the pen's own door reads it too. */
+  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true },
   default_color: '#F5E6C8', sort_order: 16,
 });
 
@@ -436,6 +458,31 @@ CAT_ELEMENTS.push({
   allowed_actions: { move: true, delete: true, resize: true },
   placement_config: { procedural: 'card_topper' },
   default_color: '#D94F6E', sort_order: 9,
+});
+
+/* ⚠️ THE CREAM PATTERN STUDIO'S OWN ROW. `cream_pattern` is the VALUE of `procedural`, not a nested
+ * key — the same trap the dust, grass and pen rows name, and PROCEDURAL_TOOLS is keyed by
+ * `placement_config.procedural`. An `opensStudio` entry, so tapping it must REPLACE the screen
+ * rather than put anything on the cake; a fixture is the only way to reach that from here, since
+ * __placeElementById goes through handleElementDrop and never consults the table. */
+CAT_ELEMENTS.push({
+  /* ⚠️ `e30`, BECAUSE `e28` IS ALREADY TAKEN — by "Fondant crown hero" further down this file, and
+   * the catalogue merges by id so the LATER row wins. Written as e28 first, and the symptom was not
+   * an error: tapping the row put a sticker on the cake instead of opening the studio, because the
+   * row the designer actually held was the crown — an ordinary single-per-slot element behaving
+   * exactly as it should. The tool table was never consulted because the `procedural` key was not
+   * on the row it looked at.
+   *
+   * ⚠️ AND THIS FILE ALREADY HAS DUPLICATES: `e8` at two places and `e27` at two more. Whichever of
+   * each pair sits later is the one that exists, and the earlier one is dead weight that reads as
+   * live. Not fixed here — it is the other session's file too — but any new row must check first. */
+  id: 'e30', name: 'Cream pattern studio', description: 'pipe a block, then repeat it',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#f3d7e2'), thumbnail_url: CAT_THUMB('#f3d7e2'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, delete: true, resize: true, color: true },
+  placement_config: { procedural: 'cream_pattern' },
+  default_color: '#E85A9B', sort_order: 11,
 });
 
 /* ⚠️ A LETTER-BLOCKS ROW — the last card this harness could not open. Routed by `letter_blocks` as
@@ -665,14 +712,41 @@ const STUBS = {
    *
    * allowed_zones includes `board`; allowed_actions has resize TRUE and tilt FALSE. The panel showed
    * the opposite of both. Only a placed element can settle why. */
-  fetchElementTypes:   async () => (PARAMS.has('catalog') ? CAT_TYPES : PARAMS.has('football') ? [{
+  fetchElementTypes:   async () => (PARAMS.has('cream') ? [{
+    id: 'et-cream', slug: 'cream_layer', name: 'Cream layer', sort_order: 0,
+    placement_rules: { zones: ['side'], per_tier: true, max_per_zone: 4, top_tier_only: false, requires_frosting: true },
+    default_allowed_actions: { move: false, color: true, style: false, delete: true, resize: false, duplicate: false },
+  }] : PARAMS.has('catalog') ? CAT_TYPES : PARAMS.has('football') ? [{
     id: 'et-topper', slug: 'topper', name: 'Cake Topper', sort_order: 0,
     placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 1, top_tier_only: true, requires_frosting: false },
     default_allowed_actions: { move: true, color: true, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
   }] : []),
-  fetchElementCategories: async () => ((PARAMS.has('football') || PARAMS.has('catalog'))
+  fetchElementCategories: async () => (PARAMS.has('cream')
+    ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
+    : (PARAMS.has('football') || PARAMS.has('catalog'))
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
-  fetchElements:       async () => (PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
+  /* ⚠️ `?cream=1` — THE CREAM LAYER ELEMENT, because an empty catalogue hides a feature rather than
+   * breaking it, and that is the worse failure. The tier panel's "Cream layer" row is guarded on
+   * `creamElement` (found by scanning loaded elements for `placement_config.second_cream`), so with
+   * `fetchElements` returning [] the row is correctly absent — and a verification script then
+   * "passes" its round-tier AND square-tier cases for the same wrong reason. That happened, on
+   * 2026-09-29, to the script written to prove the round/square gate; the rect result was worthless
+   * and would have been reported as evidence.
+   *
+   * ⚠️ THE CONFIG MIRRORS THE KEYS THE CODE READS, not a row copied from production — `second_cream`
+   * lives only in the dev database (no migration or API source defines it). `addCreamToTier` seeds
+   * `lift`/`noise`/`height`/`fill_side` and the card reads `height_range`; anything absent falls back
+   * to SECOND_CREAM_DEFAULTS, which is the point of seeding only what the admin authored. */
+  fetchElements:       async () => (PARAMS.has('cream') ? [{
+    id: 'cream-el-1', name: 'Cream layer',
+    image_url: null, thumbnail_url: null, thumb_key: null,
+    element_type_id: 'et-cream', category_id: 'cat-finishes',
+    allowed_zones: ['side'],
+    allowed_actions: { move: false, color: true, delete: true, resize: false, duplicate: false },
+    placement_config: { second_cream: { lift: 0.04, noise: 0.05, fill_side: 'below', height: 0.5,
+                                        height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
+    default_color: '#D98BA6', sort_order: 0,
+  }] : PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,
@@ -846,7 +920,11 @@ const shapeTier = SHAPE === 'rect' ? { shape: 'rect', width: 2.4, depth: 1.8 }
 const styledDesign = STYLE_KEY ? {
   tiers: [{
     color: '#F1EEDC', height: 1.45, ...shapeTier,
-    frostingType: 'buttercream', frostingStyle: STYLE_KEY,
+    /* ⚠️ `?frosting=` — so the LONGEST tab note is reachable. The tab strip now prints the tier's
+       frosting under the label, and "Chocolate Glaze" is 15 characters in an 85px grid cell whose
+       note span has no overflow guard. Hardcoded to buttercream, this harness could only ever show
+       the shortest-but-one value, so the one case that can actually spill was untestable. */
+    frostingType: PARAMS.get('frosting') || 'buttercream', frostingStyle: STYLE_KEY,
   }],
 } : null;
 

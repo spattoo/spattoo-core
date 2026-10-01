@@ -82,7 +82,6 @@ export default function CustomerStorefront({
   baker: bakerProp = null,
   inviteId = null,
   logoUrl = null,
-  gallery: galleryProp = null,
   apiBaseUrl = '',
   supabase = null,
   captchaSiteKey = null,   // host-injected Turnstile site key (core reads no env); null → no-op
@@ -152,7 +151,6 @@ export default function CustomerStorefront({
   const [howOpen, setHowOpen]     = useState(false);
   const [tIdx, setTIdx]           = useState(0);
   const [bp, rootRef, viewportH] = useContainerBreakpoint();
-  const galRef = useRef(null);   // "Our creations" scroll row (hook must precede any early return)
 
   useEffect(() => {
     let alive = true;
@@ -401,7 +399,6 @@ export default function CustomerStorefront({
     .sf-navlink:hover { opacity: .68; }
     .sf-arrow { transition: transform .15s ease, background .15s ease; }
     .sf-arrow:hover { background: ${pal.bandSoftA}; transform: translateY(-50%) scale(1.08); }
-    .sf-gallery::-webkit-scrollbar { display: none; }
   `;
   const pageBg = tokens.pageBgMode === 'heroTop' ? pal.heroTop : tokens.pageBg;   // aurora: derived cream top; else the token — which `withGround` may already have replaced. (exposed for inline SVG fills)
   const { steps } = buildContent(baker);
@@ -438,8 +435,15 @@ export default function CustomerStorefront({
   const portrait = baker.portrait_url || null;   // a real baker photo; placeholder glyph otherwise
   const websiteHref = safeHref(baker.website_url);   // SEC-16 — https/http only; null → no link rendered
 
+  /* ⚠️ NO "Gallery" ENTRY, AND NOTHING LEFT TO POINT AT. Removed 2026-09-28 — Sandeep: "from the 3
+     line menu, remove gallery. for all templates", and then the section itself: "i am planning to
+     remove the 'our creations' section. let only 'lets make your cake' be highlighted on the
+     screen."
+     This array is the ONLY nav in the repo, so one deletion covered all five templates (Standard,
+     Aurora, Atelier, Ink, Patisserie) — there is no per-template nav to chase. The link had never
+     named its own destination either: it read "Gallery" and scrolled to a heading the customer read
+     as "Our creations". */
   const nav = [
-    { label: 'Gallery', href: '#gallery' },
     { label: 'Our story', href: '#story' },
     { label: 'How it works', action: () => setHowOpen(true) },
     { label: 'Contact', href: '#contact' },
@@ -448,22 +452,15 @@ export default function CustomerStorefront({
   const t = testimonials[tIdx % (testimonials.length || 1)];
   const move = d => setTIdx(i => (i + d + testimonials.length) % testimonials.length);
 
-  // Gallery photos uploaded by the baker (baker.gallery); empty → graceful fallback below.
-  const gallery = (galleryProp?.length ? galleryProp : baker.gallery) || [];
-  const hasPhotos = gallery.length > 0;
-  // "Our creations": 3 visible, horizontal-scroll with arrows once there are more than 3.
-  const galScroll = dir => {
-    const el = galRef.current;
-    if (!el) return;
-    const first = el.firstElementChild;
-    const step = first ? first.getBoundingClientRect().width + (bp === 'mobile' ? 8 : 14) : el.clientWidth / 3;
-    el.scrollBy({ left: dir * step, behavior: 'smooth' });
-  };
-
   // Hero: the branded curve/split hero (with the live 3D cake) is ALWAYS the default — it needs no
   // photos, so it holds up for a brand-new storefront too. FULL-BLEED only when the baker sets an
   // explicit wide/lifestyle hero image. (The old dark "designer" hero fallback was removed — it was
   // the thing that reappeared when a baker had no gallery photos.)
+  //
+  // ⚠️ AND IT IS NOW THE ONLY CAKE IMAGERY ABOVE THE FOLD, since "Our creations" was retired. A
+  // storefront with no hero image and no hero design shows the 3D cake and nothing else until the
+  // baker sets a Highlight — deliberate ("lets keep it clean"), but it makes the hero load-bearing
+  // in a way it was not while a photo strip sat under it.
   const heroImage = baker.storefront_customizations?.hero_image || null;   // baker-set wide/lifestyle hero photo
   // Baker-picked cake DESIGN shown AS the hero cake (a 2D thumbnail) — replaces the generic 3D cake in
   // the branded hero, keeping band/tagline/CTA. Distinct from hero_image (the full-bleed photo hero).
@@ -551,7 +548,7 @@ export default function CustomerStorefront({
 
       {/* Body = ordered, toggleable sections (storefront_customizations.sections). Wavy bands
           alternate tint/wave by their position among the wavy sections, so reorder/toggle stays
-          correct. Gallery lives on the plain white main; story/reviews/highlight ride wavy bands. */}
+          correct. Story, reviews and highlight ride wavy bands. */}
       {(() => {
         let bandIdx = 0;
         // Which EDGE this template's bands end in. A token, not a branch on theme name: the wave is
@@ -574,52 +571,10 @@ export default function CustomerStorefront({
         return sections.map((sec, i) => {
           if (!sec.enabled) return null;
           switch (sec.type) {
-            case 'gallery':
-              return (
-                <main key="gallery" style={s.main}>
-                  <Section id="gallery" eyebrow={txt('creations_heading')} s={s}>
-                    {hasPhotos && tokens.gallery === 'bleed' ? (
-                      /* Full-bleed grid: no card, no radius, no shadow, hairline gaps, captions in
-                         small caps underneath. The gallery is the largest block on the page, and
-                         while every theme renders it as the same white-card carousel, every theme
-                         looks the same below the hero however different the hero is. Breaking the
-                         images out of the content column is the single biggest change available. */
-                      <div style={s.gBleed}>
-                        {gallery.map((g, gi) => (
-                          <figure key={gi} style={s.gBleedItem}>
-                            <img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gBleedImg} />
-                            {g.caption && <figcaption style={s.gBleedCap}>{g.caption}</figcaption>}
-                          </figure>
-                        ))}
-                      </div>
-                    ) : hasPhotos ? (
-                      // 3 visible at a time; horizontal-scroll with arrows once there are more than 3.
-                      <div style={s.galleryWrap}>
-                        {gallery.length > 3 && <button type="button" aria-label="Previous" className="sf-arrow" style={{ ...s.arrow, ...s.arrowL }} onClick={() => galScroll(-1)}>‹</button>}
-                        <div ref={galRef} className="sf-gallery" style={s.galleryScroll}>
-                          {gallery.map((g, gi) => (
-                            <figure key={gi} style={s.galleryItem}>
-                              <div style={s.gGridCard}><img src={g.url || g} alt={g.caption || `${baker.name} cake`} style={s.gImg} /></div>
-                              {g.caption && <figcaption style={s.gGridCap}>{g.caption}</figcaption>}
-                            </figure>
-                          ))}
-                        </div>
-                        {gallery.length > 3 && <button type="button" aria-label="Next" className="sf-arrow" style={{ ...s.arrow, ...s.arrowR }} onClick={() => galScroll(1)}>›</button>}
-                      </div>
-                    ) : (
-                      <div style={{ ...s.gFallback, background: `linear-gradient(135deg, ${lighten(primary, 0.42)}, ${lighten(accent, 0.16)})` }}>
-                        <CakeIcon size={52} color={alpha('#ffffff', 0.8)} />
-                        <div style={s.gFallbackText}>Fresh photos coming soon</div>
-                        <button type="button" className="sf-cta" disabled={notAcceptingOrders}
-                          style={{ ...s.gFallbackCta, ...(notAcceptingOrders ? { opacity: 0.55, cursor: 'not-allowed' } : {}) }}
-                          onClick={handleCta}>
-                          {notAcceptingOrders ? 'Not taking new orders' : 'Design your own'}
-                        </button>
-                      </div>
-                    )}
-                  </Section>
-                </main>
-              );
+            /* ⚠️ THERE IS NO `case 'gallery'`. "Our creations" was retired 2026-09-28 — see
+               SECTION_TYPES in storefrontKit.js for why. `resolveSections` can no longer yield the
+               type at all, so this switch never sees it; a re-added case here would be unreachable
+               without re-adding the type there too. */
             case 'highlight': {
               // Baker-set featured item ("this week's special"). Rendered only when it has content.
               if (!(sec.title || sec.blurb || sec.image)) return null;
@@ -771,17 +726,7 @@ function BakerIcon({ size = 56, color = '#9b5f72', style }) {
     </svg>
   );
 }
-function CakeIcon({ size = 42, color = '#9b5f72', style }) {
-  return (
-    <svg viewBox="0 0 48 48" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
-      <path d="M9 42V28a4 4 0 0 1 4-4h22a4 4 0 0 1 4 4v14" />
-      <path d="M7 42h34" />
-      <path d="M9 32c2.3 0 2.3 2.4 4.6 2.4S15.9 32 18.2 32s2.3 2.4 4.6 2.4S25.1 32 27.4 32s2.3 2.4 4.6 2.4S34.3 32 36.6 32 39 34.4 41 34.4" />
-      <path d="M24 24v-6" />
-      <circle cx="24" cy="14" r="1.8" />
-    </svg>
-  );
-}
+// (CakeIcon retired with the empty-gallery panel it drew — 2026-09-28. It had exactly one caller.)
 function CameraIcon({ size = 16, color = '#fff', style }) {
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={style}>
@@ -825,7 +770,7 @@ function Section({ id, eyebrow, title, s, children }) {
 
 // ── Invite welcome ──────────────────────────────────────────────────────────────
 // The first thing an invited customer sees. Blurs the storefront and orients them,
-// then OK closes it so they can browse the baker's story + gallery before designing
+// then OK closes it so they can browse the baker's story before designing
 // (the sticky "Start designing" CTA is always there when they're ready).
 function WelcomeModal({ bakerName, firstName, occasion, logo, primary, accent, pal, onClose }) {
   const m = welcomeStyles(primary, accent, pal);
@@ -1202,9 +1147,10 @@ function atelierHero({ s, txt, expired, baker, notAcceptingOrders, designLabel, 
       </div>
       <div style={s.atBelow}>
         <div style={s.atCol}>
-          {/* No kicker. There was one, set to the gallery's own heading — which then printed "OUR
-              CREATIONS" twice, a block apart, because that string is already the next section's
-              label. A running head that repeats the thing below it is not a running head. */}
+          {/* No kicker. There was one, set to the storefront's "Our creations" heading — which then
+              printed that string twice, a block apart, because it was already the next section's
+              own label. A running head that repeats the thing below it is not a running head. (The
+              section itself was retired in 2026-09-28; the rule it taught outlives it.) */}
           <h1 style={s.atTitle}>{txt('hero_tagline')}</h1>
         </div>
         <div style={s.atCol}>
@@ -1514,30 +1460,10 @@ function styles(primary, accent, tk, bp = 'mobile', pal) {
     howTitle:    { fontFamily: SERIF, fontSize: 24, fontWeight: 600, color: heading, margin: '0 0 6px', textAlign: 'center' },
     howStep:     { display: 'flex', gap: 14, alignItems: 'flex-start' },
 
-    // Gallery slideshow
-    gSlide:      { aspectRatio: '4 / 3', borderRadius: rad(18), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
-    gImg:        { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
-    gCaption:    { fontSize: 14, fontWeight: 600, color: muted, marginTop: 14, textAlign: bodyAlign },
-    // Breaks OUT of the content column: 100vw pulled back by half the difference. The section's own
-    // padding still holds the captions in, so only the images go edge to edge.
-    gBleed:      { width: '100vw', marginLeft: 'calc(50% - 50vw)', display: 'grid',
-                   gridTemplateColumns: wide ? '1fr 1fr' : '1fr', gap: 2 },
-    gBleedItem:  { margin: 0, position: 'relative' },
-    gBleedImg:   { width: '100%', aspectRatio: wide ? '4 / 5' : '4 / 3', objectFit: 'cover', display: 'block' },
-    // Caps, tracked, tucked under the image on the left. A centred sentence-case caption is the
-    // house style everywhere else on the page; this is the same information set as a print credit.
-    gBleedCap:   { fontFamily: FONT, fontSize: 10.5, fontWeight: 700, letterSpacing: 1.6,
-                   textTransform: 'uppercase', color: muted, padding: '10px 16px 0' },
-    galleryWrap:   { position: 'relative', maxWidth: wide ? 760 : '100%', margin: '0 auto' },
-    galleryScroll: { display: 'flex', gap: wide ? 14 : 8, overflowX: 'auto', scrollSnapType: 'x mandatory', scrollbarWidth: 'none', width: '100%', paddingBottom: 2 },
-    galleryItem:   { flex: `0 0 calc((100% - ${wide ? 28 : 16}px) / 3)`, minWidth: 0, scrollSnapAlign: 'start', margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-    gGridFig:    { margin: 0, display: 'flex', flexDirection: 'column', gap: 8 },
-    gGridCard:   { aspectRatio: '4 / 3', borderRadius: rad(16), overflow: 'hidden', boxShadow: cardShadow, background: cardBg, border: flat ? 'none' : `1px solid ${cardBorder}` },
-    gGridCap:    { fontSize: 13, fontWeight: 600, color: muted, textAlign: bodyAlign },
-    gFallback:   { aspectRatio: '4 / 3', borderRadius: rad(18), boxShadow: cardShadow, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 14, color: '#fff', textAlign: 'center', padding: 20 },
-    gFallbackText:{ fontFamily: SERIF, fontSize: 22, fontWeight: 600, color: '#fff' },
-    gFallbackCta:{ padding: '11px 24px', borderRadius: 12, border: `1.5px solid ${alpha('#ffffff', 0.7)}`, background: alpha('#ffffff', 0.12), color: '#fff', fontSize: 14, fontWeight: 700, cursor: 'pointer', fontFamily: FONT, backdropFilter: 'blur(4px)' },
-
+    /* The gallery's own styles — gSlide, gImg, the gBleed set, the gGrid set, the gFallback set —
+       went with the section on 2026-09-28. ⚠️ `arrow`, `arrowL`, `arrowR` and the `.sf-arrow` rule
+       above did NOT: the testimonials carousel below uses all four, and deleting them by name
+       prefix would have taken the reviews carousel down silently. */
     carousel:    { position: 'relative' },
     testiCard:   { background: cardBg, border: flat ? `1px solid ${cardBorder}` : `1px solid ${cardBorder}`, boxShadow: cardShadow, borderRadius: rad(18), padding: '26px 46px', margin: 0, minHeight: 150, display: 'flex', flexDirection: 'column', justifyContent: 'center' },
     stars:       { color: accent, fontSize: 16, letterSpacing: 2, marginBottom: 12, textAlign: bodyAlign },

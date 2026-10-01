@@ -51,21 +51,66 @@ export const ELEMENT_WIRE_DEFAULTS = Object.freeze({
   length: 4.0,
   /* Multiplier on WIRE_GAUGE below.
 
-     ⚠️ 2.5, NOT 1, BECAUSE "TRUE TO LIFE" WAS THE WRONG TARGET. Real florist wire is meant to
-     disappear, and at 1 it duly did — Sandeep, looking at two butterflies on a cake: *"wire is
-     barely visible."* A stem a baker cannot see is a control they will believe is broken, and on a
-     phone at arm's length it is a couple of pixels. The render is not a photograph; it has to SAY
-     "there is a wire here" at the size the cake is actually looked at. */
-  thickness: 2.5,
-  /* How far the wire bows away from the straight line between its two ends, as a fraction of its
-     own length. Zero is a pin.
+     ⚠️ 1.1 NOW, AND IT WAS 2.5 — THE SAME PERSON OVERTURNING HIS OWN EARLIER CALL, WITH BETTER
+     EVIDENCE. 2.5 came from a cake carrying two butterflies, where a true-to-life stem did vanish:
+     *"wire is barely visible."* On a cake carrying SIX it is the opposite problem — a rope apiece,
+     and the stems compete with the butterflies they are there to hold up. Sandeep: *"default
+     thinkness should be 1.1."*
 
-     ⚠️ 0.35, and below about 0.2 a white rod simply reads as a skewer however long it is. The bow
-     is not decoration; it is the only thing that says "wire" rather than "pin". */
-  bend: 0.35,
+     ⚠️ SO THE OLD NOTE WAS NOT WRONG, ITS SAMPLE WAS. "Barely visible" and "too heavy" are both
+     true readings of the same number at different counts, and a default has to serve the busy cake,
+     because that is the one where a wrong default is hardest to undo by hand. The dial still reaches
+     2.5 for a lone butterfly that needs it. */
+  thickness: 1.1,
+  /* How far the wire bows away from the straight line between its two ends, as a fraction of its
+     own length. Zero is a straight stem.
+
+     ⚠️ 0, AND IT WAS 0.35 — A DELIBERATE CHOICE THAT THE ANGLE CONTROL OVERTURNED. The old note
+     said a straight rod "reads as a skewer, not a wire", and on the cake TOP, where a stem is a
+     short vertical line, that was true. On a WALL it is not: a bow of 0.35 over two kinks is an
+     S-curl, and once the piece can be pushed in at a chosen angle the curl is the only thing the
+     eye reads — the stem no longer points anywhere. Sandeep, with a butterfly on the side at 65°:
+     *"it should be directly inserting — straight line first. then twisting should be the user
+     choice. in this case, i cant make it stand with angle."*
+
+     ⚠️ SO THE BOW BECOMES OPT-IN, WHICH IS ALSO THE RIGHT ORDER. A baker places a piece, sees it
+     go in where they meant, and then bends the wire if they want it bent. A default that arrives
+     pre-curled makes the first thing they see the hardest to reason about, and hides the two
+     controls — Angle and Long — that decide where the piece actually sits. Bend, Kinks and Twist
+     are all still there, one dial away, and they do exactly what they did before. */
+  bend: 0,
   /* WHICH WAY it bows, in degrees around the cake's axis. Not a tilt — see `wireFor`. Varying this
      between pieces is what stops a swarm of butterflies looking like a row of pins. */
   sweep: 35,
+  /* How steeply a WALL wire climbs out of the icing, in degrees above horizontal. Ignored on the top
+     surface and the rim, which have a direction of their own.
+     ⚠️ 45, AND 31 WAS TOO SHALLOW TO READ. The angle only gets to act on the part of the wire that
+     is outside the cake, and at the default burial that is half of it — so an angle that looks
+     reasonable as a number is a few pixels of rise on screen. Chosen against the render, not the
+     arithmetic. */
+  angle: 45,
+  /* ── How many bends, and how much the wire turns as it climbs ────────────────────────────────
+   *
+   * ⚠️ ONE BEND IS A HOOK, NOT A BENT WIRE. `sin(pi·t)` bows out and comes back — a C — which is
+   * what a wire looks like if you bend it once, deliberately, in the middle. Nobody bends florist
+   * wire that way. Sandeep: *"right now there is only one bending. we should also be twisting the
+   * wire. for example like a s shape etc. a slight zig zag is normal in cake decoration."*
+   *
+   * `waves` is the number of half-bends, so the same one line of arithmetic gives all of them:
+   *
+   *     1   a C — one bulge, the old shape
+   *     2   an S — out, back through the axis, out the other way
+   *     3   a zigzag
+   *
+   * ⚠️ AND `twist` IS THE OTHER HALF, WHICH A PLANAR CURVE CANNOT FAKE. Every bend above happens in
+   * ONE plane; real wire bent by hand wanders out of it, so the S you see from the front is a
+   * different S from the side. Turning the bow's plane as the wire climbs costs one term and is the
+   * difference between a drawn squiggle and something that looks bent by fingers.
+   *
+   * 2 and 25° rather than 1 and 0: an S with a little wander is what the reference photographs show,
+   * and a default nobody changes should look like the thing being copied. */
+  waves: 2,
+  twist: 25,
   /* How much of the wire is pushed into the cake. Shares the pick's default so a baker moving an
      element between the two does not find the depth has changed under them. */
   bury: ELEMENT_STICK_DEFAULTS.bury,
@@ -96,9 +141,39 @@ export const WIRE_GAUGE = 0.017;
  *  stem, and the tube starts to self-intersect at the tight end of the curve. */
 export const WIRE_BEND = Object.freeze({ min: 0, max: 0.5, step: 0.02 });
 
+/** How many half-bends the wire carries. Past four it reads as a spring rather than a stem, and the
+ *  tube starts to pinch where the curve doubles back on itself. */
+export const WIRE_WAVES = Object.freeze({ min: 1, max: 4, step: 1 });
+
+/** How far the bow's plane turns between the buried end and the tip, in degrees. A full turn makes
+ *  a corkscrew; a quarter of one is the wander a hand leaves. */
+export const WIRE_TWIST = Object.freeze({ min: 0, max: 180, step: 5 });
+
 /** The bow's direction, all the way round. A full circle so a baker can point it away from
  *  whatever it would otherwise cross. */
 export const WIRE_SWEEP = Object.freeze({ min: 0, max: 360, step: 15 });
+
+/** How steeply a WALL wire climbs as it leaves the icing, in degrees above horizontal.
+ *
+ * ⚠️ THIS WAS A CONSTANT AND IT SHOULD NOT HAVE BEEN. It started at 0 — dead horizontal, a flagpole
+ * — which Sandeep photographed: *"its inserting horizontally. thats not how its done."* Fixing it by
+ * hard-coding 31° then produced a picture he read as still horizontal, because at the default burial
+ * only half the wire is outside the cake and 31° over that short a run is a few pixels. *"can we
+ * have control for the angle with which it needs to be inserted."*
+ *
+ * ⚠️ THE FLOOR EXCLUDES THE LOOK THAT WAS REJECTED. 0 is the flagpole this replaced, so 20 is well
+ * clear of it.
+ *
+ * ⚠️ THE CEILING IS 88, AND I HAD GUESSED 75. The reasoning was that past 75 "the wire is diving
+ * into the wall and the piece reads as hung from a hook" — written at a desk, against no cake.
+ * Sandeep, with a cake of butterflies in front of him: *"we are allowing angle only till 75 degrees.
+ * we should allow till 88 degrees please."* A nearly-vertical stem is a real thing on a wall: the
+ * butterfly climbs straight up the side rather than standing out from it, which is half the
+ * reference photographs. 88 and not 90 because at 90 the stem is exactly vertical and the piece sits
+ * directly over its own entry hole, with the wire edge-on and invisible from the front.
+ *
+ * Meaningless on the top surface, where the wire runs straight down — see `frameFor`. */
+export const WIRE_ANGLE = Object.freeze({ min: 20, max: 88, step: 5 });
 
 const clamp = (v, { min, max }, fallback) =>
   (typeof v === 'number' && Number.isFinite(v) ? Math.max(min, Math.min(max, v)) : fallback);
@@ -118,9 +193,69 @@ export function elementWire(placementConfig, allowedActions) {
     thickness: clamp(cfg.thickness, STICK_SCALE, ELEMENT_WIRE_DEFAULTS.thickness),
     bend:      clamp(cfg.bend,      WIRE_BEND,   ELEMENT_WIRE_DEFAULTS.bend),
     sweep:     clamp(cfg.sweep,     WIRE_SWEEP,  ELEMENT_WIRE_DEFAULTS.sweep),
+    waves:     clamp(cfg.waves,     WIRE_WAVES,  ELEMENT_WIRE_DEFAULTS.waves),
+    twist:     clamp(cfg.twist,     WIRE_TWIST,  ELEMENT_WIRE_DEFAULTS.twist),
     bury:      clamp(cfg.bury,      { min: 0, max: 1 }, ELEMENT_WIRE_DEFAULTS.bury),
+    /* ⚠️ FORWARDED HERE OR AN ADMIN ROW CANNOT AUTHOR IT. This function is an allow-list, not a
+       spread: a key missing from it never reaches the designer however carefully it was typed into
+       placement_config, and the control silently falls back to the code default. toCanvasConfig ate
+       a whole feature that way earlier the same week. */
+    angle:     clamp(cfg.angle,     WIRE_ANGLE,  ELEMENT_WIRE_DEFAULTS.angle),
     finish:    typeof cfg.finish === 'string' ? cfg.finish : ELEMENT_WIRE_DEFAULTS.finish,
   };
+}
+
+/* ── Which way the wire runs, and the two directions its bow may use ────────────────────────────
+ *
+ * ⚠️ A WIRE IS NOT ALWAYS VERTICAL, WHICH THE FIRST VERSION ASSUMED THROUGHOUT. On the cake top it
+ * goes down into the icing; on the WALL it goes horizontally into it, and the piece floats out from
+ * the side rather than above. Sandeep: *"When the butterfly is on the side of the cake, wire is not
+ * applying. we should be able to insert from sidewise as well."*
+ *
+ * The shape is identical in both — same bow, same kinks, same twist — so only the FRAME differs:
+ * a direction to run in, and two perpendicular axes for the bow to swing through. Written as data
+ * rather than a branch, because a second copy of the curve is how the two drift apart.
+ *
+ *   down   the top surface. Runs from the piece's bottom edge into the icing; bows in the horizontal
+ *          plane, so `sweep` is a compass bearing.
+ *   out    a wall. Runs backwards into it from the piece's own plane; bows in the plane of the wall,
+ *          so `sweep` chooses between up-and-down and side-to-side.
+ *   lip    the rim. Runs down AND BACK, because a verge piece is cantilevered OUT over the edge —
+ *          straight down from there misses the cake entirely and the wire hangs on the outside of
+ *          the wall for its whole length. Leaning it back puts the buried end in the top surface
+ *          just inside the rim, which is where a decorator would actually push it.
+ *
+ * ⚠️ A LEAN IS RIGHT HERE AND WRONG ON THE TOP SURFACE, WHICH LOOKS LIKE AN INCONSISTENCY AND IS
+ * NOT. On the top the piece sits over its own anchor, so leaning the base moves it OFF the cake —
+ * that shipped once and hung a wire in mid-air beside the board. On the rim the piece is already
+ * past the edge, so leaning the base moves it BACK ON. Same change, opposite sign, because the two
+ * poses start on opposite sides of the cake's edge.
+ */
+/* The rim's lean: mostly down, somewhat out. The wall's equivalent is authored now (WIRE_ANGLE), so
+   this pair is the rim's alone. */
+const DIAG = Math.hypot(1, 0.6);
+const AXES = {
+  down: { dir: [0, -1, 0], u: [1, 0, 0], v: [0, 0, 1] },
+  lip:  { dir: [0, -1 / DIAG, -0.6 / DIAG], u: [1, 0, 0], v: [0, 0.6 / DIAG, -1 / DIAG] },
+};
+
+/**
+ * The frame a wire runs in: where it goes, and the two directions its bow can bow in.
+ *
+ * ⚠️ THE WALL FRAME IS COMPUTED, THE OTHER TWO ARE NOT, and that asymmetry is the feature. A wire
+ * leaving a wall can be pushed in at any angle a hand chooses and every reference shows a different
+ * one; a wire in the top surface goes straight down because that is the only way in. So `angle`
+ * drives `out` alone.
+ *
+ * `dir` runs from the piece toward the BURIED end, so it points down as well as in — the piece ends
+ * up above and outside its own entry point, which is what a wired butterfly does. `v` is `dir`
+ * turned a quarter turn so the bow still bulges "up" whatever the angle.
+ */
+export function frameFor(axis, angleDeg) {
+  if (axis !== 'out') return AXES[axis] ?? AXES.down;
+  const a = (clamp(angleDeg, WIRE_ANGLE, ELEMENT_WIRE_DEFAULTS.angle) * Math.PI) / 180;
+  const s = Math.sin(a), c = Math.cos(a);
+  return { dir: [0, -s, -c], u: [1, 0, 0], v: [0, c, -s] };
 }
 
 /* How many points describe the curve. Enough that a TubeGeometry reads smooth at the bend's tight
@@ -144,7 +279,7 @@ const SAMPLES = 25;
  * @returns {{ points: {x,y,z}[], radius: number, len: number, buried: number,
  *             tip: {x,y,z}, baseY: number } | null}
  */
-export function wireFor(box, instanceWire, rowWire) {
+export function wireFor(box, instanceWire, rowWire, { axis = 'down' } = {}) {
   if (!instanceWire?.on || !box || !(box.h > 0)) return null;
 
   const row = rowWire ?? ELEMENT_WIRE_DEFAULTS;
@@ -154,6 +289,8 @@ export function wireFor(box, instanceWire, rowWire) {
   const thickness = pick('thickness', STICK_SCALE);
   const bend      = pick('bend', WIRE_BEND);
   const sweep     = pick('sweep', WIRE_SWEEP);
+  const waves     = Math.round(pick('waves', WIRE_WAVES));
+  const twist     = pick('twist', WIRE_TWIST);
   const bury      = pick('bury', { min: 0, max: 1 });
 
   /* The run from where the wire leaves the icing to where the element sits. Proportional to the
@@ -173,6 +310,8 @@ export function wireFor(box, instanceWire, rowWire) {
      radius is a different fraction of a 6-inch cake than of a 12-inch one, and the invariant exists
      precisely because that reasoning is seductive and wrong. */
   const radius = box.h * WIRE_GAUGE * thickness;
+
+  const frame = frameFor(axis, pick('angle', WIRE_ANGLE));
 
   /* ⚠️ THE ELEMENT'S BOTTOM, WHICH IS NOT `-h/2`, FOR TWO SEPARATE REASONS.
  
@@ -204,28 +343,58 @@ export function wireFor(box, instanceWire, rowWire) {
  
      So the element stays exactly where it was put, the wire runs straight down from it into the
      cake, and ALL the character comes from the bow. */
-  const base = { x: 0, y: tipY - len, z: 0 };
-  const tip = { x: 0, y: tipY, z: 0 };
+  /* ⚠️ ON A WALL THE TIP IS THE PIECE'S MIDDLE, NOT ITS BOTTOM EDGE. Running down, the wire has to
+     reach the icing, so it leaves from the lowest point of the artwork. Running out of a wall there
+     is no icing below it — the stem goes in behind the piece, and behind its bottom corner it would
+     be visibly off-centre. `cy` rather than `bottom`, and the same `box` answers both. */
+  const tip = axis === 'out'
+    ? { x: 0, y: box.cy ?? 0, z: 0 }
+    : { x: 0, y: tipY, z: 0 };
+  const base = {
+    x: tip.x + frame.dir[0] * len,
+    y: tip.y + frame.dir[1] * len,
+    z: tip.z + frame.dir[2] * len,
+  };
 
   /* ⚠️ THE BOW IS HORIZONTAL, AND `sweep` ONLY CHOOSES ITS COMPASS DIRECTION. A vertical run bulging
      sideways is what hand-bent florist wire does; `sin(pi·t)` puts the deepest part at the middle
      and returns to zero at both ends, so the wire meets the icing and the butterfly without a kink
      at either. */
   const phi = (sweep * Math.PI) / 180;
-  const bow = len * bend;
+  const twistRad = (twist * Math.PI) / 180;
+  /* ⚠️ THE BOW SHRINKS AS THE BENDS MULTIPLY, and without that an S is twice the excursion of a C
+     at the same setting — so raising `waves` would fling the piece sideways and read as a different
+     control having been moved. Dividing by the count keeps `bend` meaning "how far from straight". */
+  const bow = (len * bend) / waves;
 
   const points = [];
   for (let i = 0; i < SAMPLES; i++) {
     const t = i / (SAMPLES - 1);
-    const k = Math.sin(Math.PI * t) * bow;
+    /* `sin(waves·pi·t)` is zero at both ends whatever the count, so the wire always meets the icing
+       and the butterfly without a kink — and it alternates sign, which is what turns one bulge into
+       an S and then a zigzag. */
+    const k = Math.sin(waves * Math.PI * t) * bow;
+    /* The bow's plane turns as the wire climbs. A planar curve is a drawing of a bent wire; this is
+       what makes the S seen from the front a different S from the side. */
+    const a = phi + twistRad * t;
+    const ku = Math.cos(a) * k, kv = Math.sin(a) * k;
     points.push({
-      x: Math.cos(phi) * k,
-      y: base.y + (tip.y - base.y) * t,
-      z: Math.sin(phi) * k,
+      x: base.x + (tip.x - base.x) * t + frame.u[0] * ku + frame.v[0] * kv,
+      y: base.y + (tip.y - base.y) * t + frame.u[1] * ku + frame.v[1] * kv,
+      z: base.z + (tip.z - base.z) * t + frame.u[2] * ku + frame.v[2] * kv,
     });
   }
 
-  return { points, radius, len, buried, bury, tip, baseY: base.y };
+  /* ⚠️ THE LIFT IS A VECTOR, NOT A LENGTH, once the wire can run diagonally. Whatever did not go
+     into the cake has to displace the piece — upward on the top, outward on a wall, and BOTH on the
+     rim. A single scalar was fine while every wire was vertical; on the `lip` axis, treating the
+     whole run as height floats a butterfly well above where its own stem ends. Each caller takes
+     the component its pose can actually move in. */
+  const out = len - buried;
+  return {
+    points, radius, len, buried, bury, tip, axis, baseY: base.y,
+    lift: { y: Math.max(0, -frame.dir[1] * out), out: Math.max(0, -frame.dir[2] * out) },
+  };
 }
 
 /**
@@ -238,5 +407,11 @@ export function wireFor(box, instanceWire, rowWire) {
  * without a wire, so a caller can add it unconditionally.
  */
 export function wireLift(wire) {
-  return wire ? Math.max(0, wire.len - wire.buried) : 0;
+  return wire?.lift ? wire.lift.y : 0;
+}
+
+/** How far the element stands OFF the surface it is pushed into — the same leftover run, along the
+ *  other axis. A wall wire displaces the piece entirely this way; a rim wire does a bit of both. */
+export function wireStandoff(wire) {
+  return wire?.lift ? wire.lift.out : 0;
 }

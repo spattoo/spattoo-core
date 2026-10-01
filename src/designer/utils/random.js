@@ -15,3 +15,34 @@ export function mulberry32(a) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
+
+/* ── Coherent noise around a closed ring ────────────────────────────────────────────────────────
+ *
+ * K random control points spaced around a circle, smoothstep-blended between — so the result is
+ * continuous, WRAPS at the seam, and reads as something torn or scraped rather than as per-vertex
+ * spikes. Values in -1..1; the caller scales.
+ *
+ * ⚠️ ONE KERNEL, TWO USERS, AND IT WAS ONE-AND-A-HALF. `secondCreamLayer` has used exactly this
+ * since it was written, inline, to jitter a torn cream edge; the dished top needs the same thing to
+ * stop its lip reading as a machined torus. Copying ten lines would have been quicker and is how
+ * the two would end up with different K, different blending and different answers to "what does
+ * hand-scraped cream look like" — which is one question.
+ *
+ * ⚠️ K IS THE CALLER'S, because it is the only part that is NOT shared. A torn band wants many
+ * small tears; a scraped rim wants a dozen slow swells. Same kernel, different coarseness.
+ */
+export function ringNoise(n, k, seed) {
+  const rnd = mulberry32(seed >>> 0);
+  const ctrl = Array.from({ length: Math.max(2, k) }, () => rnd() * 2 - 1);
+  const K = ctrl.length;
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * K;
+    const i0 = Math.floor(t) % K;
+    const i1 = (i0 + 1) % K;
+    const f = t - Math.floor(t);
+    const s = f * f * (3 - 2 * f);
+    out[i] = ctrl[i0] * (1 - s) + ctrl[i1] * s;
+  }
+  return out;
+}

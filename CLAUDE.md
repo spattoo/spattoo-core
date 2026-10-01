@@ -21,8 +21,9 @@ at the moment it is needed. If a rule cannot be written as a trigger, it belongs
 | write a number, a price, a count, a limit | find where it is defined. If it lives on another surface, state the dependency and quantify NOTHING. |
 | call a screen done | open it, drive it with real input, look at it. A green suite is not a working screen. |
 | diagnose anything outside this repo | read `spattoo-docs` and the vendor's own docs before proposing a remedy. Expensive cure → reproduce the fault first. |
+| build a POC or a `dev/` harness | give it an entry in **admin's Editors menu** in the same change. A URL in a chat message is not a door. |
 
-Everything below is the reasoning. These five are the part that has to fire without being re-read.
+Everything below is the reasoning. These six are the part that has to fire without being re-read.
 
 ## The rules that apply to EVERY module
 
@@ -209,6 +210,31 @@ suite can only ask three of them (2, 3 and 5). For laws 1 (one place says where 
 can grab is what you can see, from every angle) the script greps two smells and says so itself — a
 grep is not the law, and those two are what broke the cloud and the rainbow six ways in a week. Read
 them before writing a gesture, not after.
+
+## A POC lands in the Editors menu, not in a chat message
+
+⚠️ **A `dev/*.html` harness is reachable only by someone who still has the link.** Sandeep, after a
+day of them: *"i dont like the way sharing this url and going through that. if tomorrow i want to
+visit it, i wont have this url. any poc we do should have entry in editors menu in admin."* The
+harness is not the problem — it is the fastest way to look at geometry, and `dev/` is full of them
+for good reason. The problem is that it has no door.
+
+So a POC worth showing gets **both**: the `dev/` harness for the tight loop, and a studio in admin
+that anyone can find tomorrow. The studio is three small edits in `spattoo-admin/src/main.jsx` — a
+`lazy()` import, a route in the map, and an entry in `NAV_GROUPS`' Editors group, which is the single
+source of truth the `/editors` tiles page renders from as well.
+
+⚠️ **THE STUDIO IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT.** Several studios in that
+folder open with *"this is the admin prototype copy; it ports to spattoo-core verbatim"* — the old
+order, when the geometry was written in admin first. Anything that already lives in `src/designer/`
+is exported from `src/index.js` and imported from `@spattoo/designer`, or the tuned version and the
+rendered version drift (INVARIANTS #15, and rule 1 above). `CardCutoutStudio.jsx` is the worked
+example: core's functions, core's `SceneLights`/`SceneEnv`/`SceneBackground`/`DESIGNER_GROUND`.
+
+⚠️ **It works in dev without a release.** `spattoo-admin/vite.config.js` aliases `@spattoo/designer`
+to `../spattoo-core/src/index.js` when both repos are checked out side by side, so a new export is
+live on the admin dev server immediately. Deployed admin still runs the vendored tarball, so the
+entry only reaches a browser elsewhere after `npm run release`.
 
 ## Gates
 

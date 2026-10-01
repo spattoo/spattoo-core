@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { wireFor, wireLift, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP } from './elementWire.js';
+import { wireFor, wireLift, wireStandoff, elementWire, ELEMENT_WIRE_DEFAULTS, WIRE_BEND, WIRE_LENGTH, WIRE_SWEEP, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './elementWire.js';
 
 const box = { h: 0.1, cy: 0 };
 const on = (extra = {}) => wireFor(box, { on: true, ...extra }, null);
@@ -45,14 +45,64 @@ describe('the base sits directly below the tip', () => {
 });
 
 describe('the bow is what makes it read as wire', () => {
-  it('bulges furthest at the middle and nowhere at the ends', () => {
-    const w = on({ bend: 0.3 });
+  /* ⚠️ `waves: 1` IS PINNED, because the apex is only at the middle for a SINGLE bend. The default
+     is an S, whose middle is a zero crossing — a test written against the default would assert the
+     shape of whatever the default happens to be rather than the property it means to check. */
+  it('bulges furthest at the middle of a single bend, and nowhere at the ends', () => {
+    const w = on({ bend: 0.3, waves: 1, twist: 0 });
     const out = w.points.map(p => Math.hypot(p.x, p.z));
     const mid = Math.floor(out.length / 2);
     expect(out[mid]).toBeGreaterThan(0);
     expect(Math.max(...out)).toBeCloseTo(out[mid], 3);
     expect(out[0]).toBeCloseTo(0, 6);
     expect(out[out.length - 1]).toBeCloseTo(0, 6);
+  });
+
+  it('meets the icing and the piece without a kink at any number of bends', () => {
+    for (let waves = WIRE_WAVES.min; waves <= WIRE_WAVES.max; waves++) {
+      const out = on({ bend: 0.4, waves }).points.map(p => Math.hypot(p.x, p.z));
+      expect(out[0]).toBeCloseTo(0, 6);
+      expect(out[out.length - 1]).toBeCloseTo(0, 6);
+    }
+  });
+
+  /* ⚠️ AN S IS NOT TWICE THE EXCURSION OF A C. Without dividing the bow by the count, raising
+     `waves` would fling the piece sideways and read as a different control having been moved. */
+  it('keeps the same reach however many bends it has', () => {
+    const reach = w => Math.max(...w.points.map(p => Math.hypot(p.x, p.z)));
+    const one = reach(on({ bend: 0.4, waves: 1, twist: 0 }));
+    for (const waves of [2, 3, 4]) {
+      expect(reach(on({ bend: 0.4, waves, twist: 0 }))).toBeCloseTo(one / waves, 3);
+    }
+  });
+
+  it('crosses the axis once per extra bend — a C never does, an S does once', () => {
+    /* ⚠️ SIGN FLIPS BETWEEN NEIGHBOURS, WITH A DEAD ZONE, and the naive version was wrong. Comparing
+       samples two apart (`xs[i-1] * xs[i+1] < 0`) counts an exact crossing TWICE, because `sin(pi)`
+       is 1.2e-16 rather than 0 and that tiny value straddles on both sides. A dead zone treats it as
+       the zero it is meant to be. */
+    const crossings = waves => {
+      const xs = on({ bend: 0.4, waves, twist: 0, sweep: 0 }).points.map(p => p.x);
+      let n = 0, prev = 0;
+      for (const x of xs) {
+        const sign = Math.abs(x) < 1e-9 ? 0 : Math.sign(x);
+        if (sign && prev && sign !== prev) n++;
+        if (sign) prev = sign;
+      }
+      return n;
+    };
+    expect(crossings(1)).toBe(0);
+    expect(crossings(2)).toBe(1);
+    expect(crossings(3)).toBe(2);
+  });
+
+  /* The bow's plane turns as the wire climbs, which is what a planar squiggle cannot fake. */
+  it('twist rotates the bow along the wire, and zero twist keeps it in one plane', () => {
+    const flat = on({ bend: 0.4, waves: 1, twist: 0, sweep: 0 });
+    for (const p of flat.points) expect(Math.abs(p.z)).toBeCloseTo(0, 6);
+
+    const turned = on({ bend: 0.4, waves: 1, twist: WIRE_TWIST.max, sweep: 0 });
+    expect(Math.max(...turned.points.map(p => Math.abs(p.z)))).toBeGreaterThan(0);
   });
 
   it('is straight at bend 0 — the control case, and it should look wrong', () => {
@@ -67,8 +117,8 @@ describe('the bow is what makes it read as wire', () => {
   });
 
   it('sweep turns the bow without changing its size', () => {
-    const a = on({ sweep: 0, bend: 0.3 });
-    const b = on({ sweep: 90, bend: 0.3 });
+    const a = on({ sweep: 0, bend: 0.3, waves: 1, twist: 0 });
+    const b = on({ sweep: 90, bend: 0.3, waves: 1, twist: 0 });
     const reach = w => Math.max(...w.points.map(p => Math.hypot(p.x, p.z)));
     expect(reach(a)).toBeCloseTo(reach(b), 6);
     const mid = Math.floor(a.points.length / 2);
@@ -104,13 +154,13 @@ describe('how far the element rides above the icing', () => {
 
 describe('a row authors the starting values, an instance overrides them', () => {
   it('prefers the instance over the row', () => {
-    const w = wireFor(box, { on: true, bend: 0.4 }, { ...ELEMENT_WIRE_DEFAULTS, bend: 0.1 });
+    const w = wireFor(box, { on: true, bend: 0.4, waves: 1, twist: 0 }, { ...ELEMENT_WIRE_DEFAULTS, bend: 0.1 });
     const reach = Math.max(...w.points.map(p => Math.hypot(p.x, p.z)));
     expect(reach).toBeCloseTo(w.len * 0.4, 6);
   });
 
   it('clamps a nonsense value rather than drawing a spring', () => {
-    const w = on({ bend: 99 });
+    const w = on({ bend: 99, waves: 1, twist: 0 });
     expect(Math.max(...w.points.map(p => Math.hypot(p.x, p.z)))).toBeCloseTo(w.len * WIRE_BEND.max, 6);
   });
 });
@@ -120,7 +170,20 @@ describe('a row authors the starting values, an instance overrides them', () => 
    SHORTER — a default with no headroom above it is a control doing half what it appears to. It was
    found by reading, not by a test, which is the wrong way round for arithmetic this mechanical. */
 describe('every default leaves room to move in both directions', () => {
-  const ranges = { length: WIRE_LENGTH, bend: WIRE_BEND, sweep: WIRE_SWEEP };
+  const ranges = { length: WIRE_LENGTH, sweep: WIRE_SWEEP, waves: WIRE_WAVES, twist: WIRE_TWIST, angle: WIRE_ANGLE };
+
+  /* ⚠️ `bend` IS A NAMED EXCEPTION, NOT AN OVERSIGHT, and naming it here is the point — an exception
+     that is simply dropped from the list is indistinguishable from a default nobody checked.
+     Its floor IS its default: a wire now goes in STRAIGHT and the bow is opt-in. Sandeep, with a
+     butterfly on the side at 65°: *"it should be directly inserting — straight line first. then
+     twisting should be the user choice."* So the dial deliberately only travels one way from rest,
+     which is what "opt-in" means; the rule the others follow — that a default must have room above
+     AND below — would forbid exactly the behaviour that was asked for. */
+  it('bend rests ON its floor, because the bow is opt-in', () => {
+    expect(ELEMENT_WIRE_DEFAULTS.bend).toBe(WIRE_BEND.min);
+    expect(WIRE_BEND.max).toBeGreaterThan(WIRE_BEND.min);   // there is somewhere to go
+  });
+
   for (const [key, range] of Object.entries(ranges)) {
     it(`${key} sits strictly inside its own range`, () => {
       const v = ELEMENT_WIRE_DEFAULTS[key];
@@ -167,5 +230,113 @@ describe('the wire hangs from the element\'s real bottom', () => {
     const tip = w.points[w.points.length - 1].y;
     expect(tip - w.points[0].y).toBeCloseTo(w.len, 6);
     expect(w.len).toBeCloseTo(0.4, 6);
+  });
+});
+
+/* ⚠️ THREE POSES, THREE DIRECTIONS, ONE CURVE. The shape is identical in all of them — same bow,
+   same kinks, same twist — and only the frame differs. A second copy of the curve per pose is how
+   they drift apart, so the axis is data and these check the data. */
+describe('the wire runs the way the pose needs', () => {
+  const runOf = w => {
+    const a = w.points[0], b = w.points[w.points.length - 1];
+    return { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+  };
+
+  it('runs straight down on the top surface', () => {
+    const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'down' }));
+    expect(r.y).toBeGreaterThan(0);          // the tip is above the buried end
+    expect(Math.abs(r.x)).toBeCloseTo(0, 6);
+    expect(Math.abs(r.z)).toBeCloseTo(0, 6);
+  });
+
+  /* ⚠️ A WALL WIRE RISES, AND THIS TEST USED TO ASSERT THAT IT DID NOT — `abs(r.y)` close to zero
+     pinned the exact fault Sandeep photographed: *"its inserting horizontally. thats not how its
+     done."* A stem that leaves the icing level holds the butterfly at the height of its own hole,
+     scraping the wall it is meant to stand off. In every reference the wire goes in LOW and the
+     piece rides high and clear. Still mostly OUT, though — that is what separates it from `lip`. */
+  it('runs out AND up from a wall', () => {
+    const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'out' }));
+    expect(r.z).toBeGreaterThan(0);          // the tip stands proud of the buried end
+    expect(r.y).toBeGreaterThan(0);          // and above it
+    expect(r.z).toBeGreaterThan(r.y);        // but it is a wall wire, not a rim wire
+  });
+
+
+  /* ⚠️ THE ANGLE IS A CONTROL, NOT A CONSTANT, and it went through both failures to get here: dead
+     horizontal first, then hard-coded at 31° — which Sandeep still read as horizontal, because the
+     angle only acts on the part of the wire OUTSIDE the cake and at the default burial that is half
+     of it. *"can we have control for the angle with which it needs to be inserted."* */
+  it('climbs by however many degrees it was asked for', () => {
+    for (const angle of [20, 45, 75]) {
+      const r = runOf(wireFor(box, { on: true, bend: 0, angle }, null, { axis: 'out' }));
+      expect((Math.atan2(r.y, r.z) * 180) / Math.PI).toBeCloseTo(angle, 4);
+    }
+  });
+
+  it('a steeper angle lifts the piece more and pushes it out less', () => {
+    const at = angle => wireFor(box, { on: true, angle, bury: 0.5 }, null, { axis: 'out' });
+    expect(wireLift(at(70))).toBeGreaterThan(wireLift(at(30)));
+    expect(wireStandoff(at(70))).toBeLessThan(wireStandoff(at(30)));
+    /* The wire is the same length whichever way it points — the angle spends it, it does not add. */
+    const reach = w => Math.hypot(wireLift(w), wireStandoff(w));
+    expect(reach(at(70))).toBeCloseTo(reach(at(30)), 6);
+  });
+
+  it('clamps an angle outside the range rather than drawing a flagpole', () => {
+    const flat = runOf(wireFor(box, { on: true, bend: 0, angle: 0 }, null, { axis: 'out' }));
+    expect((Math.atan2(flat.y, flat.z) * 180) / Math.PI).toBeCloseTo(WIRE_ANGLE.min, 4);
+  });
+
+  /* ⚠️ THE RIM LEANS BACK, WHICH THE TOP SURFACE MUST NOT. A verge piece is cantilevered out over
+     the lip, so a vertical stem drops past the cake and runs down the outside of the wall — which
+     it did, for its whole length. Leaning puts the buried end back in the top surface. */
+  it('runs down AND back from the rim', () => {
+    const r = runOf(wireFor(box, { on: true, bend: 0 }, null, { axis: 'lip' }));
+    expect(r.y).toBeGreaterThan(0);
+    expect(r.z).toBeGreaterThan(0);
+  });
+
+  it('gives every axis the same run length and the same reach', () => {
+    const len = w => Math.hypot(...Object.values(runOf(w)));
+    const reach = w => {
+      const a = w.points[0], b = w.points[w.points.length - 1];
+      return Math.max(...w.points.map(p => {
+        const t = { x: p.x - a.x, y: p.y - a.y, z: p.z - a.z };
+        const d = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
+        const dl = Math.hypot(d.x, d.y, d.z);
+        const proj = (t.x * d.x + t.y * d.y + t.z * d.z) / (dl * dl);
+        return Math.hypot(t.x - d.x * proj, t.y - d.y * proj, t.z - d.z * proj);
+      }));
+    };
+    const made = axis => wireFor(box, { on: true, bend: 0.3, waves: 1, twist: 0 }, null, { axis });
+    for (const axis of ['out', 'lip']) {
+      expect(len(made(axis))).toBeCloseTo(len(made('down')), 6);
+      expect(reach(made(axis))).toBeCloseTo(reach(made('down')), 6);
+    }
+  });
+
+  /* ⚠️ THE LIFT IS A VECTOR ONCE THE WIRE CAN RUN DIAGONALLY. Whatever did not go in has to
+     displace the piece — up on the top, out on a wall, and both on the rim. One scalar was fine
+     while every wire was vertical; on `lip` it would float the piece above where its stem ends. */
+  it('splits what stayed out between height and standoff, per pose', () => {
+    const on = axis => wireFor(box, { on: true, bury: 0.5 }, null, { axis });
+    const out = on('down').len * 0.5;
+
+    expect(wireLift(on('down'))).toBeCloseTo(out, 6);
+    expect(wireStandoff(on('down'))).toBeCloseTo(0, 6);
+
+    /* ⚠️ A WALL WIRE NOW SPLITS IT TOO, and this used to assert lift ≈ 0 — the same horizontal run
+       Sandeep photographed. Leaving the vertical component out of the caller is what draws a stem
+       climbing away from a butterfly that stayed where it was, hanging off the middle of its own
+       wire. Mostly standoff, because it is a wall; some lift, because it climbs. */
+    const wall = on('out');
+    expect(wireLift(wall)).toBeGreaterThan(0);
+    expect(wireStandoff(wall)).toBeGreaterThan(wireLift(wall));
+    expect(Math.hypot(wireLift(wall), wireStandoff(wall))).toBeCloseTo(out, 6);
+
+    const lip = on('lip');
+    expect(wireLift(lip)).toBeGreaterThan(0);
+    expect(wireStandoff(lip)).toBeGreaterThan(0);
+    expect(Math.hypot(wireLift(lip), wireStandoff(lip))).toBeCloseTo(out, 6);
   });
 });

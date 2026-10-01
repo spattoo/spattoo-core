@@ -24,15 +24,10 @@ const SAMPLE_BAKER = {
   portrait_url: null,
   storefront_customizations: {},
   accepting_orders: true,
-  // ?gallery=none — the EMPTY state. It has its own colours (a gradient off the palette) and was
-  // unreachable in this harness, so nobody saw that it clashed until a baker did.
-  gallery: new URLSearchParams(location.search).get('gallery') === 'none' ? [] : [
-    { url: '/sample-cake-1.png', caption: 'Three-tier celebration cake' },
-    { url: '/sample-cake-2.png', caption: 'Floral buttercream' },
-    { url: '/sample-cake-3.png', caption: 'Chocolate drip finish' },
-    { url: '/sample-cake-1.png', caption: 'Ivory & gold' },
-    { url: '/sample-cake-2.png', caption: 'Berry compote' },
-  ],
+  /* No `gallery` — and no `?gallery=none` switch either. Both went with the "Our creations" section
+     on 2026-09-28: the component no longer takes a gallery prop or reads `baker.gallery`, so sample
+     photos here would be data nothing consumes, which is worse than absent (it reads as a feature
+     that has broken). The empty-state this harness used to reach no longer exists at all. */
   testimonials: [
     { quote: 'Absolutely stunning — exactly what we pictured.', author: 'Aarti', occasion: 'Birthday' },
     { quote: 'Tasted as good as it looked. Ordering again!',    author: 'Rohan', occasion: 'Anniversary' },
@@ -63,9 +58,9 @@ function Preview() {
       // test that a bad stored ground falls back rather than painting the page.
       ...(new URLSearchParams(location.search).get('bg') ? { page_bg: new URLSearchParams(location.search).get('bg') } : {}),
       ...((ctaColor || tplDefaults.ctaColor) ? { cta_color: ctaColor || tplDefaults.ctaColor } : {}),
-      // Exercise the section-array + Highlight section (baker lever). Highlight sits after gallery.
+      // Exercise the section-array + Highlight section (baker lever). Highlight leads the body now
+      // that "Our creations" is retired, so this is also the check that the page still opens well.
       sections: [
-        { type: 'gallery',   enabled: true },
         { type: 'highlight', enabled: highlight, title: 'This week: Pistachio & rose', blurb: 'A limited-run three-tier with real pistachio sponge and a rosewater buttercream. Order by Friday.', cta_label: 'Order this cake', image: '/sample-cake-2.png' },
         { type: 'story',     enabled: true },
         { type: 'reviews',   enabled: true },
@@ -78,9 +73,21 @@ function Preview() {
           on a narrow device-toolbar width (335px) pushed the Template select off the left edge —
           the control you most need in order to look at a template was the one you could not reach,
           and it looked like the template simply was not there. */}
-      <div style={{ position: 'fixed', top: 10, right: 10, zIndex: 9999, background: '#fff', border: '1px solid #ccc',
+      {/* ⚠️ AND IT SITS AT THE BOTTOM, NOT THE TOP. Pinned top-right it wrapped into a tall block at
+          phone width and covered the storefront's own header — the hamburger included, which is the
+          "3 line menu" this harness is most often opened to look at. A real click could not reach
+          it (Playwright: "<div> intercepts pointer events"), and by eye the header simply looked
+          absent. The harness must never occlude the thing it exists to show; the page's own footer
+          is far less load-bearing than its header, and `?chrome=none` hides this entirely. */}
+      {/* ⚠️ HIDDEN VIA `display`, NOT the `hidden` ATTRIBUTE. This element carries an inline
+          `display: flex`, and an inline style beats the UA stylesheet's `[hidden] { display: none }`
+          — so `hidden` here renders a switch that does nothing. Written that way first, and it would
+          have passed: the bar had ALSO moved to the bottom, so the click it was blocking started
+          working regardless, and a switch doing nothing would have been credited with the fix. */}
+      <div style={{ position: 'fixed', bottom: 10, right: 10, zIndex: 9999, background: '#fff', border: '1px solid #ccc',
         borderRadius: 8, padding: '6px 10px', font: '13px system-ui, sans-serif', boxShadow: '0 2px 10px rgba(0,0,0,0.15)',
-        display: 'flex', gap: 10, flexWrap: 'wrap', maxWidth: 'calc(100vw - 20px)', maxHeight: '40vh', overflowY: 'auto',
+        display: new URLSearchParams(location.search).get('chrome') === 'none' ? 'none' : 'flex',
+        gap: 10, flexWrap: 'wrap', maxWidth: 'calc(100vw - 20px)', maxHeight: '40vh', overflowY: 'auto',
         alignItems: 'center' }}>
         <label>Template:&nbsp;
           <select value={tpl} onChange={e => setTpl(e.target.value)} style={{ font: 'inherit' }}>

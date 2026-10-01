@@ -339,7 +339,24 @@ export default function FacetShell({
         <div style={s.body(isMobile)}>
           {/* PINNED, on both layouts. If the cake scrolls away we have built a form again — the
               whole reason this is not a wizard is that something happens on every tap, and that
-              only lands if the thing is still visible when you tap. */}
+              only lands if the thing is still visible when you tap.
+
+              ⚠️ EXCEPT ON `design`, WHERE IT ANSWERS NOTHING AND MISLEADS. The stage draws
+              `HeroCake3D` in the BAKER'S theme colours — it is not the customer's cake and it does
+              not move when they tap anything on this facet, because picking a design fills the slot
+              and closes the sheet. So the rule above buys nothing here: there is no effect for the
+              pinned thing to show.
+
+              And it does active harm on this one screen. `design` is where the baker's REAL cakes
+              are on display, so a large blank cake beside them reads as "your cake so far", invites
+              a comparison against photographs it cannot win, and takes 340px from the gallery that
+              is the whole point of the screen. Sandeep: *"i dont think we should show the green cake
+              on the left side highlighted here."*
+
+              Hidden for the WHOLE facet, not just the gallery inside it, because the same is true of
+              its door screen — and a pane that appeared and vanished halfway through one facet would
+              be worse than either choice. */}
+          {open !== 'design' && (
           <div style={s.stage(isMobile, primary)}>
             {/* Smaller on a phone than it was. The plan says the cake stays PINNED — "if it scrolls
                 away it is a form" — and that still holds; but at 170 it was a third of the sheet, and
@@ -348,6 +365,7 @@ export default function FacetShell({
             <CakeVisual facet={open} flavour={shownFlavour} primary={primary} accent={accent}
                         height={isMobile ? 124 : 230} />
           </div>
+          )}
 
           <div style={s.panel(isMobile)}>
             {open

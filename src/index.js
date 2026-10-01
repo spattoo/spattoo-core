@@ -28,6 +28,25 @@ export { thumbnailFromImage } from './designer/utils/thumbnail.js';
  */
 export { buildPipingStroke, buildPipingHeap, mergePenGeometries, NOZZLES, NOZZLE_BY_KEY, DEFAULT_NOZZLE, PEN_FEEL }
   from './designer/geometry/creamPen.js';
+/* What a piped shape is MADE OF, so a studio can dress one in the cake's own cream rather than in a
+ * lookalike. `mediumOf(key).material({ softness }, colour)` is the exact call `CreamPen` makes on
+ * every stroke and heap, and `creamMaterialProps` behind it carries the sheen and roughness curve
+ * that make buttercream read as buttercream.
+ *
+ * ⚠️ EXPORTED RATHER THAN COPIED, and `PipingCalibrator` is why. That studio mirrors CakeTier's
+ * maths locally under three separate "MUST stay identical to spattoo-core" warnings — a promise a
+ * comment cannot keep. A material recipe is a shader curve, so it belongs in code (see the note in
+ * pipingMedia.js) and therefore in ONE copy that both the cake and the studio import. */
+export { MEDIA, DEFAULT_MEDIUM, mediumOf } from './designer/geometry/pipingMedia.js';
+/* The metallic↔matte mapping, so a studio placing a pearl beside piped cream uses the SAME curve the
+ * ball cluster's Finish control writes. One slider drives both PBR params together because a
+ * believable metal needs high metalness AND low roughness — finish.js is the one place that pairing
+ * lives, and a second copy in admin would be a pearl that drifts from the cake's own.
+ *
+ * ⚠️ A LEAF MODULE WITH NO IMPORTS, so unlike pipingMedia.js this cannot reach the env map and needs
+ * no entry in check-env-map's accepted list. Worth stating: that gate fired on the last export in
+ * this file and the difference is exactly this — what a module IMPORTS, not what it does. */
+export { FINISH_METALLIC, FINISH_MATTE, finishToMaterial, finishOf } from './designer/geometry/finish.js';
 export { default as CreateTemplate } from './admin/CreateTemplate.jsx';
 export { default as CustomerStorefront } from './storefront/CustomerStorefront.jsx';
 // Print a cake's decorations: the artwork for edible paper, and the traced outline as a template to
@@ -125,6 +144,18 @@ export { default as AcrylicWord } from './designer/canvas/AcrylicWord.jsx';
 export { ACRYLIC_DEFAULTS, acrylicCfg, acrylicFitAspect, writingFromAcrylicRow, acrylicFinishes,
          NOMINAL_MM_PER_UNIT } from './designer/geometry/acrylicConfig.js';
 export { buildStyledWall, buildStyledTop, displaceByHeightField, makeWallReliefSampler, ropeRadius, pipedBodyRadius, pipedParams } from './designer/geometry/creamWall.js';
+// The tier TOP — the scraped edge and the turntable spiral. One builder for both, because they are
+// two tools on one sheet of cream (see topCavity.js); exported so the admin studio tunes against the
+// SAME code CakeTier renders, rather than a prototype copy that then has to be ported back.
+export { buildTopSurface, buildTopCavity, cavityProfile, CAVITY_DEFAULTS } from './designer/geometry/topCavity.js';
+export { spiralField, ridgeProfile, swirlPhase, SPIRAL_DEFAULTS, SPIRAL_RISE } from './designer/geometry/topSpiral.js';
+// The bendable wire a butterfly floats on. The RANGES are exported, not just the defaults, because
+// admin's Manage Elements offers the same numbers on its own form — and a hand-copied `max` there
+// drifted the moment this one moved: core went to 88° and the admin field still read 20–75.
+// One constant, both surfaces (root CLAUDE.md rule 1, and its note that a number on another surface
+// is a dependency to state rather than a value to repeat).
+export { ELEMENT_WIRE_DEFAULTS, WIRE_ANGLE, WIRE_LENGTH, WIRE_BEND, WIRE_WAVES, WIRE_TWIST, WIRE_SWEEP }
+  from './designer/geometry/elementWire.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';

@@ -161,6 +161,8 @@ export function toCanvasConfig(design) {
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
+        topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
+        topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -391,6 +393,45 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, styleParams: { ...(t.styleParams ?? {}), [key]: value } }
+        : t),
+    }));
+  }
+
+  /* ── The dished top with its scraped cream lip ─────────────────────────────────────────────────
+   *
+   * ⚠️ NOT A `frostingStyle`, AND THAT IS THE SAME ARGUMENT THE CREAM LAYER ALREADY WON. `style` is
+   * one string per tier — Smooth, Cream Wave, Ribbed, Vertical Piping are mutually exclusive ways
+   * the WALL is finished. A dished top COMPOSES with every one of them: a ribbed wall under a
+   * scraped rim is a cake somebody makes. Filing it as a fifth chip would delete that combination,
+   * which is what CakeDesigner's cream-layer note says in so many words.
+   *
+   * Sparse, like `styleParams`: absent means no cavity, so nothing in the catalogue or in a saved
+   * design changes until somebody switches it on.
+   *
+   * ⚠️ THE SEED LIVES HERE RATHER THAN IN THE COMPONENT, or Shuffle is a preview toy. The edge is
+   * random; a design that cannot reproduce the exact rim a baker chose has not saved their work.
+   */
+  function setTierCavity(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, topCavity: changes === null ? undefined : { ...(t.topCavity ?? {}), ...changes } }
+        : t),
+    }));
+  }
+
+  /* The turntable spiral on the tier's top. A SEPARATE field from `topCavity`, because Sandeep asked
+     for them to be separately selectable — *"both edge elevation, spiral can individually be
+     selected"* — and a shared one could not express "spiral, no rim".
+
+     ⚠️ SEPARATE HERE, ONE MESH DOWNSTREAM. `buildTopSurface` takes both and returns a single
+     geometry: they are two tools on one sheet of cream, and built apart they z-fight at the floor
+     and cannot meet the rim's wobbling inner edge. Separately SELECTABLE, jointly BUILT. */
+  function setTierSpiral(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, topSpiral: changes === null ? undefined : { ...(t.topSpiral ?? {}), ...changes } }
         : t),
     }));
   }
@@ -1040,6 +1081,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // renderer only splits/folds when `foldable` is true; fold (deg) / spine (0–1) tune
           // it, falling back to DEFAULT_FOLD_DEG / DEFAULT_SPINE at render. Absent → flat plane.
           foldable:      element.placement_config?.foldable === true,
+          /* ⚠️ DEFAULT TRUE, AND THE INVERSION IS DELIBERATE. A billboard here applies YAW ONLY — `lockX` and `lockZ` are both true — so it turns the
+     piece to face the viewer and leaves Tilt, Roll and Spin to compose on top. It is right for a
+     flat decal whose artwork must never be seen edge-on, and wrong for a butterfly: turn the cake
+     and every one of them swivels to keep facing you, when the reference photographs show them
+     facing every which way. Opting out lets a piece keep the facing it was placed with.
+ 
+             Every element in the catalogue already billboards, so the flag has to be OPT-OUT: absent
+             means on, and only `billboard: false` changes anything. A flag whose absence meant "does
+             not" would silently re-pose the whole catalogue on its next save. */
+          billboard:     element.placement_config?.billboard !== false,
           fold:          element.placement_config?.fold ?? null,
           spine:         element.placement_config?.spine ?? null,
           // Verge seat anchor (placement_config.verge.seat): 'center' (default) rests the mid-spine on
@@ -1119,7 +1170,11 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the radians THREE/baseRotation use. Config-driven, applied by the renderer; null = +z.
           baseRotation:  facingOffsetRadians(element.placement_config),
           yOffset:       extra.yOffset ?? seatYOffset,   // perch/verge: calibrated seat; cluster: ball stacking lift
-          rotation:      seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
+          /* `extra` wins, for the reason the lean fields above now do: every positional field here
+             honours it, and the ones that did not were simply impossible to place WITH — which made
+             them impossible to look at in a harness, and a state that cannot be reached hides every
+             bug in it. */
+          rotation:      extra.rotation ?? seatFanYaw,     // insert modifier: small per-instance fan spin (else 0 — user Y-spin adds on top)
           radialOffset:  0,
           /* ⚠️ `extra` WINS, LIKE IT DOES FOR SCALE AND yOffset ABOVE — and it did not, which made a
              lean impossible to place with and therefore impossible to look at. That is not academic:
@@ -1143,6 +1198,21 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // presents the set as ONE card (members abstracted) and they move/remove together — a
           // distinct unit from a user group (groupId) or a decor_pattern (patternId).
           clusterId:     extra.clusterId ?? null,
+          /* A scatter instance the baker asked to be LARGE — a few pearls among the dots.
+             ⚠️ DECLARED BY NAME, because `extra` is not spread onto the sticker. Every field here is
+             read explicitly, and the `wire` note below records what happens otherwise: the value was
+             passed, never read here, and the piece silently rendered without it — indistinguishable
+             from a broken feature.
+             ⚠️ ABSENT MEANS SMALL, which is every sprinkle ever placed before this existed and every
+             one placed today unless the baker turns big ones on. That is what keeps the default
+             behaviour byte-identical and old saved cakes reloading unchanged. */
+          scatterBig:    extra.scatterBig === true,
+          /* A side scatter confined to a BAND round the base of the wall — the sprinkle skirt in
+             Sandeep's reference photo, rather than pieces spread over the whole side.
+             ⚠️ DECLARED BY NAME for the same reason as `scatterBig` above: `extra` is not spread.
+             ⚠️ ABSENT MEANS "ALL OVER", which is every side scatter placed before this existed, so
+             the default is untouched and old saved cakes reload exactly as they were. */
+          scatterBand:   extra.scatterBand === true,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
           // with a persistent zone chooser — like a piping element. `patternDeletable` keeps the
@@ -1587,7 +1657,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,

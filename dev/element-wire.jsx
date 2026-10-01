@@ -15,19 +15,26 @@ import './scene.js';
  *
  * Three things to judge, in order:
  *
- *   1. Does it read as WIRE, or as a pin? The bow is the whole difference. Sweep `bend` and find
- *      where a white rod stops looking like a skewer.
+ *   1. Does it read as WIRE, or as a pin? The bow is the difference — but it is OPT-IN now, so the
+ *      question here is whether a baker who raises `bend` gets something worth having, not whether
+ *      the default looks bare. On a wall a straight stem reading as a stem is the point: Sandeep,
+ *      *"it should be directly inserting — straight line first. then twisting should be the user
+ *      choice."*
  *   2. Is it thin enough? A stem wire is roughly a quarter of a cocktail stick.
  *   3. Does the butterfly sit where a hand would have put it — out and up, clear of the icing?
  *
  *   /element-wire.html                       the defaults
- *   /element-wire.html?bend=0                straight: the control case, should look wrong
+ *   /element-wire.html?bend=0.35              the bow the DEFAULT used to carry — now opt-in, and on
+ *                                            a wall it is a curl that hides the angle the stem went in at
  *   /element-wire.html?bend=0.5              the maximum, where it starts to read as a spring
  *   /element-wire.html?lean=0                vertical, which hand-bent wire never is
  *   /element-wire.html?lean=45&bend=0.3      the reference photographs' look
  *   /element-wire.html?len=6                 a long stem, high above the cake
  *   /element-wire.html?thick=0.6             too fat, for comparison
  *   /element-wire.html?bury=1                pushed right in, the piece down on the icing
+ *   /element-wire.html?zone=side&angle=20    a WALL wire at its shallowest — nearly the flagpole
+ *   /element-wire.html?zone=side&angle=75    and at its steepest, the piece almost over its own hole
+ *   /element-wire.html?zone=side&angle=45&bend=0  the run alone, with no bow to read it through
  *   /element-wire.html?wire=0                no wire — the control
  *
  * ⚠️ `?glb=` TAKES A BUTTERFLY. It defaults to the fondant heart because that is the element this
@@ -43,11 +50,13 @@ const LEAN  = num("sweep", num("lean", undefined));
 const LEN   = num('len', undefined);
 const THICK = num('thick', undefined);
 const BURY  = num('bury', undefined);
+/* How steeply a WALL wire climbs out of the icing. Only `?zone=side` reads it. */
+const ANGLE = num('angle', undefined);
 
 /* Only the keys actually given, so anything absent falls through to ELEMENT_WIRE_DEFAULTS — the
    case worth looking at is what a row that authors nothing gets. */
 const shape = Object.fromEntries(Object.entries({
-  length: LEN, thickness: THICK, bend: BEND, sweep: LEAN, bury: BURY,
+  length: LEN, thickness: THICK, bend: BEND, sweep: LEAN, bury: BURY, angle: ANGLE,
 }).filter(([, v]) => v != null && Number.isFinite(v)));
 
 /* ⚠️ A 2D IMAGE IS A DIFFERENT RENDER PATH, NOT A DIFFERENT FILE EXTENSION, and it is the path the
@@ -76,8 +85,21 @@ const FOLD = q.get('fold') === '1';
    element's tilt/yaw/billboard groups, which rotated the whole stem about the piece and swung the
    buried end out across the board. Sweep this against the fix: the butterfly should lean and the
    stem should not move at all. */
-const TILT = q.has('tilt') ? Number(q.get('tilt')) : 0;
-const ROLL = q.has('roll') ? Number(q.get('roll')) : 0;
+/* ⚠️ DEGREES IN, RADIANS OUT, AND THE CONVERSION IS NOT COSMETIC. `tiltAngle` is radians —
+   `leanStep` nudges by 0.1 and `clampLean` caps at 1.2, about 69°. Passing a degree figure straight
+   through sent 23 RADIANS, nearly four full turns, which parks the plane at an arbitrary angle. A
+   sweep built that way showed a butterfly vanishing at "23°" and I came within a sentence of
+   reporting it as a rendering bug: a flat plane really does disappear edge-on, so the wrong numbers
+   produced a symptom plausible enough to explain. The harness takes degrees because that is what
+   the card reads back. */
+const deg = v => (v * Math.PI) / 180;
+/* ⚠️ SPIN IS THE CLEAN TEST FOR THE BILLBOARD, and tilt is not. Rendered from one fixed angle, a
+   billboarded piece and a free one look identical at yaw 0 — they coincide, which is exactly what a
+   billboard at rest means. Spin separates them from the same camera: inside the wrapper it is
+   overruled every frame, outside it the piece turns. */
+const SPIN = q.has('spin') ? deg(Number(q.get('spin'))) : 0;
+const TILT = q.has('tilt') ? deg(Number(q.get('tilt'))) : 0;
+const ROLL = q.has('roll') ? deg(Number(q.get('roll'))) : 0;
 const glb = q.get('glb');
 const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUTTERFLY;
 
@@ -86,20 +108,31 @@ const ART = (glb === '1' ? HEART : glb) ?? (IMG === '1' ? TEST_PNG : IMG) ?? BUT
 const FOLDED = ART === BUTTERFLY ? q.get('fold') !== '0' : FOLD;
 
 const PIECE = {
-  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${ART.slice(-24)}`,
+  id: `wire-${JSON.stringify(shape)}-${WIRE}-${FOLDED}-${TILT}-${ROLL}-${SPIN}-${q.get('face')}-${q.get('zone')}-${ART.slice(-24)}`,
   name: 'element on a wire',
   image_url: ART,
-  allowed_zones: ['top_surface'],
+  allowed_zones: ['top_surface', 'side', 'rim'],
   default_color: '#c9b6e4',
   placement_config: {
     r: 2, scale: { max: 6, min: 0.5, step: 0.25 },
     metalness: 0.0015, roughness: 0.3876,
     top_surface: { modes: ['stand'] },
+    /* `?zone=side` puts it on the WALL, which is a different renderer (DraggableSideSticker) and
+       a wire that runs horizontally into the icing rather than down into it. */
+    side: 'hug',
+    /* `?zone=rim` is the EDGE tile — mode `verge`, "rests its base on the rim lip and reclines
+       radially outward… (butterflies, flowers)". It renders through the TOP component, so the wire
+       is already mounted there; whether a downward stem is right for a piece cantilevered over the
+       lip is the question this case exists to answer. */
+    rim: 'verge',
     /* ⚠️ `?fold=1` IS THE CASE THE BUTTERFLIES ACTUALLY USE. Standing, a foldable sticker hinges its
        wings up into a V from the spine — so the lowest point stops being a wingtip and becomes the
        body, and a wire hung from the flat bottom starts in mid-air below it. Sandeep: *"butterfly
        can be folded in core. so need to adjust wire accordingly."* */
     ...(FOLDED ? { foldable: true } : {}),
+    /* `?face=0` turns the billboard off — the case that makes Tilt and Spin visibly move a piece
+       rather than foreshorten it. See placement_config.billboard in admin. */
+    ...(q.get('face') === '0' ? { billboard: false } : {}),
     wire: shape,
   },
   // The capability is what offers the wire; without it the designer shows no toggle at all.
@@ -110,11 +143,14 @@ createRoot(document.getElementById('root')).render(
   <div style={{ height: '100%' }}>
     {/* ⚠️ OFF AT PLACEMENT, like the pick — "can add a wire", so a baker decides. Previewing it
         means saying so explicitly, exactly as the card's toggle does. */}
-    <ElementPreview element={PIECE} zone="top_surface" mode="stand" autoRotate={false}
+    <ElementPreview element={PIECE}
+                    zone={{ side: 'side', rim: 'rim' }[q.get('zone')] ?? 'top_surface'}
+                    mode={{ side: 'hug', rim: 'verge' }[q.get('zone')] ?? 'stand'} autoRotate={false}
                     extra={{
                       ...(WIRE ? { wire: { on: true, ...shape } } : {}),
                       ...(TILT ? { tiltAngle: TILT } : {}),
                       ...(ROLL ? { rollAngle: ROLL } : {}),
+                      ...(SPIN ? { rotation: SPIN } : {}),
                     }}
                     style={{ height: '100%' }} />
   </div>,

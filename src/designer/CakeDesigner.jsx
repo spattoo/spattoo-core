@@ -16,7 +16,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
@@ -39,7 +39,7 @@ const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon } from '../shared/icons.jsx';
+import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -53,13 +53,14 @@ import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
+import CreamPatternStudio from './pattern/CreamPatternStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
 import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from './geometry/garnishPlacement.js';
 import Segmented from '../shared/Segmented.jsx';
-import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands } from './geometry/rainbow.js';
+import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands, springRange } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
-import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH } from './geometry/elementWire.js';
+import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
@@ -125,6 +126,8 @@ import UploadsPanel from './decorations/UploadsPanel.jsx';
 import FrostingTypePicker from './controls/FrostingPicker.jsx';
 import FrostingStylePicker from './controls/FrostingStylePicker.jsx';
 import StyleControls from './controls/StyleControls.jsx';
+// THE row that opens something (root CLAUDE.md rule 7). First use inside the designer: the tier
+// panel had no "press this and a card opens" affordance before the Cream layer row below.
 import { frostingSupportsGradient, frostingAllowsStyles, stylesForFrosting, applyMaterialConfig, frostingDef } from './frostings.js';
 import { applyDecorMaterialConfig } from './materials.js';
 import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
@@ -136,10 +139,12 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
-import { writingFromAcrylicRow, acrylicFinishes } from './geometry/acrylicConfig.js';
+import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS } from './geometry/acrylicConfig.js';
 import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
+import { CAVITY_DEFAULTS } from './geometry/topCavity.js';
+import { SPIRAL_DEFAULTS, SPIRAL_RISE } from './geometry/topSpiral.js';
 import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
@@ -589,6 +594,12 @@ function collectElementColors(design) {
    `catLabel` prettifies anything missing, so a category authored in admin is readable the day it
    exists rather than rendering as `undefined`. */
 const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', material: 'Material', theme: 'Theme', age_group: 'Age group', gender: 'Gender' };
+
+/* How a tier's colour is laid on, as [value, label]. ONE source: the Solid/Ombre/Stripes buttons in
+   the Pattern panel render from this, and the Pattern tab's own note reads the label from it too —
+   two copies would let the tab say "Ombre" while the row underneath showed "Stripes" selected. */
+const TREATMENT_LABELS = [['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']];
+const treatmentLabel = (t) => TREATMENT_LABELS.find(([k]) => k === t)?.[1] ?? null;
 const catLabel = (cat) => CAT_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
 /* ── WHICH CATEGORIES BECOME CHIPS — A SUPPRESSION LIST, NOT A WHITELIST ─────────────────────────
@@ -765,9 +776,49 @@ function supportsTopAndSide(el) {
 
 // Tilt stepper (−/°/+) — decor-specific (piping has no tilt); paired with the shared SizeDial.
 // Nudge one lean axis, through the shared clamp (placement.js) so this and the chooser's TiltRow
-// cannot end up with different limits.
+// cannot end up with different limits. The STEP comes from there too — see the note beside
+// LEAN_STEP_DEG for why a tap is 10° and not the 0.1 rad that was hard-coded here four times.
 const leanStep = (v, d) => clampLean((v ?? 0) + d);
 const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
+
+/* ── The four lean arrows, defined ONCE ────────────────────────────────────────────────────────
+ *
+ * ⚠️ THERE WERE TWO COPIES OF THESE, AND THAT COST A WRONG FIX. The chooser's TiltRow and the
+ * element card each built their own four buttons and their own readout. Sandeep reported the card's
+ * readout clipping its minus sign; I widened the one in TiltRow — the surface he was not looking at
+ * — and reported it fixed. Two identical controls are one control and a bug waiting to be fixed in
+ * the wrong place.
+ *
+ * ⚠️ AND AN ARROW THAT CANNOT MOVE NOW SAYS SO. `clampLean` caps a lean at ±70°, and at
+ * the cap the button looked exactly like a live one: Sandeep, parked at the cap pressing ↓, reported
+ * *"arrows are not working. nothing happening."* They were working; one of them had nowhere left to
+ * go and no way to say it. A control that is spent must read as spent (root CLAUDE.md rule 7).
+ *
+ * Returns an ARRAY so the card can spread it into a scrolling row and TiltRow can wrap it in a
+ * labelled, centred one — the two layouts differ, the controls do not.
+ */
+function leanArrows(ta, ra, onChange) {
+  /* A nudge that lands back on the value it started from is a nudge with nowhere to go. Compared
+     through `clampLean` on both sides, because the stored value has already been rounded by it. */
+  const spent = (v, d) => leanStep(v, d) === clampLean(v);
+  const arrow = (key, title, glyph, dead, apply) => (
+    <button key={key} type="button" disabled={dead} onClick={apply}
+      title={dead ? `${title} — already as far as it goes` : title}
+      style={{ ...s.tbIconBtn, ...(dead ? { color: '#cfc9c1', cursor: 'default' } : null) }}>{glyph}</button>
+  );
+  return [
+    arrow('ta-up',    'Lean back',    '↑', spent(ta, -LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta, -LEAN_STEP) })),
+    arrow('ta-down',  'Lean forward', '↓', spent(ta,  LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta,  LEAN_STEP) })),
+    arrow('ta-left',  'Lean left',    '←', spent(ra, -LEAN_STEP), () => onChange({ rollAngle: leanStep(ra, -LEAN_STEP) })),
+    arrow('ta-right', 'Lean right',   '→', spent(ra,  LEAN_STEP), () => onChange({ rollAngle: leanStep(ra,  LEAN_STEP) })),
+    /* ⚠️ WIDE ENOUGH FOR BOTH SIGNS. `leanDeg` always prints a number, so this can never show a
+       dash — yet the card read "69°/-", which is a NEGATIVE roll with its digits clipped off. At
+       minWidth 46 the worst case "-70°/-70°" needs about 60px, so any lean that went negative lost
+       its value behind the scroll arrow, and both arrows looked inert. */
+    <span key="ta-val" style={{ ...s.tbSizeLabel, fontSize: 11, fontWeight: 700, minWidth: 68,
+                                textAlign: 'center', whiteSpace: 'nowrap' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
+  ];
+}
 
 // Tilt is TWO axes: ↑↓ leans front/back, ←→ leans left/right (on a wall, that second one spins the
 // element in the plane of the wall). Four arrows in one row rather than two −/+ rows: the mapping to
@@ -780,11 +831,7 @@ function TiltRow({ tiltAngle, rollAngle, onChange }) {
     // dial beside this one came to be invisible.
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
       <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tilt</span>
-      <button style={s.tbIconBtn} title="Lean back"  onClick={() => onChange({ tiltAngle: leanStep(ta, -0.1) })}>↑</button>
-      <button style={s.tbIconBtn} title="Lean forward" onClick={() => onChange({ tiltAngle: leanStep(ta,  0.1) })}>↓</button>
-      <button style={s.tbIconBtn} title="Lean left"  onClick={() => onChange({ rollAngle: leanStep(ra, -0.1) })}>←</button>
-      <button style={s.tbIconBtn} title="Lean right" onClick={() => onChange({ rollAngle: leanStep(ra,  0.1) })}>→</button>
-      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 46, textAlign: 'center' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>
+      {leanArrows(ta, ra, onChange)}
     </div>
   );
 }
@@ -1901,7 +1948,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -1986,6 +2033,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // never a branch, and the element row's placement_config is what switches it.
   const [garnishStudio, setGarnishStudio] = useState(false);
   const [topperStudio, setTopperStudio] = useState(false);
+  /* The cream pattern studio: a block piped on a plate, then repeated on the cake. Sits beside the
+     other two because it is the same kind of thing — a screen you leave the cake to work on. */
+  const [patternStudio, setPatternStudio] = useState(false);
+  /* ⚠️ ITS OWN COLOUR, not the garnish studio's. Sharing `garnishColor` meant a studio for CREAM
+     opened on #4A2C1B — chocolate — with every tip thumbnail drawn brown, and its wheel wrote back
+     through `setGarnishColor`, so picking a pattern colour changed what the chocolate studio would
+     draw with next. Two tools coupled by nothing more than wanting the same control. White, because
+     that is what buttercream is before anybody colours it — the same default the pen carries. */
+  const [patternColor, setPatternColor] = useState('#ffffff');
   const [pendingTopper, setPendingTopper] = useState(null);
   const [pendingGarnish, setPendingGarnish] = useState(null);
   /* Kept pieces, for the "My decorations" shelf. Reloaded whenever the studio closes, so one just
@@ -5532,6 +5588,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
       setTopperStudio(true);
     }),
+    /* ⚠️ A PATTERN IS MADE BEFORE IT IS PLACED, which is what makes this a studio rather than a
+       tool. Sandeep: "if i build the pattern as only one building block, i should be able to drag
+       and extend it on the cake" — so what this screen produces is a BLOCK, and repeating it along
+       the cake is the placing half, not the making half.
+
+       ⚠️ NOT THE SAME THING AS PIPING ON THE CAKE. A mane follows a curved wall and stacks on the
+       cream below it; a block is composed flat and laid down over and over. Both are cream and both
+       use the same heap geometry, and they are still two different acts. */
+    cream_pattern: opensStudio(() => setPatternStudio(true)),
   };
 
   // Re-typing re-lays the run. Keeping arrangements across an edit was considered and dropped: the
@@ -5710,6 +5775,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // the canvas changes the selection, and piping ends on "Done piping".
     if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     closeAllPopups();
+    /* ⚠️ THE TIER PANEL NOW READS THE CATALOGUE, so it has to be loaded before the panel opens.
+     * Its Frosting section offers "Cream layer", guarded on `creamElement` — found by scanning
+     * `elementById` for `placement_config.second_cream`. That map is filled LAZILY: nothing loads it
+     * until the Decorations drawer is opened, a search runs, or a loaded design already has piping
+     * or stickers. So on a fresh cake the row was simply ABSENT, and appeared later once the baker
+     * had been somewhere else entirely — a control whose existence depended on unrelated
+     * navigation. Found by driving it (scripts/shoot-cream-doorway.mjs); invisible to source review
+     * and to the suite, which never mounts this component.
+     *
+     * Same reasoning as the eager load above for piping and placed stickers — "placed stickers need
+     * their source element resolvable before the panel opens" — now true of the tier panel too.
+     * `loadElementsIfNeeded` short-circuits on `allElementsLoaded`, so this is one fetch per session,
+     * and it is the fetch the Decorations drawer would have made anyway.
+     *
+     * ⚠️ NOT AWAITED. Selection must not wait on a network call; the row appears when the catalogue
+     * lands, which is the same behaviour every other catalogue-backed control already has. */
+    loadElementsIfNeeded();
     // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
     const isSame = selectedEl?.type === 'tier' && selectedEl.index === i;
     selectExclusive(isSame ? null : { type: 'tier', index: i });
@@ -6017,6 +6099,66 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function scatterScaleFor(element) {
     return element?.placement_config?.r ?? 0.5;
   }
+  /* ── "Big ones": a few larger sprinkles mixed through the small ones ──────────────────────────
+   *
+   * Sandeep, with a reference photo of pearls scattered among dots: "we have a sprinkles procedural
+   * element in core… it should be able to add some biegger size sprinkles in the middle" — and then
+   * the constraint that shapes the whole design: "default option is the existing behaviour. the new
+   * change is only as an option."
+   *
+   * ⚠️ A MULTIPLIER, NOT AN AUTHORED ABSOLUTE SIZE. The card's Size dial moves the whole scatter, so
+   * a big one has to stay proportional to whatever the baker set. An absolute would be correct once
+   * and then stop tracking the moment the dial moved.
+   *
+   * ⚠️ CLAMPED TO THE ELEMENT'S OWN RANGE. `scaleRangeOf(...).max` is the ceiling an admin authored
+   * for this element; a "big" sprinkle has no business exceeding it just because a multiplier said
+   * so. With the harness fixture (r 0.45, max 1.0, ×2.6) the clamp is what actually bites. */
+  const SCATTER_BIG_MUL = 2.4;
+  function scatterBigMulFor(element) {
+    const m = element?.placement_config?.scatter_big;
+    return Number.isFinite(m) && m > 1 ? m : SCATTER_BIG_MUL;
+  }
+  function scatterBigScaleFor(element, baseScale) {
+    return Math.min(baseScale * scatterBigMulFor(element), scaleRangeOf(element, 0.1, 4, 0.05).max);
+  }
+  /* The base (small) size of a surface's scatter. ⚠️ NEVER `instances[0].scale` — with a mix the
+     first instance may itself be big, and reading it would make one big sprinkle redefine "small"
+     for the whole set the next time anything resized. */
+  function scatterBaseScaleOf(instances, el) {
+    return instances.find(s => !s.scatterBig)?.scale ?? scatterScaleFor(el);
+  }
+  /* ── The base band: a ring of sprinkles round the foot of the wall ────────────────────────────
+   *
+   * Sandeep, with a photo of a rainbow nonpareil skirt: "at the buttom of the cake, there is a multi
+   * color band of the sprinkles. we should provide this option in the sprinkles card. density should
+   * be adjustable."
+   *
+   * ⚠️ WHAT THIS CAN AND CANNOT BE, measured before building so the result is not a surprise. A
+   * sprinkle is `STICKER_SIZE × scale` across (0.126 world units at the harness's r=0.45) on a
+   * ~7.5-unit circumference, so a 25% band packs to about 183 instances — under the 400 cap, and it
+   * reads as a ring of distinct beads. The photograph's texture needs pieces at r≈0.15, which is
+   * ~1600 instances: clamped to 400 and therefore sparse. A genuinely dense skirt is a GENERATED
+   * band (the `particleFinish` compositor luster dust and gold leaf already bake into), not
+   * instances. This is the instanced option, chosen knowingly.
+   *
+   * ⚠️ THE HEIGHT IS ADMIN-AUTHORED, never a literal here — `placement_config.scatter_band`, as a
+   * fraction of the wall. Config-driven like `scatter_big` beside it.
+   *
+   * ⚠️ DENSITY IS THE EXISTING COUNT DIAL. A band has a smaller area than the whole wall, so the
+   * same count reads far denser; `scatterMaxCount` already derives its ceiling from the area it is
+   * given, which is why the band passes its own height in rather than the tier's. */
+  const SCATTER_BAND_FRAC = 0.28;
+  function scatterBandFracFor(element) {
+    const f = element?.placement_config?.scatter_band;
+    return Number.isFinite(f) && f > 0 && f < 1 ? f : SCATTER_BAND_FRAC;
+  }
+  /* Is this surface's set a band? DERIVED from the instances, like the palette — a stored flag and
+     the cake could disagree, and the cake is the truth. Any instance answers it: the toggle re-seats
+     the whole set together, so they are never mixed. */
+  function scatterIsBand(elementId, group) {
+    const set = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === group);
+    return set.length > 0 && set.every(s => s.scatterBand);
+  }
   const isSideZoneName = z => z === ZONES.SIDE || z === ZONES.MIDDLE_TIER;
   // The cake's actual top tier (top decor belongs there); side defaults to the bottom tier.
   function scatterTierForZone(zone) {
@@ -6024,13 +6166,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   // Sensible max instances for a (zone × tier × size): surface area ÷ sprinkle footprint, packed
   // ~70%. So the cap fills the cake and scales with size, instead of an arbitrary number.
-  function scatterMaxCount(zone, tierIndex, scale) {
+  /* ⚠️ `bandFrac` SHRINKS THE AREA, and therefore the ceiling. A band is roughly a quarter of the
+     wall, so a cap derived from the whole wall would let Count run four times past what the strip
+     can hold and pack the seats solid — the dial's maximum has to mean the same thing in both
+     modes. */
+  function scatterMaxCount(zone, tierIndex, scale, bandFrac = null) {
     const tier = canvasConfig.tiers[tierIndex] ?? canvasConfig.tiers[0];
     const R = tier?.radius ?? 1.2;
-    const tierH = tier?.height ?? BOTTOM_H;
+    const tierH = (tier?.height ?? BOTTOM_H) * (bandFrac != null ? bandFrac : 1);
     const area = isSideZoneName(zone) ? (2 * Math.PI * R * tierH) : (Math.PI * (R * 0.82) ** 2);
     const footprint = (STICKER_SIZE * scale) ** 2;
-    return Math.max(12, Math.min(400, Math.floor((area / footprint) * 0.7)));
+    /* ⚠️ NO FLAT CEILING ANY MORE. Sandeep, on a band that would not fill: "count 400 is too less in
+       case of band. band can be very thick." The 400 was arbitrary — it was never derived from
+       anything, and at the sizes a band actually uses it sits at roughly a SEVENTH of what fits
+       (measured: 2733 at size 0.1, 1214 at 0.15, 683 at 0.2). The area maths is the real ceiling and
+       it already scales with Size, so it is now the only one: the dial's maximum means "as full as
+       this strip gets", in both modes, at whatever size the baker chose. */
+    return Math.max(12, Math.floor((area / footprint) * 0.7));
   }
   // The count a NEW scatter seeds with — the element's admin-authored default
   // (placement_config.scatter_count), falling back to SCATTER_DEFAULT_COUNT. Config-driven, never a
@@ -6064,7 +6216,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   // A random seat within (zone × tier), best-effort ≥ minDist from already-taken seats. Top =
   // a point in the top disk; side = a (theta, y) on the wall. Returns a position for addSticker.
-  function randomScatterSeat(zone, tierIndex, taken, minDist) {
+  function randomScatterSeat(zone, tierIndex, taken, minDist, bandFrac = null) {
     const tier = canvasConfig.tiers[tierIndex] ?? canvasConfig.tiers[0];
     const R = tier?.radius ?? 1.2;
     const tierH = tier?.height ?? BOTTOM_H;
@@ -6072,8 +6224,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const isSide = isSideZoneName(zone);
     let seat = null;
     for (let attempt = 0; attempt < 24; attempt++) {
+      /* ⚠️ `bandFrac` CONFINES THE SIDE SEATS TO THE FOOT OF THE WALL. null = the whole wall, which
+         is every side scatter that existed before the base band and every one placed without it.
+         The band starts at the same 0.08 inset the full-wall case uses (a sprinkle sitting exactly
+         on the board edge reads as spilled), and runs up `bandFrac` of the tier's height. */
+      const span = bandFrac != null
+        ? Math.max(0.02, tierH * bandFrac - 0.08)
+        : Math.max(0.02, tierH - 0.16);
       const cand = isSide
-        ? { theta: Math.random() * 2 * Math.PI - Math.PI, y: baseY + 0.08 + Math.random() * Math.max(0.02, tierH - 0.16) }
+        ? { theta: Math.random() * 2 * Math.PI - Math.PI, y: baseY + 0.08 + Math.random() * span }
         : (() => { const rad = Math.sqrt(Math.random()) * R * 0.82, ang = Math.random() * 2 * Math.PI; return { x: rad * Math.sin(ang), z: rad * Math.cos(ang) }; })();
       const clear = taken.every(t => {
         if (isSide) {
@@ -6092,16 +6251,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // change. Mode comes from the element's config for the zone (renders its art).
   // `palette` — one colour, several, or none. Several cycles across the new instances the way a
   // cluster's does; one behaves exactly as the single `color` argument always did.
-  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], palette) {
+  /* `band` — true confines a SIDE set to the foot of the wall (the base band). It rides on every
+     instance as `scatterBand` so growing the set later keeps filling the band rather than reverting
+     to the whole wall, exactly as the colour cycle had to be carried rather than re-derived. */
+  function scatterInstances(el, zone, tierIndex, count, scale, taken = [], palette, band = false) {
     const pal = Array.isArray(palette) ? palette.filter(Boolean) : (palette ? [palette] : []);
     const mode = zoneMode(el.placement_config, zone, 'hug');
     const minDist = STICKER_SIZE * scale;
+    const bandFrac = (band && isSideZoneName(zone)) ? scatterBandFracFor(el) : null;
     const baseId = Date.now();
     const ids = [];
     for (let i = 0; i < count; i++) {
-      const seat = randomScatterSeat(zone, tierIndex, taken, minDist);
+      const seat = randomScatterSeat(zone, tierIndex, taken, minDist, bandFrac);
       taken.push(seat);
-      const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale });
+      const id = addSticker(el, zone, tierIndex, mode, seat, { id: baseId + i, scale, scatterBand: bandFrac != null });
       // ⚠️ Offset by how many are ALREADY seated, so growing a mixed scatter continues the cycle
       // instead of restarting it. Without this, dragging Count up gives you a correctly mixed first
       // batch followed by a run of whatever colour the palette happens to start on.
@@ -6321,18 +6484,231 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // and every design saved before this reads back as a one-colour palette on its own. A stored field
   // would have had to survive the design jsonb, the template snapshot and the order snapshot, and
   // every existing design would have needed a default.
-  function scatterPaletteOf(elementId) {
+  /* How many of a surface's sprinkles are big. DERIVED by counting them, never held as a separate
+     setting — exactly the choice `scatterPaletteOf` makes below, and for the same reason: a stored
+     number and the cake could disagree, and the cake is the truth. */
+  function scatterBigCountOf(elementId, group) {
+    return design.stickers.filter(s => s.elementId === elementId && s.scatter
+      && scatterGroupOf(s) === group && s.scatterBig).length;
+  }
+  /* Choose WHICH instances are big, then resize them.
+   *
+   * ⚠️ FARTHEST-POINT SAMPLING OVER THE SEATS, not placement order. `setScatterPalette` cycles
+   * colours by index and that is right for colour — a repeating mix reads as a mix wherever it
+   * lands. Size is different: two big ones side by side read as a mistake, and index order says
+   * nothing about where a seat actually is, because `randomScatterSeat` places at random. So: take
+   * one, then repeatedly take whichever instance is furthest from every big already chosen.
+   * Deterministic for a given set of seats, and it degrades gracefully — asking for as many bigs as
+   * there are sprinkles simply makes them all big.
+   *
+   * ⚠️ IT ALSO RESETS. An instance that is no longer chosen goes back to the base size, so dialling
+   * Big ones down actually removes them rather than leaving orphans at the large size. */
+  function setScatterBigCount(elementId, zone, target) {
+    const group = isSideZoneName(zone) ? 'side' : 'top';
+    const el = elementById.get(elementId);
+    const instances = design.stickers
+      .filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === group)
+      .sort((a, b) => a.id - b.id);
+    if (!el || !instances.length) return;
+    const n = Math.max(0, Math.min(Math.round(target), instances.length));
+    const base = scatterBaseScaleOf(instances, el);
+    const bigScale = scatterBigScaleFor(el, base);
+    // Each surface in its OWN coordinates: the wall is (angle, height), the top is (x, z). Comparing
+    // across the two would be meaningless, which is why the group is resolved before any of this.
+    const pos = s => (isSideZoneName(s.zone) ? { a: s.theta ?? 0, b: s.y ?? 0 } : { a: s.x ?? 0, b: s.z ?? 0 });
+    const d2 = (p, q) => ((p.a - q.a) ** 2 + (p.b - q.b) ** 2);
+    const chosen = [];
+    while (chosen.length < n) {
+      let best = null, bestD = -1;
+      for (const s of instances) {
+        if (chosen.some(c => c.id === s.id)) continue;
+        const p = pos(s);
+        const d = chosen.length ? Math.min(...chosen.map(c => d2(p, pos(c)))) : 0;
+        if (d > bestD) { bestD = d; best = s; }
+      }
+      if (!best) break;
+      chosen.push(best);
+    }
+    const bigIds = new Set(chosen.map(s => s.id));
+    instances.forEach(s => {
+      const big = bigIds.has(s.id);
+      if (!!s.scatterBig === big) return;                       // already right — no needless write
+      updateSticker(s.id, { scatterBig: big, scale: big ? bigScale : base });
+    });
+  }
+  /* The card's Size dial, as a named function rather than a closure inside the JSX.
+     ⚠️ SO A PROBE CAN DRIVE THE REAL PATH. The alternative was a dev hook repeating these two
+     writes, which would have tested the hook rather than the dial — and a copy that agrees with
+     itself is exactly how a resize bug survives a green check. One implementation, two callers.
+     Smalls take the value; bigs take the clamped multiple, so the mix survives a resize.
+
+     ⚠️ PER SURFACE, like Count and Big ones. Sandeep: "there is only one size control. user can
+     select diff sizes for top and side." The instances always COULD differ — `scale` is per sticker
+     and `buildDesignSnapshot` stores them wholesale — so nothing new is persisted here and no old
+     design reads back differently. The card's single dial was the only thing insisting on one size,
+     because this function filtered on `elementId` alone and fanned every write across both
+     surfaces. Same group filter `setScatterBigCount` already uses, three hundred lines up.
+
+     ⚠️ `zone` IS OPTIONAL AND null MEANS BOTH. `toggleScatterSurface` seeds a new surface from
+     `scatterBaseScaleOf(all, el)` — deliberately spanning both groups, per its own note — so a
+     caller that wants the old fan-everything behaviour still has it, and the dial simply never
+     asks for it. */
+  function setScatterSize(elementId, zone, v) {
+    const el = elementById.get(elementId);
+    const grp = zone == null ? null : (isSideZoneName(zone) ? 'side' : 'top');
+    const all = design.stickers.filter(s => s.elementId === elementId && s.scatter
+      && (grp == null || scatterGroupOf(s) === grp));
+    if (!el || !all.length) return;
+    const smalls = all.filter(x => !x.scatterBig).map(x => x.id);
+    const bigs   = all.filter(x => x.scatterBig).map(x => x.id);
+    if (smalls.length) scaleStickers(smalls, v);
+    if (bigs.length)   scaleStickers(bigs, scatterBigScaleFor(el, v));
+  }
+  /* Turn a side set into a base band, or spread it back over the whole wall.
+   *
+   * ⚠️ RE-SEATED, NOT NUDGED. Editing each instance's `y` in place would drop them into the band at
+   * whatever angles they already had, ignoring `minDist` — the spacing is computed against the seats
+   * taken so far, so a half-moved set collides with itself. Remove and re-place is the only way the
+   * packer's own rule still holds, and it is what `scatterInstances` exists to do.
+   *
+   * ⚠️ IT CARRIES THE PALETTE, THE BASE SIZE AND THE BIG COUNT FORWARD. Three separate bugs in this
+   * card came from a re-place that dropped one of them (a block of one colour, a whole surface at
+   * the large size, a shrink eating the big ones), so all three are read BEFORE the removal and
+   * restored after. */
+  function setScatterBand(elementId, zone, on) {
+    const el = elementById.get(elementId);
+    if (!el || !isSideZoneName(zone)) return;
+    const grp = 'side';
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
+    if (!instances.length || scatterIsBand(elementId, grp) === !!on) return;
+    const count   = instances.length;
+    const scale   = scatterBaseScaleOf(instances, el);
+    // The SIDE's own palette — banding the side must not reach the top's colours.
+    const palette = scatterPaletteOf(elementId, grp);
+    const bigs    = scatterBigCountOf(elementId, grp);
+    const tierIndex = instances[0].tierIndex ?? scatterTierForZone(zone);
+    instances.forEach(s => removeSticker(s.id));
+    const ids = scatterInstances(el, zone, tierIndex, count, scale, [], palette, !!on);
+    /* ⚠️ MARK THE BIG ONES ON THE RETURNED IDS, NOT BY CALLING setScatterBigCount.
+     *
+     * That is what the first version did, and it silently lost them: `setScatterBigCount` re-reads
+     * `design.stickers`, which still holds the PRE-removal set while `removeSticker`'s update is
+     * pending — the identical stale-state bug already fixed once today in `setScatterDensity`, and
+     * reintroduced here a few hundred lines away. Measured before this fix: 3 big ones went in, 0
+     * came out. `scatterInstances` returns the new ids, so this writes against ids it holds rather
+     * than querying state that has not settled.
+     *
+     * ⚠️ AND THE SPREAD IS BY INDEX HERE, not farthest-point. Choosing by seat position would mean
+     * reading the seats back — the same pending state. Every seat is random, so evenly spacing the
+     * bigs through placement order gives a comparable spread, and a re-seat has reshuffled all of
+     * them anyway. The dial's own farthest-point pass still applies the moment it is next used. */
+    if (bigs > 0 && ids.length) {
+      const bigScale = scatterBigScaleFor(el, scale);
+      const step = ids.length / Math.min(bigs, ids.length);
+      for (let i = 0; i < Math.min(bigs, ids.length); i++) {
+        updateSticker(ids[Math.floor(i * step)], { scatterBig: true, scale: bigScale });
+      }
+    }
+    setSelectedStickerIds(new Set());
+    setSelectedEl({ type: 'scatter', elementId });
+  }
+  /* ⚠️ PER SURFACE, and my earlier question was the wrong one to ask. I offered "shared or split?"
+     as a preference; Sandeep picked shared and then hit what that actually means: "i actually wanted
+     color sprinkles only for the band. but on the top also colors changing... i know you asked this
+     question while building it, i preferred shared. but that should not be it."
+
+     It was never a preference. A band round the foot and a scatter across the top are two
+     decorations that happen to share an element row — colouring them together is a bug wearing a
+     setting's clothes, and offering it as a choice put the cost of my own design question onto him.
+     Scoped by group like Count, Big ones and Size, so the rainbow band leaves the top alone.
+
+     `group` is optional and null still means every instance, which is what seeding a brand-new
+     surface reads (it has no colours of its own to derive from yet). */
+  function scatterPaletteOf(elementId, group = null) {
     const out = [];
-    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+    design.stickers.filter(s => s.elementId === elementId
+        && (group == null || scatterGroupOf(s) === group))
+      .sort((a, b) => a.id - b.id)
       .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
     return out;
   }
+  /* The palette a NEWLY ticked surface should come up in: its own if it somehow has one, otherwise
+     the element's, so ticking Side on after mixing the Top still carries the mix across rather than
+     arriving grey. Ticking a surface on is the one moment the two surfaces are deliberately linked
+     — after that they are independent. */
+  function scatterSeedPaletteOf(elementId, group) {
+    const own = scatterPaletteOf(elementId, group);
+    return own.length ? own : scatterPaletteOf(elementId);
+  }
   // Cycle the customer's palette across the instances, in placement order. `i % length` is what makes
   // a 3-colour palette read as a repeating mix rather than three blocks.
-  function setScatterPalette(elementId, palette) {
+  function setScatterPalette(elementId, group, palette) {
     if (!palette.length) return;
-    design.stickers.filter(s => s.elementId === elementId).sort((a, b) => a.id - b.id)
+    design.stickers.filter(s => s.elementId === elementId
+        && (group == null || scatterGroupOf(s) === group))
+      .sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
+  }
+  /* ── One colour, or a mix ─────────────────────────────────────────────────────────────────────
+   *
+   * Sandeep, on the rainbow band: "it ll be diffficult for the user to remember the colors in the
+   * multi color band. need to have a option for multi color? may be near the color selector."
+   *
+   * The Colours row could always hold several colours, but getting there meant pressing + and
+   * picking each one — and then REMEMBERING what you picked, because nothing named the mix. This is
+   * the named state: one colour, or a mix, switched deliberately.
+   *
+   * ⚠️ THE MODE IS DERIVED, NOT STORED. `scatterIsMulti` counts the distinct colours on the cake,
+   * exactly as `scatterPaletteOf` and `scatterIsBand` derive theirs — a stored flag and the cake can
+   * disagree, and the cake is the truth. So an old design with three hand-picked colours reads back
+   * as a mix by itself, with nothing migrated.
+   *
+   * ⚠️ BUT SWITCHING BACK MUST NOT LOSE WHAT YOU HAD, which derivation alone cannot give: once every
+   * instance is one colour the mix is gone from the cake, and there is nowhere to read it from. So
+   * each instance carries its OTHER colour in a stash — `scatterSolo` while it is in the mix,
+   * `scatterMix` while it is back on one colour. Per instance, so `buildDesignSnapshot` (which
+   * stores `stickers` wholesale) round-trips both for free, and so re-entering the mix restores the
+   * exact colour each sprinkle had rather than re-cycling a palette over shuffled seats.
+   *
+   * ⚠️ THE SEED MIX IS SEEDED IN CODE AND OVERLAID FROM CONFIG (root CLAUDE.md rule 3), same shape
+   * as `scatterBigMulFor` and `scatterBandFracFor`. An admin retunes a sprinkle's mix on the element
+   * row; nobody needs a deploy. Only used the FIRST time a mix is asked for — after that the stash
+   * answers, so a baker's own edits are never overwritten by the preset (presets are a starting
+   * point, never forced). */
+  const SCATTER_MIX = Object.freeze(['#E8657F', '#F2C14E', '#7FC46B', '#5BA8D4', '#B07FD4', '#F09A5B']);
+  function scatterMixFor(element) {
+    const m = element?.placement_config?.scatter_mix;
+    return Array.isArray(m) && m.length > 1 && m.every(c => typeof c === 'string' && /^#[0-9a-f]{6}$/i.test(c))
+      ? m : SCATTER_MIX;
+  }
+  function scatterIsMulti(elementId, group = null) {
+    return scatterPaletteOf(elementId, group).length > 1;
+  }
+  function setScatterMulti(elementId, group, on) {
+    const el = elementById.get(elementId);
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter
+        && (group == null || scatterGroupOf(s) === group))
+      .sort((a, b) => a.id - b.id);
+    if (!el || !instances.length || scatterIsMulti(elementId, group) === !!on) return;
+    if (on) {
+      /* Prefer each instance's own stashed mix colour; fall back to cycling the seed mix. The stash
+         is what makes a second visit identical to the first rather than merely similar. */
+      const mix = scatterMixFor(el);
+      instances.forEach((s, i) => updateSticker(s.id, {
+        scatterSolo: s.color ?? null,
+        color: s.scatterMix ?? mix[i % mix.length],
+        scatterMix: null,
+      }));
+    } else {
+      /* Back to one colour: the stashed solo if there is one, else the first colour in the mix —
+         which is what a baker who never had a single colour would expect to land on. */
+      const solo = instances.find(s => s.scatterSolo)?.scatterSolo ?? instances[0].color;
+      instances.forEach(s => updateSticker(s.id, {
+        scatterMix: s.color ?? null,
+        color: solo,
+        scatterSolo: null,
+      }));
+    }
   }
 
   // The cluster's CURRENT finish = the material override its balls share (every member carries the
@@ -6432,10 +6808,32 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (!el) return;
       // ⚠️ The PALETTE, not `ref.color`. This passed the first instance's colour, so growing a
       // mixed scatter gave a correctly mixed original batch followed by a block of one colour.
-      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, ref.scale ?? scatterScaleFor(el), takenSeatsOf(instances), scatterPaletteOf(elementId));
+      /* ⚠️ AND THE BASE SCALE, NOT `ref.scale` — the same first-instance trap as the colour above,
+         one line apart. With big ones on, `instances[0]` may BE a big one, and every sprinkle added
+         from then on would have come in at the large size. */
+      /* ⚠️ AND THE BAND, for the third time in this one call: a side set confined to the foot of the
+         wall must keep filling the foot as Count grows, not revert to the whole side. Same shape as
+         the palette and the base scale above — state the set already carries, which the generator
+         cannot re-derive on its own. */
+      scatterInstances(el, ref.zone, ref.tierIndex, target - cur, scatterBaseScaleOf(instances, el), takenSeatsOf(instances), scatterPaletteOf(elementId, grp), scatterIsBand(elementId, grp));
     } else {
-      // Drop the newest (highest id) instances first.
-      const remove = [...instances].sort((a, b) => b.id - a.id).slice(0, cur - target).map(s => s.id);
+      /* Drop the newest (highest id) instances first — dragged positions survive that way.
+       *
+       * ⚠️ BUT SMALLS BEFORE BIGS, or a shrink silently eats the big ones the baker asked for.
+       * Measured before this: 3 big in 20, dialled down to 6, came back with 2. Newest-first alone
+       * is blind to size.
+       *
+       * ⚠️ AND THIS IS WHY THERE IS NO RE-SPREAD AFTERWARDS. The first version of this fixed it by
+       * re-applying the big count once the removal was done — which read `design.stickers` while
+       * `removeSticker`'s state update was still pending, so it re-spread across the PRE-removal set
+       * and the removal won. Ordering the removal is the same fix without the stale read: growing
+       * adds only smalls (so the count already holds), and shrinking now keeps every big until the
+       * target is smaller than their number, at which point losing some is arithmetic. */
+      const newestFirst = (a, b) => b.id - a.id;
+      const remove = [
+        ...instances.filter(s => !s.scatterBig).sort(newestFirst),
+        ...instances.filter(s => s.scatterBig).sort(newestFirst),
+      ].slice(0, cur - target).map(s => s.id);
       remove.forEach(id => removeSticker(id));
     }
   }
@@ -6450,12 +6848,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
     if (on) {
       if (all.some(s => scatterGroupOf(s) === grp)) return;   // already present
-      const ref = all[0];                                     // share size/colour with the existing set
       const tierIndex = scatterTierForZone(zone);
-      const scale = ref?.scale ?? scatterScaleFor(el);
+      /* ⚠️ THE BASE SIZE, NOT `all[0].scale`. The third and last call site of the first-instance
+         trap the comment below already records for colour — and the one I missed when fixing the
+         other two. `all` spans BOTH surfaces, so with big ones on the top, `all[0]` could be a big
+         one, and ticking Side on seeded the entire side set at the LARGE size. Measured before the
+         fix: 12 side instances at 0.78 instead of 0.3, and their "big" ones then went to 1.0 on top
+         of that. */
+      const scale = scatterBaseScaleOf(all, el);
       // Same reason: a scatter ticked onto a second surface should carry the whole mix, not the
       // first instance's colour.
-      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterPaletteOf(elementId));
+      // Carries the band too: ticking Side back on after setting a base band should return the band,
+      // not a fresh scatter up the whole wall.
+      scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterSeedPaletteOf(elementId, grp), scatterIsBand(elementId, grp));
     } else {
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }
@@ -6486,6 +6891,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Big-sprinkle mix. The control is a DialCell — a drag, which a script cannot aim precisely —
+       and `setScatterBigCount` is otherwise unreachable from the page, so the one thing most likely
+       to be wrong (which instances turn big, at what size, and whether 0 truly changes nothing)
+       could not be looked at. Same argument as `__tapElementById`. */
+    window.__setScatterBig   = (elementId, zone, n) => { setScatterBigCount(elementId, zone, n); return true; };
+    window.__scatterBigCount = (elementId, group) => scatterBigCountOf(elementId, group);
+    /* The other three paths a size mix can be destroyed on — resize, density, and ticking a second
+       surface. Each calls the SAME function the card does, never a re-implementation: a hook that
+       repeated the logic would agree with itself and prove nothing. Without these, "the mix survives
+       a resize", "big ones survive a Count change" and the SIDE surface at all were unreachable. */
+    /* ⚠️ THE ZONE IS PART OF THE SIGNATURE NOW. Size is per surface, so a probe that could only say
+       "set the size" could no longer express what the dial does — and a hook whose shape has drifted
+       from the control is a hook that proves the wrong thing. Pass null for the old both-surfaces
+       write, which is still what seeding a new surface uses. */
+    window.__setScatterSize    = (elementId, zone, v) => { setScatterSize(elementId, zone, v); return true; };
+    window.__scatterSizeOf     = (elementId, group) => {
+      const el = elementById.get(elementId);
+      const set = design.stickers.filter(s => s.elementId === elementId && s.scatter
+        && (group == null || scatterGroupOf(s) === group));
+      return set.length ? scatterBaseScaleOf(set, el) : null;
+    };
+    /* The colour MODE, through the card's own writers. Same argument as `__setScatterPalette` right
+       below: the mode is derived from the instances, so a probe that set colours directly would be
+       asserting on its own arithmetic rather than on what the toggle does. */
+    /* ⚠️ THE GROUP IS PART OF THESE NOW. The palette is per surface, so a probe that could only say
+       "make it multi" could not express the thing that was wrong — the top recolouring with the
+       band. Pass null for every instance of the element, which is what the old behaviour was. */
+    window.__setScatterMulti   = (elementId, group, on) => { setScatterMulti(elementId, group, on); return true; };
+    window.__scatterIsMulti    = (elementId, group) => scatterIsMulti(elementId, group ?? null);
+    window.__scatterPaletteOf  = (elementId, group) => scatterPaletteOf(elementId, group ?? null);
+    /* The ceiling the Count dial offers, so "400 is too few for a band" is checkable as a number
+       rather than by eye. Takes the LIVE size, which is what the card now passes. */
+    window.__scatterMaxCount   = (elementId, group) => {
+      const el = elementById.get(elementId);
+      const zone = group === 'side' ? ZONES.SIDE : ZONES.TOP_SURFACE;
+      const set = design.stickers.filter(s => s.elementId === elementId && s.scatter
+        && scatterGroupOf(s) === group);
+      const scale = set.length ? scatterBaseScaleOf(set, el) : scatterScaleFor(el);
+      return scatterMaxCount(zone, scatterTierForZone(zone), scale,
+        scatterIsBand(elementId, group) ? scatterBandFracFor(el) : null);
+    };
+    window.__setScatterDensity = (elementId, zone, n) => { setScatterDensity(elementId, zone, n); return true; };
+    window.__scatterSurface    = (elementId, zone, on) => { toggleScatterSurface(elementId, zone, on); return true; };
+    /* The base band, through the card's own function — a Chip is clickable from a script, but the
+       probe then depends on finding it by label, and the point of these hooks is to drive the real
+       path without the UI in the way. */
+    window.__setScatterBand    = (elementId, zone, on) => { setScatterBand(elementId, zone, on); return true; };
+    /* The palette, through the card's own writer. Driving the `<input type="color">` swatches from a
+       script means synthesising change events on a native picker, and the rainbow is the whole point
+       of the base band — untested, "multi-colour works" would have been a guess. */
+    window.__setScatterPalette = (elementId, group, colours) => { setScatterPalette(elementId, group ?? null, colours); return true; };
+    window.__scatterIsBand     = (elementId, group) => scatterIsBand(elementId, group);
+    /* ⚠️ THE TAP PATH FOR ONE INSTANCE, which nothing could reach. Same argument as
+       `__tapElementById`: a sprinkle on a spinning 3D wall cannot be aimed by a script, so the whole
+       toolbar path — select one, then press its Remove — was unreachable, and that is exactly where
+       Sandeep's "it removed control from the card stack, but did not clear the sprinkles" lives.
+       Calls `handleStickerSelect`, the real handler, never a re-implementation. */
+    window.__tapSticker = (id, ctrlKey = false) => { handleStickerSelect(id, ctrlKey); return true; };
     window.__getSelection = () => [...selectedStickerIds];
     /* What is selected, as a fact rather than an inference from what is on screen. Added while
      * proving the foil tap-to-reopen fix: a tap that MISSED a flake and a tap that HIT it but
@@ -6538,6 +7001,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       ...(t.topPipings    ?? []).map(p => ({ tierIndex: i, zone: 'rim',   cardId: p.cardId, layerId: p.layerId })),
       ...(t.bottomPipings ?? []).map(p => ({ tierIndex: i, zone: 'board', cardId: p.cardId, layerId: p.layerId })),
     ]);
+    /* ── Freehand strokes, and piping one from a script ──────────────────────────────────────────
+     * ⚠️ `__getPiping` CANNOT SEE THESE. It walks `design.tiers` and reports RINGS; every cream-pen
+     * tap, rope and GLB stamp lives in `design.piping`, a different store entirely. So the whole
+     * hand-piping half of this feature was unreadable from a test.
+     *
+     * ⚠️ READ-ONLY, AND A `__pipeAt` THAT COMMITTED STROKES WAS DELETED FROM HERE. It re-decided the
+     * seat in design space — "find a stroke within thickness x 2, sit above it" — which is the same
+     * question `pickSeat` answers, asked a second way. A check built on it would have proved my
+     * hook agreed with my hook while never touching the code under test. Stacking is verified by
+     * REAL pointer events through the real pen (scripts/shoot-pen-stacking.mjs), and the seat rule
+     * itself by geometry/penSeat.test.js, which needs no scene at all. */
+    /* ⚠️ A PIPING ROW CANNOT BE OPENED BY `__tapElementById`, and that is not a quirk of the hook —
+     * `cream_piping` is filtered out of the decorations grid and reached ONLY through the ring-picker
+     * tile, which calls openPipingPopup. Driving it with tapPlaceElement opened the BOTTOM TIER card
+     * instead, which is what a screenshot showed after three assertions failed for reasons that had
+     * nothing to do with the code under test. Same argument as __tapElementById itself: a card with
+     * one door needs that door opening from a script, or the whole hand-piping half of this feature
+     * is unreachable by any check. */
+    window.__openPiping = (id) => { const e = elementById.get(id); if (!e) return false; openPipingPopup(e); return true; };
+    window.__getStrokes = () => (design.piping ?? []).map(st => ({
+      id: st.id, kind: st.kind ?? 'rope', point: st.point ?? null, normal: st.normal ?? null,
+      glbUrl: st.glbUrl ?? null, thickness: st.thickness, stampId: st.stampId ?? null,
+    }));
     window.__listElements = () => [...elementById.values()].map(e => ({
       id: e.id, name: e.name, mode: zoneMode(e.placement_config, 'top_surface'),
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
@@ -6943,6 +7429,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     ...creamPipingEls.filter(el => el.placement_config?.pattern_only !== true),
     ...pipingPatternEls.filter(el => pipingBlockById[el.placement_config?.parts?.[0]?.element_id]?.image_url),
   ];
+  /* ── What the cream pattern studio may pipe with ───────────────────────────────────────────────
+   *
+   * Sandeep: *"elements with placement_config.hand_piping ticked is a good idea."*
+   *
+   * ⚠️ THE SAME FLAG THE PEN'S OWN DOOR READS, and deliberately not a second judgement. `hand_piping`
+   * is ticked per element in admin by whoever calibrated it: a shell or a rosette repeats happily, a
+   * wrap band is ONE pre-formed ring and a drip a procedural curtain, and stamping either along a
+   * line produces something nobody would pipe. Absent means OFF — an element nobody has considered
+   * does not get the feature by default.
+   *
+   * ⚠️ RESOLVED HERE, NOT IN THE STUDIO. `resolvePipingGlbs` needs `pipingBlockById`, which needs the
+   * catalogue; handing the studio a ready list keeps the one copy of that resolution in the file
+   * that owns the catalogue, and keeps the studio ignorant of how a pattern references its blocks.
+   * An element whose GLB does not resolve is dropped rather than offered — a tile that stamps
+   * nothing reads as the studio being broken. */
+  const patternPieceEls = pipingPickerEls
+    .filter(el => el.placement_config?.hand_piping)
+    .map(el => ({
+      id: el.id,
+      name: el.name,
+      glbUrl: resolvePipingGlbs(el).glbUrl,
+      thumb: thumbSrc(el),
+      // How the RING stands this piece up. Without it a shell authored lying on its side is piped
+      // lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
+      rotation: pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
+    }))
+    .filter(p => !!p.glbUrl);
+
+  /* ── The cake the pattern studio pipes on ──────────────────────────────────────────────────────
+   *
+   * ⚠️ `baseY` AND `board` ARE NOT IN `canvasConfig`, AND ASSUMING THEY WERE WOULD HAVE SHIPPED AN
+   * EMPTY STUDIO. `toCanvasConfig` emits neither: CakeCanvas's `cakeScene` stacks `baseY` from a
+   * running total of tier heights and derives the board with `boardOf(bottomTier)`. Passing
+   * `canvasConfig.board` gave `undefined` (no board drawn at all — the very fault this studio was
+   * opened to fix), and a missing `baseY` makes `yBase + height` NaN, which puts every tier and
+   * every catcher nowhere. Nothing would have errored: the same NaN class as the omitted `bury`
+   * that blanked this feature's screen once already, and the build, bindings, three gates and 2440
+   * tests were all green with it in place.
+   *
+   * Stacked the SAME WAY cakeScene stacks it rather than imported, because cakeScene is built inside
+   * the canvas from its own config; this is the one number, computed by the one rule. */
+  const patternTiers = useMemo(() => {
+    let stackY = BOARD_TOP_Y;
+    return (canvasConfig.tiers ?? []).map(t => {
+      const baseY = stackY;
+      stackY += t.height ?? 0;
+      return { ...t, baseY };
+    });
+  }, [canvasConfig.tiers]);
+  /* Shaped the way CakeCanvas hands a board to the pen — `kind` is the board's word for it and
+     `shape` is the renderer's, and 0.1 is the board's own top face (BOARD_TOP_Y). */
+  const patternBoard = useMemo(() => {
+    const bt = patternTiers[0];
+    if (!bt) return null;
+    const b = boardOf(bt);
+    return b ? { shape: b.kind, radius: b.radius, width: b.width, depth: b.depth, y: 0.05 } : null;
+  }, [patternTiers]);
+
   // Drips ride the SAME ring popup as piping, but are their OWN picker group (a chocolate drip is not
   // "cream piping"). dripEls render in a separate labelled card via the shared renderRingPickerCard.
 
@@ -7905,7 +8449,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const painting = creamPaint?.tierIndex === creamTier && creamPaint?.layerId === band?.layerId;
     /* ⚠️ BLACK, NOT GREEN. Sandeep: "buttons in black" — which also settles the question left open
        on the foil card ("see the buttons are in green color"). #1a1a1a is what "active" already
-       means everywhere else in this app (doneBtn, the toolbar's pressed state, editTabOn), so the
+       means everywhere else in this app (doneBtn, the toolbar's pressed state), so the
        finish cards now agree with every other card instead of carrying their own tone. */
     const chip = (active) => ({ padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 700, cursor: 'pointer',
       border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE, color: active ? SURFACE : INK });
@@ -8072,12 +8616,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   // The scatter card body: a density-managed set of packed instances (sprinkles). Density slider
-  // (add/remove instances, never regenerate), one shared Size, one shared Colour (if the element
-  // allows it), and Remove all. Reuses SizeDial + the colour wheel; no parallel renderer.
+  // (add/remove instances, never regenerate), Count/Big ones/Size PER SURFACE, one shared palette
+  // (if the element allows colour), and Remove all. Reuses SizeDial + the colour wheel; no parallel
+  // renderer.
   function renderScatterBody(card) {
     const all = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
     if (!all.length) return null;
-    const size = all[0]?.scale ?? 1;        // shared across surfaces (Size + Colour are one set)
+    /* ⚠️ NO SHARED `size` HERE ANY MORE. It used to read the base scale across BOTH surfaces and
+       hand it to one dial; each surface row now derives its own (`suSize`), because the top and the
+       side can differ. A single const would have gone on quietly showing whichever surface happened
+       to sort first — the first-instance trap one level up. */
     const canColor = !!caps?.color;
     const el = elementById.get(card.elementId);
     const scR = scaleRangeOf(el, 0.1, 4, 0.05);   // dial bounds + increment from config
@@ -8104,86 +8652,241 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 way we did for piping elements". Third instance of one shape, so it reuses the style
                 rather than growing a third copy.
                 ⚠️ No active-tile border here: unlike piping and placement, NOTHING below follows a
-                selection — Count is listed per active surface and Size/Colour are shared. A selected
-                look would promise a focus this card does not have. */}
+                selection — each active surface gets its OWN row of dials, so there is nothing for a
+                selected tile to point at. A selected look would promise a focus this card does not
+                have. */}
             <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {surfaces.map(su => {
               const on = all.some(s => scatterGroupOf(s) === su.group);
+              /* ⚠️ THIS SURFACE'S OWN SIZE, and the tile is why deleting the shared `size` const was
+                 not merely a tidy-up. It used to read one base scale across BOTH surfaces, so once
+                 the top and the side could differ, every preview would have drawn at whichever
+                 surface sorted first. An unticked surface has no instances yet, so it falls back to
+                 the element's configured size — which is what it will actually be seeded at.
+
+                 ⚠️ AND IT BUILT CLEAN WITH THE CONST GONE. `npm run build` passed, `check:bindings`
+                 passed, and the dead reference would still have thrown a ReferenceError the moment a
+                 baker opened a sprinkles card — the JSX closure is only evaluated on render. Rule 6,
+                 demonstrated on my own change: a green build is not a working screen. */
+              const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+              const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
+              /* ⚠️ THE WHOLE TILE IS THE CONTROL, and it says so. Sandeep: "looks like sprinkles
+                 control does not have a pointer."
+               *
+               * He is right and it was mine. `bdbfec6f` wrapped this tile in a div to fix the
+               * stack's height and set `cursor: 'default'` on the wrapper — so a 104px tile showing
+               * a cake with sprinkles on it looked inert, while the only thing that actually
+               * responded was `PreviewTile`'s 22px checkbox in the corner. Root CLAUDE.md rule 7,
+               * judged AT REST on a phone: you aim at the picture, because the picture is what the
+               * control is about.
+               *
+               * ⚠️ AND THE OTHER TWO USERS ALREADY DO IT THIS WAY. The placement chooser (`slots`)
+               * and the piping ring stack both put an `onClick` on this same wrapper and keep
+               * `previewTile`'s own `cursor: 'pointer'`. This card was the odd one out — a third
+               * behaviour for one shape, which is the thing the shared style exists to prevent.
+               *
+               * ⚠️ THE LABEL GUARD IS NOT OPTIONAL. Those two wrappers can bubble freely because
+               * their onClick does something DIFFERENT from the checkbox (it selects a slot or a
+               * ring). Mine calls the SAME toggle, and `PreviewTile` stops only `pointerdown`, not
+               * `click` — so without this guard a tap on the checkbox would fire both handlers and
+               * cancel itself out: off, then straight back on. Caught by reading the other two
+               * rather than by the build, which would have been perfectly happy.
+               *
+               * ⚠️ NO `previewTileOn` HERE. `PreviewTile` already draws an INK border when checked;
+               * adding the wrapper's ring too would double it. That style means "the controls below
+               * are editing THIS tile", and on this card every ticked surface has its own row — so
+               * it would be claiming a focus that does not exist. */
               return (
-                <div key={su.zone} style={{ ...s.previewTile, cursor: 'default' }}>
-                <PreviewTile checked={on} onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
+                <div key={su.zone}
+                     onClick={e => { if (e.target.closest('label')) return; toggleScatterSurface(card.elementId, su.zone, !on); }}
+                     style={s.previewTile}>
+                <PreviewTile checked={on}
+                  onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
                   locked={false}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
-                  <TopperPreview parts={scatterPreviewParts(el, su.zone, size)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
+                  <TopperPreview parts={scatterPreviewParts(el, su.zone, suSize)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
                 </PreviewTile>
                 </div>
               );
             })}
             </ScrollFadeRow>
+            {/* ── Base band ───────────────────────────────────────────────────────────────────────
+                Sandeep, with a photo of a rainbow sprinkle skirt: "at the buttom of the cake, there
+                is a multi color band of the sprinkles. we should provide this option in the sprinkles
+                card. density should be adjustable."
+
+                ⚠️ ONLY WHILE THE SIDE SET EXISTS. A band toggle over an empty side has no instances
+                to re-seat, so it would be a control that does nothing; it appears with the Side tick.
+
+                ⚠️ A Chip, matching the `Scraped edge` toggle in the tier sheet's Frosting tab: this
+                is on/off rather than one-of-many, and Chip brings aria-pressed, focus and the phone
+                hit target with it.
+
+                ⚠️ DENSITY IS THE EXISTING COUNT DIAL, per the ask. A band is about a quarter of the
+                wall's area, so the same Count reads far denser — and `scatterMaxCount` is given the
+                band fraction so the dial's maximum still means "as full as this strip gets".
+
+                ⚠️ MULTI-COLOUR NEEDED NOTHING BUILT. The Colours row below already derives a palette
+                from the instances and cycles it across them, with no cap on how many you add, so a
+                rainbow mix works here exactly as it does on a full-wall scatter. */}
+            {onSurfaces.some(su => su.group === 'side') && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                <span style={s.editPanelLabel}>Side</span>
+                <Chip label="Band at the base" isMobile={isMobile}
+                      active={scatterIsBand(card.elementId, 'side')}
+                      onClick={() => setScatterBand(card.elementId, ZONES.SIDE, !scatterIsBand(card.elementId, 'side'))} />
+              </div>
+            )}
           </div>
         )}
-        {/* Count is per active surface (denser top than side if you like); Size + Colour are shared. */}
-        {onSurfaces.length > 0 && (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <span style={s.editPanelLabel}>Count</span>
-            {onSurfaces.map(su => {
-              const c = all.filter(s => scatterGroupOf(s) === su.group).length;
-              // Max from the CONFIGURED size, not the live (resized) size — else resizing would jog the slider.
-              const maxCount = scatterMaxCount(su.zone, su.tierIndex, scatterScaleFor(el));
-              return (
-                /* One cell per ACTIVE SURFACE, captioned with the surface when there is more than
-                   one — count is per surface (a denser top than side is a real choice), while Size
-                   and Colour are shared. A count, so integer fmt and rounded on write. */
-                <DialCell key={su.group}
-                  label={onSurfaces.length > 1 ? su.label : 'Count'}
-                  value={Math.min(c, maxCount)} min={1} max={maxCount} step={1}
+        {/* ── ONE ROW PER SURFACE ─────────────────────────────────────────────────────────────────
+            Sandeep: "dial controls - lets keep top and side in two rows. and there is only one size
+            control. user can select diff sizes for top and side."
+
+            THE PREVIOUS SHAPE was every dial in ONE scroller — his earlier ask, "we can put them in
+            one row actually", which was right when a surface owned only Count and Big ones. Adding a
+            per-surface Size makes it six cells on one line, and six cells scroll: the baker would
+            have had to drag sideways to reach the thing they were looking for, on the axis the cake
+            is not on. A row per surface is three cells each, which fits a 375px phone without
+            scrolling at all.
+
+            ⚠️ AND IT FIXES THE CAPTIONS. With one row every cell had to name its surface — "Count
+            Top · Big Top · Count Side · Big Side" — because nothing else said which was which. A
+            row that IS the surface carries that in one label at its head, so the cells go back to
+            plain nouns: Count, Big ones, Size. Same words on both rows, which is what makes them
+            comparable at a glance.
+
+            ⚠️ STILL `ScrollFadeRow` OVER `s.previewRow`, per surface. Three cells will not overflow
+            on any phone, but the row keeps its own fade rather than my asserting a width it will
+            never exceed — and `ControlCell`'s `minHeight: 46` is what holds both rows on the same
+            baseline as each other.
+
+            ⚠️ THE HEADING IS THE SURFACE, and it only appears when there are two. One surface ticked
+            means one row, and a row labelled "Top" above dials that could only ever be top is noise.
+
+            COLOURS SITS IN THIS BLOCK TOO, under the surface it belongs to — see the note on it
+            below. It is a swatch grid rather than a dial, so it goes under the row, not in it. */}
+        {onSurfaces.map(su => {
+          const c = all.filter(x => scatterGroupOf(x) === su.group).length;
+          /* ⚠️ THE BAND'S OWN CEILING. A band is roughly a quarter of the wall, so a cap derived
+             from the whole side would let Count run four times past what the strip can hold and
+             pack the seats solid — the dial's maximum has to mean the same thing in both modes.
+
+             ⚠️ AND FROM THE LIVE SIZE, NOT THE CONFIGURED ONE. This read `scatterScaleFor(el)` — the
+             size an admin authored — so shrinking the sprinkles never bought you room for more of
+             them. That is the other half of "count 400 is too less in case of band": at the
+             element's configured 0.45 the ceiling computed 134, while the same band at the size the
+             baker had actually set (0.1) holds 2733. The old comment justified it as stopping the
+             dial "jogging" on resize; a ceiling that is wrong by a factor of twenty is the worse of
+             the two, and now that the dial shows the REAL count the jog only moves the maximum. */
+          const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+          const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
+          const maxCount = scatterMaxCount(su.zone, su.tierIndex, suSize,
+            scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
+          const inSet = c;
+          /* `suSet`/`suSize` are declared with the ceiling above — THIS SURFACE'S OWN BASE SIZE, not
+             the element's. `scatterBaseScaleOf` over the whole set would show the top's size on the
+             side's dial the moment the two differ, which is the entire point of the change. The same
+             "never the first instance" rule applies within the group: with big ones on, `[0]` may
+             itself be big. */
+          return (
+            <div key={`dials-${su.group}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+              {onSurfaces.length > 1 && <span style={s.editPanelLabel}>{su.label}</span>}
+              <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+                {/* Count is per ACTIVE SURFACE — a denser top than side is a real choice.
+                    A count, so integer fmt and rounded on write.
+
+                    ⚠️ IT SHOWS THE REAL COUNT. This was `Math.min(c, maxCount)`, so whenever the
+                    ceiling dropped below what was actually on the cake the dial quietly displayed
+                    the CEILING and called it the count. Measured: with the band on I asked for 400,
+                    got 400 instances, and the dial said 134 — a control disagreeing with the cake it
+                    controls, which is how "count is only 1, but it shows more than one sprinkles"
+                    looks from the baker's side. The ceiling now limits only what you can SET; `max`
+                    opens up to the current count so a set that is already past it can still be
+                    dialled DOWN rather than being stuck off the end of its own scale. */}
+                <DialCell label="Count"
+                  value={c} min={1} max={Math.max(c, maxCount)} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterDensity(card.elementId, su.zone, Math.round(v))} />
-              );
-            })}
-          </div>
-        )}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={s.editPanelLabel}>Size</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1, minWidth: 0 }}>
-            <SizeDial size={size} min={scR.min} max={scR.max} step={scR.step}
-              onChange={v => scaleStickers(all.map(s => s.id), v)} />
-          </div>
-        </div>
-        {/* ── Colours, not Colour ────────────────────────────────────────────────────────────────
-            One wheel here set every instance to the same colour, because the write fanned it across
-            the whole group. But each scatter instance is its own sticker record with its own `color`,
-            so a mix was always storable — the card was the only thing insisting on uniformity.
+                {/* ── Big ones ──────────────────────────────────────────────────────────────────
+                    A few larger sprinkles mixed through the small ones — the pearls among the dots.
 
-            The same row the cluster card uses, and deliberately so: a cluster packs into a heap and a
-            scatter spreads across a surface, but "which colours is this group made of" is one
-            question and should not have two answers that drift apart.
+                    ⚠️ DEFAULT 0, AND THAT IS THE WHOLE CONTRACT. "default option is the existing
+                    behaviour. the new change is only as an option." At zero nothing is written, no
+                    instance carries `scatterBig`, and the scatter is identical to what it has always
+                    been — including every cake saved before this existed.
 
-            The palette is DERIVED from the instances (scatterPaletteOf), so nothing new is persisted
-            and an old single-colour design reads back as a one-swatch palette by itself. */}
-        {canColor && (() => {
-          const palette = scatterPaletteOf(card.elementId);
-          const pal = palette.length ? palette : ['#ffffff'];
-          return (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-              <span style={s.editPanelLabel}>Colours</span>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                {pal.map((c, i) => (
-                  <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
-                    <input type="color" value={c} style={s.paletteSwatch}
-                      onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, next); }} />
-                    {pal.length > 1 && (
-                      <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, pal.filter((_, j) => j !== i))}
-                        style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
-                    )}
-                  </span>
-                ))}
-                <button title="Add colour" onClick={() => setScatterPalette(card.elementId, [...pal, nextPaletteColour(pal[pal.length - 1])])}
-                  style={{ ...s.paletteSwatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-              </div>
+                    ⚠️ A COUNT, NOT A PROPORTION: "count is safe i believe. user would have control."
+                    Adding more sprinkles does not quietly multiply the big ones. */}
+                <DialCell label="Big ones"
+                  value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
+                  min={0} max={inSet} step={1}
+                  fmt={v => String(Math.round(v))}
+                  onChange={v => setScatterBigCount(card.elementId, su.zone, Math.round(v))} />
+                {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
+                    instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
+                    was uniform and would silently WIPE a mix now — one nudge and every pearl becomes a
+                    dot. `setScatterSize` writes the base to the smalls and the clamped large size to the
+                    bigs, so the mix survives a resize and stays proportional.
+
+                    ⚠️ AND IT IS SCOPED TO THIS SURFACE now — the zone goes in, so dialling the side
+                    leaves the top where the baker put it. */}
+                <DialCell label="Size" value={suSize} min={scR.min} max={scR.max} step={scR.step}
+                  onChange={v => setScatterSize(card.elementId, su.zone, v)} />
+              </ScrollFadeRow>
+              {/* ── Colours, not Colour — and PER SURFACE ──────────────────────────────────────
+                  Sandeep: "i actually wanted color sprinkles only for the band. but on the top also
+                  colors changing. i think we should keep the colors separaetly. i know you asked
+                  this question while building it, i preferred shared. but that should not be it."
+
+                  ⚠️ I ASKED THE WRONG QUESTION AND HE PAID FOR IT. I offered "shared or split?" as a
+                  preference. It is not one: a band round the foot and a scatter across the top are
+                  two decorations that happen to share an element row, so one palette across both
+                  was a bug wearing a setting's clothes. Measured before this: turning the mix on
+                  recoloured all 412 instances, top included. Scoped by group now, like Count, Big
+                  ones and Size — the surface owns its colours, and this row sits UNDER that
+                  surface's dials so which set it acts on is a matter of position, not memory.
+
+                  Each instance is its own sticker with its own `color`, and the palette is DERIVED
+                  from them (`scatterPaletteOf`), so nothing new is persisted and an old design reads
+                  back as a one-swatch palette by itself.
+
+                  ⚠️ A `Chip` for the mix, matching "Band at the base" above and "Scraped edge" in
+                  the tier sheet: on/off, with aria-pressed, focus and the phone hit-target for free.
+                  The swatches always show every colour — the mix is never hidden behind the mode —
+                  and `+` still implies it, because the chip is derived from the palette. */}
+              {canColor && (() => {
+                const palette = scatterPaletteOf(card.elementId, su.group);
+                const pal = palette.length ? palette : ['#ffffff'];
+                const isMulti = scatterIsMulti(card.elementId, su.group);
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 2 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <span style={s.editPanelLabel}>Colours</span>
+                      <Chip label="Multi colour" isMobile={isMobile}
+                            active={isMulti}
+                            onClick={() => setScatterMulti(card.elementId, su.group, !isMulti)} />
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+                      {pal.map((col, i) => (
+                        <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
+                          <input type="color" value={col} style={s.paletteSwatch}
+                            onChange={e => { const next = [...pal]; next[i] = e.target.value; setScatterPalette(card.elementId, su.group, next); }} />
+                          {pal.length > 1 && (
+                            <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, su.group, pal.filter((_, j) => j !== i))}
+                              style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
+                          )}
+                        </span>
+                      ))}
+                      <button title="Add colour" onClick={() => setScatterPalette(card.elementId, su.group, [...pal, nextPaletteColour(pal[pal.length - 1])])}
+                        style={{ ...s.paletteSwatch, width: 26, fontSize: 16, color: '#3D5A44', background: '#F2F7F3', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
-        })()}
+        })}
         {/* Always offered. See the note on `delete` in the toolbar's actions below: a decoration a
             customer cannot take off their own cake is not a capability, it is a trap. */}
         {true && (
@@ -8993,13 +9696,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const ta = sticker?.tiltAngle ?? 0, ra = sticker?.rollAngle ?? 0;
       // Steppers, not dials: four discrete nudges on two axes. They are also the one control here
       // that a horizontal scroller cannot fight — a tap is not a drag.
-      tiltCtls = [
-        <button key="ta-up"    style={s.tbIconBtn} title="Lean back"    onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta, -0.1) })}>↑</button>,
-        <button key="ta-down"  style={s.tbIconBtn} title="Lean forward" onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta,  0.1) })}>↓</button>,
-        <button key="ta-left"  style={s.tbIconBtn} title="Lean left"    onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra, -0.1) })}>←</button>,
-        <button key="ta-right" style={s.tbIconBtn} title="Lean right"   onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra,  0.1) })}>→</button>,
-        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 46 }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
-      ];
+      /* The same four arrows the chooser shows — one definition, so a fix cannot land on one surface
+         and miss the other, which is how the clipped readout came to be "fixed" while the card it
+         was reported on kept clipping. */
+      tiltCtls = leanArrows(ta, ra, patch => updateSticker(el.id, patch));
     }
     if (el.type === 'sticker') {
       const fSticker = design.stickers.find(stkr => stkr.id === el.id);
@@ -9262,6 +9962,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (sticker) {
         const row  = elementWire(srcEl?.placement_config, srcEl?.allowed_actions);
         const wr   = sticker.wire ?? { on: false, ...row };
+        /* The two zones the wall renderer draws — the same pair DraggableSideSticker is chosen by,
+           so the control appears exactly where the wire it steers actually runs out of a wall. */
+        const onWall = sticker.zone === ZONES.SIDE || sticker.zone === ZONES.MIDDLE_TIER;
         const setWire = patch => updateSticker(el.id, {
           wire: { ...wr, ...patch },
           /* Switching a wire on puts the stick away, and only then — a patch that always wrote
@@ -9286,14 +9989,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <Chip key="wire-on" label="On a wire" active={!!wr.on} isMobile={isMobile}
                 onClick={() => setWire({ on: !wr.on })} />,
           ...(wr.on ? [
-            /* ⚠️ BEND FIRST, WHICH IS NOT THE STICK'S ORDER AND SHOULD NOT BE. A pick has no shape to
-               choose, so its row opens with depth. A wire's bow is the whole of what makes it read as
-               wire rather than a pin, so it is the control a baker reaches for first (INVARIANTS #12
-               — layout follows use). */
-            ...dial('wbend', 'Bend', wr.bend ?? row.bend, v => `${Math.round(v * 100)}%`,
-                    v => setWire({ bend: v }), WIRE_BEND.min, WIRE_BEND.max, WIRE_BEND.step),
+            /* ⚠️ ANGLE AND LONG LEAD, AND BEND USED TO. The old note said the bow "is the whole of
+               what makes it read as wire rather than a pin, so it is the control a baker reaches for
+               first" — true while every wire arrived pre-curled. It does not any more: `bend`
+               defaults to 0 and the bow is opt-in, so leading with three controls that all do
+               nothing until a fourth is touched is the order the features were built in, not the
+               order they are used (INVARIANTS #12).
+
+               What a baker actually reaches for is where the piece SITS: how steeply the stem goes
+               in, and how far out it holds the butterfly. Sandeep: *"angle is most used control, so
+               bring it little front in the row."* Angle first, Long second, the bow family behind
+               them in its own order. */
+            ...(onWall ? dial('wang', 'Angle', wr.angle ?? row.angle, v => `${Math.round(v)}°`,
+                    v => setWire({ angle: v }), WIRE_ANGLE.min, WIRE_ANGLE.max, WIRE_ANGLE.step) : []),
             ...dial('wlen', 'Long', wr.length ?? row.length, v => `${v.toFixed(1)}×`,
                     v => setWire({ length: v }), WIRE_LENGTH.min, WIRE_LENGTH.max, WIRE_LENGTH.step),
+            ...dial('wbend', 'Bend', wr.bend ?? row.bend, v => `${Math.round(v * 100)}%`,
+                    v => setWire({ bend: v }), WIRE_BEND.min, WIRE_BEND.max, WIRE_BEND.step),
+            /* ⚠️ "Kinks", NOT "Bends", BESIDE A CONTROL ALREADY CALLED "Bend". One is how FAR the wire
+               leaves the straight line, the other is HOW MANY times it does — two words a letter
+               apart for two different questions is a label doing harm. A kink is what a bend in a
+               wire is called, which is the word a baker would reach for. */
+            ...dial('wwav', 'Kinks', wr.waves ?? row.waves, v => `${Math.round(v)}`,
+                    v => setWire({ waves: Math.round(v) }), WIRE_WAVES.min, WIRE_WAVES.max, WIRE_WAVES.step),
+            /* How far the bow's plane turns on the way up — what stops an S being a flat squiggle. */
+            ...dial('wtwi', 'Twist', wr.twist ?? row.twist, v => `${Math.round(v)}°`,
+                    v => setWire({ twist: v }), WIRE_TWIST.min, WIRE_TWIST.max, WIRE_TWIST.step),
+            /* ⚠️ Angle is ONLY ON A WALL, and sits at the head of the row above. A stem in the top
+               surface goes straight down — the only way into a horizontal surface — and a rim wire
+               leans back over its own lip, so the dial would move and change nothing there (rule 7,
+               read backwards). It is a control rather than a constant because two constants both
+               failed: dead horizontal, then a hard-coded 31° that still read as horizontal, because
+               the angle only acts on the part of the wire OUTSIDE the cake. */
             /* Which way it bows. On a cake wearing a dozen butterflies this is what stops them
                looking like a row of flags — the reference photographs have every one facing
                differently.
@@ -9759,6 +10486,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               { k: 'Spacing', dial: 'size', v: w.letterSpacing ?? 0, min: 0, max: 0.6, step: 0.02,
                 fmt: v => (v === 0 ? 'normal' : `+${Math.round(v * 100)}%`),
                 set: v => setWriting({ letterSpacing: v }) },
+            ] : []),
+            /* ── Standing up: the legs a topper is pushed in on ──────────────────────────────────
+               ⚠️ AUTHORED IN THE STUDIO, READ BY THE RENDERER, AND REACHABLE BY NOBODY IN BETWEEN.
+               The Acrylic Topper Studio has offered Base bar, Legs, leg length and buried since it
+               was built; `acrylicCfg` reads every one of them. The Texts card filtered the whole
+               Adjust row down to Size and Rotate for acrylic, so a customer typing their own
+               message got whatever the defaults said and could not change it. Sandeep: *"we have
+               actually done a poc in admin to hav 1 leg or 2 legs. some of those settings are
+               missing when we merged that in to the texts."*
+
+               ⚠️ STANDING ONLY, WHICH IS THE POSE AND NOT THE ZONE. `acrylicCfg` already returns
+               `legs: 0` for a flat piece — a plaque against a wall has nothing to push into and
+               prongs would point at the customer. Offering the dial there would move a number the
+               builder discards, which is the "picker that visibly does nothing" this file warns
+               about elsewhere.
+
+               These three and no more. Bridge and the sheet thickness are cuttability, calibrated
+               per face against a cutter's minimum detail — topperFaces.js records a Parisienne
+               topper reading "Bithday", correct by every measure and unreadable. That is not a
+               taste, and a customer dragging it would be dragging a manufacturing tolerance. */
+            ...(w.style === 'acrylic' && surface !== 'side' ? [
+              { k: 'Legs', dial: 'size', v: w.legs ?? ACRYLIC_DEFAULTS.legs, min: 0, max: 4, step: 1,
+                fmt: v => (Math.round(v) === 0 ? 'none' : `${Math.round(v)}`),
+                set: v => setWriting({ legs: Math.round(v) }) },
+              ...((w.legs ?? ACRYLIC_DEFAULTS.legs) > 0 ? [
+                { k: 'Leg length', dial: 'size', v: w.legLen ?? ACRYLIC_DEFAULTS.legLen,
+                  min: 0.15, max: 0.9, step: 0.02, fmt: v => v.toFixed(2),
+                  set: v => setWriting({ legLen: v }) },
+                /* How far the legs go IN. Not a manufacturing number despite looking like one: it
+                   decides how high the word rides above the icing, which is the whole reason a
+                   baker reaches for a longer leg. Bounded by the leg itself in the builder, so a
+                   word can never be buried past its own prongs. */
+                { k: 'Buried', dial: 'size', v: w.bury ?? ACRYLIC_DEFAULTS.bury,
+                  min: 0, max: 0.9, step: 0.01, fmt: v => `${Math.round(v * 100)}%`,
+                  set: v => setWriting({ bury: v }) },
+              ] : []),
             ] : []),
             /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
                from a sheet; bending the baseline is a piped-writing idea. */
@@ -10563,6 +11326,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // exists.
   function renderRainbowBody(card) {
     const rb = design.tiers[card.tierIndex]?.rainbows?.find(r => r.id === card.id);
+    /* What the Springs-at dial may offer, or null when it would be dead. The rule lives in
+       rainbow.js beside the geometry it describes, and is measured by its own tests. */
+    const rbSpring = springRange(rb ?? {});
     if (!rb) return null;
     const current = arrangementOf(rb);
     const set = changes => updateTierRainbows(card.tierIndex, cur =>
@@ -10652,7 +11418,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ['Ropes',       'bands',     3,    9,    1,     v => String(Math.round(v)),  true],
             ['Thickness',   'thickness', 0.04, 0.18, 0.005, v => v.toFixed(3),           true],
             ['Press flat',  'flatten',   0,    0.9,  0.05,  v => v.toFixed(2),           true],
-            ['Up the wall', 'spring',    0,    1,    0.02,  v => v.toFixed(2),           (rb.surface ?? 'top') === 'side'],
+            /* ⚠️ IT WAS HIDDEN, NOT MISSING, AND THE FIRST FIX UN-HID IT TOO FAR. Gated to the
+               wall, it could not be reached on a top rainbow at all — Sandeep: *"i think the option
+               'springs at' is not wired. i cant reach it in core."* But showing the whole 0–1.4
+               everywhere puts most of the travel where it does nothing: a foot resting on the cake
+               TOP pins the springing point, so `archY` does not move until spring passes 1. That
+               dead two-thirds is exactly the fault the original gate was protecting against, and
+               the doc had already measured it.
+
+               So the range is asked for rather than assumed — `springRange` reads the feet and the
+               surface, returns only the live part, and returns null when there is none. Its own
+               tests measure the claim against `archY` instead of restating the formula. */
+            ['Springs at', 'spring', rbSpring?.min ?? 0, rbSpring?.max ?? 1.4,
+             rbSpring?.step ?? 0.02, v => v.toFixed(2), !!rbSpring],
           ].filter(([, , , , , , show]) => show).map(([label, key, min, max, step, fmt]) => (
             <DialCell key={key} label={label} value={rb[key] ?? RAINBOW_DEFAULTS[key]}
               min={min} max={max} step={step} fmt={fmt}
@@ -12696,10 +13474,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                a baker taps to find empty — which is the usual argument against splitting it out. */
             if (((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen)
                 && stopsEligible && !hasActiveGroup) {
-              // "Gradient", not "Blend". Blend was a width compromise from when Shape made four tabs;
-              // three fit the real word, and the panel inside this tab has always called it a
-              // gradient — a tab whose label disagrees with its own contents is a small lie.
-              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Colours' : 'Gradient', node: (
+              /* ⚠️ "Pattern" ON A TIER, "Gradient" ON A STICKER — each accurate to what is inside.
+               *
+               * Sandeep: "but other two tabs are 'color' and 'colors' these are confusing". They
+               * were: "Colours" sat one letter from "Colour" in the same strip.
+               *
+               * ⚠️ AND THAT WAS A SILENT REGRESSION, not a taste call. This shipped as "Blend" (a
+               * width compromise from when Shape made four tabs), was restored to "Gradient" on
+               * 2026-08-07 — "a tab whose label disagrees with its own contents is a small lie" —
+               * and a later edit then added `isTierGradient ? 'Colours'`. Since `isTierGradient` is
+               * merely `selectedEl?.type === 'tier'`, that made the 'Gradient' branch UNREACHABLE
+               * for tiers: the exact case the 2026-08-07 change was about. Two doc entries in
+               * mobile-navigation.md still described the old, correct label.
+               *
+               * ⚠️ WHY NOT SIMPLY RESTORE "Gradient": the panel stopped being only a gradient. On a
+               * tier it offers Solid / Ombre / STRIPES, and stripes are not a gradient — the same
+               * "small lie" pointing the other way. A STICKER really does only get a gradient (the
+               * treatment row is gated on `isTierGradient`), so it keeps the accurate word. */
+              /* ⚠️ NO NOTE ON A GLAZE TIER. The Solid/Ombre/Stripes row is gated off there
+                 (`isTierGradient && !isGlazeTier`), so a treatment name would describe a control
+                 that is not in the panel — the tab lying about its own contents, which is the exact
+                 fault the label history above is about. */
+              sections.push({ id: 'gradient', label: isGlazeTier ? 'Glaze' : isTierGradient ? 'Pattern' : 'Gradient',
+                              note: isGlazeTier ? null : treatmentLabel(treatment), node: (
                 <>
                 {/* ⚠️ On the COLOUR axis, not under Style. Style is documented as geometry only and is
                     single-select, so putting stripes there would make "ribbed AND striped" —
@@ -12708,7 +13505,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={s.gradientBlock}>
                     <div style={s.gradientLabel}>How the colour sits</div>
                     <div style={s.treatRow}>
-                      {[['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']].map(([k, lbl]) => (
+                      {TREATMENT_LABELS.map(([k, lbl]) => (
                         <button key={k} onClick={() => setTreatment(k)}
                           style={{ ...s.treatBtn, ...(treatment === k ? s.treatBtnOn : null) }}>{lbl}</button>
                       ))}
@@ -12777,7 +13574,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const opts  = frostingAllowsStyles(type) ? stylesForFrosting(type) : null;
               const style = opts?.some(o => o.value === tier?.frostingStyle) ? tier.frostingStyle : DEFAULT_STYLE;
               const userParams = opts ? userStyleParams(style) : [];
-              sections.push({ id: 'frosting', label: 'Frosting', node: (
+              /* The note says the MATERIAL, not the style — "cream vs fondant" is the thing Sandeep
+                 reported not being able to reach, and it is the decision that governs which styles
+                 are even offered (`frostingAllowsStyles`). One source: the same `frostingDef` the
+                 picker inside this tab renders from, so the tab cannot name a material the panel
+                 disagrees with. */
+              sections.push({ id: 'frosting', label: 'Frosting', note: frostingDef(type).label, node: (
                 <>
                   <FrostingTypePicker
                     value={type}
@@ -12796,6 +13598,235 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       values={resolveStyleParams(style, tier?.styleParams)}
                       onChange={(key, value) => setTierStyleParam(selectedEl.index, key, value)}
                     />
+                  )}
+                  {/* ── Top edge: a dished top with a scraped cream lip ──────────────────────────
+                    *
+                    * Sandeep: *"it should go under STYLE i think. thoughts?"* — and the answer is
+                    * the one the Cream layer below already established, for the same reason.
+                    *
+                    * ⚠️ IT CANNOT BE A STYLE CHIP, BECAUSE THE TWO COMPOSE. `frostingStyle` is ONE
+                    * string per tier: Smooth, Cream Wave, Ribbed and Vertical Piping are mutually
+                    * exclusive ways the WALL is finished. A dished top goes with every one of them
+                    * — a ribbed wall under a scraped rim is a cake somebody makes. A fifth chip
+                    * would mean choosing the cavity INSTEAD of Ribbed and would delete that.
+                    *
+                    * ⚠️ AND IT IS A DIFFERENT SURFACE. Style finishes the wall; this finishes the
+                    * top. Same section, because both answer "how is the cream worked"; own
+                    * heading, because they are not the same question.
+                    *
+                    * ⚠️ INLINE, NOT A NavRow — which is where it parts company with Cream layer.
+                    * That one earned a card: several bands per tier, an edge you paint while the
+                    * cake spins, an anchor, a gold rim. This is two controls, fewer than Cream
+                    * Wave's Depth and Waviness, which render inline right here. A row that opens a
+                    * card holding two dials is a door in front of a cupboard.
+                    *
+                    * ⚠️ HEIGHT ON A DIAL, IRREGULARITY ON A BUTTON. Height is a quantity with a
+                    * direction and a baker knows which way they want it. The irregularity is not —
+                    * nobody wants seed 7 over seed 8, they want to see another one, and a dial over
+                    * a seed is a control whose numbers carry no meaning.
+                    *
+                    * Width, crest, swells and wobble stay out: each was chosen against the
+                    * reference photographs and they are what make it read as cream rather than as a
+                    * moulding. They belong to an admin row, the way the acrylic topper's sheet and
+                    * bridge do. */}
+                  {/* 4, not 10: the sheet body already puts its own `gap: 10` above this heading, so
+                      the original margin was buying a 20px break where 14px reads the same — and this
+                      tab is 119px over its visible height with the Cream layer row at the end paying
+                      for it. See ChipPicker's note for the rest of that budget. */}
+                  <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                                textTransform: 'uppercase', marginTop: 4 }}>Top edge</div>
+                  {/* ⚠️ A CONTROL AND ITS LABEL ARE ONE THING, AND A WRAPPING ROW SPLIT THEM. These
+                      rows wrap, and `[dial, label]` emitted as siblings let a wrap fall between the
+                      two: with both features on, "Height" landed on the line BELOW the dial it names,
+                      directly under a different dial. A label naming the wrong control is worse than
+                      no label — see INVARIANTS #11, which is about exactly this pairing. So each pair
+                      is an inline-flex of its own and wraps as a unit. */}
+                  {/* ⚠️ THE TWO ROWS NEED A GAP OF THEIR OWN, AND HAD NONE. Each is its own flex row
+                      whose height is exactly the chip's 32px, and nothing separated them: measured in
+                      the sheet, "Scraped edge" ended at 681 and "Spiral" began at 681 — touching to
+                      the pixel, where every other block in this panel sits 14–17px apart. Sandeep:
+                      *"scraped edge, spiral, cream layer chips are overlapping."* They were not
+                      overlapping, which is worse than it sounds: a zero gap is indistinguishable
+                      from a collision and is read as one.
+
+                      A column with a gap rather than a margin on the second row, because the second
+                      row is CONDITIONAL — it disappears on a square tier, and a margin living on the
+                      thing that vanishes leaves the spacing to be re-derived by whatever is next. */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <Chip label="Scraped edge" isMobile={isMobile}
+                          active={!!tier?.topCavity?.on}
+                          onClick={() => setTierCavity(selectedEl.index,
+                            tier?.topCavity?.on ? { on: false } : { on: true })} />
+                    {tier?.topCavity?.on && (<>
+                      <span style={s.topEdgePair}>
+                        <SizeDial size={tier.topCavity.lip ?? CAVITY_DEFAULTS.lip}
+                          min={0} max={0.18} step={0.005}
+                          fmt={v => (v === 0 ? 'flat' : `${Math.round(v * 1000) / 10}`)}
+                          onChange={v => setTierCavity(selectedEl.index, { lip: v })} />
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                      </span>
+                      {/* ⚠️ THE SEED IS STORED, or Shuffle is a preview toy — a design that cannot
+                          reproduce the rim a baker chose has not saved their work. A fresh number
+                          rather than the next one: "seed 8 after seed 7" invites the idea they are
+                          ordered and that further along is a better one. They are different hands. */}
+                      <span style={s.topEdgePair}>
+                        <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                          onClick={() => setTierCavity(selectedEl.index,
+                            { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
+                        <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                      </span>
+                    </>)}
+                  </div>
+
+                  {/* ── The turntable spiral ──────────────────────────────────────────────────────
+                    *
+                    * Sandeep: *"spiral is a separate thing"*, and then *"so spiral is an option user
+                    * can select separately. so both edge elevation, spiral can individually be
+                    * selected."* Hence its own chip beside the scraped edge rather than a setting
+                    * inside it — all four combinations are reachable, including spiral with no rim.
+                    *
+                    * ⚠️ SEPARATELY SELECTABLE, JOINTLY BUILT. Two chips here, one mesh in CakeTier:
+                    * they are two tools on one sheet of cream and the spiral runs across the floor
+                    * the rim encloses. See buildTopSurface.
+                    *
+                    * ⚠️ ROUND TIERS ONLY, AND THE CHIP IS SIMPLY ABSENT ON THE REST. A turntable
+                    * cannot spin a rectangle — no sheet cake in any reference has one, and forced
+                    * onto one the rings never reach the long sides and a coil sits marooned in the
+                    * middle. `isRoundWall`, never a test on a shape's NAME (INVARIANTS #1). Absent
+                    * rather than disabled because this row is a line of chips a baker scans, not a
+                    * form: a permanently dead chip in it is a worse answer than one fewer chip.
+                    * The scraped edge has no such limit — a scraper walks any perimeter. */}
+                  {isRoundWall(tierShape(tier)) && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                      <Chip label="Spiral" isMobile={isMobile}
+                            active={!!tier?.topSpiral?.on}
+                            onClick={() => setTierSpiral(selectedEl.index,
+                              tier?.topSpiral?.on ? { on: false } : { on: true })} />
+                      {tier?.topSpiral?.on && (<>
+                        <span style={s.topEdgePair}>
+                          <SizeDial size={tier.topSpiral.turns ?? SPIRAL_DEFAULTS.turns}
+                            min={2} max={10} step={1} fmt={v => `${Math.round(v)}`}
+                            onChange={v => setTierSpiral(selectedEl.index, { turns: Math.round(v) })} />
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Rings</span>
+                        </span>
+                        {/* ⚠️ A NARROW RANGE ON PURPOSE. Sandeep: *"usually there wont be too high
+                            spirals, so the range would be small. but adjustable."* SPIRAL_RISE
+                            carries the ends, chosen off the same sweep as the default. */}
+                        <span style={s.topEdgePair}>
+                          <SizeDial size={tier.topSpiral.rise ?? SPIRAL_DEFAULTS.rise}
+                            min={SPIRAL_RISE.min} max={SPIRAL_RISE.max} step={SPIRAL_RISE.step}
+                            fmt={v => `${Math.round(v * 1000) / 10}`}
+                            onChange={v => setTierSpiral(selectedEl.index, { rise: v })} />
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Height</span>
+                        </span>
+                        {/* One Shuffle per feature, each storing its own seed: a design that cannot
+                            reproduce the coil a baker chose has not saved their work. */}
+                        <span style={s.topEdgePair}>
+                          <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                            onClick={() => setTierSpiral(selectedEl.index,
+                              { seed: 1 + Math.floor(Math.random() * 9999) })}>↻</button>
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                        </span>
+                      </>)}
+                    </div>
+                  )}
+                  </div>
+
+                  {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
+                    *
+                    * Sandeep: "cream layer is sitting in finish category. its actually a cream
+                    * finish. so it should sit in style here."
+                    *
+                    * ⚠️ IT CANNOT BE A STYLE CHIP, and that is not a filing opinion — the two
+                    * COMPOSE. CakeCanvas hands the tier `frostingStyle` and `creamLayers` as
+                    * separate props and CakeTier renders SecondCreamLayers over the wall, so a
+                    * chip in the single-select Style row would make "ribbed wall" and "cream
+                    * band" mutually exclusive and delete a combination that works today.
+                    *
+                    * ⚠️ AND IT KEEPS ITS CARD. Sandeep's own objection — "it comes with few
+                    * settings" — is true but understates it: the discriminator is INSTANCES, not
+                    * the count of controls. Every style already reveals its own params here
+                    * (Cream Wave has Depth and Waviness). No style has several per tier, a torn
+                    * edge you paint while the cake spins, an anchor, or a gold-leaf rim.
+                    *
+                    * ⚠️ THE CARD'S OWN BUTTON (`s.neutralBtn`), NOT `NavRow` AND NOT A CHIP.
+                    *
+                    * Sandeep: *"'cream layer' option looks like a note. not like an actionable
+                    * thing."* He was right, and it was two mistakes of mine stacked. `NavRow` is a
+                    * SETTINGS-LIST row — white fill, a 1px #E6EBE7 hairline, an #B4C3B8 chevron —
+                    * and its only other use is TopUpsSection, several rows on a tinted page. Here it
+                    * sat alone on a sheet that is itself `rgba(255,255,255,0.55)`: white on white,
+                    * with the hover and press states that sell it as pressable unreachable on a
+                    * phone (root CLAUDE.md rule 7 — judged AT REST). And the hint I wrote ran to
+                    * three lines, so the biggest thing in the box was grey prose: the shape of a
+                    * callout, not a control.
+                    *
+                    * `neutralBtn` is what this card already uses for a real action — it spreads
+                    * `cardBtnBase`, so the geometry stays shared. Full width, like the cream card's
+                    * own "+ Add band". The chevron stays, because this DOES open something; the band
+                    * count sits beside it when there is one.
+                    *
+                    * ⚠️ BUT ITS TONE WAS TOO QUIET AND I ASSERTED OTHERWISE BEFORE MEASURING. The
+                    * comment here claimed "a 1.5px LINE border"; the computed style was 1px #dddddd
+                    * at 34px — lighter AND shorter than the Chip right above it (#999999, 44px).
+                    * A control quieter than its own neighbour is exactly what "looks like a note"
+                    * means, so the override below copies Chip's resting values verbatim. Both
+                    * DECLARE 1.5px and both RENDER 1px, so the width was never the difference —
+                    * see the measured note on the override itself.
+                    *
+                    * ⚠️ NOT A CHIP, still. Everything else in this section is a single-select that
+                    * changes the wall, and a chip that opened a card would read as a fifth wall
+                    * style — the confusion this control exists to end.
+                    *
+                    * ⚠️ NO HINT. The card this opens leads with "A raised second buttercream band
+                    * with a torn edge…", so the explanation is one tap away instead of impersonating
+                    * a control.
+                    *
+                    * ⚠️ NAMED "Cream layer", matching the element the baker already knows from the
+                    * decorations drawer. One thing, one name.
+                    *
+                    * ⚠️ ROUND WALLS ONLY — SecondCreamLayers renders on round walls, so the row is
+                    * ABSENT on a square tier rather than present and dead. `isRoundWall`, never a
+                    * shape-name test (see the packer's note on the same trap).
+                    *
+                    * The drag-to-place tile stays in the drawer: it drops onto the tier you aimed
+                    * at, which this row cannot do, and both call addCreamToTier — one function,
+                    * three affordances, so there is no second implementation to drift. */}
+                  {creamElement && isRoundWall(tierShape(tier)) && (
+                    <button
+                      type="button"
+                      /* ⚠️ THE CHIP'S RESTING WEIGHT, MATCHED AND THEN MEASURED. Sandeep chose "match
+                         the chips" after: *"'cream layer' option looks like a note. not like an
+                         actionable thing."*
+                         `neutralBtn` alone measured 1px #dddddd at 34px against the "Scraped edge"
+                         chip's #999999 at 44px — lighter AND shorter than its own neighbour, which
+                         is what "looks like a note" means. These are Chip's own resting values.
+                         ⚠️ THE WIDTH IS DECLARED 1.5px AND RENDERS 1px — for the chip too, so the
+                         two match exactly (verified: identical computed border, background, colour
+                         and height). The real difference was never the width I kept citing; it was
+                         the COLOUR (#999999 vs #dddddd) and the HEIGHT (44 vs 34). */
+                      style={{ ...s.neutralBtn, width: '100%', justifyContent: 'space-between', gap: 8,
+                               minHeight: 44, background: 'transparent', color: '#666',
+                               border: '1.5px solid #999999' }}
+                      onClick={() => {
+                        focusEditor('decoration');
+                        /* First press seeds a band so something appears immediately — the tap and
+                           drag paths both do this. Later presses only REOPEN the card on this tier:
+                           seeding again would quietly add a fourth band to a tier that has three. */
+                        if (tier?.creamLayers?.length) { setCreamTier(selectedEl.index); setCreamSel(0); }
+                        else addCreamToTier(selectedEl.index);
+                        selectExclusive({ type: 'cream', elementId: creamElement.id });
+                      }}
+                    >
+                      <span>Cream layer</span>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#8a7a80' }}>
+                        {tier?.creamLayers?.length ? (
+                          <span style={{ fontWeight: 800, color: INK }}>{tier.creamLayers.length}</span>
+                        ) : null}
+                        <ChevronRightIcon size={16} />
+                      </span>
+                    </button>
                   )}
                 </>
               ) });
@@ -12883,17 +13914,55 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   }}>{isMobile ? 'Done' : '✕'}</button>
                 </div>
 
+                {/* ⚠️ THE SHARED `Segmented`, NOT A FOURTH HAND-ROLLED STRIP.
+                  *
+                  * Sandeep, looking at this row on a phone: "when i click on cake (tier) it only
+                  * opens the color options. i cant choose the cream vs fondant or the style option
+                  * that i can choose in desktop" — then, asked what happened when he tapped
+                  * Frosting: "I didn't notice it was a tab."
+                  *
+                  * Nothing was broken. Measured at 390 and 360px the strip does not overflow and
+                  * every tab is on screen and tappable; on DESKTOP all sections stack at once, on a
+                  * phone only the active one mounts, so the tabs are the sole way through — and
+                  * they did not read as a way through. The old row was `border: 'none'` over a 5%
+                  * black fill, so the unselected tabs looked like inert background beside one solid
+                  * black pill, which reads as a heading with two disabled things next to it.
+                  *
+                  * `Segmented` is the component this app already extracted for exactly this — a
+                  * tinted track, a hairline, a raised white selection, a focus ring, arrow-key
+                  * navigation and real tablist ARIA — and it was ALREADY imported in this file and
+                  * used eight times in it while this strip hand-rolled its own. Its own header calls
+                  * a fourth copy out by name: "the visual drift is what you notice, and the
+                  * accessibility is what silently never arrives."
+                  *
+                  * `equal` because these are a few short labels that must not reflow as the section
+                  * list changes (Shape appears only on a square tier). */}
                 {showTabs && (
-                  <div style={s.editTabs} role="tablist">
-                    {sections.map(sec => (
-                      <button key={sec.id} role="tab" aria-selected={sec.id === active.id}
-                              style={{ ...s.editTab, ...(sec.id === active.id ? s.editTabOn : {}) }}
-                              // The drag is an override of THIS view, so switching view drops it and
-                              // the next tab sizes to its own content.
-                              onClick={() => { setEditTab(sec.id); setEditDragH(null); }}>
-                        {sec.label}
-                      </button>
-                    ))}
+                  <div style={{ width: '100%', paddingBottom: 10, flexShrink: 0 }}>
+                    <Segmented
+                      equal
+                      isMobile
+                      label="What to change"
+                      value={active.id}
+                      /* ⚠️ THE `note` IS THE FIX FOR "I didn't notice it was a tab". Sandeep, after
+                         the strip already looked like a control: "since most of this section is
+                         covered by the color picker, its easy to miss the other tabs. i am the one
+                         built this app and i myself missed."
+                         Measured: the sheet is 366px (43% of a 844px viewport) and the Colour body
+                         is 212px of it — 58%, the largest block by far. A swatch row + saturation
+                         square + hue strip is a COMPLETE, recognisable object, so the sheet reads as
+                         "a colour picker" and anything above a complete object reads as its title
+                         bar rather than as navigation.
+                         A second line saying what each tab currently holds does three things at
+                         once: it proves the tabs are about DIFFERENT things, it answers "what is
+                         behind there" without a tap, and it gives the strip enough substance to stop
+                         reading as a heading. `Segmented` already supports it — "a second line (an
+                         amount, a count, a state)" — and nothing in the app had used it yet. */
+                      items={sections.map(sec => ({ id: sec.id, label: sec.label, note: sec.note ?? null }))}
+                      // The drag is an override of THIS view, so switching view drops it and the
+                      // next tab sizes to its own content.
+                      onChange={id => { setEditTab(id); setEditDragH(null); }}
+                    />
                   </div>
                 )}
 
@@ -14172,6 +15241,74 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
       )}
 
+      {/* ⚠️ THE PIECES LAND AS `heap` STROKES SHARING ONE `patternId`, not as a new kind of object.
+          A piped blob already has a home on the design — `design.piping`, where every cream-pen tap
+          stores one — with a renderer, a save round-trip and a reload that all work. Inventing a
+          `design.patterns[]` would mean a second copy of each of those. The shared `patternId` is
+          the same grouping `decor_pattern` uses on stickers, and it is what a pattern card will read
+          when it is built.
+
+          ⚠️ SEATED ON THE TOP SURFACE, CENTRED, FOR NOW. The studio composes on a flat plate, so the
+          pieces carry plate coordinates; dropping them on the tier top is the one placement where
+          that frame still means what it meant. Choosing WHERE it goes — and repeating it along a
+          drag, which is the whole point of a block — is the next step, deliberately not faked here
+          with a placement that only looks like a choice. */}
+      {patternStudio && (
+        <CreamPatternStudio
+          apiClient={apiClient}
+          /* ⚠️ ITS OWN COLOUR, NOT THE GARNISH STUDIO'S. Handing in `garnishColor` was wrong twice
+             over: it starts at #4A2C1B — chocolate — so every tip thumbnail came up brown in a
+             studio for CREAM; and the wheel wrote back through `setGarnishColor`, so choosing a
+             pattern colour silently changed what the chocolate studio would draw with next. Two
+             tools sharing one piece of state because they happened to want the same control. */
+          color={patternColor}
+          /* The ONE colour control, handed in rather than rebuilt — INVARIANTS #3, and the same
+             component GarnishStudio is given. */
+          colorControl={
+            <ColorWheel color={patternColor} onChange={setPatternColor} width={152} compact={isMobile}
+              cakeColors={[...new Set(collectElementColors(design))]} />
+          }
+          /* Gated on `hand_piping`, resolved to GLBs above. */
+          pieceElements={patternPieceEls}
+          /* ⚠️ THE BAKER'S OWN CAKE, NOT A STAND-IN. Sandeep, at a studio showing a bare dish: *"its
+             showing only board. it should show cake as well."* A pattern composed on a flat plate has
+             to be transplanted onto a cake that curves, so the plate was solving an easier problem
+             than the one the studio exists for. */
+          tiers={patternTiers}
+          board={patternBoard}
+          /* One definition of the calibrated stamp size — see PIPE_STAMP_THICKNESS. */
+          defaultThickness={PIPE_STAMP_THICKNESS}
+          onCancel={() => setPatternStudio(false)}
+          onSave={({ pieces }) => {
+            /* ⚠️ NO LONGER RE-SEATED, AND THAT IS THE POINT OF PIPING ON THE CAKE. The plate
+               version composed in plate coordinates and dropped the result on the tier top, which
+               was the only placement where that frame still meant anything. The studio now pipes on
+               the baker's own tiers, so a piece is ALREADY where it belongs — lifting it by a
+               computed `topY` would move it off the wall it was piped on.
+
+               ⚠️ AND THEY ARE STAMPS, THE SAME RECORD THE PEN COMMITS. `kind: 'stamp'` with a
+               `glbUrl` is what "I'll pipe it myself" makes, rendered by StampStroke through
+               stampTransforms — so a block composed in the studio and a run piped by hand are the
+               same object, and `patternId` groups this one for the pattern card to read later. */
+            const patternId = crypto.randomUUID();
+            (pieces ?? []).forEach(p => {
+              addStroke({
+                kind: 'stamp', patternId,
+                point: p.point,
+                normal: p.normal,
+                glbUrl: p.glbUrl, stampId: p.elId, stampName: p.name ?? null,
+                seed: p.seed, regular: true, rotation: p.rotation ?? null, lean: p.lean ?? 0,
+                thickness: p.thickness,
+                color: p.colour, softness: p.softness, medium: 'cream',
+                tierIndex: p.tierIndex ?? 0,
+              });
+            });
+            setPatternStudio(false);
+            focusEditor('decoration');
+          }}
+        />
+      )}
+
       {topperStudio && (
         <TopperComposer
           apiClient={apiClient}
@@ -15263,6 +16400,12 @@ const s = {
     color:'#333', fontWeight:600, fontFamily:"'Quicksand',sans-serif",
     minWidth:28, textAlign:'center',
   },
+
+  /* ⚠️ A CONTROL AND THE WORD FOR IT WRAP AS ONE. The Top edge rows wrap, and a dial and its label
+     emitted as siblings let the break fall between them — with both features on, "Height" landed on
+     the line below the dial it names, immediately under a DIFFERENT dial. A label naming the wrong
+     control is worse than no label, and INVARIANTS #11 is about exactly this pairing. */
+  topEdgePair: { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' },
   tbSizeLabel: {
     fontSize:13, fontWeight:700, color:'#222', minWidth:26, textAlign:'center',
   },
@@ -15562,20 +16705,13 @@ const s = {
      So: the tabs still divide the width, and `minWidth` on each is what turns the row into a
      scroller the moment there are more than it can seat. Nothing changes today; it degrades
      gracefully the day a sixth section appears. */
-  editTabs: {
-    display: 'flex', gap: 4, padding: '0 0 10px', flexShrink: 0, width: '100%',
-    overflowX: 'auto', scrollbarWidth: 'none',
-  },
-  editTab: {
-    flex: '1 1 0', minWidth: 72, minHeight: 44, padding: '9px 6px', borderRadius: 9, border: 'none',
-    background: 'rgba(0,0,0,0.05)', color: '#6b6b6b', fontSize: 12, fontWeight: 700,
-    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer',
-  },
+  // (`editTabs`/`editTab`/`editTabOn` are gone — the tier sheet's strip is the shared `Segmented`
+  //  now. They were a fourth copy of a control this app had already extracted, and the one copy
+  //  without a focus ring, a keyboard path or tablist ARIA.)
   // #1a1a1a is what "selected" is throughout this app — the toolbar's active button, the rotation
   // slider, and `gradientModeOn`, which is the control sitting inside the very next tab. The brand
   // green belongs to the storefront and the marketing site; using it here made the tab strip the one
   // green thing in a black chrome.
-  editTabOn: { background: INK, color: '#fff' },
   sheetBody: {
     flex: '1 1 auto', minHeight: 0, width: '100%', overflowY: 'auto',
     display: 'flex', flexDirection: 'column', gap: 10, alignItems: 'center',

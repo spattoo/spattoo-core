@@ -13,12 +13,13 @@ import { INK } from '../shared/tokens.js';
 const TEXT_FIELDS = [
   { key: 'hero_tagline',      label: 'Hero tagline' },
   { key: 'hero_subtitle',     label: 'Hero subtitle' },
-  { key: 'creations_heading', label: 'Gallery heading' },
   { key: 'story_heading',     label: 'Story heading' },
   { key: 'reviews_heading',   label: 'Reviews heading' },
 ];
 
-const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 'Our story', reviews: 'Reviews' };
+// No `gallery` entry: the section was retired 2026-09-28 and `resolveSections` can no longer
+// produce the type, so this map is never asked for it.
+const SECTION_LABELS = { highlight: 'Highlight', story: 'Our story', reviews: 'Reviews' };
 
 // ThemePreview — a full-screen "see it before you pick it" customiser. Renders the REAL
 // storefront live in a phone frame using a synthetic baker, lets the baker switch theme and
@@ -30,7 +31,6 @@ const SECTION_LABELS = { gallery: 'Cake photos', highlight: 'Highlight', story: 
 //   value       { storefront_theme_id, primary_color, accent_color }
 //   baker       { name, slug, story, instagram_handle, website_url }  — preview content
 //   logoUrl     string?   wordmark/logo to show
-//   gallery     []?       sample photos (else the fallback panel shows)
 //   onPublish   async ({ storefront_theme_id, primary_color, accent_color }) => void
 //   onShareStore (opts?) => void — opens the host's share-your-store card. Same handoff as
 //                 onReviewFlavours / onUpgrade: the host owns that modal, this screen does not.
@@ -80,19 +80,16 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const [tieredNoMin, setTieredNoMin] = useState(0);
   /** The review step, shown before the rights confirm and ONLY when there is something wrong. */
   const [review, setReview] = useState(false);
-  // Gallery: [{ id, key, url, caption }] — key is the R2 key to persist (null while uploading).
-  const [gallery, setGallery] = useState([]);
-  const [galleryDirty, setGalleryDirty] = useState(false);
   // Content-rights attestation — asked ONCE, at Publish (the only moment the storefront becomes
   // world-visible), never per photo. Unticked every time the confirm opens: an attestation is only
   // worth something if it was an affirmative act.
   const [publishConfirm, setPublishConfirm] = useState(false);
   const [publishRights, setPublishRights] = useState(false);
-  // The baker's cake-design templates — an authoritative image source for the gallery (baker picks
-  // from these OR uploads). Fetched on open; picking snapshots the design's thumbnail as a photo.
+  // The baker's cake-design templates — the image source for the HERO cake. Fetched on open;
+  // picking snapshots the design's thumbnail. (It fed the retired gallery control too, until
+  // 2026-09-28; the hero is the only picker left.)
   const [designs, setDesigns] = useState([]);
-  const [designPicker, setDesignPicker] = useState(null);   // which control opened it: null | 'gallery' | 'hero'
-  const [uploadingGallery, setUploadingGallery] = useState(0);
+  const [designPicker, setDesignPicker] = useState(null);   // null | 'hero'
   // Testimonials: [{ id, quote, author, occasion }]
   const [testimonials, setTestimonials] = useState([]);
   const [testimonialsDirty, setTestimonialsDirty] = useState(false);
@@ -154,17 +151,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       setCustomizations(value?.storefront_customizations || {});
       setPortraitUrl(value?.portrait_url || null);
       setPortraitKey(undefined);
-      setGalleryDirty(false);
       setTestimonialsDirty(false);
     } catch (e) { console.error('[ThemePreview] value sync failed', e); }
-    // Render the storefront only AFTER the gallery photos have loaded — otherwise it first paints the
-    // no-photos state then swaps once photos arrive. Promise.resolve() so a missing/non-promise
-    // fetchStorefrontPhotos can't throw synchronously and strand the gate — ready ALWAYS flips.
-    setReady(false);
-    Promise.resolve(apiClient?.fetchStorefrontPhotos?.())
-      .then(r => setGallery((r?.photos || []).map((p, i) => ({ id: p.id || `e${i}`, key: p.key, url: p.url, caption: p.caption || '' }))))
-      .catch(() => setGallery([]))
-      .finally(() => setReady(true));
+    /* ⚠️ `ready` STILL HAS TO FLIP, and it used to be released by the gallery-photo fetch's
+       `.finally()`. That fetch went with the section (2026-09-28) — deleting the chain without
+       replacing the gate would have stranded the customiser on its spinner forever, and nothing in
+       the suite mounts this component, so nothing would have caught it. There is no longer anything
+       to wait for: the preview's remaining server-backed parts load inside the storefront itself. */
+    setReady(true);
     Promise.resolve(apiClient?.fetchTestimonials?.())
       .then(r => setTestimonials((r?.testimonials || []).map((t, i) => ({ id: t.id || `e${i}`, quote: t.quote || '', author: t.author || '', occasion: t.occasion || '' }))))
       .catch(() => setTestimonials([]));
@@ -187,56 +181,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
   const removeTestimonial = id => { setTestimonials(t => t.filter(it => it.id !== id)); setTestimonialsDirty(true); };
   const setTestimonialField = (id, field, v) => { setTestimonials(t => t.map(it => (it.id === id ? { ...it, [field]: v } : it))); setTestimonialsDirty(true); };
 
-  async function addPhotos(e) {
-    const files = [...(e.target.files || [])];
-    e.target.value = '';
-    if (!files.length || !apiClient?.getSignedUploadUrl) return;
-    setGalleryDirty(true);
-    for (const file of files) {
-      const id = `n${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      setGallery(g => [...g, { id, key: null, url: URL.createObjectURL(file), caption: '' }]);
-      setUploadingGallery(n => n + 1);
-      (async () => {
-        try {
-          const ext = (file.name.split('.').pop() || 'jpg').toLowerCase();
-          const filename = `${baker.slug || 'baker'}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}.${ext}`;
-          const { url: signed, key } = await apiClient.getSignedUploadUrl('storefront/gallery', filename, file.type, file.size);
-          await fetch(signed, { method: 'PUT', headers: { 'Content-Type': file.type }, body: file });
-          // Persist a DB row immediately so the photo is tracked + manageable (no orphans).
-          let dbId = id;
-          if (apiClient.addStorefrontPhoto) {
-            const row = await apiClient.addStorefrontPhoto(key, '');
-            dbId = row?.id ?? id;
-          }
-          setGallery(g => g.map(it => (it.id === id ? { ...it, id: dbId, key } : it)));
-        } catch (err) {
-          console.error('Gallery upload failed', err);
-        } finally {
-          setUploadingGallery(n => n - 1);
-        }
-      })();
-    }
-  }
-  // Add a gallery photo by SNAPSHOTTING a cake design's thumbnail (Option A — it stays as picked,
-  // independent of the design). The server copies the design's thumbnail into the baker's gallery
-  // folder + records the row; here we add optimistically and reconcile with the persisted row.
-  async function addFromDesign(design) {
-    if (!apiClient?.addStorefrontPhotoFromTemplate) return;
-    const tempId = `n${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const thumb = design.thumbnail_url || design.thumbnail || design.url;
-    setGallery(g => [...g, { id: tempId, key: null, url: thumb, caption: '' }]);   // key:null → shows the uploading shimmer
-    setGalleryDirty(true);
-    setUploadingGallery(n => n + 1);
-    try {
-      const row = await apiClient.addStorefrontPhotoFromTemplate(design.id);
-      setGallery(g => g.map(it => (it.id === tempId ? { ...it, id: row?.id ?? tempId, key: row?.key ?? 'design', url: row?.url || thumb } : it)));
-    } catch (err) {
-      console.error('Add from design failed', err);
-      setGallery(g => g.filter(it => it.id !== tempId));   // roll back so a failed add doesn't linger
-    } finally {
-      setUploadingGallery(n => n - 1);
-    }
-  }
+  /* `addPhotos` and `addFromDesign` went with the "Our creations" control (2026-09-28). The R2
+     folder they signed into — `storefront/gallery` — is STILL IN USE: `uploadSectionImage` below
+     puts Highlight images there, so it must stay registered in the API's folder list. */
   // Set the hero cake FROM a design (single value in storefront_customizations, not a photo row): the
   // server snapshots the thumbnail and returns its URL, which we store as hero_design_image.
   async function setHeroFromDesign(design) {
@@ -249,19 +196,6 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       console.error('Set hero from design failed', err);
     }
   }
-  const removePhoto = id => {
-    const item = gallery.find(it => it.id === id);
-    setGallery(g => g.filter(it => it.id !== id));
-    setGalleryDirty(true);
-    // Persisted rows (real DB id, not a temp 'n…') → delete the row + R2 file server-side.
-    if (item && item.key && !String(item.id).startsWith('n') && apiClient?.deleteStorefrontPhoto) {
-      apiClient.deleteStorefrontPhoto(item.id).catch(e => console.error('Delete photo failed', e));
-    }
-  };
-  const setCaption  = (id, caption) => { setGallery(g => g.map(it => (it.id === id ? { ...it, caption } : it))); setGalleryDirty(true); };
-
-  const galleryForPreview = useMemo(() => gallery.map(g => ({ url: g.url, caption: g.caption })), [gallery]);
-
   async function pickPortrait(e) {
     const file = e.target.files?.[0];
     e.target.value = '';
@@ -409,9 +343,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
 
   if (!open) return null;
 
-  const busy = uploadingPortrait || uploadingGallery > 0;
+  const busy = uploadingPortrait;
   const dirty = themeId !== value?.storefront_theme_id || primary !== value?.primary_color
-    || accent !== value?.accent_color || portraitKey !== undefined || galleryDirty || testimonialsDirty
+    || accent !== value?.accent_color || portraitKey !== undefined || testimonialsDirty
     || JSON.stringify(customizations) !== JSON.stringify(value?.storefront_customizations || {});
 
   async function publish() {
@@ -427,17 +361,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       // rights_attested rides along to the host, which hands it to POST /baker/storefront/publish.
       // The API REFUSES to go live without it, and records who vouched (content_attestations).
       // The SAVED theme, never the previewed one. The button above already refuses, so reaching here
-      // with a locked preview should be impossible — but this payload also carries colours, sections
-      // and the gallery, and a 403 on the theme would reject the whole request and lose edits that
+      // with a locked preview should be impossible — but this payload also carries colours and
+      // sections, and a 403 on the theme would reject the whole request and lose edits that
       // had nothing to do with it. Cheap insurance against an expensive, confusing failure.
       const payload = { storefront_theme_id: lockedPreview ? savedThemeId : themeId, primary_color: primary, accent_color: accent, storefront_customizations: customizations, rights_attested: publishRights };
       if (portraitKey !== undefined) payload.portrait_key = portraitKey;   // new portrait (or null to clear)
       await onPublish?.(payload);
-      // 2. photo captions + order for persisted rows (metadata only; add/remove already saved)
-      const persisted = gallery.filter(g => g.key && !String(g.id).startsWith('n'));
-      if (apiClient?.updateStorefrontPhotos) {
-        await apiClient.updateStorefrontPhotos(persisted.map((g, i) => ({ id: g.id, caption: g.caption || null, sort_order: i })));
-      }
+      // (2. photo captions/order — gone with the gallery control, 2026-09-28. Any rows a baker
+      //  already had stay in the database untouched; nothing here writes or reads them.)
       // 3. testimonials (replace the whole set; rows without a quote are dropped server-side)
       if (testimonialsDirty && apiClient?.updateTestimonials) {
         await apiClient.updateTestimonials(testimonials.map(t => ({ quote: t.quote, author: t.author, occasion: t.occasion })));
@@ -580,24 +511,23 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
                 <div style={s.hlEditorCap}>This highlight’s content</div>
                 <input value={sec.title || ''} placeholder="Title — e.g. This week: red velvet" onChange={e => setSectionField(i, 'title', e.target.value)} style={s.textInput} />
                 <textarea value={sec.blurb || ''} placeholder="Short blurb…" rows={2} onChange={e => setSectionField(i, 'blurb', e.target.value)} style={{ ...s.textInput, resize: 'vertical' }} />
-                <label style={s.textLabel}>Image — upload one, or pick from your cake photos</label>
+                <label style={s.textLabel}>Image — upload one</label>
                 <div style={s.hlImgRow}>
                   <label style={s.hlUpload} title="Upload a photo">
                     <input type="file" accept="image/*" style={{ display: 'none' }} onChange={e => uploadSectionImage(i, e)} />
                     {hlUploading === i ? '…' : '＋'}
                   </label>
                   <button type="button" onClick={() => setSectionField(i, 'image', '')} style={{ ...s.hlImgNone, borderColor: !sec.image ? primary : '#D9DED9' }}>None</button>
-                  {sec.image && !gallery.some(g => g.url === sec.image) && (
+                  {/* The chosen image, whatever it is. It used to be hidden when it matched one of
+                      the gallery thumbnails shown beside it; with those gone (2026-09-28) the
+                      condition would have hidden nothing and confused the next reader. Upload is
+                      now the only source — the picker that offered stored photos went with the
+                      section, and this control keeps its own independent upload. */}
+                  {sec.image && (
                     <div style={{ ...s.hlImgThumb, borderColor: primary, borderWidth: 2 }}>
                       <img src={sec.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     </div>
                   )}
-                  {gallery.filter(g => g.url).map(g => (
-                    <button key={g.id} type="button" onClick={() => setSectionField(i, 'image', g.url)}
-                      style={{ ...s.hlImgThumb, borderColor: sec.image === g.url ? primary : 'transparent', borderWidth: sec.image === g.url ? 2 : 1 }}>
-                      <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    </button>
-                  ))}
                 </div>
               </div>
             )}
@@ -606,35 +536,9 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
       </div>
       <button type="button" style={s.addPhotos} onClick={() => addSection('highlight')}>+ Add a Highlight section</button>
     </>),
-    gallery: () => (<>
-      <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Cake photos</div>
-      <div style={s.galleryList}>
-        {gallery.map(g => (
-          <div key={g.id} style={s.galleryItem}>
-            <div style={s.galleryThumb}>
-              <img src={g.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              {g.key === null && <div style={s.galleryUploading} />}
-            </div>
-            <input value={g.caption} onChange={e => setCaption(g.id, e.target.value)} placeholder="Caption (optional)" style={s.galleryCaption} />
-            <button type="button" aria-label="Remove" style={s.galleryRemove} onClick={() => removePhoto(g.id)}>×</button>
-          </div>
-        ))}
-      </div>
-      {/* Two ways to add a photo: pick from the baker's real cake designs (authoritative), or upload.
-          Shown only when the baker HAS designs to pick from AND the host supports the snapshot endpoint
-          (capability gate) — so a host without addStorefrontPhotoFromTemplate never shows a dead button. */}
-      {designs.length > 0 && apiClient?.addStorefrontPhotoFromTemplate && (
-        <button type="button" style={s.pickDesigns} onClick={() => setDesignPicker('gallery')}>
-          Choose from templates
-        </button>
-      )}
-      {/* No attestation here — a photo isn't public until the storefront is. The rights gate is the
-          Publish button (see the confirm below). */}
-      <label style={s.addPhotos}>
-        <input type="file" accept="image/*" multiple onChange={addPhotos} style={{ display: 'none' }} />
-        + Upload photos
-      </label>
-    </>),
+    /* No `gallery` control. "Our creations" was retired 2026-09-28 and this registry is keyed by
+       what a template lists in `controls` — `DEFAULT_CONTROLS` no longer names it, so re-adding an
+       entry here alone would render nothing. */
     reviews: () => (<>
       <div style={{ ...s.ctrlLabel, marginTop: 22 }}>Reviews</div>
       <div style={s.reviewList}>
@@ -662,7 +566,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
     // every server-backed part was missing — which reads as "my flavours are gone", not as "this is
     // only a mock". `preview` then blocks the one thing that must not happen for real: sending an
     // enquiry to the baker's own slug from their own settings screen.
-    ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl} gallery={galleryForPreview}
+    ? <CustomerStorefront baker={previewBaker} logoUrl={logoUrl}
                           apiBaseUrl={apiClient?.baseUrl ?? ''} preview
                           onStartDesign={() => {}} onEditPortrait={() => portraitInputRef.current?.click()} />
     : <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CakeSpinner label="Loading…" /></div>;
@@ -816,15 +720,14 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
         </div>
       )}
 
-      {/* ONE design picker, reused by the gallery (multi-add) and the hero (single pick) controls —
-          the opener sets the mode, which chooses the action + copy. No second picker. */}
+      {/* The design picker. It had two modes — the gallery's multi-add and the hero's single pick —
+          until the gallery went (2026-09-28); the hero is the only opener left, so the mode ternary
+          went with it rather than being kept "in case". */}
       {designPicker && (
         <Panel
           onClose={() => setDesignPicker(null)}
           title="Your templates"
-          subtitle={designPicker === 'hero'
-            ? 'Tap a template to show it as your hero cake.'
-            : 'Tap a template to add its picture to your gallery. You can add more than one.'}
+          subtitle="Tap a template to show it as your hero cake."
           width={560}
         >
           <div style={s.pickerGrid}>
@@ -832,7 +735,7 @@ export default function ThemePreview({ open, apiClient, themes = [], value, bake
               const thumb = d.thumbnail_url || d.thumbnail || d.url;
               return (
                 <button key={d.id} type="button" style={s.pickerCard} title={d.name || 'design'}
-                  onClick={() => (designPicker === 'hero' ? setHeroFromDesign(d) : addFromDesign(d))}>
+                  onClick={() => setHeroFromDesign(d)}>
                   <div style={s.pickerThumb}><img src={thumb} alt={d.name || 'Cake design'} style={s.pickerImg} loading="lazy" /></div>
                   <span style={s.pickerName}>{d.name || 'Cake design'}</span>
                 </button>
@@ -1232,11 +1135,10 @@ const s = {
   textRow:  { marginTop: 10 },
   textLabel:{ display: 'block', fontSize: 11.5, fontWeight: 700, color: '#6B8C74', marginBottom: 4 },
   textInput:{ width: '100%', boxSizing: 'border-box', padding: '8px 10px', borderRadius: 9, border: '1px solid #D9DED9', fontSize: 13, fontFamily: FONT, color: '#2C4433', outline: 'none', background: '#fff' },
-  galleryList: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 },
-  galleryItem: { display: 'flex', alignItems: 'center', gap: 8 },
-  galleryThumb: { position: 'relative', width: 44, height: 44, borderRadius: 8, overflow: 'hidden', flexShrink: 0, background: '#F0F4F1', border: '1px solid #E3E8E4' },
-  galleryUploading: { position: 'absolute', inset: 0, background: 'rgba(255,255,255,0.55)', backgroundImage: 'linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent)' },
-  galleryCaption: { flex: 1, minWidth: 0, padding: '7px 9px', borderRadius: 8, border: '1px solid #D9DED9', fontSize: 12, fontFamily: FONT, color: '#2C4433', outline: 'none' },
+  /* ⚠️ THREE OF THESE SURVIVED THE GALLERY, and they are not named for what still uses them.
+     `galleryRemove` is the × on a Highlight section AND on a review; `addPhotos` is "+ Add a
+     Highlight section" AND "+ Add review"; `pickDesigns` is the hero's picker button. Deleting the
+     gallery's styles by name prefix would have taken all three with it. */
   galleryRemove: { flexShrink: 0, width: 26, height: 26, borderRadius: 7, border: '1px solid #E3D3D3', background: '#fff', color: '#C0392B', fontSize: 16, lineHeight: 1, cursor: 'pointer' },
   addPhotos: { display: 'block', width: '100%', textAlign: 'center', marginTop: 10, padding: '10px', borderRadius: 10, border: '1.5px dashed #C5D4C8', background: '#F8FBF9', color: '#2C4433', fontSize: 13, fontWeight: 800, cursor: 'pointer', fontFamily: FONT },
   // "Choose from your designs" — the authoritative (solid) action; upload is the dashed secondary one.

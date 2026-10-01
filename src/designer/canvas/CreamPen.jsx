@@ -2,6 +2,7 @@ import { useState, useRef, useMemo, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
+import { pickSeat } from '../geometry/penSeat.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
 import { translateStroke, distanceToStroke } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
@@ -65,13 +66,24 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
   const seatAt = (clientX, clientY) => {
     const ray = buildRay(clientX, clientY, gl.domElement, camera);
     rc.current.set(ray.origin, ray.direction);
-    const hit = rc.current.intersectObjects(scene.children, true)
-      .find(h => h.object.userData?.isPenCatcher);
-    if (!hit) return null;
-    const n = hit.face
-      ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize()
-      : new THREE.Vector3(0, 1, 0);
-    return { p: hit.point.clone().addScaledVector(n, styleRef.current?.thickness ?? 0.03), n };
+    /* ⚠️ THE RAYCAST IS ALL THIS DOES. Which hit wins, which way the piece grows and whether the
+       rope lift applies are ONE rule, and it lives in geometry/penSeat.js where a test can ask it
+       without a scene — see that file for why. Hits arrive in distance order from three.js, and the
+       world-space face normal is computed here because only the component has the matrices. */
+    const hits = rc.current.intersectObjects(scene.children, true).map(h => ({
+      userData: h.object.userData,
+      point: h.point.toArray(),
+      faceNormal: h.face
+        ? h.face.normal.clone().transformDirection(h.object.matrixWorld).normalize().toArray()
+        : null,
+    }));
+    const seat = pickSeat(hits, { thickness: styleRef.current?.thickness ?? 0.03 });
+    if (!seat) return null;
+    return {
+      p: new THREE.Vector3().fromArray(seat.point),
+      n: new THREE.Vector3().fromArray(seat.normal),
+      onCream: seat.onCream,
+    };
   };
 
   // R3F pointerdown on a catcher starts the stroke (and gives us the tier + surface normal it
@@ -273,8 +285,18 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
   return (
     <>
       {piping.map((s, i) => ((s.kind === 'stamp' || s.kind === 'stamprope')
-        /* StampStroke carries its own Suspense + boundary (SafeGlb) — nothing to add here. */
-        ? <StampStroke key={s.id ?? i} stroke={s} />
+        /* StampStroke carries its own Suspense + boundary (SafeGlb) — nothing to add here.
+
+           ⚠️ A PLACED STAMP IS A SEAT. Piping onto piping is what a mane IS — Sandeep, at a unicorn
+           cake: *"the piping includes multiple nozzles and a lot of overlap."* Without this the pen
+           only ever sees the tier catchers, so every piece lands on the CAKE no matter what is
+           already standing there, and cream piped on cream buries itself in the piece it was aimed
+           at. `grow` is the stroke's OWN normal rather than the face the ray struck: a rosette's
+           face normals swing right round between crests and creases, so seating on the struck face
+           sends the next piece off sideways. A piece laid on another follows the one BELOW it,
+           which is what a hand does. */
+        ? <StampStroke key={s.id ?? i} stroke={s}
+            userData={{ isPenSeat: true, strokeId: s.id, grow: s.normal }} />
         : <StrokeMesh key={s.id ?? i} {...s} />))}
 
       {/* Live preview: swept rope/heap only. In stamp mode the stamps appear on release

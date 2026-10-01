@@ -32,7 +32,17 @@
 // `rainbows` is on it from the same day, for the same reason. Note the shape: an ARRAY, so `pickTierFields`
 // keeps it when present — an empty one is dropped, which is right, since no rainbows and no field
 // are the same cake. `clouds` is the same shape for the same reasons.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds'];
+// `topCavity` and `topSpiral` — the scraped edge and the turntable spiral — were the FOURTH and FIFTH
+// to be lost exactly as glaze, grass and creamLayers were. Sandeep: *"when i create a template with
+// scraped edge and spiral and when i load the cake again, scrap edge and spiral are not loading
+// again."* Added to the tier, to toCanvasConfig, to CakeTier, and not to this line.
+//
+// ⚠️ THE NOTES ABOVE ARE NOT A FIX, AND FIVE OF THEM SHOULD HAVE SAID SO SOONER. Each records the
+// same accident and asks the next person to remember; the round-trip test below was written for it
+// and still missed these two, because it can only check the fields somebody remembered to put in its
+// fixture — the same remembering that fails here. So there is now a test that DERIVES what this list
+// must contain, by watching which tier keys toCanvasConfig actually reads. See designSnapshot.test.js.
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'topCavity', 'topSpiral'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {
