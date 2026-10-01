@@ -6970,41 +6970,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * tap, rope and GLB stamp lives in `design.piping`, a different store entirely. So the whole
      * hand-piping half of this feature was unreadable from a test.
      *
-     * ⚠️ AND PIPING IS DRIVEN, NOT SYNTHESISED. The pen captures RAW DOM pointer events on the
-     * canvas, so a script would have to aim screen coordinates into a live 3D scene — a test of my
-     * aim rather than of the pen. Same argument `__tapElementById` and `__tapSticker` already make.
-     * `__pipeAt` commits one tap through the SAME stroke shape the pen commits, so what it proves is
-     * what a baker gets. `y` is optional: omitted, it stacks on whatever is already at (x, z). */
+     * ⚠️ READ-ONLY, AND A `__pipeAt` THAT COMMITTED STROKES WAS DELETED FROM HERE. It re-decided the
+     * seat in design space — "find a stroke within thickness x 2, sit above it" — which is the same
+     * question `pickSeat` answers, asked a second way. A check built on it would have proved my
+     * hook agreed with my hook while never touching the code under test. Stacking is verified by
+     * REAL pointer events through the real pen (scripts/shoot-pen-stacking.mjs), and the seat rule
+     * itself by geometry/penSeat.test.js, which needs no scene at all. */
+    /* ⚠️ A PIPING ROW CANNOT BE OPENED BY `__tapElementById`, and that is not a quirk of the hook —
+     * `cream_piping` is filtered out of the decorations grid and reached ONLY through the ring-picker
+     * tile, which calls openPipingPopup. Driving it with tapPlaceElement opened the BOTTOM TIER card
+     * instead, which is what a screenshot showed after three assertions failed for reasons that had
+     * nothing to do with the code under test. Same argument as __tapElementById itself: a card with
+     * one door needs that door opening from a script, or the whole hand-piping half of this feature
+     * is unreachable by any check. */
+    window.__openPiping = (id) => { const e = elementById.get(id); if (!e) return false; openPipingPopup(e); return true; };
     window.__getStrokes = () => (design.piping ?? []).map(st => ({
       id: st.id, kind: st.kind ?? 'rope', point: st.point ?? null, normal: st.normal ?? null,
       glbUrl: st.glbUrl ?? null, thickness: st.thickness, stampId: st.stampId ?? null,
     }));
-    window.__pipeAt = (x = 0, z = 0, y = null) => {
-      const ps = penStyle;
-      if (!ps?.stampId || !ps?.stampUrl) return false;
-      const tiers = canvasConfig.tiers ?? [];
-      const top = tiers[tiers.length - 1];
-      if (!top) return false;
-      /* Seat on the cream already standing at (x, z) when there is any, else on the tier top —
-         which is exactly what seatAt decides for a real press, expressed in design space. */
-      let seatY = BOARD_TOP_Y + tiers.reduce((h, t) => h + (t.height ?? 0), 0);
-      if (y == null) {
-        for (const st of (design.piping ?? [])) {
-          const p = st.point;
-          if (!p || Math.hypot(p[0] - x, p[2] - z) > (st.thickness ?? 0.03) * 2) continue;
-          seatY = Math.max(seatY, p[1] + (st.thickness ?? 0.03) * 2);
-        }
-      } else seatY = y;
-      addStroke({
-        kind: 'stamp', point: [x, seatY, z], normal: [0, 1, 0],
-        glbUrl: ps.stampUrl, stampId: ps.stampId, stampName: ps.stampName ?? null,
-        seed: Math.floor(Math.random() * 1e6), regular: !!ps.stampRegular,
-        rotation: ps.stampRotation ?? null, lean: ps.stampLean ?? 0,
-        thickness: ps.thickness, color: ps.color, softness: ps.softness, medium: 'cream',
-        tierIndex: tiers.length - 1,
-      });
-      return true;
-    };
     window.__listElements = () => [...elementById.values()].map(e => ({
       id: e.id, name: e.name, mode: zoneMode(e.placement_config, 'top_surface'),
       glb: /\.(glb|gltf)(\?|$)/i.test(e.image_url ?? ''),
