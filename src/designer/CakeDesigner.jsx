@@ -780,6 +780,45 @@ function supportsTopAndSide(el) {
 const leanStep = (v, d) => clampLean((v ?? 0) + d);
 const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
 
+/* ── The four lean arrows, defined ONCE ────────────────────────────────────────────────────────
+ *
+ * ⚠️ THERE WERE TWO COPIES OF THESE, AND THAT COST A WRONG FIX. The chooser's TiltRow and the
+ * element card each built their own four buttons and their own readout. Sandeep reported the card's
+ * readout clipping its minus sign; I widened the one in TiltRow — the surface he was not looking at
+ * — and reported it fixed. Two identical controls are one control and a bug waiting to be fixed in
+ * the wrong place.
+ *
+ * ⚠️ AND AN ARROW THAT CANNOT MOVE NOW SAYS SO. `clampLean` caps a lean at ±1.2 rad (±69°), and at
+ * the cap the button looked exactly like a live one: Sandeep, parked at +69° pressing ↓, reported
+ * *"arrows are not working. nothing happening."* They were working; one of them had nowhere left to
+ * go and no way to say it. A control that is spent must read as spent (root CLAUDE.md rule 7).
+ *
+ * Returns an ARRAY so the card can spread it into a scrolling row and TiltRow can wrap it in a
+ * labelled, centred one — the two layouts differ, the controls do not.
+ */
+function leanArrows(ta, ra, onChange) {
+  /* A nudge that lands back on the value it started from is a nudge with nowhere to go. Compared
+     through `clampLean` on both sides, because the stored value has already been rounded by it. */
+  const spent = (v, d) => leanStep(v, d) === clampLean(v);
+  const arrow = (key, title, glyph, dead, apply) => (
+    <button key={key} type="button" disabled={dead} onClick={apply}
+      title={dead ? `${title} — already as far as it goes` : title}
+      style={{ ...s.tbIconBtn, ...(dead ? { color: '#cfc9c1', cursor: 'default' } : null) }}>{glyph}</button>
+  );
+  return [
+    arrow('ta-up',    'Lean back',  '↑', spent(ta, -0.1), () => onChange({ tiltAngle: leanStep(ta, -0.1) })),
+    arrow('ta-down',  'Lean forward', '↓', spent(ta,  0.1), () => onChange({ tiltAngle: leanStep(ta,  0.1) })),
+    arrow('ta-left',  'Lean left',  '←', spent(ra, -0.1), () => onChange({ rollAngle: leanStep(ra, -0.1) })),
+    arrow('ta-right', 'Lean right', '→', spent(ra,  0.1), () => onChange({ rollAngle: leanStep(ra,  0.1) })),
+    /* ⚠️ WIDE ENOUGH FOR BOTH SIGNS. `leanDeg` always prints a number, so this can never show a
+       dash — yet the card read "69°/-", which is a NEGATIVE roll with its digits clipped off. At
+       minWidth 46 the worst case "-69°/-69°" needs about 60px, so any lean that went negative lost
+       its value behind the scroll arrow, and both arrows looked inert. */
+    <span key="ta-val" style={{ ...s.tbSizeLabel, fontSize: 11, fontWeight: 700, minWidth: 68,
+                                textAlign: 'center', whiteSpace: 'nowrap' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
+  ];
+}
+
 // Tilt is TWO axes: ↑↓ leans front/back, ←→ leans left/right (on a wall, that second one spins the
 // element in the plane of the wall). Four arrows in one row rather than two −/+ rows: the mapping to
 // what is on screen is direct, and it costs less width on a phone.
@@ -791,18 +830,7 @@ function TiltRow({ tiltAngle, rollAngle, onChange }) {
     // dial beside this one came to be invisible.
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
       <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tilt</span>
-      <button style={s.tbIconBtn} title="Lean back"  onClick={() => onChange({ tiltAngle: leanStep(ta, -0.1) })}>↑</button>
-      <button style={s.tbIconBtn} title="Lean forward" onClick={() => onChange({ tiltAngle: leanStep(ta,  0.1) })}>↓</button>
-      <button style={s.tbIconBtn} title="Lean left"  onClick={() => onChange({ rollAngle: leanStep(ra, -0.1) })}>←</button>
-      <button style={s.tbIconBtn} title="Lean right" onClick={() => onChange({ rollAngle: leanStep(ra,  0.1) })}>→</button>
-      {/* ⚠️ WIDE ENOUGH FOR BOTH SIGNS, AND IT WAS NOT. `leanDeg` always prints a number, so this
-          never shows a dash — yet the card read "69°/-", which is a NEGATIVE roll with its digits
-          clipped off. At minWidth 46 the worst case, "-69°/-69°", needs about 60px, so any lean that
-          went negative lost its value behind the scroll arrow. Sandeep, pressing arrows and watching
-          a readout that never appeared to move: *"for butterfly - arrows are not working. nothing
-          happening."* Both were working; the number saying so was cut in half.
-          `whiteSpace: nowrap` so it is never broken across lines either. */}
-      <span style={{ fontSize: 11, fontWeight: 700, minWidth: 68, textAlign: 'center', whiteSpace: 'nowrap' }}>{leanDeg(ta)}/{leanDeg(ra)}</span>
+      {leanArrows(ta, ra, onChange)}
     </div>
   );
 }
@@ -9667,13 +9695,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const ta = sticker?.tiltAngle ?? 0, ra = sticker?.rollAngle ?? 0;
       // Steppers, not dials: four discrete nudges on two axes. They are also the one control here
       // that a horizontal scroller cannot fight — a tap is not a drag.
-      tiltCtls = [
-        <button key="ta-up"    style={s.tbIconBtn} title="Lean back"    onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta, -0.1) })}>↑</button>,
-        <button key="ta-down"  style={s.tbIconBtn} title="Lean forward" onClick={() => updateSticker(el.id, { tiltAngle: leanStep(ta,  0.1) })}>↓</button>,
-        <button key="ta-left"  style={s.tbIconBtn} title="Lean left"    onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra, -0.1) })}>←</button>,
-        <button key="ta-right" style={s.tbIconBtn} title="Lean right"   onClick={() => updateSticker(el.id, { rollAngle: leanStep(ra,  0.1) })}>→</button>,
-        <span key="ta-val" style={{ ...s.tbSizeLabel, minWidth: 46 }}>{leanDeg(ta)}/{leanDeg(ra)}</span>,
-      ];
+      /* The same four arrows the chooser shows — one definition, so a fix cannot land on one surface
+         and miss the other, which is how the clipped readout came to be "fixed" while the card it
+         was reported on kept clipping. */
+      tiltCtls = leanArrows(ta, ra, patch => updateSticker(el.id, patch));
     }
     if (el.type === 'sticker') {
       const fSticker = design.stickers.find(stkr => stkr.id === el.id);
