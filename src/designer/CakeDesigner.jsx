@@ -100,6 +100,10 @@ export function tourMayRun({ isCustomer, tourSeen, choseScratch }) {
   return tourSeen === false;
 }
 
+/* The rail's most it will ever open up — a CEILING, not a floor. Measured, not chosen: at a 900px
+   window the spread settled on 20.1px between items, and Sandeep picked that out of three heights
+   ("yes i mean 900px version"). `fde91ba9` had this same number right about the RHYTHM and wrong
+   about the role — it pinned the gap there and let the column overflow a short blade. */
 const RAIL_NAV_GAP = 20;
 /* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
    numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
@@ -3385,6 +3389,30 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * dependency changes when the rail finally mounts. Everything else was correct and the gap simply
    * stayed at its default. Storing the node in state re-runs the effect the moment it appears. */
   const [railNavEl, setRailNavEl] = useState(null);
+  /* ── The nav's own gap: spread to the 900px rhythm, never past it ─────────────────────────────
+   * Computed rather than declared — see sidebarNav for why neither a fixed pitch nor a spread works
+   * alone. Read off `clientHeight`, which is set by `flex: 1` from the space the blade has, NOT by
+   * this gap — so widening the gap cannot feed back into the measurement that produced it. The
+   * tools group below does form a loop (its own height shortens the nav), and that one is already
+   * damped where toolGap is computed. */
+  const [navGap, setNavGap] = useState(RAIL_MIN_GAP);
+  useLayoutEffect(() => {
+    const nav = railNavEl;
+    if (isMobile || !nav) return undefined;
+    const measure = () => {
+      const items = [...nav.querySelectorAll('button')];
+      if (items.length < 2) return;
+      const total = items.reduce((a2, el) => a2 + el.getBoundingClientRect().height, 0);
+      if (total <= 0 || nav.clientHeight <= 0) return;
+      const room = (nav.clientHeight - total) / (items.length - 1);
+      const next = Math.max(RAIL_MIN_GAP, Math.min(RAIL_NAV_GAP, Math.floor(room)));
+      setNavGap(prev => (Math.abs(prev - next) >= 1 ? next : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [railNavEl, isMobile, railItems.length]);
   // 2, because that is sidebarNav's own `gap` — its floor when the viewport is too short to spread.
   // Floored at 4 instead, the two groups settled 2px apart on any window under ~750px: the nav had
   // bottomed out at its gap and this one had bottomed out at a different number.
@@ -12122,7 +12150,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
           {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
           <div style={plainRail ? { ...s.sidebarInner, ...s.sidebarInnerPlain } : s.sidebarInner}>
-          <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
+          <nav className="spattoo-rail-nav" ref={setRailNavEl} style={{ ...s.sidebarNav, gap: navGap }}>
             {railItems.map(({ id, label, short, icon, menu }) => {
               const active = railItemActive(id, menu);
               const isNew  = id === 'new';
@@ -16013,14 +16041,27 @@ const s = {
     flex: 1, width: '100%', minHeight: 0,
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'flex-start',
-    // A FIXED pitch, not a spread. The items keep one rhythm whatever the viewport and whatever the
-    // principal can do, so five items read as a menu rather than as a column with holes in it. The
-    // tools group below the divider still matches, because toolGap MEASURES the rendered pitch rather
-    // than assuming it — see the note above that effect.
-    //
-    // ⚠️ This also retires the scroll-origin trap the old note warned about: centred/spread content in
-    // a scroller can strand its first item above the origin, and flex-start cannot.
-    padding: '4px 0', gap: RAIL_NAV_GAP,
+    /* ⚠️ THE GAP IS COMPUTED, because neither a spread nor a fixed pitch is right on its own.
+
+     * A FIXED pitch (fde91ba9) gives the column a hard intrinsic height — every item is
+     * flexShrink:0 — so on a short blade it overflows, and `scrollbarWidth: none` means nothing says
+     * so. The LAST item is silently unreachable, and that item is Share. Sandeep, on production:
+     * "on the spatula menu- above the chef's desk, share button is hiding", and on dev, where the
+     * build is newer, "share button is completely invisible" — one bug at two versions.
+     *
+     * A SPREAD never overflows, but it opens up without limit: measured at 9px between items on a
+     * 780px window, 20px at 900, 38px at 1100. The 1100 case is the "column with holes in it" that
+     * fde91ba9 was right to object to, and it is worse for a customer's five items.
+     *
+     * So: spread UNTIL the 900px rhythm, then stop. `navGap` clamps
+     * (clientHeight - itemsTotal) / (n - 1) between RAIL_MIN_GAP and RAIL_NAV_GAP, which compresses
+     * on a short window so nothing is ever hidden and holds one rhythm on a tall one. CSS cannot
+     * express a capped gap — space-evenly always fills what exists — so it is measured.
+     *
+     * flex-start rather than space-evenly, because an explicit gap and a spread would fight. That
+     * also keeps the scroll-origin trap retired, which is the one thing fde91ba9 genuinely fixed:
+     * centred or spread content in a scroller can strand its first item above the origin. */
+    padding: '4px 0',
     overflowY: 'auto', scrollbarWidth: 'none',   // a scrollbar in a 64px rail is worse than none
   },
   // Stacked nav item: icon box on top, label below.
