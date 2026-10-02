@@ -14393,6 +14393,68 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </ScrollFadeRow>
               )}
 
+              {/* ── "I'll pipe it myself" ──────────────────────────────────────────────────────
+                  Every tile above answers "which BORDER does this ring go round". Between them they
+                  cover a rim and a board, which is most of what gets piped and nowhere near all of
+                  it — a baker pipes wherever they want, and until now the zone list was the entire
+                  vocabulary a customer had.
+
+                  Offered here rather than as its own decoration because it is the SAME shape and the
+                  same decision: you are choosing where this piping goes, and "anywhere I draw" is one
+                  of the answers. A separate card would have made it a different product.
+
+                  Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
+                  put the cake in draw mode and then stamp nothing at all, which reads as the drawing
+                  being broken. */}
+              {/* ── Gated on the element, not on the designer ─────────────────────────────────
+                  `hand_piping` is ticked per element in admin, by whoever calibrated it. Not every
+                  piping element survives being repeated along a freehand line: a wrap band is ONE
+                  pre-formed ring and a drip is a procedural curtain, both rings by nature, and
+                  stamping either along a squiggle produces something nobody would pipe. A shell or
+                  a rosette repeats happily.
+                  Absent means OFF. An element nobody has considered does not get the feature by
+                  default — the alternative is offering it everywhere and finding out on a customer's
+                  cake which elements it ruins. */}
+              {!!pipingPopupEl.placement_config?.hand_piping
+                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
+                  <button
+                    onClick={() => pipeItMyself(pipingPopupEl)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
+                             border: '1.5px solid #999999', background: '#fff',
+                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
+                    {/* A hand-drawn squiggle with beads along it — the line you draw, and this shape
+                        repeating down it. The zone tiles are all rings; this one must not look like
+                        another ring or it reads as a seventh border. */}
+                    <svg width="26" height="18" viewBox="0 0 34 20" fill="none" aria-hidden focusable="false"
+                         style={{ flexShrink: 0 }}>
+                      <path d="M2 14C6 4 11 4 15 10s9 6 13 -4" stroke="#c9c1b4" strokeWidth="1.6"
+                            strokeLinecap="round" strokeDasharray="2.6 2.6" />
+                      {[[3.4, 12.4], [8.2, 6.4], [13.2, 8.2], [18.4, 12], [23.6, 11.2], [28.4, 5.2]].map(([cx, cy], i) => (
+                        <circle key={i} cx={cx} cy={cy} r="2.4" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.2" />
+                      ))}
+                    </svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>I'll pipe it myself</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
+                        Draw anywhere on the cake and this shape repeats along your line.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
+              {/* ⚠️ THE CONTROLS SIT BELOW EVERY WAY OF APPLYING THIS PIPING, NOT ABOVE ONE OF THEM.
+                 They used to come first — Colour, Size, Radial, then Ring/Single, then "I'll pipe it
+                 myself" underneath. So the row a customer reaches for sat ABOVE the choice it serves,
+                 and above a button that replaces the whole card. Sandeep: *"when 'ill pipe myself'
+                 option is choosen, color picker, size etc should work for that option. and also move
+                 the color, size, radial etc to below the button."*
+                 ⚠️ HAND-PIPING KEEPS ITS OWN CONTROLS, and they are not these. Choosing it swaps this
+                 card for the pen's, which carries Size, Spacing, Lean and a colour wheel writing to
+                 `penStyle` — the thing a stamped run actually renders from. These edit the RING, which
+                 is why the row is headed with the ring's name: below the choices, and still saying
+                 which one it belongs to. */}
               {/* Controls for the SELECTED ring only. With the tiles side by side the old vertical
                   order no longer says which ring a colour belongs to, so one ring at a time is not a
                   reduction — it is what makes the row legible. */}
@@ -14729,57 +14791,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })}
-              {/* ── Or put it where you like ────────────────────────────────────────────────────
-                  Every tile above answers "which BORDER does this ring go round". Between them they
-                  cover a rim and a board, which is most of what gets piped and nowhere near all of
-                  it — a baker pipes wherever they want, and until now the zone list was the entire
-                  vocabulary a customer had.
-
-                  Offered here rather than as its own decoration because it is the SAME shape and the
-                  same decision: you are choosing where this piping goes, and "anywhere I draw" is one
-                  of the answers. A separate card would have made it a different product.
-
-                  Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
-                  put the cake in draw mode and then stamp nothing at all, which reads as the drawing
-                  being broken. */}
-              {/* ── Gated on the element, not on the designer ─────────────────────────────────
-                  `hand_piping` is ticked per element in admin, by whoever calibrated it. Not every
-                  piping element survives being repeated along a freehand line: a wrap band is ONE
-                  pre-formed ring and a drip is a procedural curtain, both rings by nature, and
-                  stamping either along a squiggle produces something nobody would pipe. A shell or
-                  a rosette repeats happily.
-                  Absent means OFF. An element nobody has considered does not get the feature by
-                  default — the alternative is offering it everywhere and finding out on a customer's
-                  cake which elements it ruins. */}
-              {!!pipingPopupEl.placement_config?.hand_piping
-                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
-                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
-                  <button
-                    onClick={() => pipeItMyself(pipingPopupEl)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
-                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
-                             border: '1.5px solid #999999', background: '#fff',
-                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
-                    {/* A hand-drawn squiggle with beads along it — the line you draw, and this shape
-                        repeating down it. The zone tiles are all rings; this one must not look like
-                        another ring or it reads as a seventh border. */}
-                    <svg width="26" height="18" viewBox="0 0 34 20" fill="none" aria-hidden focusable="false"
-                         style={{ flexShrink: 0 }}>
-                      <path d="M2 14C6 4 11 4 15 10s9 6 13 -4" stroke="#c9c1b4" strokeWidth="1.6"
-                            strokeLinecap="round" strokeDasharray="2.6 2.6" />
-                      {[[3.4, 12.4], [8.2, 6.4], [13.2, 8.2], [18.4, 12], [23.6, 11.2], [28.4, 5.2]].map(([cx, cy], i) => (
-                        <circle key={i} cx={cx} cy={cy} r="2.4" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.2" />
-                      ))}
-                    </svg>
-                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>I'll pipe it myself</span>
-                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
-                        Draw anywhere on the cake and this shape repeats along your line.
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              )}
               {/* Card-level Remove — takes the whole decoration off the cake (every tier × zone), the same
                   action the sticker/cluster/foil/cream cards offer. The per-zone checkboxes above stay as
                   the fine-grained control. Config-gated on allowed_actions.delete; hidden when it isn't
