@@ -16,7 +16,14 @@ import { AccountPanel } from '../src/designer/CakeDesigner.jsx';
 // The phone the fake server believes in, and the code it will accept.
 const GOOD_CODE = '424242';
 
+const GOOD_PASSWORD = 'letmein';
+
 const stubApi = {
+  // Stands in for Supabase, which is where the real password goes — never our API.
+  reauthenticate: async (pw) => {
+    await wait(400);
+    if (pw !== GOOD_PASSWORD) throw new Error('That password is not right.');
+  },
   signOut: () => console.log('[harness] signOut'),
   changePassword: async () => { await wait(400); },
   startPhoneChange: async (phone) => {

@@ -1598,6 +1598,48 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   const [phoneMsg,   setPhoneMsg]   = useState(null);
   const [phoneNow,   setPhoneNow]   = useState(userData?.phone ?? null);
 
+  // ── Locked until you prove it is you ─────────────────────────────────────────────────────────
+  // ⚠️ THIS STATE IS A RENDERING DECISION AND NOTHING MORE. It decides what the baker SEES; it
+  // decides nothing about what the server accepts. Every write behind it — phone start, phone
+  // confirm, password — is independently gated by requireRecentPassword on the API, reading a claim
+  // Supabase signed. A lock that lived only here would stop nobody: the calls are reachable from a
+  // console with the same session.
+  //
+  // Read-only is also the better resting state on its own. "What number do we have for you" is a
+  // question worth answering without arming anything to change it.
+  const [unlocked,  setUnlocked]  = useState(false);
+  const [unlockPw,  setUnlockPw]  = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockMsg, setUnlockMsg] = useState(null);
+  const [asking,    setAsking]    = useState(false);   // the password prompt is open
+
+  const canReauth = !!apiClient?.reauthenticate;
+
+  async function unlock() {
+    setUnlocking(true); setUnlockMsg(null);
+    try {
+      await apiClient.reauthenticate(unlockPw);
+      setUnlocked(true); setAsking(false); setUnlockPw('');
+    } catch (e) {
+      setUnlockMsg(e?.message || 'That password is not right.');
+    } finally {
+      setUnlocking(false);
+    }
+  }
+
+  // The server is the authority on whether the unlock is still good, and it expires on its own
+  // clock. When it says so, drop back to the prompt rather than leaving a screen that looks
+  // editable and refuses every edit.
+  function handleWriteError(e, setMsg) {
+    if (e?.code === 'reauth_required' || e?.code === 'reauth_expired') {
+      setUnlocked(false); setAsking(true);
+      setUnlockMsg('Please confirm your password again.');
+      return true;
+    }
+    setMsg({ ok: false, text: e?.message || 'Something went wrong.' });
+    return false;
+  }
+
   // ── Password ─────────────────────────────────────────────────────────────────────────────────
   const [pw,        setPw]        = useState({ next: '', confirm: '' });
   const [pwBusy,    setPwBusy]    = useState(false);
@@ -1607,7 +1649,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // A half-typed number or password is work. Esc and a stray backdrop click must not take it
   // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
-  const dirty = phoneStep !== 'idle' || pw.next.length > 0 || pw.confirm.length > 0;
+  const dirty = phoneStep !== 'idle' || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
 
   async function sendCode() {
     setPhoneBusy(true); setPhoneMsg(null);
@@ -1617,7 +1659,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       setCode('');
       setPhoneStep('code');
     } catch (e) {
-      setPhoneMsg({ ok: false, text: e?.message || 'We could not send the code.' });
+      if (!handleWriteError(e, setPhoneMsg)) setPhoneMsg({ ok: false, text: e?.message || 'We could not send the code.' });
     } finally {
       setPhoneBusy(false);
     }
@@ -1635,7 +1677,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       // the profile, so the profile is what has to be re-read — not this component's copy.
       onPhoneChanged?.();
     } catch (e) {
-      setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
+      if (!handleWriteError(e, setPhoneMsg)) setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
     } finally {
       setPhoneBusy(false);
     }
@@ -1660,7 +1702,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       // on the login screen and re-authenticates with the new password.
       setTimeout(() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); }, 1200);
     } catch (err) {
-      setPwMsg({ ok: false, text: err.message || 'Failed to update password.' });
+      if (!handleWriteError(err, setPwMsg)) setPwMsg({ ok: false, text: err.message || 'Failed to update password.' });
       setPwBusy(false);
     }
   }
@@ -1683,6 +1725,53 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
         )}
       </PanelBlock>
 
+      {/* ── The lock ────────────────────────────────────────────────────────────────────────────
+          A session outlives the person paying attention to it — a closed laptop, a borrowed phone.
+          requireAuth answers "is this a valid session"; only a password answers "is this the owner,
+          right now". So the screen opens read-only and this is the one way out of that.
+
+          ⚠️ The password goes to SUPABASE, never to our API (apiClient.reauthenticate). Our server
+          reads the stamp Supabase puts in the next token. */}
+      {!unlocked && canReauth && (
+        <PanelBlock>
+          {!asking ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ flex: 1, minWidth: 140, fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+                Confirm your password to change anything here.
+              </div>
+              <button type="button" style={s.accountGhostBtn} onClick={() => { setAsking(true); setUnlockMsg(null); }}>
+                Edit
+              </button>
+            </div>
+          ) : (
+            <>
+              <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+                Enter your password to unlock this screen.
+              </div>
+              <input style={s.modalInput} type="password" autoFocus value={unlockPw} disabled={unlocking}
+                autoComplete="current-password" placeholder="Your password"
+                onChange={e => setUnlockPw(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && unlockPw && !unlocking && unlock()} />
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button type="button" style={s.accountGhostBtn} disabled={unlocking}
+                  onClick={() => { setAsking(false); setUnlockPw(''); setUnlockMsg(null); }}>
+                  Cancel
+                </button>
+                <button type="button"
+                  style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                           opacity: unlockPw && !unlocking ? 1 : 0.6 }}
+                  disabled={!unlockPw || unlocking} onClick={unlock}>
+                  {unlocking ? 'Checking…' : 'Unlock'}
+                </button>
+              </div>
+            </>
+          )}
+          {unlockMsg && (
+            <div style={{ fontSize: 12, fontWeight: 600, color: DANGER }}>{unlockMsg}</div>
+          )}
+        </PanelBlock>
+      )}
+
       {/* ── Mobile number ───────────────────────────────────────────────────────────────────── */}
       <PanelBlock>
         <div style={s.fieldLabel}>MOBILE NUMBER</div>
@@ -1693,7 +1782,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
               <div style={{ fontSize: 14, fontWeight: 700, color: phoneNow ? INK : '#9AA79F' }}>
                 {phoneNow || 'Not set'}
               </div>
-              {canChangePhone && (
+              {canChangePhone && unlocked && (
                 <button type="button" style={s.accountGhostBtn}
                   onClick={() => { setPhoneMsg(null); setPhoneStep('entry'); }}>
                   {phoneNow ? 'Change' : 'Add a number'}
@@ -1775,6 +1864,15 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       {/* ── Password ────────────────────────────────────────────────────────────────────────── */}
       <PanelBlock>
         <div style={s.fieldLabel}>PASSWORD</div>
+        {/* Shown but inert while locked, rather than hidden. A control that appears only once you
+            have already got past a gate teaches nobody that it exists — the same reasoning
+            PlateButton's note gives for a disabled Undo over an absent one. */}
+        {!unlocked ? (
+          <div style={{ fontSize: 12, color: INK_MUTED, lineHeight: 1.5 }}>
+            ••••••••  <span style={{ color: '#9AA79F' }}>— unlock above to change it</span>
+          </div>
+        ) : (
+        <>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>New password</span>
           <input style={s.modalInput} type="password" value={pw.next} disabled={pwBusy}
@@ -1805,6 +1903,8 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
           disabled={!canSavePw} onClick={savePassword}>
           {pwBusy ? 'Updating…' : 'Update password'}
         </button>
+        </>
+        )}
       </PanelBlock>
 
       {/* Sign out lives here now that the menu it used to share is gone. Last, and plainly styled:

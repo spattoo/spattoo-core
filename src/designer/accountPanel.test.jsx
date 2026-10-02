@@ -68,7 +68,41 @@ describe('who may change it', () => {
   // ASK rather than assume, or a staff member is shown a control that will 403.
   it('offers the control only when the server said this person owns the number', () => {
     expect(panel).toMatch(/canChangePhone/);
-    expect(panel).toMatch(/\{canChangePhone && \(/);
+    // ...and only once the screen is unlocked, so the two gates are read together rather than one
+    // quietly replacing the other.
+    expect(panel).toMatch(/canChangePhone && unlocked &&/);
+  });
+});
+
+describe('the lock', () => {
+  // ⚠️ THE LOCK IS NOT THE UI. `unlocked` decides what is drawn; the server decides what is
+  // allowed, independently, on every write (requireRecentPassword in spattoo-api). If this ever
+  // becomes the only gate, the calls behind it are reachable from a console with the same session
+  // and the padlock is decoration.
+  it('opens read-only', () => {
+    expect(panel).toMatch(/const \[unlocked,\s+setUnlocked\]\s*=\s*useState\(false\)/);
+  });
+
+  it('hides the phone control until unlocked', () => {
+    expect(panel).toMatch(/canChangePhone && unlocked &&/);
+  });
+
+  it('hides the password fields until unlocked', () => {
+    expect(panel).toMatch(/\{!unlocked \? \(/);
+  });
+
+  // The password is proved against Supabase, never posted to our API — which would make an endpoint
+  // that answers "is this the right password", i.e. something to brute force.
+  it('proves the password through reauthenticate, not a password field on our API', () => {
+    expect(panel).toMatch(/apiClient\.reauthenticate\(unlockPw\)/);
+    expect(panel).not.toMatch(/signInWithPassword/);
+  });
+
+  // A server-side expiry the screen ignores leaves a panel that looks editable and refuses every
+  // edit. Both codes drop back to the prompt.
+  it('re-prompts when the server says the unlock is stale', () => {
+    expect(panel).toMatch(/reauth_required/);
+    expect(panel).toMatch(/reauth_expired/);
   });
 });
 
@@ -98,7 +132,17 @@ describe('the screen itself', () => {
 
   // Rule 4 — no pictographic emoji in any UI. The code box's placeholder is middle dots, which are
   // punctuation, not pictures.
+  //
+  // ⚠️ COMMENTS DO NOT COUNT, and this test failed until it said so. CLAUDE.md rule 4 exempts them
+  // outright — "Comments and docs are not UI; ⚠️ in source is fine" — and this component's notes
+  // carry both `⚠️` and a `✕` describing the close button. decorFlyout.test.jsx hit the same wall and
+  // wrote down the order that works: block comments out FIRST and non-greedily, then line comments.
+  // Taking `{/* … */}` out as one unit instead swallows everything between the first `{/*` and the
+  // next `*​/}`, which is most of the file.
   it('has no emoji', () => {
-    expect(panel).not.toMatch(/\p{Extended_Pictographic}/u);
+    const code = panel
+      .replace(/\/\*[\s\S]*?\*\//g, '')   // block comments, JSX comments' innards included
+      .replace(/^\s*\/\/.*$/gm, '');       // line comments
+    expect(code).not.toMatch(/\p{Extended_Pictographic}/u);
   });
 });
