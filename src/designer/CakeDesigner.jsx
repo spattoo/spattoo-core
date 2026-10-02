@@ -14430,6 +14430,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
                     {/* The preview tile lives in the row above — one per candidate ring, however
                         many there are. Nothing is drawn here: one derivation, one render. */}
+                    {/* ⚠️ THE ROW SAYS WHOSE CONTROLS THESE ARE. One Colour, one Size and one Radial
+                        serve every candidate ring, and which ring they were pointed at lived only in
+                        a tile highlight above them — so a baker who meant to recolour the board
+                        recoloured the rim and reasonably read it as the control being broken. The
+                        label is already derived for the tile; printing it here costs a line and
+                        removes the only ambiguity in the card. Shown only when there IS a choice:
+                        with one candidate it would be a heading above its own single subject. */}
+                    {candidates.length > 1 && (
+                      <div style={{ ...cap, color: INK, marginBottom: 2 }}>{label}</div>
+                    )}
                     {/* ── Every control for this ring, on one row ─────────────────────────────
                         Colour, Size, and what used to be a separate ADJUST section below with its
                         own header, hairline and full-width label-left/stepper-right rows. That
@@ -16604,7 +16614,14 @@ const s = {
   },
   // Which tile the controls below are editing. Bordered rather than tinted: the tile is mostly a
   // photograph of a cake, and a wash over it would change the colour being judged.
-  previewTileOn: { border: `1.5px solid ${INK}`, background: 'rgba(0,0,0,0.04)' },
+  /* ⚠️ IT HAS TO BEAT THE TILE'S OWN BORDER, AND IT DID NOT. PreviewTile draws a 1.5px INK border
+     when a ring is CHECKED, so on a card with both rings on the cake this read as a 1.5px INK border
+     against a 1.5px INK border plus a 4% tint — a difference nobody can see. Sandeep, having picked
+     the board and watched the colour land on the rim: *"there is only one color picker for both top
+     and side... color picker should work for which ever is selected."* It did; nothing said which
+     one that was. A selection that cannot be distinguished from "applied" is not a selection. */
+  previewTileOn: { border: `2.5px solid ${INK}`, background: 'rgba(44,68,51,0.10)',
+                   boxShadow: `0 0 0 1px ${INK}` },
   editPopup: {
     position: 'absolute',
     right: EDIT_POPUP_RIGHT, top: 12,
