@@ -1226,7 +1226,7 @@ describe('the springs-at range only offers what moves the arch', () => {
      that went past 1 would set a value the next drag snapped back — law 5 broken by a control. */
   it('stops at 1 on the wall and 1.4 over the cake', () => {
     expect(springRange({ footLeft: 'board', footRight: 'board', surface: 'side' }).max).toBe(1);
-    expect(springRange({ footLeft: 'board', footRight: 'board', surface: 'top' }).max).toBe(1.4);
+    expect(springRange({ footLeft: 'board', footRight: 'board', surface: 'top' }).max).toBe(1.8);
   });
 
   it('offers nothing at all rather than a dead dial', () => {

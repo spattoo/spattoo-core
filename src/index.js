@@ -205,7 +205,7 @@ export {
   toConfig as fondantToConfig, FONDANT_BUILD_VERSION,
 } from './designer/geometry/fondantParts.js';
 export { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, iconTiers } from './designer/decorations/RainbowArrangements.jsx';
-export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, archCenterX, requiredStandoff, rainbowBoardReach, rainbowFootReach, rainbowHandleAt, rainbowDragTo, wrapToWall, fitOnTopScale, rainbowGuide, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
+export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, archCenterX, requiredStandoff, rainbowBoardReach, rainbowFootReach, rainbowHandleAt, rainbowDragTo, wrapToWall, fitOnTopScale, rainbowGuide, springRange, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
 export { default as RainbowArch } from './designer/canvas/RainbowArch.jsx';
 // Fondant letter blocks. Layout is separate from the renderer for the same reason grass's is: one
 // word in, N placements out, and nothing downstream owns a single block.
