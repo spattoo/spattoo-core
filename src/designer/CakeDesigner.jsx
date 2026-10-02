@@ -36,7 +36,7 @@ const FRAME_GAP = 16;
  * last hardcoded version of this number was right when it was written and wrong within two paddings.
  */
 const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
-import { Panel, Z } from '../shared/Panel.jsx';
+import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
 import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
@@ -1568,78 +1568,251 @@ function SidebarTooltip({ label, children }) {
   );
 }
 
-// ── Change password modal ─────────────────────────────────────────────────────
-function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
-  const [form, setForm] = useState({ newPassword: '', confirmPassword: '' });
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState(null);
+// ── My Account ────────────────────────────────────────────────────────────────────────────────
+// One screen for the things that are about the PERSON rather than the bakery: the number we reach
+// them on, and the password they sign in with. Both used to be elsewhere — the password behind a
+// menu item of its own, the phone nowhere at all — and a menu with one action in it is a menu that
+// has to grow a second one the moment anything is added.
+//
+// ⚠️ THE PHONE CHANGE IS NOT THE SIGN-IN OTP, AND MUST NEVER BECOME IT.
+// Every other OTP in this app is supabase.auth.signInWithOtp/verifyOtp, and what those return is a
+// SESSION. Pointed at a number the baker does not own yet, that signs them in as whoever DOES own
+// it — or, since shouldCreateUser defaults true, mints an empty auth user and signs them in as
+// that. Either way the baker loses the session they started in. Supabase's own phone_change is
+// real but writes the number onto auth.users, where it becomes a password-free door into the
+// bakery, because phone sign-in is switched on for the storefront. So the server mints and checks
+// its own code and grants nothing: spattoo-backend migrations/119 and routes/account.js.
+//
+// ⚠️ EVERYTHING IS VISIBLE AT ONCE (INVARIANTS #11). The current number sits directly above the
+// control that replaces it, and the password rules sit under the box they describe. Nothing here
+// is behind a tab: a baker opening this screen is here to change one of two things and should be
+// able to see both without discovering them.
+export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData, onPhoneChanged, isMobile = false }) {
+  // ── Phone ────────────────────────────────────────────────────────────────────────────────────
+  // 'idle' → showing the current number. 'entry' → typing a new one. 'code' → proving it.
+  const [phoneStep,  setPhoneStep]  = useState('idle');
+  const [newPhone,   setNewPhone]   = useState('');
+  const [code,       setCode]       = useState('');
+  const [sentTo,     setSentTo]     = useState(null);
+  const [phoneBusy,  setPhoneBusy]  = useState(false);
+  const [phoneMsg,   setPhoneMsg]   = useState(null);
+  const [phoneNow,   setPhoneNow]   = useState(userData?.phone ?? null);
 
-  function setField(key, val) { setForm(f => ({ ...f, [key]: val })); }
+  // ── Password ─────────────────────────────────────────────────────────────────────────────────
+  const [pw,        setPw]        = useState({ next: '', confirm: '' });
+  const [pwBusy,    setPwBusy]    = useState(false);
+  const [pwMsg,     setPwMsg]     = useState(null);
 
-  async function handleSubmit() {
-    if (form.newPassword !== form.confirmPassword) {
-      setMsg({ ok: false, text: 'Passwords do not match.' });
-      return;
-    }
-    // Full policy (length + character classes) is enforced by isPasswordValid, mirroring
-    // the Supabase Auth policy; the live checklist below shows each rule. canSubmit already
-    // gates on it, so this is a defensive backstop for any programmatic call path.
-    if (!isPasswordValid(form.newPassword)) {
-      setMsg({ ok: false, text: 'Password does not meet the requirements below.' });
-      return;
-    }
-    setLoading(true);
-    setMsg(null);
+  const canChangePhone = userData?.canChangePhone !== false && !!apiClient?.startPhoneChange;
+
+  // A half-typed number or password is work. Esc and a stray backdrop click must not take it
+  // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
+  const dirty = phoneStep !== 'idle' || pw.next.length > 0 || pw.confirm.length > 0;
+
+  async function sendCode() {
+    setPhoneBusy(true); setPhoneMsg(null);
     try {
-      if (apiClient?.changePassword) {
-        await apiClient.changePassword(form.newPassword);
-      } else if (supabase) {
-        const { error } = await supabase.auth.updateUser({ password: form.newPassword });
-        if (error) throw error;
-      }
-      setMsg({ ok: true, text: 'Password updated. Signing you out…' });
-      // Supabase invalidates the session on password change — sign out cleanly
-      // so the user lands on the login screen and re-authenticates with the new password.
-      setTimeout(() => {
-        apiClient?.signOut?.() ?? supabase?.auth.signOut();
-      }, 1200);
-    } catch (err) {
-      setMsg({ ok: false, text: err.message || 'Failed to update password.' });
-      setLoading(false);
+      const r = await apiClient.startPhoneChange(newPhone.trim());
+      setSentTo(r?.to ?? null);
+      setCode('');
+      setPhoneStep('code');
+    } catch (e) {
+      setPhoneMsg({ ok: false, text: e?.message || 'We could not send the code.' });
+    } finally {
+      setPhoneBusy(false);
     }
   }
 
-  const mismatch = form.confirmPassword.length > 0 && form.newPassword !== form.confirmPassword;
-  const canSubmit = isPasswordValid(form.newPassword) && form.newPassword === form.confirmPassword && !loading;
+  async function verifyCode() {
+    setPhoneBusy(true); setPhoneMsg(null);
+    try {
+      const r = await apiClient.confirmPhoneChange(code.trim());
+      setPhoneNow(r?.phone ?? null);
+      setPhoneStep('idle');
+      setNewPhone(''); setCode(''); setSentTo(null);
+      setPhoneMsg({ ok: true, text: 'Your number is updated.' });
+      // The header, the storefront contact and anything else holding the old number read it from
+      // the profile, so the profile is what has to be re-read — not this component's copy.
+      onPhoneChanged?.();
+    } catch (e) {
+      setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
+    } finally {
+      setPhoneBusy(false);
+    }
+  }
+
+  async function savePassword() {
+    if (pw.next !== pw.confirm) { setPwMsg({ ok: false, text: 'Passwords do not match.' }); return; }
+    // Full policy (length + character classes) is enforced by isPasswordValid, mirroring the
+    // Supabase Auth policy; the live checklist below shows each rule. canSavePw already gates on
+    // it, so this is a defensive backstop for any programmatic call path.
+    if (!isPasswordValid(pw.next)) { setPwMsg({ ok: false, text: 'Password does not meet the requirements below.' }); return; }
+    setPwBusy(true); setPwMsg(null);
+    try {
+      if (apiClient?.changePassword) {
+        await apiClient.changePassword(pw.next);
+      } else if (supabase) {
+        const { error } = await supabase.auth.updateUser({ password: pw.next });
+        if (error) throw error;
+      }
+      setPwMsg({ ok: true, text: 'Password updated. Signing you out…' });
+      // Supabase invalidates the session on password change — sign out cleanly so the user lands
+      // on the login screen and re-authenticates with the new password.
+      setTimeout(() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); }, 1200);
+    } catch (err) {
+      setPwMsg({ ok: false, text: err.message || 'Failed to update password.' });
+      setPwBusy(false);
+    }
+  }
+
+  const mismatch   = pw.confirm.length > 0 && pw.next !== pw.confirm;
+  const canSavePw  = isPasswordValid(pw.next) && pw.next === pw.confirm && !pwBusy;
+  const name       = personName(userData, 'My Account');
 
   return (
-    <Panel onClose={onClose} title="Change Password" width={380}>
+    <Panel onClose={onClose} title="My Account" width={400} guardUnsaved={dirty} isMobile={isMobile}>
+      {/* Who this is. Read-only on purpose: the email is the sign-in identity, and moving it is a
+          different act with its own confirmation, not a field on a settings screen. */}
+      <PanelBlock>
+        <div style={{ fontSize: 14.5, fontWeight: 800, color: INK }}>{name}</div>
+        {userData?.email && (
+          <>
+            <div style={{ fontSize: 12, color: INK_MUTED, wordBreak: 'break-word' }}>{userData.email}</div>
+            <div style={{ fontSize: 11, color: '#9AA79F' }}>You sign in with this address.</div>
+          </>
+        )}
+      </PanelBlock>
+
+      {/* ── Mobile number ───────────────────────────────────────────────────────────────────── */}
+      <PanelBlock>
+        <div style={s.fieldLabel}>MOBILE NUMBER</div>
+
+        {phoneStep === 'idle' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: phoneNow ? INK : '#9AA79F' }}>
+                {phoneNow || 'Not set'}
+              </div>
+              {canChangePhone && (
+                <button type="button" style={s.accountGhostBtn}
+                  onClick={() => { setPhoneMsg(null); setPhoneStep('entry'); }}>
+                  {phoneNow ? 'Change' : 'Add a number'}
+                </button>
+              )}
+            </div>
+            {!canChangePhone && (
+              <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+                Only the account owner can change the bakery's number.
+              </div>
+            )}
+          </>
+        )}
+
+        {phoneStep === 'entry' && (
+          <>
+            {/* What is being replaced stays visible while it is replaced (INVARIANTS #11) — a
+                screen that hides the old number asks the baker to remember what they are editing. */}
+            <div style={{ fontSize: 12, color: INK_MUTED }}>
+              Now: <b style={{ color: INK }}>{phoneNow || 'not set'}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              We will text a code to the new number to make sure it reaches you.
+            </div>
+            <input style={s.modalInput} type="tel" inputMode="tel" autoFocus
+              placeholder="+91 98765 43210" value={newPhone} disabled={phoneBusy}
+              onChange={e => setNewPhone(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && newPhone.trim() && !phoneBusy && sendCode()} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={phoneBusy}
+                onClick={() => { setPhoneStep('idle'); setNewPhone(''); setPhoneMsg(null); }}>
+                Cancel
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: newPhone.trim() && !phoneBusy ? 1 : 0.6 }}
+                disabled={!newPhone.trim() || phoneBusy} onClick={sendCode}>
+                {phoneBusy ? 'Sending…' : 'Send code'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phoneStep === 'code' && (
+          <>
+            <div style={{ fontSize: 12, color: INK_MUTED }}>
+              Changing to <b style={{ color: INK }}>{newPhone || sentTo}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              Enter the 6-digit code we texted you.
+            </div>
+            <input style={{ ...s.modalInput, letterSpacing: 4, fontWeight: 700 }}
+              type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
+              placeholder="······" value={code} disabled={phoneBusy}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && code.length === 6 && !phoneBusy && verifyCode()} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={phoneBusy}
+                onClick={() => { setPhoneStep('entry'); setCode(''); setPhoneMsg(null); }}>
+                Use another number
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: code.length === 6 && !phoneBusy ? 1 : 0.6 }}
+                disabled={code.length !== 6 || phoneBusy} onClick={verifyCode}>
+                {phoneBusy ? 'Checking…' : 'Verify'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phoneMsg && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: phoneMsg.ok ? '#2e7d52' : DANGER }}>
+            {phoneMsg.text}
+          </div>
+        )}
+      </PanelBlock>
+
+      {/* ── Password ────────────────────────────────────────────────────────────────────────── */}
+      <PanelBlock>
+        <div style={s.fieldLabel}>PASSWORD</div>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>New password</span>
-          <input style={s.modalInput} type="password" value={form.newPassword}
-            onChange={e => setField('newPassword', e.target.value)} disabled={loading} autoFocus />
-          <PasswordChecklist password={form.newPassword} />
+          <input style={s.modalInput} type="password" value={pw.next} disabled={pwBusy}
+            autoComplete="new-password"
+            onChange={e => setPw(p => ({ ...p, next: e.target.value }))} />
+          <PasswordChecklist password={pw.next} />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>Confirm new password</span>
-          <input style={s.modalInput} type="password" value={form.confirmPassword}
-            onChange={e => setField('confirmPassword', e.target.value)} disabled={loading}
-            onKeyDown={e => e.key === 'Enter' && canSubmit && handleSubmit()} />
+          <input style={s.modalInput} type="password" value={pw.confirm} disabled={pwBusy}
+            autoComplete="new-password"
+            onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && canSavePw && savePassword()} />
           {mismatch && (
             <span style={{ fontSize: 11.5, fontWeight: 700, color: DANGER, fontFamily: "'Quicksand',sans-serif" }}>
               Passwords do not match.
             </span>
           )}
         </label>
-        {msg && (
-          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : DANGER }}>
-            {msg.text}
+        {pwMsg && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: pwMsg.ok ? '#2e7d52' : DANGER }}>
+            {pwMsg.text}
           </div>
         )}
-        <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
-          disabled={!canSubmit} onClick={handleSubmit}>
-          {loading ? 'Updating...' : 'Update Password'}
+        <button type="button"
+          style={{ ...s.orderBtn, ...(brandBtn || {}), padding: '11px', fontSize: 13,
+                   opacity: canSavePw ? 1 : 0.6 }}
+          disabled={!canSavePw} onClick={savePassword}>
+          {pwBusy ? 'Updating…' : 'Update password'}
         </button>
+      </PanelBlock>
+
+      {/* Sign out lives here now that the menu it used to share is gone. Last, and plainly styled:
+          it is the one action on this screen nobody comes here to perform. */}
+      <button type="button" style={s.accountSignOutBtn}
+        onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); }}>
+        Sign out
+      </button>
     </Panel>
   );
 }
@@ -2618,7 +2791,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // flag per menu, so a nav item gets a submenu purely by declaring `menu` in the config.
   const [navMenuId, setNavMenuId] = useState(null);
   const [addUserModal,        setAddUserModal]        = useState(false);
-  const [changePasswordModal, setChangePasswordModal] = useState(false);
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [printStudioOpen,     setPrintStudioOpen]     = useState(false);
   // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked — one convention for "your
@@ -3099,6 +3272,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const initials = userData
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
+
+  // What the avatar does, in ONE place. The header and the rail both show it, and a baker who
+  // learns it on a laptop must meet the same thing on a phone — two handlers is two chances for
+  // that to stop being true.
+  const openAccount = useCallback(() => {
+    if (role === 'customer') { setProfileOpen(o => !o); return; }   // nothing to edit — see the menu's note
+    setProfileOpen(false);
+    setAccountPanelOpen(true);
+  }, [role]);
   const isMobile = windowWidth <= 640;
   /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
    * bottom edge, so the shot stays visible while it is being described.
@@ -3627,8 +3809,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         setTourSeen(me?.tourSeen === true);
         // Avatar initials: in customer mode fetchBakerProfile returns no `user`, so
         // /api/me is where the logged-in principal's name comes from (baker or customer).
+        // MERGE, never replace. This effect and the fetchBakerProfile one below both write
+        // userData and neither can know which resolves last; a wholesale write here dropped
+        // `phone` and `canChangePhone` — which only /baker/profile carries — whenever /api/me
+        // happened to land second, and the account screen then offered no number to change.
         if (me?.firstName || me?.lastName) {
-          setUserData({ firstName: me.firstName, lastName: me.lastName, email: me.email });
+          setUserData(d => ({ ...d, firstName: me.firstName, lastName: me.lastName, email: me.email }));
         }
       }).catch(() => {});
     }
@@ -12058,19 +12244,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 What stays is what has to be glanceable rather than reachable: notifications, the
                 credits readout, and the avatar. Both menus are settings-shaped — visited
                 occasionally, on purpose — which is exactly what More is for. */}
+            {/* ⚠️ THE AVATAR OPENS THE ACCOUNT SCREEN, IT NO LONGER OPENS A MENU.
+                The menu held one real action — Change Password — and a menu with one item in it
+                is a lid on a box with one thing inside. Now that an app-user also owns a phone
+                number we can change, the honest shape is a screen, and `accountMenuRole` decides
+                which of the two this person gets.
+
+                A CUSTOMER still gets the menu, because they have no account to edit: they signed
+                in by OTP and have no password, and the phone they proved belongs to the enquiry,
+                not to a profile they can rewrite here. */}
             <div style={{ position: 'relative' }} ref={profileRef}>
               <button style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
-                onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+                aria-label={role === 'customer' ? 'Account menu' : 'My account'}
+                onClick={() => { openAccount(); setSettingsOpen(false); }}>
                 {initials}
               </button>
-              {profileOpen && (
+              {profileOpen && role === 'customer' && (
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
                   <div style={s.dropdownUserInfo}>
                     <div style={s.dropdownName}>{personName(userData, 'My Account')}</div>
                     {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.dropdownDivider} />
-                  {role !== 'customer' && <button style={s.dropdownItem} onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>Change Password</button>}
                   <button style={s.dropdownItem} onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>Sign out</button>
                 </div>
               )}
@@ -12252,15 +12447,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               );
             })}
 
+            {/* Same door as the header's avatar — see the note there. openAccount() is shared so
+                the two cannot drift into opening different things. */}
             <div style={{ position: 'relative' }} ref={profileRef}>
               <SidebarTooltip label={personName(userData, 'Profile')}>
                 <button
                   style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
-                  onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+                  aria-label={role === 'customer' ? 'Account menu' : 'My account'}
+                  onClick={() => { openAccount(); setSettingsOpen(false); }}>
                   {initials}
                 </button>
               </SidebarTooltip>
-              {profileOpen && (
+              {profileOpen && role === 'customer' && (
                 <RailMenu style={{ top: 'auto', bottom: 0 }}>
                   <div style={s.railDropdownUserInfo}>
                     <div style={s.railDropdownName}>
@@ -12269,10 +12467,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {userData?.email && <div style={s.railDropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.railDropdownDivider} />
-                  {role !== 'customer' && <button style={s.railDropdownItem}
-                    onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>
-                    Change Password
-                  </button>}
                   <button style={s.railDropdownItem}
                     onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>
                     Sign out
@@ -15434,13 +15628,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
       )}
 
-      {/* ── Change Password modal ── */}
-      {changePasswordModal && (
-        <ChangePasswordModal
-          onClose={() => setChangePasswordModal(false)}
+      {/* ── My Account ── */}
+      {accountPanelOpen && (
+        <AccountPanel
+          onClose={() => setAccountPanelOpen(false)}
           brandBtn={brandBtn}
           supabase={supabase}
           apiClient={apiClient}
+          userData={userData}
+          isMobile={isMobile}
+          // A changed number has to reach everything else holding the old one, and the profile is
+          // where they all read it from — so re-read that rather than patching copies.
+          onPhoneChanged={refreshBakerProfile}
         />
       )}
 
@@ -16481,6 +16680,29 @@ const s = {
     border: '1.5px solid #d1d5db', borderRadius: 10, padding: '9px 12px',
     fontSize: 13, fontFamily: "'Quicksand',sans-serif", color: '#222',
     outline: 'none', width: '100%', boxSizing: 'border-box',
+  },
+
+  /* ── The account screen's two plain buttons ─────────────────────────────────────────────────
+   * Rule 7: a clickable has to LOOK clickable at rest, on a phone, with no hover to help it.
+   * Both of these therefore carry their own border and ground rather than relying on being
+   * recognised as text that happens to respond. Borrowed from `catalogueAction` — same border,
+   * same ink — so the app keeps one secondary button rather than growing a second dialect.
+   *
+   * ⚠️ Not NavRow: these DO something here, they do not go somewhere. NavRow's chevron promises a
+   * screen, and promising one that never arrives is worse than a plain button. */
+  accountGhostBtn: {
+    padding: '8px 14px', borderRadius: 10,
+    border: '1.5px solid #C5D4C8', background: 'rgba(255,255,255,0.94)',
+    fontSize: 12, fontWeight: 800, color: '#2C4433',
+    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer', letterSpacing: 0.3,
+  },
+  /* Sign out is the one action nobody opens this screen to perform, so it is quiet — but it is
+   * still a real button with a real edge, not a line of text pretending to be one. */
+  accountSignOutBtn: {
+    width: '100%', padding: '11px', borderRadius: 11,
+    border: `1.5px solid ${LINE}`, background: 'transparent',
+    fontSize: 13, fontWeight: 700, color: INK_MUTED,
+    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer', letterSpacing: 0.3,
   },
   offeringBtn: {
     flex: 1, padding: '7px 0', borderRadius: 10, border: '1.5px solid #999999',
