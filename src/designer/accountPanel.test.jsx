@@ -126,6 +126,16 @@ describe('what belongs on this screen', () => {
   });
 
   // ...and the avatar menu is where it went, beside the way in.
+  // ⚠️ THE HOVER LABEL MUST GO WHEN THE MENU COMES. The pointer is still over the avatar after the
+  // click, so SidebarTooltip stayed visible — positioned `left: calc(100% + 12px)`, which is exactly
+  // where the rail menu opens. It covered Sign out completely: rendered, clickable, invisible.
+  it('the avatar tooltip is suppressed while its menu is open', () => {
+    expect(src).toMatch(/suppressed=\{profileOpen\}/);
+    // And the component must actually honour it, not just accept the prop.
+    expect(src).toMatch(/const show = visible && !suppressed;/);
+    expect(src).not.toMatch(/opacity: visible \? 1 : 0,/);
+  });
+
   // Counts the BEHAVIOUR, not the label: the header dropdown writes `>My Account<` on one line and
   // the rail menu puts the text on its own, so matching the words found one of the two and called
   // the other missing. What has to be true in both places is that the item opens the panel.

@@ -1536,8 +1536,17 @@ function SheetBody({ children }) {
 }
 
 // ── Sidebar tooltip ───────────────────────────────────────────────────────────
-function SidebarTooltip({ label, children }) {
+// ⚠️ `suppressed` EXISTS BECAUSE A TOOLTIP OUTLIVES THE HOVER THAT OPENED A MENU.
+// The pointer is still over the avatar after the click, so the label stayed up — and it is
+// positioned `left: calc(100% + 12px)`, i.e. exactly over the menu that just appeared. It covered
+// Sign out: the item was rendered, hit-testable and invisible, which is the worst of the three.
+//
+// Not fixed with a z-index. The tooltip NAMES a collapsed rail icon, and an open menu already shows
+// that name in its own header — so while the menu is open the label is redundant as well as in the
+// way, and the honest fix is not to draw it rather than to draw it underneath.
+function SidebarTooltip({ label, suppressed = false, children }) {
   const [visible, setVisible] = useState(false);
+  const show = visible && !suppressed;
   return (
     <div style={{ position: 'relative', display: 'flex' }}
       onMouseEnter={() => setVisible(true)}
@@ -1559,8 +1568,8 @@ function SidebarTooltip({ label, children }) {
         boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
         fontFamily: "'Quicksand', sans-serif",
         letterSpacing: 0.3,
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(-4px)',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(-4px)',
         transition: 'opacity 0.15s ease, transform 0.15s ease',
       }}>
         {label}
@@ -12606,7 +12615,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* Same door as the header's avatar — see the note there. openAccount() is shared so
                 the two cannot drift into opening different things. */}
             <div style={{ position: 'relative' }} ref={profileRef}>
-              <SidebarTooltip label={personName(userData, 'Profile')}>
+              <SidebarTooltip label={personName(userData, 'Profile')} suppressed={profileOpen}>
                 <button
                   style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
                   aria-label={role === 'customer' ? 'Account menu' : 'My account'}
