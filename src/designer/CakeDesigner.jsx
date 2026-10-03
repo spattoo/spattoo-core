@@ -1653,7 +1653,7 @@ export function CatalogueStoreSteps({ published, onOpenStore }) {
 // control that replaces it, and the password rules sit under the box they describe. Nothing here
 // is behind a tab: a baker opening this screen is here to change one of two things and should be
 // able to see both without discovering them.
-export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData, onPhoneChanged, isMobile = false, canDelete = false }) {
+export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData, bakerEmail = null, canEditEmail = false, onProfileChanged, onPhoneChanged, isMobile = false, canDelete = false }) {
   // ── Phone ────────────────────────────────────────────────────────────────────────────────────
   // 'idle' → showing the current number. 'entry' → typing a new one. 'code' → proving it.
   const [phoneStep,  setPhoneStep]  = useState('idle');
@@ -1712,6 +1712,15 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // ── Password ─────────────────────────────────────────────────────────────────────────────────
   const [pw,        setPw]        = useState({ next: '', confirm: '' });
+  // ── Where we email you ───────────────────────────────────────────────────────────────────────
+  // ⚠️ NULL IS A VALUE: it means "use my login address", which is what bakerNotifyEmail() already
+  // does and what 22 of 24 bakeries rely on. So the field starts BLANK with the login email as its
+  // placeholder, and clearing it restores the default rather than cutting the bakery off.
+  const [emailEditing, setEmailEditing] = useState(false);
+  const [emailDraft,   setEmailDraft]   = useState(bakerEmail ?? '');
+  const [emailBusy,    setEmailBusy]    = useState(false);
+  const [emailMsg,     setEmailMsg]     = useState(null);
+  const [emailNow,     setEmailNow]     = useState(bakerEmail ?? null);
   const [pwEditing, setPwEditing] = useState(false);
   const [pwBusy,    setPwBusy]    = useState(false);
   const [pwMsg,     setPwMsg]     = useState(null);
@@ -1720,7 +1729,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // A half-typed number or password is work. Esc and a stray backdrop click must not take it
   // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
-  const dirty = phoneStep !== 'idle' || pwEditing || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
+  const dirty = phoneStep !== 'idle' || emailEditing || pwEditing || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
 
   async function sendCode() {
     setPhoneBusy(true); setPhoneMsg(null);
@@ -1751,6 +1760,22 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       if (!handleWriteError(e, setPhoneMsg)) setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
     } finally {
       setPhoneBusy(false);
+    }
+  }
+
+  async function saveEmail() {
+    setEmailBusy(true); setEmailMsg(null);
+    try {
+      const next = emailDraft.trim();
+      await apiClient.updateBakerProfile({ email: next });   // '' → null on the server, by design
+      setEmailNow(next || null);
+      setEmailEditing(false);
+      setEmailMsg({ ok: true, text: next ? 'Saved.' : 'Back to your sign-in address.' });
+      onProfileChanged?.();
+    } catch (e) {
+      if (!handleWriteError(e, setEmailMsg)) setEmailMsg({ ok: false, text: e?.message || 'Could not save that address.' });
+    } finally {
+      setEmailBusy(false);
     }
   }
 
@@ -1797,15 +1822,73 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   return (
     <Panel onClose={onClose} title="My Account" width={400} guardUnsaved={dirty} isMobile={isMobile}>
-      {/* Who this is. Read-only on purpose: the email is the sign-in identity, and moving it is a
-          different act with its own confirmation, not a field on a settings screen. */}
+      {/* Who this is. */}
       <PanelBlock>
         <div style={{ fontSize: 14.5, fontWeight: 800, color: INK }}>{name}</div>
-        {userData?.email && (
+      </PanelBlock>
+
+      {/* ── Where we email you ──────────────────────────────────────────────────────────────────
+          ⚠️ THIS IS NOT THE SIGN-IN ADDRESS, and the screen used to show that instead — the login
+          email with "You sign in with this address." under it. Sandeep: "in my account- we should
+          show the communicatio email only. user name cant be changed. so not editable." A field
+          nobody can act on is furniture; the one that CAN change is the one worth the space.
+
+          ⚠️ IT WRITES bakers.email, NOT the app-user's. The app-user's email IS the username, and
+          moving it would mean moving the Supabase auth identity — a different act with its own
+          confirmation. Nothing here touches it.
+
+          ⚠️ BLANK MEANS "USE MY SIGN-IN ADDRESS", and that is the live default: bakerNotifyEmail()
+          prefers bakers.email and falls back to the primary app-user, which is what 22 of the 24
+          bakeries on dev run on. So the placeholder is the login email rather than a backfilled
+          copy — a copy would stop following the moment the login address changed.
+
+          ⚠️ IT IS EVERY EMAIL WE SEND, not just orders: bakerNotifyEmail feeds order mail,
+          quote-accepted, trial reminders and billing events alike. The hint says so. */}
+      <PanelBlock>
+        <div style={s.fieldLabel}>WHERE WE EMAIL YOU</div>
+        {!emailEditing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 140, fontSize: 13.5, fontWeight: 700, color: INK, wordBreak: 'break-word' }}>
+              {emailNow || userData?.email || '—'}
+              {!emailNow && userData?.email && (
+                <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#9AA79F', marginTop: 2 }}>
+                  Your sign-in address
+                </span>
+              )}
+            </div>
+            {canEditEmail && unlocked && (
+              <EditPencil label="Change where we email you"
+                onClick={() => { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailEditing(true); }} />
+            )}
+          </div>
+        ) : (
           <>
-            <div style={{ fontSize: 12, color: INK_MUTED, wordBreak: 'break-word' }}>{userData.email}</div>
-            <div style={{ fontSize: 11, color: '#9AA79F' }}>You sign in with this address.</div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              Orders, quotes and invoices all go here. Leave it blank to use your sign-in address.
+            </div>
+            <input style={s.modalInput} type="email" inputMode="email" autoFocus
+              placeholder={userData?.email || 'you@yourbakery.com'}
+              value={emailDraft} disabled={emailBusy}
+              onChange={e => setEmailDraft(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !emailBusy && saveEmail()} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={emailBusy}
+                onClick={() => { setEmailEditing(false); setEmailDraft(emailNow ?? ''); setEmailMsg(null); }}>
+                Cancel
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: emailBusy ? 0.6 : 1 }}
+                disabled={emailBusy} onClick={saveEmail}>
+                {emailBusy ? 'Saving…' : 'Save'}
+              </button>
+            </div>
           </>
+        )}
+        {emailMsg && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: emailMsg.ok ? '#2e7d52' : DANGER }}>
+            {emailMsg.text}
+          </div>
         )}
       </PanelBlock>
 
@@ -16087,6 +16170,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           userData={userData}
           isMobile={isMobile}
           canDelete={hasCap('account:delete')}
+          // bakers.email — null means "use my sign-in address", which is the live default.
+          bakerEmail={bakerData?.email ?? null}
+          // PATCH /baker/profile is requireCapability('store:manage'), so an ungated pencil could
+          // only ever 403 for a staff member.
+          canEditEmail={hasCap('store:manage')}
+          onProfileChanged={refreshBakerProfile}
           // A changed number has to reach everything else holding the old one, and the profile is
           // where they all read it from — so re-read that rather than patching copies.
           onPhoneChanged={refreshBakerProfile}

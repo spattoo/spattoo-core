@@ -95,10 +95,11 @@ describe('the lock', () => {
   // "Change" button on the number, bare fields on the password — and that is what the pencil
   // replaced. A second copy of the control is where the next difference would come from, so both
   // rows render the same component or this fails.
-  it('opens both rows the same way', () => {
+  it('opens every row the same way', () => {
     expect(panel).toMatch(/const EditPencil =/);
+    // Email, phone, password — three editable rows, one control between them.
     const uses = panel.match(/<EditPencil /g) ?? [];
-    expect(uses.length).toBe(2);
+    expect(uses.length).toBe(3);
   });
 
   // The password is proved against Supabase, never posted to our API — which would make an endpoint
@@ -144,6 +145,40 @@ describe('what belongs on this screen', () => {
     expect(opens.length).toBe(2);
     const signOuts = src.match(/apiClient\?\.signOut\?\.\(\) \?\? supabase\?\.auth\.signOut\(\); setProfileOpen\(false\);/g) ?? [];
     expect(signOuts.length).toBe(2);
+  });
+});
+
+describe('where we email you', () => {
+  /* ⚠️ IT IS bakers.email, NEVER THE APP-USER'S. The app-user's email IS the username — moving it
+     means moving the Supabase auth identity, which is a different act with its own confirmation.
+     Sandeep: "i dont want to do the appuser email- thats username." */
+  it('writes the bakery address, not the sign-in one', () => {
+    expect(panel).toMatch(/apiClient\.updateBakerProfile\(\{ email: next \}\)/);
+    expect(panel).not.toMatch(/updateUser\(\{\s*email/);
+  });
+
+  /* ⚠️ BLANK IS A VALUE. null means "use my sign-in address" — bakerNotifyEmail() prefers
+     bakers.email and falls back to the primary app-user, which is what 22 of the 24 bakeries on dev
+     actually run on. Backfilling a copy instead would freeze an address that stops following the
+     login email, which is the bug this whole field came out of. */
+  it('treats an empty box as the default, not as nothing', () => {
+    expect(panel).toMatch(/placeholder=\{userData\?\.email \|\| 'you@yourbakery\.com'\}/);
+    expect(panel).toMatch(/Leave it blank to use your sign-in address/);
+  });
+
+  // PATCH /baker/profile is requireCapability('store:manage') — an ungated pencil could only 403.
+  it('offers the pencil only to somebody the server will accept', () => {
+    expect(panel).toMatch(/\{canEditEmail && unlocked && \(/);
+    expect(src).toMatch(/canEditEmail=\{hasCap\('store:manage'\)\}/);
+  });
+
+  // The sign-in address is no longer shown as a field of its own: it cannot be changed, and a row
+  // nobody can act on is furniture.
+  it('does not show the username as its own row', () => {
+    const code = panel
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/You sign in with this address/);
   });
 });
 

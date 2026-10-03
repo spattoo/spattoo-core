@@ -35,6 +35,10 @@ const stubApi = {
     }
     return { to: '••••' + phone.replace(/\D/g, '').slice(-4), expiresIn: 600 };
   },
+  updateBakerProfile: async ({ email }) => {
+    await wait(400);
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address');
+  },
   confirmPhoneChange: async (code) => {
     await wait(400);
     if (code !== GOOD_CODE) throw new Error('That code is not right.');
@@ -60,6 +64,10 @@ function Harness() {
       {open && (
         <AccountPanel onClose={() => setOpen(false)} apiClient={stubApi} userData={user}
                       isMobile={window.innerWidth <= 640}
+                      // Flip this to an address to see the overridden state.
+                      bakerEmail={new URLSearchParams(location.search).get('email')}
+                      canEditEmail
+                      onProfileChanged={() => console.log('[harness] profile re-read')}
                       onPhoneChanged={() => console.log('[harness] profile re-read')} />
       )}
     </>
