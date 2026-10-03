@@ -67,6 +67,8 @@ describe('the split itself', () => {
   // The header described the page it was on. After the split it described the other one.
   it('says what each page is for', () => {
     expect(panel).toMatch(/scope === 'store'\s+\? 'How your shop looks and when it is open'/);
+    // ...and stopped claiming agreements once they left for My Account.
+    expect(panel).not.toMatch(/what you have agreed to/);
   });
 
   /* ⚠️ THE REASON THIS SPLIT NEEDED A SERVER CHANGE. `bakers.settings` is ONE jsonb column and both
@@ -79,17 +81,28 @@ describe('the split itself', () => {
   });
 });
 
-describe('closing your account', () => {
-  it('moved to My Account', () => {
-    expect(designer).toMatch(/<PrivacyDataSection apiClient=\{apiClient\} show="deletion" \/>/);
-    expect(panel).toMatch(/<PrivacyDataSection apiClient=\{apiClient\} show="consents" \/>/);
+describe('your agreements and closing your account', () => {
+  /* Both halves of the old Privacy & Data screen are on My Account. The consent trail went there on
+     a second pass: it had landed under a Settings entry called "Orders & Delivery", and Sandeep
+     called it — "'Your agreements' does not seem to be correct under 'order and delivery'". */
+  it('are both on My Account, and neither is in Settings', () => {
+    expect(designer).toMatch(/<PrivacyDataSection apiClient=\{apiClient\} show=\{canDelete \? 'all' : 'consents'\} \/>/);
+    expect(panel).not.toMatch(/PrivacyDataSection/);
   });
 
-  // The route is requireCapability('account:delete') — owner-only. An ungated control could only
-  // ever 403, and this codebase's rule is that a button which cannot work is worse than none.
-  it('is gated on the capability the server enforces', () => {
+  /* ⚠️ THE CAPABILITY PICKS `show`, it does not hide the block. Erasure is owner-only because the
+     route is requireCapability('account:delete') and a control that could only ever 403 is worse
+     than none — but gating the WHOLE section on it would take the agreements away from staff who
+     could read them yesterday. */
+  it('gate erasure without taking the agreements from staff', () => {
     expect(designer).toMatch(/canDelete=\{hasCap\('account:delete'\)\}/);
-    expect(designer).toMatch(/\{canDelete && apiClient\?\.fetchDeletionStatus && \(/);
+    expect(designer).toMatch(/show=\{canDelete \? 'all' : 'consents'\}/);
+  });
+
+  // The section calls all three fetches unguarded inside one Promise.all, so a host missing any of
+  // them throws before the per-promise catch can see it.
+  it('stay absent on a host that cannot serve them', () => {
+    expect(designer).toMatch(/const privacyReady = !!\(apiClient\?\.fetchConsentHistory && apiClient\?\.fetchLegalCurrent && apiClient\?\.fetchDeletionStatus\)/);
   });
 
   // One component, three blocks, two screens — splitting the FILE would have duplicated the fetches
@@ -104,6 +117,31 @@ describe('closing your account', () => {
   // most likely to want it.
   it('stays whole on the lapsed gate', () => {
     expect(designer).toMatch(/title="Privacy & Data" width=\{520\} flow="block">\s*\n\s*<PrivacyDataSection apiClient=\{apiClient\} \/>/);
+  });
+});
+
+describe('a menu item can carry an icon', () => {
+  /* A menu item is drawn in three places — RailSubmenu, the desktop rail menu and the mobile More
+     sheet — and they were three copies of the same four lines, which is how `badge` ended up
+     supported in two of them and not the third. One component now, so an item cannot grow a mark
+     that shows on a laptop and not on a phone. */
+  it('is one row component, used by every menu', () => {
+    expect(designer).toMatch(/function MenuItemRow\(\{ item, gutter, style, onClick, role \}\)/);
+    expect((designer.match(/<MenuItemRow /g) ?? []).length).toBe(3);
+  });
+
+  /* ⚠️ THE GUTTER IS THE POINT. Giving ONE item an icon indents only that item — "Share my store"
+     sat 72px right of "Store Settings" above it, because the others had nothing in the slot. The
+     column is reserved for every item in a menu that has any icon, which is a fact about the LIST,
+     so a row cannot decide it alone. Caught in a harness on the rail's own ground; invisible in the
+     source. */
+  it('reserves the icon column for the whole menu, or for none of it', () => {
+    expect(designer).toMatch(/const menuHasIcons = items => \(items \?\? \[\]\)\.some\(i => i\.icon\)/);
+    expect((designer.match(/gutter=\{menuHasIcons\(/g) ?? []).length).toBe(3);
+  });
+
+  it('and Share kept the mark it had as a rail item', () => {
+    expect(designer).toMatch(/label: 'Share my store', icon: <ShareIcon size=\{15\} \/>/);
   });
 });
 

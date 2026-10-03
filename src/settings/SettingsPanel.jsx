@@ -5,7 +5,6 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 // the sink can never disagree about what a valid handle is.
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
-import { PrivacyDataSection } from './PrivacyDataPanel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { CameraIcon, UploadsIcon, CopyIcon } from '../shared/icons.jsx';
@@ -350,7 +349,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
             <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{scope === 'store' ? 'Store' : 'Settings'}</div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
               {scope === 'store'    ? 'How your shop looks and when it is open'
-             : scope === 'settings' ? 'How orders reach you, and what you have agreed to'
+             : scope === 'settings' ? 'How orders reach you, and how cakes reach your customers'
              :                        'Manage your store preferences'}
             </div>
           </div>
@@ -637,9 +636,6 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   else. */}
               {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
                   Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
-              {/* `show="consents"` — "Delete my account" moved to My Account, where closing your
-                  own account is a thing a PERSON does rather than a setting of the shop. */}
-              <PrivacyDataSection apiClient={apiClient} show="consents" />
               </>
               )}
 

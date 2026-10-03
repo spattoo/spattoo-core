@@ -40,7 +40,7 @@ import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
 import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { StoreIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
+import { StoreIcon, ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -1680,6 +1680,10 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   const [asking,    setAsking]    = useState(false);   // the password prompt is open
 
   const canReauth = !!apiClient?.reauthenticate;
+  /* PrivacyDataSection calls all three of these unguarded inside one Promise.all, so a host missing
+     any of them throws before the catch can see it. An older baker app simply shows no privacy
+     block rather than a broken panel. */
+  const privacyReady = !!(apiClient?.fetchConsentHistory && apiClient?.fetchLegalCurrent && apiClient?.fetchDeletionStatus);
 
   async function unlock() {
     setUnlocking(true); setUnlockMsg(null);
@@ -2005,8 +2009,13 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
           ⚠️ THE CONSENT TRAIL STAYED BEHIND, in Settings. The two halves of the old screen answer
           different questions: what this BUSINESS agreed to, and whether this PERSON wants out. */}
-      {canDelete && apiClient?.fetchDeletionStatus && (
-        <PrivacyDataSection apiClient={apiClient} show="deletion" />
+      {privacyReady && (
+        /* ⚠️ `show` FOLLOWS THE CAPABILITY, it does not hide the whole block.
+           The agreement trail is something any app-user may read; erasure is owner-only, because
+           POST /api/baker/account/delete is requireCapability('account:delete') and a control that
+           could only ever 403 is worse than no control. Gating the whole section on `account:delete`
+           would have taken the agreements away from staff who could read them yesterday. */
+        <PrivacyDataSection apiClient={apiClient} show={canDelete ? 'all' : 'consents'} />
       )}
     </Panel>
   );
@@ -2222,6 +2231,36 @@ const ORDERS_MENU = [
 // The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
 // Every rail menu (Orders submenu, Settings, profile) goes through here, so a new one cannot
 // accidentally ship the white card that belongs under the mobile header.
+/* ── One row of a menu, wherever that menu is drawn ──────────────────────────────────────────────
+ *
+ * A menu item appears in three places — RailSubmenu, the desktop rail menu, and the mobile More
+ * sheet. They were three copies of the same four lines, which is how `badge` ended up supported in
+ * two of them and not the third.
+ *
+ * ⚠️ `gutter` IS WHY THIS IS A COMPONENT AND NOT A SNIPPET. Giving one item an icon indents only
+ * that item: "Share my store" sat 72px right of "Store Settings" above it, because the others had
+ * nothing in the slot. So the icon column is reserved for EVERY item in a menu that has any icon,
+ * and for none in a menu that has none — which is a decision about the whole list, and therefore
+ * cannot be made by a row rendering itself. Measured in a harness on the rail's own ground, not
+ * reasoned about; the misalignment is invisible in the source.
+ */
+function MenuItemRow({ item, gutter, style, onClick, role }) {
+  return (
+    <button key={item.id} role={role} style={style} onClick={onClick}>
+      {gutter && (
+        <span aria-hidden style={{ width: 15, flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
+          {item.icon}
+        </span>
+      )}
+      <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+      {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
+    </button>
+  );
+}
+
+// True when any item in this menu carries an icon — see MenuItemRow's note on `gutter`.
+const menuHasIcons = items => (items ?? []).some(i => i.icon);
+
 function RailMenu({ style, children }) {
   return (
     <div className="spattoo-rail-menu" style={style ? { ...s.railDropdown, ...style } : s.railDropdown}>
@@ -2302,9 +2341,8 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
         <RailMenu style={anchor}>
           <div style={s.railDropdownSection}>{label}</div>
           {items.map(item => (
-            <button key={item.id} style={s.railDropdownItem} onClick={() => onSelect(item)}>
-              {item.label}
-            </button>
+            <MenuItemRow key={item.id} item={item} gutter={menuHasIcons(items)}
+              style={s.railMenuItemWithIcon} onClick={() => onSelect(item)} />
           ))}
         </RailMenu>
       )}
@@ -3744,7 +3782,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
               { id: 'store-flavours', label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
                 badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
             ] : []),
-            { id: 'store-share', label: 'Share my store', open: () => onShareStore?.() },
+            /* The same mark the rail carried when sharing WAS the rail item — it did not change
+               job, only address, and an icon that moves with it says so. */
+            { id: 'store-share', label: 'Share my store', icon: <ShareIcon size={15} />, open: () => onShareStore?.() },
           ] }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
@@ -12696,11 +12736,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <RailMenu style={{ top: 'auto', bottom: 0 }}>
                       <div style={s.railDropdownSection}>{menu.label}</div>
                       {menu.items.map(item => (
-                        <button key={item.id} style={s.railDropdownItem}
-                                onClick={() => { leaveOpenPanels(); item.open(); }}>
-                          {item.label}
-                          {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
-                        </button>
+                        <MenuItemRow key={item.id} item={item} gutter={menuHasIcons(menu.items)}
+                          style={s.railMenuItemWithIcon}
+                          onClick={() => { leaveOpenPanels(); item.open(); }} />
                       ))}
                     </RailMenu>
                   )}
@@ -15459,11 +15497,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div key={menu.id} style={s.mobileSheetSection}>
                   <div style={s.mobileSheetSectionTitle}>{menu.label}</div>
                   {menu.items.map(item => (
-                    <button key={item.id} role="menuitem" style={s.mobileSheetRow}
-                            onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); item.open(); }}>
-                      {item.label}
-                      {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
-                    </button>
+                    <MenuItemRow key={item.id} item={item} gutter={menuHasIcons(menu.items)}
+                      role="menuitem" style={s.mobileSheetRow}
+                      onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); item.open(); }} />
                   ))}
                 </div>
               ))}
@@ -16634,6 +16670,11 @@ const s = {
   railDropdown:        RAIL_MENU.surface,
   railDropdownSection: RAIL_MENU.section,
   railDropdownItem:    RAIL_MENU.item,
+  /* The same item, laid out as a row so an icon can sit beside the label.
+     ⚠️ A separate key rather than flex on MENU_SHAPE.item: the AVATAR menus share that shape and
+     have no icons, and widening a token to suit one caller is how a token stops meaning one thing.
+     `gap` only shows when there is an icon to separate, so icon-less items are unchanged. */
+  railMenuItemWithIcon: { ...RAIL_MENU.item, display: 'flex', alignItems: 'center', gap: 9, width: '100%' },
   railDropdownUserInfo: RAIL_MENU.userInfo,
   railDropdownName:    RAIL_MENU.name,
   railDropdownEmail:   RAIL_MENU.email,
