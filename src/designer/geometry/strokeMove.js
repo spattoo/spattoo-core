@@ -89,3 +89,15 @@ export function distanceToStroke(points, point) {
   }
   return best;
 }
+
+/* Where a stroke IS, as a list of points — one answer for a drawn path and for a stamped piece.
+   ⚠️ A STAMP CARRIES `points: []`. An empty array is neither null nor undefined, so the obvious
+   `st.points ?? [st.point]` chooses the empty list over the `point` that actually says where the
+   piece sits, and `distanceToStroke` then answers Infinity for it. Every press in Edit mode missed
+   every stamped piece because of that one `??`: a hand-piped piece could be neither chosen nor
+   slid, while a drawn line could be both. Length, not presence. Null when there is no position. */
+export function strokePoints(st) {
+  if (st?.points?.length) return st.points;
+  if (st?.point) return [st.point];
+  return null;
+}

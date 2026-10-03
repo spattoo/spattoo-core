@@ -2358,7 +2358,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3276,6 +3276,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
   // Draw or slide: one pen, two gestures, and they cannot share a drag. See the toggle in the pen card.
   const [penMove, setPenMove] = useState(false);
+  /* ⚠️ WHICH PIPED PIECE THE SMALL CARD IS EDITING. A hand-piped run has always carried its own
+     colour and thickness; what was missing was a way to say WHICH one. Null means none chosen and
+     the card is absent — it is not a panel that sits there empty. */
+  const [pickedStrokeId, setPickedStrokeId] = useState(null);
+  const pickedStroke = design.piping.find(st => st.id === pickedStrokeId) ?? null;
+  /* ⚠️ THE LAST PIECE PLACED, so switching to Edit pre-selects it. The common move after putting a
+     piece down is to recolour THAT piece, and making the customer hunt for it on the cake first is
+     the friction that made this feature necessary in the first place. */
+  const lastStrokeIdRef = useRef(null);
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
@@ -10920,40 +10929,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
         </>}
 
-        {/* ── Draw or slide ────────────────────────────────────────────────────────────────────
-            One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
-            pressing the cake to draw over it are the same press. So it is a mode, said out loud,
-            rather than a modifier key nobody would find on a phone.
-            Sliding moves the WHOLE stroke and keeps its shape: it is the unit you drew, and the unit
-            a ring already is. Until this, a border a few millimetres too low cost you the whole line.
-        */}
         {/* ⚠️ CREAM ONLY. "Draw" is a gesture you make against the cake with a pen; an acrylic
             topper is a cut sheet that is placed, never drawn, so on a topper these two buttons named
             a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
-            sure what are intended for". */}
-        {w.style !== 'acrylic' && <>
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-          {[['Draw', false], ['Move', true]].map(([label, val]) => (
-            <button key={label} onClick={() => setPenMove(val)}
-              style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
-                       /* Black, like every other pressed state in this app. This was the last green
-                          toggle on a card — and `penMove` is the PEN's mode (declared once, read by
-                          the canvas as penDrawMode/penMoveMode), surfaced here, so it should not
-                          have carried a tone of its own in the first place. */
-                       border: `1.5px solid ${penMove === val ? INK : LINE}`,
-                       background: penMove === val ? INK : SURFACE,
-                       color: penMove === val ? SURFACE : INK,
-                       fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {penMove && (
-          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
-            Drag a piped line to slide it. It keeps its shape and stays on the cake.
-          </div>
-        )}
-        </>}
+            sure what are intended for". The row itself is renderPenModeRow — shared with the pen
+            card, which is where hand-piping happens. */}
+        {w.style !== 'acrylic' && renderPenModeRow()}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         {/* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
@@ -11392,6 +11373,58 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  /* ── Draw or Edit ─────────────────────────────────────────────────────────────────────────
+     ⚠️ ONE ROW, TWO CARDS. This toggle lived only on the WRITING card, and the mode it switches is
+     the PEN's — so hand-piping, which is the whole reason the mode exists, had no way to reach it.
+     Reported as exactly that: pieces placed by tapping could not be recoloured, because Edit mode
+     was unreachable from the Cream Pen card. Extracted rather than copied (root CLAUDE.md rule 1).
+
+     One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
+     pressing the cake to draw over it are the same press. So it is a mode, said out loud, rather
+     than a modifier key nobody would find on a phone. Sliding moves the WHOLE stroke and keeps its
+     shape: it is the unit you drew, and the unit a ring already is.
+
+     ⚠️ CREAM ONLY on the writing card — "Draw" is a gesture you make against the cake with a pen;
+     an acrylic topper is a cut sheet that is placed, never drawn. The caller gates that. */
+  function renderPenModeRow() {
+    return (
+      <>
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {/* ⚠️ "EDIT", NOT "MOVE", BECAUSE IT DOES BOTH NOW — tap a piece to choose it, drag to
+              slide it. The two cannot live in Draw: in stamp mode a TAP IS THE PLACEMENT GESTURE
+              ("clicked on cake few times so a few cream elements added"), so a tap that also
+              selected would make it impossible to place a piece overlapping one already there,
+              which is how a cluster gets built. One meaning per gesture per mode.
+              Entering Edit pre-selects the piece placed last: the usual next move after putting one
+              down is to recolour THAT one, and hunting for it on the cake first is the friction this
+              whole feature exists to remove. */}
+          {[['Draw', false], ['Edit', true]].map(([label, val]) => (
+            <button key={label} onClick={() => {
+                setPenMove(val);
+                setPickedStrokeId(val ? (lastStrokeIdRef.current ?? null) : null);
+              }}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
+                       /* Black, like every other pressed state in this app. This was the last green
+                          toggle on a card — and `penMove` is the PEN's mode (declared once, read by
+                          the canvas as penDrawMode/penMoveMode), surfaced here, so it should not
+                          have carried a tone of its own in the first place. */
+                       border: `1.5px solid ${penMove === val ? INK : LINE}`,
+                       background: penMove === val ? INK : SURFACE,
+                       color: penMove === val ? SURFACE : INK,
+                       fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {penMove && (
+          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
+            Tap a piped piece to change its colour and size. Drag one to slide it.
+          </div>
+        )}
+      </>
+    );
+  }
+
   function renderPenBody() {
     /* ⚠️ THE COPY FOLLOWS THE MEDIUM. The card said "Cream Pen" and "Cream colour" while piping
        chocolate — the medium reached the renderer and not a word of the interface, which is the kind
@@ -11591,6 +11624,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </span>
           </span>
         </label>
+
+        {/* ⚠️ ONLY ONCE SOMETHING IS PLACED. Edit with an empty cake is a mode that can do nothing,
+            and on a first visit the only thing to say is "drag on the cake". It appears the moment
+            there is a piece to edit, which is also the moment it is wanted. */}
+        {!!design.piping.length && renderPenModeRow()}
 
         <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 10 }}>
           {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
@@ -13817,11 +13855,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
               onWritingMove={(id, moves) => updateWriting(id, moves)}
               selectedWritingId={selectedWritingId}
+              onPickStroke={setPickedStrokeId}
               penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && !penMove}
               penMoveMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && penMove}
-              onMoveStroke={updateStrokePoints}
+              /* ⚠️ THE MERGING WRITER, because a slide now has to write `point` for a stamped piece
+                 and `points` for a drawn line. `updateStrokePoints` only ever wrote the latter. */
+              onMoveStroke={updateStroke}
               penStyle={penStyle}
-              onAddStroke={addStroke}
+              /* ⚠️ REMEMBERS THE PIECE JUST PLACED. `addStroke` seeds the id itself, so the only
+                 way to know which one was made is to make it here and pass it in — the hook merges
+                 a given id rather than inventing a second one. */
+              onAddStroke={st => { const id = crypto.randomUUID(); lastStrokeIdRef.current = id; addStroke({ ...st, id }); }}
               dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}
               dustSelected={{ tier: dustTier, idx: dustSel }}
               onDustMove={(tier, idx, u, v) => updateDustSplash(tier, idx, { u, v })}
@@ -13873,6 +13917,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
+          {/* ⚠️ RENDERED BESIDE THE CANVAS, NOT INSIDE THE PIPING CARD. It lived in the ring
+              card's tree first, which meant it could only ever appear while that card was open —
+              and hand-piping happens on the PEN card, so it never appeared at all. It belongs to
+              the cake, like the selection it describes. */}
+      {/* ── One piped piece, chosen on the cake ────────────────────────────────────────────────
+          ⚠️ IT SITS OVER THE CARD RATHER THAN REPLACING IT, which is Sandeep's call and the right
+          one: *"lets make it sit over. that gives the opportunity to always click on 'done with
+          piping'."* A card that swapped itself out would hide the way back out of the pen.
+
+          ⚠️ EVERY PIECE CARRIES ITS OWN COLOUR AND THICKNESS ALREADY — `DEFAULT_STROKE` has had both
+          since the pen was built. Nothing was remodelled to make these editable; what was missing
+          was any way to say WHICH piece, so the pen's own controls could only ever describe the
+          NEXT stroke. That is why a customer who placed several could not change one of them.
+
+          The tick is the only way out, deliberately: it is also what returns the piping card to
+          being the active one on a phone. */}
+      {pickedStroke && createPortal(
+        <div style={{ position: 'fixed', zIndex: 4200, right: isMobile ? 10 : EDIT_POPUP_RIGHT + EDIT_POPUP_W + 14,
+                      bottom: isMobile ? 'calc(env(safe-area-inset-bottom) + 86px)' : 'auto',
+                      top: isMobile ? 'auto' : 90, width: isMobile ? 'auto' : 196, left: isMobile ? 10 : 'auto',
+                      background: '#fff', borderRadius: 14, padding: 12,
+                      border: '1.5px solid #eadde2', boxShadow: '0 12px 44px rgba(0,0,0,0.24)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: INK, textTransform: 'uppercase',
+                           letterSpacing: 0.6, fontFamily: "'Quicksand',sans-serif" }}>
+              This piece
+            </span>
+            <button type="button" onClick={() => setPickedStrokeId(null)}
+              title="Done with this piece"
+              style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+                       border: 'none', background: INK, color: '#fff', fontSize: 15, lineHeight: 1 }}>✓</button>
+          </div>
+          <ColorWheel color={pickedStroke.color ?? '#ffffff'} compact
+            onChange={c => updateStroke(pickedStroke.id, { color: c })}
+            cakeColors={[...new Set(collectElementColors(design))]} width={152} />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+            <DialCell label="Size" value={pickedStroke.thickness ?? 0.03}
+              min={0.04} max={0.34} step={0.005} fmt={v => v.toFixed(3)}
+              onChange={v => updateStroke(pickedStroke.id, { thickness: v })} />
+          </div>
+        </div>, document.body)}
           {/* ── The name, as it will be burned in ────────────────────────────────────────────────
               Inside the 9:16 box and nowhere else, so it moves and scales with the frame.
 
@@ -14948,6 +15033,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   })}
                 </ScrollFadeRow>
               )}
+              {/* ⚠️ THE NAME OF THE SELECTED RING, UNDER THE TILES — not down with the controls.
+                  It went below "I'll pipe it myself" when the control row moved there, and read as a
+                  heading for the hand-piping block it had nothing to do with. Sandeep: *"below the
+                  'ill pipe it myself' there is RIM text showing. i think this text is to show what is
+                  selected from the preview. i think it should be above."* He is right: it names which
+                  TILE is chosen, so it belongs to the tiles. The controls further down inherit it.
+                  Shown only when there is a choice — one candidate needs no label to tell it apart. */}
+              {candidates.length > 1 && (
+                <div style={{ fontSize: 8.5, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif",
+                              textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>
+                  {candidates.find(c => c.tierIndex === activeRing.tierIndex && c.zone === activeRing.zone)?.label}
+                </div>
+              )}
 
               {/* ── "I'll pipe it myself" ──────────────────────────────────────────────────────
                   Every tile above answers "which BORDER does this ring go round". Between them they
@@ -15048,16 +15146,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div key={`${zone}-${tierIndex}`} style={{ borderTop: '1px solid #999999', paddingTop: 10, paddingBottom: 4 }}>
                     {/* The preview tile lives in the row above — one per candidate ring, however
                         many there are. Nothing is drawn here: one derivation, one render. */}
-                    {/* ⚠️ THE ROW SAYS WHOSE CONTROLS THESE ARE. One Colour, one Size and one Radial
-                        serve every candidate ring, and which ring they were pointed at lived only in
-                        a tile highlight above them — so a baker who meant to recolour the board
-                        recoloured the rim and reasonably read it as the control being broken. The
-                        label is already derived for the tile; printing it here costs a line and
-                        removes the only ambiguity in the card. Shown only when there IS a choice:
-                        with one candidate it would be a heading above its own single subject. */}
-                    {candidates.length > 1 && (
-                      <div style={{ ...cap, color: INK, marginBottom: 2 }}>{label}</div>
-                    )}
                     {/* ── Every control for this ring, on one row ─────────────────────────────
                         Colour, Size, and what used to be a separate ADJUST section below with its
                         own header, hairline and full-width label-left/stepper-right rows. That
@@ -15210,6 +15298,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <body> so it escapes the card's narrow, backdrop-blurred scroll container
                         (a backdrop-filter ancestor would otherwise trap a fixed-positioned child).
                         Anchored to the left of the tapped Color dot, clamped to the viewport. */}
+
                     {pipingColorKey === `${card.cardId}-${zone}-${tierIndex}` && pipingColorAnchor && createPortal(
                       (() => {
                         const PAD = 14;

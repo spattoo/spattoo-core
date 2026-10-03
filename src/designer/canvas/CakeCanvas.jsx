@@ -2761,7 +2761,7 @@ function CakeScene({
   // shared with the edit popup's SizeDial (see placement.js stickerSizeControl). Absent = no grips.
   stickerResize = null,
   onWritingClick, onWritingMove, selectedWritingId = null,
-  penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke,
+  penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
@@ -3005,7 +3005,7 @@ function CakeScene({
           selectedStickerIds, onStickerSelect, onStickerLongPress, onStickerMove, onGroupMove, onMoveMany,
           stickerToolbar, stickerResize, isStickerMovable,
           onWritingClick, onWritingMove, selectedWritingId,
-          penDrawMode, penMoveMode, penStyle, onAddStroke, onMoveStroke,
+          penDrawMode, penMoveMode, penStyle, onAddStroke, onMoveStroke, onPickStroke,
           // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
@@ -3151,7 +3151,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedStickerIds = null, onStickerSelect = NOOP, onStickerLongPress, onStickerMove = NOOP,
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
     onWritingClick, onWritingMove, selectedWritingId = null,
-    penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke,
+    penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit,
     onCloudMove, onRainbowMove,
   } = edit ?? {};
@@ -3440,6 +3440,7 @@ function CakeContent({ config, scene, edit = null }) {
         drawMode={penDrawMode}
         moveMode={penMoveMode}
         onMoveStroke={onMoveStroke}
+        onPickStroke={onPickStroke}
         penStyle={penStyle}
         tierData={tierData}
         board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
@@ -4032,7 +4033,7 @@ export default function CakeCanvas({
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
   onWritingClick, onWritingMove, selectedWritingId = null,
-  penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke,
+  penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
@@ -4208,6 +4209,7 @@ export default function CakeCanvas({
         penDrawMode={penDrawMode}
         penMoveMode={penMoveMode}
         onMoveStroke={onMoveStroke}
+        onPickStroke={onPickStroke}
         penStyle={penStyle}
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}

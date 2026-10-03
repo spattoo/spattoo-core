@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { translateStroke, distanceToStroke } from './strokeMove.js';
+import { translateStroke, distanceToStroke, strokePoints } from './strokeMove.js';
 
 // ── Sliding a placed stroke ──────────────────────────────────────────────────────────────────────
 // Two things have to hold or the feature is worse than not having it: the SHAPE survives the move
@@ -110,5 +110,30 @@ describe('distanceToStroke', () => {
   it('is Infinity for an empty stroke, so it can never win', () => {
     expect(distanceToStroke([], [0, 0, 0])).toBe(Infinity);
     expect(distanceToStroke(null, [0, 0, 0])).toBe(Infinity);
+  });
+});
+
+describe('strokePoints', () => {
+  it('reads a drawn line from its points', () => {
+    expect(strokePoints({ points: [[0, 1, 0], [0.1, 1, 0]] })).toEqual([[0, 1, 0], [0.1, 1, 0]]);
+  });
+
+  /* ⚠️ THE WHOLE REASON THIS EXISTS. A stamped piece stores its position in `point` and carries an
+     EMPTY `points`, and `st.points ?? [st.point]` takes the empty array — which made every stamped
+     piece unselectable and unslidable in Edit mode. */
+  it('reads a stamped piece from its point, even though points is an empty array', () => {
+    expect(strokePoints({ point: [0.3, 1.7, 0.1], points: [] })).toEqual([[0.3, 1.7, 0.1]]);
+  });
+
+  it('answers null when a stroke has no position at all', () => {
+    expect(strokePoints({ points: [] })).toBeNull();
+    expect(strokePoints({})).toBeNull();
+    expect(strokePoints(null)).toBeNull();
+  });
+
+  it('a stamped piece is within grab reach of a press on it', () => {
+    const stamp = { point: [0.3, 1.694, 0.1], points: [], thickness: 0.144 };
+    const press = [0.3, 1.906, 0.17];   // the seat sits on top of the piece, not inside it
+    expect(distanceToStroke(strokePoints(stamp), press)).toBeLessThan(Math.max(0.12, 0.144 * 3));
   });
 });

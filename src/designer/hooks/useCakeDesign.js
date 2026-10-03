@@ -1585,10 +1585,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // Replace one stroke's points, keeping everything else about it. The whole of "slide a placed
   // stroke": the shape, colour, nozzle, seed and orientation are all unchanged and only WHERE it
   // sits moves. Keyed by id rather than index because Undo re-indexes the list.
-  function updateStrokePoints(id, points) {
+  /* ⚠️ THE ONE WRITER FOR A PIPED PIECE, and it MERGES. A hand-piped run is already a stroke of its
+     own with its own colour and thickness — nothing had to be remodelled for a customer to recolour
+     one — but the only writer used to be the drag, and it replaced `points` and nothing else. It
+     also could not move a STAMPED piece, which is positioned by `point`: one merging writer takes
+     both, and a patch of { color } cannot blank either. Merges, like updateTopper and updateGarnish.
+     Sandeep, after placing several and finding them fixed: *"when you click few cream elements and
+     when user selects each of them, can we make color and size changeable for each of them
+     separately?"* They always could be; there was no way to say which one. */
+  function updateStroke(id, patch) {
     setDesign(prev => ({
       ...prev,
-      piping: prev.piping.map(s => (s.id === id ? { ...s, points } : s)),
+      piping: prev.piping.map(s => (s.id === id ? { ...s, ...patch } : s)),
     }));
   }
   /* ⚠️ A FILL REPLACES THE LAST FILL, it does not stack on top of it. Each pass is a real stroke —
@@ -1671,7 +1679,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
+    addStroke, updateStroke, setStrokeFill, removeStroke, clearPiping,
     addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish,
     addTopper, updateTopper, removeTopper,
     resetDesign,

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { pickSeat } from '../geometry/penSeat.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
-import { translateStroke, distanceToStroke } from '../geometry/strokeMove.js';
+import { translateStroke, distanceToStroke, strokePoints } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
 import StampStroke from './StampStroke.jsx';
@@ -46,7 +46,7 @@ function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, sof
 
 const CatcherMat = () => <meshBasicMaterial transparent opacity={0} depthWrite={false} />;
 
-export default function CreamPen({ piping = [], drawMode = false, moveMode = false, penStyle, tierData = [], board, onAddStroke, onMoveStroke }) {
+export default function CreamPen({ piping = [], drawMode = false, moveMode = false, penStyle, tierData = [], board, onAddStroke, onMoveStroke, onPickStroke }) {
   const { gl, camera, scene } = useThree();
   const [live, setLive] = useState([]);          // Vector3[] — seated centerline of the in-progress stroke
   const activeRef = useRef(null);                // { tierIndex } while drawing, else null
@@ -103,13 +103,22 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
       const hit = [-1, null];
       let best = Infinity;
       for (const st of pipingRef.current) {
-        const pts = st.points ?? (st.point ? [st.point] : null);
+        const pts = strokePoints(st);   // see strokeMove.js — a stamp's `points` is EMPTY
         if (!pts) continue;
         const d = distanceToStroke(pts, s.p.toArray());
         const reach = Math.max(0.12, (st.thickness ?? 0.03) * 3);
         if (d < best && d < reach) { best = d; hit[0] = d; hit[1] = st; }
       }
-      if (hit[1]) moveRef.current = { id: hit[1].id, from: s.p.toArray(), original: hit[1].points };
+      /* ⚠️ `moved: false` IS WHAT SEPARATES A TAP FROM A DRAG, and the same press has to be able to
+         become either — you cannot know which it is until the pointer does or does not travel. The
+         grab is armed here; `onMove` sets `moved` the first time it actually slides the piece, and
+         `onUp` reads it: moved means it was a drag and the slide is the whole gesture, unmoved means
+         it was a tap and the piece is being CHOSEN. Deciding at press time would make selecting
+         impossible (every press would slide) or sliding impossible (every press would select). */
+      /* `single` says which FIELD the slide writes back. A stamp is positioned by `point`; writing
+         its moved position into `points` moved nothing and left the piece where it was. */
+      if (hit[1]) moveRef.current = { id: hit[1].id, from: s.p.toArray(), original: strokePoints(hit[1]),
+                                      single: !hit[1].points?.length, moved: false };
       return;
     }
 
@@ -128,12 +137,16 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
         const m = moveRef.current;
         const s = seatAt(ev.clientX, ev.clientY);
         if (!s) return;
+        m.moved = true;
         const st = pipingRef.current.find(x => x.id === m.id);
         // Replayed from the ORIGINAL points every frame, never from the live ones — accumulating
         // would turn every intermediate pointermove into another displacement.
-        onMoveStroke?.(m.id, translateStroke(m.original, m.from, s.p.toArray(), {
+        const moved = translateStroke(m.original, m.from, s.p.toArray(), {
           normal: st?.normal ?? [0, 1, 0], axis: [0, 0],
-        }));
+        });
+        /* A PATCH, not a points array — see `single` above. The writer merges, so a stamp's `point`
+           and a drawn line's `points` each go back to the field that positions them. */
+        onMoveStroke?.(m.id, m.single ? { point: moved[0] } : { points: moved });
         return;
       }
       if (!activeRef.current) return;
@@ -173,7 +186,14 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
     };
 
     const onUp = () => {
-      if (moveRef.current) { moveRef.current = null; return; }
+      if (moveRef.current) {
+        /* A press that never travelled is a tap: the customer pointed at a piece rather than moving
+           it. Reported up so the card can edit THAT piece — its colour and thickness are its own. */
+        const m = moveRef.current;
+        moveRef.current = null;
+        if (!m.moved) onPickStroke?.(m.id);
+        return;
+      }
       if (!activeRef.current) return;
       const { tierIndex, normal } = activeRef.current;
       activeRef.current = null;
@@ -239,7 +259,7 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drawMode, moveMode, gl, camera, scene, onAddStroke, onMoveStroke]);
+  }, [drawMode, moveMode, gl, camera, scene, onAddStroke, onMoveStroke, onPickStroke]);
 
   // ── The pointer has to SAY you can draw ────────────────────────────────────────────────────────
   // Draw mode changed nothing about the canvas: same arrow, same cake, and the only clue was a line
