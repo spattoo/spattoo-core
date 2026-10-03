@@ -32,10 +32,17 @@ const round = v => +v.toFixed(4);
  * @param opts.axis    the cake's centre in world XZ
  * @returns the moved points (a new array; the input is untouched)
  */
+/* Is this surface a FLAT one — a cake top, the board — rather than a wall?
+   ⚠️ ONE RULE, TWO READERS. The slide asks it to choose between moving on a plane and moving round a
+   cylinder; the pen asks it to choose which of an element's two authored rotations a stamped piece
+   gets. Two copies of 0.7 would drift, and the second reader is the one that shipped a rose swirl
+   lying face-down on a wall. */
+export const isUprightNormal = (normal) => Math.abs(normal?.[1] ?? 0) > 0.7;
+
 export function translateStroke(points, from, to, { normal = [0, 1, 0], axis = [0, 0] } = {}) {
   if (!Array.isArray(points) || !points.length || !from || !to) return points;
 
-  const upright = Math.abs(normal[1] ?? 0) > 0.7;
+  const upright = isUprightNormal(normal);
   return upright
     ? moveOnFlat(points, from, to)
     : moveOnWall(points, from, to, axis);

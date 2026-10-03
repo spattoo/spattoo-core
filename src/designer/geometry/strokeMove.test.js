@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { translateStroke, distanceToStroke, strokePoints } from './strokeMove.js';
+import { translateStroke, distanceToStroke, strokePoints, isUprightNormal } from './strokeMove.js';
 
 // ── Sliding a placed stroke ──────────────────────────────────────────────────────────────────────
 // Two things have to hold or the feature is worse than not having it: the SHAPE survives the move
@@ -135,5 +135,30 @@ describe('strokePoints', () => {
     const stamp = { point: [0.3, 1.694, 0.1], points: [], thickness: 0.144 };
     const press = [0.3, 1.906, 0.17];   // the seat sits on top of the piece, not inside it
     expect(distanceToStroke(strokePoints(stamp), press)).toBeLessThan(Math.max(0.12, 0.144 * 3));
+  });
+});
+
+describe('isUprightNormal', () => {
+  /* ⚠️ THIS IS WHICH AUTHORED ROTATION A HAND-PIPED PIECE GETS. An element carries one attitude for
+     a rim and another for a wall; the pen reads this to pick. Rose Swirl is the worked case —
+     top_rotation [0,0,0], bottom_rotation [-89,-174,-180] — and taking the rim's on a wall laid
+     every swirl face-down, which reads as the pen using a different nozzle. */
+  it('a cake top and a board are upright', () => {
+    expect(isUprightNormal([0, 1, 0])).toBe(true);
+    expect(isUprightNormal([0.03, 0.999, 0])).toBe(true);
+  });
+
+  it('a tier wall is not', () => {
+    expect(isUprightNormal([1, 0, 0])).toBe(false);
+    expect(isUprightNormal([0.7, 0.14, 0.7])).toBe(false);
+  });
+
+  /* A missing normal answers false here, and the pen never asks it one: CreamPen passes
+     `nrm ?? [0,1,0]`, the same default the stroke itself stores when the start of a drag missed the
+     cake. One default, read by both, rather than this function guessing on their behalf. */
+  it('answers false for a normal it was not given', () => {
+    expect(isUprightNormal(null)).toBe(false);
+    expect(isUprightNormal([])).toBe(false);
+    expect(isUprightNormal([0, 1, 0])).toBe(true);   // ...which is what the pen substitutes
   });
 });

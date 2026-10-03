@@ -6012,11 +6012,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // remembering where it came from there is no return: the zone tiles, the colour and the size
       // for the ring version are all behind a card the customer can no longer find.
       stampCardId: el.cardId,
-      // How the ring stands this piece up. Without it a shell authored lying on its side is piped
-      // lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
-      // The RIM (top) config, because drawing on the cake is the case that surface answers: feet on
-      // the surface, leaning along it. The board variant is the same piece rotated for a plate.
-      stampRotation: pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
+      /* How the ring stands this piece up. Without it a shell authored lying on its side is piped
+         lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
+
+         ⚠️ TWO ROTATIONS, BECAUSE AN ELEMENT IS AUTHORED PER SURFACE AND A PEN DRAWS ON BOTH. This
+         passed only the RIM figure, reasoning that "drawing on the cake is the case that surface
+         answers" — which is true of the top and false of the wall, and the wall is where a customer
+         pipes a spray down the side. Rose Swirl is the worked example: `top_rotation [0,0,0]`
+         because the rim needs none, `bottom_rotation [-89,-174,-180]` to stand it against a wall.
+         Handed the rim figure everywhere, every swirl piped on the side lay face-down and read as a
+         flat petal — reported as the pen using a different nozzle from the element chosen, which is
+         exactly what it looks like. The seat normal decides which one applies, at commit. */
+      /* ⚠️ `rotation` ON TOP, `bottomRotation` ON THE BOTTOM — the two branches of
+         pipingPlacementFromConfig do NOT return the same key, and reading `.rotation` off the bottom
+         one gives `undefined`. My first cut did exactly that, so the side value was null, the
+         fallback took the rim figure again and the fix changed nothing while looking right. */
+      stampRotation:     pipingPlacementFromConfig(el.placement_config, true).rotation        ?? null,
+      stampRotationSide: pipingPlacementFromConfig(el.placement_config, false).bottomRotation ?? null,
       // ── Size it like PIPING, not like a rope ─────────────────────────────────────────────────
       // `thickness` on the pen is a rope DIAMETER, and the stamp scales to it: target = 2×thickness.
       // At the pen's own default that is 0.104 against a ring shell's 0.24 × 1.2 = 0.288, so the
@@ -6072,7 +6084,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function pipeWithCreamAgain() {
     setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
-                           stampName: null, stampCardId: null, stampRotation: null, stampLean: 0,
+                           stampName: null, stampCardId: null, stampRotation: null,
+                           stampRotationSide: null, stampLean: 0,
                            thickness: PEN_DEFAULT_THICKNESS }));
   }
 

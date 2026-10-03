@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { pickSeat } from '../geometry/penSeat.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
-import { translateStroke, distanceToStroke, strokePoints } from '../geometry/strokeMove.js';
+import { translateStroke, distanceToStroke, strokePoints, isUprightNormal } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
 import StampStroke from './StampStroke.jsx';
@@ -231,8 +231,19 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
             // redraw identically after a reload, and penStyle is live UI state that will have moved
             // on — a border piped in stamp mode would come back jittered because the pen was back on
             // cream by then. Same reason the points are stored rather than recomputed.
+            /* ⚠️ THE ROTATION IS CHOSEN BY THE SURFACE, AND STORED. An element authors one attitude
+               for a rim and another for a wall; the pen draws on both, so taking the rim's
+               everywhere laid every piece flat against the side. Resolved HERE, where the seat
+               normal is known, and written onto the stroke for the same reason `regular` and
+               `medium` are: penStyle is live UI state that will have moved on by the time this is
+               reloaded, and a stroke has to redraw identically for ever. */
+            /* `nrm ?? [0,1,0]` matches what the stroke itself stores when the start missed — the
+               rope branch below writes `normal: nrm || [0,1,0]` — so an unknown surface is treated
+               as the top by BOTH, rather than by one of them. */
+            const rotation = (isUprightNormal(nrm ?? [0, 1, 0]) ? s.stampRotation : s.stampRotationSide)
+                             ?? s.stampRotation ?? null;
             const stamp = { ...base, stampId: s.stampId, glbUrl: s.stampUrl, seed, regular: !!s.stampRegular,
-                            rotation: s.stampRotation ?? null, lean: s.stampLean ?? 0,
+                            rotation, lean: s.stampLean ?? 0,
                             // Carried for the X-Ray report: a hand-piped run is the SAME element as
                             // its ring, and the sheet has to be able to name it.
                             stampName: s.stampName ?? null };
