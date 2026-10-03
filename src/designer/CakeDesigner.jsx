@@ -69,7 +69,7 @@ import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from 
 const BOARD_TOP_Y = 0.1;
 
 // The rail's minimum spacing between stacked items. Used by sidebarNav's `gap` AND as the floor for
-// the measured tools gap below the divider — one number, because the two groups sit in one column
+// the measured tools gap in the cluster below it — one number, because the two groups sit in one column
 // and any disagreement shows up as the bottom pair being crammed together on a short window.
 const RAIL_MIN_GAP = 2;
 /* The rail's PITCH, fixed rather than spread. space-evenly was tuned when the rail always held a
@@ -3795,9 +3795,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           ] }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
-    /* ⚠️ DASHBOARD IS LAST, which puts it at the foot of the nav — directly above the divider, and
-       so directly above the tools cluster that holds Chef's Desk and Settings. That is what "above
-       the settings" means here.
+    /* ⚠️ DASHBOARD IS LAST, which puts it at the foot of the nav — directly above the tools cluster
+       that holds Chef's Desk and Settings. That is what "above the settings" means here.
 
        ⚠️ IT STAYS IN railItems RATHER THAN MOVING INTO THAT CLUSTER, and the cluster's own note says
        why: "this cluster is the persistent TOOLS a baker reaches for regardless of what is on the
@@ -3832,10 +3831,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      reaches the renderer. */
   ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode, settingsScope, flavoursPanelOpen, flavoursUncurated, onShareStore]);
 
-  /* ── The tools below the divider must sit on the nav's rhythm ────────────────────────────────
+  /* ── The tools cluster must sit on the nav's rhythm ──────────────────────────────────────────
    * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
    * blade — 68px apart on a 900px window, tightening toward the bare 2px gap on a short one. The
-   * tools group below the divider is a plain stack, so it sat at its natural 49px however tall the
+   * tools group below it is a plain stack, so it sat at its natural 49px however tall the
    * window was. On a laptop that reads as Chef's Desk and Settings being crammed together while
    * everything above them is evenly spaced.
    *
@@ -12716,12 +12715,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           </nav>
 
-          <div style={s.sidebarDivider} />
 
           {/* gap is measured from the nav above — see toolGap. */}
-          <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: toolGap }}>
+          <div style={{ padding: '0 0 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: toolGap }}>
             {/* ── Chef's Desk — baker fulfilment tools (Color Guide, Edible Print Studio, …) ────────
-                BELOW the divider, with Settings and Profile, and deliberately not inside <nav>.
+                OUTSIDE the <nav>, with Settings and Profile, and deliberately so.
                 The nav scrolls (sidebarNav: overflowY auto) with its scrollbar hidden on purpose — a
                 scrollbar in a 64px rail is worse than none. Chef's Desk was the LAST item in it, so
                 on a viewport too short for the full rail it sat below the fold with no scrollbar, no
@@ -12736,9 +12734,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 + RailMenu, the same two shared components, rather than its own dropdown. */}
             {/* Both menus, from the ONE list. Labelled like every item above them: icon-only they
                 asked a baker to recognise a crossed-whisk glyph or hover to find out, in a rail where
-                nothing else does. They sit below the divider because they are TOOLS rather than
+                nothing else does. They sit apart from the nav because they are TOOLS rather than
                 destinations — a grouping distinction, never a reason to name them differently — and
-                outside the scroller, so a short viewport cannot put them below the fold. */}
+                outside the scroller, so a short viewport cannot put them below the fold.
+
+                ⚠️ THAT SPLIT IS STRUCTURAL AND STILL HERE; only the rule that drew it is gone.
+                Sandeep: "user does not care about that boundary... the boundary does not add any
+                value. lets the menu items flow without that." The <nav> still scrolls and this
+                cluster still cannot be scrolled away — which is the bug the separation fixed, and
+                a 1px line was never what fixed it. */}
             {canManageStore && toolMenus.map(menu => {
               const isChefs = menu.id === 'chefsdesk';
               const open = isChefs ? chefsDeskOpen : settingsOpen;
@@ -16597,11 +16601,6 @@ const s = {
   /* 48px of top padding bought clearance for the spatula's CAP (see sidebarInner). A plain bar has
      no cap, so that space is simply lost — a whole menu item's worth, per the note there. */
   sidebarInnerPlain: { padding: '14px 0 22px' },
-  sidebarDivider: {
-    height: 1, width: 32,
-    background: 'rgba(255,255,255,0.10)',
-    margin: '6px 0', flexShrink: 0,
-  },
   // The rail holds ~12 items and they are flexShrink:0, so its intrinsic height is ~823px. A flex
   // item defaults to min-height:auto — it will not shrink below its content — so on any viewport
   // shorter than roughly 847px the whole chain (nav → sidebarInner → sidebar) grew PAST the page,
