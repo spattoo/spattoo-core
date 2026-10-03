@@ -87,8 +87,18 @@ describe('the lock', () => {
     expect(panel).toMatch(/canChangePhone && unlocked &&/);
   });
 
-  it('hides the password fields until unlocked', () => {
-    expect(panel).toMatch(/\{!unlocked \? \(/);
+  it('hides the password control until unlocked', () => {
+    expect(panel).toMatch(/\{unlocked && <EditPencil label="Change password"/);
+  });
+
+  // ⚠️ ONE CONTROL, NOT TWO THAT LOOK ALIKE. The rows shipped with different gestures — a worded
+  // "Change" button on the number, bare fields on the password — and that is what the pencil
+  // replaced. A second copy of the control is where the next difference would come from, so both
+  // rows render the same component or this fails.
+  it('opens both rows the same way', () => {
+    expect(panel).toMatch(/const EditPencil =/);
+    const uses = panel.match(/<EditPencil /g) ?? [];
+    expect(uses.length).toBe(2);
   });
 
   // The password is proved against Supabase, never posted to our API — which would make an endpoint
@@ -103,6 +113,27 @@ describe('the lock', () => {
   it('re-prompts when the server says the unlock is stale', () => {
     expect(panel).toMatch(/reauth_required/);
     expect(panel).toMatch(/reauth_expired/);
+  });
+});
+
+describe('what belongs on this screen', () => {
+  // Sandeep: "this screen is not the right place for signout button. when the user clicks on
+  // avatar, there should be two options - 1. My account 2. Signout." Sign out is not an account
+  // DETAIL, it is a way out of the app; at the foot of a screen you open to edit something it costs
+  // a tap every time and sits where a destructive-looking button should not.
+  it('has no sign out', () => {
+    expect(panel).not.toMatch(/Sign out/);
+  });
+
+  // ...and the avatar menu is where it went, beside the way in.
+  // Counts the BEHAVIOUR, not the label: the header dropdown writes `>My Account<` on one line and
+  // the rail menu puts the text on its own, so matching the words found one of the two and called
+  // the other missing. What has to be true in both places is that the item opens the panel.
+  it('the avatar menu offers both doors, in the header and the rail', () => {
+    const opens = src.match(/setAccountPanelOpen\(true\); setProfileOpen\(false\);/g) ?? [];
+    expect(opens.length).toBe(2);
+    const signOuts = src.match(/apiClient\?\.signOut\?\.\(\) \?\? supabase\?\.auth\.signOut\(\); setProfileOpen\(false\);/g) ?? [];
+    expect(signOuts.length).toBe(2);
   });
 });
 

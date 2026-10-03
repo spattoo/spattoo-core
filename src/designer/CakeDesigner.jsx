@@ -37,6 +37,7 @@ const FRAME_GAP = 16;
  */
 const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
+import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
 import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
@@ -1642,6 +1643,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // ── Password ─────────────────────────────────────────────────────────────────────────────────
   const [pw,        setPw]        = useState({ next: '', confirm: '' });
+  const [pwEditing, setPwEditing] = useState(false);
   const [pwBusy,    setPwBusy]    = useState(false);
   const [pwMsg,     setPwMsg]     = useState(null);
 
@@ -1649,7 +1651,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // A half-typed number or password is work. Esc and a stray backdrop click must not take it
   // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
-  const dirty = phoneStep !== 'idle' || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
+  const dirty = phoneStep !== 'idle' || pwEditing || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
 
   async function sendCode() {
     setPhoneBusy(true); setPhoneMsg(null);
@@ -1710,6 +1712,19 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   const mismatch   = pw.confirm.length > 0 && pw.next !== pw.confirm;
   const canSavePw  = isPasswordValid(pw.next) && pw.next === pw.confirm && !pwBusy;
   const name       = personName(userData, 'My Account');
+
+  // ⚠️ ONE CONTROL FOR BOTH ROWS. They shipped different: the number sat behind a "Change" button
+  // while the password fields were simply open, so two edits on one screen asked for two different
+  // gestures. Sandeep: "for mobile number and password, add a pencil icon next to them." A shared
+  // component is what keeps that true — a second copy is where the next difference comes from.
+  const EditPencil = ({ label, onClick }) => (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+               width: 30, height: 30, borderRadius: 9, cursor: 'pointer', color: '#2C4433',
+               border: '1.5px solid #C5D4C8', background: 'rgba(255,255,255,0.94)' }}>
+      <PencilIcon size={14} />
+    </button>
+  );
 
   return (
     <Panel onClose={onClose} title="My Account" width={400} guardUnsaved={dirty} isMobile={isMobile}>
@@ -1783,10 +1798,8 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
                 {phoneNow || 'Not set'}
               </div>
               {canChangePhone && unlocked && (
-                <button type="button" style={s.accountGhostBtn}
-                  onClick={() => { setPhoneMsg(null); setPhoneStep('entry'); }}>
-                  {phoneNow ? 'Change' : 'Add a number'}
-                </button>
+                <EditPencil label={phoneNow ? 'Change mobile number' : 'Add a mobile number'}
+                  onClick={() => { setPhoneMsg(null); setPhoneStep('entry'); }} />
               )}
             </div>
             {!canChangePhone && (
@@ -1867,9 +1880,10 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
         {/* Shown but inert while locked, rather than hidden. A control that appears only once you
             have already got past a gate teaches nobody that it exists — the same reasoning
             PlateButton's note gives for a disabled Undo over an absent one. */}
-        {!unlocked ? (
-          <div style={{ fontSize: 12, color: INK_MUTED, lineHeight: 1.5 }}>
-            ••••••••  <span style={{ color: '#9AA79F' }}>— unlock above to change it</span>
+        {!pwEditing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: INK, letterSpacing: 2 }}>••••••••</div>
+            {unlocked && <EditPencil label="Change password" onClick={() => { setPwMsg(null); setPwEditing(true); }} />}
           </div>
         ) : (
         <>
@@ -1897,22 +1911,22 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
             {pwMsg.text}
           </div>
         )}
-        <button type="button"
-          style={{ ...s.orderBtn, ...(brandBtn || {}), padding: '11px', fontSize: 13,
-                   opacity: canSavePw ? 1 : 0.6 }}
-          disabled={!canSavePw} onClick={savePassword}>
-          {pwBusy ? 'Updating…' : 'Update password'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={s.accountGhostBtn} disabled={pwBusy}
+            onClick={() => { setPwEditing(false); setPw({ next: '', confirm: '' }); setPwMsg(null); }}>
+            Cancel
+          </button>
+          <button type="button"
+            style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '11px', fontSize: 13,
+                     opacity: canSavePw ? 1 : 0.6 }}
+            disabled={!canSavePw} onClick={savePassword}>
+            {pwBusy ? 'Updating…' : 'Update password'}
+          </button>
+        </div>
         </>
         )}
       </PanelBlock>
 
-      {/* Sign out lives here now that the menu it used to share is gone. Last, and plainly styled:
-          it is the one action on this screen nobody comes here to perform. */}
-      <button type="button" style={s.accountSignOutBtn}
-        onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); }}>
-        Sign out
-      </button>
     </Panel>
   );
 }
@@ -3376,11 +3390,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // What the avatar does, in ONE place. The header and the rail both show it, and a baker who
   // learns it on a laptop must meet the same thing on a phone — two handlers is two chances for
   // that to stop being true.
-  const openAccount = useCallback(() => {
-    if (role === 'customer') { setProfileOpen(o => !o); return; }   // nothing to edit — see the menu's note
-    setProfileOpen(false);
-    setAccountPanelOpen(true);
-  }, [role]);
+  //
+  // ⚠️ IT OPENS THE MENU, NOT THE SCREEN. It opened My Account directly for a while, because the
+  // menu it replaced held one real action and a menu with one item is a lid on a box with one
+  // thing inside. That was right until Sign out came back out of the account screen — Sandeep:
+  // "this screen is not the right place for signout button ... there should be two options -
+  // 1. My account 2. Signout." Sign out is not an account detail, it is a way out of the app, and
+  // burying it at the foot of a screen you open to edit something costs a tap every time.
+  const openAccount = useCallback(() => { setProfileOpen(o => !o); }, []);
   const isMobile = windowWidth <= 640;
   /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
    * bottom edge, so the shot stays visible while it is being described.
@@ -12392,13 +12409,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 onClick={() => { openAccount(); setSettingsOpen(false); }}>
                 {initials}
               </button>
-              {profileOpen && role === 'customer' && (
+              {profileOpen && (
                 <div style={{ ...s.dropdown, left: 'auto', right: 0, top: 'calc(100% + 8px)' }}>
                   <div style={s.dropdownUserInfo}>
                     <div style={s.dropdownName}>{personName(userData, 'My Account')}</div>
                     {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.dropdownDivider} />
+                  {/* A CUSTOMER gets no account screen: they signed in by OTP, have no password,
+                      and the phone they proved belongs to the enquiry rather than to a profile. */}
+                  {role !== 'customer' && (
+                    <button style={s.dropdownItem}
+                      onClick={() => { setAccountPanelOpen(true); setProfileOpen(false); }}>My Account</button>
+                  )}
                   <button style={s.dropdownItem} onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>Sign out</button>
                 </div>
               )}
@@ -12591,7 +12614,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   {initials}
                 </button>
               </SidebarTooltip>
-              {profileOpen && role === 'customer' && (
+              {profileOpen && (
                 <RailMenu style={{ top: 'auto', bottom: 0 }}>
                   <div style={s.railDropdownUserInfo}>
                     <div style={s.railDropdownName}>
@@ -12600,6 +12623,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {userData?.email && <div style={s.railDropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.railDropdownDivider} />
+                  {role !== 'customer' && (
+                    <button style={s.railDropdownItem}
+                      onClick={() => { setAccountPanelOpen(true); setProfileOpen(false); }}>
+                      My Account
+                    </button>
+                  )}
                   <button style={s.railDropdownItem}
                     onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>
                     Sign out
@@ -16829,14 +16858,7 @@ const s = {
     fontSize: 12, fontWeight: 800, color: '#2C4433',
     fontFamily: "'Quicksand',sans-serif", cursor: 'pointer', letterSpacing: 0.3,
   },
-  /* Sign out is the one action nobody opens this screen to perform, so it is quiet — but it is
-   * still a real button with a real edge, not a line of text pretending to be one. */
-  accountSignOutBtn: {
-    width: '100%', padding: '11px', borderRadius: 11,
-    border: `1.5px solid ${LINE}`, background: 'transparent',
-    fontSize: 13, fontWeight: 700, color: INK_MUTED,
-    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer', letterSpacing: 0.3,
-  },
+
   offeringBtn: {
     flex: 1, padding: '7px 0', borderRadius: 10, border: '1.5px solid #999999',
     fontSize: 11, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.3,
