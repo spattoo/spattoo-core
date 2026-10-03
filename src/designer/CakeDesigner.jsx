@@ -40,7 +40,7 @@ import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
 import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
+import { StoreIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -1578,6 +1578,62 @@ function SidebarTooltip({ label, suppressed = false, children }) {
   );
 }
 
+// ── Where the catalogue goes ─────────────────────────────────────────────────────────────────────
+//
+// ⚠️ THE CATALOGUE SCREEN ASSERTED SOMETHING IT NEVER CHECKED. Its help line says "Your customers
+// can see your catalogue", which is true only once the storefront is PUBLISHED — and for a new
+// baker, who is exactly the person that sentence is written for, it is false. They stock the shelf,
+// read that customers can see it, and nobody can. Sandeep: "for a new baker, he does not know where
+// this catalogue goes."
+//
+// So the gap was never the wording, it was that nothing on the screen knew whether the shop was
+// live. `storefront_published` rides on the baker profile the designer already holds.
+//
+// ⚠️ NOT A WIZARD, THOUGH ONE WAS ASKED FOR — "a wizard kind of (or any better representation)".
+// A wizard implies ordered steps, and these two are not ordered: a baker can publish an empty shop
+// or stock an unpublished one, and both are reasonable. A checklist states what is true now and
+// what is left, in any order, which is why the tick is computed rather than sequential.
+export function CatalogueStoreSteps({ published, onOpenStore }) {
+  const Step = ({ done, children, action }) => (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, textAlign: 'left' }}>
+      {/* A ring that fills, not a tick that appears: the empty state has to read as "not yet"
+          rather than as a missing icon. INVARIANTS #7 — it is legible at rest, with no hover. */}
+      <span aria-hidden style={{
+        flexShrink: 0, width: 15, height: 15, borderRadius: '50%', marginTop: 1,
+        border: `2px solid ${done ? '#2C4433' : '#C5D4C8'}`,
+        background: done ? '#2C4433' : 'transparent',
+      }} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.5,
+                     color: done ? '#6B7280' : INK, fontWeight: done ? 600 : 700 }}>
+        {children}
+        {action}
+      </span>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 12px',
+                  background: 'rgba(255,255,255,0.92)', borderRadius: 10, margin: '2px -10px 0' }}>
+      {/* Sandeep's clause (b), kept as the reason the two steps are worth doing. */}
+      <div style={{ fontSize: 12, fontWeight: 800, color: INK }}>Your catalogue is your shop window.</div>
+      <Step done={false}>
+        Add cakes from Library, or upload your own photo.
+      </Step>
+      <Step done={!!published} action={!published && (
+        <button type="button" onClick={onOpenStore}
+          style={{ display: 'block', marginTop: 5, padding: '7px 12px', borderRadius: 9,
+                   border: '1.5px solid #C5D4C8', background: '#fff', cursor: 'pointer',
+                   fontFamily: "'Quicksand',sans-serif", fontSize: 12, fontWeight: 800, color: '#2C4433' }}>
+          Open Store to publish
+        </button>
+      )}>
+        {published
+          ? 'Your store is live — customers can see these cakes.'
+          : 'Publish your store, so customers can see them.'}
+      </Step>
+    </div>
+  );
+}
+
 // ── My Account ────────────────────────────────────────────────────────────────────────────────
 // One screen for the things that are about the PERSON rather than the bakery: the number we reach
 // them on, and the password they sign in with. Both used to be elsewhere — the password behind a
@@ -1597,7 +1653,7 @@ function SidebarTooltip({ label, suppressed = false, children }) {
 // control that replaces it, and the password rules sit under the box they describe. Nothing here
 // is behind a tab: a baker opening this screen is here to change one of two things and should be
 // able to see both without discovering them.
-export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData, onPhoneChanged, isMobile = false }) {
+export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData, onPhoneChanged, isMobile = false, canDelete = false }) {
   // ── Phone ────────────────────────────────────────────────────────────────────────────────────
   // 'idle' → showing the current number. 'entry' → typing a new one. 'code' → proving it.
   const [phoneStep,  setPhoneStep]  = useState('idle');
@@ -1936,6 +1992,22 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
         )}
       </PanelBlock>
 
+      {/* ── Closing your account ────────────────────────────────────────────────────────────────
+          Sandeep: "'delete my account' - should go to my account." It lived on the Store Settings
+          page inside Privacy & Data, which is where the LAW groups it — beside the consent trail.
+          But erasure is something a PERSON does to their own account, and a baker looking for how
+          to close theirs was never going to find it by scrolling a form about their shop.
+
+          ⚠️ GATED ON THE CAPABILITY, not merely shown. POST /api/baker/account/delete is
+          `requireCapability('account:delete')` — owner-only — so for a staff member this control
+          could never do anything but 403, and this codebase's own rule is that a button which
+          cannot work is worse than no button.
+
+          ⚠️ THE CONSENT TRAIL STAYED BEHIND, in Settings. The two halves of the old screen answer
+          different questions: what this BUSINESS agreed to, and whether this PERSON wants out. */}
+      {canDelete && apiClient?.fetchDeletionStatus && (
+        <PrivacyDataSection apiClient={apiClient} show="deletion" />
+      )}
     </Panel>
   );
 }
@@ -2984,7 +3056,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [captureMenuOpen,    setCaptureMenuOpen]    = useState(false);   // desktop "Capture ⋯" → photo / reel
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
-  const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
+  /* ⚠️ A SCOPE, NOT A BOOLEAN — because there are two destinations now and only one page.
+     `null` closed, `'store'` the shop, `'settings'` the app. One state rather than two booleans so
+     the two cannot both be open: they are the same docked page, and a second one would render on
+     top of the first with no way back to it. */
+  const [settingsScope,       setSettingsScope]       = useState(null);
+  const settingsPanelOpen = settingsScope !== null;
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
   /* ⚠️ THE CATALOGUE IS THE FLYOUT, NOT A PAGE. It was a docked settings page for a day — rows with
      toggles and a Remove — and that screen is gone: Catalogue is what the rail's Templates opens,
@@ -3648,9 +3725,27 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
        Leaves a customer FOUR items, which still fits the phone strip's six slots, so More stays
        absent there — see splitMobileNav. */
+    /* ⚠️ THIS WAS `Share`, AND IT IS NOW THE SHOP ITSELF. Sandeep: "store is an important part of
+       spattoo. and setting a store needs to stand individual under menu. not hidden under the
+       setting tab. Lets make the 'share' button to 'Store' with a store icon."
+
+       Sharing did not go away — it became an item INSIDE here, next to Publish, which is the moment
+       a baker first has something worth sharing. A rail slot that only ever did one thing now opens
+       everything the shop is, and Settings keeps what is genuinely about the app.
+
+       The menu entries are gated separately: `store:manage` owns the shop's configuration, while
+       Share is handed to anyone who may design, exactly as the old rail item was. */
     ...(orderMode === 'customer'
       ? []
-      : [{ id: 'share', label: 'Share', icon: <ShareIcon size={20} />, requires: 'design:create' }]),
+      : [{ id: 'store', label: 'Store', icon: <StoreIcon size={20} />, requires: 'design:create',
+          menu: [
+            ...(hasCap('store:manage') ? [
+              { id: 'store-settings', label: 'Store Settings', open: () => setSettingsScope('store'), active: settingsScope === 'store' },
+              { id: 'store-flavours', label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
+                badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
+            ] : []),
+            { id: 'store-share', label: 'Share my store', open: () => onShareStore?.() },
+          ] }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
     // ── "Take a tour" is not a rail item ──────────────────────────────────────────────────────
@@ -3673,7 +3768,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and
      `strandedMenus` only looks for a menu stranded in the More sheet — not for one that never
      reaches the renderer. */
-  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode]);
+  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode, settingsScope, flavoursPanelOpen, flavoursUncurated, onShareStore]);
 
   /* ── The tools below the divider must sit on the nav's rhythm ────────────────────────────────
    * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
@@ -3777,11 +3872,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       id: 'settings', label: 'Settings', icon: <GearIcon size={20} />,
       items: [
         ...(hasCap('store:manage') ? [
-          // `active`: this destination is open, so the rail lights its menu — the rail says where you are.
-          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true), active: settingsPanelOpen },
-          // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
-          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
-            badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
+          /* ⚠️ STORE SETTINGS AND FLAVOURS LEFT THIS MENU (2026-10-03) — they are on the rail's own
+             Store item now. What stays here is what is about the APP rather than the shop: how
+             orders reach the baker, and the agreements their business has signed.
+             `active`: this destination is open, so the rail lights its menu — the rail says where
+             you are. */
+          { id: 'orders-delivery', label: 'Orders & Delivery', open: () => setSettingsScope('settings'), active: settingsScope === 'settings' },
           /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
              for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
              three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the
@@ -3812,7 +3908,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      them for its `active` flags — Catalogue lights while the flyout is open, Library while its page
      is. Miss one and the rail goes on showing the previous state: a destination you are looking at
      that the nav says you are not in. */
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsScope, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -3851,7 +3947,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    */
   const leaveOpenPanels = () => {
     setDashboardOpen(false);
-    setSettingsPanelOpen(false);
+    setSettingsScope(null);
     setFlavoursPanelOpen(false);
     /* ⚠️ THIS ONE SAVES AS YOU TAP, so a rail click closing it loses nothing — which is exactly why
        it was built that way. The note above says a docked panel holding unsaved work would have to
@@ -3895,7 +3991,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (id === 'dashboard') setDashboardOpen(true);
     if (id === 'customers') setCustomersPanelOpen(true);
     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
-    if (id === 'share')     onShareStore?.();
+
     if (id === 'codesign')  setCodesignPanelOpen(true);
   };
 
@@ -13065,6 +13161,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                covering the strip it exists for. `10` and `-10` do both. */
                             padding: '4px 10px', margin: '2px -10px 0' }}>
                 {cataloguePhotoBusy ? 'Adding your photo…' : 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'}
+                {/* ⚠️ THE SENTENCE ABOVE IS DICTATED AND UNCHANGED — this is an ADDITION, not an
+                    edit. It says customers can see the catalogue, which is true only once the shop
+                    is live; rather than qualify his words, the condition it depends on is stated
+                    beneath them. Only when it is NOT live: a line telling a published baker their
+                    shop is published is noise on every visit. */}
+                {!cataloguePhotoBusy && bakerData?.storefront_published === false && hasCap('store:manage') && (
+                  <div style={{ marginTop: 6, color: INK, fontWeight: 700 }}>
+                    Your store is not live yet.{' '}
+                    <button type="button" onClick={() => { setTemplatesOpen(false); setSettingsScope('store'); }}
+                      style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer',
+                               fontFamily: "'Quicksand',sans-serif", fontSize: 12, fontWeight: 800,
+                               color: '#2C4433', textDecoration: 'underline' }}>
+                      Publish it in Store
+                    </button>{' '}
+                    so customers can see these cakes.
+                  </div>
+                )}
               </div>
             )}
             {cataloguePhotoError && (
@@ -13181,8 +13294,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {/* ⚠️ THREE DIFFERENT EMPTINESSES, and only one of them is the baker's to act on.
                     A customer is never told to go to Library or to upload — they cannot do either,
                     and naming a screen they have no way to open reads as a broken app. */}
+                {/* ⚠️ `templates` IS THE CATALOGUE — fetchTemplates returns it, and loadTemplates
+                    says so: "An empty array now means the catalogue is empty". So the FIRST branch
+                    is the one every new baker lands on, and it used to read "No templates yet": a
+                    statement of fact that names nothing to do and never mentions the storefront the
+                    shelf feeds. Sandeep: "for a new baker, he does not know where this catalogue
+                    goes."
+
+                    The second branch — a stocked catalogue with nothing shown and no filters on —
+                    keeps the dictated sentence it always had. */}
                 {templates.length === 0
-                  ? 'No templates yet'
+                  ? (hasCap('store:manage')
+                      ? <CatalogueStoreSteps
+                          published={bakerData?.storefront_published}
+                          onOpenStore={() => { setTemplatesOpen(false); setSettingsScope('store'); }}
+                        />
+                      : 'No cakes to show yet.')
                   : hasCap('store:manage')
                     /* ⚠️ SANDEEP'S WORDS, VERBATIM — restored 2026-09-28. He dictated this sentence
                        and I paraphrased it: dropped the "can" from "can see" (which changes it from
@@ -15808,6 +15935,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           apiClient={apiClient}
           userData={userData}
           isMobile={isMobile}
+          canDelete={hasCap('account:delete')}
           // A changed number has to reach everything else holding the old one, and the profile is
           // where they all read it from — so re-read that rather than patching copies.
           onPhoneChanged={refreshBakerProfile}
@@ -15939,13 +16067,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* ── Settings panel ── */}
       <SettingsPanel
         open={settingsPanelOpen}
-        onClose={() => setSettingsPanelOpen(false)}
+        scope={settingsScope ?? 'all'}
+        onClose={() => setSettingsScope(null)}
         // The same share card the sidebar opens — the customiser offers it too, since a baker who
         // has just published is the one person who does not yet know their storefront address.
         onShareStore={onShareStore}
         // The publish review's "Review my flavours". Closes Settings on the way so the baker lands
         // ON the flavour list rather than behind it — the customiser has already closed itself.
-        onReviewFlavours={() => { setSettingsPanelOpen(false); setFlavoursPanelOpen(true); }}
+        onReviewFlavours={() => { setSettingsScope(null); setFlavoursPanelOpen(true); }}
         // "Upgrade to publish" on a premium theme preview, and "Upgrade to Blaze" on a paused
         // theme's notice. Straight to billing — by the time a baker has previewed their own shop in
         // a theme and reached for Publish, an explainer screen in between is a step that loses
@@ -15955,7 +16084,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // publishing, so withholding it would leave a staff member pressing a button that closes
         // the panel and does nothing. A dead control is worse than one that opens a screen they may
         // not be able to act on.
-        onUpgrade={() => { setSettingsPanelOpen(false); setBillingPanelOpen(true); }}
+        onUpgrade={() => { setSettingsScope(null); setBillingPanelOpen(true); }}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}

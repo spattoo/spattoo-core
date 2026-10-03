@@ -146,7 +146,30 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
 
 // ── Main panel ─────────────────────────────────────────────────────────────────
 
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore }) {
+/**
+ * ⚠️ TWO SCREENS, ONE COMPONENT — `scope` decides which blocks render (2026-10-03).
+ *
+ * Sandeep: "store is an important part of spattoo. and setting a store needs to stand individual
+ * under menu. not hidden under the setting tab." So the shop got its own rail destination, and this
+ * page split along the line between THE SHOP and THE APP:
+ *
+ *   'store'     Branding · Storefront Theme + Publish · Store Info · Store Hours
+ *   'settings'  Orders & Delivery · the consent trail
+ *   'all'       everything, as it was
+ *
+ * ⚠️ NOT TWO FILES. The fetches, the dirty state, the logo upload and `handleSave` are shared by
+ * both halves, and copying 600 lines to split a render is how the two drift. `scope` filters what is
+ * drawn; every save path stays single.
+ *
+ * ⚠️ THE SAVE IS SAFE BECAUSE THE SERVER MERGES NOW. `bakers.settings` is one jsonb column and BOTH
+ * halves write into it — hours from Store, lead time and delivery from Settings. PUT
+ * /api/baker/settings took the body verbatim until this split, so whichever screen saved last would
+ * have erased the other's keys, silently. spattoo-api now merges over the stored blob, gated by
+ * check:settings-merge. Do not trim what a screen sends without reading that gate first.
+ */
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore, scope = 'all' }) {
+  const showStore    = scope === 'all' || scope === 'store';
+  const showSettings = scope === 'all' || scope === 'settings';
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -324,8 +347,12 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
               is always on screen. Phone: the arrow, the normal way out of a full-screen page. */}
           {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>Settings</div>
-            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>Manage your store preferences</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{scope === 'store' ? 'Store' : 'Settings'}</div>
+            <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
+              {scope === 'store'    ? 'How your shop looks and when it is open'
+             : scope === 'settings' ? 'How orders reach you, and what you have agreed to'
+             :                        'Manage your store preferences'}
+            </div>
           </div>
           {!isMobile && <PanelDismiss onClick={onClose} />}
         </div>
@@ -348,6 +375,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
 
           {settings && profile && (
             <>
+              {showStore && (
+              <>
               {/* ── Branding ── */}
               <Section title="Branding">
                 {/* Logo — clicking the image opens the file picker */}
@@ -522,6 +551,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 </Field>
               </Section>
 
+              </>
+              )}
+
+              {showSettings && (
+              <>
               {/* ── Orders & Delivery ── */}
               {/* One panel, because a baker setting up their shop is answering one question — how
                   orders reach them and how cakes reach the customer. Two headings for four fields
@@ -603,7 +637,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   else. */}
               {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
                   Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
-              <PrivacyDataSection apiClient={apiClient} />
+              {/* `show="consents"` — "Delete my account" moved to My Account, where closing your
+                  own account is a thing a PERSON does rather than a setting of the shop. */}
+              <PrivacyDataSection apiClient={apiClient} show="consents" />
+              </>
+              )}
 
               {/* Save */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
