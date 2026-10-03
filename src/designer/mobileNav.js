@@ -53,7 +53,7 @@
  * beginnings, now adjacent), DECORATE it, then run the bakery (Orders, Dashboard). Templates arrived
  * last and was simply appended to the end, which put a starting move after two management ones.
  * Dashboard moves to the far end: it is the thing you glance at, not the thing you are doing. */
-export const MOBILE_PRIMARY = ['new', 'templates', 'elements', 'orders', 'dashboard'];
+export const MOBILE_PRIMARY = ['new', 'elements', 'templates', 'orders', 'dashboard'];
 
 /**
  * How many slots the strip has, More included. Six is the ceiling argued above: full-bleed slots

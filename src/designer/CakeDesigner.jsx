@@ -3729,7 +3729,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // edge, so it takes a short form rather than an ellipsis — a truncated label is worse than a
     // shorter honest one, and "Decor" is what a baker says out loud anyway.
     { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create', short: 'New' },
-    { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
+    /* ⚠️ DECORATIONS SITS SECOND, BESIDE New Cake — Dashboard used to. Sandeep: "decorations should
+       be near to the new cake menu. instead of dashboard. we will have decorations there. and
+       dashboard will come above the settings."
+
+       It is a frequency argument, and INVARIANTS #12 is the rule it comes from: lay a surface out by
+       how often each control is used, not by the order the features were built. Decorating is what a
+       baker does all day and it was third; Dashboard is a glance, once or twice, and it held the
+       slot nearest the one control everybody presses. */
+    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     /* ⚠️ CARRIES A SUBMENU NOW, so tapping it no longer opens the browse flyout — `openRailItem`
        returns early for any item with a `menu` ("a submenu is not a destination yet"). Browse is the
        first item inside instead. Templates is in MOBILE_PRIMARY, which is what `strandedMenus`
@@ -3741,7 +3749,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
        which is what `openRailItem`'s `id === 'templates'` branch already does. */
     { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create',
       ...(templatesMenu.length > 1 ? { menu: templatesMenu } : null) },
-    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
     // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
     // burying it three taps deep inside another panel made no sense.
@@ -3788,6 +3795,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           ] }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
+    /* ⚠️ DASHBOARD IS LAST, which puts it at the foot of the nav — directly above the divider, and
+       so directly above the tools cluster that holds Chef's Desk and Settings. That is what "above
+       the settings" means here.
+
+       ⚠️ IT STAYS IN railItems RATHER THAN MOVING INTO THAT CLUSTER, and the cluster's own note says
+       why: "this cluster is the persistent TOOLS a baker reaches for regardless of what is on the
+       canvas, while nav is DESTINATIONS". A dashboard is a destination. Two other things would have
+       broken too — the cluster sits OUTSIDE the scroller, so anything added there is pinned and
+       costs fixed height on a short window; and splitMobileNav reads railItems, so leaving would
+       have deleted Dashboard from the phone strip entirely.
+
+       The cost, stated: Chef's Desk sits between Dashboard and Settings, so it is above Settings
+       rather than immediately above it. Putting it literally adjacent would mean breaking the
+       grouping rule above. */
+    { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
     // ── "Take a tour" is not a rail item ──────────────────────────────────────────────────────
     // Removed from the rail: the column is short of vertical room (the hang-hole came out for the
     // same reason), and a tour is the one entry here that a baker needs once rather than daily.

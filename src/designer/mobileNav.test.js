@@ -16,7 +16,7 @@ const RAIL = [
   { id: 'uploads',   label: 'Uploads' },
   { id: 'orders',    label: 'Orders',          menu: [{ id: 'orders-list', label: 'Orders' }] },
   { id: 'customers', label: 'Customers' },
-  { id: 'share',     label: 'Share' },
+  { id: 'store',     label: 'Store' },
 ];
 
 describe('splitMobileNav', () => {
@@ -43,17 +43,17 @@ describe('splitMobileNav', () => {
                      { id: 'invite', label: 'Invite' }];
     expect(limited.length).toBeGreaterThan(MOBILE_SLOTS);   // so More is still in play
     const { primary } = splitMobileNav(limited);
-    expect(primary.map(i => i.id)).toEqual(['new', 'templates', 'elements']);
+    expect(primary.map(i => i.id)).toEqual(['new', 'elements', 'templates']);
     expect(primary.every(Boolean)).toBe(true);
   });
 
   // A CUSTOMER's rail: design:create + element:manage only. Five items, six slots — More would have
-  // hidden Uploads and Share behind a tap while three slots sat beside them.
-  const CUSTOMER = RAIL.filter(i => ['new', 'templates', 'elements', 'uploads', 'share'].includes(i.id));
+  // hidden Uploads and Store behind a tap while three slots sat beside them.
+  const CUSTOMER = RAIL.filter(i => ['new', 'templates', 'elements', 'uploads', 'store'].includes(i.id));
 
   it('puts everything in the strip when it fits, and leaves nothing behind More', () => {
     const { primary, secondary } = splitMobileNav(CUSTOMER);
-    expect(primary.map(i => i.id)).toEqual(['new', 'templates', 'elements', 'uploads', 'share']);
+    expect(primary.map(i => i.id)).toEqual(['new', 'elements', 'templates', 'uploads', 'store']);
     expect(secondary).toEqual([]);           // the render draws More only when this is non-empty
     expect(primary.length).toBeLessThanOrEqual(MOBILE_SLOTS);
   });
@@ -62,7 +62,7 @@ describe('splitMobileNav', () => {
     expect(RAIL.length).toBeGreaterThan(MOBILE_SLOTS);
     const { primary, secondary } = splitMobileNav(RAIL);
     expect(primary.map(i => i.id)).toEqual(MOBILE_PRIMARY);
-    expect(secondary.map(i => i.id)).toEqual(['uploads', 'customers', 'share']);
+    expect(secondary.map(i => i.id)).toEqual(['uploads', 'customers', 'store']);
   });
 
   it('loses nothing either way', () => {
