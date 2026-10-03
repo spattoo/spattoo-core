@@ -6059,11 +6059,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // of cream would go on stamping shells with no way to say stop.
   // Coming back to the pen always starts in DRAW. A tool that remembers it was left in move mode
   // greets the next visit by doing nothing when you drag, which reads as broken.
+  const wasPenSelectedRef = useRef(false);
   useEffect(() => {
-    /* ⚠️ AND THE SELECTION GOES WITH THE MODE. The small card is piping's, not the cake's — left
-       standing after "Done piping" it would hover over whatever the customer opened next, editing a
-       piece they can no longer see. */
-    if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) { setPenMove(false); setPickedStrokeId(null); }
+    const isPen = selectedEl?.type === 'tool' && selectedEl.tool === 'pen';
+    if (!isPen) {
+      setPenMove(false);
+      /* ⚠️ THE PIECE CARD GOES AWAY WHEN THE PEN IS PUT DOWN, OR WHEN SOMETHING ELSE IS SELECTED —
+         it describes one piped piece and must never hover over a tier's card, editing something the
+         customer can no longer see. But NOT on every change: choosing a piece straight off the cake
+         CLEARS the selection rather than setting one, so `selectedEl` is null in that case and the
+         pick has to survive it. Hence two tests rather than "the selection changed". */
+      if (wasPenSelectedRef.current || selectedEl) setPickedStrokeId(null);
+    }
+    wasPenSelectedRef.current = isPen;
   }, [selectedEl]);
 
   /* ⚠️ The More sheet must not survive a selection, now that the strip can leave.
@@ -13968,7 +13976,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
               onWritingMove={(id, moves) => updateWriting(id, moves)}
               selectedWritingId={selectedWritingId}
-              onPickStroke={setPickedStrokeId}
+              /* ⚠️ A PIECE CHOSEN WITH THE PEN AWAY MUST ALSO CLOSE WHAT WAS OPEN. The click used
+                 to fall through the cream to the tier, so the tier's colour card was already up;
+                 leaving it there would stack the piece card on top of a card about something else.
+                 The pen's own picks (draw and move) leave the selection alone — it is the pen. */
+              onPickStroke={id => {
+                setPickedStrokeId(id);
+                if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) selectExclusive(null);
+              }}
               penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && !penMove}
               penMoveMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && penMove}
               /* ⚠️ THE MERGING WRITER, because a slide now has to write `point` for a stamped piece
