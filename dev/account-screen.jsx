@@ -10,7 +10,7 @@
  * or migration 119's attempt ceiling.
  */
 import { createRoot } from 'react-dom/client';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AccountPanel } from '../src/designer/CakeDesigner.jsx';
 
 // The phone the fake server believes in, and the code it will accept.
@@ -49,8 +49,18 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 function Harness() {
   const [open, setOpen] = useState(true);
-  const user = { firstName: '31san', lastName: '31t', email: 'ashoky041981+31@gmail.com',
-                 phone: '+91 98765 43210', canChangePhone: true };
+  /* ⚠️ `?late=1` RE-CREATES THE ONE CASE THAT BROKE: the panel mounted before fetchBakerProfile
+     resolved, so both rows seeded null and — until the sync effect — stayed that way for the life
+     of the panel. The baker saw their sign-in address labelled as the default when the bakery had
+     its own on file, and "Not set" against a phone number that existed. */
+  const late = new URLSearchParams(location.search).has('late');
+  const [loaded, setLoaded] = useState(!late);
+  useEffect(() => { if (late) { const t = setTimeout(() => setLoaded(true), 900); return () => clearTimeout(t); } }, [late]);
+
+  const user = loaded
+    ? { firstName: '31san', lastName: '31t', email: 'ashoky041981+31@gmail.com',
+        phone: '+91 98765 43210', canChangePhone: true }
+    : { firstName: '31san', lastName: '31t', email: 'ashoky041981+31@gmail.com', canChangePhone: true };
   return (
     <>
       {/* So the harness is still usable after the panel is dismissed. */}
@@ -65,7 +75,7 @@ function Harness() {
         <AccountPanel onClose={() => setOpen(false)} apiClient={stubApi} userData={user}
                       isMobile={window.innerWidth <= 640}
                       // Flip this to an address to see the overridden state.
-                      bakerEmail={new URLSearchParams(location.search).get('email')}
+                      bakerEmail={loaded ? new URLSearchParams(location.search).get('email') : null}
                       canEditEmail
                       onProfileChanged={() => console.log('[harness] profile re-read')}
                       onPhoneChanged={() => console.log('[harness] profile re-read')} />

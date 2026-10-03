@@ -1721,6 +1721,20 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   const [emailBusy,    setEmailBusy]    = useState(false);
   const [emailMsg,     setEmailMsg]     = useState(null);
   const [emailNow,     setEmailNow]     = useState(bakerEmail ?? null);
+  /* ⚠️ useState SEEDS ONCE, AND BOTH ROWS READ A PROP THAT ARRIVES LATE.
+     `bakerEmail` and `userData.phone` come from fetchBakerProfile, which resolves during designer
+     boot. The panel is mounted only when opened, so in almost every case the data is already there
+     — but "almost every case" is how this class of bug hides: open My Account inside that window
+     and the seed is null FOREVER, because nothing re-runs useState. A bakery that HAS set its own
+     address would then be shown the owner's with "Your sign-in address" under it, which is a quiet
+     lie about where their mail goes, and a baker with a number on file would read "Not set".
+
+     Syncing on the prop is the whole fix. It cannot fight a local edit: both setters already run on
+     save, so by the time the parent re-reads the profile it is sending back the value this panel
+     just wrote. */
+  useEffect(() => { setEmailNow(bakerEmail ?? null); }, [bakerEmail]);
+  useEffect(() => { setPhoneNow(userData?.phone ?? null); }, [userData?.phone]);
+
   const [pwEditing, setPwEditing] = useState(false);
   const [pwBusy,    setPwBusy]    = useState(false);
   const [pwMsg,     setPwMsg]     = useState(null);

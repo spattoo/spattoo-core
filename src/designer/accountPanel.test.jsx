@@ -166,6 +166,22 @@ describe('where we email you', () => {
     expect(panel).toMatch(/Leave it blank to use your sign-in address/);
   });
 
+  // It must never be blank: with no bakery address on file the row still answers the question by
+  // showing the one Spattoo actually writes to today.
+  it('always has something to show', () => {
+    expect(panel).toMatch(/\{emailNow \|\| userData\?\.email \|\| '—'\}/);
+  });
+
+  /* ⚠️ useState SEEDS ONCE. Both this row and the phone read a prop that arrives with
+     fetchBakerProfile, so a panel opened inside that window seeded null and STAYED null — a bakery
+     with its own address was shown the owner's, labelled "Your sign-in address", and a phone on
+     file read "Not set". Verified in dev/account-screen.jsx with `?late=1`, which holds the profile
+     back 900ms: the rows correct themselves on arrival instead of lying for the life of the panel. */
+  it('corrects itself when the profile arrives after the panel opens', () => {
+    expect(panel).toMatch(/useEffect\(\(\) => \{ setEmailNow\(bakerEmail \?\? null\); \}, \[bakerEmail\]\)/);
+    expect(panel).toMatch(/useEffect\(\(\) => \{ setPhoneNow\(userData\?\.phone \?\? null\); \}, \[userData\?\.phone\]\)/);
+  });
+
   // PATCH /baker/profile is requireCapability('store:manage') — an ungated pencil could only 403.
   it('offers the pencil only to somebody the server will accept', () => {
     expect(panel).toMatch(/\{canEditEmail && unlocked && \(/);
