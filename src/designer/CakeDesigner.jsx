@@ -6060,7 +6060,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Coming back to the pen always starts in DRAW. A tool that remembers it was left in move mode
   // greets the next visit by doing nothing when you drag, which reads as broken.
   useEffect(() => {
-    if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) setPenMove(false);
+    /* ⚠️ AND THE SELECTION GOES WITH THE MODE. The small card is piping's, not the cake's — left
+       standing after "Done piping" it would hover over whatever the customer opened next, editing a
+       piece they can no longer see. */
+    if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) { setPenMove(false); setPickedStrokeId(null); }
   }, [selectedEl]);
 
   /* ⚠️ The More sheet must not survive a selection, now that the strip can leave.
@@ -13972,10 +13975,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  and `points` for a drawn line. `updateStrokePoints` only ever wrote the latter. */
               onMoveStroke={updateStroke}
               penStyle={penStyle}
-              /* ⚠️ REMEMBERS THE PIECE JUST PLACED. `addStroke` seeds the id itself, so the only
-                 way to know which one was made is to make it here and pass it in — the hook merges
-                 a given id rather than inventing a second one. */
-              onAddStroke={st => { const id = crypto.randomUUID(); lastStrokeIdRef.current = id; addStroke({ ...st, id }); }}
+              /* ⚠️ PLACING A PIECE SELECTS IT. Sandeep, after piping a cake of them and finding the
+                 colour unreachable: *"i cannot change color after i click to pipe them."* The
+                 per-piece card existed, behind a mode toggle he had no reason to press — and the
+                 big CREAM COLOUR wheel sitting beside it only ever coloured the NEXT piece, so the
+                 obvious control looked broken. Now the card is already open on the thing just put
+                 down, which is the moment you want to recolour it; the next tap places another and
+                 the card follows. Edit mode stays for going back to a piece from earlier, and for
+                 sliding one.
+
+                 ⚠️ `addStroke` seeds the id itself, so the only way to know which piece was made is
+                 to make the id here and pass it in — the hook merges a given id rather than
+                 inventing a second one. */
+              onAddStroke={st => {
+                const id = crypto.randomUUID();
+                lastStrokeIdRef.current = id;
+                addStroke({ ...st, id });
+                setPickedStrokeId(id);
+              }}
               dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}
               dustSelected={{ tier: dustTier, idx: dustSel }}
               onDustMove={(tier, idx, u, v) => updateDustSplash(tier, idx, { u, v })}
@@ -14052,7 +14069,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
             <span style={{ fontSize: 10, fontWeight: 800, color: INK, textTransform: 'uppercase',
                            letterSpacing: 0.6, fontFamily: "'Quicksand',sans-serif" }}>
-              This piece
+              {pickedStroke.kind === 'stamprope' || (pickedStroke.points?.length ?? 0) > 1
+                ? 'This run' : 'This piece'}
             </span>
             <button type="button" onClick={() => setPickedStrokeId(null)}
               title="Done with this piece"
