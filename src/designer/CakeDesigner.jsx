@@ -6408,6 +6408,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // overlap (min-centre distance ≈ one tile, STICKER_SIZE × scale). One scatter card with a density +
   // surface chooser manages the set.
   const SCATTER_DEFAULT_COUNT = 12;
+  /* How many scattered instances the renderer can carry before the cake stops responding. See the
+     measurement beside `scatterMaxCount`, which is the only place this is used. */
+  const SCATTER_RENDER_BUDGET = 1000;
   // Per-instance size for scatter: the element's own configured r (admin-controlled), default 0.5
   // when unset. No element-type branch — just the config value. Tunable on the card afterwards.
   function scatterScaleFor(element) {
@@ -6496,7 +6499,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        (measured: 2733 at size 0.1, 1214 at 0.15, 683 at 0.2). The area maths is the real ceiling and
        it already scales with Size, so it is now the only one: the dial's maximum means "as full as
        this strip gets", in both modes, at whatever size the baker chose. */
-    return Math.max(12, Math.floor((area / footprint) * 0.7));
+    /* ⚠️ AND A SECOND CEILING, BECAUSE "FITS" AND "DRAWS" ARE DIFFERENT QUESTIONS. The area maths
+       answers how many pieces the surface HOLDS. Nothing in it knows that every scattered piece is
+       its own sticker in `design.stickers` — its own component, its own mesh, its own draw call —
+       so the dial happily offered 2,715 on a top at sprinkle size and 9,761 on a wall, and the page
+       stopped responding. Sandeep: *"sprinkles — when added a cluster of many like 3000 or more,
+       page is freezing."*
+
+       Measured in the designer, stepping the Count dial (headless, no GPU, so these are pessimistic
+       — the SHAPE is what transfers, and it is linear in both):
+
+           count    placing    per frame            count    placing    per frame
+              55     179 ms        55 ms             1358    2442 ms       688 ms
+             272     433 ms       160 ms             2036    3608 ms       967 ms
+             815    1036 ms       404 ms             2715    5160 ms      1297 ms
+
+       Placing is quadratic three times over — the seat search checks every seat already taken, and
+       `addSticker`/`updateSticker` each copy the whole array per piece — but the frame cost is what
+       makes it read as FROZEN rather than slow: at 2,715 the cake redraws about once a second, for
+       as long as it is on screen.
+
+       ⚠️ 1,000 IS A JUDGEMENT ANCHORED ON THREE THINGS WE KNOW, not on the numbers above, which were
+       taken without a GPU. It is comfortably past the flat 400 that was removed for being too few
+       ("count 400 is too less in case of band. band can be very thick"); it is twelve times the
+       largest scatter set in any saved template or order (84); and it is a third of where the freeze
+       was reported. Raise it when a scatter set draws as ONE instanced mesh rather than N
+       components, which is the fix this number is standing in for.
+
+       ⚠️ IT CAPS THE DIAL, NOT THE CAKE. A design already carrying more keeps what it has — clamping
+       on load would silently re-pose somebody's approved cake, which is the objection that shaped
+       migration 118. You simply cannot ask for more. */
+    return Math.max(12, Math.min(SCATTER_RENDER_BUDGET, Math.floor((area / footprint) * 0.7)));
   }
   // The count a NEW scatter seeds with — the element's admin-authored default
   // (placement_config.scatter_count), falling back to SCATTER_DEFAULT_COUNT. Config-driven, never a
