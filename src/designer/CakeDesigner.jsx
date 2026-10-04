@@ -11569,11 +11569,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           ))}
         </div>
-        {penMove && (
-          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
-            Tap a piped piece to change its colour and size. Drag one to slide it.
-          </div>
-        )}
+        {/* ⚠️ THE EXPLANATION USED TO SIT BEHIND THE MODE IT EXPLAINED. This line was gated on
+            `penMove`, so it only appeared once you were already IN Edit — and the toggle above says
+            "Edit" without saying what it edits. A baker piped a few pieces, tapped one to recolour
+            it, and got another piece stamped on top: in stamp mode A TAP IS THE PLACEMENT GESTURE,
+            which is deliberate (see the note on the buttons) and gives no hint that selecting is
+            possible at all. Reported as exactly that — not knowing Edit is how you pick up a piece
+            you already piped.
+
+            It is the mirror of the rule PlateButton states: "a control that appears only once you
+            have already needed it teaches nobody it exists". Here it was the explanation.
+
+            So both modes get a line, and Draw's points FORWARD. No new surface, and it stays beside
+            the control it describes rather than below the thing it narrates (INVARIANTS #11).
+
+            ⚠️ THE DRAW LINE SAYS NOTHING ABOUT HOW YOU DRAW, and that is not brevity. This row is
+            shared by TWO cards: the pen, where a tap STAMPS a piece, and writing, where you drag
+            letters. "Tap the cake to place a piece" is true of one and false of the other — my
+            first cut said it and would have been wrong on every writing card. What both have in
+            common is the thing the baker could not find, so that is all it claims.
+
+            On the pen card this row only renders once something is piped (see the caller), so the
+            line arrives exactly when there is something to edit. */}
+        <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
+          {penMove
+            ? 'Tap a piped piece to change its colour and size. Drag one to slide it.'
+            : 'To recolour or move what you have piped, switch to Edit.'}
+        </div>
       </>
     );
   }
