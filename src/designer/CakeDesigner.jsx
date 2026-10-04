@@ -3335,6 +3335,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      without the client knowing anything about plans. Resolving it on the client would be a second
      copy of a billing rule, and the quieter one. */
   const [railSkin, setRailSkin] = useState(DEFAULT_RAIL_SKIN);
+  /* How many looks there are to choose BETWEEN. Starts at 1 so the Settings entry is absent until
+     the answer arrives: an entry that appears a second after the menu opens is worse than one that
+     was never there. */
+  const [railSkinCount, setRailSkinCount] = useState(1);
   const [settingsScope,       setSettingsScope]       = useState(null);
   const settingsPanelOpen = settingsScope !== null;
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
@@ -4193,8 +4197,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
              you are. */
           { id: 'orders-delivery', label: 'Orders & Delivery', open: () => setSettingsScope('settings'), active: settingsScope === 'settings' },
           /* Its own entry, because it had none: the chooser was inside the page above and nobody
-             looking for "how my menu bar looks" would open one called Orders & Delivery. */
-          { id: 'appearance', label: 'Menu bar', open: () => setSettingsScope('appearance'), active: settingsScope === 'appearance' },
+             looking for "how my menu bar looks" would open one called Orders & Delivery.
+             ⚠️ ONLY WHEN THERE IS SOMETHING TO CHOOSE. With one look active (migration 122) this
+             entry would open a page showing the rail they are already looking at. */
+          ...(railSkinCount > 1
+            ? [{ id: 'appearance', label: 'Menu bar', open: () => setSettingsScope('appearance'), active: settingsScope === 'appearance' }]
+            : []),
           /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
              for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
              three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the
@@ -4225,7 +4233,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      them for its `active` flags — Catalogue lights while the flyout is open, Library while its page
      is. Miss one and the rail goes on showing the previous state: a destination you are looking at
      that the nav says you are not in. */
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsScope, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsScope, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen, railSkinCount]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
@@ -4436,6 +4444,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (!apiClient?.fetchRailSkins) return;
     apiClient.fetchRailSkins()
       .then(r => {
+        setRailSkinCount((r?.skins ?? []).length);
         const row = (r?.skins ?? []).find(sk => sk.key === r?.served);
         // An answer naming a skin the list does not contain is a server and a client that disagree;
         // the default is the honest thing to draw rather than a half-applied look.

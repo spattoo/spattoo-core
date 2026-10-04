@@ -170,7 +170,9 @@ describe('it left the store settings', () => {
      total -- the value arrives after mount, the memo never recomputes, and the entry can never
      appear however correct its gate is. That is how 'Record a reel' shipped invisible. */
   it('recomputes the menu when it opens', () => {
-    expect(designer).toMatch(/billingPanelOpen, topUpsPanelOpen\]\)/);
+    const deps = designer.match(/\.filter\(m => m\.items\.length\), \[([^\]]*)\]/)?.[1] ?? '';
+    expect(deps).toContain('billingPanelOpen');
+    expect(deps).toContain('topUpsPanelOpen');
   });
 
   /* Two render branches exist and only one is obvious. A panel mounted in one is a dead menu entry

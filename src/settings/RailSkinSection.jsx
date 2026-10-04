@@ -31,8 +31,13 @@ export function RailSkinSection({ apiClient, onChanged }) {
   }, [apiClient]);
   useEffect(() => { load(); }, [load]);
 
-  // A host that cannot serve them shows nothing, rather than an empty box that looks broken.
-  if (!apiClient?.fetchRailSkins || !state?.skins?.length) return null;
+  /* A host that cannot serve them shows nothing, rather than an empty box that looks broken.
+   *
+   * ⚠️ AND FEWER THAN TWO IS NOT A CHOICE. The same rule the Templates rail item already states —
+   * "A ONE-ITEM MENU IS NOT A MENU" — applied to a chooser: a single swatch you cannot move away
+   * from is a picture of the status quo with a border round it. Migration 122 switched the other
+   * looks off, and this is what makes that invisible rather than sad. */
+  if (!apiClient?.fetchRailSkins || (state?.skins?.length ?? 0) < 2) return null;
 
   const { skins, chosen, entitled } = state;
 

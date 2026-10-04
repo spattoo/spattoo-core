@@ -72,6 +72,22 @@ describe('finding it at all', () => {
     expect(designer).toMatch(/setSettingsScope\('appearance'\)/);
   });
 
+  /* ⚠️ AND ONLY WHEN THERE IS SOMETHING TO CHOOSE. Sandeep, having seen the looks on dev: "for now,
+     lets go with the default one only... no wooden texture - its not in sync with the rest of the
+     screen." Migration 122 switches walnut and slate off, which leaves one row — and a chooser
+     showing a single swatch you cannot move away from is a picture of the status quo with a border
+     round it. Same rule the Templates rail item states: a one-item menu is not a menu.
+
+     Deactivated, not deleted: turning a look back on is one UPDATE, and this is what makes it
+     reappear without another deploy. `railSkinCount` is in the tools memo's deps for that reason —
+     an unlisted condition would ship an entry that can never return. */
+  it('shows that entry only when more than one look is active', () => {
+    expect(designer).toMatch(/\.\.\.\(railSkinCount > 1/);
+    expect(section).toMatch(/\(state\?\.skins\?\.length \?\? 0\) < 2\) return null;/);
+    const deps = designer.match(/\.filter\(m => m\.items\.length\), \[([^\]]*)\]/)?.[1] ?? '';
+    expect(deps).toContain('railSkinCount');
+  });
+
   it('and its own scope, so that entry opens it alone', () => {
     expect(panel).toMatch(/const showAppearance = scope === 'all' \|\| scope === 'appearance';/);
     expect(panel).toMatch(/\{showAppearance && \(/);

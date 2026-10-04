@@ -38,7 +38,7 @@ const stub = {
   // Rail skins. `?locked` flips the entitlement so the Blaze state can be seen too — that is the
   // half a baker on Spark actually meets, and the half most likely to be built blind.
   fetchRailSkins: async () => ({
-    skins: [
+    skins: (new URLSearchParams(location.search).has('one') ? (a => [a[0]]) : (a => a))([
       { key:'chrome', name:'Chrome', is_default:true,  is_premium:false,
         stops:['#121214','#08080a','#08080a','#020203'], joint_at:null, texture:'none',
         ink:'rgba(255,255,255,0.78)', ink_active:'#ffffff' },
@@ -48,8 +48,8 @@ const stub = {
       { key:'slate',  name:'Slate',  is_default:false, is_premium:true,
         stops:['#2B3038','#232830','#1E232A','#161A20'], joint_at:null, texture:'none',
         ink:'rgba(255,255,255,0.80)', ink_active:'#ffffff' },
-    ],
-    chosen: 'walnut', served: 'walnut',
+    ]),
+    chosen: null, served: 'chrome',
     entitled: !new URLSearchParams(location.search).has('locked'),
   }),
   setRailSkin: async () => { await wait(300); },
