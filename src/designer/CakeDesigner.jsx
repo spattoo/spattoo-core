@@ -14168,13 +14168,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
               onWritingMove={(id, moves) => updateWriting(id, moves)}
               selectedWritingId={selectedWritingId}
-              /* ⚠️ A PIECE CHOSEN WITH THE PEN AWAY MUST ALSO CLOSE WHAT WAS OPEN. The click used
-                 to fall through the cream to the tier, so the tier's colour card was already up;
-                 leaving it there would stack the piece card on top of a card about something else.
-                 The pen's own picks (draw and move) leave the selection alone — it is the pen. */
+              /* ⚠️ A PIECE CHOSEN WITH THE PEN AWAY OPENS THE PEN, because the pen card IS that
+                 piece's parent — and clearing the selection instead left the customer holding a
+                 card with two controls on it and no way back to Undo, Clear or Done. Sandeep, after
+                 removing the ring that the piping card was built around: *"when i select the piping
+                 piece which is pipied using the hand piping - it opens the small opoup. but the
+                 parent popup is never opened."* A ring card dies with its ring; hand-piped strokes
+                 outlive it, and they still have somewhere to belong.
+
+                 ⚠️ IN EDIT, NOT DRAW. Arriving in Draw would mean the next tap on the cake PLACES a
+                 piece, and someone who just tapped an existing one to change its colour is editing,
+                 not piping. Edit also makes the second tap mean what they expect: choose another
+                 piece.
+
+                 The pen's own picks leave the selection alone — it is already the pen. */
               onPickStroke={id => {
                 setPickedStrokeId(id);
-                if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) selectExclusive(null);
+                if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) {
+                  selectExclusive({ type: 'tool', tool: 'pen' });
+                  setPenMove(true);
+                }
               }}
               penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && !penMove}
               penMoveMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && penMove}
