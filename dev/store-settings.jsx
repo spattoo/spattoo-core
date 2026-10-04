@@ -60,7 +60,7 @@ function Harness() {
   return (
     <>
       <div style={{ position: 'fixed', top: 8, right: 8, zIndex: 9999, display: 'flex', gap: 8 }}>
-        {['store', 'settings', 'all'].map(k => (
+        {['store', 'settings', 'appearance', 'all'].map(k => (
           <button key={k} onClick={() => setScope(k)}
             style={{ padding: '8px 14px', borderRadius: 10, cursor: 'pointer', fontWeight: 800,
                      border: '1.5px solid #C5D4C8', background: scope === k ? '#2C4433' : '#fff',

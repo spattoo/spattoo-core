@@ -170,6 +170,12 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
 export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore, onRailSkinChanged, scope = 'all' }) {
   const showStore    = scope === 'all' || scope === 'store';
   const showSettings = scope === 'all' || scope === 'settings';
+  /* ⚠️ ITS OWN SCOPE, because it had none and was therefore unfindable. The chooser shipped inside
+     the page Settings ▸ "Orders & Delivery" opens — so reaching it meant clicking an entry about
+     lead times and scrolling. Sandeep: "where can the baker change the spatula menu? i dont see it
+     in settins." He is right, and it is the SAME mistake he caught a day earlier when the consent
+     trail sat under that entry: a door is only a door if its label names what is behind it. */
+  const showAppearance = scope === 'all' || scope === 'appearance';
   const isMobile = useIsMobile();
   const [settings, setSettings]     = useState(null);
   const [profile,  setProfile]      = useState(null);
@@ -347,10 +353,13 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
               is always on screen. Phone: the arrow, the normal way out of a full-screen page. */}
           {isMobile && <PanelBackArrow onClick={onClose} />}
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>{scope === 'store' ? 'Store' : 'Settings'}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: '#fff' }}>
+              {scope === 'store' ? 'Store' : scope === 'appearance' ? 'Menu bar' : 'Settings'}
+            </div>
             <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.6)', marginTop: 2 }}>
               {scope === 'store'    ? 'How your shop looks and when it is open'
              : scope === 'settings' ? 'How orders reach you, and how cakes reach your customers'
+             : scope === 'appearance' ? 'How the app looks while you work'
              :                        'Manage your store preferences'}
             </div>
           </div>
@@ -554,6 +563,13 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
               </>
               )}
 
+              {showAppearance && (
+                /* ⚠️ Settings, NOT My Account. That screen is behind the re-auth gate, and asking
+                   for a password to try a different colour is friction a cosmetic has not earned —
+                   the gate is there for what a borrowed session could DO. See RailSkinSection. */
+                <RailSkinSection apiClient={apiClient} onChanged={onRailSkinChanged} />
+              )}
+
               {showSettings && (
               <>
               {/* ── Orders & Delivery ── */}
@@ -637,15 +653,15 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   else. */}
               {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
                   Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
-              {/* ⚠️ HERE AND NOT My Account. That screen is behind the re-auth gate, and asking
-                  for a password to try a different colour is friction a cosmetic has not earned.
-                  See RailSkinSection. */}
-              <RailSkinSection apiClient={apiClient} onChanged={onRailSkinChanged} />
-
               </>
               )}
 
-              {/* Save */}
+              {/* ⚠️ NOT ON THE APPEARANCE PAGE. A skin saves the moment it is tapped — the same
+                  immediate contract PrivacyDataSection's actions have, and its note says why they
+                  are "NOT part of Save Settings". Leaving the button here would offer a press that
+                  changes nothing on screen while implying the choice had not been kept yet, which
+                  is the dead-control rule with the failure hidden rather than obvious. */}
+              {!showAppearance || showSettings || showStore ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, paddingTop: 4 }}>
                 <button
                   onClick={handleSave}
@@ -664,6 +680,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                 </button>
                 {saved && <span style={{ fontSize: 13, fontWeight: 700, color: '#2C4433' }}>✓ Saved</span>}
               </div>
+              ) : null}
+
             </>
           )}
         </div>

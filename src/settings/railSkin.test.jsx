@@ -18,6 +18,7 @@ import { readFileSync } from 'node:fs';
  */
 const designer = readFileSync(new URL('../designer/CakeDesigner.jsx', import.meta.url), 'utf8');
 const section  = readFileSync(new URL('./RailSkinSection.jsx', import.meta.url), 'utf8');
+const panel    = readFileSync(new URL('./SettingsPanel.jsx', import.meta.url), 'utf8');
 
 describe('the client does not re-decide who may have a skin', () => {
   /* `served` arrives already resolved against the entitlement. Resolving it again here would be a
@@ -57,6 +58,30 @@ describe('the rail is drawn from the row', () => {
   it('has a default that does not need the network', () => {
     expect(designer).toMatch(/const DEFAULT_RAIL_SKIN = \{/);
     expect(designer).toMatch(/stops: CHROME_STOPS\.map/);
+  });
+});
+
+describe('finding it at all', () => {
+  /* ⚠️ IT SHIPPED UNFINDABLE. The chooser went inside the page Settings ▸ "Orders & Delivery"
+     opens, so reaching it meant opening an entry about lead times and scrolling. Sandeep: "where
+     can the baker change the spatula menu? i dont see it in settins." — and it is the SAME mistake
+     he caught a day earlier, when the consent trail sat under that same entry. A door is only a
+     door if its label names what is behind it. */
+  it('has its own entry in the Settings menu', () => {
+    expect(designer).toMatch(/id: 'appearance', label: 'Menu bar'/);
+    expect(designer).toMatch(/setSettingsScope\('appearance'\)/);
+  });
+
+  it('and its own scope, so that entry opens it alone', () => {
+    expect(panel).toMatch(/const showAppearance = scope === 'all' \|\| scope === 'appearance';/);
+    expect(panel).toMatch(/\{showAppearance && \(/);
+  });
+
+  /* A skin saves the moment it is tapped, so the page has nothing to Save — the same immediate
+     contract PrivacyDataSection's actions have. A button that changes nothing on screen while
+     implying the choice is unsaved is the dead-control rule with the failure hidden. */
+  it('does not offer a Save button for a choice that is already saved', () => {
+    expect(panel).toMatch(/\{!showAppearance \|\| showSettings \|\| showStore \? \(/);
   });
 });
 

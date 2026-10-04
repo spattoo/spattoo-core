@@ -4192,6 +4192,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
              `active`: this destination is open, so the rail lights its menu — the rail says where
              you are. */
           { id: 'orders-delivery', label: 'Orders & Delivery', open: () => setSettingsScope('settings'), active: settingsScope === 'settings' },
+          /* Its own entry, because it had none: the chooser was inside the page above and nobody
+             looking for "how my menu bar looks" would open one called Orders & Delivery. */
+          { id: 'appearance', label: 'Menu bar', open: () => setSettingsScope('appearance'), active: settingsScope === 'appearance' },
           /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
              for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
              three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the

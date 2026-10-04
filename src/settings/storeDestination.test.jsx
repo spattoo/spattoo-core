@@ -130,7 +130,10 @@ describe('your agreements and closing your account', () => {
      called it — "'Your agreements' does not seem to be correct under 'order and delivery'". */
   it('are both on My Account, and neither is in Settings', () => {
     expect(designer).toMatch(/<PrivacyDataSection apiClient=\{apiClient\} show=\{canDelete \? 'all' : 'consents'\} \/>/);
-    expect(panel).not.toMatch(/PrivacyDataSection/);
+    const panelCode = panel
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/^\s*\/\/.*$/gm, '');
+    expect(panelCode).not.toMatch(/PrivacyDataSection/);
   });
 
   /* ⚠️ THE CAPABILITY PICKS `show`, it does not hide the block. Erasure is owner-only because the
