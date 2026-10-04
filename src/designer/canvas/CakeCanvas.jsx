@@ -3348,6 +3348,18 @@ function CakeContent({ config, scene, edit = null }) {
               // in those two cases: a cloud beside the cake is past the tier's own rim, and a scale
               // that stopped at the rim would refuse to follow the pointer outward.
               resolve={ray => {
+                /* ⚠️ THE WALL IS A CYLINDER, NOT A PLANE, and resolving it against a horizontal one
+                   is why a cloud on the side could not be moved up. A flat plane yields x and z —
+                   an angle and a distance from the axis — and no height at all, so there was never
+                   a `v` to hand to cloudDragTo however willing the geometry was to take it. The
+                   cylinder gives theta AND y, which is exactly round-the-wall and up-the-wall.
+                   `cylinderHit` is the shared one every other wall decoration uses. */
+                if ((cl.surface ?? 'top') === 'side') {
+                  const hit = cylinderHit(ray, tier.radius || 1);
+                  if (!hit) return null;
+                  return cloudDragTo(cl, { radius: tier.radius }, hit.theta / (Math.PI * 2),
+                    tier.height > 0 ? (hit.y - tier.baseY) / tier.height : 0);
+                }
                 const onTop = (cl.surface ?? 'top') === 'top';
                 const planeY = onTop ? tier.baseY + tier.height : (board ? 0.1 : tier.baseY);
                 const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
