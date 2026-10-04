@@ -3,7 +3,7 @@ import { parseNotificationLink } from '../notifications/notificationLink.js';
 import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
-import { splitMobileNav, strandedMenus } from './mobileNav.js';
+import { splitMobileNav } from './mobileNav.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
@@ -109,6 +109,25 @@ const RAIL_NAV_GAP = 20;
 /* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
    numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
 const PLAIN_RAIL_W = 52;
+
+/* ── What the rail looks like when you are NOT on it ────────────────────────────────────────────
+ *
+ * Sandeep: "menu items text looks dull, when you hover it, it becomes little brighter. but default
+ * one is very dull."
+ *
+ * ⚠️ MEASURED AGAINST THE RAIL'S OWN GRADIENT, not picked. The strip runs #121214 → #08080a →
+ * #020203 (shared/chrome.js), and white at the old values came out:
+ *
+ *     labels  rgba(255,255,255,0.50)   5.26 : 1 at the darkest stop
+ *     icons   rgba(255,255,255,0.45)   4.44 : 1  ← BELOW AA for small text, which 9px labels are
+ *
+ * So the icons were not merely dull, they were a contrast failure. 0.78 measures 11.5:1 and still
+ * leaves headroom: the ACTIVE item goes to #fff and keeps its rgba(255,255,255,0.14) pill, so "you
+ * are here" is still two signals ahead of "you are not".
+ *
+ * One token for both, because an icon and the word under it are one control — and because they
+ * drifted apart by 0.05 for no reason anybody recorded. */
+const RAIL_REST_INK = 'rgba(255,255,255,0.78)';
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -1294,150 +1313,6 @@ function ActionSheet({ open, onClose, align = 'left', children }) {
     </div>
   </>);
 }
-// ── Spatula silhouette ─────────────────────────────────────────────────────────
-// The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
-// long straight handle (stretches to the column height), then an asymmetric
-// rounded-rectangle blade at the bottom. Proportions traced from the design ref;
-// each bottom corner is a cubic (cornerH = where it leaves the vertical edge,
-// cornerW = how far it reaches along the bottom). See dev/spatula-menu.html.
-function spatulaFramePath({
-  W, handleHalf, bladeHalf, capTopY,
-  lShoulderY, rShoulderY, bladeFullY, bladeBotY,
-  lCornerH, lCornerW, rCornerH, rCornerW,
-}) {
-  const cx = W / 2;
-  const capR = handleHalf;
-  const capCY = capTopY + capR;
-  const Lh = cx - handleHalf, Rh = cx + handleHalf;
-  const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
-  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
-  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
-  const rSh = bladeFullY - rShoulderY;
-  const lSh = bladeFullY - lShoulderY;
-  return [
-    `M ${cx} ${capTopY}`,
-    `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`,
-    `L ${Rh} ${rShoulderY}`,
-    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
-    `L ${Rb} ${rEdgeBotY}`,
-    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
-    `L ${flatL} ${bladeBotY}`,
-    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
-    `L ${Lb} ${bladeFullY}`,
-    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
-    `L ${Lh} ${capCY}`,
-    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
-    'Z',
-  ].join(' ');
-}
-
-// Absolutely-positioned SVG that fills the sidebar (measured) and draws the
-// spatula behind the nav. The blade is wider than the handle, so it bulges out
-// (overflow visible, pointer-events none so it never blocks the canvas).
-// `lifted`: the rail is floating over a docked page, so the spatula casts a shadow onto it.
-function SpatulaFrame({ lifted = false }) {
-  const ref = useRef(null);
-  const [h, setH] = useState(720);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const update = () => setH(el.clientHeight || 720);
-    update();
-    const ro = new ResizeObserver(update);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // ── No hang-hole ──────────────────────────────────────────────────────────────────────────────
-  // It was the most expensive detail in the rail. The first nav item had to clear the hole's bottom
-  // edge (y=71), which is what `sidebarInner`'s top padding was buying — a whole menu item's worth
-  // of the most valuable space in the rail, spent on a feature of a real spatula that hangs on a
-  // hook. Without it the clearance is the CAP's bottom (y=38), and the silhouette is still
-  // unmistakably a spatula: the shape is the cap, the taper and the blade, not the hole.
-  //
-  // `holeY` survives as an anchor because the cream swirls are positioned relative to it — they are
-  // a separate decoration that happens to have been measured from the hole.
-  const W = RAIL.svgW, cx = W / 2, handleHalf = 30;
-  // The cap's bottom is capTopY + handleHalf = 38 — the clearance sidebarInner's top padding now
-  // buys, instead of the hole's 71. Stated here rather than derived, because the padding is CSS on
-  // the other side of the file; if this geometry moves, that number moves with it.
-  const capTopY = 8, holeY = capTopY + handleHalf + 24;
-  const bladeBotY = h - 12;
-  const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
-  const shoulderY  = bladeFullY - 65;     // shoulder span
-  const path = spatulaFramePath({
-    W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
-    lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
-    lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
-  });
-  const swirls = [
-    `M ${cx + 12} ${holeY - 16} C ${cx + 32} ${holeY + 10} ${cx + 8} ${holeY + 46} ${cx - 10} ${holeY + 34} C ${cx - 24} ${holeY + 24} ${cx - 14} ${holeY + 2} ${cx + 2} ${holeY}`,
-    `M ${cx - 4} ${holeY + 70} C ${cx + 22} ${holeY + 180} ${cx - 22} ${holeY + 300} ${cx + 8} ${holeY + 430}`,
-    `M ${cx + 10} ${holeY + 150} C ${cx - 20} ${holeY + 260} ${cx + 20} ${holeY + 400} ${cx - 6} ${holeY + 520}`,
-  ];
-
-  return (
-    <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
-      <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`}
-        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible',
-                 filter: lifted ? RAIL_LIFTED_SHADOW : 'none', transition: 'filter 0.2s' }}>
-        <defs>
-          {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
-              and "match the spatula" only holds if both read from one definition. */}
-          <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
-            {CHROME_STOPS.map(({ offset, color }) => (
-              <stop key={offset} offset={offset} stopColor={color} />
-            ))}
-          </linearGradient>
-          <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
-            <stop offset="0" stopColor="rgba(255,255,255,0.03)" />
-            <stop offset="1" stopColor="rgba(255,255,255,0)" />
-          </radialGradient>
-          <filter id="spat-soft" x="-60%" y="-6%" width="220%" height="112%">
-            <feDropShadow dx="0" dy="7" stdDeviation="16" floodColor="#000" floodOpacity="0.26" />
-          </filter>
-          <filter id="spat-blur"><feGaussianBlur stdDeviation="9" /></filter>
-          <filter id="spat-blurHole"><feGaussianBlur stdDeviation="2.5" /></filter>
-          {/* 3D: thin edge sheen (top-left light) + thin inner shadow → flat, not chunky */}
-          <filter id="spat-spec" x="-30%" y="-30%" width="160%" height="160%">
-            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
-            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
-              <feDistantLight azimuth="235" elevation="30" />
-            </feSpecularLighting>
-            <feComposite in="s" in2="SourceAlpha" operator="in" />
-          </filter>
-          <filter id="spat-inner" x="-30%" y="-30%" width="160%" height="160%">
-            <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
-            <feGaussianBlur stdDeviation="3.5" result="ab" />
-            <feOffset in="ab" dx="0" dy="-0.5" result="o" />
-            <feFlood floodColor="#000" floodOpacity="0.45" />
-            <feComposite in2="o" operator="in" result="sh" />
-            <feComposite in="sh" in2="SourceAlpha" operator="in" />
-          </filter>
-          <clipPath id="spat-sil"><path d={path} /></clipPath>
-        </defs>
-        <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
-        <g clipPath="url(#spat-sil)">
-          <g filter="url(#spat-blur)">
-            {swirls.slice(1).map((d, i) => (
-              <path key={`d${i}`} d={d} fill="none" stroke="rgba(0,0,0,0.16)" strokeWidth={11} strokeLinecap="round" />
-            ))}
-            {swirls.slice(1).map((d, i) => (
-              <path key={`l${i}`} d={d} fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth={6} strokeLinecap="round" transform="translate(9,2)" />
-            ))}
-          </g>
-          <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
-        </g>
-        {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
-        <path d={path} fill="#000" filter="url(#spat-inner)" />
-        <path d={path} fill="#000" filter="url(#spat-spec)" />
-        <path d={path} fill="url(#spat-sheen)" />
-        <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
-      </svg>
-    </div>
-  );
-}
-
 // ── Mobile: the spatula comes off the bottom bar ────────────────────────────────
 // The horizontal silhouette (spatulaBarPath / MobileSpatulaBar / MOBILE_BAR) lived here and drew a
 // spatula behind the phone's nav icons. It is gone, and the reason is measured rather than aesthetic.
@@ -1451,9 +1326,9 @@ function SpatulaFrame({ lifted = false }) {
 // invisible — an item overflowing a row with no visible boundary looks exactly like an item that was
 // never added.
 //
-// The shape is not lost. The desktop rail still draws it (SpatulaFrame), where there is room for it,
-// and SpatulaMarkIcon below carries it into the phone's More button — so the charm moves to somewhere
-// it costs nothing instead of paying rent on the most contested 60px in the app.
+// The shape is not lost: SpatulaMarkIcon below carries it into the phone's More button — so the
+// charm lives somewhere it costs nothing instead of paying rent on contested space. The desktop rail
+// drew it too until 2026-10-04, when it became a straight strip for the same reason as here.
 //
 // dev/mobile-nav.html holds the comparison this came from, with the numbers live.
 
@@ -3846,8 +3721,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     /* ⚠️ CARRIES A SUBMENU NOW, so tapping it no longer opens the browse flyout — `openRailItem`
        returns early for any item with a `menu` ("a submenu is not a destination yet"). Browse is the
-       first item inside instead. Templates is in MOBILE_PRIMARY, which is what `strandedMenus`
-       requires of anything carrying a menu: the phone strip can draw one, the More sheet cannot. */
+       first item inside instead. Templates is in MOBILE_PRIMARY, so the phone strip draws its
+       submenu directly; an item with a menu that lands in the More sheet is flattened into rows
+       there instead (see the sheet). */
     /* ⚠️ A ONE-ITEM MENU IS NOT A MENU. A CUSTOMER has `design:create` but not `store:manage`, so
        their `templatesMenu` holds Catalogue alone — and `openRailItem` returns early for anything
        carrying a `menu`, which would put their only template surface behind an extra tap into a
@@ -3932,9 +3808,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      CURRENT value and took its early return for menu-carrying items. Result: Templates opened
      neither the flyout nor a submenu. Measured in the browser: zero `.spattoo-rail-menu` elements
      after clicking it, with the button list unchanged.
-     ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and
-     `strandedMenus` only looks for a menu stranded in the More sheet — not for one that never
-     reaches the renderer. */
+     ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and nothing
+     looks for a menu that never reaches the renderer. */
   ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode, settingsScope, flavoursPanelOpen, flavoursUncurated, onShareStore]);
 
   /* ── The tools cluster must sit on the nav's rhythm ──────────────────────────────────────────
@@ -4025,7 +3900,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // entry is added to one of them and not the other".
   //
   // ⚠️ FLAT, not nested. The More sheet has no surface for a submenu (mobileNav.js says so, and
-  // `strandedMenus` exists to make a violation loud), so the sheet renders these ITEMS under a
+  // a submenu cannot be anchored there), so the sheet renders these ITEMS under a
   // heading rather than a button that would open something the sheet cannot draw.
   const toolMenus = useMemo(() => [
     {
@@ -4082,14 +3957,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // list is the whole point, and the last time they did not, Uploads went missing from the phone.
   const { primary: mobilePrimary, secondary: mobileSecondary } = useMemo(() => splitMobileNav(railItems), [railItems]);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-
-  useEffect(() => {
-    if (!import.meta.env?.DEV) return;
-    const stranded = strandedMenus(railItems);
-    if (stranded.length) {
-      console.error(`[nav] ${stranded.join(', ')} carries a submenu but sits in the More sheet, which has no surface to render one. Add it to MOBILE_PRIMARY, or give the sheet a submenu.`);
-    }
-  }, [railItems]);
 
   // What tapping one DOES. One function, both surfaces — the phone's copy of this had also lost
   // 'uploads', so even re-adding the item to the mobile array would have drawn a dead button.
@@ -12823,9 +12690,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {!isMobile && <div style={dockedPageOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
-        <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
-          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
-          <div style={plainRail ? { ...s.sidebarInner, ...s.sidebarInnerPlain } : s.sidebarInner}>
+        <div style={{ ...s.sidebar, ...(plainRail ? s.sidebarPlain : null),
+                      ...(dockedPageOpen ? { boxShadow: '6px 0 16px rgba(0,0,0,0.28)' } : null) }}>
+          <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={{ ...s.sidebarNav, gap: navGap }}>
             {railItems.map(({ id, label, short, icon, menu }) => {
               const active = railItemActive(id, menu);
@@ -15733,7 +15600,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={s.mobileSheet} role="menu">
               <div style={s.mobileSheetGrip} />
               <div style={s.mobileSheetGrid}>
-                {mobileSecondary.map(({ id, icon, label }) => (
+                {/* ⚠️ ONLY THE ITEMS THAT ARE A DESTINATION. One carrying a menu is drawn flat
+                    below instead — see the note there. A tile here calls `openRailItem(id)` with no
+                    menu, and for a menu-carrying item that resolves to nothing at all: the handler
+                    has no branch for it, so the tap is silently swallowed. */}
+                {mobileSecondary.filter(i => !i.menu).map(({ id, icon, label }) => (
                   <button key={id} role="menuitem"
                           style={{ ...s.mobileSheetItem, ...(railItemActive(id) ? s.mobileSheetItemOn : {}) }}
                           onClick={() => { setMobileMoreOpen(false); openRailItem(id); }}>
@@ -15743,10 +15614,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ))}
               </div>
 
+              {/* ── A nav item that carries a menu, flattened ────────────────────────────────────
+                  ⚠️ THIS WAS A REAL DEAD END, not a tidiness fix. Store gained a submenu on
+                  2026-10-03 and is not in MOBILE_PRIMARY, so on a phone it landed in this sheet as
+                  a tile — and tapping it did NOTHING, because the tile calls `openRailItem(id)`
+                  without a menu and the handler has no branch for Store. A baker on a phone had no
+                  route to their shop at all.
+
+                  Nothing failed: the suite was green and `check:narrow` passed. The dev-only
+                  `strandedMenus` warning had been shouting about it in the console the whole time,
+                  and I only saw it on opening dev/rail.html to photograph something else. That
+                  guard is retired now — see mobileNav.js for why, and for what replaced it.
+
+                  The remedy is the one the sheet already uses for Chef's Desk and Settings
+                  directly below — rows under a heading — rather than a second idea about what a
+                  stranded menu should do. */}
+              {mobileSecondary.filter(i => i.menu).map(item => (
+                <div key={item.id} style={s.mobileSheetSection}>
+                  <div style={s.mobileSheetSectionTitle}>{item.label}</div>
+                  {item.menu.map(sub => (
+                    <MenuItemRow key={sub.id} item={sub} gutter={menuHasIcons(item.menu)}
+                      role="menuitem" style={s.mobileSheetRow}
+                      onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); sub.open(); }} />
+                  ))}
+                </div>
+              ))}
+
               {/* ── Chef's Desk and Settings, arrived from the header ────────────────────────────
                   Rendered FLAT, as rows under a heading, because the sheet has no surface for a
-                  submenu — mobileNav.js states that invariant and `strandedMenus` shouts when a
-                  nav item breaks it. A button here that opened a dropdown would open nothing.
+                  submenu. A button here that opened a dropdown would open nothing.
 
                   Rows rather than grid tiles: these have no icons of their own, and inventing five
                   glyphs to make them fit a three-across grid would be decoration standing in for
@@ -16781,22 +16677,41 @@ const s = {
     paddingBottom: 10, marginBottom: -10,
   },
 
-  // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
-  // this is just the 64px handle-width positioning context. The blade bulges out
-  // (overflow visible). Nav + controls live in sidebarInner, above the silhouette.
+  /* ── Sidebar — a straight strip ─────────────────────────────────────────────────────────────
+   * It was a silicone spatula: a 158px SVG silhouette drawn behind a 64px column, cap and tapered
+   * handle and blade. Sandeep: "lets move to straight strip menu shape instead of spatula shape for
+   * menu. with rectangular strip we can extend it better below and accomodate more menu items."
+   *
+   * It is a space argument and the old code had already measured the cost twice. The cap needed
+   * 48px of clearance above the first item — `sidebarInner`'s note calls that "worth a whole menu
+   * item" — and the hang-hole before it needed 96px, which is why the hole was removed. A strip
+   * needs neither, so the column starts 34px higher and the rail can simply keep going down.
+   *
+   * It also reclaims width: the blade bulged 61px either side of centre, so panels docked at 133px
+   * to clear paint that is no longer there. See shared/rail.js — RAIL_RIGHT is 104 now.
+   *
+   * The surface is what the customer's plain bar already used: chromeGradient() rather than a
+   * hand-picked near-black, because "match the chrome" is the requirement and shared/chrome.js is
+   * where that colour lives. Rounded on the RIGHT only — the strip runs off the window's left edge
+   * exactly as the spatula's handle did, so a radius there would float it away from the frame. */
   sidebar: {
     width: RAIL.width, minWidth: RAIL.width, margin: 0,
     position: 'relative', overflow: 'visible',
     display: 'flex', flexShrink: 0, flex: 1,
     minHeight: 0,             // see sidebarNav — the rail must be allowed to shrink, not grow
+    background: chromeGradient(180),
+    borderRadius: '0 16px 16px 0',
+    boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
+    transition: 'box-shadow 0.2s',
   },
   sidebarInner: {
     position: 'relative', zIndex: 1,
     flex: 1, width: '100%',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    // 96 cleared the cap AND the hang-hole (whose bottom edge was y=71). With the hole gone the
-    // clearance is the cap's own bottom at y=38, plus breathing room — worth a whole menu item.
-    padding: '48px 0 30px',
+    /* 96 cleared the cap AND the hang-hole; 48 cleared the cap alone once the hole went — "worth a
+       whole menu item" either way, and spent on a silhouette. With the strip there is no cap to
+       clear, so this is ordinary breathing room and the column starts 34px higher. */
+    padding: '14px 0 22px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
   /* ── The plain bar a CUSTOMER gets ──────────────────────────────────────────────────────────
@@ -16826,24 +16741,22 @@ const s = {
   startChoiceTitle: { fontSize: 14, fontWeight: 800, color: '#2C4433' },
   startChoiceBody:  { fontSize: 12, fontWeight: 600, color: '#4A5D51', lineHeight: 1.35 },
 
+  /* ⚠️ ONLY THE WIDTH NOW. The surface, radius and shadow moved up to `sidebar` when the baker's
+     rail became a strip too — this bar was always the same thing minus a silhouette, and with the
+     silhouette gone the only difference left is that a customer's is thinner. */
   sidebarPlain: {
     width: PLAIN_RAIL_W, minWidth: PLAIN_RAIL_W,
-    background: chromeGradient(180),
-    borderRadius: '0 16px 16px 0',
-    boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
   },
   // navItem is 60 wide for the 64px rail, so on a 52px bar it has to come in with it.
   /* nowrap is a GUARD, not the fix — `short` is. Without it a label longer than the box wraps under
      the icon and pushes the next item down, which is worse than a clip and harder to notice. */
   navItemPlain: { width: 48, whiteSpace: 'nowrap' },
-  /* 48px of top padding bought clearance for the spatula's CAP (see sidebarInner). A plain bar has
-     no cap, so that space is simply lost — a whole menu item's worth, per the note there. */
-  sidebarInnerPlain: { padding: '14px 0 22px' },
+
   // The rail holds ~12 items and they are flexShrink:0, so its intrinsic height is ~823px. A flex
   // item defaults to min-height:auto — it will not shrink below its content — so on any viewport
   // shorter than roughly 847px the whole chain (nav → sidebarInner → sidebar) grew PAST the page,
   // and `page`'s overflow:hidden ate the difference. What it ate was the bottom of the spatula:
-  // SpatulaFrame draws its SVG to the sidebar's measured clientHeight, so the blade was rendered
+  // The silhouette was drawn to the sidebar's measured clientHeight, so its blade rendered
   // below the fold. Reported on a MacBook Air (~760-800px of viewport once Chrome's chrome and the
   // bookmarks bar are gone); invisible on a 27" iMac, which has the height to spare.
   //
@@ -16889,7 +16802,7 @@ const s = {
   },
   navLabel: {
     fontSize: 9, fontWeight: 700, lineHeight: 1,
-    color: 'rgba(255,255,255,0.5)', letterSpacing: 0.2,
+    color: RAIL_REST_INK, letterSpacing: 0.2,
     transition: 'color 0.15s',
   },
   sidebarBtn: {
@@ -16899,7 +16812,7 @@ const s = {
     // thumb one, so the 44px touch floor does not apply here (the phone strip keeps its 44).
     width: 34, height: 34, borderRadius: 11,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: 'rgba(255,255,255,0.45)',
+    color: RAIL_REST_INK,
     transition: 'background 0.15s, color 0.15s',
     flexShrink: 0,
   },

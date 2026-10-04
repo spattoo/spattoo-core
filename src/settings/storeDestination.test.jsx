@@ -45,6 +45,20 @@ describe('the rail', () => {
     }
   });
 
+  /* ⚠️ STORE WAS DEAD ON EVERY PHONE FOR A DAY. It gained a submenu on 2026-10-03 and is not in
+     MOBILE_PRIMARY, so it landed in the More sheet as a tile — and the tile calls
+     `openRailItem(id)` with NO menu, which the handler has no branch for. The tap was swallowed.
+     A green suite, every gate passing, and the only signal was a dev console warning nobody was
+     looking at.
+
+     The sheet now draws a menu-carrying item as rows under a heading, the shape Chef's Desk and
+     Settings always used there. These two filters are complements, so every secondary item reaches
+     exactly one renderer by construction — which is what replaced the warning. */
+  it('renders a stranded menu rather than swallowing the tap', () => {
+    expect(designer).toMatch(/mobileSecondary\.filter\(i => !i\.menu\)\.map/);
+    expect(designer).toMatch(/mobileSecondary\.filter\(i => i\.menu\)\.map/);
+  });
+
   it('leaves Settings with what is about the app, not the shop', () => {
     expect(designer).toMatch(/id: 'orders-delivery', label: 'Orders & Delivery'/);
     expect(designer).not.toMatch(/label: 'Store Settings', open: \(\) => setSettingsPanelOpen/);
@@ -127,7 +141,7 @@ describe('a menu item can carry an icon', () => {
      that shows on a laptop and not on a phone. */
   it('is one row component, used by every menu', () => {
     expect(designer).toMatch(/function MenuItemRow\(\{ item, gutter, style, onClick, role \}\)/);
-    expect((designer.match(/<MenuItemRow /g) ?? []).length).toBe(3);
+    expect((designer.match(/<MenuItemRow /g) ?? []).length).toBe(4);
   });
 
   /* ⚠️ THE GUTTER IS THE POINT. Giving ONE item an icon indents only that item — "Share my store"
@@ -137,7 +151,7 @@ describe('a menu item can carry an icon', () => {
      source. */
   it('reserves the icon column for the whole menu, or for none of it', () => {
     expect(designer).toMatch(/const menuHasIcons = items => \(items \?\? \[\]\)\.some\(i => i\.icon\)/);
-    expect((designer.match(/gutter=\{menuHasIcons\(/g) ?? []).length).toBe(3);
+    expect((designer.match(/gutter=\{menuHasIcons\(/g) ?? []).length).toBe(4);
   });
 
   it('and Share kept the mark it had as a rail item', () => {

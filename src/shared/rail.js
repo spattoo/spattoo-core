@@ -1,37 +1,35 @@
 // ── The rail's footprint ────────────────────────────────────────────────────────────────────────
-// Where the spatula rail actually ends, for everything that has to sit beside it.
+// Where the rail actually ends, for everything that has to sit beside it.
 //
-// This is not the same as where the nav COLUMN ends, and that is the whole problem it solves. The
-// column is 64px wide, but the spatula drawn behind it is 158 and deliberately overflows on both
-// sides — the blade bulges past the handle, which is the point of the shape. So the rail's visible
-// right edge is nowhere near its box's.
+// ⚠️ IT USED TO BE WIDER THAN ITS OWN COLUMN, and this file exists because of that. The rail was
+// drawn as a silicone spatula: a 158px SVG behind a 64px column, with the blade bulging 61px either
+// side of centre, so the painted edge was 133px — nowhere near the box's 104.
 //
 // Eight docked panels (Orders, Customers, Settings, Billing, Templates, Flavours, Invites,
-// Dashboard) each hardcoded `left: 76`. That was correct once: leftCol's padding used to be 12, and
-// 12 + 64 = 76 landed exactly on the column's edge. The padding is 40 now and the silhouette is
-// wider, so 76 stopped being the edge and became a point 53% of the way ACROSS the rail — measured,
-// not estimated. Every one of those panels opened over the middle of the blade, hiding half the nav
-// a baker uses to get back out of them.
+// Dashboard) each hardcoded `left: 76`, correct back when leftCol's padding was 12. The padding
+// became 40 and the silhouette grew, so 76 turned into a point 53% of the way ACROSS the rail —
+// measured, not estimated — and every one of those panels opened over the middle of the blade,
+// hiding half the nav a baker uses to get back out of them.
 //
-// One derivation, so that moving or resizing the rail moves everything that docks beside it instead
-// of leaving eight copies of a number that used to be true.
+// The spatula is gone (2026-10-04, straight strip) and the arithmetic collapses to the obvious: the
+// rail is its column, so its right edge is padding plus width. The derivation stays anyway, because
+// what it prevents is eight copies of a number that used to be true — and that risk belongs to the
+// hardcoding, not to the shape.
 
 export const RAIL = {
   padLeft:    40,   // leftCol's left padding
-  width:      64,   // the nav column itself
-  svgW:      158,   // SpatulaFrame's viewBox width — wider than the column, on purpose
-  bladeHalf:  61,   // the silhouette's widest point, either side of centre
+  width:      64,   // the nav column itself — and now the whole of it
 };
 
-/** Centre line of the rail, in viewport px. The silhouette is centred on the column. */
+/** Centre line of the rail, in viewport px. */
 export const RAIL_CENTRE = RAIL.padLeft + RAIL.width / 2;
 
 /**
- * Where the painted silhouette actually ends (133px). Verified against the real path's
- * getBoundingClientRect, not derived on paper — the blade's outermost control point is
- * `cx + bladeHalf`, and the SVG is centred on the column rather than aligned to it.
+ * Where the rail ends (104px). With a straight strip the painted edge IS the column's edge, so this
+ * is padding + width rather than the old blade measurement. Panels dock 29px further left than they
+ * did — which is the strip's whole point: the shape was spending that space on a silhouette.
  */
-export const RAIL_RIGHT = RAIL_CENTRE + RAIL.bladeHalf;
+export const RAIL_RIGHT = RAIL.padLeft + RAIL.width;
 
 /**
  * Left edge for a panel that docks BESIDE the rail, clearing it completely so the nav stays
