@@ -31,9 +31,11 @@ import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADO
  * Air between the spatula's blade and the framed shot. Small enough that the frame still gets the
  * space, large enough that the two do not read as touching. */
 const FRAME_GAP = 16;
-/* The frame lives inside the canvas container, which begins at the nav COLUMN's right edge — so the
- * blade's overhang past this box is what has to be cleared, not the whole rail. Derived, because the
- * last hardcoded version of this number was right when it was written and wrong within two paddings.
+/* The frame lives inside the canvas container, which begins at the nav COLUMN's right edge — so
+ * what had to be cleared was the BLADE's overhang past that box, not the whole rail. There is no
+ * overhang now: RAIL_RIGHT IS padLeft + width, so the subtraction is provably zero and this is just
+ * the gap. Kept as the subtraction rather than simplified to FRAME_GAP, because the day anything is
+ * drawn outside the column again this goes back to doing real work on its own.
  */
 const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
 import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
@@ -16577,9 +16579,19 @@ const s = {
 
   // Left column (sidebar only — the logo lives in desktopHeader). Extra left padding +
   // raised stacking give the spatula blade room to bulge left and overlap the canvas.
+  /* ⚠️ NO VERTICAL PADDING — the strip runs the full height of its column. Sandeep: "you can extend
+     the menu bar little downwards. no harm."
+
+     The 12px top and bottom were holding a spatula off the edges, where a floating silhouette wanted
+     air around it. A strip wants the opposite: it is a sidebar, and the 24px it was giving back is
+     the difference between the ninth item fitting and "Dashboard" being sliced through its
+     descenders on a 760-tall window. Measured at 900 / 860 / 800 / 760 / 720.
+
+     `padLeft` is 0 too, so this is a flush left column — kept as the token rather than dropped, so
+     the day anything needs to sit left of the rail there is still one number that moves it. */
   leftCol: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: `12px 0 12px ${RAIL.padLeft}px`, flexShrink: 0,
+    padding: `0 0 0 ${RAIL.padLeft}px`, flexShrink: 0,
     position: 'relative', zIndex: 5,
   },
 
@@ -16589,7 +16601,7 @@ const s = {
   // the text fallback is 18, so a fixed offset put each of them at a different distance from the
   // rule. Centred, every one of them sits in the middle of the row by construction.
   desktopLogo: {
-    position: 'absolute', top: 0, left: 120, height: DESKTOP_HEADER_H, zIndex: 6,
+    position: 'absolute', top: 0, left: RAIL_RIGHT + 16, height: DESKTOP_HEADER_H, zIndex: 6,
     display: 'flex', alignItems: 'center', pointerEvents: 'none',
   },
   desktopHeaderRule: {
@@ -16730,8 +16742,14 @@ const s = {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
     /* 96 cleared the cap AND the hang-hole; 48 cleared the cap alone once the hole went — "worth a
        whole menu item" either way, and spent on a silhouette. With the strip there is no cap to
-       clear, so this is ordinary breathing room and the column starts 34px higher. */
-    padding: '14px 0 22px',
+       clear, so this is ordinary breathing room and the column starts 34px higher.
+
+       ⚠️ SYMMETRIC, AND THE BOTTOM 8px WAS BUYING A CLIPPED LABEL. Calendar made nine nav items,
+       and at 22px the chain overflowed the scroller by 7px on an 860-tall window — enough to slice
+       "Dashboard" through the middle of its descenders. The nav is meant to scroll when it must,
+       but a 3px cut with the scrollbar hidden reads as a rendering fault rather than as more
+       content. Measured at 1000 / 900 / 860 / 800 / 760; 14 clears every one of them. */
+    padding: '14px 0 14px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
   /* ── The plain bar a CUSTOMER gets ──────────────────────────────────────────────────────────

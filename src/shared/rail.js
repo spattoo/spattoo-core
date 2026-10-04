@@ -17,7 +17,14 @@
 // hardcoding, not to the shape.
 
 export const RAIL = {
-  padLeft:    40,   // leftCol's left padding
+  /* ⚠️ ZERO SINCE 2026-10-04, AND IT WAS NEVER A MARGIN. Sandeep: "can we move menu strip to the
+     left completely? why wasting space on the left?"
+
+     It was 40 because the spatula's blade bulged 61px either side of the column's centre line
+     (cx=72), so the silhouette reached back to x=11 — the padding was CLEARANCE for paint that
+     extended left of its own box, not whitespace anybody chose. With the strip there is nothing
+     left of the column to clear, so the 40px was the shape's last unpaid bill. */
+  padLeft:     0,   // leftCol's left padding — the strip sits against the window edge
   width:      64,   // the nav column itself — and now the whole of it
 };
 
