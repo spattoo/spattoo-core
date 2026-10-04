@@ -21,6 +21,7 @@ import { readFileSync } from 'node:fs';
 const designer = readFileSync(new URL('../designer/CakeDesigner.jsx', import.meta.url), 'utf8');
 const panel    = readFileSync(new URL('./SettingsPanel.jsx', import.meta.url), 'utf8');
 const privacy  = readFileSync(new URL('./PrivacyDataPanel.jsx', import.meta.url), 'utf8');
+const orders   = readFileSync(new URL('../orders/OrdersPanel.jsx', import.meta.url), 'utf8');
 
 describe('the rail', () => {
   it('has a Store item where Share used to be', () => {
@@ -57,6 +58,34 @@ describe('the rail', () => {
   it('renders a stranded menu rather than swallowing the tap', () => {
     expect(designer).toMatch(/mobileSecondary\.filter\(i => !i\.menu\)\.map/);
     expect(designer).toMatch(/mobileSecondary\.filter\(i => i\.menu\)\.map/);
+  });
+
+  /* Sandeep: "calendar is an important feature and it deserves an independant menu." It was a view
+     inside the Orders submenu; it is a destination now, directly below Orders. */
+  it('gives Calendar its own item, and only one door to it', () => {
+    expect(designer).toMatch(/id: 'calendar', label: 'Calendar', icon: <CalendarIcon/);
+    expect(designer).toMatch(/if \(id === 'calendar'\)\s+openOrdersPanel\('calendar'\)/);
+    // Out of the submenu, not duplicated into it — a second door to the same room is worse than a
+    // longer walk to one.
+    expect(designer).not.toMatch(/id: 'orders-calendar'/);
+  });
+
+  /* ⚠️ GATED ON THE HOST METHOD, not the capability alone. OrdersPanel decides a calendar exists at
+     all from `typeof apiClient?.fetchOrdersCalendar === 'function'` and silently falls back to the
+     list — so an ungated item would open the list while saying Calendar. */
+  it('appears only where a calendar can actually be drawn', () => {
+    expect(designer).toMatch(/\.\.\.\(apiClient\?\.fetchOrdersCalendar\s*\n?\s*\? \[\{ id: 'calendar'/);
+    const deps = designer.match(/\.filter\(item => hasCap\(item\.requires\)\), \[([^\]]*)\]/)?.[1] ?? '';
+    expect(deps, 'the rail memo must depend on apiClient now that it gates an item').toContain('apiClient');
+  });
+
+  /* ⚠️ THE LIT ITEM FOLLOWS THE PANEL, not the request. OrdersPanel owns `view` and its own toggle
+     changes it without telling anyone — so lighting Calendar from `ordersInitialView` would be
+     correct until the baker pressed that toggle, then quietly wrong. */
+  it('lights whichever view is actually on screen', () => {
+    expect(designer).toMatch(/id === 'calendar'\s+\? \(ordersPanelOpen && ordersView === 'calendar'\)/);
+    expect(designer).toMatch(/onViewChange=\{setOrdersView\}/);
+    expect(orders).toMatch(/useEffect\(\(\) => \{ onViewChange\?\.\(view\); \}, \[view, onViewChange\]\)/);
   });
 
   it('leaves Settings with what is about the app, not the shop', () => {

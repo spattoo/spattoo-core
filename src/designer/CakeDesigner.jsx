@@ -2194,10 +2194,15 @@ const CANVAS_INSET_STACK = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 10;
 /** The colour wheel sits clear to the stack's LEFT — one more step out than the canvas. */
 const WHEEL_DODGE_STACK  = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 20;
 
+/* ⚠️ CALENDAR LEFT THIS MENU (2026-10-04) and is a rail item of its own. Sandeep: "calendar is an
+   important feature and it deserves an independant menu."
+
+   It is still the same PANEL in a different view — OrdersPanel owns both and the data, the filter
+   path and the fetch are shared — so what moved is the door, not the screen. It is not duplicated
+   here as well: a second door to the same room is worse than a longer walk to one. */
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
-  { id: 'orders-calendar', label: 'Calendar',  view: 'calendar' },
 ];
 
 // The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
@@ -3049,6 +3054,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      EXISTING key rather than uploading a second copy of the same cake. */
   const [manualOrderPhoto,    setManualOrderPhoto]    = useState(null);
   const [ordersInitialView,   setOrdersInitialView]   = useState('list');  // which Orders view the rail asked for ('list' | 'calendar')
+  const [ordersView,          setOrdersView]          = useState('list');  // which one it is SHOWING — the panel reports it
   // Holds the quote result after a successful customer submit; read when the
   // OrderModal success screen is dismissed so the host can react (redirect to a
   // share screen). A ref so it survives the submit→close render gap.
@@ -3739,6 +3745,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // Orders rather than as its own rail destination. Declared as `menu` config — any nav item gets
     // a submenu the same way.
     { id: 'orders',     label: 'Orders',      icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
+    /* ⚠️ GATED ON THE HOST METHOD, not only on the capability. OrdersPanel decides whether a
+       calendar exists at all with `typeof apiClient?.fetchOrdersCalendar === 'function'` and falls
+       back to the list when it does not — so without the same gate here this item would open the
+       list while saying Calendar, which is the dead-button rule with the failure hidden. */
+    ...(apiClient?.fetchOrdersCalendar
+      ? [{ id: 'calendar', label: 'Calendar', icon: <CalendarIcon size={20} />, requires: 'order:view' }]
+      : []),
     { id: 'customers',  label: 'Customers',   icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
     ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
     /* ⚠️ NOT FOR A CUSTOMER. Sandeep: "for customer login - 'share' option is not needed."
@@ -3810,7 +3823,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      after clicking it, with the button list unchanged.
      ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and nothing
      looks for a menu that never reaches the renderer. */
-  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode, settingsScope, flavoursPanelOpen, flavoursUncurated, onShareStore]);
+  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode, settingsScope, flavoursPanelOpen, flavoursUncurated, onShareStore, apiClient]);
 
   /* ── The tools cluster must sit on the nav's rhythm ──────────────────────────────────────────
    * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
@@ -4023,6 +4036,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (id === 'tools')     openTools();
     if (id === 'templates') openTemplates();
     if (id === 'dashboard') setDashboardOpen(true);
+    if (id === 'calendar')  openOrdersPanel('calendar');
     if (id === 'customers') setCustomersPanelOpen(true);
     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
 
@@ -4037,6 +4051,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     : id === 'templates' ? templatesOpen
     : id === 'tools'     ? toolsOpen
     : id === 'codesign'  ? codesignPanelOpen
+    /* ⚠️ READS THE PANEL'S LIVE VIEW, not the one the rail asked for. OrdersPanel owns `view` and
+       its own toggle changes it without the rail being told — so lighting this from
+       `ordersInitialView` would be right until the baker pressed that toggle, and then quietly
+       wrong. `onViewChange` reports it back instead. */
+    : id === 'calendar'  ? (ordersPanelOpen && ordersView === 'calendar')
     : id === 'dashboard' ? dashboardOpen
     : id === 'customers' ? customersPanelOpen
     : id === 'invite'    ? invitePanelOpen
@@ -16302,6 +16321,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         externalFilter={ordersFilter}
         initialOrderId={newOrderId}
         initialView={ordersInitialView}
+        onViewChange={setOrdersView}
         bakerTimezone={bakerData?.timezone ?? null}
         // For the finished-photo editor's optional mark. Absent = the "add your name" tool is not
         // offered at all, rather than offered and writing nothing.

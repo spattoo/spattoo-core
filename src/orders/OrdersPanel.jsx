@@ -1669,7 +1669,12 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
   /* Opens Top-ups → Message credits. Only the no-email notice uses it, and it is optional: a host
      that cannot go there (the harness, admin) simply renders the notice without the way through
      rather than a button that does nothing. */
-  onOpenMessageCredits = null }) {
+  onOpenMessageCredits = null,
+  /* Which view is actually on screen. The rail lights Orders or Calendar from this, and it has to
+     be the LIVE value: this panel owns `view` and its own toggle changes it, so a rail reading only
+     the view it requested would be right until the baker used that toggle. Optional — a host that
+     does not care simply does not pass it. */
+  onViewChange = null }) {
   const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1682,6 +1687,11 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
   // data, same filter path. It only exists when the host wired the counts endpoint.
   const hasCalendar = typeof apiClient?.fetchOrdersCalendar === 'function';
   const [view, setView] = useState(initialView === 'calendar' && hasCalendar ? 'calendar' : 'list');
+
+  /* Reported from ONE place rather than at each setView: there are five of them (mount, the reopen
+     effect, the segmented toggle, the back-from-filter button and the day-picked handler), and
+     telling the host at four of five is the shape of bug this prop exists to prevent. */
+  useEffect(() => { onViewChange?.(view); }, [view, onViewChange]);
 
   // A day picked in the calendar filters the list exactly the way the Dashboard's
   // "due today" card does. Held here so `externalFilter` (the host's) stays a pure
