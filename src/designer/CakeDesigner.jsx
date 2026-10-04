@@ -130,6 +130,27 @@ const PLAIN_RAIL_W = 52;
  * One token for both, because an icon and the word under it are one control — and because they
  * drifted apart by 0.05 for no reason anybody recorded. */
 const RAIL_REST_INK = 'rgba(255,255,255,0.78)';
+
+/* ── What the rail is made of ────────────────────────────────────────────────────────────────────
+ *
+ * Seeded here and OVERLAID from the DB (rule 3), the same contract cream textures and materials
+ * already use: this is what the rail draws before `fetchRailSkins` answers, and on any host that
+ * cannot answer at all. It is the row migration 120 seeds as `chrome`, written twice on purpose —
+ * a default that only exists in a database is a rail that has no colour until a network call
+ * returns, and the first paint of every session would be the wrong one.
+ *
+ * ⚠️ `texture` IS A KEY, NOT A NAME (rule 2). The renderer switches on 'none' | 'grain'; it never
+ * asks which skin it is drawing. A fourth look wanting brushed metal is one more branch HERE and a
+ * row in admin — not a condition on `key === 'walnut'` spread through the paint.
+ */
+const DEFAULT_RAIL_SKIN = {
+  key: 'chrome',
+  stops: CHROME_STOPS.map(s2 => s2.color),
+  joint_at: null,
+  texture: 'none',
+  ink: RAIL_REST_INK,
+  ink_active: '#ffffff',
+};
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -1356,7 +1377,7 @@ function spatulaFramePath({
 // spatula behind the nav. The blade is wider than the handle, so it bulges out
 // (overflow visible, pointer-events none so it never blocks the canvas).
 // `lifted`: the rail is floating over a docked page, so the spatula casts a shadow onto it.
-function SpatulaFrame({ lifted = false }) {
+function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
   const ref = useRef(null);
   const [h, setH] = useState(720);
   useLayoutEffect(() => {
@@ -1386,10 +1407,32 @@ function SpatulaFrame({ lifted = false }) {
   const bladeBotY = h - 12;
   const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
   const shoulderY  = bladeFullY - 65;     // shoulder span
+  /* ── Where the handle's material stops ───────────────────────────────────────────────────────
+   * A skin with `joint_at` is two materials: a wooden handle socketed into a silicone head, say.
+   * The fraction is OF THE HANDLE, not of the rail — the rail is drawn to whatever height it has,
+   * so a pixel would be wrong on every other window — and it is clamped to the straight part,
+   * because past the shoulder the silhouette is already widening into the head and a band there
+   * reads as a kink in the taper rather than as a joint.
+   *
+   * `null` is one material all the way down, which is what chrome and slate are. */
+  const jointSpan = shoulderY - 18 - capTopY;
+  const woodEndY  = skin.joint_at == null ? null : capTopY + jointSpan * Math.min(1, skin.joint_at + 0.38);
   const path = spatulaFramePath({
     W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+  });
+  /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
+     resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,
+     spread across its width and kept inside `handleHalf` so the clip never has to crop one. */
+  const grain = (skin.texture !== 'grain' || woodEndY == null) ? [] : Array.from({ length: 7 }, (_, i) => {
+    const t  = (i + 0.5) / 7;                       // 0..1 across the handle
+    const x  = cx - handleHalf + 6 + t * (handleHalf * 2 - 12);
+    const sw = 2.4 + ((i * 37) % 11) / 9;           // a little variety, from the index
+    const b1 = ((i * 53) % 13) - 6;                 // bow one way, then the other
+    const b2 = ((i * 29) % 11) - 5;
+    const y0 = capTopY + 10, y1 = woodEndY - 4, mid = (y0 + y1) / 2;
+    return { d: `M ${x} ${y0} C ${x + b1} ${mid * 0.6} ${x + b2} ${mid * 1.4} ${x + b1 * 0.4} ${y1}`, sw };
   });
   const swirls = [
     `M ${cx + 12} ${holeY - 16} C ${cx + 32} ${holeY + 10} ${cx + 8} ${holeY + 46} ${cx - 10} ${holeY + 34} C ${cx - 24} ${holeY + 24} ${cx - 14} ${holeY + 2} ${cx + 2} ${holeY}`,
@@ -1403,11 +1446,14 @@ function SpatulaFrame({ lifted = false }) {
         style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible',
                  filter: lifted ? RAIL_LIFTED_SHADOW : 'none', transition: 'filter 0.2s' }}>
         <defs>
-          {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
-              and "match the spatula" only holds if both read from one definition. */}
+          {/* ⚠️ THE SKIN'S OWN STOPS, SPREAD EVENLY — not CHROME_STOPS, which is now only the seed
+              for the default (see DEFAULT_RAIL_SKIN). Offsets are computed rather than stored so a
+              row may carry three stops or five without the schema caring; shared/chrome.js keeps
+              three and migration 120's chrome row writes four, and both have to render identically
+              or the default skin would not match the panel headers that read the same file. */}
           <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
-            {CHROME_STOPS.map(({ offset, color }) => (
-              <stop key={offset} offset={offset} stopColor={color} />
+            {(woodEndY == null ? skin.stops : DEFAULT_RAIL_SKIN.stops).map((color, i, a) => (
+              <stop key={i} offset={a.length === 1 ? 0 : i / (a.length - 1)} stopColor={color} />
             ))}
           </linearGradient>
           <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
@@ -1435,6 +1481,39 @@ function SpatulaFrame({ lifted = false }) {
             <feComposite in2="o" operator="in" result="sh" />
             <feComposite in="sh" in2="SourceAlpha" operator="in" />
           </filter>
+          {/* ── Wood ────────────────────────────────────────────────────────────────────────────
+              Three gradients rather than a texture image: an image would be a network request for
+              a 60px-wide strip, and at this size the thing that reads as wood is not grain detail
+              but the ROUNDNESS — a cylinder lit from the left. `spat-woodRound` is that, and it is
+              doing most of the work; the grain lines below are the garnish. */}
+          {/* ⚠️ DARK WALNUT, AND THE DARKNESS IS MEASURED. The first cut was a mid oak
+              (#3A2616 / #4C321C / #3C2717) and it looked like wood — but the rail's ink is white at
+              0.78, which reads 12.08:1 on the near-black head and collapsed to 2.61:1 at the oak's
+              lightest point. Every label on the handle was below AA for 9px text; the labels sit ON
+              this, so the material has to make room for them rather than the other way round.
+              Walked the same hue down: walnut 4.66, dark walnut 5.60, espresso 6.42. 5.60 keeps a
+              margin over the 4.5 floor while still reading as timber rather than as a dark bar. */}
+          <linearGradient id="spat-handle" x1="0" y1="0" x2="0" y2="1">
+            {skin.stops.map((color, i, a) => (
+              <stop key={i} offset={a.length === 1 ? 0 : i / (a.length - 1)} stopColor={color} />
+            ))}
+          </linearGradient>
+          <linearGradient id="spat-woodRound" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0"    stopColor="#000" stopOpacity="0.55" />
+            <stop offset="0.26" stopColor="#000" stopOpacity="0.06" />
+            <stop offset="0.44" stopColor="#fff" stopOpacity="0.13" />
+            <stop offset="0.70" stopColor="#000" stopOpacity="0.05" />
+            <stop offset="1"    stopColor="#000" stopOpacity="0.58" />
+          </linearGradient>
+          {/* The joint: a short fade back into the dark head rather than a hard line, because a
+              hard line at this width reads as a seam in the artwork instead of a ferrule. */}
+          <linearGradient id="spat-ferrule" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0"    stopColor="#000" stopOpacity="0" />
+            <stop offset="0.55" stopColor="#000" stopOpacity="0.55" />
+            {/* Into the HEAD's own first stop, so the joint disappears into whatever the head is
+                rather than into a near-black typed in when walnut was the only skin. */}
+            <stop offset="1"    stopColor={DEFAULT_RAIL_SKIN.stops[0]} stopOpacity="1" />
+          </linearGradient>
           <clipPath id="spat-sil"><path d={path} /></clipPath>
         </defs>
         <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
@@ -1449,6 +1528,31 @@ function SpatulaFrame({ lifted = false }) {
           </g>
           <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
         </g>
+        {/* ── The handle is wood ──────────────────────────────────────────────────────────────────
+            Clipped to the silhouette and drawn as a plain rect over the handle's span, so the shape
+            stays the single authored path — nothing here can change the outline, only what is
+            inside it.
+
+            ⚠️ BEFORE THE SHADING BELOW, DELIBERATELY. The inner shadow, the edge specular and the
+            sheen are applied to the whole path afterwards, so the wood takes the same rounded edge
+            and the same light as the head. Painted after them it would sit on top as a sticker. */}
+        {woodEndY != null && (
+        <g clipPath="url(#spat-sil)">
+          <rect x={cx - handleHalf - 2} y={0} width={handleHalf * 2 + 4} height={woodEndY}
+                fill="url(#spat-handle)" />
+          {grain.map((g, i) => (
+            <path key={`g${i}`} d={g.d} fill="none" strokeWidth={g.sw} strokeLinecap="round"
+                  stroke={i % 2 ? 'rgba(22,13,6,0.38)' : 'rgba(168,128,86,0.16)'} />
+          ))}
+          {/* The cylinder. Last of the wood layers so it shades the grain too, which is what stops
+              the lines reading as stickers on a flat strip. */}
+          <rect x={cx - handleHalf - 2} y={0} width={handleHalf * 2 + 4} height={woodEndY}
+                fill="url(#spat-woodRound)" />
+          <rect x={cx - handleHalf - 2} y={woodEndY - 26} width={handleHalf * 2 + 4} height={28}
+                fill="url(#spat-ferrule)" />
+        </g>
+        )}
+
         {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
         <path d={path} fill="#000" filter="url(#spat-inner)" />
         <path d={path} fill="#000" filter="url(#spat-spec)" />
@@ -3222,6 +3326,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      `null` closed, `'store'` the shop, `'settings'` the app. One state rather than two booleans so
      the two cannot both be open: they are the same docked page, and a second one would render on
      top of the first with no way back to it. */
+  /* ── Which rail skin this person is drawing ──────────────────────────────────────────────────
+     Seeded from DEFAULT_RAIL_SKIN so the FIRST PAINT has a colour: a rail that waits for a network
+     call before it knows what it is made of flashes the wrong one on every load.
+
+     ⚠️ THE SERVER DECIDES WHICH, NOT THIS. `served` already has the entitlement applied
+     (lib/railSkin.js), so a baker who chose Walnut and dropped off Blaze gets chrome back here
+     without the client knowing anything about plans. Resolving it on the client would be a second
+     copy of a billing rule, and the quieter one. */
+  const [railSkin, setRailSkin] = useState(DEFAULT_RAIL_SKIN);
   const [settingsScope,       setSettingsScope]       = useState(null);
   const settingsPanelOpen = settingsScope !== null;
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
@@ -4315,6 +4428,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       if (user) setUserData(user);
     } catch { /* keep the last good profile */ }
   }, [apiClient]);
+
+  const refreshRailSkin = useCallback(() => {
+    if (!apiClient?.fetchRailSkins) return;
+    apiClient.fetchRailSkins()
+      .then(r => {
+        const row = (r?.skins ?? []).find(sk => sk.key === r?.served);
+        // An answer naming a skin the list does not contain is a server and a client that disagree;
+        // the default is the honest thing to draw rather than a half-applied look.
+        setRailSkin(row ? { ...DEFAULT_RAIL_SKIN, ...row } : DEFAULT_RAIL_SKIN);
+      })
+      .catch(() => {});   // a failed lookup keeps the default — the rail must never not render
+  }, [apiClient]);
+  useEffect(() => { refreshRailSkin(); }, [refreshRailSkin]);
 
   useEffect(() => {
     if (apiClient?.fetchBakerProfile) {
@@ -12878,7 +13004,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Sidebar ── */}
         <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
-          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
+          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} skin={railSkin} />}
           <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={{ ...s.sidebarNav, gap: navGap }}>
             {railItems.map(({ id, label, short, icon, menu }) => {
@@ -12887,7 +13013,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               const button = (
                 <button key={id} style={plainRail ? { ...s.navItem, ...s.navItemPlain } : s.navItem} data-tour={id}
                   onClick={() => openRailItem(id, menu)}>
-                  <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
+                  <span style={{ ...s.sidebarBtn, color: railSkin.ink, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: railSkin.ink_active } : {}), ...(active ? { ...s.sidebarBtnActive, color: railSkin.ink_active } : {}) }}>
                     {isNew
                       ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                           <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -12902,7 +13028,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       (Dashboard 48.8 and Customers 48.8 are baker-only, on the 64px spatula).
                       `short` already exists for exactly this — the phone strip added it, and the note
                       there says a shorter honest label beats a truncated one. Reused, not reinvented. */}
-                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>
+                  <span style={{ ...s.navLabel, color: active ? railSkin.ink_active : railSkin.ink }}>
                     {plainRail ? (short ?? label) : label}
                   </span>
                 </button>
@@ -16468,6 +16594,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // the panel and does nothing. A dead control is worse than one that opens a screen they may
         // not be able to act on.
         onUpgrade={() => { setSettingsScope(null); setBillingPanelOpen(true); }}
+        // The rail redraws itself from the server's answer; the panel does not own what it looks like.
+        onRailSkinChanged={refreshRailSkin}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useIsMobile, Toggle, Section, Field } from './controls.jsx';
 import ThemePreview from '../storefront/ThemePreview.jsx';
+import { RailSkinSection } from './RailSkinSection.jsx';
 // SEC-CORE-4 — same pure helper the storefront renders through, so the input and
 // the sink can never disagree about what a valid handle is.
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
@@ -166,7 +167,7 @@ const HOUR_SLOTS = Array.from({ length: 36 }, (_, i) => {
  * have erased the other's keys, silently. spattoo-api now merges over the stored blob, gated by
  * check:settings-merge. Do not trim what a screen sends without reading that gate first.
  */
-export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore, scope = 'all' }) {
+export default function SettingsPanel({ open, onClose, apiClient, primaryColor = INK, accentColor = '#333333', onBrandingUpdate, onSettingsSaved, onReviewFlavours, onUpgrade, onShareStore, onRailSkinChanged, scope = 'all' }) {
   const showStore    = scope === 'all' || scope === 'store';
   const showSettings = scope === 'all' || scope === 'settings';
   const isMobile = useIsMobile();
@@ -636,6 +637,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   else. */}
               {/* Privacy & Data — DPDP rights (consent trail, withdrawal, account deletion).
                   Self-contained: its own fetches + immediate actions, NOT part of Save Settings. */}
+              {/* ⚠️ HERE AND NOT My Account. That screen is behind the re-auth gate, and asking
+                  for a password to try a different colour is friction a cosmetic has not earned.
+                  See RailSkinSection. */}
+              <RailSkinSection apiClient={apiClient} onChanged={onRailSkinChanged} />
+
               </>
               )}
 

@@ -354,6 +354,30 @@ const garnishDesign = (_seed.has('garnish') || _seed.has('tier') || _shape || _p
   }] : [],
 } : null;
 
+/* ── Rail skins, so all three can be seen ────────────────────────────────────────────────────────
+ * `?skin=walnut` picks one. The stub answers the shape the real route does — skins + served — so
+ * the designer's resolver is exercised rather than bypassed; `served` is what the SERVER decided,
+ * and the client is not supposed to second-guess it.
+ */
+const SKINS = [
+  { key:'chrome', name:'Chrome', is_default:true,  is_premium:false,
+    stops:['#121214','#08080a','#08080a','#020203'], joint_at:null, texture:'none',
+    ink:'rgba(255,255,255,0.78)', ink_active:'#ffffff' },
+  { key:'walnut', name:'Walnut', is_default:false, is_premium:true,
+    stops:['#3A2616','#4C321C','#3C2717','#2C1D11'], joint_at:0.62, texture:'grain',
+    ink:'rgba(255,255,255,0.78)', ink_active:'#ffffff' },
+  { key:'slate',  name:'Slate',  is_default:false, is_premium:true,
+    stops:['#2B3038','#232830','#1E232A','#161A20'], joint_at:null, texture:'none',
+    ink:'rgba(255,255,255,0.80)', ink_active:'#ffffff' },
+];
+const WANTED = new URLSearchParams(location.search).get('skin') || 'chrome';
+
+const withSkins = (api) => new Proxy(api, {
+  get: (t, k) => k === 'fetchRailSkins'
+    ? async () => ({ skins: SKINS, chosen: WANTED, served: WANTED, entitled: true })
+    : Reflect.get(t, k),
+});
+
 createRoot(document.getElementById('root')).render(
   <CakeDesigner
     initialDesign={garnishDesign}
@@ -361,7 +385,7 @@ createRoot(document.getElementById('root')).render(
        meshes the modelled cream styles need. Without it the designer falls back to a preset light and
        renders Vertical Piping as a smooth wall — a different cake from the one being judged. */
     cfAssetsBase={HARNESS_ASSETS_BASE}
-    apiClient={apiClient}
+    apiClient={withSkins(apiClient)}
     orderMode={customer ? 'customer' : 'baker'}
     onOrder={() => {}}
     onShareStore={() => {}}

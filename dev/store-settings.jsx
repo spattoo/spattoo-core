@@ -35,6 +35,24 @@ const stub = {
   fetchConsentHistory: async () => ({ events: [] }),
   fetchLegalCurrent:   async () => ({ documents: [] }),
   fetchDeletionStatus: async () => ({ deletion_status: 'active' }),
+  // Rail skins. `?locked` flips the entitlement so the Blaze state can be seen too — that is the
+  // half a baker on Spark actually meets, and the half most likely to be built blind.
+  fetchRailSkins: async () => ({
+    skins: [
+      { key:'chrome', name:'Chrome', is_default:true,  is_premium:false,
+        stops:['#121214','#08080a','#08080a','#020203'], joint_at:null, texture:'none',
+        ink:'rgba(255,255,255,0.78)', ink_active:'#ffffff' },
+      { key:'walnut', name:'Walnut', is_default:false, is_premium:true,
+        stops:['#3A2616','#4C321C','#3C2717','#2C1D11'], joint_at:0.62, texture:'grain',
+        ink:'rgba(255,255,255,0.78)', ink_active:'#ffffff' },
+      { key:'slate',  name:'Slate',  is_default:false, is_premium:true,
+        stops:['#2B3038','#232830','#1E232A','#161A20'], joint_at:null, texture:'none',
+        ink:'rgba(255,255,255,0.80)', ink_active:'#ffffff' },
+    ],
+    chosen: 'walnut', served: 'walnut',
+    entitled: !new URLSearchParams(location.search).has('locked'),
+  }),
+  setRailSkin: async () => { await wait(300); },
 };
 
 function Harness() {
