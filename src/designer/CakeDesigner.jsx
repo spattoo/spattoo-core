@@ -2585,7 +2585,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3521,7 +3521,30 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      colour and thickness; what was missing was a way to say WHICH one. Null means none chosen and
      the card is absent — it is not a panel that sits there empty. */
   const [pickedStrokeId, setPickedStrokeId] = useState(null);
+  /* ⚠️ THE PIECE AS IT WAS WHEN IT WAS CHOSEN, so the small card's Undo has something to go back to.
+     One level, deliberately: it means "put this piece back the way I found it", which is the thing a
+     customer actually wants after trying three colours on it.
+     ⚠️ AND IT MUST NOT DEPEND ON `design.piping`. Re-snapshotting whenever the design changes would
+     capture each edit as it happened, and Undo would restore the state it had a moment ago — which
+     is to say, do nothing. It is keyed on the SELECTION alone, which is exactly when a new "before"
+     is wanted.
+     ⚠️ STATE, NOT A REF, AND THAT DISTINCTION IS THE WHOLE BUG I SHIPPED FIRST. `pieceChanged` reads
+     this DURING RENDER to light the Undo button. A ref set inside an effect mutates after the paint
+     and schedules nothing, so the button kept whatever it was painted with: Undo sat enabled on a
+     piece nobody had touched, and the DOM only caught up when something else happened to re-render.
+     Found by reading the rendered attribute (`disabled` was never set) rather than the value I
+     expected. Anything render reads must be state.
+     ⚠️ DECLARED ABOVE `pieceChanged`, WHICH READS IT: a `const` below its reader is a temporal dead
+     zone crash, and `npm run build` is green on one — that is a runtime event. */
+  const [pickedBefore, setPickedBefore] = useState(null);
   const pickedStroke = design.piping.find(st => st.id === pickedStrokeId) ?? null;
+  /* Has this piece actually MOVED or CHANGED since it was chosen? A live comparison rather than a
+     flag set by each writer: three controls and a drag can all change it, and a flag is one of them
+     forgetting. An Undo that is always lit on a piece nobody has touched promises something it
+     cannot do (rule 7 — if it does something it must look like it does something). */
+  const pieceChanged = !!pickedStroke && !!pickedBefore
+    && ['color', 'thickness', 'point', 'points'].some(
+      k => JSON.stringify(pickedStroke[k]) !== JSON.stringify(pickedBefore[k]));
   /* ⚠️ THE LAST PIECE PLACED, so switching to Edit pre-selects it. The common move after putting a
      piece down is to recolour THAT piece, and making the customer hunt for it on the cake first is
      the friction that made this feature necessary in the first place. */
@@ -6229,6 +6252,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // of cream would go on stamping shells with no way to say stop.
   // Coming back to the pen always starts in DRAW. A tool that remembers it was left in move mode
   // greets the next visit by doing nothing when you drag, which reads as broken.
+  useEffect(() => {
+    setPickedBefore(pickedStrokeId ? (design.piping.find(st => st.id === pickedStrokeId) ?? null) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see pickedBefore: design.piping is read
+    // here but deliberately NOT depended on, or every edit would become the new "before" and Undo
+    // would restore the state it had a moment ago, which is to say do nothing.
+  }, [pickedStrokeId]);
+
   const wasPenSelectedRef = useRef(false);
   useEffect(() => {
     const isPen = selectedEl?.type === 'tool' && selectedEl.tool === 'pen';
@@ -14304,6 +14334,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <DialCell label="Size" value={pickedStroke.thickness ?? 0.03}
               min={0.04} max={0.34} step={0.005} fmt={v => v.toFixed(3)}
               onChange={v => updateStroke(pickedStroke.id, { thickness: v })} />
+          </div>
+          {/* ── Undo and Remove, for THIS piece ────────────────────────────────────────────────
+              The same pair the pen card offers, meaning the same things one scale down: Undo puts
+              the piece back the way it was when it was chosen, Remove takes that one piece off the
+              cake. The pen card's Undo drops the LAST stroke and its Clear all wipes every one of
+              them — neither is "this one", which is what a customer means while looking at a card
+              headed THIS PIECE.
+              ⚠️ Same glyph, same tones, same order as that row on purpose (INVARIANTS #14): a
+              customer meets one Undo in this tool, not two that look different. */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            <button onClick={() => { if (pickedBefore) updateStroke(pickedStroke.id, pickedBefore); }}
+              disabled={!pieceChanged}
+              style={pieceChanged
+                ? { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11 }
+                : { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11, color: INK_MUTED, cursor: 'not-allowed' }}>
+              ↶ Undo
+            </button>
+            {/* Destructive, so the FIELD carries it — the same rule the pen card's Clear all follows. */}
+            <button onClick={() => { removeStrokeById(pickedStroke.id); setPickedStrokeId(null); }}
+              style={{ ...s.deleteBtn, flex: 1, padding: '7px 0', fontSize: 11 }}>
+              Remove
+            </button>
           </div>
         </div>, document.body)}
           {/* ── The name, as it will be burned in ────────────────────────────────────────────────

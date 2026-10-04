@@ -1622,6 +1622,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   function removeStroke() {
     setDesign(prev => ({ ...prev, piping: prev.piping.slice(0, -1) }));
   }
+  /* ⚠️ ONE PIECE, BY ID, AND ITS FILLS GO WITH IT. `removeStroke` drops the LAST stroke, which is
+     the pen card's Undo and is the wrong tool for "get rid of this one" — a customer who chose a
+     piece in the middle of a run means that piece. Fills are tagged `fillOf` with their outline's
+     id, so deleting an outline without them would leave the filling of a shape that no longer
+     exists, floating on the cake with nothing to belong to. */
+  function removeStrokeById(id) {
+    if (!id) return;
+    setDesign(prev => ({ ...prev, piping: prev.piping.filter(s => s.id !== id && s.fillOf !== id) }));
+  }
   function clearPiping() {
     setDesign(prev => ({ ...prev, piping: [] }));
   }
@@ -1679,7 +1688,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    addStroke, updateStroke, setStrokeFill, removeStroke, clearPiping,
+    addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping,
     addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish,
     addTopper, updateTopper, removeTopper,
     resetDesign,
