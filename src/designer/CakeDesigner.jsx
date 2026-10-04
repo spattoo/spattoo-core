@@ -1315,6 +1315,150 @@ function ActionSheet({ open, onClose, align = 'left', children }) {
     </div>
   </>);
 }
+// ── Spatula silhouette ─────────────────────────────────────────────────────────
+// The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
+// long straight handle (stretches to the column height), then an asymmetric
+// rounded-rectangle blade at the bottom. Proportions traced from the design ref;
+// each bottom corner is a cubic (cornerH = where it leaves the vertical edge,
+// cornerW = how far it reaches along the bottom). See dev/spatula-menu.html.
+function spatulaFramePath({
+  W, handleHalf, bladeHalf, capTopY,
+  lShoulderY, rShoulderY, bladeFullY, bladeBotY,
+  lCornerH, lCornerW, rCornerH, rCornerW,
+}) {
+  const cx = W / 2;
+  const capR = handleHalf;
+  const capCY = capTopY + capR;
+  const Lh = cx - handleHalf, Rh = cx + handleHalf;
+  const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
+  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
+  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
+  const rSh = bladeFullY - rShoulderY;
+  const lSh = bladeFullY - lShoulderY;
+  return [
+    `M ${cx} ${capTopY}`,
+    `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`,
+    `L ${Rh} ${rShoulderY}`,
+    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
+    `L ${Rb} ${rEdgeBotY}`,
+    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
+    `L ${flatL} ${bladeBotY}`,
+    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
+    `L ${Lb} ${bladeFullY}`,
+    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
+    `L ${Lh} ${capCY}`,
+    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
+    'Z',
+  ].join(' ');
+}
+
+// Absolutely-positioned SVG that fills the sidebar (measured) and draws the
+// spatula behind the nav. The blade is wider than the handle, so it bulges out
+// (overflow visible, pointer-events none so it never blocks the canvas).
+// `lifted`: the rail is floating over a docked page, so the spatula casts a shadow onto it.
+function SpatulaFrame({ lifted = false }) {
+  const ref = useRef(null);
+  const [h, setH] = useState(720);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const update = () => setH(el.clientHeight || 720);
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // ── No hang-hole ──────────────────────────────────────────────────────────────────────────────
+  // It was the most expensive detail in the rail. The first nav item had to clear the hole's bottom
+  // edge (y=71), which is what `sidebarInner`'s top padding was buying — a whole menu item's worth
+  // of the most valuable space in the rail, spent on a feature of a real spatula that hangs on a
+  // hook. Without it the clearance is the CAP's bottom (y=38), and the silhouette is still
+  // unmistakably a spatula: the shape is the cap, the taper and the blade, not the hole.
+  //
+  // `holeY` survives as an anchor because the cream swirls are positioned relative to it — they are
+  // a separate decoration that happens to have been measured from the hole.
+  const W = RAIL.svgW, cx = W / 2, handleHalf = 30;
+  // The cap's bottom is capTopY + handleHalf = 38 — the clearance sidebarInner's top padding now
+  // buys, instead of the hole's 71. Stated here rather than derived, because the padding is CSS on
+  // the other side of the file; if this geometry moves, that number moves with it.
+  const capTopY = 8, holeY = capTopY + handleHalf + 24;
+  const bladeBotY = h - 12;
+  const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
+  const shoulderY  = bladeFullY - 65;     // shoulder span
+  const path = spatulaFramePath({
+    W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
+    lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
+    lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+  });
+  const swirls = [
+    `M ${cx + 12} ${holeY - 16} C ${cx + 32} ${holeY + 10} ${cx + 8} ${holeY + 46} ${cx - 10} ${holeY + 34} C ${cx - 24} ${holeY + 24} ${cx - 14} ${holeY + 2} ${cx + 2} ${holeY}`,
+    `M ${cx - 4} ${holeY + 70} C ${cx + 22} ${holeY + 180} ${cx - 22} ${holeY + 300} ${cx + 8} ${holeY + 430}`,
+    `M ${cx + 10} ${holeY + 150} C ${cx - 20} ${holeY + 260} ${cx + 20} ${holeY + 400} ${cx - 6} ${holeY + 520}`,
+  ];
+
+  return (
+    <div ref={ref} style={{ position: 'absolute', inset: 0, zIndex: 0, overflow: 'visible', pointerEvents: 'none' }}>
+      <svg width={W} height={h} viewBox={`0 0 ${W} ${h}`}
+        style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible',
+                 filter: lifted ? RAIL_LIFTED_SHADOW : 'none', transition: 'filter 0.2s' }}>
+        <defs>
+          {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
+              and "match the spatula" only holds if both read from one definition. */}
+          <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
+            {CHROME_STOPS.map(({ offset, color }) => (
+              <stop key={offset} offset={offset} stopColor={color} />
+            ))}
+          </linearGradient>
+          <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
+            <stop offset="0" stopColor="rgba(255,255,255,0.03)" />
+            <stop offset="1" stopColor="rgba(255,255,255,0)" />
+          </radialGradient>
+          <filter id="spat-soft" x="-60%" y="-6%" width="220%" height="112%">
+            <feDropShadow dx="0" dy="7" stdDeviation="16" floodColor="#000" floodOpacity="0.26" />
+          </filter>
+          <filter id="spat-blur"><feGaussianBlur stdDeviation="9" /></filter>
+          <filter id="spat-blurHole"><feGaussianBlur stdDeviation="2.5" /></filter>
+          {/* 3D: thin edge sheen (top-left light) + thin inner shadow → flat, not chunky */}
+          <filter id="spat-spec" x="-30%" y="-30%" width="160%" height="160%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="4" result="b" />
+            <feSpecularLighting in="b" surfaceScale="2.5" specularConstant="0.62" specularExponent="22" lightingColor="#d7dbe2" result="s">
+              <feDistantLight azimuth="235" elevation="30" />
+            </feSpecularLighting>
+            <feComposite in="s" in2="SourceAlpha" operator="in" />
+          </filter>
+          <filter id="spat-inner" x="-30%" y="-30%" width="160%" height="160%">
+            <feComponentTransfer in="SourceAlpha"><feFuncA type="table" tableValues="1 0" /></feComponentTransfer>
+            <feGaussianBlur stdDeviation="3.5" result="ab" />
+            <feOffset in="ab" dx="0" dy="-0.5" result="o" />
+            <feFlood floodColor="#000" floodOpacity="0.45" />
+            <feComposite in2="o" operator="in" result="sh" />
+            <feComposite in="sh" in2="SourceAlpha" operator="in" />
+          </filter>
+          <clipPath id="spat-sil"><path d={path} /></clipPath>
+        </defs>
+        <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
+        <g clipPath="url(#spat-sil)">
+          <g filter="url(#spat-blur)">
+            {swirls.slice(1).map((d, i) => (
+              <path key={`d${i}`} d={d} fill="none" stroke="rgba(0,0,0,0.16)" strokeWidth={11} strokeLinecap="round" />
+            ))}
+            {swirls.slice(1).map((d, i) => (
+              <path key={`l${i}`} d={d} fill="none" stroke="rgba(255,255,255,0.035)" strokeWidth={6} strokeLinecap="round" transform="translate(9,2)" />
+            ))}
+          </g>
+          <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
+        </g>
+        {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
+        <path d={path} fill="#000" filter="url(#spat-inner)" />
+        <path d={path} fill="#000" filter="url(#spat-spec)" />
+        <path d={path} fill="url(#spat-sheen)" />
+        <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
+      </svg>
+    </div>
+  );
+}
+
 // ── Mobile: the spatula comes off the bottom bar ────────────────────────────────
 // The horizontal silhouette (spatulaBarPath / MobileSpatulaBar / MOBILE_BAR) lived here and drew a
 // spatula behind the phone's nav icons. It is gone, and the reason is measured rather than aesthetic.
@@ -1330,7 +1474,7 @@ function ActionSheet({ open, onClose, align = 'left', children }) {
 //
 // The shape is not lost: SpatulaMarkIcon below carries it into the phone's More button — so the
 // charm lives somewhere it costs nothing instead of paying rent on contested space. The desktop rail
-// drew it too until 2026-10-04, when it became a straight strip for the same reason as here.
+// still draws it, where there is room for it.
 //
 // dev/mobile-nav.html holds the comparison this came from, with the numbers live.
 
@@ -12711,8 +12855,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {!isMobile && <div style={dockedPageOpen ? { ...s.leftCol, zIndex: RAIL_OVER_PAGE_Z } : s.leftCol}>
 
         {/* ── Sidebar ── */}
-        <div style={{ ...s.sidebar, ...(plainRail ? s.sidebarPlain : null),
-                      ...(dockedPageOpen ? { boxShadow: '6px 0 16px rgba(0,0,0,0.28)' } : null) }}>
+        <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
+          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
           <div style={s.sidebarInner}>
           <nav className="spattoo-rail-nav" ref={setRailNavEl} style={{ ...s.sidebarNav, gap: navGap }}>
             {railItems.map(({ id, label, short, icon, menu }) => {
@@ -16601,7 +16745,7 @@ const s = {
   // the text fallback is 18, so a fixed offset put each of them at a different distance from the
   // rule. Centred, every one of them sits in the middle of the row by construction.
   desktopLogo: {
-    position: 'absolute', top: 0, left: RAIL_RIGHT + 16, height: DESKTOP_HEADER_H, zIndex: 6,
+    position: 'absolute', top: 0, left: RAIL.padLeft + RAIL.width + 16, height: DESKTOP_HEADER_H, zIndex: 6,
     display: 'flex', alignItems: 'center', pointerEvents: 'none',
   },
   desktopHeaderRule: {
@@ -16709,32 +16853,26 @@ const s = {
     paddingBottom: 10, marginBottom: -10,
   },
 
-  /* ── Sidebar — a straight strip ─────────────────────────────────────────────────────────────
-   * It was a silicone spatula: a 158px SVG silhouette drawn behind a 64px column, cap and tapered
-   * handle and blade. Sandeep: "lets move to straight strip menu shape instead of spatula shape for
-   * menu. with rectangular strip we can extend it better below and accomodate more menu items."
+  /* ── Sidebar — spatula-shaped ────────────────────────────────────────────────────────────────
+   * The SVG silhouette (SpatulaFrame) is drawn behind; this is the 64px handle-width positioning
+   * context. The blade bulges out past it (overflow visible). Nav and controls live in
+   * sidebarInner, above the silhouette.
    *
-   * It is a space argument and the old code had already measured the cost twice. The cap needed
-   * 48px of clearance above the first item — `sidebarInner`'s note calls that "worth a whole menu
-   * item" — and the hang-hole before it needed 96px, which is why the hole was removed. A strip
-   * needs neither, so the column starts 34px higher and the rail can simply keep going down.
+   * ⚠️ IT WAS A STRAIGHT STRIP FOR HALF A MORNING (2026-10-04) and the round trip is worth keeping.
+   * The strip was asked for on a space argument — the cap costs 48px of clearance, "worth a whole
+   * menu item" — and it did buy that back. Then Sandeep looked at it: "i feel like spatula was
+   * better looking. but the only problem is we should extend that little below so that we can
+   * accomodate the calendar now."
    *
-   * It also reclaims width: the blade bulged 61px either side of centre, so panels docked at 133px
-   * to clear paint that is no longer there. See shared/rail.js — RAIL_RIGHT is 104 now.
-   *
-   * The surface is what the customer's plain bar already used: chromeGradient() rather than a
-   * hand-picked near-black, because "match the chrome" is the requirement and shared/chrome.js is
-   * where that colour lives. Rounded on the RIGHT only — the strip runs off the window's left edge
-   * exactly as the spatula's handle did, so a radius there would float it away from the frame. */
+   * So the room came from somewhere the shape was not using: the 30px under the last item and
+   * leftCol's 12/12, none of which the silhouette needs, because items OVERLAY the blade rather
+   * than sit above it. See sidebarInner. The lesson is that the cap's 48 was the only part of that
+   * cost which was actually geometry. */
   sidebar: {
     width: RAIL.width, minWidth: RAIL.width, margin: 0,
     position: 'relative', overflow: 'visible',
     display: 'flex', flexShrink: 0, flex: 1,
     minHeight: 0,             // see sidebarNav — the rail must be allowed to shrink, not grow
-    background: chromeGradient(180),
-    borderRadius: '0 16px 16px 0',
-    boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
-    transition: 'box-shadow 0.2s',
   },
   sidebarInner: {
     position: 'relative', zIndex: 1,
@@ -16744,12 +16882,24 @@ const s = {
        whole menu item" either way, and spent on a silhouette. With the strip there is no cap to
        clear, so this is ordinary breathing room and the column starts 34px higher.
 
-       ⚠️ SYMMETRIC, AND THE BOTTOM 8px WAS BUYING A CLIPPED LABEL. Calendar made nine nav items,
-       and at 22px the chain overflowed the scroller by 7px on an 860-tall window — enough to slice
-       "Dashboard" through the middle of its descenders. The nav is meant to scroll when it must,
-       but a 3px cut with the scrollbar hidden reads as a rendering fault rather than as more
-       content. Measured at 1000 / 900 / 860 / 800 / 760; 14 clears every one of them. */
-    padding: '14px 0 14px',
+       ⚠️ THE TOP 48 IS GEOMETRY, NOT TASTE. SpatulaFrame draws its cap from y=8 to y=38 and the
+       handle is only 60px wide there, narrowing into a rounded arc — so an icon placed above 38
+       hangs off the silhouette rather than sitting on it. 48 clears that bottom edge with room.
+
+       ⚠️ THE BOTTOM IS 10, NOT THE 30 IT WAS. Sandeep, bringing the shape back: "the only problem
+       is we should extend that little below so that we can accomodate the calendar now." Items
+       OVERLAY the blade — it is 122px wide against a 64px column — so the space below them was
+       never structural, it was air. Twenty-four of it comes back, and leftCol's 12/12 (removed with
+       the strip, kept removed) gives 24 more: 48px more room for items than the shape had before
+       Calendar existed.
+
+       ⚠️ 6 IS SWEPT, NOT CHOSEN. The last label lands within a pixel of the scroller's edge and
+       `space-evenly` rounds differently at each height, so the clipping is not monotonic in this
+       number: measured across 1000 / 900 / 880 / 860 / 840 / 820 / 800 / 780 / 760, a bottom of 10
+       clips by 1px and 4 clips by 3px, while 6 clears every one of them with 3px to spare. Re-sweep
+       if an item is ever added or removed — a value that works by rounding has to be re-measured,
+       not reasoned about. */
+    padding: '48px 0 6px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
   /* ── The plain bar a CUSTOMER gets ──────────────────────────────────────────────────────────
@@ -16784,6 +16934,9 @@ const s = {
      silhouette gone the only difference left is that a customer's is thinner. */
   sidebarPlain: {
     width: PLAIN_RAIL_W, minWidth: PLAIN_RAIL_W,
+    background: chromeGradient(180),
+    borderRadius: '0 16px 16px 0',
+    boxShadow: '2px 0 14px rgba(0,0,0,0.18)',
   },
   // navItem is 60 wide for the 64px rail, so on a 52px bar it has to come in with it.
   /* nowrap is a GUARD, not the fix — `short` is. Without it a label longer than the box wraps under

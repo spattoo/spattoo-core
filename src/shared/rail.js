@@ -11,32 +11,36 @@
 // measured, not estimated — and every one of those panels opened over the middle of the blade,
 // hiding half the nav a baker uses to get back out of them.
 //
-// The spatula is gone (2026-10-04, straight strip) and the arithmetic collapses to the obvious: the
-// rail is its column, so its right edge is padding plus width. The derivation stays anyway, because
-// what it prevents is eight copies of a number that used to be true — and that risk belongs to the
-// hardcoding, not to the shape.
+// ⚠️ THE SHAPE LEFT AND CAME BACK ON THE SAME DAY (2026-10-04), which is the best argument for this
+// file existing. It became a straight strip for half a morning — every number here collapsed to the
+// column's own edge — and then Sandeep looked at it: "i feel like spatula was better looking." The
+// blade is back, so RAIL_RIGHT is the blade's reach again. Nothing outside this file moved in either
+// direction, because nothing outside this file knows the number.
 
 export const RAIL = {
-  /* ⚠️ ZERO SINCE 2026-10-04, AND IT WAS NEVER A MARGIN. Sandeep: "can we move menu strip to the
-     left completely? why wasting space on the left?"
-
-     It was 40 because the spatula's blade bulged 61px either side of the column's centre line
-     (cx=72), so the silhouette reached back to x=11 — the padding was CLEARANCE for paint that
-     extended left of its own box, not whitespace anybody chose. With the strip there is nothing
-     left of the column to clear, so the 40px was the shape's last unpaid bill. */
-  padLeft:     0,   // leftCol's left padding — the strip sits against the window edge
-  width:      64,   // the nav column itself — and now the whole of it
+  /* ⚠️ NOT A MARGIN — CLEARANCE. The blade bulges 61px either side of the column's centre (cx=72),
+     so the silhouette reaches back to x=11; this is room for paint that extends left of its own
+     box. It went to 0 for the strip, which had nothing to clear, and came straight back with the
+     shape. Anyone reading it as whitespace and deleting it will clip the blade's left edge. */
+  padLeft:    40,   // leftCol's left padding — clearance for the blade's reach past the column
+  width:      64,   // the nav column itself
+  svgW:      158,   // SpatulaFrame's viewBox width — wider than the column, on purpose
+  bladeHalf:  61,   // the silhouette's widest point, either side of centre
 };
 
 /** Centre line of the rail, in viewport px. */
 export const RAIL_CENTRE = RAIL.padLeft + RAIL.width / 2;
 
 /**
- * Where the rail ends (104px). With a straight strip the painted edge IS the column's edge, so this
- * is padding + width rather than the old blade measurement. Panels dock 29px further left than they
- * did — which is the strip's whole point: the shape was spending that space on a silhouette.
+ * Where the painted silhouette actually ends (133px). Verified against the real path's
+ * getBoundingClientRect, not derived on paper — the blade's outermost control point is
+ * `cx + bladeHalf`, and the SVG is centred on the column rather than aligned to it.
+ *
+ * ⚠️ NOT WHERE THE COLUMN ENDS (104). Anything docking BESIDE the rail wants this; anything sitting
+ * at header height wants the column, because up there the shape is only the handle. The desktop
+ * logo got that wrong in both directions on 2026-10-04 and now derives from the column.
  */
-export const RAIL_RIGHT = RAIL.padLeft + RAIL.width;
+export const RAIL_RIGHT = RAIL_CENTRE + RAIL.bladeHalf;
 
 /**
  * Left edge for a panel that docks BESIDE the rail, clearing it completely so the nav stays
