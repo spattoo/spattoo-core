@@ -15814,7 +15814,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         // screen whenever the swatch sat low enough to expose it.
                         // Gradient eligibility is CONFIG only — the piping element's allowed_actions.gradient.
                         // Stops/mode live on the ring layer (p.gradient); `color` is the solid/stop-0 fallback.
-                        const gradEligible = !!pipingPopupEl?.allowed_actions?.gradient;
+                        /* ⚠️ A DRIP IS ALWAYS ELIGIBLE, AND IT IS NOT THE SAME SENTENCE AS A RING'S.
+                           `allowed_actions.gradient` asks whether a GLB ring may be swept through
+                           several colours — an authored judgement per element. A chocolate drip has
+                           no GLB and no sweep: the stops are the CHOCOLATES in the pour, split along
+                           a wandering seam (see dripColorAt). Sandeep, at a cake poured pink one
+                           side and blue the other: *"we should allow multi color drip."* Reusing the
+                           stop list rather than inventing a second one is what makes the control,
+                           the storage and the save path already exist. */
+                        const gradEligible = isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
                         const gStops  = p.gradient?.colors?.length ? p.gradient.colors : [color];
                         const gMode   = p.gradient?.mode ?? 'swirl';
                         const gActive = Math.min(gradStop, Math.max(0, gStops.length - 1));
@@ -15843,6 +15851,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             />
                             {gradEligible && (
                               <GradientControls
+                                /* A drip has no sweep direction to choose — two ganaches meet where
+                                   they meet — so the mode row is empty and GradientControls hides
+                                   it on `modes.length > 1`. */
+                                label={isDrip ? 'Chocolates' : 'Gradient colors'}
+                                modes={isDrip ? [] : undefined}
                                 stops={gStops} activeStop={gActive} mode={gMode}
                                 onSelectStop={setGradStop}
                                 onAddStop={() => { if (gStops.length >= 3) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}

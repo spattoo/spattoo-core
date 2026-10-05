@@ -23,7 +23,7 @@ import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rec
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { seatHalfDepth } from '../geometry/seating.js';
-import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
+import { buildDripGeometry, buildDripWeb, dripRenderParams, buildDripFlood, paintDripColors } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
@@ -688,6 +688,7 @@ export function TopPipingRing(props) {
   // GLB impl), NOT a per-element-type renderer.
   if (props.drip) return (
     <TopDripRing topY={props.topY} radius={props.radius} color={props.color}
+      colors={props.dripColors}
       gloss={props.dripGloss} lengthMul={props.dripLength} flood={props.dripFlood} config={props.dripConfig}
       selected={props.selected} onClick={props.onClick} />
   );
@@ -702,36 +703,78 @@ export function TopPipingRing(props) {
 // The drip geometry (web arches + runs) is built from the tier's REAL radius+topY so it scales to any
 // tier. The rolled rim bead is a torus the consumer adds with the same material (matching the admin
 // drip studio). Customer controls: colour, gloss, length (a multiplier on the authored base run).
-export function TopDripRing({ topY, radius, color = '#3a2117', gloss = DRIP_GLOSS_DEFAULT,
+export function TopDripRing({ topY, radius, color = '#3a2117', colors = null, gloss = DRIP_GLOSS_DEFAULT,
   lengthMul = 1, flood = false, config = null, selected = false, onClick }) {
   // ONE derivation of the scaled params + startDrop/lip — shared with the relief sampler (chocolateDrip.js).
   const cfgKey = JSON.stringify(config ?? {});
   const { params, startDrop, lipR, s } = useMemo(
     () => dripRenderParams(config, radius, lengthMul), [cfgKey, radius, lengthMul]);
+  const floodH = 0.03 * s;
+
+  /* ── One chocolate or several ──────────────────────────────────────────────────────────────────
+   * `colors` is the authored list; `color` is what every drip before this one was, and stays the
+   * answer when there is one. A single-colour drip must come out byte-identical to what it was, so
+   * the multi path is entered only when there is genuinely more than one.
+   *
+   * ⚠️ THE CALIBRATION RUNS PER COLOUR, HERE, AND NOT INSIDE THE PAINTER. `chocolateMaterialProps`
+   * puts the chosen colour through `albedoForLight` before the renderer ever sees it — that is what
+   * makes a chosen pink come out as that pink under this scene's light (INVARIANTS #16). Painting
+   * raw hexes into the verts would have given the two-colour drip a different pink from the
+   * one-colour drip of the same hex, for no reason a customer could see. One function decides what
+   * a colour looks like; it is called twice instead of once.
+   */
+  const list  = (Array.isArray(colors) && colors.length ? colors : [color]).filter(Boolean);
+  const multi = list.length > 1;
+  const listKey = list.join('|');
+  const albedos = useMemo(
+    () => list.map(c => albedoForLight(c, CHOCOLATE_REFERENCE_LIGHT, { rolloff: CHOCOLATE_ROLLOFF })),
+    [listKey]);
+
+  /* The geometries are memoised on SHAPE and the paint is a separate pass over the same objects, so
+     changing a colour never rebuilds a drip — and `paintDripColors` strips the attribute again when
+     the list drops back to one. */
+  const splitOpts = { R: radius, seed: params.seed ?? 1 };
+  const floodGeo = useMemo(() => buildDripFlood({ R: radius, h: floodH }), [radius, floodH]);
   const dripsGeo = useMemo(() => buildDripGeometry({ R: radius, topY, startDrop, ...params }), [radius, topY, startDrop, params]);
   const webGeo   = useMemo(() => buildDripWeb({ R: radius, topY, ...params }), [radius, topY, params]);
-  const mat = chocolateMaterialProps(gloss, color);
-  const emissive = selected ? color : '#000000', emissiveIntensity = selected ? 0.15 : 0;
-  const floodH = 0.03 * s;
+  /* The bead is a torus the consumer owns, and it has to be a real geometry rather than a JSX
+     primitive now: a vertex colour cannot be painted onto something React makes on the fly. */
+  const beadGeo  = useMemo(() => new THREE.TorusGeometry(radius, lipR, 16, 128)
+                                   .rotateX(Math.PI / 2), [radius, lipR]);
+  useMemo(() => {
+    for (const g of [floodGeo, dripsGeo, webGeo, beadGeo]) paintDripColors(g, albedos, splitOpts);
+  }, [floodGeo, dripsGeo, webGeo, beadGeo, listKey, radius, splitOpts.seed]);
+
+  const mat = chocolateMaterialProps(gloss, list[0] ?? color);
+  // With vertex colours the material tint MULTIPLIES them, so it steps back to white and lets the
+  // verts carry the answer. Single colour keeps the exact material it always had.
+  const matProps = multi ? { ...mat, color: '#ffffff', vertexColors: true } : mat;
+  /* ⚠️ THE MATERIAL IS REMADE WHEN THIS SWITCHES, AND THAT IS NOT TIDINESS. `vertexColors` is a
+     SHADER-COMPILE flag: setting it on a material that already exists changes nothing until
+     `needsUpdate` is set, and R3F only assigns props. Adding a second chocolate therefore turned the
+     tint white — which it has to, for the verts to carry the colour — while the shader went on
+     ignoring the attribute, and the whole drip rendered white. It painted correctly the entire time;
+     the proof was `painted true,true,true,true` beside a white cake. A `key` is how R3F is told to
+     build a new material rather than re-dress the old one. */
+  const matKey = multi ? 'vc' : 'solid';
+  const emissive = selected ? (list[0] ?? color) : '#000000', emissiveIntensity = selected ? 0.15 : 0;
   return (
     <group onClick={onClick}>
       {/* optional top flood — a thin chocolate pool covering the tier top inside the rim */}
       {flood && (
-        <mesh position={[0, topY + floodH / 2, 0]} castShadow>
-          <cylinderGeometry args={[radius, radius, floodH, 96]} />
-          <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        <mesh position={[0, topY + floodH / 2, 0]} geometry={floodGeo} castShadow>
+          <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
         </mesh>
       )}
       {/* rolled rim bead at the very edge */}
-      <mesh position={[0, topY, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <torusGeometry args={[radius, lipR, 16, 128]} />
-        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      <mesh position={[0, topY, 0]} geometry={beadGeo} castShadow>
+        <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
       <mesh geometry={webGeo} castShadow>
-        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
       <mesh geometry={dripsGeo} castShadow>
-        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
     </group>
   );
@@ -1764,6 +1807,15 @@ export default function CakeTier({
       wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       drip={p.drip ?? false} dripConfig={p.dripConfig ?? null}
       dripGloss={p.dripGloss ?? DRIP_GLOSS_DEFAULT} dripLength={p.dripLength ?? 1} dripFlood={p.dripFlood ?? false}
+      /* ⚠️ THE CHOCOLATES LIVE IN `gradient.colors`, WHICH IS NOT A FILING COMPROMISE. That field is
+         already "the colours this ring is made of", already saved and reloaded with the layer, and
+         already has a built control with add, remove and select (GradientControls). A second list
+         beside it would have meant a second storage field, a second save path and a second stop
+         picker, to express the same sentence. A drip reads them as two ganaches poured against each
+         other; a GLB ring reads them as a sweep. Same data, different renderer — which is the whole
+         shape of INVARIANTS #1.
+         Below two, there is nothing to split and `color` is the answer it has always been. */
+      dripColors={p.gradient?.colors?.length >= 2 ? p.gradient.colors : null}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       canMove={pipingMovable(p)}
       onMoveInstance={onPipingInstanceMove ? (index, angle) => onPipingInstanceMove('rim', p.layerId, index, angle) : null}

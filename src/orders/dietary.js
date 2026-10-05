@@ -158,6 +158,70 @@ export function unguaranteedSentence(requirement, { bakerName } = {}) {
     : `This bakery can't guarantee ${label}.`;
 }
 
+/* ── "we only bake eggless" ────────────────────────────────────────────────────
+ * A bakery with no `egg` row offers one answer to the egg question, so there is nothing
+ * to ask — and the two surfaces that reach this point do it differently enough that the
+ * SENTENCE has to live here rather than at either of them. The baker's order form said
+ * it first (OrderModal, where the egg chips are replaced by a statement); the storefront
+ * flow has no dietary step at all, so it is the only place a customer learns it.
+ *
+ * Two registers, the same split as `unguaranteedSentence` and `conflictCallToAction`:
+ * the baker entering their own order is told "this bakery", because naming them their
+ * own name is nonsense; a customer is told whose kitchen it is, since they arrived from
+ * a storefront and the fact belongs to that bakery and not to cakes in general.
+ *
+ * ⚠️ IT STATES, IT DOES NOT PROMISE. Same ground as the green dot above: we hold the
+ * baker's own declaration — a missing `egg` row in `baker_dietary_exclusions` — not a
+ * verified property of a baked cake. "is fully eggless" reports what they told us. */
+export function egglessOnlySentence({ bakerName } = {}) {
+  const who = bakerName || 'This bakery';
+  return `${who} is fully eggless — every cake is made without egg.`;
+}
+
+// The mirror. Rare here, but a bakery CAN exclude `eggless`, and a customer who came for an
+// eggless cake deserves the same plain sentence rather than a question with one answer in it.
+export function eggOnlySentence({ bakerName } = {}) {
+  return `${bakerName || 'This bakery'} bakes with egg.`;
+}
+
+/* ── Egg or eggless: ask, or tell ───────────────────────────────────────────────────────────────
+ *
+ * Derived from the vocabulary, never hardcoded, so `baker_dietary_exclusions` drives it:
+ *   both offered  → a real question, two chips
+ *   one offered   → NOT a question. A pure-veg kitchen is TOLD as a fact, and nothing is recorded
+ *                   on the order — inventing a requirement the customer never asserted is exactly
+ *                   what `source` must not be allowed to lie about. The bakery's own standing row
+ *                   is stamped server-side instead, as `bakery_policy` (migration 124).
+ *   neither       → the baker switched both off; say nothing and ask nothing.
+ *
+ * ⚠️ LIFTED OUT OF OrderModal RATHER THAN COPIED (root CLAUDE.md rule 1). The storefront's flavour
+ * step asks this too now, for the customer who sends an enquiry without ever opening the designer —
+ * and two surfaces each deriving "is this a question?" from the same table is how one of them ends
+ * up offering a choice the kitchen cannot honour.
+ *
+ * `options` is the ANNOTATED vocabulary from GET /api/dietary-requirements?bakerSlug=, which both
+ * surfaces fetch; `visibleRequirements` applies the offered rule.
+ */
+export function eggQuestion(options, { bakerName } = {}) {
+  const visible = visibleRequirements(options);
+  const choices = [EGG_KEY, EGGLESS_KEY].map(k => visible.find(o => o.key === k)).filter(Boolean);
+  const only    = choices.length === 1 ? choices[0].key : null;
+  return {
+    choices,
+    isAQuestion: choices.length === 2,
+    statement: only === EGGLESS_KEY ? egglessOnlySentence({ bakerName })
+             : only === EGG_KEY     ? eggOnlySentence({ bakerName })
+             : '',
+  };
+}
+
+/* Choosing a side replaces the other — they cannot both be true (validateDietaryCoherence refuses
+ * the pair outright). Returns the next key set; the caller owns where it is stored, which is a
+ * useState on the order form and the shared draft on the storefront. */
+export function withEggChoice(keys, key) {
+  return [...(keys ?? []).filter(k => k !== EGG_KEY && k !== EGGLESS_KEY), key];
+}
+
 // ── Flavour ↔ requirement conflicts ───────────────────────────────────────────
 // "You asked for nut-free, but Tier 2 is Hazelnut Praline." Same module as the rest of
 // the dietary presentation because it is the same feature on the same four surfaces —

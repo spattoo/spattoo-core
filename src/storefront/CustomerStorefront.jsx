@@ -196,6 +196,12 @@ export default function CustomerStorefront({
         .then(r => r.templates ?? []),
     fetchStorefrontFlavours: () =>
       getJSON(`${apiBaseUrl}/api/flavours?bakerSlug=${encodeURIComponent(bakerSlug)}`),
+    /* The SAME public endpoint the order form calls (OrderModal's apiClient.fetchDietaryRequirements),
+       annotated per baker with `offered`. The flavour step asks egg-or-eggless from it rather than
+       from a flag on the storefront payload: the labels are DB-authored, and a second source would
+       be a second copy of "what does this kitchen deal in". */
+    fetchDietaryRequirements: () =>
+      getJSON(`${apiBaseUrl}/api/dietary-requirements?bakerSlug=${encodeURIComponent(bakerSlug)}`),
   }), [apiBaseUrl, bakerSlug]);
 
   useEffect(() => {

@@ -3,6 +3,8 @@ import { Slice } from './CakeVisual.jsx';
 import FlavourWheel from './FlavourWheel.jsx';
 import { suggestFlavours, fallback, seasonFor, eligibleFlavours, HINTS } from './suggestFlavour.js';
 import { rankedOccasions, everyTier, celebrationsFor } from './cakeDraft.js';
+import { eggQuestion, withEggChoice, eggChoiceOf, DIET_TONE } from '../../orders/dietary.js';
+import Chip from '../../shared/Chip.jsx';
 
 // ── The flavour facet ───────────────────────────────────────────────────────────────────────────
 // Two doors: know what you want, or don't.
@@ -21,12 +23,39 @@ import { rankedOccasions, everyTier, celebrationsFor } from './cakeDraft.js';
 export default function FlavourFacet({ draft, patch, close, api, bakerName, setPreview, facetBack }) {
   const [door, setDoor] = useState(null);
   const [state, setState] = useState({ loading: true, flavours: [], error: null });
+  /* ── Egg or eggless, asked HERE ────────────────────────────────────────────────────────────────
+   * Sandeep: "a customer who does not go through the design flow would not have an option to select
+   * egg vs eggless… we will ask that in the storefront flow, but when the user comes to designer by
+   * logging in, we should default to the selected option. any point of time, we should not ask the
+   * same question twice."
+   *
+   * The enquiry path ends at submitEnquiry and never opens the order form, so without this nobody
+   * on it is ever asked. It sits in the FLAVOUR step because that is what it is — a product
+   * attribute that changes which flavours are possible, which is exactly why OrderModal puts it
+   * directly above flavour too.
+   *
+   * ⚠️ NOT ASKED TWICE. The answer goes on the shared draft, and OrderModal seeds `dietaryKeys`
+   * from that same draft at mount (loadDraft, customer mode) — so a customer who answers here and
+   * then designs finds it already chosen and confirms rather than re-enters. Nothing new carries
+   * it: that channel has existed since the facets shipped.
+   *
+   * Fails soft: no vocabulary, no row. The order form still asks, which is the state this flow was
+   * in yesterday — a storefront that breaks because a reference list did not load would be worse. */
+  const [dietOptions, setDietOptions] = useState([]);
 
   useEffect(() => {
     let alive = true;
     api.fetchStorefrontFlavours()
       .then(list => alive && setState({ loading: false, flavours: list ?? [], error: null }))
       .catch(e => alive && setState({ loading: false, flavours: [], error: e.message }));
+    return () => { alive = false; };
+  }, [api]);
+
+  useEffect(() => {
+    let alive = true;
+    api.fetchDietaryRequirements?.()
+      .then(rows => alive && setDietOptions(Array.isArray(rows) ? rows : []))
+      .catch(() => {});          // see the fail-soft note above
     return () => { alive = false; };
   }, [api]);
 
@@ -45,9 +74,30 @@ export default function FlavourFacet({ draft, patch, close, api, bakerName, setP
                       onBack={() => setDoor(null)} />;
   }
 
+  /* Ask when the kitchen does both, TELL when it does one — the same derivation the order form
+   * runs, from the same annotated vocabulary. A question with one answer is not a question, and
+   * answering it on the customer's behalf would file an assertion they never made. */
+  const egg       = eggQuestion(dietOptions, { bakerName });
+  const eggChoice = eggChoiceOf(draft.details.dietaryKeys);
+  const chooseEgg = (key) =>
+    patch({ details: { dietaryKeys: withEggChoice(draft.details.dietaryKeys, key) } });
+
+  const eggRow = egg.isAQuestion ? (
+    <div style={s.eggWrap}>
+      <span style={s.eggLabel}>Egg or eggless?</span>
+      <div style={s.eggChips}>
+        {egg.choices.map(o => (
+          <Chip key={o.key} label={o.label} active={eggChoice === o.key}
+                tone={DIET_TONE.diet} onClick={() => chooseEgg(o.key)} />
+        ))}
+      </div>
+    </div>
+  ) : egg.statement ? <div style={s.diet}>{egg.statement}</div> : null;
+
   if (door !== 'browse') {
     return (
       <>
+        {eggRow}
         <button type="button" onClick={() => setDoor('browse')} style={s.door}>
           <span style={s.doorLabel}>I know my flavour</span>
           {draft.flavours.some(f => f.name.trim()) && <span style={s.doorTick}>✓</span>}
@@ -676,6 +726,17 @@ const s = {
              cursor: 'pointer', lineHeight: 1.3 },
   another: { padding: '12px 18px', borderRadius: 12, border: '1.5px solid #E7DFD5', background: '#fff',
              font: 'inherit', fontSize: 13.5, fontWeight: 700, color: '#7A6C60', cursor: 'pointer' },
+
+  eggWrap:  { display: 'flex', flexDirection: 'column', gap: 7, marginBottom: 12 },
+  eggLabel: { fontSize: 13.5, fontWeight: 800, color: '#2A241F' },
+  eggChips: { display: 'flex', gap: 8, flexWrap: 'wrap' },
+
+  /* The dietary green, not a colour picked for this facet — DIET_TONE is what every other
+     dietary surface already reads as "diet", and a fact about the kitchen wearing a different
+     colour here would be a second vocabulary (INVARIANTS #14). */
+  diet: { fontSize: 12.5, fontWeight: 700, lineHeight: 1.45, padding: '9px 12px', borderRadius: 11,
+          color: DIET_TONE.diet.fg, background: DIET_TONE.diet.bg,
+          border: `1px solid ${DIET_TONE.diet.border}` },
 
   note: { display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, fontWeight: 600, color: '#7A6C60' },
   noteTitle: { fontSize: 14, fontWeight: 800, color: '#2A241F' },

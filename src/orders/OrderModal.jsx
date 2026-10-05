@@ -10,7 +10,7 @@ import { uploadThumbnail } from '../designer/utils/thumbnail.js';
 import {
   findFlavourConflicts, conflictSentence, conflictCallToAction, dietTone,
   visibleRequirements, unguaranteedRequirements, unguaranteedSentence,
-  EGG_KEY, EGGLESS_KEY, eggChoiceOf, impliesEggless,
+  EGG_KEY, EGGLESS_KEY, eggChoiceOf, impliesEggless, eggQuestion, withEggChoice,
 } from './dietary.js';
 import Chip from '../shared/Chip.jsx';
 // The SAME occasion list the storefront offers — they write the same column, and a baker picking
@@ -411,13 +411,12 @@ export default function OrderModal({
    *                   is precisely the column that must not be allowed to lie.
    *   neither       → the baker has switched both off; ask nothing.
    */
-  const eggOptions = useMemo(
-    () => [EGG_KEY, EGGLESS_KEY]
-      .map(k => visibleDietaryOptions.find(o => o.key === k))
-      .filter(Boolean),
-    [visibleDietaryOptions],
-  );
-  const eggIsAQuestion = eggOptions.length === 2;
+  /* The ask-or-tell rule lives in dietary.js now: the storefront's flavour step asks the same
+     question for the customer who never opens the designer, and two surfaces deriving it from the
+     same table is how one of them ends up offering a choice the kitchen cannot honour. */
+  const egg = useMemo(() => eggQuestion(dietaryOptions), [dietaryOptions]);
+  const eggOptions     = egg.choices;
+  const eggIsAQuestion = egg.isAQuestion;
   const eggChoice      = eggChoiceOf(dietaryKeys);
 
   // Everything the "anything special?" list still asks about, once the egg question has taken
@@ -444,7 +443,7 @@ export default function OrderModal({
 
   // Choosing a side of the egg question replaces the other — they cannot both be true.
   function chooseEgg(key) {
-    setDietaryKeys(ks => [...ks.filter(k => k !== EGG_KEY && k !== EGGLESS_KEY), key]);
+    setDietaryKeys(ks => withEggChoice(ks, key));
   }
 
   // Allergens the customer ticked that this bakery has said it can't guarantee. Recorded
@@ -1155,9 +1154,7 @@ export default function OrderModal({
                       </>
                     ) : (
                       <span style={{ fontSize: isMobile?13:12, color:'#666' }}>
-                        {eggOptions[0].key === EGGLESS_KEY
-                          ? 'This bakery is fully eggless — every cake is made without egg.'
-                          : 'This bakery bakes with egg.'}
+                        {egg.statement}
                       </span>
                     )}
                   </div>
