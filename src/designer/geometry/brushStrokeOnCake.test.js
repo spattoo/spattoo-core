@@ -383,12 +383,16 @@ describe('coverage', () => {
       if (t.getX(v) > 0.8) strongest = Math.max(strongest, red);
       if (t.getX(v) < 0.05) weakest = Math.min(weakest, red);
     }
-    /* ⚠️ A RATIO, NOT A MARGIN. This read `weakest + 0.2` and broke the day paintBrushColors started
-       correcting for the scene's light — creamAlbedo takes pure red from 1.0 to 0.337 of linear, so
-       the whole range it measures is compressed and a fixed gap in absolute units no longer fits
-       inside it. The claim was never about 0.2: it is that a thick part of the stroke is markedly
-       more saturated than a dry edge, and that survives any scaling of both. */
-    expect(strongest).toBeGreaterThan(weakest * 1.5);
+    /* ⚠️ A DIRECTION AND A CEILING, NOT A MARGIN OR A RATIO — and this test has now been wrong twice
+       in the same way, which is the thing to learn from it. It read `weakest + 0.2`, then
+       `weakest * 1.5`, and each time it was measuring the SIZE of the wash while claiming to be
+       about its existence. Both broke on changes that were correct: the albedo correction compressed
+       the range, and a reference photo then said the wash itself was far too strong.
+       How thin a dry edge goes is a TUNED NUMBER (`floor`, judged against a photograph). What is not
+       tuned is that thick is more saturated than thin, and that a stroke never gives up most of its
+       colour — a brushstroke is cream, not a glaze. Those two are what belong here. */
+    expect(strongest).toBeGreaterThan(weakest);
+    expect(weakest).toBeGreaterThan(strongest * 0.6);
   });
 
   it('a stroke with no thickness attribute is left alone', () => {

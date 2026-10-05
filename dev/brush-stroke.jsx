@@ -120,6 +120,7 @@ function Band() {
     R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
     colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
     count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: 0.75, floor: FLOOR, bite: BITE,
+    climb: CLIMB, sweep: SWEEP,
   }), []);
   if (!parts.length) return null;
   console.log('[band]', brushBandCount({ count: BAND, colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3) }),

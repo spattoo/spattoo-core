@@ -585,7 +585,7 @@ export function dragStrokeTo(grab, point, opts = {}) {
  * real buttercream is not transparent, it is THIN. You are seeing less pigment, not through it. The
  * drip reaches the same conclusion for the same reason; see paintDripColors.
  */
-export function paintBrushColors(geo, color, under, { floor = 0.55, bite = 0.35 } = {}) {
+export function paintBrushColors(geo, color, under, { floor = 0.9, bite = 0.35 } = {}) {
   const t = geo?.attributes?.aThickness;
   if (!t) return geo;
   /* ⚠️ ALBEDO, NOT THE HEX — INVARIANTS #16, and this module was breaking it in the one way the rule
@@ -607,7 +607,13 @@ export function paintBrushColors(geo, color, under, { floor = 0.55, bite = 0.35 
        wash rather than as a hole in the stroke. `bite` below 1 because pigment stacks FAST: the
        first scrape of cream hides most of what is under it and the tenth adds almost nothing, so a
        stroke is saturated across nearly all of its length and washes out only at the very ends and
-       edges. Against a photograph, a linear fade was far too pale over far too much of the stroke. */
+       edges. Against a photograph, a linear fade was far too pale over far too much of the stroke.
+       ⚠️ AND 0.55 WAS STILL FAR TOO PALE, which took a reference photo to settle rather than another
+       opinion. Buttercream is not a glaze: on a real brushstroke cake each pull is a SOLID block of
+       colour with a torn top, not a gradient running out to white. Measured down one stroke at 0.55,
+       the tip rendered #DEDFE2 for a colour asked for as #2E5C8A — the stroke had given up almost
+       all of its colour over its top third. At 0.9 the tip holds. Not 1: a knife really does run
+       out, and the last film of cream really does let a little of the wall through. */
     const k = floor + (1 - floor) * Math.pow(clamp01(t.getX(v)), bite);
     mix.copy(b).lerp(a, k);
     out[v * 3] = mix.r; out[v * 3 + 1] = mix.g; out[v * 3 + 2] = mix.b;
