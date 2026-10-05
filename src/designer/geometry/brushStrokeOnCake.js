@@ -47,8 +47,18 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      washed out at the size a stroke actually appears on a cake: put beside a flat chocolate panel,
      Sandeep could not tell them apart — *"they still look mostly same."* Judging relief on a zoomed
      render is judging it at a distance nobody looks from. At this value the ridge carries a
-     highlight and a shadow in a whole-cake frame, which is where it has to work. */
-  lift:   0.17,   // × R: how proud a FULL-weight stroke's ridges stand
+     highlight and a shadow in a whole-cake frame, which is where it has to work.
+     ⚠️ AND 0.17 CAME BACK DOWN, BECAUSE THE REASON FOR IT WAS FIXED ELSEWHERE. It was raised to
+     carry relief at cake distance against a stroke that was washing out — and that stroke was
+     washing out for two reasons that have both since been found: it was painted at its RAW hex under
+     a 3.25× light, and it was translucent enough to give up most of its colour. With a solid,
+     correctly-lit stroke the ridge reads at a far lower lift, so the number that compensated for
+     those is now simply too much cream. Sandeep, at thickness 0.16: *"we can still reduce the
+     thickness."* Measured against the real thing rather than against the slider: at 0.17 a
+     full-weight stroke stands 0.158R proud, which on a 15cm cake is 12mm of buttercream. A heavy
+     palette-knife stroke is 3-5mm. Swept 0.17 · 0.12 · 0.08 at cake distance at both ends of the
+     slider: the ridge still carries its highlight and shadow at 0.11. */
+  lift:   0.11,   // × R: how proud a FULL-weight stroke's ridges stand
   skim:   0.004,  // × R: the clearance under even the thinnest film
   /* ⚠️ STROKES OVERLAP, AND THE LATER ONE GOES ON TOP. Sandeep: *"when i keep brush strokes side by
      side, we should allow overlaps. this is an important thing to make the final output look real."*

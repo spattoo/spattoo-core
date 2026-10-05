@@ -121,7 +121,7 @@ function Band() {
   const parts = useMemo(() => buildBrushBand({
     R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
     colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
-    count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: BAND_W, floor: FLOOR, bite: BITE,
+    count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: BAND_W, floor: FLOOR, bite: BITE, lift: LIFT,
     climb: CLIMB, sweep: SWEEP,
   }), []);
   if (!parts.length) return null;
