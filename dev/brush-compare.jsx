@@ -4,6 +4,14 @@ import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ THE ASSETS BASE, OR THIS PAGE IS LIT BY drei's INDOOR PRESET AND NOT BY THE CAKE'S OWN SKY.
+   `check:harness-scene` passes without it — that gate keys on mounting CakePreview/CakeCanvas, and
+   this page builds its own cylinder and mounts SceneLights/SceneEnv directly, so it slipped through
+   the net while reading as compliant. It cost: every judgement on this page about cream texture and
+   about overlaps was made under the wrong environment, which is the exact failure scene.js was
+   written to end and whose cost it already lists. Side-effect import; see that file. */
+import './scene.js';
+
 import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
 import { buildBrushStrokeOnWall, BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 import { brushStroke } from '../src/designer/geometry/brushStroke.js';

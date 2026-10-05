@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { brushStroke } from './brushStroke.js';
+// The band merges into ONE mesh — same function, and the same reasons, as a piped wall.
+import { mergePenGeometries } from './creamPen.js';
 
 // ── A brushstroke PAINTED ON the cake ────────────────────────────────────────────────────────────
 //
@@ -716,4 +718,88 @@ export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256 } = {}) 
     commit(list) { for (const [sx, y, v] of list) splat(sx, y, v); },
     clear() { h.fill(0); },
   };
+}
+
+/* ── A band of them, all the way round ───────────────────────────────────────────────────────────
+ *
+ * One tier's worth of brushstrokes: a ring of pulls up the wall, overlapping their neighbours, in a
+ * handful of colours that repeat. This is what the technique IS on a real cake — a single stroke is
+ * a sample of it — and it is the thing a baker asks for.
+ *
+ * ⚠️ ONE MESH, NOT N MESHES, AND NOT INSTANCES. Instancing is the reflex answer to "there are
+ * twenty of these" and it cannot work here: an InstancedMesh draws ONE geometry many times, and the
+ * entire point of a band is that no two strokes are the same shape — different height, different
+ * width, a different tear where each one was lifted. Making them instanceable would mean making them
+ * identical, which is the fault being designed against. What an instance buys is one draw call, and
+ * a merge buys the same one draw call while leaving every stroke its own shape, so the band costs a
+ * tier of piping and is built the way `mergePenGeometries` already builds a piped wall.
+ *
+ * ⚠️ AND THE COUNT IS SNAPPED TO A MULTIPLE OF THE COLOURS. A band is a CLOSED loop: nineteen
+ * strokes in three colours puts two of the same colour next to each other at the seam, in one place,
+ * which reads as a mistake rather than as a pattern — and it is the kind of fault that only appears
+ * on the far side of the cake, after the design is saved. Rounded to the nearest multiple, never
+ * below one of each.
+ */
+export const BRUSH_BAND_DEFAULTS = {
+  colors:   ['#F6DCE2', '#8EC5E8', '#F4C542'],
+  count:    18,      // strokes round the tier — snapped to a multiple of `colors.length`
+  jitter:   0.35,    // 0 … 1: how far each one wanders off its even spacing, × the gap
+  overlap:  0.35,    // 0 … 1: how much of its own width a stroke shares with its neighbour
+  rise:     0.02,    // where the pulls start, × wall height
+  climb:    0.52,    // and how far up they travel
+  climbVar: 0.55,    // 0 … 1: how unequal those lengths are — the randomness in height
+  sweep:    0.015,
+  bow:      0.012,
+  width:    null,    // null = derived from `count` and `overlap`, so the band always closes
+  weight:   0.6,
+  seed:     1,
+};
+
+/** How many strokes this band actually lays — the snapped count, so a caller can show it. */
+export function brushBandCount({ count, colors } = {}) {
+  const n = Math.max(1, (colors ?? BRUSH_BAND_DEFAULTS.colors).length);
+  const want = Math.max(n, Math.round(count ?? BRUSH_BAND_DEFAULTS.count));
+  return Math.max(n, Math.round(want / n) * n);
+}
+
+/**
+ * A band of brushstrokes round one tier's wall, as a single BufferGeometry with vertex colours.
+ *
+ * `under` is the wall's own colour — what a thin stroke lets through. Returns null if there is
+ * nothing to build.
+ */
+export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff', ...opts } = {}) {
+  const p = { ...BRUSH_BAND_DEFAULTS, ...opts };
+  const colors = (p.colors?.length ? p.colors : BRUSH_BAND_DEFAULTS.colors);
+  const n = brushBandCount({ count: p.count, colors });
+  if (!(R > 0) || !(wallH > 0)) return null;
+
+  const gap = 1 / n;                                   // turns between strokes
+  /* ⚠️ THE WIDTH FOLLOWS THE COUNT, because the band has to CLOSE. Authored as a fixed number it is
+     right at one count and wrong at every other: raise the count and the strokes bunch into a solid
+     wall of cream, lower it and the cake shows through in stripes. `overlap` is the thing a baker
+     actually means — how much each pull shares with the one before it — and the width is what that
+     implies. An explicit `width` still wins, for a caller that wants gaps on purpose. */
+  const width = p.width ?? (gap * Math.PI * 2 * (1 + p.overlap));
+
+  /* ONE bed for the whole band, so a stroke rides on its neighbour, and the last one laid rides over
+     the first — which is what happens when a hand goes round a cake and arrives back where it
+     started. The bed wraps round the seam already; nothing here has to know where the seam is. */
+  const bed = makeBrushBed({ R, wallH });
+  const parts = [];
+  for (let i = 0; i < n; i++) {
+    /* Deterministic per stroke, and distinct: a design is re-rendered from saved numbers, so the
+       same band must come back the same band. `* 97` rather than `+ i` because the gesture's own
+       hashes are sampled at small salts and neighbouring seeds give neighbouring answers — the
+       whole band drifted in one direction, every stroke a little taller than the last. */
+    const seed = p.seed * 1000 + i * 97;
+    const at = (i * gap) + (seedFrac(seed, 307) - 0.5) * gap * p.jitter;
+    const geo = buildBrushStrokeOnWall({
+      R, baseY, wallH, bed, width, weight: p.weight, seed,
+      path: brushGesture({ at, seed, rise: p.rise, climb: p.climb, climbVar: p.climbVar,
+                           sweep: p.sweep, bow: p.bow }),
+    });
+    if (geo) parts.push(paintBrushColors(geo, colors[i % colors.length], under));
+  }
+  return parts.length ? mergePenGeometries(parts) : null;
 }

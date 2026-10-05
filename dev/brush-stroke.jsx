@@ -4,12 +4,21 @@ import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors, brushGesture, makeBrushBed,
+         buildBrushBand, brushBandCount,
          BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 // Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
 // creamMaterialProps is THE cream material — the one every piped stroke on every cake already
 // uses, with the calibrated albedo and the sheen. A brushstroke is buttercream; it asks the same
 // function rather than inventing a second opinion about what cream looks like.
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ THE ASSETS BASE, OR THIS PAGE IS LIT BY drei's INDOOR PRESET AND NOT BY THE CAKE'S OWN SKY.
+   `check:harness-scene` passes without it — that gate keys on mounting CakePreview/CakeCanvas, and
+   this page builds its own cylinder and mounts SceneLights/SceneEnv directly, so it slipped through
+   the net while reading as compliant. It cost: every judgement on this page about cream texture and
+   about overlaps was made under the wrong environment, which is the exact failure scene.js was
+   written to end and whose cost it already lists. Side-effect import; see that file. */
+import './scene.js';
+
 import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
 
 /* ── Brushstrokes painted on a cake wall ─────────────────────────────────────────────────────────
@@ -101,6 +110,26 @@ function Stroke({ at, weight, color, seed, idx }) {
   );
 }
 
+const BAND = P.has('band') ? (+P.get('band') || 18) : 0;
+const BAND_COLORS = (P.get('colors') ?? '').split(',').filter(Boolean);
+
+function Band() {
+  const geo = useMemo(() => buildBrushBand({
+    R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
+    colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
+    count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: 0.75,
+  }), []);
+  if (!geo) return null;
+  console.log('[band]', brushBandCount({ count: BAND, colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3) }),
+              'strokes ·', geo.attributes.position.count, 'verts · one draw call');
+  return (
+    <mesh geometry={geo} castShadow receiveShadow>
+      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, '#ffffff')} color="#ffffff" vertexColors />
+    </mesh>
+  );
+}
+
 function App() {
   return (
     <Canvas shadows camera={{ position: TOP ? [2.6, 2.0, 2.6] : [0, 1.4, 4.0], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
@@ -126,7 +155,9 @@ function App() {
         <cylinderGeometry args={[R, R, TIER_H, 96]} />
         <meshStandardMaterial color="#FBF8F3" roughness={0.75} />
       </mesh>
-      {WEIGHTS.map((w, i) => (
+      {/* ?band=18&colors=#F6DCE2,#8EC5E8 — the whole tier at once, which is the thing a baker asks
+          for. One mesh: see buildBrushBand on why this is a merge and not an InstancedMesh. */}
+      {BAND ? <Band /> : WEIGHTS.map((w, i) => (
         <Stroke key={i} idx={i} at={(i - (WEIGHTS.length - 1) / 2) * GAP} weight={w} color={COLORS[i % COLORS.length]} seed={SEED + i * 7} />
       ))}
       <OrbitControls target={[0, BOARD_H + TIER_H * 0.5, 0]} enablePan={false} />

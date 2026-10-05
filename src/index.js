@@ -161,6 +161,7 @@ export { ELEMENT_WIRE_DEFAULTS, WIRE_ANGLE, WIRE_LENGTH, WIRE_BEND, WIRE_WAVES, 
 export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad, brushStriation,
          strokeFacesOutward, wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors,
          brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
+         buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS,
          BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripColorAt, paintDripColors, buildDripFlood, DRIP_SPLIT_DEFAULTS } from './designer/geometry/chocolateDrip.js';
 // Piped grass (Wilton 233). Geometry + seats are separate on purpose: the renderer INSTANCES one

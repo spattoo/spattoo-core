@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
          wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture, makeBrushBed,
+         buildBrushBand, brushBandCount,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
 const WALL = { R: 1, baseY: 0, wallH: 1 };
@@ -577,5 +578,66 @@ describe('a stroke laid across another ENDS on it', () => {
     let worst = 0;
     for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
     expect(worst).toBeLessThan(1e-9);
+  });
+});
+
+describe('a band of strokes round a tier', () => {
+  const BAND = { R: 1, baseY: 0, wallH: 1.25, under: '#FBF8F3' };
+
+  it('is ONE geometry, however many strokes it lays', () => {
+    /* The whole performance answer. Not instances — an InstancedMesh draws one geometry many times
+       and no two strokes here are the same shape, which is the point of a band. */
+    const g = buildBrushBand({ ...BAND, count: 18, colors: ['#a00', '#0a0', '#00a'] });
+    expect(g).toBeTruthy();
+    expect(g.attributes.color).toBeTruthy();                   // the colours survived the merge
+    expect(g.attributes.position.count).toBeGreaterThan(1000);
+  });
+
+  it('snaps the count to a whole number of colour repeats', () => {
+    /* A band is a CLOSED loop. Nineteen strokes in three colours puts two of the same colour side by
+       side at the seam, once, on the far side of the cake — a fault that only shows up after the
+       design is saved. */
+    expect(brushBandCount({ count: 19, colors: ['a', 'b', 'c'] })).toBe(18);
+    expect(brushBandCount({ count: 20, colors: ['a', 'b', 'c'] })).toBe(21);
+    expect(brushBandCount({ count: 20, colors: ['a', 'b'] })).toBe(20);
+  });
+
+  it('never lays fewer strokes than there are colours', () => {
+    expect(brushBandCount({ count: 1, colors: ['a', 'b', 'c', 'd'] })).toBe(4);
+  });
+
+  it('comes back the same band from the same numbers', () => {
+    /* A design is re-rendered from what was saved, so a reload that gives a different cake is a lost
+       cake. Everything random here is seeded. */
+    const a = buildBrushBand({ ...BAND, count: 9, seed: 4, colors: ['#a00', '#0a0', '#00a'] });
+    const b = buildBrushBand({ ...BAND, count: 9, seed: 4, colors: ['#a00', '#0a0', '#00a'] });
+    expect(Array.from(a.attributes.position.array)).toEqual(Array.from(b.attributes.position.array));
+  });
+
+  it('and a different seed is a different band', () => {
+    const a = buildBrushBand({ ...BAND, count: 9, seed: 4, colors: ['#a00'] });
+    const b = buildBrushBand({ ...BAND, count: 9, seed: 5, colors: ['#a00'] });
+    expect(Array.from(a.attributes.position.array)).not.toEqual(Array.from(b.attributes.position.array));
+  });
+
+  it('the strokes run out at different heights', () => {
+    /* ⚠️ MEASURED ON THE BAND, not on brushGesture, because the band is where the seeds are chosen
+       and that is where it went wrong: neighbouring seeds give neighbouring answers out of the small
+       salts the gesture hashes at, so `seed + i` walked the whole ring in one direction — every
+       stroke a little taller than the last, a staircase round the cake rather than a hand. */
+    const g = buildBrushBand({ ...BAND, count: 12, seed: 2, colors: ['#a00'] });
+    const p = g.attributes.position, m = BRUSH_ON_CAKE_DEFAULTS.across;
+    const tops = [];
+    for (let s = 0; s < 12; s++) {
+      let hi = 0;
+      for (let v = s * m * BRUSH_ON_CAKE_DEFAULTS.rows; v < (s + 1) * m * BRUSH_ON_CAKE_DEFAULTS.rows; v++) {
+        if (v < p.count) hi = Math.max(hi, p.getY(v));
+      }
+      tops.push(hi);
+    }
+    const lo = Math.min(...tops), hiAll = Math.max(...tops);
+    expect(hiAll - lo).toBeGreaterThan(0.1);                   // they really do differ
+    /* And not as a ramp: the tallest is not simply the last one round. */
+    expect(tops.indexOf(hiAll)).not.toBe(tops.length - 1);
   });
 });
