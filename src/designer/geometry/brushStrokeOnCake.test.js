@@ -298,3 +298,40 @@ describe('a stroke that reaches the rim drapes down the wall', () => {
     for (let v = 0; v < pos.count; v++) expect(pos.getY(v)).toBeGreaterThanOrEqual(TOP.y);
   });
 });
+
+/* ── Strokes overlap, and the later one goes on top ──────────────────────────────────────────────
+ * "we should allow overlaps. this is an important thing to make the final output look real."
+ * Nothing ever prevented the overlap; what was missing was an ORDER — two layers at one radius
+ * interpenetrate, which is fighting rather than stacking.
+ */
+describe('overlapping strokes', () => {
+  const base = { ...WALL, path: SWEEP, weight: 1, seed: 5 };
+  const lowest = geo => {
+    const pos = geo.attributes.position;
+    let lo = Infinity;
+    for (let v = 0; v < pos.count; v++) lo = Math.min(lo, Math.hypot(pos.getX(v), pos.getZ(v)));
+    return lo;
+  };
+
+  it('a later stroke sits above an earlier one at the same place', () => {
+    const first = lowest(buildBrushStrokeOnWall({ ...base, layer: 0 }));
+    const third = lowest(buildBrushStrokeOnWall({ ...base, layer: 2 }));
+    expect(third).toBeGreaterThan(first);
+  });
+
+  it('the shape is otherwise identical — stacking moves it, it does not reshape it', () => {
+    const a = buildBrushStrokeOnWall({ ...base, layer: 0 }).attributes.position;
+    const b = buildBrushStrokeOnWall({ ...base, layer: 3 }).attributes.position;
+    expect(b.count).toBe(a.count);
+    // Same height up the wall, every vertex — only the radius moved.
+    for (let v = 0; v < a.count; v += 37) expect(b.getY(v)).toBeCloseTo(a.getY(v), 9);
+  });
+
+  /* ⚠️ A STROKE ON ITS OWN MUST STILL LOOK PAINTED ON. Stacked ten deep the lift has to stay under
+     one stroke's own relief, or the last one hovers. */
+  it('ten deep is still less than one stroke of relief', () => {
+    const solo = lowest(buildBrushStrokeOnWall({ ...base, layer: 0 }));
+    const tenth = lowest(buildBrushStrokeOnWall({ ...base, layer: 10 }));
+    expect(tenth - solo).toBeLessThan(BRUSH_ON_CAKE_DEFAULTS.lift * 0.35);
+  });
+});

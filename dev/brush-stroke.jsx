@@ -28,6 +28,9 @@ const R = 1, TIER_H = 1.25, BOARD_R = 1.5, BOARD_H = 0.07;
 const WEIGHTS = (P.get('weights') ?? '0,0.25,0.5,0.75,1').split(',').map(Number);
 const WIDTH = +(P.get('width') ?? D.width);
 const SEED = +(P.get('seed') ?? 1);
+/* ?gap — how far apart the strokes sit, in turns. Below the stroke's own width they OVERLAP, which
+   is the thing to look at: a brushed cake is strokes laid across each other, not stripes. */
+const GAP = +(P.get('gap') ?? 0.052);
 /* ⚠️ THE DEFAULTS COME FROM THE GEOMETRY, NOT FROM A COPY HERE. Written as literals, this page kept
    serving the OLD lift after the real default was raised — so the render I was judging was the
    harness's opinion rather than the module's, which is the whole thing a harness must not do. */
@@ -66,8 +69,8 @@ function topPath(k) {
 
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
-    ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS })
+    ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
   ), [at, weight, seed, idx]);
   if (!geo) return null;
   return (
@@ -97,7 +100,7 @@ function App() {
         <meshStandardMaterial color="#FBF8F3" roughness={0.75} />
       </mesh>
       {WEIGHTS.map((w, i) => (
-        <Stroke key={i} idx={i} at={(i - (WEIGHTS.length - 1) / 2) * 0.052} weight={w} color={COLORS[i % COLORS.length]} seed={SEED + i * 7} />
+        <Stroke key={i} idx={i} at={(i - (WEIGHTS.length - 1) / 2) * GAP} weight={w} color={COLORS[i % COLORS.length]} seed={SEED + i * 7} />
       ))}
       <OrbitControls target={[0, BOARD_H + TIER_H * 0.5, 0]} enablePan={false} />
     </Canvas>

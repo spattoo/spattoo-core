@@ -46,6 +46,20 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      highlight and a shadow in a whole-cake frame, which is where it has to work. */
   lift:   0.17,   // × R: how proud a FULL-weight stroke's ridges stand
   skim:   0.004,  // × R: the clearance under even the thinnest film
+  /* ⚠️ STROKES OVERLAP, AND THE LATER ONE GOES ON TOP. Sandeep: *"when i keep brush strokes side by
+     side, we should allow overlaps. this is an important thing to make the final output look real."*
+     He is right about why: a brushed cake is strokes laid ACROSS each other — a baker does not leave
+     a white gap between them — and the overlaps are most of what stops a row of them reading as
+     stripes on wallpaper.
+     Nothing ever prevented the overlap; what was missing is an ORDER. Two layers at the same radius
+     interpenetrate and z-fight, which is not "on top of", it is "fighting with". Each stroke is
+     lifted by its own place in the order, so the one painted later draws over the one before it —
+     silhouette, ridge and all — exactly as wet cream laid over set cream does.
+     ⚠️ SMALL ENOUGH TO BE INVISIBLE ALONE. A stroke with nothing under it must still look painted ON
+     the cake, not hovering above it, so the step is a fraction of the thinnest film. Ten strokes
+     deep is 0.03R, which is under a third of one stroke's own relief. */
+  layer:     0,       // where this stroke comes in the order — later paints over earlier
+  layerStep: 0.003,   // × R: how far each one rides above the one before it
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
      look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of
@@ -293,7 +307,7 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const grid = strokeGrid(stroke, m);
   const n = grid.length;
   const pos = [], idx = [];
-  const maxLift = p.lift * R, skim = p.skim * R;
+  const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
   for (let i = 0; i < n; i++) {
     const along = n > 1 ? i / (n - 1) : 0;
     // `film` is the floor: even at zero thickness there is a layer, and it keeps its knife marks.
@@ -385,7 +399,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
   const n = grid.length;
   const pos = [], idx = [];
-  const maxLift = p.lift * R, skim = p.skim * R;
+  const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
   for (let i = 0; i < n; i++) {
     const load = brushLoad(n > 1 ? i / (n - 1) : 0) * (p.film + (1 - p.film) * clamp01(p.weight));
     for (let j = 0; j < m; j++) {
