@@ -140,11 +140,22 @@ function Band() {
             a glint. Left here because the fix belongs in creamMaterialProps, which every piped
             stroke in the app shares, and that is not a change to make without re-measuring cream. * */
     <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow>
-      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
-        {...(P.has('nospec') ? { specularIntensity: 0 } : null)}
-        {...(P.has('nosheen') ? { sheen: 0 } : null)}
-        {...(P.has('noenv') ? { envMapIntensity: 0 } : null)} />
+      {/* ⚠️ ?flat — THE DECOMPOSITION PROBE, and the one that ends an argument. meshBasic draws the
+          vertex colours with NO lighting, so whatever pale is left is pigment and everything that
+          disappears was shading. Measured at thickness 0 over three scan lines: 356 pale pixels as
+          shipped, 291 with specular off, 297 with specular AND sheen off, 144 unlit. So roughly
+          144 pigment, 65 specular, and the rest plain diffuse light on a curved white wall.
+          Also measured and FLAT — neither moved it, so neither is the cause: seamMin 0.0015 to
+          0.008 (356/354/356/356) and skim 0.004 to 0.025 (356/355/361). Clearance is not the
+          mechanism, which is worth knowing before anyone reaches for it again. */}
+      {P.has('flat')
+        ? <meshBasicMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1} color="#ffffff" vertexColors />
+        : <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
+            {...(P.has('nospec') ? { specularIntensity: 0 } : null)}
+            {...(P.has('nosheen') ? { sheen: 0 } : null)}
+            {...(P.has('noenv') ? { envMapIntensity: 0 } : null)} />}
     </mesh>
   ));
 }
