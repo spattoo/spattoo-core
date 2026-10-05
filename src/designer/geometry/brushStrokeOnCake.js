@@ -150,7 +150,17 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      the knife marks are four or five lanes across the same band, and three samples per lane turns
      them into a stepped zigzag. Six per lane is where they go round, and there is a test holding
      that ratio — raising `lanes` alone errors nowhere, measures right, and comes out faceted. */
-  across: 31,     // samples across the band
+  across: 45,     // samples across the band
+  /* ⚠️ THE RELEASE IS MANY FINE STREAKS, NOT TWO OR THREE PEAKS. brushStroke's default tip is seven
+     fingers under a strong middle-longest envelope — right for one chocolate shard seen close up,
+     and at cake scale it resolves as a couple of big triangles that Sandeep ringed beside the
+     photograph: *"some pieces stroke release are too artificial."* A bristled release leaves streaks
+     of uneven length with no overall shape. The envelope goes from 1.6 to 0.3 so it is a hint rather
+     than a silhouette, and `across` rises with the count or the streaks cannot be sampled. */
+  tipFingers: 18,
+  tipTaper:   0.3,
+  tipReach:   0.5,
+  tipJitter:  0.8,    // 0 … 1: how unevenly the streaks are spaced — equal pitch reads as a saw
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -562,7 +572,9 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
      curve, for a shape that is by definition the same smear wherever it is laid. */
   const flat = densify(path.map(([u, v]) => [u * Math.PI * 2 * R, v * wallH]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
-  const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false });
+  const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
+                                     tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
+                                     tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
   const put = p.bed ? [] : null;
@@ -630,7 +642,9 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
   const flat = densify(path.map(([x, z]) => [x * R, z * R]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
-  const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false });
+  const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
+                                     tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
+                                     tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
   return buildStrokeMesh(stroke, p, {

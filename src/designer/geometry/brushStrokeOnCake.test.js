@@ -564,34 +564,35 @@ describe('a stroke laid across another ENDS on it', () => {
   });
 
   it('where it crosses, it never comes back through', () => {
-    /* ⚠️ MEASURED OVER THE WHOLE OVERLAP, not on one horizontal slice. The slice version compared
-       B's first point against the nearest A point within 0.004 of arc — which is not necessarily the
-       piece of A that is UNDERNEATH it — and it reported penetration of 0.0003 where a proper sweep
-       finds B above A at every one of 244 overlapped samples. A test that is approximately right
-       about the one thing it exists to catch is worse than none: it cried wolf on a change that was
-       correct, and it would have been believed. */
-    const { A, B } = pair();
-    const pts = [];
-    const pa = A.attributes.position;
-    for (let i = 0; i < pa.count; i++) {
-      pts.push([Math.atan2(pa.getX(i), pa.getZ(i)), pa.getY(i), Math.hypot(pa.getX(i), pa.getZ(i)) - 1]);
+    /* ⚠️ ASKED OF THE BED, WHICH IS THE AUTHORITY, and this is the third shape of this test. The
+       first compared one horizontal slice; the second swept the whole overlap but matched B's
+       vertices to the NEAREST A vertex within a tolerance — and near the base, where both strokes
+       are widest and steepest, "nearest" is not "underneath", so it reported 2mm of penetration that
+       is not there. Both cried wolf on correct changes.
+       What the renderer actually promises is that a stroke never sits below the cream that was
+       already on the wall when it was laid. That is exactly what the bed holds, so ask it: build A
+       into a second bed and compare B against THAT — not against the shared bed, which by then also
+       contains B's own stamps and reads higher than anything A ever put down. */
+    const shared = makeBrushBed({ R: 1, wallH: 1 });
+    const A = buildBrushStrokeOnWall({ ...WALL, bed: shared, weight: 0.7, seed: 11, path: gest(-0.014) });
+    const B = buildBrushStrokeOnWall({ ...WALL, bed: shared, weight: 1.0, seed: 18, path: gest(0.014) });
+    expect(A && B).toBeTruthy();
+
+    const before = makeBrushBed({ R: 1, wallH: 1 });          // what was there when B was laid
+    buildBrushStrokeOnWall({ ...WALL, bed: before, weight: 0.7, seed: 11, path: gest(-0.014) });
+
+    const p = B.attributes.position;
+    let worst = Infinity, over = 0;
+    for (let i = 0; i < p.count; i++) {
+      const th = Math.atan2(p.getX(i), p.getZ(i)), y = p.getY(i);
+      const h = Math.hypot(p.getX(i), p.getZ(i)) - 1;
+      const under = before.heightAt(th, y);
+      if (under < 0.006) continue;                            // only where A really left cream
+      over++;
+      worst = Math.min(worst, h - under);
     }
-    const pb = B.attributes.position;
-    let worst = Infinity, shared = 0;
-    for (let i = 0; i < pb.count; i++) {
-      const th = Math.atan2(pb.getX(i), pb.getZ(i)), y = pb.getY(i);
-      const h = Math.hypot(pb.getX(i), pb.getZ(i)) - 1;
-      let best = null, bd = Infinity;
-      for (const [t, yy, hh] of pts) {
-        const d = Math.hypot((t - th) * 3, yy - y);
-        if (d < bd) { bd = d; best = hh; }
-      }
-      if (bd > 0.01 || best < 0.006) continue;      // only where A really is, and is real cream
-      shared++;
-      worst = Math.min(worst, h - best);
-    }
-    expect(shared).toBeGreaterThan(50);             // they really do overlap
-    expect(worst).toBeGreaterThan(0);               // and B is above A at every one of them
+    expect(over).toBeGreaterThan(50);                         // they really do overlap
+    expect(worst).toBeGreaterThan(0);                         // and B is above A everywhere they do
   });
 
   it('the heavy overlap is still there on the dial, it is just off', () => {
