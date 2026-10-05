@@ -40,7 +40,14 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      still has to cover "merges with the surface", and `weight` is what does that — this is only
      where the top of its range lands. */
   lift:   0.095,  // × R: how proud a FULL-weight stroke's ridges stand
-  skim:   0.004,  // × R: how far even a weightless stroke sits off the wall, so it is not z-fighting
+  skim:   0.004,  // × R: the clearance under even the thinnest film
+  /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
+     perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
+     look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of
+     its edge, and a dead-flat film also Z-FIGHTS: over a long grazing sweep the wall punches through
+     it in stripes, which is the "breaking at extreme sweep" in the same screenshot. A film with its
+     own small relief is both the texture and the clearance. */
+  film:   0.12,   // 0 … 1: how much of the full relief a zero-thickness stroke still carries
   ridge:  0.6,    // 0 … 1: how much of the height sits in the edge ridges vs the scraped middle
   /* ⚠️ HOW WIDE THE STROKE STILL IS WHERE IT IS LIFTED, AS A RANGE RATHER THAN A NUMBER. Sandeep,
      off a render of five: *"the width of the stroke release does not need to be same. there should
@@ -197,7 +204,8 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const maxLift = p.lift * R, skim = p.skim * R;
   for (let i = 0; i < n; i++) {
     const along = n > 1 ? i / (n - 1) : 0;
-    const load = brushLoad(along) * clamp01(p.weight);
+    // `film` is the floor: even at zero thickness there is a layer, and it keeps its knife marks.
+    const load = brushLoad(along) * (p.film + (1 - p.film) * clamp01(p.weight));
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [sx, y] = grid[i][j];                  // arc length round the cake, height up the wall
@@ -261,7 +269,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const pos = [], idx = [];
   const maxLift = p.lift * R, skim = p.skim * R;
   for (let i = 0; i < n; i++) {
-    const load = brushLoad(n > 1 ? i / (n - 1) : 0) * clamp01(p.weight);
+    const load = brushLoad(n > 1 ? i / (n - 1) : 0) * (p.film + (1 - p.film) * clamp01(p.weight));
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [gx, gz] = grid[i][j];
@@ -281,4 +289,45 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
+}
+
+/* ── Placing a stroke by hand ─────────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"round and height need to be done with dragging."* Where a stroke SITS is a thing you
+ * point at; two sliders for one position is the control-and-effect split INVARIANTS #11 is about,
+ * and you cannot aim with them.
+ *
+ * ⚠️ THE GRAB OFFSET IS THE WHOLE OF IT, AND LEAVING IT OUT IS LAW 5 BROKEN. Writing the pointer's
+ * position straight in as the stroke's origin makes the stroke JUMP by however far the grabbed point
+ * and the origin happened to be apart — the exact fault a piping border shipped with, recorded in
+ * the designer's own notes. `grabOffset` is taken once at pointer-down and re-applied on every move,
+ * so the point taken hold of stays under the pointer: `dragStrokeTo` and the grab are inverses.
+ *
+ * Pure, and in core, so the studio and anything after it share one answer rather than each deriving
+ * their own — the maths is testable here without a scene, which a studio behind a login is not.
+ */
+
+/** Where a world-space point sits on the wall, in the two numbers a stroke is authored with. */
+export function wallCoordsOf(point, { baseY = 0, wallH = 1 } = {}) {
+  const x = point?.x ?? 0, y = point?.y ?? 0, z = point?.z ?? 0;
+  return {
+    at:   ((Math.atan2(x, z) / (Math.PI * 2)) % 1 + 1) % 1,
+    rise: wallH > 0 ? (y - baseY) / wallH : 0,
+  };
+}
+
+/** How far the stroke's origin is from the point just taken hold of. Recorded once, at pointer-down. */
+export function grabOffset(stroke, point, opts) {
+  const w = wallCoordsOf(point, opts);
+  return { dAt: (stroke?.at ?? 0) - w.at, dRise: (stroke?.rise ?? 0) - w.rise };
+}
+
+/** The stroke's new origin for a pointer now at `point`. Clamped up the wall, wrapped round it. */
+export function dragStrokeTo(grab, point, opts = {}) {
+  const w = wallCoordsOf(point, opts);
+  const { riseMin = 0.02, riseMax = 0.95 } = opts;
+  return {
+    at:   ((w.at + (grab?.dAt ?? 0)) % 1 + 1) % 1,
+    rise: Math.min(riseMax, Math.max(riseMin, w.rise + (grab?.dRise ?? 0))),
+  };
 }

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
+         wallCoordsOf, grabOffset, dragStrokeTo,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
 const WALL = { R: 1, baseY: 0, wallH: 1 };
@@ -58,8 +59,10 @@ describe('a stroke on the wall', () => {
     const heavy = maxLift(buildBrushStrokeOnWall({ ...WALL, path: SWEEP, weight: 1 }));
     const light = maxLift(buildBrushStrokeOnWall({ ...WALL, path: SWEEP, weight: 0 }));
     expect(heavy).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.lift * 0.5);
-    expect(light).toBeLessThan(BRUSH_ON_CAKE_DEFAULTS.lift * 0.15);
-    expect(light).toBeGreaterThan(0);          // still off the wall, or it z-fights
+    /* ⚠️ "MERGES" MEANS A THIN LAYER, NOT NOTHING — `film`. A dead-flat stroke read as a sticker and
+       z-fought with the wall over a long sweep; it keeps a little relief, and its knife marks. */
+    expect(light).toBeLessThan(BRUSH_ON_CAKE_DEFAULTS.lift * 0.2);
+    expect(light).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.lift * 0.03);
   });
 
   it('every size of cake gets the same stroke, in proportion', () => {
@@ -188,5 +191,54 @@ describe('brushStroke default is untouched', () => {
     const asBefore = brushStroke(path, { width: 12, seed: 3 });
     const explicit = brushStroke(path, { width: 12, seed: 3, tipWidth: 0.42 });
     expect(JSON.stringify(asBefore.band)).toBe(JSON.stringify(explicit.band));
+  });
+});
+
+/* ── Placing a stroke by hand ────────────────────────────────────────────────────────────────────
+ * "round and height need to be done with dragging". The maths is here rather than in the studio
+ * because a studio behind a login cannot be driven, and this is the half that can be wrong.
+ */
+describe('dragging a stroke', () => {
+  const CAKE = { baseY: 0.07, wallH: 1.25 };
+  const onWall = (at, rise) => ({
+    x: Math.sin(at * Math.PI * 2), z: Math.cos(at * Math.PI * 2),
+    y: CAKE.baseY + rise * CAKE.wallH,
+  });
+
+  it('reads a world point back as the two numbers a stroke is authored with', () => {
+    const w = wallCoordsOf(onWall(0.3, 0.4), CAKE);
+    expect(w.at).toBeCloseTo(0.3, 6);
+    expect(w.rise).toBeCloseTo(0.4, 6);
+  });
+
+  /* ⚠️ LAW 5. Grab a stroke and put the pointer back where it started and NOTHING moves. Without the
+     offset the stroke jumps to the pointer by however far the grabbed point was from its origin —
+     the exact fault a piping border shipped with. */
+  it('a grab that does not travel does not move the stroke', () => {
+    const stroke = { at: 0.20, rise: 0.55 };
+    const point = onWall(0.26, 0.61);                 // taken hold of away from its origin
+    const g = grabOffset(stroke, point, CAKE);
+    const back = dragStrokeTo(g, point, CAKE);
+    expect(back.at).toBeCloseTo(stroke.at, 6);
+    expect(back.rise).toBeCloseTo(stroke.rise, 6);
+  });
+
+  it('and a drag moves it by exactly what the pointer travelled', () => {
+    const stroke = { at: 0.20, rise: 0.55 };
+    const g = grabOffset(stroke, onWall(0.26, 0.61), CAKE);
+    const moved = dragStrokeTo(g, onWall(0.31, 0.45), CAKE);
+    expect(moved.at).toBeCloseTo(0.25, 6);            // +0.05 round
+    expect(moved.rise).toBeCloseTo(0.39, 6);          // −0.16 up
+  });
+
+  it('carries on round the back rather than sticking at the seam', () => {
+    const g = grabOffset({ at: 0.98, rise: 0.5 }, onWall(0.98, 0.5), CAKE);
+    expect(dragStrokeTo(g, onWall(0.03, 0.5), CAKE).at).toBeCloseTo(0.03, 6);
+  });
+
+  it('but stops at the top and bottom of the wall', () => {
+    const g = grabOffset({ at: 0.5, rise: 0.5 }, onWall(0.5, 0.5), CAKE);
+    expect(dragStrokeTo(g, onWall(0.5, 5), CAKE).rise).toBeLessThanOrEqual(0.95);
+    expect(dragStrokeTo(g, onWall(0.5, -5), CAKE).rise).toBeGreaterThanOrEqual(0.02);
   });
 });

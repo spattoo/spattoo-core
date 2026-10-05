@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { createRoot } from 'react-dom/client';
+import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { buildBrushStrokeOnWall, BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
@@ -31,6 +32,8 @@ const SEED = +(P.get('seed') ?? 1);
    harness's opinion rather than the module's, which is the whole thing a harness must not do. */
 const LIFT = +(P.get('lift') ?? D.lift);
 const ACROSS = +(P.get('across') ?? D.across);
+const SWEEP = +(P.get('sweep') ?? 0.012);
+const CLIMB = +(P.get('climb') ?? 0.52);
 const COLORS = ['#F6DCE2', '#8EC5E8', '#F4C542', '#E8788F', '#B79CE0', '#3FAE8E'];
 
 /* ⚠️ A BRUSHSTROKE ON A CAKE RUNS UP THE WALL, NOT ROUND IT. My first cut swept each stroke
@@ -41,7 +44,7 @@ function path(at) {
   const out = [];
   for (let i = 0; i < 14; i++) {
     const t = i / 13;
-    out.push([at + 0.012 * t, 0.16 + 0.52 * t + Math.sin(Math.PI * t) * 0.01]);
+    out.push([at + SWEEP * t, 0.16 + CLIMB * t + Math.sin(Math.PI * t) * 0.01]);
   }
   return out;
 }
@@ -53,7 +56,12 @@ function Stroke({ at, weight, color, seed }) {
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow receiveShadow>
-      <meshPhysicalMaterial {...creamMaterialProps(0.7, color)} />
+      {/* DoubleSide because a painted layer's winding depends on which way the stroke happens to
+          run — the same call CreamPen makes for cream. polygonOffset because the thinnest film sits
+          almost on the wall, and over a long grazing sweep the depth buffer loses: the wall punches
+          through in stripes, which is what "breaking at extreme sweep" was. */}
+      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, color)} />
     </mesh>
   );
 }
