@@ -377,29 +377,34 @@ describe('coverage', () => {
     expect(t.getX(t.count - m + Math.floor(m / 2))).toBeLessThan(0.3); // the release: running out
   });
 
-  it('paints full strength where it is thick and washes toward the cake where it is thin', () => {
+  it('carries one colour end to end, because a brush does not carry white', () => {
+    /* ⚠️ THE WASH IS OFF, AND THIS TEST USED TO ASSERT THE OPPOSITE. Five cuts tried to make it
+       small enough — 0.55, 0.75, 0.58, 0.9, 0.95 — and every one still put a pale cap on each
+       stroke, because the number was never the problem: the tip is SEVEN FINGERS OF DIFFERENT
+       LENGTHS, so the mesh's last row spans a tall triangle and a per-row fade is stretched across
+       all of it. Five per cent of rows made twenty per cent of the stroke. Beside the photograph
+       there is no gradient anywhere — solid colour to a hard ragged edge, and the raggedness IS the
+       release. Sandeep, three times: *"brush wont carry white."* */
     const painted = paintBrushColors(geo(), '#ff0000', '#ffffff');
     const c = painted.attributes.color;
-    let strongest = 0, weakest = 1;
-    const t = painted.attributes.aThickness;
+    let lo = 1, hi = 0;
+    for (let v = 0; v < c.count; v++) { const red = c.getX(v) - c.getY(v); lo = Math.min(lo, red); hi = Math.max(hi, red); }
+    expect(hi - lo).toBeLessThan(1e-6);
+  });
+
+  it('and the wash is still on the dial for a caller that wants it', () => {
+    /* Thin cream over a cake really is translucent; it is just not what a brushstroke looks like.
+       ⚠️ If this is ever turned back on it has to be driven by distance from the tip in WORLD units
+       rather than by row index, or it will smear across the fingers exactly as before. */
+    const painted = paintBrushColors(geo(), '#ff0000', '#ffffff', { floor: 0.3 });
+    const c = painted.attributes.color, t = painted.attributes.aThickness;
+    let thick = 0, thin = 1;
     for (let v = 0; v < c.count; v++) {
-      const red = c.getX(v) - c.getY(v);          // distance from white, in the red channel
-      if (t.getX(v) > 0.8) strongest = Math.max(strongest, red);
-      if (t.getX(v) < 0.05) weakest = Math.min(weakest, red);
+      const red = c.getX(v) - c.getY(v);
+      if (t.getX(v) > 0.8) thick = Math.max(thick, red);
+      if (t.getX(v) < 0.05) thin = Math.min(thin, red);
     }
-    /* ⚠️ A DIRECTION AND A CEILING, NOT A MARGIN OR A RATIO — and this test has now been wrong twice
-       in the same way, which is the thing to learn from it. It read `weakest + 0.2`, then
-       `weakest * 1.5`, and each time it was measuring the SIZE of the wash while claiming to be
-       about its existence. Both broke on changes that were correct: the albedo correction compressed
-       the range, and a reference photo then said the wash itself was far too strong.
-       How thin a dry edge goes is a TUNED NUMBER (`floor`, judged against a photograph). What is not
-       tuned is that thick is more saturated than thin, and that a stroke never gives up most of its
-       colour — a brushstroke is cream, not a glaze. Those two are what belong here. */
-    expect(strongest).toBeGreaterThan(weakest);
-    /* The ceiling belongs on the SIDES, which is where "a brushstroke is not a glaze" actually
-       bites. The release is allowed to fade the whole way (see the test above), so measuring the
-       ceiling over every thin vertex on the mesh now asserts the opposite of what is wanted. */
-    expect(BRUSH_ON_CAKE_DEFAULTS.sideFloor).toBeGreaterThan(0.6);
+    expect(thick).toBeGreaterThan(thin * 1.3);
   });
 
   it('a stroke with no thickness attribute is left alone', () => {

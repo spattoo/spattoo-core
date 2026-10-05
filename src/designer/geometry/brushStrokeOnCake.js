@@ -131,7 +131,7 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   /* How much pigment the stroke still carries at its SIDES, as against at its release. See the note
      in buildStrokeMesh: a knife leaves a clean full-strength edge sideways and runs dry lengthways,
      and one number for both is why solid sides meant a solid, paper-cut tip. */
-  sideFloor: 0.8,
+  sideFloor: 0.9,
   /* ⚠️ AND THE REFERENCE HAS NO BEAD ON ANY EDGE. 0.6 put most of the height into the two lips, which
      at cake scale reads as a rolled rope down the side of every stroke — Sandeep, ringing one:
      *"when you compare it with the scale of the cake, dont you think that is bulky edge? see the same
@@ -474,14 +474,26 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          came out pale — turn Thickness to 0 and the cream lost its colour, which is not what thin
          cream does. It also spread the fade over the top 45% of every stroke, where a photograph of
          the real thing shows a saturated pull that lets go only at the very end.
-         ⚠️ AND IT IS A RIM AT THE RELEASE, NOT HALF THE STROKE. Every cut of this started the fade
+         ⚠️ AND IN THE END IT IS OFF (`floor` 1), WHICH THE REFERENCE SAYS AND FIVE CUTS OF THIS DID
+         NOT. 0.55, 0.75, 0.58, 0.9, 0.95 — each one a smaller fade, each one still putting a pale
+         cap on every stroke, and the reason was not the number. THE TIP IS SEVEN FINGERS OF
+         DIFFERENT LENGTHS, so the last ROW of the mesh spans a tall triangle; a fade applied per row
+         is then stretched across that whole triangle however narrow the row band is. A five per cent
+         fade made a twenty per cent cap. Put the render beside the photograph and there is no
+         gradient anywhere on it: solid colour to a hard, ragged edge, and the raggedness is the
+         release. Sandeep, three times, the last one with both pictures open: *"brush wont carry
+         white."*
+         The dial stays because thin cream over a cake really is translucent and a future caller may
+         want it — but it must be driven by distance from the tip in WORLD units, not by row index,
+         or it will smear over the fingers again.
+         ⚠️ THE RIM, FOR WHEN IT IS TURNED BACK ON. Every cut of this started the fade
          far too early — 0.55, then 0.75, then 0.58 — and each one put white up the middle of a pull
          that a brush is not carrying any white in. Sandeep: *"how can this be correct. half of the
          stroke is white. brush wont carry white. only at the stroke release, it mixes with cake
          color so fading somewhre at the edge makes sense."* That is the whole rule, and the
          photograph says the same: a solid block of colour, and a thin soft edge where the layer
          finally breaks. The last tenth. */
-      const release = 1 - smoothstep(0.9, 1, along);
+      const release = 1 - smoothstep(0.95, 1, along);
       const cover = release * side;
       thick.push(clamp01(cover + (1 - cover) * onCream * p.cling));
     }
@@ -685,7 +697,7 @@ export function dragStrokeTo(grab, point, opts = {}) {
  * real buttercream is not transparent, it is THIN. You are seeing less pigment, not through it. The
  * drip reaches the same conclusion for the same reason; see paintDripColors.
  */
-export function paintBrushColors(geo, color, under, { floor = 0.4, bite = 0.6 } = {}) {
+export function paintBrushColors(geo, color, under, { floor = 1, bite = 0.6 } = {}) {
   const t = geo?.attributes?.aThickness;
   if (!t) return geo;
   /* ⚠️ ALBEDO, NOT THE HEX — INVARIANTS #16, and this module was breaking it in the one way the rule
