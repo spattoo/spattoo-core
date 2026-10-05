@@ -58,6 +58,12 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      ⚠️ SMALL ENOUGH TO BE INVISIBLE ALONE. A stroke with nothing under it must still look painted ON
      the cake, not hovering above it, so the step is a fraction of the thinnest film. Ten strokes
      deep is 0.03R, which is under a third of one stroke's own relief. */
+  /* ⚠️ `bed` IS THE HONEST ANSWER AND `layer` IS THE CHEAP ONE. Given a bed, a stroke rides on the
+     cream already laid, exactly where that cream is — so a neighbour's ridge is covered rather than
+     punched through, and a stroke with nothing under it still lies flat on the wall. Without one it
+     falls back to a flat lift by its place in the order, which is better than nothing and is what
+     made the emerging part of a covered stroke look elevated. */
+  bed:       null,
   layer:     0,       // where this stroke comes in the order — later paints over earlier
   layerStep: 0.003,   // × R: how far each one rides above the one before it
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
@@ -297,7 +303,7 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0 } = {}) {
  * `place(x, y, h)` is the whole difference: on a wall it wraps round the cylinder, on a lid it lies
  * flat and folds over the rim.
  */
-function buildStrokeMesh(stroke, p, { R, place }) {
+function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const m = Math.max(3, p.across | 0);
   const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
   const n = grid.length;
@@ -310,9 +316,13 @@ function buildStrokeMesh(stroke, p, { R, place }) {
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [gx, gy] = grid[i][j];
-      const h = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
+      /* ⚠️ THE BASE IS WHAT IS ALREADY HERE, not a global lift. Where nothing has been painted the
+         stroke lies on the wall; where it crosses another it rides over it, and only there. */
+      const base = bedAt ? Math.max(skim, bedAt(gx, gy)) : skim;
+      const h = base + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
                 * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
       pos.push(...place(gx, gy, h));
+      if (bedPut) bedPut.push([gx, gy, h]);
       /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle —
          because the middle is deliberately SCRAPED, a hollow between two ridges — and a real stroke
          is at its most saturated exactly there. What thins the pigment is how much cream was on the
@@ -356,11 +366,16 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
-  return buildStrokeMesh(stroke, p, {
+  const put = p.bed ? [] : null;
+  const geo = buildStrokeMesh(stroke, p, {
     R,
     // Round the cake and up it: arc length becomes an angle, relief pushes outward.
     place: (sx, y, h) => { const th = sx / R, rad = R + h; return [Math.sin(th) * rad, baseY + y, Math.cos(th) * rad]; },
+    bedAt: p.bed ? ((sx, y) => p.bed.heightAt(sx, y)) : null,
+    bedPut: put,
   });
+  if (p.bed && put) p.bed.commit(put);          // committed AFTER, so a stroke never climbs itself
+  return geo;
 }
 
 /**
@@ -541,4 +556,74 @@ export function brushGesture(opts = {}) {
               Math.min(0.97, rise + climb * t + Math.sin(Math.PI * t) * p.bow)]);
   }
   return out;
+}
+
+/* ── What is already on the wall ─────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A STROKE RIDES ON WHAT IS UNDER IT, AND ONLY WHERE SOMETHING IS. Lifting a whole stroke by its
+ * place in the order — which is what `layer` does — is wrong in both directions at once: too little
+ * to clear a neighbour's ridge, so the lower one punches through; and applied everywhere, so a
+ * stroke with nothing beneath most of it still stands off the wall. Sandeep, at the render: *"the
+ * part that coming out from the other strip is elevated high."* That is the global lift, seen.
+ *
+ * A bed is the height of the cream already laid, sampled where it matters. A stroke reads it for its
+ * base and then stamps itself into it, so the next stroke rides on the two of them. That is what
+ * cream does: the surface is the UNION of what has been put down, and nothing laid later can sink
+ * below what is already there.
+ *
+ * ⚠️ A RASTER, NOT A LIST OF STROKES. Asking every previous stroke about every vertex is
+ * strokes × verts × verts and grows with the cake; a grid in the wall's own flat space is one lookup
+ * whatever has been painted. It is coarse on purpose — it carries where the cream IS, not its
+ * texture, and the stroke's own relief is added on top of what it reads.
+ */
+export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256 } = {}) {
+  const w = Math.PI * 2 * R;
+  const h = new Float32Array(cols * rows);
+  const wrapC = c => ((c % cols) + cols) % cols;
+  const clampR = r => (r < 0 ? 0 : r > rows - 1 ? rows - 1 : r);
+  const at = (c, r) => h[clampR(r) * cols + wrapC(c)];
+
+  /* ⚠️ READ SMOOTHLY OR THE STROKE COMES OUT AS A COMB. Nearest-cell sampling gives every vertex in
+     a cell the same base, so a stroke climbing off a neighbour does it in steps — and at this grid's
+     size a stroke spans only a few cells, so the steps are the size of the ridge. The first cut of
+     this looked markedly worse than no bed at all, which is what a cheap read buys. */
+  const sample = (sx, y) => {
+    const fx = (((sx / w) % 1) + 1) % 1 * cols - 0.5;
+    const fy = (y / wallH) * rows - 0.5;
+    const c0 = Math.floor(fx), r0 = Math.floor(fy);
+    const tx = fx - c0, ty = fy - r0;
+    return (at(c0, r0) * (1 - tx) + at(c0 + 1, r0) * tx) * (1 - ty)
+         + (at(c0, r0 + 1) * (1 - tx) + at(c0 + 1, r0 + 1) * tx) * ty;
+  };
+
+  /* ⚠️ AND STAMP AN AREA, NOT A POINT. A vertex writes one cell, so between vertices the bed keeps
+     its holes and the next stroke reads full height and nothing in alternation — the comb again,
+     from the other side. A small splat closes them; the bed carries WHERE the cream is, and a
+     cell-wide blur of that is harmless because the stroke's own relief is added on top. */
+  const splat = (sx, y, v) => {
+    const fx = (((sx / w) % 1) + 1) % 1 * cols, fy = (y / wallH) * rows;
+    const c0 = Math.round(fx), r0 = Math.round(fy);
+    /* ⚠️ AND THE SPLAT FALLS OFF. A flat max over the neighbourhood writes square plateaus with a
+       cliff at their rim, and a stroke climbing that cliff comes out serrated — visible on exactly
+       one edge of one stroke, which is how a plateau announces itself. A shoulder at the edge of the
+       stamp gives the next stroke something to climb rather than something to trip over. */
+    for (let dr = -2; dr <= 2; dr++) {
+      for (let dc = -2; dc <= 2; dc++) {
+        const d = Math.hypot(dc, dr);
+        if (d > 2.2) continue;
+        const k = v * (1 - 0.34 * d);
+        const i = clampR(r0 + dr) * cols + wrapC(c0 + dc);
+        if (k > h[i]) h[i] = k;
+      }
+    }
+  };
+
+  return {
+    heightAt: sample,
+    /* ⚠️ A STROKE MUST NOT READ ITS OWN STAMPS. Reading and writing in one pass makes a stroke climb
+       its own ridge — each vertex sees the one before it and rises, and the stroke walks off the
+       cake. A build COLLECTS what it would stamp and commits it at the end. */
+    commit(list) { for (const [sx, y, v] of list) splat(sx, y, v); },
+    clear() { h.fill(0); },
+  };
 }

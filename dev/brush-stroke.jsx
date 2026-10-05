@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors, brushGesture,
+import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors, brushGesture, makeBrushBed,
          BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 // Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
 // creamMaterialProps is THE cream material — the one every piped stroke on every cake already
@@ -62,10 +62,14 @@ function topPath(k) {
 
 const CAKE_COLOR = '#FBF8F3';
 
+/* One bed for the whole wall: each stroke reads the cream already laid and rides on it, then stamps
+   itself in for the next. Rebuilt whenever the set of strokes changes, so order stays honest. */
+const BED = makeBrushBed({ R, wallH: TIER_H });
+
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, bed: BED })
   ), [at, weight, seed, idx]);
   /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
      a flat colour never will. */

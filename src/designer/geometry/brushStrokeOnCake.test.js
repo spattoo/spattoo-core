@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
-         wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture,
+         wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture, makeBrushBed,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
 const WALL = { R: 1, baseY: 0, wallH: 1 };
@@ -425,5 +425,56 @@ describe('brushGesture', () => {
   it('climbVar 0 makes them all the same, for a caller that wants a rule not a hand', () => {
     const tops = [1, 2, 3, 4].map(s => Math.max(...brushGesture({ seed: s, climbVar: 0 }).map(([, v]) => v)));
     expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(0.05);
+  });
+});
+
+/* ── Riding on what is already there ─────────────────────────────────────────────────────────────
+ * "the part that coming out from the other strip is elevated high." That is a GLOBAL lift, seen: a
+ * stroke raised by its place in the order stands proud everywhere, including where nothing is under
+ * it. A bed raises it only where cream actually is.
+ */
+describe('the bed', () => {
+  const WALLB = { R: 1, baseY: 0, wallH: 1 };
+  const radii = geo => {
+    const pos = geo.attributes.position, out = [];
+    for (let v = 0; v < pos.count; v++) out.push(Math.hypot(pos.getX(v), pos.getZ(v)));
+    return out;
+  };
+
+  it('with nothing laid, a stroke lies on the wall exactly as it would with no bed at all', () => {
+    const bare = radii(buildBrushStrokeOnWall({ ...WALLB, path: SWEEP, weight: 1, seed: 5 }));
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    const onEmpty = radii(buildBrushStrokeOnWall({ ...WALLB, path: SWEEP, weight: 1, seed: 5, bed }));
+    for (let i = 0; i < bare.length; i += 29) expect(onEmpty[i]).toBeCloseTo(bare[i], 9);
+  });
+
+  /* ⚠️ AND IT DOES NOT CLIMB ITS OWN STAMPS. Reading and writing in one pass makes every vertex see
+     the one before it and rise; the stroke walks off the cake. The build collects and commits after,
+     and this is what says so: the first stroke onto an empty bed is identical to no bed. */
+  it('a second stroke over the first rides on it', () => {
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    buildBrushStrokeOnWall({ ...WALLB, path: SWEEP, weight: 1, seed: 5, bed });
+    const over = radii(buildBrushStrokeOnWall({ ...WALLB, path: SWEEP, weight: 1, seed: 5, bed }));
+    const alone = radii(buildBrushStrokeOnWall({ ...WALLB, path: SWEEP, weight: 1, seed: 5 }));
+    let higher = 0;
+    for (let i = 0; i < over.length; i++) if (over[i] > alone[i] + 1e-6) higher++;
+    expect(higher / over.length).toBeGreaterThan(0.5);
+  });
+
+  it('and a stroke somewhere else is untouched by it', () => {
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    buildBrushStrokeOnWall({ ...WALLB, path: SWEEP, weight: 1, seed: 5, bed });
+    const far = SWEEP.map(([u, v]) => [u + 0.45, v]);              // the far side of the cake
+    const clear = radii(buildBrushStrokeOnWall({ ...WALLB, path: far, weight: 1, seed: 5, bed }));
+    const alone = radii(buildBrushStrokeOnWall({ ...WALLB, path: far, weight: 1, seed: 5 }));
+    for (let i = 0; i < clear.length; i += 29) expect(clear[i]).toBeCloseTo(alone[i], 9);
+  });
+
+  it('the bed keeps the highest — cream fills, it does not cut', () => {
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    bed.commit([[0.5, 0.5, 0.09]]);
+    const tall = bed.heightAt(0.5, 0.5);
+    bed.commit([[0.5, 0.5, 0.02]]);
+    expect(bed.heightAt(0.5, 0.5)).toBeCloseTo(tall, 9);
   });
 });
