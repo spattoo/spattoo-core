@@ -1819,7 +1819,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       await apiClient.reauthenticate(unlockPw);
       setUnlocked(true); setUnlockPw('');
       // Straight into the editor they reached for. Proving who you are is a toll, not a destination.
-      if (pendingEdit === 'email')    { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailEditing(true); }
+      if (pendingEdit === 'email')    { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailStep('entry'); }
       if (pendingEdit === 'phone')    { setPhoneMsg(null); setPhoneStep('entry'); }
       if (pendingEdit === 'password') { setPwMsg(null); setPwEditing(true); }
       setPendingEdit(null);
@@ -1859,7 +1859,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
          under it. The window can expire mid-flow — fifteen minutes is long enough to start a phone
          change, wait for a text and come back — so this is a real state, not a defensive one. */
       setUnlocked(false);
-      if (which === 'email')    setEmailEditing(false);
+      if (which === 'email')    setEmailStep('idle');
       if (which === 'phone')    setPhoneStep('idle');
       if (which === 'password') setPwEditing(false);
       setPendingEdit(which ?? null);
@@ -1877,7 +1877,12 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   // ⚠️ NULL IS A VALUE: it means "use my login address", which is what bakerNotifyEmail() already
   // does and what 22 of 24 bakeries rely on. So the field starts BLANK with the login email as its
   // placeholder, and clearing it restores the default rather than cutting the bakery off.
-  const [emailEditing, setEmailEditing] = useState(false);
+  /* 'idle' → showing it. 'entry' → typing a new one. 'code' → proving it reaches them.
+     ⚠️ THE SAME THREE STEPS THE PHONE HAS, because it is the same question: an address Spattoo
+     writes orders, quotes and invoices to is not proved by somebody typing it correctly. */
+  const [emailStep,    setEmailStep]    = useState('idle');
+  const [emailCode,    setEmailCode]    = useState('');
+  const [emailSentTo,  setEmailSentTo]  = useState(null);
   const [emailDraft,   setEmailDraft]   = useState(bakerEmail ?? '');
   const [emailBusy,    setEmailBusy]    = useState(false);
   const [emailMsg,     setEmailMsg]     = useState(null);
@@ -1904,7 +1909,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // A half-typed number or password is work. Esc and a stray backdrop click must not take it
   // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
-  const dirty = phoneStep !== 'idle' || emailEditing || pwEditing || !!pendingEdit || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
+  const dirty = phoneStep !== 'idle' || emailStep !== 'idle' || pwEditing || !!pendingEdit || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
 
   async function sendCode() {
     setPhoneBusy(true); setPhoneMsg(null);
@@ -1938,17 +1943,38 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
     }
   }
 
-  async function saveEmail() {
+  async function sendEmailCode() {
     setEmailBusy(true); setEmailMsg(null);
     try {
       const next = emailDraft.trim();
-      await apiClient.updateBakerProfile({ email: next });   // '' → null on the server, by design
-      setEmailNow(next || null);
-      setEmailEditing(false);
-      setEmailMsg({ ok: true, text: next ? 'Saved.' : 'Back to your sign-in address.' });
+      /* Empty means "use my sign-in address", which needs no proof: it is the one Supabase verified
+         and this baker is signed in with. See the clear route. */
+      if (!next) {
+        await apiClient.clearBakerEmail();
+        setEmailNow(null); setEmailStep('idle');
+        setEmailMsg({ ok: true, text: 'Back to your sign-in address.' });
+        onProfileChanged?.();
+        return;
+      }
+      const r = await apiClient.startEmailChange(next);
+      setEmailSentTo(r?.to ?? null); setEmailCode(''); setEmailStep('code');
+    } catch (e) {
+      if (!handleWriteError(e, setEmailMsg, 'email')) setEmailMsg({ ok: false, text: e?.message || 'We could not send the code.' });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function confirmEmailCode() {
+    setEmailBusy(true); setEmailMsg(null);
+    try {
+      const r = await apiClient.confirmEmailChange(emailCode.trim());
+      setEmailNow(r?.email ?? null);
+      setEmailStep('idle'); setEmailDraft(''); setEmailCode(''); setEmailSentTo(null);
+      setEmailMsg({ ok: true, text: 'Confirmed — this is where we will email you.' });
       onProfileChanged?.();
     } catch (e) {
-      if (!handleWriteError(e, setEmailMsg, 'email')) setEmailMsg({ ok: false, text: e?.message || 'Could not save that address.' });
+      if (!handleWriteError(e, setEmailMsg, 'email')) setEmailMsg({ ok: false, text: e?.message || 'That code did not work.' });
     } finally {
       setEmailBusy(false);
     }
@@ -2049,7 +2075,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
           quote-accepted, trial reminders and billing events alike. The hint says so. */}
       <PanelBlock>
         <div style={s.fieldLabel}>WHERE WE EMAIL YOU</div>
-        {pendingEdit === 'email' ? <UnlockPrompt which="email" /> : !emailEditing ? (
+        {pendingEdit === 'email' ? <UnlockPrompt which="email" /> : emailStep === 'idle' ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 140, fontSize: 13.5, fontWeight: 700, color: INK, wordBreak: 'break-word' }}>
               {emailNow || userData?.email || '—'}
@@ -2061,33 +2087,62 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
             </div>
             {canEditEmail && (
               <EditPencil label="Change where we email you"
-                onClick={() => startEdit('email', () => { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailEditing(true); })} />
+                onClick={() => startEdit('email', () => { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailStep('entry'); })} />
             )}
           </div>
-        ) : (
+        ) : emailStep === 'entry' ? (
           <>
             <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
-              Orders, quotes and invoices all go here. Leave it blank to use your sign-in address.
+              Orders, quotes and invoices all go here. We will email a code to make sure it reaches
+              you. Leave it blank to use your sign-in address.
             </div>
             <input style={s.modalInput} type="email" inputMode="email" autoFocus
               placeholder={userData?.email || 'you@yourbakery.com'}
               value={emailDraft} disabled={emailBusy}
               onChange={e => setEmailDraft(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && !emailBusy && saveEmail()} />
+              onKeyDown={e => e.key === 'Enter' && !emailBusy && sendEmailCode()} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" style={s.accountGhostBtn} disabled={emailBusy}
-                onClick={() => { setEmailEditing(false); setEmailDraft(emailNow ?? ''); setEmailMsg(null); }}>
+                onClick={() => { setEmailStep('idle'); setEmailDraft(emailNow ?? ''); setEmailMsg(null); }}>
                 Cancel
               </button>
               <button type="button"
                 style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
                          opacity: emailBusy ? 0.6 : 1 }}
-                disabled={emailBusy} onClick={saveEmail}>
-                {emailBusy ? 'Saving…' : 'Save'}
+                disabled={emailBusy} onClick={sendEmailCode}>
+                {emailBusy ? 'Sending…' : (emailDraft.trim() ? 'Send code' : 'Use sign-in address')}
               </button>
             </div>
           </>
-        )}
+        ) : emailStep === 'code' ? (
+          <>
+            {/* The address they TYPED, not the server's mask of it — they wrote it a moment ago and
+                hiding most of it back confirms nothing. `emailSentTo` is the fallback. */}
+            <div style={{ fontSize: 12, color: INK_MUTED, wordBreak: 'break-word' }}>
+              Changing to <b style={{ color: INK }}>{emailDraft || emailSentTo}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              Enter the 6-digit code we emailed there.
+            </div>
+            <input style={{ ...s.modalInput, letterSpacing: 4, fontWeight: 700 }}
+              type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
+              placeholder="······" value={emailCode} disabled={emailBusy}
+              onChange={e => setEmailCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && emailCode.length === 6 && !emailBusy && confirmEmailCode()} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={emailBusy}
+                onClick={() => { setEmailStep('entry'); setEmailCode(''); setEmailMsg(null); }}>
+                Use another address
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: emailCode.length === 6 && !emailBusy ? 1 : 0.6 }}
+                disabled={emailCode.length !== 6 || emailBusy} onClick={confirmEmailCode}>
+                {emailBusy ? 'Checking…' : 'Confirm'}
+              </button>
+            </div>
+          </>
+        ) : null}
         {emailMsg && (
           <div style={{ fontSize: 12, fontWeight: 600, color: emailMsg.ok ? '#2e7d52' : DANGER }}>
             {emailMsg.text}

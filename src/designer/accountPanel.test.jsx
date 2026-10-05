@@ -175,11 +175,34 @@ describe('what belongs on this screen', () => {
 });
 
 describe('where we email you', () => {
+  /* ⚠️ IT IS PROVED NOW, AND FOR A DAY IT WAS NOT. Sandeep: "are we sending a email OTP when user
+     changes email? i meam, are we verifying new email?" We were not — PATCH /baker/profile
+     shape-checked the address and saved it.
+
+     The argument for leaving it was "a typo is recoverable because the field is visible", and that
+     is only true of somebody who goes back and LOOKS. This address receives orders, quotes,
+     invoices and trial reminders; a typo stops all of it with nothing on any screen saying so,
+     which is the identical silent failure the phone was protected from a day earlier. */
+  it('takes the same three steps the phone does', () => {
+    expect(panel).toMatch(/const \[emailStep,\s+setEmailStep\]\s+= useState\('idle'\)/);
+    expect(panel).toMatch(/apiClient\.startEmailChange\(next\)/);
+    expect(panel).toMatch(/apiClient\.confirmEmailChange\(emailCode\.trim\(\)\)/);
+    // The unverified door is gone, not merely unused.
+    expect(panel).not.toMatch(/updateBakerProfile\(\{ email/);
+  });
+
+  /* Clearing needs no code: it falls back to the address Supabase verified at sign-up and this
+     baker is signed in with right now. Demanding a second proof of that is ceremony. */
+  it('clears without a code, because that address is already proved', () => {
+    expect(panel).toMatch(/apiClient\.clearBakerEmail\(\)/);
+    expect(panel).toMatch(/if \(!next\) \{/);
+  });
+
   /* ⚠️ IT IS bakers.email, NEVER THE APP-USER'S. The app-user's email IS the username — moving it
      means moving the Supabase auth identity, which is a different act with its own confirmation.
      Sandeep: "i dont want to do the appuser email- thats username." */
   it('writes the bakery address, not the sign-in one', () => {
-    expect(panel).toMatch(/apiClient\.updateBakerProfile\(\{ email: next \}\)/);
+    expect(panel).toMatch(/apiClient\.(startEmailChange|clearBakerEmail)/);
     expect(panel).not.toMatch(/updateUser\(\{\s*email/);
   });
 

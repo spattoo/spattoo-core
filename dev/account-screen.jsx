@@ -35,6 +35,17 @@ const stubApi = {
     }
     return { to: '••••' + phone.replace(/\D/g, '').slice(-4), expiresIn: 600 };
   },
+  startEmailChange: async (email) => {
+    await wait(400);
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address');
+    return { to: email.replace(/^(.).*(@.*)$/, '$1•••••$2'), expiresIn: 600 };
+  },
+  confirmEmailChange: async (code) => {
+    await wait(400);
+    if (code !== GOOD_CODE) throw new Error('That code is not right.');
+    return { email: 'orders@31bakers.com' };
+  },
+  clearBakerEmail: async () => { await wait(300); },
   updateBakerProfile: async ({ email }) => {
     await wait(400);
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error('Enter a valid email address');
