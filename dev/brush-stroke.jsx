@@ -30,7 +30,7 @@ const WIDTH = +(P.get('width') ?? D.width);
 const SEED = +(P.get('seed') ?? 1);
 /* ?gap — how far apart the strokes sit, in turns. Below the stroke's own width they OVERLAP, which
    is the thing to look at: a brushed cake is strokes laid across each other, not stripes. */
-const GAP = +(P.get('gap') ?? 0.052);
+const GAP = +(P.get('gap') ?? 0.042);
 /* ⚠️ THE DEFAULTS COME FROM THE GEOMETRY, NOT FROM A COPY HERE. Written as literals, this page kept
    serving the OLD lift after the real default was raised — so the render I was judging was the
    harness's opinion rather than the module's, which is the whole thing a harness must not do. */
