@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pipingPlacementFromConfig } from './pipingLayer.js';
+import { pipingPlacementFromConfig, pipingAllowedArrangements, pipingDefaultArrangement } from './pipingLayer.js';
 
 /* ── An element is authored PER SURFACE, and the pen draws on both ───────────────────────────────
  *
@@ -43,5 +43,33 @@ describe('pipingPlacementFromConfig — the two authored rotations', () => {
   it('an element that authors no rotation answers null for both, and the pen falls back', () => {
     expect(pipingPlacementFromConfig({ r: 1 }, true).rotation ?? null).toBeNull();
     expect(pipingPlacementFromConfig({ r: 1 }, false).bottomRotation ?? null).toBeNull();
+  });
+});
+
+/* ── `single` is retired from the choice, not from the renderer ──────────────────────────────────
+ *
+ * Four catalogue templates (the Vintage set) carry `arrangement: 'single'`, and one element
+ * (Shell Fan) defaults to it. The option is gone from the card; everything already built on it has
+ * to keep working, which is the only reason these two facts are pinned separately.
+ */
+describe('arrangements offered', () => {
+  const BOTH   = { top_arrangements_allowed: ['ring', 'single'], bottom_arrangements_allowed: ['ring', 'single'] };
+  const SINGLE = { top_arrangements_allowed: ['single'], top_arrangement: 'single' };
+
+  it('never offers single, however the element is authored', () => {
+    expect(pipingAllowedArrangements(BOTH, true)).toEqual(['ring']);
+    expect(pipingAllowedArrangements(BOTH, false)).toEqual(['ring']);
+    expect(pipingAllowedArrangements(SINGLE, true)).toEqual(['ring']);
+  });
+
+  /* ⚠️ THE SHELL FAN CASE. It is the one element whose authored default IS single, so without this
+     a new ring from it would have placed one piece with no control left to say otherwise. */
+  it('an element that defaults to single now starts as a ring', () => {
+    expect(pipingDefaultArrangement(SINGLE, true)).toBe('ring');
+    expect(pipingDefaultArrangement({ ...BOTH, top_arrangement: 'single' }, true)).toBe('ring');
+  });
+
+  it('a card with one choice cannot show a toggle', () => {
+    expect(pipingAllowedArrangements(BOTH, true).length).toBe(1);
   });
 });

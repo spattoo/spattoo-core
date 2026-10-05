@@ -7,9 +7,36 @@ import { PIPING_FRONT_ANGLE } from '../constants.js';
 
 // Which arrangements an element allows for a zone. Mirrors the allowed_zones array
 // convention; absent ⇒ ['ring'] (matches legacy piping that only ever ringed).
+/* ── `single` IS RETIRED FROM THE CHOICE, AND STILL RENDERS FOR EVER ─────────────────────────────
+ *
+ * Sandeep: *"'ill pipe it myself' and 'single' (from ring and single) are nearly same. single option
+ * is no more needed since user can do it using hand piping."* Nearly, and the gap is precision
+ * rather than freedom: `single` puts pieces on the RING'S OWN TRACK — same radius, same calibrated
+ * rotation and offsets the full ring uses — with an angle and a per-piece height each. Hand-piping
+ * puts a piece where you tap. The trade is deliberate and is his call; what is NOT negotiable is
+ * that four of the catalogue's templates (the Vintage set) are built on `single`.
+ *
+ * ⚠️ SO THIS HIDES THE OPTION AND NOTHING ELSE. `ringPositions`' single branch, the per-piece angle
+ * and `dy`, the Pieces section of the card — all untouched. A design that carries
+ * `arrangement: 'single'` keeps rendering and stays editable; it simply cannot be switched BACK to,
+ * because the Ring/Single toggle needs two choices to appear and there is now one.
+ *
+ * ⚠️ AND IT FIXES SHELL FAN BY CONSTRUCTION. That row is the one element whose default arrangement
+ * IS single; `pipingDefaultArrangement` picks the admin's preference only when it is still allowed,
+ * so filtering here makes a NEW Shell Fan ring come out as a ring. Doing this in the card instead
+ * would have left that element placing a single piece with no way to say otherwise.
+ *
+ * Filtered rather than deleted from the stored arrays: `top_arrangements_allowed` is authored data
+ * on ten elements, and rewriting it would edit rows the Vintage templates depend on to save reading
+ * one line here. */
+const OFFERED_ARRANGEMENTS = ['ring'];
+
 export function pipingAllowedArrangements(pc, isTop) {
   const allowed = isTop ? pc?.top_arrangements_allowed : pc?.bottom_arrangements_allowed;
-  return Array.isArray(allowed) && allowed.length ? allowed : ['ring'];
+  const authored = Array.isArray(allowed) && allowed.length ? allowed : ['ring'];
+  const offered = authored.filter(a => OFFERED_ARRANGEMENTS.includes(a));
+  // Never an empty list: an element authored single-only still has to place something.
+  return offered.length ? offered : ['ring'];
 }
 
 // Default arrangement for a zone: the admin's `*_arrangement` if it's actually allowed,
