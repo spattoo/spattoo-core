@@ -3,7 +3,8 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { buildBrushStrokeOnWall, BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
+import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat,
+         BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 // Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
 // creamMaterialProps is THE cream material — the one every piped stroke on every cake already
 // uses, with the calibrated albedo and the sheen. A brushstroke is buttercream; it asks the same
@@ -34,6 +35,9 @@ const LIFT = +(P.get('lift') ?? D.lift);
 const ACROSS = +(P.get('across') ?? D.across);
 const SWEEP = +(P.get('sweep') ?? 0.012);
 const CLIMB = +(P.get('climb') ?? 0.52);
+/* ?top=1 — the SAME stroke laid on the cake top instead of the wall. A cream stroke goes on both,
+   hugging either, and buildBrushStrokeOnFlat had never been looked at. */
+const TOP = P.has('top');
 const COLORS = ['#F6DCE2', '#8EC5E8', '#F4C542', '#E8788F', '#B79CE0', '#3FAE8E'];
 
 /* ⚠️ A BRUSHSTROKE ON A CAKE RUNS UP THE WALL, NOT ROUND IT. My first cut swept each stroke
@@ -49,10 +53,22 @@ function path(at) {
   return out;
 }
 
-function Stroke({ at, weight, color, seed }) {
-  const geo = useMemo(() => buildBrushStrokeOnWall({
-    R, baseY: BOARD_H, wallH: TIER_H, path: path(at), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS,
-  }), [at, weight, seed]);
+/* On the top, the gesture is drawn in units of R from the axis rather than round-and-up. */
+function topPath(k) {
+  const out = [];
+  for (let i = 0; i < 14; i++) {
+    const t = i / 13;
+    // Deliberately past the rim at the far end, so the drape is what this page shows.
+    out.push([-0.72 + 2.05 * t, -0.52 + k * 0.26 + Math.sin(Math.PI * t) * 0.07]);
+  }
+  return out;
+}
+
+function Stroke({ at, weight, color, seed, idx }) {
+  const geo = useMemo(() => (TOP
+    ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS })
+  ), [at, weight, seed, idx]);
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow receiveShadow>
@@ -68,7 +84,7 @@ function Stroke({ at, weight, color, seed }) {
 
 function App() {
   return (
-    <Canvas shadows camera={{ position: [0, 1.4, 4.0], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
+    <Canvas shadows camera={{ position: TOP ? [2.6, 2.0, 2.6] : [0, 1.4, 4.0], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
       <color attach="background" args={['#eceaf3']} />
       <SceneLights />
       <SceneEnv />
@@ -81,7 +97,7 @@ function App() {
         <meshStandardMaterial color="#FBF8F3" roughness={0.75} />
       </mesh>
       {WEIGHTS.map((w, i) => (
-        <Stroke key={i} at={(i - (WEIGHTS.length - 1) / 2) * 0.052} weight={w} color={COLORS[i % COLORS.length]} seed={SEED + i * 7} />
+        <Stroke key={i} idx={i} at={(i - (WEIGHTS.length - 1) / 2) * 0.052} weight={w} color={COLORS[i % COLORS.length]} seed={SEED + i * 7} />
       ))}
       <OrbitControls target={[0, BOARD_H + TIER_H * 0.5, 0]} enablePan={false} />
     </Canvas>

@@ -242,3 +242,59 @@ describe('dragging a stroke', () => {
     expect(dragStrokeTo(g, onWall(0.5, -5), CAKE).rise).toBeGreaterThanOrEqual(0.02);
   });
 });
+
+/* ── Over the edge ───────────────────────────────────────────────────────────────────────────────
+ * "lets make it drape over the edge." A gesture that reaches the rim used to keep laying cream on
+ * the plane of the lid, so it hung in the air past the tier.
+ */
+describe('a stroke that reaches the rim drapes down the wall', () => {
+  const TOP = { R: 1, y: 2 };
+  const OVER = [[-0.5, 0], [0.3, 0.02], [1.1, 0.03], [1.6, 0.02]];   // runs well past the rim
+  const INSIDE = [[-0.5, 0], [-0.1, 0.02], [0.3, 0.03], [0.6, 0.02]];
+
+  const verts = geo => {
+    const pos = geo.attributes.position, out = [];
+    for (let v = 0; v < pos.count; v++) out.push([pos.getX(v), pos.getY(v), pos.getZ(v)]);
+    return out;
+  };
+
+  /* ⚠️ THE ASSERTION IS ABOUT RADIUS, NOT HEIGHT, and my first one got that wrong. I required every
+     vertex past the rim to sit below the lid — but right AT the corner the lip is still rolling, so
+     it legitimately stands a little above the plane, which is what cream going over an edge does.
+     What must never happen is cream floating OUTWARD into the air beyond the wall. */
+  it('nothing hangs in the air past the tier', () => {
+    for (const [x, , z] of verts(buildBrushStrokeOnFlat({ ...TOP, path: OVER, weight: 1 }))) {
+      expect(Math.hypot(x, z)).toBeLessThanOrEqual(1 + BRUSH_ON_CAKE_DEFAULTS.lift * 1.2);
+    }
+  });
+
+  it('some of it is on the lid and some of it is down the side', () => {
+    const v = verts(buildBrushStrokeOnFlat({ ...TOP, path: OVER, weight: 1 }));
+    expect(v.some(([, y]) => y > TOP.y - 1e-6)).toBe(true);        // still on top
+    expect(v.some(([, y]) => y < TOP.y - 0.1)).toBe(true);         // and over the edge
+  });
+
+  /* ⚠️ THE LENGTH OF CREAM DOES NOT CHANGE BECAUSE IT MET A CORNER. Distance past the rim becomes
+     exactly that distance down the wall — fold, never stretch. */
+  it('folds without stretching', () => {
+    const geo = buildBrushStrokeOnFlat({ ...TOP, path: OVER, weight: 0 });
+    const pos = geo.attributes.position;
+    let lowest = Infinity;
+    for (let v = 0; v < pos.count; v++) lowest = Math.min(lowest, pos.getY(v));
+    // The gesture's furthest point is 1.6 from the axis; 0.6 of it is past the rim.
+    expect(TOP.y - lowest).toBeGreaterThan(0.4);
+    expect(TOP.y - lowest).toBeLessThan(0.8);
+  });
+
+  it('a stroke that stays on the lid is untouched by any of this', () => {
+    for (const [, y] of verts(buildBrushStrokeOnFlat({ ...TOP, path: INSIDE, weight: 1 }))) {
+      expect(y).toBeGreaterThanOrEqual(TOP.y);
+    }
+  });
+
+  it('the board does not drape — there is no rim to fall off', () => {
+    const geo = buildBrushStrokeOnFlat({ ...TOP, path: OVER, weight: 1, drape: false });
+    const pos = geo.attributes.position;
+    for (let v = 0; v < pos.count; v++) expect(pos.getY(v)).toBeGreaterThanOrEqual(TOP.y);
+  });
+});

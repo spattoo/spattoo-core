@@ -339,9 +339,35 @@ export function strokeFacesOutward(geo) {
   return out > inward;
 }
 
+/* ── Over the edge ───────────────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A STROKE THAT REACHES THE RIM GOES OVER IT. Left alone, the flat builder kept laying cream on
+ * the plane of the top, so a gesture that ran past the tier hung in the air beyond it — correct
+ * arithmetic, impossible cake. Sandeep: *"lets make it drape over the edge."*
+ *
+ * The fold is SHARP because the rim is: a tier is a cylinder with a flat lid, so the edge really is
+ * a right angle and cream taken over it bends there. What must not happen is STRETCHING — the length
+ * of cream does not change because it met a corner — so the distance travelled past the rim becomes
+ * exactly that distance DOWN the wall. Arc length in, arc length out.
+ *
+ * ⚠️ AND THE RELIEF TURNS WITH THE SURFACE. On the lid it stands up; on the wall it stands out. A
+ * height added along +Y the whole way would bury the draped half inside the cake. The direction
+ * rotates across a short band rather than flipping, so the lip rolls over the corner instead of
+ * ending in a step. */
+function drapePoint(x, z, h, R, topY) {
+  const d = Math.hypot(x, z);
+  if (d <= R) return [x, topY + h, z];                     // still on the lid: relief points up
+  const th = Math.atan2(x, z);
+  const over = d - R;                                       // how far past the rim it travelled
+  // Over the corner the relief swings from up to outward across a band, so the lip rolls.
+  const turn = smoothstep(0, 0.09 * R, over);
+  const out = R + h * turn;
+  return [Math.sin(th) * out, topY - over + h * (1 - turn), Math.cos(th) * out];
+}
+
 /**
  * The same stroke, laid on a flat surface — the cake top or the board. `path` is in units of R from
- * the axis, so [-1, 1] spans the tier.
+ * the axis, so [-1, 1] spans the tier. A gesture that reaches the rim drapes down the wall.
  */
 export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}) {
   const p = { ...BRUSH_ON_CAKE_DEFAULTS, ...opts };
@@ -361,8 +387,11 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
       const u = j / (m - 1);
       const [gx, gz] = grid[i][j];
       const along = n > 1 ? i / (n - 1) : 0;
-      pos.push(gx, y + skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
-                 * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain }), gz);
+      const h = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
+                * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
+      /* `drape` off keeps the old behaviour for a flat surface with no rim to fall off — the BOARD,
+         where running past the edge of the tier is not running past anything. */
+      pos.push(...(p.drape === false ? [gx, y + h, gz] : drapePoint(gx, gz, h, R, y)));
     }
   }
   for (let i = 0; i < n - 1; i++) {
