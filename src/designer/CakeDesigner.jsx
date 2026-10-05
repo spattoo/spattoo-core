@@ -328,9 +328,17 @@ const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 //                clicked "+" but hasn't picked its colour yet. It renders as a dashed "pick a colour"
 //                chip and isn't a real stop, so direction/balance stay hidden until it's filled.
 const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
+/* ⚠️ THREE, AND IT IS A DECISION RATHER THAN A LIMIT OF THE CODE. Sandeep, on the drip: *"it can
+   accept up to 3 colors. 2 colors is less, and many colors is not practical. lets confine it to 3."*
+   Two is a gender reveal and little else; past three a cake stops reading as a pour and starts
+   reading as a swatch card, and a baker has to actually make the thing. Named because the number
+   was written twice — the control hid its `+` at one copy while the ring popup's add handler
+   checked another, which is how a cap comes to disagree with itself. */
+export const PIPING_MAX_STOPS = 3;
+
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
                             modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange, pending = false,
-                            label = 'Gradient colors', maxStops = 3 }) {
+                            label = 'Gradient colors', maxStops = PIPING_MAX_STOPS }) {
   const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
     <div style={s.gradientBlock}>
@@ -15858,7 +15866,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 modes={isDrip ? [] : undefined}
                                 stops={gStops} activeStop={gActive} mode={gMode}
                                 onSelectStop={setGradStop}
-                                onAddStop={() => { if (gStops.length >= 3) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
+                                onAddStop={() => { if (gStops.length >= PIPING_MAX_STOPS) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
                                 onRemoveStop={i => { writePipingGradient(tierIndex, zone, gStops.filter((_, idx) => idx !== i), gMode); setGradStop(0); }}
                                 onModeChange={m => writePipingGradient(tierIndex, zone, gStops, m)}
                               />
