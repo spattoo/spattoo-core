@@ -86,18 +86,45 @@ describe('a stroke on the wall', () => {
     expect([...c.attributes.position.array]).not.toEqual([...a.attributes.position.array]);
   });
 
-  /* The torn tip is the random bit he asked for: "randomness in the edge spikes where we leave the
-     stroke". Two seeds must disagree at the END far more than at the start. */
-  it('the lift-off end is where the randomness lives', () => {
-    const ends = s => {
-      const g = buildBrushStrokeOnWall({ ...WALL, path: SWEEP, seed: s, weight: 1 });
-      const pos = g.attributes.position, last = [];
-      for (let v = pos.count - 11; v < pos.count; v++) last.push(pos.getY(v));
-      return last;
-    };
-    const a = ends(3), b = ends(8);
-    expect(a.some((y, i) => Math.abs(y - b[i]) > 1e-6)).toBe(true);
+  /* ⚠️ THE TEST THAT MATTERED, AND MY FIRST ONE WAS NOT IT. I asked only that two seeds differ
+     somewhere in the last row — which they did even while the tip was being COLLAPSED to its two end
+     points, because those two points come from different places. Sandeep spotted it off a render:
+     *"all the edges where the stroke is released look same. there should be randomness."*
+
+     The honest question is whether the last row is a straight line. `brushStroke` returns the tip as
+     seven fingers of different lengths; flattened between two corners they are gone, and every
+     stroke ends on the same ruled taper however different its seed is. */
+  it('the lift-off end is a row of fingers, not a ruled line', () => {
+    const geo = buildBrushStrokeOnWall({ ...WALL, path: SWEEP, weight: 1, across: 15 });
+    const pos = geo.attributes.position, m = 15;
+    const row = [];
+    for (let v = pos.count - m; v < pos.count; v++) row.push([pos.getX(v), pos.getY(v), pos.getZ(v)]);
+    // How far each point strays from the straight line between the row's two ends.
+    const a = row[0], b = row[row.length - 1];
+    const dx = b[0] - a[0], dy = b[1] - a[1], dz = b[2] - a[2];
+    const len = Math.hypot(dx, dy, dz) || 1;
+    let worst = 0;
+    for (let i = 1; i < row.length - 1; i++) {
+      const t = ((row[i][0] - a[0]) * dx + (row[i][1] - a[1]) * dy + (row[i][2] - a[2]) * dz) / (len * len);
+      worst = Math.max(worst, Math.hypot(row[i][0] - (a[0] + dx * t),
+                                         row[i][1] - (a[1] + dy * t),
+                                         row[i][2] - (a[2] + dz * t)));
+    }
+    expect(worst).toBeGreaterThan(0.01);     // a collapsed tip measures exactly 0
   });
+
+  it('and two strokes tear differently', () => {
+    const endRow = seed => {
+      const g = buildBrushStrokeOnWall({ ...WALL, path: SWEEP, seed, weight: 1, across: 15 });
+      const pos = g.attributes.position, out = [];
+      for (let v = pos.count - 15; v < pos.count; v++) out.push(pos.getY(v));
+      return out;
+    };
+    const a = endRow(3), b = endRow(8);
+    const spread = a.reduce((acc, y, i) => acc + Math.abs(y - b[i]), 0) / a.length;
+    expect(spread).toBeGreaterThan(0.002);
+  });
+
 });
 
 describe('a stroke on a flat surface', () => {

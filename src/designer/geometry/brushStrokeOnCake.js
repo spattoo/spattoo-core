@@ -75,6 +75,38 @@ export function brushLoad(t) {
   return start * run;
 }
 
+
+/* The rows of the mesh, each `m` points wide, in the stroke's own flat space.
+ *
+ * ⚠️ THE TORN TIP IS A ROW OF ITS OWN, SAMPLED ACROSS — and collapsing it to its two end points is
+ * exactly the bug Sandeep spotted off a render: *"all the edges where the stroke is released look
+ * same. there should be randomness."* `brushStroke` returns the tip as SEVEN fingers of different
+ * lengths, which is the randomness; taking only `tip[0]` and `tip[last]` and lerping between them
+ * throws every one of them away and leaves a ruled line. Each stroke then ended identically however
+ * different its seed was — the variation existed and was being discarded one line before it was
+ * used.
+ */
+function strokeGrid(stroke, m) {
+  const grid = stroke.band.map(([l, r]) => {
+    const row = [];
+    for (let j = 0; j < m; j++) { const u = j / (m - 1); row.push([lerp(l[0], r[0], u), lerp(l[1], r[1], u)]); }
+    return row;
+  });
+  if (stroke.tip?.length) {
+    // The fingers, with the last cross-section's own corners at either end so the row closes.
+    const [l, r] = stroke.band[stroke.band.length - 1];
+    const pts = [l, ...stroke.tip, r];
+    const row = [];
+    for (let j = 0; j < m; j++) {
+      const x = (j / (m - 1)) * (pts.length - 1);
+      const i0 = Math.floor(x), i1 = Math.min(pts.length - 1, i0 + 1), f = x - i0;
+      row.push([lerp(pts[i0][0], pts[i1][0], f), lerp(pts[i0][1], pts[i1][1], f)]);
+    }
+    grid.push(row);
+  }
+  return grid;
+}
+
 /**
  * A brushstroke seated on a cylindrical wall.
  *
@@ -94,24 +126,19 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed });
   if (!stroke || !stroke.band?.length) return null;
 
-  const rows = stroke.band.slice();
-  /* The torn tip becomes a final row at zero height: the layer thins until it breaks, so the fingers
-     lie flat on the cake rather than ending in a wall of cream. */
-  if (stroke.tip?.length) rows.push([stroke.tip[0], stroke.tip[stroke.tip.length - 1]]);
-
-  const n = rows.length, m = Math.max(3, p.across | 0);
+  const m = Math.max(3, p.across | 0);
+  const grid = strokeGrid(stroke, m);
+  const n = grid.length;
   const pos = [], idx = [];
   const maxLift = p.lift * R, skim = p.skim * R;
   for (let i = 0; i < n; i++) {
-    const [l, r] = rows[i];
     const along = n > 1 ? i / (n - 1) : 0;
     const load = brushLoad(along) * clamp01(p.weight);
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
-      const s = lerp(l[0], r[0], u);               // arc length round the cake
-      const y = lerp(l[1], r[1], u);               // height up the wall
+      const [sx, y] = grid[i][j];                  // arc length round the cake, height up the wall
       const h = skim + maxLift * load * brushRelief(u, p.ridge);
-      const th = s / R;
+      const th = sx / R;
       const rad = R + h;
       pos.push(Math.sin(th) * rad, baseY + y, Math.cos(th) * rad);
     }
@@ -163,20 +190,17 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed });
   if (!stroke || !stroke.band?.length) return null;
 
-  const rows = stroke.band.slice();
-  if (stroke.tip?.length) rows.push([stroke.tip[0], stroke.tip[stroke.tip.length - 1]]);
-
-  const n = rows.length, m = Math.max(3, p.across | 0);
+  const m = Math.max(3, p.across | 0);
+  const grid = strokeGrid(stroke, m);
+  const n = grid.length;
   const pos = [], idx = [];
   const maxLift = p.lift * R, skim = p.skim * R;
   for (let i = 0; i < n; i++) {
-    const [l, r] = rows[i];
     const load = brushLoad(n > 1 ? i / (n - 1) : 0) * clamp01(p.weight);
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
-      pos.push(lerp(l[0], r[0], u),
-               y + skim + maxLift * load * brushRelief(u, p.ridge),
-               lerp(l[1], r[1], u));
+      const [gx, gz] = grid[i][j];
+      pos.push(gx, y + skim + maxLift * load * brushRelief(u, p.ridge), gz);
     }
   }
   for (let i = 0; i < n - 1; i++) {
