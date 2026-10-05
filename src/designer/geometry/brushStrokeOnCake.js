@@ -76,7 +76,14 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      This is doing double duty as the scale of "is there cream here at all", which is right: a
      clearance smaller than the thing it is clearing is not one. Applies ONLY over cream — a lone
      stroke is bit-identical with and without a bed, and there is a test holding that. */
-  seam:      0.012,   // × R: how far a stroke stands off the cream it is laid on
+  /* ⚠️ A FRACTION OF THE CREAM BENEATH, NOT A FIXED HEIGHT — and it was fixed, which is most of why
+     a thickness-0 band still looked like a stack of slabs. This clearance is not physics: the
+     stroke's own relief already adds its own layer on top. It exists ONLY to cover the bed's
+     under-read, which is proportional to the height it is reading (measured at about a tenth), so a
+     clearance that does not scale is far too big under a thin film — 0.012R of gap under 0.019R of
+     cream. `seamMin` is the floor: the bed's grid quantisation, which does not scale with anything. */
+  seam:      0.18,    // 0 … 1 of the cream under it: how far a stroke stands off what it is laid on
+  seamMin:   0.0015,  // × R: and never less than this, which is the bed's own resolution
   /* How far in from each edge the cream runs out. The first number is onto bare cake, the second
      onto cream already laid — see brushRelief, and note that a stroke uses BOTH at once when one of
      its edges is on a neighbour and the other is on the wall. */
@@ -103,7 +110,14 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      its edge, and a dead-flat film also Z-FIGHTS: over a long grazing sweep the wall punches through
      it in stripes, which is the "breaking at extreme sweep" in the same screenshot. A film with its
      own small relief is both the texture and the clearance. */
-  film:   0.12,   // 0 … 1: how much of the full relief a zero-thickness stroke still carries
+  /* ⚠️ AND 0.12 OF THE FULL RELIEF WAS NOT A FILM, IT WAS A LAYER. Sandeep, with the slider at the
+     bottom: *"even at thickness 0 it looks very thick."* His own spec for this control is the test —
+     *"if its a thick stroke edges have elevation, if its a lighter stroke, it just merges with the
+     cake surface without elevation"* — and 0.12 × the 0.17R lift is 0.019R per stroke, which doubles
+     wherever two overlap. A cake band came out 0.0497R proud at ZERO. The z-fighting this guards
+     against is already handled by polygonOffset; what the film has to do is catch light, and 0.05
+     still does. */
+  film:   0.05,   // 0 … 1: how much of the full relief a zero-thickness stroke still carries
   ridge:  0.6,    // 0 … 1: how much of the height sits in the edge ridges vs the scraped middle
   /* ⚠️ HOW WIDE THE STROKE STILL IS WHERE IT IS LIFTED, AS A RANGE RATHER THAN A NUMBER. Sandeep,
      off a render of five: *"the width of the stroke release does not need to be same. there should
@@ -362,7 +376,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const n = grid.length;
   const pos = [], idx = [], thick = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
-  const seam = p.seam * R;
+  const seamMin = p.seamMin * R;
   let prev = null;                       // the previous row's stamps, for the half-steps between
   for (let i = 0; i < n; i++) {
     const along = n > 1 ? i / (n - 1) : 0;
@@ -377,7 +391,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
       const bedH = bedAt ? bedAt(gx, gy) : 0;
       /* How much cream is actually under this point — 0 on bare wall, 1 well inside a neighbour.
          Everything about an overlap is conditioned on this, and nothing about a lone stroke is. */
-      const onCream = clamp01(bedH / (seam || 1e-9));
+      const onCream = clamp01(bedH / (0.01 * R));
       /* ⚠️ RIDING EXACTLY ON THE CREAM BELOW IS NOT AN OVERLAP, IT IS A JOIN. The relief feathers to
          nothing at both edges, so a stroke laid on another meets it TANGENTIALLY: the two surfaces
          become coplanar along the seam, there is no step to cast a shadow, and the depth buffer has
@@ -386,7 +400,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          does not blend into it, it lays a new layer ON it, and the thickness of that layer is the
          whole tell. So the stroke clears the cream it crosses by a little, and by nothing at all
          where there is no cream to clear. */
-      const base = Math.max(skim, bedH + seam * onCream);
+      const base = Math.max(skim, bedH + onCream * Math.max(seamMin, bedH * p.seam));
       const skirt = p.skirt + (p.skirtOn - p.skirt) * onCream;
       const h = base + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt, floor: p.lip * onCream })
                 * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });

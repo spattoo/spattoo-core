@@ -725,3 +725,36 @@ describe('a short pull is a narrow pull', () => {
     }
   });
 });
+
+describe('Thickness runs from merged to proud', () => {
+  /* ⚠️ THE CONTROL HAS TO REACH BOTH ENDS, and the bottom end is the one that was wrong. Sandeep's
+     own words for what it should do: *"if its a thick stroke edges have elevation, if its a lighter
+     stroke, it just merges with the cake surface without elevation"* — then, with the slider at the
+     bottom: *"even at thickness 0 it looks very thick."* A band stood 0.0497R proud at ZERO, from a
+     film of 0.12 of the lift doubling wherever two strokes overlapped, plus a clearance that was a
+     fixed height however thin the cream under it was. */
+  const band = weight => buildBrushBand({ R: 1, baseY: 0, wallH: 1.25, under: '#fff',
+                                          colors: ['#a00', '#0a0', '#00a'], count: 18, climb: 0.45, weight, seed: 5 });
+  const tallest = (parts) => {
+    let hi = 0;
+    for (const part of parts) {
+      const p = part.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) hi = Math.max(hi, Math.hypot(p.getX(i), p.getZ(i)) - 1);
+    }
+    return hi;
+  };
+
+  it('at 0 a band lies almost flat on the wall, overlaps and all', () => {
+    expect(tallest(band(0))).toBeLessThan(0.025);
+  });
+
+  it('and it is still THERE — a flat stroke is not a missing one', () => {
+    /* The other half of the same sentence. A film with no relief at all catches no light and
+       z-fights the wall, which is what the film exists to prevent. */
+    expect(tallest(band(0))).toBeGreaterThan(0.008);
+  });
+
+  it('at 1 it stands well proud, so the slider spans something worth dragging', () => {
+    expect(tallest(band(1))).toBeGreaterThan(tallest(band(0)) * 8);
+  });
+});
