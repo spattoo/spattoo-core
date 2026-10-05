@@ -148,12 +148,17 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      photograph: *"some pieces stroke release are too artificial."* A bristled release leaves streaks
      of uneven length with no overall shape. The envelope goes from 1.6 to 0.3 so it is a hint rather
      than a silhouette, and `across` rises with the count or the streaks cannot be sampled. */
-  tipFingers: 18,
+  tipFingers: 15,
   tipTaper:   0.3,
-  tipReach:   0.5,
+  /* ⚠️ SHORT EXCURSIONS, OR THE RELEASE IS A COMB. At 0.5 of the width the longest finger runs
+     further than the dissolve is deep, so each one stays solid for most of its length and reads as a
+     needle — Sandeep, ringing the band of them: *"these spikes look too harsh."* A release is a
+     ragged LINE, not a row of spikes: the excursions have to be short enough that the dissolve
+     reaches most of the way down them. */
+  tipReach:   0.2,
   tipJitter:  0.8,    // 0 … 1: how unevenly the streaks are spaced — equal pitch reads as a saw
   tipRows:    5,      // cross-sections through the release, so the dissolve has room to happen
-  merge:      0.055,  // × R: how deep the dissolve reaches back from each finger's own end
+  merge:      0.075,  // × R: how deep the dissolve reaches back from each finger's own end
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
