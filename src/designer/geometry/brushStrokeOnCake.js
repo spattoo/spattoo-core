@@ -535,7 +535,15 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          so a stubby pull dissolves over exactly the same depth as a long one. As a fraction it would
          be a huge wash on a long stroke and nothing on a short one, which is both wrong and the
          opposite of what a hand does. */
-      const cover = side * smoothstep(0, merge, toTip[i][j]);
+      /* ⚠️ A RELEASE ONLY DISSOLVES INTO WHAT IS ACTUALLY UNDER IT, and over a neighbour that is
+         CREAM, not the cake. Washed to the wall's colour regardless, every stroke laid a pale ghost
+         of its own release across the stroke behind it — which on a packed band is a white halo
+         beside each one, exactly as Sandeep saw it with a dark colour: *"see the white color shadow
+         for each stroke."* Measured on that band: 16.5% of the mesh's vertices were under 0.4
+         saturation, so it was the pigment and not the lighting however much it looked like a shadow.
+         Where there is cream beneath, the layer thins into the SAME cream and nothing shows. */
+      const dissolve = smoothstep(0, merge, toTip[i][j]);
+      const cover = side * (dissolve + (1 - dissolve) * onCream);
       thick.push(clamp01(cover));
     }
     if (bedPut) prev = row;
@@ -918,16 +926,19 @@ export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256 } = {}) 
  */
 export const BRUSH_BAND_DEFAULTS = {
   colors:   ['#F6DCE2', '#8EC5E8', '#F4C542'],
-  count:    18,      // strokes round the tier — snapped to a multiple of `colors.length`
+  /* ⚠️ THE DEFAULTS ARE THE ONES SANDEEP SETTLED ON IN THE STUDIO, not a guess — he drove the
+     sliders until the band looked like the cake he is copying and sent the screenshot. That is the
+     whole point of the studio existing, so they are copied here verbatim rather than rounded. */
+  count:    30,      // strokes round the tier — snapped to a multiple of `colors.length`
   jitter:   0.35,    // 0 … 1: how far each one wanders off its even spacing, × the gap
   overlap:  0.35,    // 0 … 1: how much of its own width a stroke shares with its neighbour
   rise:     0.02,    // where the pulls start, × wall height
-  climb:    0.52,    // and how far up they travel
+  climb:    0.42,    // and how far up they travel
   climbVar: 0.55,    // 0 … 1: how unequal those lengths are — the randomness in height
-  sweep:    0.015,
-  bow:      0.012,
+  sweep:    0,
+  bow:      -0.2,
   width:    null,    // null = derived from `count` and `overlap`, so the band always closes
-  weight:   0.6,
+  weight:   0.18,
   /* How far a thin stroke washes toward the wall under it — passed through to paintBrushColors, so
      a band and a single stroke cannot disagree about it. */
   floor:    null,

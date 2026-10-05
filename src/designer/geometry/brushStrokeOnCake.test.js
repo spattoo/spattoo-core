@@ -749,8 +749,12 @@ describe('a short pull is a narrow pull', () => {
        REMOVED, which is how they were caught; this one does not. */
     const m = BRUSH_ON_CAKE_DEFAULTS.across, rows = BRUSH_ON_CAKE_DEFAULTS.rows, wallH = 1.25;
     for (const climb of [0.52, 0.3, 0.15, 0.12]) {
+      /* ⚠️ `bow: 0` HOLDS THE OTHER VARIABLE. This sweeps LENGTH, and the band's default bow is
+         -0.2 — which bends the gesture into an S and legitimately changes how tall the mesh is for
+         a given climb. Inheriting it made this test fail on a defaults change that had nothing to do
+         with what it is about. A sweep answers only the question it varies. */
       const parts = buildBrushBand({ R: 1, baseY: 0, wallH, under: '#fff',
-                                     colors: ['#a00'], count: 18, climb, climbVar: 0, seed: 5 });
+                                     colors: ['#a00'], count: 18, climb, climbVar: 0, bow: 0, seed: 5 });
       const p = parts[0].geometry.attributes.position;
       let y0 = Infinity, y1 = -Infinity;
       for (let i = 0; i < m * rows; i++) { y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i)); }
