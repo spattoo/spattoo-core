@@ -176,6 +176,12 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
  * background, so it is in the render — a studio that paints a different colour behind a transparent
  * canvas is judging its subject against a surround no cake has. */
 export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
+/* ⚠️ A HOST THAT MOUNTS SceneEnv MUST BE ABLE TO SAY WHERE THE MAP IS, and until this it could not.
+   SceneLights and SceneEnv were both on this surface and `configureEnvMap` was not, so spattoo-admin
+   — which mounts them in a dozen studios — had no way to reach it and every studio fell back to
+   drei's indoor preset. Half an interface is how that went unnoticed: the studios looked compliant,
+   `check:studio-scene` passed, and the lighting was wrong in all of them. */
+export { configureEnvMap, envProps } from './designer/canvas/envMap.js';
 /* THE cream material — one answer to "what does cream look like", so a studio cannot form a second
    opinion about it. From the LEAF module rather than from CakeTier: exporting it from there makes
    CakeTier an exported scene-lighting entry point and check:env-map rightly demands the HDRI. */

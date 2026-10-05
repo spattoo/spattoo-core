@@ -57,6 +57,8 @@ const SEAM  = +(P.get('seam')  ?? D.seam);
 const LIP   = +(P.get('lip')   ?? D.lip);
 const SKON  = +(P.get('skirtOn') ?? D.skirtOn);
 const CLING = +(P.get('cling') ?? D.cling);
+const FLOOR = P.has('floor') ? +P.get('floor') : null;
+const BITE  = P.has('bite') ? +P.get('bite') : null;
 /* ?top=1 — the SAME stroke laid on the cake top instead of the wall. A cream stroke goes on both,
    hugging either, and buildBrushStrokeOnFlat had never been looked at. */
 const TOP = P.has('top');
@@ -117,7 +119,7 @@ function Band() {
   const parts = useMemo(() => buildBrushBand({
     R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
     colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
-    count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: 0.75,
+    count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: 0.75, floor: FLOOR, bite: BITE,
   }), []);
   if (!parts.length) return null;
   console.log('[band]', brushBandCount({ count: BAND, colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3) }),

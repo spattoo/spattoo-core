@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { brushStroke } from './brushStroke.js';
+// THE cream albedo — the one every piped stroke already uses. See paintBrushColors.
+import { creamAlbedo } from './creamMaterial.js';
 // The band merges into ONE mesh — same function, and the same reasons, as a piped wall.
 import { mergePenGeometries } from './creamPen.js';
 
@@ -586,7 +588,18 @@ export function dragStrokeTo(grab, point, opts = {}) {
 export function paintBrushColors(geo, color, under, { floor = 0.55, bite = 0.35 } = {}) {
   const t = geo?.attributes?.aThickness;
   if (!t) return geo;
-  const a = new THREE.Color(color), b = new THREE.Color(under ?? '#ffffff');
+  /* ⚠️ ALBEDO, NOT THE HEX — INVARIANTS #16, and this module was breaking it in the one way the rule
+     is hardest to see. `creamMaterialProps` returns `color: creamAlbedo(hex)` precisely because this
+     scene's light is about 3.25×: a material handed the raw hex renders roughly three times too
+     bright. A brushstroke mesh overrides that `color` to white and carries its colour PER VERTEX
+     instead — it has to, because the wash at a thin edge varies vertex by vertex — and the override
+     threw the correction away with it. Every stroke this module has ever drawn was rendered at its
+     raw hex under a reference light built for the corrected one, which is exactly what it looked
+     like: Sandeep, of a studio render, *"I see too much exposure of light on this screenshot."*
+     Both ends of the mix are corrected, not just the cream: `under` is the WALL, and a wall is lit by
+     the same light. Corrected on one end only, a thin stroke would wash toward a surface three times
+     brighter than the one it is actually lying on. */
+  const a = new THREE.Color(creamAlbedo(color)), b = new THREE.Color(creamAlbedo(under ?? '#ffffff'));
   const mix = new THREE.Color();
   const out = new Float32Array(t.count * 3);
   for (let v = 0; v < t.count; v++) {
@@ -752,6 +765,10 @@ export const BRUSH_BAND_DEFAULTS = {
   bow:      0.012,
   width:    null,    // null = derived from `count` and `overlap`, so the band always closes
   weight:   0.6,
+  /* How far a thin stroke washes toward the wall under it — passed through to paintBrushColors, so
+     a band and a single stroke cannot disagree about it. */
+  floor:    null,
+  bite:     null,
   seed:     1,
 };
 
@@ -816,7 +833,10 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
                            sweep: p.sweep, bow: p.bow }),
     });
     const k = i % colors.length;
-    if (geo) byColor[k].push(paintBrushColors(geo, colors[k], under));
+    const wash = {};
+    if (p.floor != null) wash.floor = p.floor;
+    if (p.bite != null) wash.bite = p.bite;
+    if (geo) byColor[k].push(paintBrushColors(geo, colors[k], under, wash));
   }
   return byColor
     .map((list, k) => ({ color: colors[k], geometry: list.length ? mergePenGeometries(list) : null }))

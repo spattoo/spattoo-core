@@ -383,7 +383,12 @@ describe('coverage', () => {
       if (t.getX(v) > 0.8) strongest = Math.max(strongest, red);
       if (t.getX(v) < 0.05) weakest = Math.min(weakest, red);
     }
-    expect(strongest).toBeGreaterThan(weakest + 0.2);
+    /* ⚠️ A RATIO, NOT A MARGIN. This read `weakest + 0.2` and broke the day paintBrushColors started
+       correcting for the scene's light — creamAlbedo takes pure red from 1.0 to 0.337 of linear, so
+       the whole range it measures is compressed and a fixed gap in absolute units no longer fits
+       inside it. The claim was never about 0.2: it is that a thick part of the stroke is markedly
+       more saturated than a dry edge, and that survives any scaling of both. */
+    expect(strongest).toBeGreaterThan(weakest * 1.5);
   });
 
   it('a stroke with no thickness attribute is left alone', () => {
