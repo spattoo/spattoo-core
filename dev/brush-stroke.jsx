@@ -47,6 +47,7 @@ const ROWS  = +(P.get('rows')  ?? D.rows);
 const SEAM  = +(P.get('seam')  ?? D.seam);
 const LIP   = +(P.get('lip')   ?? D.lip);
 const SKON  = +(P.get('skirtOn') ?? D.skirtOn);
+const CLING = +(P.get('cling') ?? D.cling);
 /* ?top=1 — the SAME stroke laid on the cake top instead of the wall. A cream stroke goes on both,
    hugging either, and buildBrushStrokeOnFlat had never been looked at. */
 const TOP = P.has('top');
@@ -82,7 +83,7 @@ const BED = P.has('nobed') ? null : makeBrushBed({ R, wallH: TIER_H });
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, seam: SEAM, lip: LIP, skirtOn: SKON, bed: BED })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, seam: SEAM, lip: LIP, skirtOn: SKON, cling: CLING, bed: BED })
   ), [at, weight, seed, idx]);
   /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
      a flat colour never will. */

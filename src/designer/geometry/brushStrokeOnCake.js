@@ -77,13 +77,14 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      onto cream already laid — see brushRelief, and note that a stroke uses BOTH at once when one of
      its edges is on a neighbour and the other is on the wall. */
   skirt:     0.13,    // 0 … 1 of the width: the feathered edge on bare cake
-  skirtOn:   0.09,    // and the wall it leaves where it lifts off cream
+  skirtOn:   0.11,    // and the wall it leaves where it lifts off cream
   /* ⚠️ AND ON CREAM IT DOES NOT RUN OUT AT ALL. A clearance alone is not an overlap: it puts the new
      stroke a hair above the old one and then still TAPERS IT TO NOTHING at the edge, so the two
      surfaces arrive at the same place and the seam is a colour boundary again — measured at 0.009R
      against the stroke's own 0.09R of relief, which is a tenth, which is nothing. Cream dragged onto
      cream stops at a height, because the blade is riding on a surface that is already there. */
-  lip:       0.55,    // 0 … 1: how much of its own height a stroke still has where it ends on cream
+  lip:       0.25,    // 0 … 1: how much of its own height a stroke still has where it ends on cream
+  cling:     0.5,     // 0 … 1: how much of that holds the COLOUR up too, rather than washing to the cake
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
      look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of
@@ -101,10 +102,10 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   tipMin: 0.30,
   tipMax: 0.95,
   /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
-     the knife marks are seven lanes across the same band, and four samples per lane turns them into
-     a stepped zigzag — side by side at 31 the lanes come out faceted and half of them never resolve
-     at all. Six per lane is where they go round. */
-  across: 45,     // samples across the band
+     the knife marks are four or five lanes across the same band, and three samples per lane turns
+     them into a stepped zigzag. Six per lane is where they go round, and there is a test holding
+     that ratio — raising `lanes` alone errors nowhere, measures right, and comes out faceted. */
+  across: 31,     // samples across the band
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -127,14 +128,15 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      fraying is turned off and the edges are wandered here instead, in runs: chocolate and cream tear
      in lengths, not at every sample. */
   tear:   0.3,    // 0 … 1: how deeply the trailing edge bites, in runs along the stroke
-  /* ⚠️ TUNED AT CAKE DISTANCE, NOT ON A CLOSE-UP, because that is where it is judged and where the
-     last cut of this died. At 4.5 lanes cutting 0.3 the marks were there on a probe and GONE on a
-     cake — Sandeep, off a whole-cake render: *"this is not good either."* The strokes read as vinyl
-     panels. Swept 4.5/0.3 · 7/0.55 · 8.5/0.7 · 10/0.8 on one wall: everything from 7 reads as
-     dragged cream, and from 8.5 up it starts to comb — evenly ruled, which is the corduroy this
-     file's own note warns about. 7 and 0.55 is the last setting that still looks like a hand. */
-  lanes:  7,      // how many drag lines across the width
-  grain:  0.55,   // 0 … 1: how deep the lines cut, × the local relief
+  /* ⚠️ DEEPER MARKS WERE TRIED AND THEY LOOK WORSE, which is the whole note. "this is not good
+     either" about a whole-cake render was about the OVERLAPS; I read it as the texture, swept
+     4.5/0.3 · 7/0.55 · 8.5/0.7 · 10/0.8, picked 7/0.55 off a close-up and shipped it — Sandeep:
+     *"knife marks to too heavy and it started looking bad… we were working on the overlap. not on
+     knife marks."* At 5.5 the strokes start to rib and by 7 they are corduroy, which is the machined
+     look this file's own note already warns about. Back where it was, and it stays there unless
+     someone asks for it. */
+  lanes:  4.5,    // how many drag lines across the width — fractional so they do not land evenly
+  grain:  0.3,    // 0 … 1: how deep the lines cut, × the local relief
   seed:   1,
 };
 
@@ -400,7 +402,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          a saturated neighbour: a bright seam running the length of the overlap, which is exactly the
          look of one shape pasted over another rather than laid on it. */
       const cover = load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u);
-      thick.push(clamp01(cover + (1 - cover) * onCream));
+      thick.push(clamp01(cover + (1 - cover) * onCream * p.cling));
     }
     if (bedPut) prev = row;
   }
