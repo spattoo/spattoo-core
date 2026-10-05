@@ -435,6 +435,35 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   return geo;
 }
 
+
+/* How long a gesture actually is, in world units, once it has been unrolled flat. */
+function pathLength(flat) {
+  let d = 0;
+  for (let i = 1; i < flat.length; i++) d += Math.hypot(flat[i][0] - flat[i - 1][0], flat[i][1] - flat[i - 1][1]);
+  return d;
+}
+
+/**
+ * The widest a pull of this length can be and still look like a pull.
+ *
+ * ⚠️ A STROKE WIDER THAN IT IS LONG IS NOT A STROKE, AND IT DOES NOT DEGRADE GRACEFULLY — it comes
+ * apart. `brushStroke` builds the band by offsetting the gesture by half its width, and once that
+ * half-width approaches the length there is no gesture left to offset: the two edges meet, cross,
+ * and the tip taper and the tear — both measured as fractions of the WIDTH — swallow the whole
+ * piece. Sandeep, dragging Length down: *"it lost the shape."* What came out were sideways lumps
+ * with holes in them, which is the same failure hand-piping.md already records for a chocolate
+ * brushstroke taken round a tight curve: *"offsetting a curve by more than its radius of curvature
+ * folds the inner edge through the centre."*
+ *
+ * ⚠️ AND IT IS CLAMPED HERE RATHER THAN ASKED OF THE CALLER, because every caller gets it wrong in
+ * the same way: width is authored once and length is a slider, so the pair goes bad the moment
+ * somebody drags the slider. A knife pressed and pulled a short distance leaves a SHORT, NARROWER
+ * mark; it does not leave a wide one. 0.95 rather than 1 so the widest case still reads as a pull
+ * rather than as a square.
+ */
+export const BRUSH_WIDTH_OF_LENGTH = 0.95;
+export const brushMaxWidth = (len) => Math.max(1e-4, len * BRUSH_WIDTH_OF_LENGTH);
+
 /**
  * A brushstroke seated on a cylindrical wall.
  *
@@ -451,7 +480,8 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
      and only then wrapped. Solving it in 3D would mean re-deriving every tear and jag against a
      curve, for a shape that is by definition the same smear wherever it is laid. */
   const flat = densify(path.map(([u, v]) => [u * Math.PI * 2 * R, v * wallH]), p.rows);
-  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
+  const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
+  const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
   const put = p.bed ? [] : null;
@@ -518,7 +548,8 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const p = { ...BRUSH_ON_CAKE_DEFAULTS, ...opts };
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
   const flat = densify(path.map(([x, z]) => [x * R, z * R]), p.rows);
-  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
+  const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
+  const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
   return buildStrokeMesh(stroke, p, {

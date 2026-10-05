@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
          wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture, makeBrushBed,
-         buildBrushBand, brushBandCount,
+         buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
 const WALL = { R: 1, baseY: 0, wallH: 1 };
@@ -664,5 +664,64 @@ describe('a band of strokes round a tier', () => {
     expect(hiAll - lo).toBeGreaterThan(0.1);                   // they really do differ
     /* And not as a ramp: the tallest is not simply the last one round. */
     expect(tops.indexOf(hiAll)).not.toBe(tops.length - 1);
+  });
+});
+
+describe('a short pull is a narrow pull', () => {
+  /* ⚠️ THE FAILURE IS A COLLAPSE, NOT A WOBBLE, which is why this is clamped rather than warned
+     about. `brushStroke` offsets the gesture by half the width; once that approaches the length
+     there is no gesture left to offset, the two edges cross, and the tip taper and the tear — both
+     fractions of the WIDTH — swallow the piece. Sandeep, dragging Length down: *"it lost the
+     shape."* What came back were sideways lumps with holes in them. */
+  const gest = climb => brushGesture({ at: 0, seed: 11, sweep: 0.012, climb, climbVar: 0 });
+  /* How far the mesh reaches across the wall against how far it reaches up it. */
+  const spread = (geo) => {
+    const p = geo.attributes.position;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const th = Math.atan2(p.getX(i), p.getZ(i));
+      x0 = Math.min(x0, th); x1 = Math.max(x1, th);
+      y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i));
+    }
+    return { across: x1 - x0, along: y1 - y0 };
+  };
+
+  it('a stroke is never much wider than it is long, however wide it was asked to be', () => {
+    for (const climb of [0.5, 0.3, 0.2, 0.12]) {
+      const g = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, width: 1.2, seed: 11, path: gest(climb) });
+      const { across, along } = spread(g);
+      expect(across / along).toBeLessThan(1.6);
+    }
+  });
+
+  it('and a stroke with room for its width is left exactly alone', () => {
+    /* The clamp must not be a tax on the normal case: a long pull keeps the width it was given,
+       byte for byte, so nothing already authored changes shape. */
+    const asked = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, width: 0.3, seed: 11, path: gest(0.8) });
+    const loose = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, width: 0.3, seed: 11, path: gest(0.8), rows: BRUSH_ON_CAKE_DEFAULTS.rows });
+    expect(Array.from(asked.attributes.position.array)).toEqual(Array.from(loose.attributes.position.array));
+    expect(brushMaxWidth(0.8)).toBeGreaterThan(0.3);     // the clamp genuinely had room to spare
+  });
+
+  it('the band keeps its shape at every length, not just the default', () => {
+    /* ⚠️ MEASURED AGAINST THE GESTURE'S OWN LENGTH, and the two cuts before this one are the reason.
+       The first divided the PART's angular span by the stroke count, which proves nothing twice
+       over: the part wraps the whole ring and `atan2` wraps with it, so the span is ~2π whatever
+       shape the strokes are. The second measured one stroke's width against its height — better, and
+       still blind here, because an over-wide band does not spread sideways, it FOLDS: at climb 0.15
+       the unclamped stroke measured 0.405 tall for a gesture 0.19 long, so the aspect ratio came out
+       at 1.24 and passed while the shape was ruined.
+       What the collapse actually does is put cream where the gesture never went. So: how far up the
+       wall the mesh reaches, against how far the hand moved. Both cuts above passed with the clamp
+       REMOVED, which is how they were caught; this one does not. */
+    const m = BRUSH_ON_CAKE_DEFAULTS.across, rows = BRUSH_ON_CAKE_DEFAULTS.rows, wallH = 1.25;
+    for (const climb of [0.52, 0.3, 0.15, 0.12]) {
+      const parts = buildBrushBand({ R: 1, baseY: 0, wallH, under: '#fff',
+                                     colors: ['#a00'], count: 18, climb, climbVar: 0, seed: 5 });
+      const p = parts[0].geometry.attributes.position;
+      let y0 = Infinity, y1 = -Infinity;
+      for (let i = 0; i < m * rows; i++) { y0 = Math.min(y0, p.getY(i)); y1 = Math.max(y1, p.getY(i)); }
+      expect((y1 - y0) / (climb * wallH)).toBeLessThan(1.7);
+    }
   });
 });
