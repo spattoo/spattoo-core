@@ -474,8 +474,14 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          came out pale — turn Thickness to 0 and the cream lost its colour, which is not what thin
          cream does. It also spread the fade over the top 45% of every stroke, where a photograph of
          the real thing shows a saturated pull that lets go only at the very end.
-         So the pigment has its own curve: full strength until the last quarter, then it goes. */
-      const release = 1 - smoothstep(0.58, 1, along);
+         ⚠️ AND IT IS A RIM AT THE RELEASE, NOT HALF THE STROKE. Every cut of this started the fade
+         far too early — 0.55, then 0.75, then 0.58 — and each one put white up the middle of a pull
+         that a brush is not carrying any white in. Sandeep: *"how can this be correct. half of the
+         stroke is white. brush wont carry white. only at the stroke release, it mixes with cake
+         color so fading somewhre at the edge makes sense."* That is the whole rule, and the
+         photograph says the same: a solid block of colour, and a thin soft edge where the layer
+         finally breaks. The last tenth. */
+      const release = 1 - smoothstep(0.9, 1, along);
       const cover = release * side;
       thick.push(clamp01(cover + (1 - cover) * onCream * p.cling));
     }
@@ -679,7 +685,7 @@ export function dragStrokeTo(grab, point, opts = {}) {
  * real buttercream is not transparent, it is THIN. You are seeing less pigment, not through it. The
  * drip reaches the same conclusion for the same reason; see paintDripColors.
  */
-export function paintBrushColors(geo, color, under, { floor = 0.25, bite = 0.6 } = {}) {
+export function paintBrushColors(geo, color, under, { floor = 0.4, bite = 0.6 } = {}) {
   const t = geo?.attributes?.aThickness;
   if (!t) return geo;
   /* ⚠️ ALBEDO, NOT THE HEX — INVARIANTS #16, and this module was breaking it in the one way the rule
