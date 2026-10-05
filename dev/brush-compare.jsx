@@ -16,13 +16,33 @@ import { garnishMaterialProps } from '../src/designer/geometry/garnishMaterial.j
  * screenshot."* The two share a GESTURE and nothing else, and the only honest way to answer whether
  * they read differently is to put them on one cake under one light.
  *
+ * ⚠️ WHAT THIS PAGE MEASURED, 2026-10-05: the chocolate piece has NO surface texture and cannot be
+ * given any that reads. `brushStroke` generates striations and `buildPanelsGeometry` extrudes only
+ * the outline, so they never reach 3D — and adding them does not help. Measured: subdividing the
+ * front cap and displacing it works (444 verts to 4,179, relief half the panel's thickness, which is
+ * physically right for a smear) and is INVISIBLE. Forced to seven times that depth it is barely
+ * perceptible, and would make a 3 mm panel corrugated.
+ *
+ * The reason is deliberate and documented in garnishMaterial.js: a garnish has clearcoat, environment
+ * and specular switched OFF so its colour stays the chocolate's colour, and that file says in as many
+ * words that what remains *"is not here. It has to happen where the scene environment is applied."*
+ * Shallow relief on a surface with no reflection has nothing to catch. Tested fairly — coloured white
+ * chocolate rather than dark, and tilted into the key light — and it stays flat either way.
+ *
+ * So the 9x vertex cost was reverted rather than shipped. The striations go in the day the garnish
+ * lighting question is answered, and not before.
+ *
  * ⚠️ BOTH ARE THE REAL GENERATORS, NOT APPROXIMATIONS OF THEM. The chocolate piece is
  * `brushStroke` → `buildPanelsGeometry` → `garnishMaterialProps`, which is exactly what the garnish
  * studio saves and the cake renders; the cream one is `buildBrushStrokeOnWall` →
  * `creamMaterialProps`. A hand-rolled stand-in for either would be a picture of my own assumptions.
  */
 const R = 1, TIER_H = 1.25, BOARD_R = 1.5, BOARD_H = 0.07;
-const CHOC = '#5A3A22', CREAM = '#E8788F';
+/* ⚠️ COLOURED WHITE CHOCOLATE, NOT DARK. The studio's own note: *"coloured white chocolate spooned
+   onto acetate"* — the brushstroke cakes are pastels. Comparing a near-black piece against a pink
+   cream stroke stacks the deck: a dark surface shows almost no shading whatever its relief. */
+const CHOC = +(new URLSearchParams(location.search).get('dark') ?? 0) ? '#5A3A22' : '#7FB5DE';
+const CREAM = '#E8788F';
 
 /* The chocolate piece: pulled flat on acetate, set, peeled, and STOOD UP leaning on the cake. */
 function ChocolatePiece() {
