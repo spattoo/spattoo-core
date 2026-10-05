@@ -136,7 +136,18 @@ function Band() {
        vertex colours — but sheen and roughness come from the real one. */
     <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow>
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors />
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
+        {/* ⚠️ THE MATERIAL PROBES, KEPT. ?nospec ?nosheen ?noenv each switch ONE term off, which is
+            how the pale band down every stroke's edge was identified: measured across one scan line
+            it is 143px with the default specular and 63px without, while sheen and envMapIntensity
+            change it by nothing (the second confirming INVARIANTS #18). Three.js defaults
+            specularIntensity to 1, so a cream edge presenting a grazing angle gets a WHITE Fresnel
+            highlight — on a stroke whose edge ramps down to the wall that is a desaturated halo, not
+            a glint. Left here because the fix belongs in creamMaterialProps, which every piped
+            stroke in the app shares, and that is not a change to make without re-measuring cream. */}
+        {...(P.has('nospec') ? { specularIntensity: 0 } : null)}
+        {...(P.has('nosheen') ? { sheen: 0 } : null)}
+        {...(P.has('noenv') ? { envMapIntensity: 0 } : null)} />
     </mesh>
   ));
 }
