@@ -128,7 +128,16 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      against is already handled by polygonOffset; what the film has to do is catch light, and 0.05
      still does. */
   film:   0.05,   // 0 … 1: how much of the full relief a zero-thickness stroke still carries
-  ridge:  0.6,    // 0 … 1: how much of the height sits in the edge ridges vs the scraped middle
+  /* How much pigment the stroke still carries at its SIDES, as against at its release. See the note
+     in buildStrokeMesh: a knife leaves a clean full-strength edge sideways and runs dry lengthways,
+     and one number for both is why solid sides meant a solid, paper-cut tip. */
+  sideFloor: 0.8,
+  /* ⚠️ AND THE REFERENCE HAS NO BEAD ON ANY EDGE. 0.6 put most of the height into the two lips, which
+     at cake scale reads as a rolled rope down the side of every stroke — Sandeep, ringing one:
+     *"when you compare it with the scale of the cake, dont you think that is bulky edge? see the same
+     reference, anything looking that thick?"* On a real brushstroke cake the pulls are close to flat,
+     with the relief spread across the whole width rather than piled at its rim. */
+  ridge:  0.3,    // 0 … 1: how much of the height sits in the edge ridges vs the scraped middle
   /* ⚠️ HOW WIDE THE STROKE STILL IS WHERE IT IS LIFTED, AS A RANGE RATHER THAN A NUMBER. Sandeep,
      off a render of five: *"the width of the stroke release does not need to be same. there should
      be randomness. some can be looking as close rectangle, and thats real."* `brushStroke` ended
@@ -450,7 +459,24 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          cake's colour regardless, the edge of a stroke crossing its neighbour came out pale against
          a saturated neighbour: a bright seam running the length of the overlap, which is exactly the
          look of one shape pasted over another rather than laid on it. */
-      const cover = load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u);
+      /* ⚠️ THE SIDES AND THE RELEASE ARE NOT THE SAME THING, and conflating them is what made the
+         tops look like cut paper. One number here drove both, so raising the opacity to stop the
+         BODY washing out — which it had to, a brushstroke is cream and not a glaze — also made the
+         RELEASE solid, and a release that does not fade ends in a hard torn silhouette. Against a
+         photograph of the real thing the tops dissolve: the cream runs out and the last of it
+         streaks away to nothing.
+         So: across the stroke the pigment barely drops at all (`sideFloor`), because a knife laying
+         cream leaves a clean full-strength edge. ALONG it, where the knife runs dry, it fades the
+         whole way. */
+      const side = p.sideFloor + (1 - p.sideFloor) * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u);
+      /* ⚠️ THE PIGMENT DOES NOT FOLLOW `load`, AND IT USED TO. `load` is the HEIGHT curve: it carries
+         brushLoad's long run-dry AND the thickness slider, so colour tied to it meant a thin stroke
+         came out pale — turn Thickness to 0 and the cream lost its colour, which is not what thin
+         cream does. It also spread the fade over the top 45% of every stroke, where a photograph of
+         the real thing shows a saturated pull that lets go only at the very end.
+         So the pigment has its own curve: full strength until the last quarter, then it goes. */
+      const release = 1 - smoothstep(0.58, 1, along);
+      const cover = release * side;
       thick.push(clamp01(cover + (1 - cover) * onCream * p.cling));
     }
     if (bedPut) prev = row;
@@ -653,7 +679,7 @@ export function dragStrokeTo(grab, point, opts = {}) {
  * real buttercream is not transparent, it is THIN. You are seeing less pigment, not through it. The
  * drip reaches the same conclusion for the same reason; see paintDripColors.
  */
-export function paintBrushColors(geo, color, under, { floor = 0.9, bite = 0.35 } = {}) {
+export function paintBrushColors(geo, color, under, { floor = 0.25, bite = 0.6 } = {}) {
   const t = geo?.attributes?.aThickness;
   if (!t) return geo;
   /* ⚠️ ALBEDO, NOT THE HEX — INVARIANTS #16, and this module was breaking it in the one way the rule
