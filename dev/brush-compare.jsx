@@ -58,11 +58,15 @@ function ChocolatePiece() {
     return br && buildPanelsGeometry([br.outline], { scale: 0.9 / 420 });
   }, []);
   if (!geo?.geometry) return null;
-  /* Standing on the board, leaning on the wall — which is how a set, peeled piece goes on a cake,
-     and is itself one of the tells: it is an OBJECT resting against the cake, not a layer on it.
-     Clear of the wall, so the comparison is not about what is hidden. */
+  /* ⚠️ WHERE A CHOCOLATE PIECE ACTUALLY GOES, which my first comparison got wrong and Sandeep said
+     so: *"they still look mostly same."* Stood against the wall it is a coloured shape beside
+     another coloured shape. A set, peeled piece is PUSHED INTO the cake top and stands proud of it —
+     `garnishTransform`'s 'stand' mode — so it breaks the skyline, shows the cut edge of its own
+     slab, and throws a shadow across the lid. That is the difference; placing it flat against the
+     wall hid every bit of it. */
   return (
-    <mesh geometry={geo.geometry} position={[-0.78, BOARD_H, 1.08]} rotation={[-0.14, 0.18, 0.05]} castShadow>
+    <mesh geometry={geo.geometry} position={[-0.42, BOARD_H + TIER_H - 0.03, 0.18]}
+      rotation={[-0.16, 0.5, 0.07]} castShadow receiveShadow>
       <meshPhysicalMaterial {...garnishMaterialProps({ medium: 'chocolate', gloss: 0.8, color: CHOC })} />
     </mesh>
   );
@@ -89,7 +93,7 @@ function CreamStroke() {
 
 function App() {
   return (
-    <Canvas shadows camera={{ position: [-0.1, 1.15, 3.6], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
+    <Canvas shadows camera={{ position: [-0.3, 1.9, 4.3], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
       <color attach="background" args={['#eceaf3']} />
       <SceneLights />
       <SceneEnv />
@@ -103,7 +107,7 @@ function App() {
       </mesh>
       <ChocolatePiece />
       <CreamStroke />
-      <OrbitControls target={[0, BOARD_H + TIER_H * 0.5, 0]} enablePan={false} />
+      <OrbitControls target={[0, BOARD_H + TIER_H * 0.72, 0]} enablePan={false} />
     </Canvas>
   );
 }
