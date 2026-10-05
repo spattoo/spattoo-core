@@ -77,14 +77,22 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      onto cream already laid — see brushRelief, and note that a stroke uses BOTH at once when one of
      its edges is on a neighbour and the other is on the wall. */
   skirt:     0.13,    // 0 … 1 of the width: the feathered edge on bare cake
-  skirtOn:   0.11,    // and the wall it leaves where it lifts off cream
-  /* ⚠️ AND ON CREAM IT DOES NOT RUN OUT AT ALL. A clearance alone is not an overlap: it puts the new
-     stroke a hair above the old one and then still TAPERS IT TO NOTHING at the edge, so the two
-     surfaces arrive at the same place and the seam is a colour boundary again — measured at 0.009R
-     against the stroke's own 0.09R of relief, which is a tenth, which is nothing. Cream dragged onto
-     cream stops at a height, because the blade is riding on a surface that is already there. */
-  lip:       0.25,    // 0 … 1: how much of its own height a stroke still has where it ends on cream
-  cling:     0.5,     // 0 … 1: how much of that holds the COLOUR up too, rather than washing to the cake
+  skirtOn:   0.13,    // and on cream — only worth lowering alongside `lip`, which is off
+  /* ⚠️ `lip` AND `cling` ARE ONE DIAL, AND IT IS OFF. Turned up, a stroke ENDS on the cream it
+     crosses — keeping a fraction of its own height over a short wall, and holding its colour instead
+     of washing out — which is what set cream dragged over set cream really does, and it gives a
+     heavy, impasto overlap with an obvious step. It was built because the seam read as a colour cut,
+     and it is off because that is not the look: shown the soft version and the strong one side by
+     side, Sandeep picked the soft one twice. *"this first one looks better."*
+     ⚠️ WHAT HE IS PICKING IS THE TRANSLUCENCY, and it is worth naming because it looks like a bug.
+     A stroke thins at its edges, and thin cream washes toward whatever is under it — so where one
+     crosses another, its edge goes PALE over a saturated neighbour. Read as an error that veil is
+     "the colour is wrong at the seam"; read as what it is, it is two layers of thin cream and it is
+     most of why these look like buttercream rather than vinyl. `cling` is how much of it to give
+     away. Note what is NOT on this dial: the clearance below. That is what stops the stroke
+     underneath coming back up through, and it stays on at every setting. */
+  lip:       0,       // 0 … 1: how much of its own height a stroke still has where it ends on cream
+  cling:     0,       // 0 … 1: how much of that holds the COLOUR up too, rather than washing out
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
      look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of

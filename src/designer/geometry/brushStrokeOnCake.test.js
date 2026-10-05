@@ -541,24 +541,31 @@ describe('a stroke laid across another ENDS on it', () => {
     expect(worst).toBeGreaterThan(0.88);                        // it was 0.68 when the shoulder started at the middle
   });
 
-  it('where it crosses, it stands clear of what is under it', () => {
+  it('where it crosses, it never comes back through', () => {
+    /* THE actual requirement, and the one the pictures were about. Not "there is a big step" — that
+       was the heavy look, and it was turned down. Everywhere the two share ground, the later stroke
+       is above the earlier one, which is all that stops the slivers. */
     const { A, B } = pair();
     const y = 0.45, sa = sliceOf(A, 1, y), sb = sliceOf(B, 1, y);
-    const edge = sb[0];                                          // B's first point — its left edge
-    const under = sa.reduce((best, p) => (Math.abs(p[0] - edge[0]) < Math.abs(best[0] - edge[0]) ? p : best));
-    expect(Math.abs(under[0] - edge[0])).toBeLessThan(0.01);     // they really are at the same place
-    expect(edge[1] - under[1]).toBeGreaterThan(0.030);           // and B ends well above A
+    let shared = 0;
+    for (const [th, hb] of sb) {
+      const near = sa.filter(([t]) => Math.abs(t - th) < 0.004);
+      if (!near.length) continue;
+      shared++;
+      expect(hb).toBeGreaterThan(Math.max(...near.map(p => p[1])));
+    }
+    expect(shared).toBeGreaterThan(3);                           // and they really do overlap
   });
 
-  it('and most of that step is the lip, not the clearance', () => {
-    /* The control. With the stroke tapering into its neighbour the step is the clearance and nothing
-       else — measured 0.0174 against 0.0395 — and 0.0174 against the stroke's own ~0.09 of relief is
-       a fifth, which is what a seam you cannot see looks like in numbers. */
-    const { A: A0, B: B0 } = pair({ lip: 0 });
+  it('the heavy overlap is still there on the dial, it is just off', () => {
     const y = 0.45;
-    const e0 = sliceOf(B0, 1, y)[0];
-    const u0 = sliceOf(A0, 1, y).reduce((b, p) => (Math.abs(p[0] - e0[0]) < Math.abs(b[0] - e0[0]) ? p : b));
-    expect(e0[1] - u0[1]).toBeLessThan(0.022);
+    const step = lip => {
+      const { A, B } = pair({ lip, cling: lip > 0 ? 1 : 0, skirtOn: lip > 0 ? 0.03 : 0.13 });
+      const e = sliceOf(B, 1, y)[0];
+      const u = sliceOf(A, 1, y).reduce((b, p) => (Math.abs(p[0] - e[0]) < Math.abs(b[0] - e[0]) ? p : b));
+      return e[1] - u[1];
+    };
+    expect(step(0.55)).toBeGreaterThan(step(0) * 2.5);
   });
 
   it('a stroke with nothing under it is untouched by any of it', () => {
