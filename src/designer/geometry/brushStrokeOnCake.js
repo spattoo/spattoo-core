@@ -66,6 +66,23 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
      exactly what we had: Sandeep, *"the cream texture is not looking close to real cream."* Cream
      dragged under a blade keeps every nick in that blade as a line running the length of the pull. */
+  /* ⚠️ THE EDGE HAS TO WAVER, AND IT CANNOT WAVER FINER THAN THE ROWS IT IS MADE OF. A gesture is
+     authored with a dozen points, so the band had a dozen cross-sections and its edges ran as near
+     straight lines whatever noise was applied to them. Densified here rather than asked of the
+     caller: how finely a shape must be sampled is the shape's business, not the hand's. */
+  rows:   40,     // cross-sections down the stroke, resampled from however few the gesture carried
+  /* ⚠️ AND THE STROKE BREATHES. A knife does not hold one width for the length of a pull — it loads
+     and gives out, so the band swells and pinches as it travels. Without this the two edges stay
+     exactly parallel, which is the "straight and smooth" Sandeep saw; the per-point jitter inside
+     brushStroke is too fine and too small to read as anything but a slightly fuzzy ruler. */
+  breathe: 0.22,  // 0 … 1: how much the width swells and pinches along the stroke
+  /* ⚠️ THE TEAR IS COHERENT, NOT PER-ROW. brushStroke jitters each point independently, which is
+     right at a dozen hand-placed points and becomes WHITE NOISE at forty: adjacent rows alternate
+     and the edge comes out as pinking shears — the "row of identical notches… a decorative zigzag,
+     which reads as machined rather than broken" that file's own note warns about. So the per-point
+     fraying is turned off and the edges are wandered here instead, in runs: chocolate and cream tear
+     in lengths, not at every sample. */
+  tear:   0.3,    // 0 … 1: how deeply the trailing edge bites, in runs along the stroke
   lanes:  4.5,    // how many drag lines across the width — fractional so they do not land evenly
   grain:  0.3,    // 0 … 1: how deep the lines cut, × the local relief
   seed:   1,
@@ -90,12 +107,38 @@ const lerp = (a, b, t) => a + (b - a) * t;
  * ⚠️ IT MUST REACH ZERO AT THE EDGES or the stroke ends in a vertical cliff, which reads as a sticker
  * cut out and laid on rather than cream pushed across.
  */
-export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge) {
+/* A smooth, non-repeating wave in −1 … 1 along the stroke. Two incommensurate terms, the same
+   reasoning the rope's swell and the drip's seam use: one frequency repeats and reads as machined. */
+function alongWave(along, seed, salt) {
+  const ph = seedFrac(seed, salt) * Math.PI * 2;
+  return Math.sin(along * 5.3 + ph) * 0.68 + Math.sin(along * 9.7 + ph * 1.9) * 0.32;
+}
+
+/**
+ * ⚠️ THE LIP WANDERS, AND A LIP THAT DOES NOT IS THE TELL. This took only `u` — the position ACROSS
+ * the band — so the crest sat at exactly the same fraction across on every row down the stroke. The
+ * result is a ridge tracing a perfectly smooth line parallel to the edge, equally proud from end to
+ * end. Sandeep, off the render: *"if you see the edge elevations, those are straight and smooth. pls
+ * fix and make it look natural."* No amount of grain on the surface hides it, because the fault is
+ * in the SILHOUETTE of the lip, not in its texture.
+ *
+ * So each edge gets its own drift and its own height, both functions of distance travelled: a hand
+ * rocks the knife as it pulls, so one edge bites deeper here and lifts there, and the two edges do
+ * not do it together.
+ *
+ * `along` defaults to 0, so a caller that does not care gets exactly the old profile.
+ */
+export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge, { along = 0, seed = 1 } = {}) {
   const t = clamp01(u);
   const skirt = smoothstep(0, 0.13, t) * smoothstep(0, 0.13, 1 - t);   // down to the wall at both edges
-  const d = Math.min(t, 1 - t) * 2;                                     // 0 at an edge, 1 in the middle
-  const crest = 1 - smoothstep(0.1, 0.75, d);                           // 1 on the ridges, 0 mid-band
-  return skirt * lerp(1 - ridge, 1, crest);
+  // Where each crest sits, and how proud it is — independently, because the knife is not symmetrical.
+  const dl = alongWave(along, seed, 21) * 0.09;
+  const dr = alongWave(along, seed, 37) * 0.09;
+  const al = 0.70 + 0.30 * (0.5 + 0.5 * alongWave(along, seed, 53));
+  const ar = 0.70 + 0.30 * (0.5 + 0.5 * alongWave(along, seed, 71));
+  const cl = (1 - smoothstep(0.10 + dl, 0.75 + dl, t * 2)) * al;        // the left lip
+  const cr = (1 - smoothstep(0.10 + dr, 0.75 + dr, (1 - t) * 2)) * ar;  // the right lip
+  return skirt * lerp(1 - ridge, 1, Math.max(cl, cr));
 }
 
 /**
@@ -139,6 +182,27 @@ export function brushLoad(t) {
 }
 
 
+/* More cross-sections than the gesture was drawn with. A dozen hand-placed points cannot carry an
+   edge that wavers; resampled along its own length, the per-point tear inside brushStroke lands
+   forty times instead of a dozen and the edge stops being a ruler. */
+function densify(path, want) {
+  if (!Array.isArray(path) || path.length < 2 || want <= path.length) return path;
+  const seg = [0];
+  for (let i = 1; i < path.length; i++) {
+    seg.push(seg[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1]));
+  }
+  const total = seg[seg.length - 1];
+  if (!(total > 0)) return path;
+  const out = [];
+  for (let k = 0; k < want; k++) {
+    const d = (k / (want - 1)) * total;
+    let i = 1; while (i < seg.length - 1 && seg[i] < d) i++;
+    const f = (d - seg[i - 1]) / ((seg[i] - seg[i - 1]) || 1);
+    out.push([lerp(path[i - 1][0], path[i][0], f), lerp(path[i - 1][1], path[i][1], f)]);
+  }
+  return out;
+}
+
 /** How wide this particular stroke is where it was lifted — the same seed always gives the same
  *  answer, so a cake reopens as the cake that was made. */
 export function tipFor({ seed = 1, tipMin, tipMax } = {}) {
@@ -157,10 +221,33 @@ export function tipFor({ seed = 1, tipMin, tipMax } = {}) {
  * different its seed was — the variation existed and was being discarded one line before it was
  * used.
  */
-function strokeGrid(stroke, m) {
-  const grid = stroke.band.map(([l, r]) => {
+/* How far the trailing edge has bitten in at this point along the stroke. Mostly nothing, then a
+   run of it — that is what a torn edge is, as against a sawtooth that bites at every sample. */
+function tearBite(along, seed) {
+  const w = alongWave(along, seed, 151);
+  const v = alongWave(along * 2.7, seed, 173);
+  const run = Math.max(0, w - 0.25);                 // only sometimes
+  return -(run * 0.9 + Math.max(0, v - 0.55) * 0.7); // and a sharper nick inside the run
+}
+
+function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0 } = {}) {
+  const n = stroke.band.length;
+  const grid = stroke.band.map(([l, r], i) => {
+    const along = n > 1 ? i / (n - 1) : 0;
+    /* Swell and pinch about the row's own middle, so the CENTRELINE of the stroke never moves —
+       breathing that shifted it would be a wobbly path, which is a different thing and reads as a
+       shaky hand rather than as a loaded knife.
+       ⚠️ AND THE TWO EDGES ARE NOT THE SAME EDGE. A spatula has a flat side that sweeps a smooth
+       curve and a trailing side where the cream rips away from the blade — fraying both alike is
+       what makes a stroke read as a symmetrical leaf. The clean side only breathes; the trailing
+       side breathes AND bites. */
+    const kL = 1 + breathe * alongWave(along, seed, 97) * 0.5;
+    const kR = 1 + breathe * alongWave(along, seed, 131) * 0.5 + tear * tearBite(along, seed);
+    const cx = (l[0] + r[0]) / 2, cy = (l[1] + r[1]) / 2;
+    const lx = cx + (l[0] - cx) * kL, ly = cy + (l[1] - cy) * kL;
+    const rx = cx + (r[0] - cx) * Math.max(0.15, kR), ry = cy + (r[1] - cy) * Math.max(0.15, kR);
     const row = [];
-    for (let j = 0; j < m; j++) { const u = j / (m - 1); row.push([lerp(l[0], r[0], u), lerp(l[1], r[1], u)]); }
+    for (let j = 0; j < m; j++) { const u = j / (m - 1); row.push([lerp(lx, rx, u), lerp(ly, ry, u)]); }
     return row;
   });
   if (stroke.tip?.length) {
@@ -193,8 +280,8 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   /* The gesture is solved FLAT, in the wall's own unrolled surface — arc length across, height up —
      and only then wrapped. Solving it in 3D would mean re-deriving every tear and jag against a
      curve, for a shape that is by definition the same smear wherever it is laid. */
-  const flat = path.map(([u, v]) => [u * Math.PI * 2 * R, v * wallH]);
-  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p) });
+  const flat = densify(path.map(([u, v]) => [u * Math.PI * 2 * R, v * wallH]), p.rows);
+  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
   const m = Math.max(3, p.across | 0);
@@ -209,7 +296,7 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [sx, y] = grid[i][j];                  // arc length round the cake, height up the wall
-      const h = skim + maxLift * load * brushRelief(u, p.ridge)
+      const h = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
                 * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
       const th = sx / R;
       const rad = R + h;
@@ -259,12 +346,12 @@ export function strokeFacesOutward(geo) {
 export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}) {
   const p = { ...BRUSH_ON_CAKE_DEFAULTS, ...opts };
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
-  const flat = path.map(([x, z]) => [x * R, z * R]);
-  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p) });
+  const flat = densify(path.map(([x, z]) => [x * R, z * R]), p.rows);
+  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
   const m = Math.max(3, p.across | 0);
-  const grid = strokeGrid(stroke, m);
+  const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
   const n = grid.length;
   const pos = [], idx = [];
   const maxLift = p.lift * R, skim = p.skim * R;
@@ -274,7 +361,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
       const u = j / (m - 1);
       const [gx, gz] = grid[i][j];
       const along = n > 1 ? i / (n - 1) : 0;
-      pos.push(gx, y + skim + maxLift * load * brushRelief(u, p.ridge)
+      pos.push(gx, y + skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
                  * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain }), gz);
     }
   }
