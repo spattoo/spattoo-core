@@ -42,7 +42,21 @@ const FLAVOURS = [
 
 // The templates door is REAL now, so the stub declines to handle `design` and the shell falls
 // through to it. The stub API mimics the public GET /api/storefront/:slug/templates.
+/* The annotated dietary vocabulary, as GET /api/dietary-requirements?bakerSlug= returns it. The
+   `offered` flags are what decide whether the flavour step ASKS the egg question or states the
+   answer, so the harness drives all three kitchens: ?egg=both (default), ?egg=eggless, ?egg=egg. */
+const DIET_ROWS = (mode) => [
+  { id: 1, key: 'egg',         label: 'With egg',   kind: 'diet',     offered: mode !== 'eggless' },
+  { id: 2, key: 'eggless',     label: 'Eggless',    kind: 'diet',     offered: mode !== 'egg' },
+  { id: 3, key: 'vegan',       label: 'Vegan',      kind: 'diet',     offered: true },
+  { id: 4, key: 'nut_free',    label: 'Nut-free',   kind: 'allergen', offered: true },
+];
+
 const API = {
+  fetchDietaryRequirements: async () => {
+    await new Promise(r => setTimeout(r, 150));
+    return DIET_ROWS(new URLSearchParams(location.search).get('egg') || 'both');
+  },
   fetchStorefrontTemplates: async () => {
     await new Promise(r => setTimeout(r, 350));   // so the loading state is visible
     return [
@@ -108,7 +122,10 @@ window.fetch = async (url, init) => {
 
 function Demo() {
   const [open, setOpen] = useState(true);
-  const [mobile, setMobile] = useState(false);
+  // ?mobile=1 / ?egg=eggless|egg — the shell opens over these toggles, so a screenshot run that
+  // needs a particular combination has to ask for it in the URL rather than by clicking.
+  const q = new URLSearchParams(location.search);
+  const [mobile, setMobile] = useState(q.get('mobile') === '1');
   const [sent, setSent] = useState(null);
   // Mirrors STOREFRONT_OTP_REQUIRED on the API, which the real storefront reads back from
   // /settings. Toggled here so the suppressed path is drivable, not merely reasoned about.
