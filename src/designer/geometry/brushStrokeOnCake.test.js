@@ -377,34 +377,50 @@ describe('coverage', () => {
     expect(t.getX(t.count - m + Math.floor(m / 2))).toBeLessThan(0.3); // the release: running out
   });
 
-  it('carries one colour end to end, because a brush does not carry white', () => {
-    /* ⚠️ THE WASH IS OFF, AND THIS TEST USED TO ASSERT THE OPPOSITE. Five cuts tried to make it
-       small enough — 0.55, 0.75, 0.58, 0.9, 0.95 — and every one still put a pale cap on each
-       stroke, because the number was never the problem: the tip is SEVEN FINGERS OF DIFFERENT
-       LENGTHS, so the mesh's last row spans a tall triangle and a per-row fade is stretched across
-       all of it. Five per cent of rows made twenty per cent of the stroke. Beside the photograph
-       there is no gradient anywhere — solid colour to a hard ragged edge, and the raggedness IS the
-       release. Sandeep, three times: *"brush wont carry white."* */
+  it('the BODY is one colour — a brush does not carry white', () => {
+    /* Five cuts tried to make a per-row fade small enough and every one still washed out a quarter
+       of the stroke, because the tip is seven fingers of different lengths and the last ROW spans a
+       tall triangle. The body is solid now; the dissolve is measured in world units from the end. */
     const painted = paintBrushColors(geo(), '#ff0000', '#ffffff');
-    const c = painted.attributes.color;
+    const c = painted.attributes.color, t = painted.attributes.aThickness;
     let lo = 1, hi = 0;
-    for (let v = 0; v < c.count; v++) { const red = c.getX(v) - c.getY(v); lo = Math.min(lo, red); hi = Math.max(hi, red); }
-    expect(hi - lo).toBeLessThan(1e-6);
+    for (let v = 0; v < c.count; v++) {
+      if (t.getX(v) < 0.999) continue;                 // the body: everything the dissolve has not reached
+      const red = c.getX(v) - c.getY(v);
+      lo = Math.min(lo, red); hi = Math.max(hi, red);
+    }
+    expect(hi - lo).toBeLessThan(1e-3);                // float noise out of pow(), nothing visible
   });
 
-  it('and the wash is still on the dial for a caller that wants it', () => {
-    /* Thin cream over a cake really is translucent; it is just not what a brushstroke looks like.
-       ⚠️ If this is ever turned back on it has to be driven by distance from the tip in WORLD units
-       rather than by row index, or it will smear across the fingers exactly as before. */
-    const painted = paintBrushColors(geo(), '#ff0000', '#ffffff', { floor: 0.3 });
-    const c = painted.attributes.color, t = painted.attributes.aThickness;
-    let thick = 0, thin = 1;
-    for (let v = 0; v < c.count; v++) {
-      const red = c.getX(v) - c.getY(v);
-      if (t.getX(v) > 0.8) thick = Math.max(thick, red);
-      if (t.getX(v) < 0.05) thin = Math.min(thin, red);
-    }
-    expect(thick).toBeGreaterThan(thin * 1.3);
+  it('and the release DISSOLVES into the cake over the same depth, long stroke or short', () => {
+    /* ⚠️ THE RULE, IN SANDEEP'S WORDS: *"even a short stroke will have a release, so it dissolves.
+       its not like it needs to have some height."* A release is a physical thing — the layer thins
+       out over a few millimetres and the cake comes through — so it CANNOT be a fraction of the
+       stroke's length. As a fraction it is a huge wash on a long pull and nothing on a stubby one,
+       which is both wrong and backwards. Measured here as the height of the band of vertices the
+       dissolve touches, on two strokes whose lengths differ by three times. */
+    const depth = (climb) => {
+      const g = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, weight: 0.6, seed: 11,
+        path: brushGesture({ at: 0, seed: 11, climb, climbVar: 0, sweep: 0.012 }) });
+      /* ⚠️ THE CENTRE COLUMN ONLY. Coverage carries TWO things — the dissolve at the end and the
+         slight thinning at the two sides — so sweeping every vertex counts the stroke's whole left
+         and right edges as "dissolving" and reports a band the length of the stroke. The first cut
+         of this test did exactly that and failed a working change. */
+      const m = BRUSH_ON_CAKE_DEFAULTS.across;
+      const t = g.attributes.aThickness, p = g.attributes.position;
+      let lo = Infinity, hi = -Infinity;
+      for (let v = (m / 2) | 0; v < t.count; v += m) {
+        if (t.getX(v) > 0.98) continue;                // untouched by the dissolve
+        lo = Math.min(lo, p.getY(v)); hi = Math.max(hi, p.getY(v));
+      }
+      return { span: hi - lo, len: climb };
+    };
+    const short = depth(0.22), long = depth(0.7);
+    expect(short.span).toBeGreaterThan(0.01);                       // a short stroke dissolves at all
+    expect(Math.abs(long.span - short.span)).toBeLessThan(short.span * 0.6);  // and by the same depth
+    /* And it is NOT a fraction of the length: as a fraction, three times the stroke would be three
+       times the band. */
+    expect(long.span).toBeLessThan(short.span * 2);
   });
 
   it('a stroke with no thickness attribute is left alone', () => {
@@ -593,22 +609,6 @@ describe('a stroke laid across another ENDS on it', () => {
     }
     expect(over).toBeGreaterThan(50);                         // they really do overlap
     expect(worst).toBeGreaterThan(0);                         // and B is above A everywhere they do
-  });
-
-  it('the heavy overlap is still there on the dial, it is just off', () => {
-    const y = 0.45;
-    const step = lip => {
-      const { A, B } = pair({ lip, cling: lip > 0 ? 1 : 0, skirtOn: lip > 0 ? 0.03 : 0.13 });
-      const e = sliceOf(B, 1, y)[0];
-      const u = sliceOf(A, 1, y).reduce((b, p) => (Math.abs(p[0] - e[0]) < Math.abs(b[0] - e[0]) ? p : b));
-      return e[1] - u[1];
-    };
-    /* ⚠️ 2.5x WAS MEASURED WHEN THE OVERLAP WAS A SUM, and the levelling fix dilutes it on purpose:
-       the lip raises the stroke's OWN profile, and where it is riding on cream the surface is the
-       higher of that and the neighbour, so the lip only shows where its own profile wins. 1.64x
-       measured. The claim here is that the dial still does something, not how much — how much is
-       the dial's whole job. */
-    expect(step(0.55)).toBeGreaterThan(step(0) * 1.3);
   });
 
   it('a stroke with nothing under it is untouched by any of it', () => {

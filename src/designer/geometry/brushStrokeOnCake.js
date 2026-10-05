@@ -98,22 +98,13 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      onto cream already laid — see brushRelief, and note that a stroke uses BOTH at once when one of
      its edges is on a neighbour and the other is on the wall. */
   skirt:     0.13,    // 0 … 1 of the width: the feathered edge on bare cake
-  skirtOn:   0.13,    // and on cream — only worth lowering alongside `lip`, which is off
-  /* ⚠️ `lip` AND `cling` ARE ONE DIAL, AND IT IS OFF. Turned up, a stroke ENDS on the cream it
-     crosses — keeping a fraction of its own height over a short wall, and holding its colour instead
-     of washing out — which is what set cream dragged over set cream really does, and it gives a
-     heavy, impasto overlap with an obvious step. It was built because the seam read as a colour cut,
-     and it is off because that is not the look: shown the soft version and the strong one side by
-     side, Sandeep picked the soft one twice. *"this first one looks better."*
-     ⚠️ WHAT HE IS PICKING IS THE TRANSLUCENCY, and it is worth naming because it looks like a bug.
-     A stroke thins at its edges, and thin cream washes toward whatever is under it — so where one
-     crosses another, its edge goes PALE over a saturated neighbour. Read as an error that veil is
-     "the colour is wrong at the seam"; read as what it is, it is two layers of thin cream and it is
-     most of why these look like buttercream rather than vinyl. `cling` is how much of it to give
-     away. Note what is NOT on this dial: the clearance below. That is what stops the stroke
-     underneath coming back up through, and it stays on at every setting. */
-  lip:       0,       // 0 … 1: how much of its own height a stroke still has where it ends on cream
-  cling:     0,       // 0 … 1: how much of that holds the COLOUR up too, rather than washing out
+  /* ⚠️ `lip`, `cling` and `skirtOn` WERE HERE AND ARE GONE, which is worth a line because they were
+     real work. They made an impasto overlap: a stroke ENDING on the cream it crosses at a fraction
+     of its own height, over a short wall, holding its colour instead of washing out. Shown it beside
+     the soft version Sandeep picked the soft one twice, and then the levelling fix (`max(own, over)`
+     rather than a sum) absorbed most of what the lip could still do — measured at 1.1x the step
+     against the 2.5x it managed when the overlap was a sum. Three knobs that are off and no longer
+     move anything are three things for the next person to misread. git has them. */
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
      look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of
@@ -161,6 +152,8 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   tipTaper:   0.3,
   tipReach:   0.5,
   tipJitter:  0.8,    // 0 … 1: how unevenly the streaks are spaced — equal pitch reads as a saw
+  tipRows:    5,      // cross-sections through the release, so the dissolve has room to happen
+  merge:      0.055,  // × R: how deep the dissolve reaches back from each finger's own end
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -351,7 +344,7 @@ function tearBite(along, seed) {
   return -(run * 0.9 + Math.max(0, v - 0.55) * 0.7); // and a sharper nick inside the run
 }
 
-function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0 } = {}) {
+function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } = {}) {
   const n = stroke.band.length;
   const grid = stroke.band.map(([l, r], i) => {
     const along = n > 1 ? i / (n - 1) : 0;
@@ -371,19 +364,47 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0 } = {}) {
     for (let j = 0; j < m; j++) { const u = j / (m - 1); row.push([lerp(lx, rx, u), lerp(ly, ry, u)]); }
     return row;
   });
+  /* ⚠️ THE RELEASE IS SEVERAL ROWS, NOT ONE, AND IT HAS TO BE — because what happens there is a
+     DISSOLVE and a dissolve needs somewhere to happen. Sandeep: *"stroke releases actually merge
+     with cake. thats not happening in our case"*, and *"even a short stroke will have a release, so
+     it dissolves. its not like it needs to have some height."* A single tip row gives the renderer
+     exactly one edge to work with, so any fade across it is stretched over the whole finger —
+     twenty per cent of a stroke for a five per cent fade, which is how five attempts at a smaller
+     number all failed. Split into rows, the fade is a fixed DEPTH measured back from each finger's
+     own end, so a long streak dissolves over the same few millimetres as a short one. */
+  const toTip = grid.map(row => row.map(() => Infinity));
   if (stroke.tip?.length) {
     // The fingers, with the last cross-section's own corners at either end so the row closes.
     const [l, r] = stroke.band[stroke.band.length - 1];
     const pts = [l, ...stroke.tip, r];
-    const row = [];
+    const end = [];
     for (let j = 0; j < m; j++) {
       const x = (j / (m - 1)) * (pts.length - 1);
       const i0 = Math.floor(x), i1 = Math.min(pts.length - 1, i0 + 1), f = x - i0;
-      row.push([lerp(pts[i0][0], pts[i1][0], f), lerp(pts[i0][1], pts[i1][1], f)]);
+      end.push([lerp(pts[i0][0], pts[i1][0], f), lerp(pts[i0][1], pts[i1][1], f)]);
     }
-    grid.push(row);
+    const base = grid[grid.length - 1];
+    for (let k = 1; k <= tipRows; k++) {
+      const f = k / tipRows;
+      const row = [], dist = [];
+      for (let j = 0; j < m; j++) {
+        const x = lerp(base[j][0], end[j][0], f), y = lerp(base[j][1], end[j][1], f);
+        row.push([x, y]);
+        dist.push(Math.hypot(end[j][0] - x, end[j][1] - y));     // how far back from this finger's end
+      }
+      grid.push(row); toTip.push(dist);
+    }
+    /* The body's own distance to the end, so the dissolve can reach back past the fingers when a
+       finger is shorter than the merge depth — which is the short-stroke case. */
+    for (let i = 0; i < base.length; i++) { /* nothing: `base` is a row, handled below */ }
+    const bodyRows = grid.length - tipRows;
+    for (let i = 0; i < bodyRows; i++) {
+      for (let j = 0; j < m; j++) {
+        toTip[i][j] = Math.hypot(end[j][0] - grid[i][j][0], end[j][1] - grid[i][j][1]);
+      }
+    }
   }
-  return grid;
+  return { grid, toTip };
 }
 
 
@@ -401,8 +422,10 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0 } = {}) {
  */
 function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const m = Math.max(3, p.across | 0);
-  const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
+  const { grid, toTip } = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear,
+                                                 tipRows: p.tipRows });
   const n = grid.length;
+  const merge = p.merge * R;        // how deep the dissolve reaches back from each finger's end
   const pos = [], idx = [], thick = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
   const seamMin = p.seamMin * R;
@@ -429,9 +452,8 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          does not blend into it, it lays a new layer ON it, and the thickness of that layer is the
          whole tell. So the stroke clears the cream it crosses by a little, and by nothing at all
          where there is no cream to clear. */
-      const skirt = p.skirt + (p.skirtOn - p.skirt) * onCream;
       /* The stroke's own profile, as if it had been laid on bare wall. */
-      const own = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt, floor: p.lip * onCream })
+      const own = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt: p.skirt })
                   * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
       /* Just clearing the cream already here, and nothing more. */
       const over = bedH + onCream * Math.max(seamMin, bedH * p.seam);
@@ -503,9 +525,13 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          color so fading somewhre at the edge makes sense."* That is the whole rule, and the
          photograph says the same: a solid block of colour, and a thin soft edge where the layer
          finally breaks. The last tenth. */
-      const release = 1 - smoothstep(0.95, 1, along);
-      const cover = release * side;
-      thick.push(clamp01(cover + (1 - cover) * onCream * p.cling));
+      /* ⚠️ MEASURED BACK FROM THE END IN WORLD UNITS, never as a fraction of the stroke. A release is
+         a physical thing — the layer thins out over a few millimetres and the cake comes through —
+         so a stubby pull dissolves over exactly the same depth as a long one. As a fraction it would
+         be a huge wash on a long stroke and nothing on a short one, which is both wrong and the
+         opposite of what a hand does. */
+      const cover = side * smoothstep(0, merge, toTip[i][j]);
+      thick.push(clamp01(cover));
     }
     if (bedPut) prev = row;
   }
@@ -711,7 +737,7 @@ export function dragStrokeTo(grab, point, opts = {}) {
  * real buttercream is not transparent, it is THIN. You are seeing less pigment, not through it. The
  * drip reaches the same conclusion for the same reason; see paintDripColors.
  */
-export function paintBrushColors(geo, color, under, { floor = 1, bite = 0.6 } = {}) {
+export function paintBrushColors(geo, color, under, { floor = 0, bite = 0.6 } = {}) {
   const t = geo?.attributes?.aThickness;
   if (!t) return geo;
   /* ⚠️ ALBEDO, NOT THE HEX — INVARIANTS #16, and this module was breaking it in the one way the rule
