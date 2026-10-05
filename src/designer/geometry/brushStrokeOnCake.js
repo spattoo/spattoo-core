@@ -59,17 +59,7 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      the cake, not hovering above it, so the step is a fraction of the thinnest film. Ten strokes
      deep is 0.03R, which is under a third of one stroke's own relief. */
   layer:     0,       // where this stroke comes in the order — later paints over earlier
-  /* ⚠️ THE STEP HAS TO CLEAR WHAT IT IS COVERING, and 0.003 did not: the relief runs to `lift`,
-     fifty times larger, so wherever a lower stroke had a ridge it punched straight through the one
-     laid over it. The render showed pale tongues inside every stroke and Sandeep called it: *"the
-     overlapping part looks so unreal."*
-     ⚠️ AND IT CANNOT SIMPLY BE `lift`. Five strokes would then stand half a radius off the wall. The
-     honest limit: this clears a neighbour's FEATHERED EDGE, which is where strokes are meant to
-     meet, and it does not clear a neighbour's ridge — so strokes must overlap at their margins, the
-     way a baker lays them, rather than halfway across each other. Overlap much past that and the
-     only real answer is one height field for the whole wall, taking the max of every stroke, which
-     is what cream actually does and is a bigger piece of work than a POC needs. */
-  layerStep: 0.018,   // × R: how far each one rides above the one before it
+  layerStep: 0.003,   // × R: how far each one rides above the one before it
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
      look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of
@@ -159,13 +149,7 @@ function alongWave(along, seed, salt) {
  */
 export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge, { along = 0, seed = 1 } = {}) {
   const t = clamp01(u);
-  /* ⚠️ THE FEATHER IS WIDE, AND THAT IS WHAT MAKES AN OVERLAP WORK. At 0.13 the stroke reached full
-     height within a tenth of its width, so two strokes meeting anywhere but at their very outermost
-     edge were ridge-on-ridge — and the one underneath punched through. Cream does not end in a wall;
-     it thins out over a real distance, and over that distance a neighbour can lie on top of it with
-     a lift small enough that nothing appears to float. Narrow feather, no overlaps; wide feather,
-     overlaps that look laid rather than stacked. */
-  const skirt = smoothstep(0, 0.3, t) * smoothstep(0, 0.3, 1 - t);     // down to the wall at both edges
+  const skirt = smoothstep(0, 0.13, t) * smoothstep(0, 0.13, 1 - t);   // down to the wall at both edges
   // Where each crest sits, and how proud it is — independently, because the knife is not symmetrical.
   const dl = alongWave(along, seed, 21) * 0.09;
   const dr = alongWave(along, seed, 37) * 0.09;
