@@ -1802,7 +1802,10 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   const [unlockPw,  setUnlockPw]  = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [unlockMsg, setUnlockMsg] = useState(null);
-  const [asking,    setAsking]    = useState(false);   // the password prompt is open
+  /* Which row asked for the password, or null. It is not a flag for "a prompt is open" any more —
+     it is WHICH edit the baker reached for, so proving it can carry them straight into that editor
+     rather than back to a screen they then have to press again. */
+  const [pendingEdit, setPendingEdit] = useState(null);   // 'email' | 'phone' | 'password' | null
 
   const canReauth = !!apiClient?.reauthenticate;
   /* PrivacyDataSection calls all three of these unguarded inside one Promise.all, so a host missing
@@ -1814,7 +1817,12 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
     setUnlocking(true); setUnlockMsg(null);
     try {
       await apiClient.reauthenticate(unlockPw);
-      setUnlocked(true); setAsking(false); setUnlockPw('');
+      setUnlocked(true); setUnlockPw('');
+      // Straight into the editor they reached for. Proving who you are is a toll, not a destination.
+      if (pendingEdit === 'email')    { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailEditing(true); }
+      if (pendingEdit === 'phone')    { setPhoneMsg(null); setPhoneStep('entry'); }
+      if (pendingEdit === 'password') { setPwMsg(null); setPwEditing(true); }
+      setPendingEdit(null);
     } catch (e) {
       setUnlockMsg(e?.message || 'That password is not right.');
     } finally {
@@ -1822,12 +1830,40 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
     }
   }
 
+  /* ⚠️ ASKED WHEN THEY ACT, NOT WHEN THEY ARRIVE. A card sat at the top of this screen saying
+     "Confirm your password to change anything here" with an Edit button, and Sandeep named both
+     faults: "should we ask for singin once user tries to edit email or phone? instead of asking
+     upfront?" and "the edit button does not look like it is at the page level - thats the core
+     issue."
+
+     The second is the first wearing a costume. The card was a page-level control drawn as another
+     row in a stack of rows, so it read as a section about passwords sitting between the email and
+     the phone. Making it LOOK page-level was the wrong fix: the honest one is that a screen you
+     open to read your own details should not demand a password before it will show you anything —
+     it already shows them. The toll belongs on the act, not on the door.
+
+     Once paid it stands for the rest of the visit, which is also what the server does: its window
+     is 15 minutes (middleware/reauth.js), so re-asking per row would be friction this side
+     inventing a rule the other side does not have. */
+  function startEdit(which, open) {
+    if (unlocked || !canReauth) { open(); return; }
+    setUnlockMsg(null); setUnlockPw(''); setPendingEdit(which);
+  }
+
   // The server is the authority on whether the unlock is still good, and it expires on its own
   // clock. When it says so, drop back to the prompt rather than leaving a screen that looks
   // editable and refuses every edit.
-  function handleWriteError(e, setMsg) {
+  function handleWriteError(e, setMsg, which) {
     if (e?.code === 'reauth_required' || e?.code === 'reauth_expired') {
-      setUnlocked(false); setAsking(true);
+      /* ⚠️ CLOSE THE EDITOR IT HAPPENED IN, or the row draws the prompt AND the half-filled form
+         under it. The window can expire mid-flow — fifteen minutes is long enough to start a phone
+         change, wait for a text and come back — so this is a real state, not a defensive one. */
+      setUnlocked(false);
+      if (which === 'email')    setEmailEditing(false);
+      if (which === 'phone')    setPhoneStep('idle');
+      if (which === 'password') setPwEditing(false);
+      setPendingEdit(which ?? null);
+      setUnlockPw('');
       setUnlockMsg('Please confirm your password again.');
       return true;
     }
@@ -1868,7 +1904,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
 
   // A half-typed number or password is work. Esc and a stray backdrop click must not take it
   // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
-  const dirty = phoneStep !== 'idle' || emailEditing || pwEditing || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
+  const dirty = phoneStep !== 'idle' || emailEditing || pwEditing || !!pendingEdit || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
 
   async function sendCode() {
     setPhoneBusy(true); setPhoneMsg(null);
@@ -1878,7 +1914,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       setCode('');
       setPhoneStep('code');
     } catch (e) {
-      if (!handleWriteError(e, setPhoneMsg)) setPhoneMsg({ ok: false, text: e?.message || 'We could not send the code.' });
+      if (!handleWriteError(e, setPhoneMsg, 'phone')) setPhoneMsg({ ok: false, text: e?.message || 'We could not send the code.' });
     } finally {
       setPhoneBusy(false);
     }
@@ -1896,7 +1932,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       // the profile, so the profile is what has to be re-read — not this component's copy.
       onPhoneChanged?.();
     } catch (e) {
-      if (!handleWriteError(e, setPhoneMsg)) setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
+      if (!handleWriteError(e, setPhoneMsg, 'phone')) setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
     } finally {
       setPhoneBusy(false);
     }
@@ -1912,7 +1948,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       setEmailMsg({ ok: true, text: next ? 'Saved.' : 'Back to your sign-in address.' });
       onProfileChanged?.();
     } catch (e) {
-      if (!handleWriteError(e, setEmailMsg)) setEmailMsg({ ok: false, text: e?.message || 'Could not save that address.' });
+      if (!handleWriteError(e, setEmailMsg, 'email')) setEmailMsg({ ok: false, text: e?.message || 'Could not save that address.' });
     } finally {
       setEmailBusy(false);
     }
@@ -1937,7 +1973,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
       // on the login screen and re-authenticates with the new password.
       setTimeout(() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); }, 1200);
     } catch (err) {
-      if (!handleWriteError(err, setPwMsg)) setPwMsg({ ok: false, text: err.message || 'Failed to update password.' });
+      if (!handleWriteError(err, setPwMsg, 'password')) setPwMsg({ ok: false, text: err.message || 'Failed to update password.' });
       setPwBusy(false);
     }
   }
@@ -1945,6 +1981,34 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   const mismatch   = pw.confirm.length > 0 && pw.next !== pw.confirm;
   const canSavePw  = isPasswordValid(pw.next) && pw.next === pw.confirm && !pwBusy;
   const name       = personName(userData, 'My Account');
+
+  /* The password prompt, drawn INSIDE the row that asked for it — so the question arrives where the
+     hand already is, and the row it belongs to is never in doubt. Returns null for every other row,
+     which is what lets each of the three call it unconditionally. */
+  const UnlockPrompt = ({ which }) => (pendingEdit !== which ? null : (
+    <>
+      <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+        Enter your password to change this.
+      </div>
+      <input style={s.modalInput} type="password" autoFocus value={unlockPw} disabled={unlocking}
+        autoComplete="current-password" placeholder="Your password"
+        onChange={e => setUnlockPw(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && unlockPw && !unlocking && unlock()} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" style={s.accountGhostBtn} disabled={unlocking}
+          onClick={() => { setPendingEdit(null); setUnlockPw(''); setUnlockMsg(null); }}>
+          Cancel
+        </button>
+        <button type="button"
+          style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                   opacity: unlockPw && !unlocking ? 1 : 0.6 }}
+          disabled={!unlockPw || unlocking} onClick={unlock}>
+          {unlocking ? 'Checking…' : 'Continue'}
+        </button>
+      </div>
+      {unlockMsg && <div style={{ fontSize: 12, fontWeight: 600, color: DANGER }}>{unlockMsg}</div>}
+    </>
+  ));
 
   // ⚠️ ONE CONTROL FOR BOTH ROWS. They shipped different: the number sat behind a "Change" button
   // while the password fields were simply open, so two edits on one screen asked for two different
@@ -1985,7 +2049,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
           quote-accepted, trial reminders and billing events alike. The hint says so. */}
       <PanelBlock>
         <div style={s.fieldLabel}>WHERE WE EMAIL YOU</div>
-        {!emailEditing ? (
+        {pendingEdit === 'email' ? <UnlockPrompt which="email" /> : !emailEditing ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ flex: 1, minWidth: 140, fontSize: 13.5, fontWeight: 700, color: INK, wordBreak: 'break-word' }}>
               {emailNow || userData?.email || '—'}
@@ -1995,9 +2059,9 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
                 </span>
               )}
             </div>
-            {canEditEmail && unlocked && (
+            {canEditEmail && (
               <EditPencil label="Change where we email you"
-                onClick={() => { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailEditing(true); }} />
+                onClick={() => startEdit('email', () => { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailEditing(true); })} />
             )}
           </div>
         ) : (
@@ -2031,66 +2095,22 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
         )}
       </PanelBlock>
 
-      {/* ── The lock ────────────────────────────────────────────────────────────────────────────
-          A session outlives the person paying attention to it — a closed laptop, a borrowed phone.
-          requireAuth answers "is this a valid session"; only a password answers "is this the owner,
-          right now". So the screen opens read-only and this is the one way out of that.
-
-          ⚠️ The password goes to SUPABASE, never to our API (apiClient.reauthenticate). Our server
-          reads the stamp Supabase puts in the next token. */}
-      {!unlocked && canReauth && (
-        <PanelBlock>
-          {!asking ? (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-              <div style={{ flex: 1, minWidth: 140, fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
-                Confirm your password to change anything here.
-              </div>
-              <button type="button" style={s.accountGhostBtn} onClick={() => { setAsking(true); setUnlockMsg(null); }}>
-                Edit
-              </button>
-            </div>
-          ) : (
-            <>
-              <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
-                Enter your password to unlock this screen.
-              </div>
-              <input style={s.modalInput} type="password" autoFocus value={unlockPw} disabled={unlocking}
-                autoComplete="current-password" placeholder="Your password"
-                onChange={e => setUnlockPw(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && unlockPw && !unlocking && unlock()} />
-              <div style={{ display: 'flex', gap: 8 }}>
-                <button type="button" style={s.accountGhostBtn} disabled={unlocking}
-                  onClick={() => { setAsking(false); setUnlockPw(''); setUnlockMsg(null); }}>
-                  Cancel
-                </button>
-                <button type="button"
-                  style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
-                           opacity: unlockPw && !unlocking ? 1 : 0.6 }}
-                  disabled={!unlockPw || unlocking} onClick={unlock}>
-                  {unlocking ? 'Checking…' : 'Unlock'}
-                </button>
-              </div>
-            </>
-          )}
-          {unlockMsg && (
-            <div style={{ fontSize: 12, fontWeight: 600, color: DANGER }}>{unlockMsg}</div>
-          )}
-        </PanelBlock>
-      )}
 
       {/* ── Mobile number ───────────────────────────────────────────────────────────────────── */}
       <PanelBlock>
         <div style={s.fieldLabel}>MOBILE NUMBER</div>
 
-        {phoneStep === 'idle' && (
+        {pendingEdit === 'phone' && <UnlockPrompt which="phone" />}
+
+        {phoneStep === 'idle' && pendingEdit !== 'phone' && (
           <>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
               <div style={{ fontSize: 14, fontWeight: 700, color: phoneNow ? INK : '#9AA79F' }}>
                 {phoneNow || 'Not set'}
               </div>
-              {canChangePhone && unlocked && (
+              {canChangePhone && (
                 <EditPencil label={phoneNow ? 'Change mobile number' : 'Add a mobile number'}
-                  onClick={() => { setPhoneMsg(null); setPhoneStep('entry'); }} />
+                  onClick={() => startEdit('phone', () => { setPhoneMsg(null); setPhoneStep('entry'); })} />
               )}
             </div>
             {!canChangePhone && (
@@ -2101,7 +2121,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
           </>
         )}
 
-        {phoneStep === 'entry' && (
+        {phoneStep === 'entry' && pendingEdit !== 'phone' && (
           <>
             {/* What is being replaced stays visible while it is replaced (INVARIANTS #11) — a
                 screen that hides the old number asks the baker to remember what they are editing. */}
@@ -2130,7 +2150,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
           </>
         )}
 
-        {phoneStep === 'code' && (
+        {phoneStep === 'code' && pendingEdit !== 'phone' && (
           <>
             <div style={{ fontSize: 12, color: INK_MUTED }}>
               Changing to <b style={{ color: INK }}>{newPhone || sentTo}</b>
@@ -2171,10 +2191,11 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
         {/* Shown but inert while locked, rather than hidden. A control that appears only once you
             have already got past a gate teaches nobody that it exists — the same reasoning
             PlateButton's note gives for a disabled Undo over an absent one. */}
-        {!pwEditing ? (
+        {pendingEdit === 'password' ? <UnlockPrompt which="password" /> : !pwEditing ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: INK, letterSpacing: 2 }}>••••••••</div>
-            {unlocked && <EditPencil label="Change password" onClick={() => { setPwMsg(null); setPwEditing(true); }} />}
+            <EditPencil label="Change password"
+              onClick={() => startEdit('password', () => { setPwMsg(null); setPwEditing(true); })} />
           </div>
         ) : (
         <>

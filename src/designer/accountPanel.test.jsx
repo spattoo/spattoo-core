@@ -67,10 +67,7 @@ describe('who may change it', () => {
   // migration 015 calls that index the subscription boundary. The server decides; the screen must
   // ASK rather than assume, or a staff member is shown a control that will 403.
   it('offers the control only when the server said this person owns the number', () => {
-    expect(panel).toMatch(/canChangePhone/);
-    // ...and only once the screen is unlocked, so the two gates are read together rather than one
-    // quietly replacing the other.
-    expect(panel).toMatch(/canChangePhone && unlocked &&/);
+    expect(panel).toMatch(/\{canChangePhone && \(/);
   });
 });
 
@@ -83,12 +80,41 @@ describe('the lock', () => {
     expect(panel).toMatch(/const \[unlocked,\s+setUnlocked\]\s*=\s*useState\(false\)/);
   });
 
-  it('hides the phone control until unlocked', () => {
-    expect(panel).toMatch(/canChangePhone && unlocked &&/);
+  /* ⚠️ THE GATE MOVED FROM THE DOOR TO THE ACT (2026-10-05). It used to hide every pencil behind a
+     card at the top — "Confirm your password to change anything here" + Edit — and Sandeep named
+     both faults at once: "should we ask for singin once user tries to edit email or phone? instead
+     of asking upfront?" and "the edit button does not look like it is at the page level - thats the
+     core issue."
+
+     The second is the first in costume: a page-level control drawn as another row in a stack of
+     rows reads as a section about passwords sitting between the email and the phone. Making it LOOK
+     page-level was the wrong fix. A screen you open to READ your own details should not demand a
+     password before it shows you anything — it already shows them.
+
+     So the pencils are always there and the toll is charged on the press. */
+  it('shows every pencil at rest, and asks on the press', () => {
+    expect(panel).toMatch(/\{canChangePhone && \(/);
+    expect(panel).toMatch(/\{canEditEmail && \(/);
+    expect(panel).toMatch(/onClick=\{\(\) => startEdit\('phone'/);
+    expect(panel).toMatch(/onClick=\{\(\) => startEdit\('email'/);
+    expect(panel).toMatch(/onClick=\{\(\) => startEdit\('password'/);
+    // The card that used to stand in front of them is gone, not merely restyled.
+    const code = panel.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+    expect(code).not.toMatch(/Confirm your password to change anything here/);
   });
 
-  it('hides the password control until unlocked', () => {
-    expect(panel).toMatch(/\{unlocked && <EditPencil label="Change password"/);
+  /* Proving who you are is a toll, not a destination: the row that asked is the row it opens. */
+  it('carries the baker into the editor they reached for', () => {
+    expect(panel).toMatch(/if \(pendingEdit === 'email'\)/);
+    expect(panel).toMatch(/if \(pendingEdit === 'phone'\)/);
+    expect(panel).toMatch(/if \(pendingEdit === 'password'\)/);
+  });
+
+  /* ⚠️ ONCE PAID IT STANDS FOR THE VISIT, because that is what the SERVER does — its window is 15
+     minutes (middleware/reauth.js). Re-asking per row would be this side inventing a rule the other
+     side does not have. */
+  it('does not ask again once it has been answered', () => {
+    expect(panel).toMatch(/if \(unlocked \|\| !canReauth\) \{ open\(\); return; \}/);
   });
 
   // ⚠️ ONE CONTROL, NOT TWO THAT LOOK ALIKE. The rows shipped with different gestures — a worded
@@ -184,7 +210,7 @@ describe('where we email you', () => {
 
   // PATCH /baker/profile is requireCapability('store:manage') — an ungated pencil could only 403.
   it('offers the pencil only to somebody the server will accept', () => {
-    expect(panel).toMatch(/\{canEditEmail && unlocked && \(/);
+    expect(panel).toMatch(/\{canEditEmail && \(/);
     expect(src).toMatch(/canEditEmail=\{hasCap\('store:manage'\)\}/);
   });
 
