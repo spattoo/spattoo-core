@@ -38,6 +38,12 @@ const LIFT = +(P.get('lift') ?? D.lift);
 const ACROSS = +(P.get('across') ?? D.across);
 const SWEEP = +(P.get('sweep') ?? 0.012);
 const CLIMB = +(P.get('climb') ?? 0.52);
+/* The relief knobs, so a sweep varies the ONE thing it is asking about. Same rule as ?lift — read
+   from the module when the URL is silent, never re-stated here. */
+const RIDGE = +(P.get('ridge') ?? D.ridge);
+const GRAIN = +(P.get('grain') ?? D.grain);
+const LANES = +(P.get('lanes') ?? D.lanes);
+const ROWS  = +(P.get('rows')  ?? D.rows);
 /* ?top=1 — the SAME stroke laid on the cake top instead of the wall. A cream stroke goes on both,
    hugging either, and buildBrushStrokeOnFlat had never been looked at. */
 const TOP = P.has('top');
@@ -69,7 +75,7 @@ const BED = makeBrushBed({ R, wallH: TIER_H });
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, bed: BED })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, bed: BED })
   ), [at, weight, seed, idx]);
   /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
      a flat colour never will. */
@@ -91,7 +97,12 @@ function App() {
   return (
     <Canvas shadows camera={{ position: TOP ? [2.6, 2.0, 2.6] : [0, 1.4, 4.0], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
       <color attach="background" args={['#eceaf3']} />
-      <SceneLights />
+      {/* ⚠️ `shadows` IS NOT DECORATION HERE — RELIEF IS THE WHOLE SUBJECT OF THIS PAGE. SceneLights
+          defaults it OFF and the live designer mounts `<SceneLights shadows />`, so every brushstroke
+          render judged on this page had been lit unlike the cake it authors for (INVARIANTS #17).
+          It is not what made the strokes read flat, but a page about height that throws away the
+          cue for height has no business being the one we decide on. */}
+      <SceneLights shadows />
       <SceneEnv />
       <mesh position={[0, BOARD_H / 2, 0]} receiveShadow>
         <cylinderGeometry args={[BOARD_R, BOARD_R, BOARD_H, 64]} />

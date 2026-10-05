@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
+import { brushRelief, brushLoad, brushStriation, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
          wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture, makeBrushBed,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -476,5 +476,28 @@ describe('the bed', () => {
     const tall = bed.heightAt(0.5, 0.5);
     bed.commit([[0.5, 0.5, 0.02]]);
     expect(bed.heightAt(0.5, 0.5)).toBeCloseTo(tall, 9);
+  });
+});
+
+/* ⚠️ THE KNIFE MARKS HAVE TO BE SAMPLED FINELY ENOUGH TO BE ROUND. Two numbers decide whether the
+   striations look like dragged cream or like facets, and they are set in different places for
+   different reasons — `lanes` by how a blade is nicked, `across` by cost. Raising lanes without
+   raising across is a silent regression: nothing errors, the mesh measures right, and the lanes come
+   out stepped with half of them never resolving at all. Side by side at 4.4 samples per lane the
+   difference is plain; six is where they go round. */
+describe('the striations are sampled finely enough to resolve', () => {
+  const D = BRUSH_ON_CAKE_DEFAULTS;
+
+  it('at least six samples across for every drag line', () => {
+    expect(D.across / D.lanes).toBeGreaterThanOrEqual(6);
+  });
+
+  it('and they actually cut — a stroke is not a smooth panel', () => {
+    /* Measured, not asserted from the constant: the depth that reaches the SURFACE is what was
+       tuned, and it is `grain` × the local relief, so reading grain alone proves nothing. */
+    const at = u => brushStriation(u, 0.3, { seed: 1, lanes: D.lanes, grain: D.grain });
+    let lo = Infinity, hi = -Infinity;
+    for (let k = 0; k <= 400; k++) { const v = at(k / 400); lo = Math.min(lo, v); hi = Math.max(hi, v); }
+    expect(hi - lo).toBeGreaterThan(0.4);
   });
 });

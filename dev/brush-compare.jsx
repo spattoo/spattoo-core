@@ -100,7 +100,12 @@ function App() {
   return (
     <Canvas shadows camera={{ position: [-0.3, 1.9, 4.3], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
       <color attach="background" args={['#eceaf3']} />
-      <SceneLights />
+      {/* ⚠️ `shadows` IS NOT DECORATION HERE — RELIEF IS THE WHOLE SUBJECT OF THIS PAGE. SceneLights
+          defaults it OFF and the live designer mounts `<SceneLights shadows />`, so every brushstroke
+          render judged on this page had been lit unlike the cake it authors for (INVARIANTS #17).
+          It is not what made the strokes read flat, but a page about height that throws away the
+          cue for height has no business being the one we decide on. */}
+      <SceneLights shadows />
       <SceneEnv />
       <mesh position={[0, BOARD_H / 2, 0]} receiveShadow>
         <cylinderGeometry args={[BOARD_R, BOARD_R, BOARD_H, 64]} />

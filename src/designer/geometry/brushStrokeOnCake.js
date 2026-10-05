@@ -83,9 +83,10 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   tipMin: 0.30,
   tipMax: 0.95,
   /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
-     the knife marks are four or five lanes across the same band, and three samples per lane turns
-     them into a stepped zigzag. 31 is two per lane plus headroom and costs ~600 verts a stroke. */
-  across: 31,     // samples across the band
+     the knife marks are seven lanes across the same band, and four samples per lane turns them into
+     a stepped zigzag — side by side at 31 the lanes come out faceted and half of them never resolve
+     at all. Six per lane is where they go round. */
+  across: 45,     // samples across the band
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -108,8 +109,14 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      fraying is turned off and the edges are wandered here instead, in runs: chocolate and cream tear
      in lengths, not at every sample. */
   tear:   0.3,    // 0 … 1: how deeply the trailing edge bites, in runs along the stroke
-  lanes:  4.5,    // how many drag lines across the width — fractional so they do not land evenly
-  grain:  0.3,    // 0 … 1: how deep the lines cut, × the local relief
+  /* ⚠️ TUNED AT CAKE DISTANCE, NOT ON A CLOSE-UP, because that is where it is judged and where the
+     last cut of this died. At 4.5 lanes cutting 0.3 the marks were there on a probe and GONE on a
+     cake — Sandeep, off a whole-cake render: *"this is not good either."* The strokes read as vinyl
+     panels. Swept 4.5/0.3 · 7/0.55 · 8.5/0.7 · 10/0.8 on one wall: everything from 7 reads as
+     dragged cream, and from 8.5 up it starts to comb — evenly ruled, which is the corduroy this
+     file's own note warns about. 7 and 0.55 is the last setting that still looks like a hand. */
+  lanes:  7,      // how many drag lines across the width
+  grain:  0.55,   // 0 … 1: how deep the lines cut, × the local relief
   seed:   1,
 };
 
