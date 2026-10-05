@@ -42,11 +42,27 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   lift:   0.095,  // × R: how proud a FULL-weight stroke's ridges stand
   skim:   0.004,  // × R: how far even a weightless stroke sits off the wall, so it is not z-fighting
   ridge:  0.6,    // 0 … 1: how much of the height sits in the edge ridges vs the scraped middle
+  /* ⚠️ HOW WIDE THE STROKE STILL IS WHERE IT IS LIFTED, AS A RANGE RATHER THAN A NUMBER. Sandeep,
+     off a render of five: *"the width of the stroke release does not need to be same. there should
+     be randomness. some can be looking as close rectangle, and thats real."* `brushStroke` ended
+     every stroke at a hardcoded 0.42 of its width, which is invisible on one piece and obvious on a
+     row of them. The top of this range is nearly square — a knife that still had plenty of cream on
+     it when the hand lifted — and the bottom runs out to a point. */
+  tipMin: 0.30,
+  tipMax: 0.95,
   across: 15,     // samples across the band — the ridge/hollow needs a few to read
   seed:   1,
 };
 
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
+
+/* A number in 0…1 from a seed. Its own hash rather than a draw from `brushStroke`'s rng, because
+   that file states its draw ORDER as a contract — the tubes and the web both walk it and reordering
+   makes the two meshes drift apart. Asking a question OUTSIDE it cannot disturb that. */
+function seedFrac(seed, salt) {
+  const x = Math.sin((seed + 1) * 127.1 + salt * 311.7) * 43758.5453;
+  return x - Math.floor(x);
+}
 const smoothstep = (e0, e1, x) => { const t = clamp01((x - e0) / (e1 - e0)); return t * t * (3 - 2 * t); };
 const lerp = (a, b, t) => a + (b - a) * t;
 
@@ -75,6 +91,14 @@ export function brushLoad(t) {
   return start * run;
 }
 
+
+/** How wide this particular stroke is where it was lifted — the same seed always gives the same
+ *  answer, so a cake reopens as the cake that was made. */
+export function tipFor({ seed = 1, tipMin, tipMax } = {}) {
+  const lo = tipMin ?? BRUSH_ON_CAKE_DEFAULTS.tipMin;
+  const hi = tipMax ?? BRUSH_ON_CAKE_DEFAULTS.tipMax;
+  return lo + (hi - lo) * seedFrac(seed, 3);
+}
 
 /* The rows of the mesh, each `m` points wide, in the stroke's own flat space.
  *
@@ -123,7 +147,7 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
      and only then wrapped. Solving it in 3D would mean re-deriving every tear and jag against a
      curve, for a shape that is by definition the same smear wherever it is laid. */
   const flat = path.map(([u, v]) => [u * Math.PI * 2 * R, v * wallH]);
-  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed });
+  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p) });
   if (!stroke || !stroke.band?.length) return null;
 
   const m = Math.max(3, p.across | 0);
@@ -187,7 +211,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const p = { ...BRUSH_ON_CAKE_DEFAULTS, ...opts };
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
   const flat = path.map(([x, z]) => [x * R, z * R]);
-  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed });
+  const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p) });
   if (!stroke || !stroke.band?.length) return null;
 
   const m = Math.max(3, p.across | 0);

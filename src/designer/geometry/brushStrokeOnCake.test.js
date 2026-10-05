@@ -147,3 +147,46 @@ describe('winding', () => {
     expect(strokeFacesOutward(buildBrushStrokeOnWall({ ...WALL, path: SWEEP, weight: 1 }))).toBe(true);
   });
 });
+
+/* ── How wide the stroke still is where it was lifted ────────────────────────────────────────────
+ * Sandeep, off a render of five: "the width of the stroke release does not need to be same. there
+ * should be randomness. some can be looking as close rectangle, and thats real."
+ */
+describe('the release width varies between strokes', () => {
+  /* Width of the LAST full cross-section, in world units. */
+  const endWidth = seed => {
+    const geo = buildBrushStrokeOnWall({ ...WALL, path: SWEEP, seed, weight: 1, across: 15 });
+    const pos = geo.attributes.position, m = 15;
+    const base = pos.count - 2 * m;                 // the row before the torn fingers
+    const p0 = [pos.getX(base), pos.getY(base), pos.getZ(base)];
+    const p1 = [pos.getX(base + m - 1), pos.getY(base + m - 1), pos.getZ(base + m - 1)];
+    return Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
+  };
+
+  it('some strokes run out to a point and some stay nearly square', () => {
+    const widths = [1, 2, 3, 4, 5, 6, 7, 8].map(endWidth);
+    const spread = (Math.max(...widths) - Math.min(...widths)) / Math.max(...widths);
+    expect(spread).toBeGreaterThan(0.3);     // a fixed taper measures 0
+  });
+
+  it('and the same seed always releases the same width', () => {
+    expect(endWidth(5)).toBeCloseTo(endWidth(5), 10);
+  });
+
+  it('every one of them is still a releasable width — none pinches to nothing', () => {
+    for (const s of [1, 2, 3, 4, 5, 6, 7, 8]) expect(endWidth(s)).toBeGreaterThan(0);
+  });
+});
+
+/* ⚠️ THE CHOCOLATE GARNISHES MUST NOT MOVE. Every saved piece is a path and a seed regenerated on
+   load, so a change to the shared generator's default reshapes work bakers have already approved.
+   `tipWidth` is opt-in and this is what says so. */
+describe('brushStroke default is untouched', () => {
+  it('a stroke asked the old way comes back exactly as it did', async () => {
+    const { brushStroke } = await import('./brushStroke.js');
+    const path = [[0, 0], [10, 4], [22, 9], [34, 12]];
+    const asBefore = brushStroke(path, { width: 12, seed: 3 });
+    const explicit = brushStroke(path, { width: 12, seed: 3, tipWidth: 0.42 });
+    expect(JSON.stringify(asBefore.band)).toBe(JSON.stringify(explicit.band));
+  });
+});

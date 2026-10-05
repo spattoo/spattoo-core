@@ -53,7 +53,7 @@ function noise(seed) {
  *
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
-export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false } = {}) {
+export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false, tipWidth } = {}) {
   let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
 
@@ -95,7 +95,7 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
        width and ends in a curve — the soft blunt one at the front of the reference cake. */
     let w = closed ? width / 2
       : round ? (width / 2) * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, t - 0.55) / 0.45, 2)))
-      : blade ? bladeProfile(t, width) : halfWidth(t, width);
+      : blade ? bladeProfile(t, width) : halfWidth(t, width, tipWidth);
 
     /* Perpendicular to the direction of travel. On a ring the neighbours WRAP, or the first and last
        cross-sections face different ways and the join shows as a kink. */
@@ -177,16 +177,29 @@ function turnRadius(pts, i) {
  * with its full edge, so it begins near full width rather than at nothing — broadest just past the
  * start where the pressure is greatest, then falling away and running out to a point. Read it as a
  * pressure curve, because that is what it is. */
-function halfWidth(t, width) {
+/* ⚠️ `tipWidth` IS HOW WIDE THE STROKE STILL IS WHERE IT IS LIFTED — named for the WIDTH, because
+ * `tip` is already the jagged END of the piece a few lines below and two of those in one function is
+ * a collision the build catches and a reader does not.
+ * It was, and it was a hardcoded 0.42 — so
+ * every stroke ever generated gave out at exactly the same fraction of its width, which is visible
+ * the moment you put five of them side by side. Sandeep: *"the width of the stroke release does not
+ * need to be same. there should be randomness. some can be looking as close rectangle, and thats
+ * real."* He is right about the real part: how much chocolate is left when the hand lifts depends on
+ * how much went on and how fast it moved, and a knife that still had plenty leaves a broad, nearly
+ * square end.
+ *
+ * ⚠️ DEFAULTED TO 0.42, WHICH IS NOT TIMIDITY. Every chocolate garnish already saved is a path and a
+ * seed regenerated on load, so changing this number reshapes pieces bakers have already made and
+ * approved. The caller that wants variety asks for it; the one that does not is byte-identical. */
+function halfWidth(t, width, tipWidth = 0.42) {
   const w = width / 2;
   /* ⚠️ NO SHOULDER. Holding full width and then tapering puts a corner where the two meet, and the
    * stroke comes out as a bottle: straight sides, a neck, a blunt top. A spatula never does that —
    * the chocolate starts being used up from the moment it lands, so the width falls STEADILY from
    * the landing to the tear. One smooth curve, no flat section to step off. */
   if (t < 0.1) return w * lerp(0.86, 1, t / 0.1);         // the landing, already broad
-  const TIP = 0.42;                                       // where the chocolate gives out
   const u = (t - 0.1) / 0.9;
-  return w * lerp(1, TIP, Math.pow(u, 1.5));              // slow at first, then away
+  return w * lerp(1, tipWidth, Math.pow(u, 1.5));         // slow at first, then away
 }
 
 export function bladeProfile(t, width) {
