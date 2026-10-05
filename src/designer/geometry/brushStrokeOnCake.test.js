@@ -584,13 +584,27 @@ describe('a stroke laid across another ENDS on it', () => {
 describe('a band of strokes round a tier', () => {
   const BAND = { R: 1, baseY: 0, wallH: 1.25, under: '#FBF8F3' };
 
-  it('is ONE geometry, however many strokes it lays', () => {
-    /* The whole performance answer. Not instances — an InstancedMesh draws one geometry many times
-       and no two strokes here are the same shape, which is the point of a band. */
-    const g = buildBrushBand({ ...BAND, count: 18, colors: ['#a00', '#0a0', '#00a'] });
-    expect(g).toBeTruthy();
-    expect(g.attributes.color).toBeTruthy();                   // the colours survived the merge
-    expect(g.attributes.position.count).toBeGreaterThan(1000);
+  it('is ONE part per colour, however many strokes it lays', () => {
+    /* The performance answer. Not instances — an InstancedMesh draws one geometry many times and no
+       two strokes here are the same shape, which is the point of a band. Not one mesh either: cream
+       takes its sheen from its own colour, so a single material puts a white sheen on a charcoal
+       stroke. Eighteen strokes, three draw calls. */
+    const parts = buildBrushBand({ ...BAND, count: 18, colors: ['#a00', '#0a0', '#00a'] });
+    expect(parts).toHaveLength(3);
+    expect(parts.map(p => p.color)).toEqual(['#a00', '#0a0', '#00a']);
+    for (const p of parts) {
+      expect(p.geometry.attributes.color).toBeTruthy();         // the wash survived the merge
+      expect(p.geometry.attributes.position.count).toBeGreaterThan(1000);
+    }
+  });
+
+  it('every stroke is in exactly one part, and the parts are the palette', () => {
+    /* A colour that laid no strokes is dropped rather than returned empty — a part with no geometry
+       is a mesh with nothing in it and a material compiled for nobody. */
+    const parts = buildBrushBand({ ...BAND, count: 8, colors: ['#a00', '#0a0'] });
+    const verts = parts.reduce((n, p) => n + p.geometry.attributes.position.count, 0);
+    const one = buildBrushBand({ ...BAND, count: 8, colors: ['#a00'] });
+    expect(verts).toBe(one.reduce((n, p) => n + p.geometry.attributes.position.count, 0));
   });
 
   it('snaps the count to a whole number of colour repeats', () => {
@@ -611,13 +625,15 @@ describe('a band of strokes round a tier', () => {
        cake. Everything random here is seeded. */
     const a = buildBrushBand({ ...BAND, count: 9, seed: 4, colors: ['#a00', '#0a0', '#00a'] });
     const b = buildBrushBand({ ...BAND, count: 9, seed: 4, colors: ['#a00', '#0a0', '#00a'] });
-    expect(Array.from(a.attributes.position.array)).toEqual(Array.from(b.attributes.position.array));
+    expect(a.map(p => Array.from(p.geometry.attributes.position.array)))
+      .toEqual(b.map(p => Array.from(p.geometry.attributes.position.array)));
   });
 
   it('and a different seed is a different band', () => {
     const a = buildBrushBand({ ...BAND, count: 9, seed: 4, colors: ['#a00'] });
     const b = buildBrushBand({ ...BAND, count: 9, seed: 5, colors: ['#a00'] });
-    expect(Array.from(a.attributes.position.array)).not.toEqual(Array.from(b.attributes.position.array));
+    expect(Array.from(a[0].geometry.attributes.position.array))
+      .not.toEqual(Array.from(b[0].geometry.attributes.position.array));
   });
 
   it('the strokes run out at different heights', () => {
@@ -625,7 +641,7 @@ describe('a band of strokes round a tier', () => {
        and that is where it went wrong: neighbouring seeds give neighbouring answers out of the small
        salts the gesture hashes at, so `seed + i` walked the whole ring in one direction — every
        stroke a little taller than the last, a staircase round the cake rather than a hand. */
-    const g = buildBrushBand({ ...BAND, count: 12, seed: 2, colors: ['#a00'] });
+    const g = buildBrushBand({ ...BAND, count: 12, seed: 2, colors: ['#a00'] })[0].geometry;
     const p = g.attributes.position, m = BRUSH_ON_CAKE_DEFAULTS.across;
     const tops = [];
     for (let s = 0; s < 12; s++) {

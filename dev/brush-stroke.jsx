@@ -114,20 +114,26 @@ const BAND = P.has('band') ? (+P.get('band') || 18) : 0;
 const BAND_COLORS = (P.get('colors') ?? '').split(',').filter(Boolean);
 
 function Band() {
-  const geo = useMemo(() => buildBrushBand({
+  const parts = useMemo(() => buildBrushBand({
     R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
     colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
     count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: 0.75,
   }), []);
-  if (!geo) return null;
+  if (!parts.length) return null;
   console.log('[band]', brushBandCount({ count: BAND, colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3) }),
-              'strokes ·', geo.attributes.position.count, 'verts · one draw call');
-  return (
-    <mesh geometry={geo} castShadow receiveShadow>
+              'strokes ·', parts.reduce((n, p) => n + p.geometry.attributes.position.count, 0),
+              'verts ·', parts.length, 'draw calls');
+  return parts.map(part => (
+    /* ⚠️ THE MATERIAL IS TUNED TO THIS PART'S COLOUR, which is the whole reason the band comes back
+       in parts. `creamMaterialProps` takes a sheen colour FROM the cream's colour; one material for
+       the lot puts a white sheen over a charcoal stroke and it renders mid-grey.
+       `color="#ffffff"` so the per-vertex wash is what tints it — the albedo is already in the
+       vertex colours — but sheen and roughness come from the real one. */
+    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow>
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, '#ffffff')} color="#ffffff" vertexColors />
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors />
     </mesh>
-  );
+  ));
 }
 
 function App() {

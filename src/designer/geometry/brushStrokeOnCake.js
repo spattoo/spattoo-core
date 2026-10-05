@@ -763,10 +763,26 @@ export function brushBandCount({ count, colors } = {}) {
 }
 
 /**
- * A band of brushstrokes round one tier's wall, as a single BufferGeometry with vertex colours.
+ * A band of brushstrokes round one tier's wall: ONE PART PER COLOUR, each a merged geometry.
  *
- * `under` is the wall's own colour — what a thin stroke lets through. Returns null if there is
- * nothing to build.
+ * `under` is the wall's own colour — what a thin stroke lets through. Returns `[{ color, geometry }]`,
+ * or an empty array if there is nothing to build.
+ *
+ * ⚠️ ONE PART PER COLOUR, NOT ONE PART. The first cut merged the whole band into a single mesh and
+ * it was wrong in a way that only a dark palette shows: `creamMaterialProps` returns a `sheenColor`
+ * taken from the stroke's OWN colour, because cream's sheen is the colour of the cream. One mesh
+ * takes one material, so every stroke wore the sheen of whatever colour was passed — and a white
+ * sheen lobe over a near-black albedo is not black, it is mid-grey. Sandeep asked for a dark colour
+ * in a render and what came back was the colour of wet concrete.
+ *
+ * ⚠️ AND IT COSTS ALMOST NOTHING, which is why there was never a trade to make here. A palette is
+ * two to six colours, so this is two to six draw calls for a whole tier rather than one — still far
+ * under a tier of piping, and still nothing like the one-mesh-per-stroke it is often confused with.
+ * The strokes keep their vertex colours WITHIN a part, because the wash at a thin edge varies vertex
+ * by vertex and no material can say that.
+ *
+ * The parts share ONE bed, so a stroke rides on its neighbour whatever colour that neighbour is. The
+ * order they are laid in is the order round the cake, not the order of the parts.
  */
 export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff', ...opts } = {}) {
   const p = { ...BRUSH_BAND_DEFAULTS, ...opts };
@@ -786,7 +802,7 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
      the first — which is what happens when a hand goes round a cake and arrives back where it
      started. The bed wraps round the seam already; nothing here has to know where the seam is. */
   const bed = makeBrushBed({ R, wallH });
-  const parts = [];
+  const byColor = colors.map(() => []);
   for (let i = 0; i < n; i++) {
     /* Deterministic per stroke, and distinct: a design is re-rendered from saved numbers, so the
        same band must come back the same band. `* 97` rather than `+ i` because the gesture's own
@@ -799,7 +815,10 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
       path: brushGesture({ at, seed, rise: p.rise, climb: p.climb, climbVar: p.climbVar,
                            sweep: p.sweep, bow: p.bow }),
     });
-    if (geo) parts.push(paintBrushColors(geo, colors[i % colors.length], under));
+    const k = i % colors.length;
+    if (geo) byColor[k].push(paintBrushColors(geo, colors[k], under));
   }
-  return parts.length ? mergePenGeometries(parts) : null;
+  return byColor
+    .map((list, k) => ({ color: colors[k], geometry: list.length ? mergePenGeometries(list) : null }))
+    .filter(part => part.geometry);
 }
