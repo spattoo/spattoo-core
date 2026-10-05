@@ -391,7 +391,15 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                     onPick={onPickTemplate}
                     overlay={tileOverlay}
                   />
-                  {rest.length > 0 && <SectionHead label="Everything else" count={rest.length} />}
+                  {/* ⚠️ "Previous", and it does NOT license sorting this list by date. Sandeep chose
+                      the word over "Everything else", which read as leftovers for a shelf a baker is
+                      about to choose from. It is accurate about WHICH cakes are here — the ones from
+                      before this week — and the one thing to know is that the list below keeps the
+                      server's `sort_order, name` browsing order, not a chronology. The obvious
+                      "tidy-up" is to make the word literal by sorting newest-first; that replaces
+                      Spattoo's authored browse order with a changelog, on the larger of the two
+                      shelves. Change the word before you change the order. */}
+                  {rest.length > 0 && <SectionHead label="Previous" count={rest.length} />}
                 </>
               )}
 
