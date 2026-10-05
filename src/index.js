@@ -172,6 +172,10 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
  * background, so it is in the render — a studio that paints a different colour behind a transparent
  * canvas is judging its subject against a surround no cake has. */
 export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
+/* THE cream material — one answer to "what does cream look like", so a studio cannot form a second
+   opinion about it. From the LEAF module rather than from CakeTier: exporting it from there makes
+   CakeTier an exported scene-lighting entry point and check:env-map rightly demands the HDRI. */
+export { creamMaterialProps, creamAlbedo, PIPING_SOFTNESS_DEFAULT } from './designer/geometry/creamMaterial.js';
 export { DESIGNER_GROUND, SELECTION_COLOR } from './designer/constants.js';
 /* THE selection cue for a placed object (INVARIANTS #14). A border rather than a tint, because an
  * emissive highlight is additive and corrupts the very albedo it is advertising — which matters most

@@ -50,7 +50,17 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      it when the hand lifted — and the bottom runs out to a point. */
   tipMin: 0.30,
   tipMax: 0.95,
-  across: 15,     // samples across the band — the ridge/hollow needs a few to read
+  /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
+     the knife marks are four or five lanes across the same band, and three samples per lane turns
+     them into a stepped zigzag. 31 is two per lane plus headroom and costs ~600 verts a stroke. */
+  across: 31,     // samples across the band
+  /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
+     striations left by the edge of the knife are most of what says chocolate smear rather than
+     coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
+     exactly what we had: Sandeep, *"the cream texture is not looking close to real cream."* Cream
+     dragged under a blade keeps every nick in that blade as a line running the length of the pull. */
+  lanes:  4.5,    // how many drag lines across the width — fractional so they do not land evenly
+  grain:  0.3,    // 0 … 1: how deep the lines cut, × the local relief
   seed:   1,
 };
 
@@ -79,6 +89,36 @@ export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge) {
   const d = Math.min(t, 1 - t) * 2;                                     // 0 at an edge, 1 in the middle
   const crest = 1 - smoothstep(0.1, 0.75, d);                           // 1 on the ridges, 0 mid-band
   return skirt * lerp(1 - ridge, 1, crest);
+}
+
+/**
+ * The lines a blade's own edge drags along the stroke, as a multiplier on the relief.
+ *
+ * ⚠️ MULTIPLIED, NOT ADDED, so the marks vanish wherever the cream does — at the two edges, where
+ * `brushRelief` is already zero, and at the lift, where there is nothing left to groove. Added, they
+ * would leave ridges floating off the end of the stroke and a corrugated rim along the skirt.
+ *
+ * ⚠️ AND THE LANES ARE NOT EVENLY SPACED. Two waves at incommensurate frequencies, because a blade
+ * is nicked irregularly — evenly spaced grooves read as corduroy, which is the machined look the
+ * rope's own swell note warns about. Fades out along the stroke: the deepest marks are where the
+ * cream was thickest.
+ */
+export function brushStriation(u, along, { seed = 1, lanes, grain } = {}) {
+  const n = lanes ?? BRUSH_ON_CAKE_DEFAULTS.lanes;
+  const g = grain ?? BRUSH_ON_CAKE_DEFAULTS.grain;
+  if (!(g > 0)) return 1;
+  const phase = seedFrac(seed, 11) * Math.PI * 2;
+  /* ⚠️ THE LANES WAVER DOWN THE STROKE, they do not run as straight rails. Two fixed waves gave an
+     even corduroy — regular, machine-like, and the first cut read as ribbed fondant rather than
+     cream. A hand is not a jig: the blade drifts as it travels, so the phase moves with `along` and
+     a third wave breaks what is left of the repeat. */
+  const drift = Math.sin(along * 4.1 + phase) * 0.55;
+  const a = Math.sin(u * Math.PI * 2 * n + phase + drift);
+  const b = Math.sin(u * Math.PI * 2 * n * 1.73 + phase * 2.3 + drift * 1.6) * 0.45;
+  const c = Math.sin(u * Math.PI * 2 * n * 3.1 + phase * 4.7) * 0.18;
+  const cut = (a + b + c) / 1.63;                    // −1 … 1
+  // Deepest where the cream is thickest, gone by the lift.
+  return 1 - g * (0.5 - cut * 0.5) * (1 - clamp01(along) * 0.65);
 }
 
 /**
@@ -161,7 +201,8 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [sx, y] = grid[i][j];                  // arc length round the cake, height up the wall
-      const h = skim + maxLift * load * brushRelief(u, p.ridge);
+      const h = skim + maxLift * load * brushRelief(u, p.ridge)
+                * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
       const th = sx / R;
       const rad = R + h;
       pos.push(Math.sin(th) * rad, baseY + y, Math.cos(th) * rad);
@@ -224,7 +265,9 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [gx, gz] = grid[i][j];
-      pos.push(gx, y + skim + maxLift * load * brushRelief(u, p.ridge), gz);
+      const along = n > 1 ? i / (n - 1) : 0;
+      pos.push(gx, y + skim + maxLift * load * brushRelief(u, p.ridge)
+                 * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain }), gz);
     }
   }
   for (let i = 0; i < n - 1; i++) {

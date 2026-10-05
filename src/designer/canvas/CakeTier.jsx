@@ -149,7 +149,7 @@ const DEG = Math.PI / 180;
 // EXACTLY (roughness 0.85, sheen 0.4) so elements saved before this control are
 // unchanged. Read from placement_config (bottom_softness / top_softness); absent →
 // default. The PipingCalibrator keeps an identical copy so its preview matches.
-export const PIPING_SOFTNESS_DEFAULT = 0.7;
+export { PIPING_SOFTNESS_DEFAULT } from '../geometry/creamMaterial.js';
 /* ⚠️ CREAM RECEIVES MORE LIGHT THAN THE WALL — measured, and it is NOT the wall's number. Cream runs
  * at roughness 0.85 with a sheen layer where the wall runs 0.68 with none, and a mid-grey #808080
  * renders 188,183,180 here against the wall's 180,173,168 and an asked 128. A reference light is a
@@ -167,26 +167,10 @@ export const PIPING_SOFTNESS_DEFAULT = 0.7;
  * higher albedo a smaller divisor produces. The wall hit the same wall (predicted 1.163, rendered
  * 142). Take a second reading with the first guess in place and interpolate; do not re-derive this
  * by division and assume the arithmetic is the answer. */
-export const CREAM_REFERENCE_LIGHT = [3.254, 2.974, 2.679];
-export const CREAM_ROLLOFF = 2.0;   // same reason as the wall: pale cream must not go grey
-
-/* The same correction the solid colour gets, exposed so a GRADIENT's stops can take it too — a
- * gradient replaces the base colour per pixel, so uncorrected stops would render a gradient in
- * different colours from the solid it stands in for. */
-export const creamAlbedo = (color) =>
-  albedoForLight(color, CREAM_REFERENCE_LIGHT, { rolloff: CREAM_ROLLOFF });
-
-export function creamMaterialProps(softness, color) {
-  const s = Math.min(1, Math.max(0, softness ?? PIPING_SOFTNESS_DEFAULT));
-  const albedo = creamAlbedo(color);
-  return {
-    color: albedo,
-    roughness:      0.5 + 0.5 * s,   // 0.5 wet … 0.85 (default) … 1.0 matte
-    sheen:          (0.4 / 0.7) * s, // 0 … 0.4 (default) … ~0.571 velvety
-    sheenRoughness: 0.9,
-    sheenColor:     albedo,
-  };
-}
+/* Moved to geometry/creamMaterial.js — a LEAF module, so a studio can import the cream recipe
+   without making this file an exported scene-lighting entry point (check:env-map). Re-exported here
+   so every existing caller is untouched. */
+export { CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF, creamAlbedo, creamMaterialProps } from '../geometry/creamMaterial.js';
 
 // ── Chocolate "gloss" → material ──────────────────────────────────────────────
 // A single 0–1 control for how wet the ganache reads: 0 = matte set chocolate,

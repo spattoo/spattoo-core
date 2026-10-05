@@ -4,7 +4,11 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { buildBrushStrokeOnWall, BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 // Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
+// creamMaterialProps is THE cream material — the one every piped stroke on every cake already
+// uses, with the calibrated albedo and the sheen. A brushstroke is buttercream; it asks the same
+// function rather than inventing a second opinion about what cream looks like.
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
 
 /* ── Brushstrokes painted on a cake wall ─────────────────────────────────────────────────────────
  *
@@ -49,7 +53,7 @@ function Stroke({ at, weight, color, seed }) {
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow receiveShadow>
-      <meshStandardMaterial color={color} roughness={0.62} metalness={0} />
+      <meshPhysicalMaterial {...creamMaterialProps(0.7, color)} />
     </mesh>
   );
 }
