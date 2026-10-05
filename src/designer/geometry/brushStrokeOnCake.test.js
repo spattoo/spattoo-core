@@ -758,3 +758,48 @@ describe('Thickness runs from merged to proud', () => {
     expect(tallest(band(1))).toBeGreaterThan(tallest(band(0)) * 8);
   });
 });
+
+describe('no stroke in a band is an outlier', () => {
+  /* ⚠️ ONE FAT RIDGE COSTS THE WHOLE CONTROL, which is why this is worth a test of its own rather
+     than being left to "it looks about right". Sandeep, ringing a single edge: *"this pice is too
+     thick. if i reduce the thickness because of this, other pieces are becming too thin. this is an
+     outlier."* A slider gets dragged until the WORST thing on the cake looks acceptable, so one
+     vertex at three times the median drags every other stroke down with it.
+     It was the overlap stacking: a stroke's own crest laid on top of its neighbour's crest, summed.
+     Measured at weight 0.5, the 99th percentile was 3.7× the median and ONE HUNDRED PER CENT of the
+     tallest one per cent sat at a stroke's edge. */
+  const heights = (weight) => {
+    const parts = buildBrushBand({ R: 1, baseY: 0, wallH: 1.25, under: '#fff',
+                                   colors: ['#a00', '#0a0', '#00a'], count: 18, climb: 0.52, weight, seed: 5 });
+    const hs = [];
+    for (const part of parts) {
+      const p = part.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) hs.push(Math.hypot(p.getX(i), p.getZ(i)) - 1);
+    }
+    return hs.sort((a, b) => a - b);
+  };
+  const q = (hs, f) => hs[Math.floor(f * (hs.length - 1))];
+
+  it('the tallest cream is not far above the typical cream', () => {
+    for (const weight of [0.25, 0.5, 0.75]) {
+      const hs = heights(weight);
+      expect(q(hs, 0.99) / q(hs, 0.5)).toBeLessThan(3);
+    }
+  });
+
+  it('and the tall vertices are not all crammed onto the edges', () => {
+    /* Where a stroke is thickest should be its own ridge, not the seam with its neighbour. */
+    const m = BRUSH_ON_CAKE_DEFAULTS.across;
+    const parts = buildBrushBand({ R: 1, baseY: 0, wallH: 1.25, under: '#fff',
+                                   colors: ['#a00', '#0a0', '#00a'], count: 18, climb: 0.52, weight: 0.5, seed: 5 });
+    const rows = [];
+    for (const part of parts) {
+      const p = part.geometry.attributes.position;
+      for (let i = 0; i < p.count; i++) rows.push([Math.hypot(p.getX(i), p.getZ(i)) - 1, (i % m) / (m - 1)]);
+    }
+    const cut = q(rows.map(r => r[0]).sort((a, b) => a - b), 0.99);
+    const tall = rows.filter(r => r[0] >= cut);
+    const middle = tall.filter(r => r[1] > 0.25 && r[1] < 0.75).length;
+    expect(middle / tall.length).toBeGreaterThan(0.15);
+  });
+});

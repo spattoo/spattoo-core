@@ -410,10 +410,23 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          does not blend into it, it lays a new layer ON it, and the thickness of that layer is the
          whole tell. So the stroke clears the cream it crosses by a little, and by nothing at all
          where there is no cream to clear. */
-      const base = Math.max(skim, bedH + onCream * Math.max(seamMin, bedH * p.seam));
       const skirt = p.skirt + (p.skirtOn - p.skirt) * onCream;
-      const h = base + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt, floor: p.lip * onCream })
-                * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
+      /* The stroke's own profile, as if it had been laid on bare wall. */
+      const own = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt, floor: p.lip * onCream })
+                  * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
+      /* Just clearing the cream already here, and nothing more. */
+      const over = bedH + onCream * Math.max(seamMin, bedH * p.seam);
+      /* ⚠️ A BLADE LEVELS, IT DOES NOT STACK — the HIGHER of the two, not their sum. Adding the
+         stroke's own relief on top of whatever it was riding over is what a nozzle does, not a
+         knife: the blade rides at a height and leaves cream up to that height, scraping down
+         anything already standing proud of it. Summed, the one place two crests met came out at
+         twice the cream, and it is always an EDGE — measured on a band, 100% of the tallest 1% of
+         vertices sat at a stroke's edge, with the 99th percentile 3.7× the median. Sandeep ringed
+         one: *"this pice is too thick… if i reduce the thickness because of this, other pieces are
+         becming too thin. this is an outlier."* Exactly what an outlier does to a control — it makes
+         the slider answer to the worst vertex on the cake instead of to the cake.
+         On bare wall `over` is 0 and this is the stroke's own profile, byte for byte. */
+      const h = Math.max(own, over);
       pos.push(...place(gx, gy, h));
       /* ⚠️ AND THE GAPS BETWEEN THE ROWS ARE STAMPED TOO, not blurred over. A stroke samples densely
          ACROSS itself and sparsely ALONG — forty rows over its length against forty-five points over
