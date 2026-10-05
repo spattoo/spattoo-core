@@ -2011,6 +2011,19 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
   /* The password prompt, drawn INSIDE the row that asked for it — so the question arrives where the
      hand already is, and the row it belongs to is never in doubt. Returns null for every other row,
      which is what lets each of the three call it unconditionally. */
+  /* ⚠️ A MESSAGE AFTER THE BUTTONS CAN FALL BELOW THE FOLD. Both code steps set one on a wrong
+     code — verified in the harness — and both rendered it at the FOOT of the card, under the
+     actions. On a phone the card is already tall by then (label, "changing to", instruction, input,
+     two buttons), so the one line that says why nothing happened was the first thing off-screen.
+     Sandeep: "it did not show me validation message... user does not know the reason."
+     It was shown. It was just shown somewhere he could not see.
+
+     So a code step renders its error directly under the INPUT, where the mistake is and where the
+     eye already is (INVARIANTS #11: narration beside the thing it narrates). */
+  const CodeError = ({ msg }) => (!msg || msg.ok ? null : (
+    <div style={{ fontSize: 11.5, fontWeight: 700, color: DANGER, lineHeight: 1.4 }}>{msg.text}</div>
+  ));
+
   const UnlockPrompt = ({ which }) => (pendingEdit !== which ? null : (
     <>
       <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
@@ -2129,6 +2142,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
               placeholder="······" value={emailCode} disabled={emailBusy}
               onChange={e => setEmailCode(e.target.value.replace(/\D/g, ''))}
               onKeyDown={e => e.key === 'Enter' && emailCode.length === 6 && !emailBusy && confirmEmailCode()} />
+            <CodeError msg={emailMsg} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" style={s.accountGhostBtn} disabled={emailBusy}
                 onClick={() => { setEmailStep('entry'); setEmailCode(''); setEmailMsg(null); }}>
@@ -2143,7 +2157,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
             </div>
           </>
         ) : null}
-        {emailMsg && (
+        {emailMsg && !(emailStep === 'code' && !emailMsg.ok) && (
           <div style={{ fontSize: 12, fontWeight: 600, color: emailMsg.ok ? '#2e7d52' : DANGER }}>
             {emailMsg.text}
           </div>
@@ -2218,6 +2232,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
               placeholder="······" value={code} disabled={phoneBusy}
               onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
               onKeyDown={e => e.key === 'Enter' && code.length === 6 && !phoneBusy && verifyCode()} />
+            <CodeError msg={phoneMsg} />
             <div style={{ display: 'flex', gap: 8 }}>
               <button type="button" style={s.accountGhostBtn} disabled={phoneBusy}
                 onClick={() => { setPhoneStep('entry'); setCode(''); setPhoneMsg(null); }}>
@@ -2233,7 +2248,7 @@ export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData,
           </>
         )}
 
-        {phoneMsg && (
+        {phoneMsg && !(phoneStep === 'code' && !phoneMsg.ok) && (
           <div style={{ fontSize: 12, fontWeight: 600, color: phoneMsg.ok ? '#2e7d52' : DANGER }}>
             {phoneMsg.text}
           </div>

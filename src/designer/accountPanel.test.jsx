@@ -247,6 +247,30 @@ describe('where we email you', () => {
   });
 });
 
+describe('a wrong code says so where you can see it', () => {
+  /* ⚠️ IT WAS ALWAYS SET — AND IT WAS BELOW THE FOLD. Sandeep: "when i first entered incorrect code,
+     it did not show me validation message. it did not let me in though, which is good. but user does
+     not know the reason."
+
+     Driven in the harness, both rows DID set the message on a wrong code. They rendered it at the
+     FOOT of the card, under the two action buttons — and by then a code step is already tall (label,
+     "changing to", instruction, input, buttons), so on a phone the one line explaining why nothing
+     happened was the first thing off-screen. Shown, but not where anybody was looking.
+
+     One component for both rows, rendered directly under the INPUT: the mistake is in the field, so
+     that is where the eye is (INVARIANTS #11 — narration beside the thing it narrates). */
+  it('renders the code error under the field, not after the buttons', () => {
+    expect(panel).toMatch(/const CodeError = \(\{ msg \}\)/);
+    expect((panel.match(/<CodeError msg=\{/g) ?? []).length).toBe(2);
+  });
+
+  /* And the foot stops repeating it, or a wrong code says the same thing twice in one card. */
+  it('does not say it twice', () => {
+    expect(panel).toMatch(/\{emailMsg && !\(emailStep === 'code' && !emailMsg\.ok\) && \(/);
+    expect(panel).toMatch(/\{phoneMsg && !\(phoneStep === 'code' && !phoneMsg\.ok\) && \(/);
+  });
+});
+
 describe('the screen itself', () => {
   // INVARIANTS #13 — a panel holding a half-typed number and a half-typed password must not be
   // dismissed by a stray backdrop click. The ✕ still closes.
