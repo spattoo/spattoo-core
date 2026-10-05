@@ -38,8 +38,13 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      invisible on the cake, which is the worst of both. At this value the ridge catches a highlight,
      the scraped middle reads as a groove, and the base casts a shadow onto the wall. The slider
      still has to cover "merges with the surface", and `weight` is what does that — this is only
-     where the top of its range lands. */
-  lift:   0.095,  // × R: how proud a FULL-weight stroke's ridges stand
+     where the top of its range lands.
+     ⚠️ AND 0.095 WAS STILL TOO TIMID, WHICH ONLY A CAKE-SIZED VIEW SHOWED. It read in a close-up and
+     washed out at the size a stroke actually appears on a cake: put beside a flat chocolate panel,
+     Sandeep could not tell them apart — *"they still look mostly same."* Judging relief on a zoomed
+     render is judging it at a distance nobody looks from. At this value the ridge carries a
+     highlight and a shadow in a whole-cake frame, which is where it has to work. */
+  lift:   0.17,   // × R: how proud a FULL-weight stroke's ridges stand
   skim:   0.004,  // × R: the clearance under even the thinnest film
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not

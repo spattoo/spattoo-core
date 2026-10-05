@@ -5,7 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
 import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
-import { buildBrushStrokeOnWall } from '../src/designer/geometry/brushStrokeOnCake.js';
+import { buildBrushStrokeOnWall, BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 import { brushStroke } from '../src/designer/geometry/brushStroke.js';
 import { buildPanelsGeometry } from '../src/designer/geometry/garnishPanel.js';
 import { garnishMaterialProps } from '../src/designer/geometry/garnishMaterial.js';
@@ -80,7 +80,12 @@ function CreamStroke() {
       const t = i / 13;
       path.push([0.055 + 0.012 * t, 0.10 + 0.62 * t + Math.sin(Math.PI * t) * 0.01]);
     }
-    return buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path, width: 0.34, weight: 1, seed: 6 });
+    return buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path, width: 0.34, weight: 1, seed: 6,
+      /* ⚠️ THE MODULE'S DEFAULT, NOT A COPY OF IT. Written as a literal this page kept rendering
+         the OLD lift after the real one was raised, so the comparison I was judging was the
+         harness's opinion rather than the product's — the same trap brush-stroke.jsx already
+         carries a note about, repeated here one file later. */
+      lift: +(new URLSearchParams(location.search).get('lift') ?? D.lift) });
   }, []);
   if (!geo) return null;
   return (
