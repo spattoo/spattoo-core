@@ -14876,8 +14876,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </>)}
                     </div>
                   )}
-                  </div>
 
+                  {/* ⚠️ INSIDE THE GAPPED COLUMN, because the gap is this container's job and not
+                      the button's. It used to sit after the column's close with nothing between it
+                      and the Spiral row above — touching to the pixel, the identical fault the note
+                      above describes between Scraped edge and Spiral, reported the same way:
+                      Sandeep, *"see 'spiral' and 'cream band' options are touching. leave space like
+                      we have for other options."* Fixing it with a margin on the button would put
+                      the spacing on a control that DISAPPEARS on a square tier and when no cream
+                      element exists, leaving the next thing to re-derive it — which is the reasoning
+                      the column was created with. One container, one rule, three children. */}
                   {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
                     *
                     * Sandeep: "cream layer is sitting in finish category. its actually a cream
@@ -14973,6 +14981,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </span>
                     </button>
                   )}
+                  </div>
+
                 </>
               ) });
             }
