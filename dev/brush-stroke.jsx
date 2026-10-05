@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors,
+import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors, brushGesture,
          BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 // Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
 // creamMaterialProps is THE cream material — the one every piped stroke on every cake already
@@ -47,14 +47,7 @@ const COLORS = ['#F6DCE2', '#8EC5E8', '#F4C542', '#E8788F', '#B79CE0', '#3FAE8E'
    horizontally AND spaced them horizontally, so they fought for the same circumference and most of
    them ended up round the back. Every reference cake is the same: short vertical pulls, side by
    side, because that is the way a hand moves against a tier you are turning. */
-function path(at) {
-  const out = [];
-  for (let i = 0; i < 14; i++) {
-    const t = i / 13;
-    out.push([at + SWEEP * t, 0.16 + CLIMB * t + Math.sin(Math.PI * t) * 0.01]);
-  }
-  return out;
-}
+const path = (at, seed) => brushGesture({ at, seed, sweep: SWEEP, climb: CLIMB });
 
 /* On the top, the gesture is drawn in units of R from the axis rather than round-and-up. */
 function topPath(k) {
@@ -72,7 +65,7 @@ const CAKE_COLOR = '#FBF8F3';
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
   ), [at, weight, seed, idx]);
   /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
      a flat colour never will. */

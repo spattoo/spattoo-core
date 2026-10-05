@@ -284,6 +284,59 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0 } = {}) {
   return grid;
 }
 
+
+/* ── One mesh builder, two surfaces ──────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE WALL AND THE LID DIFFER IN EXACTLY ONE THING: where a point in the stroke's own flat space
+ * ends up in the world. Everything else — the grid, the load along the pull, the ridge and hollow
+ * across it, the knife marks, the layer offset, the coverage attribute, the winding — is the same
+ * smear. Written twice they drifted immediately: an edit meant for both landed on one of them and
+ * every test still passed, because the two halves were separately correct and no longer agreed.
+ * `check:dup` caught the copy before it could happen a third time.
+ *
+ * `place(x, y, h)` is the whole difference: on a wall it wraps round the cylinder, on a lid it lies
+ * flat and folds over the rim.
+ */
+function buildStrokeMesh(stroke, p, { R, place }) {
+  const m = Math.max(3, p.across | 0);
+  const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
+  const n = grid.length;
+  const pos = [], idx = [], thick = [];
+  const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
+  for (let i = 0; i < n; i++) {
+    const along = n > 1 ? i / (n - 1) : 0;
+    // `film` is the floor: even at zero thickness there is a layer, and it keeps its knife marks.
+    const load = brushLoad(along) * (p.film + (1 - p.film) * clamp01(p.weight));
+    for (let j = 0; j < m; j++) {
+      const u = j / (m - 1);
+      const [gx, gy] = grid[i][j];
+      const h = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
+                * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
+      pos.push(...place(gx, gy, h));
+      /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle —
+         because the middle is deliberately SCRAPED, a hollow between two ridges — and a real stroke
+         is at its most saturated exactly there. What thins the pigment is how much cream was on the
+         knife and the feathered EDGES where it meets the cake. */
+      thick.push(clamp01(load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u)));
+    }
+  }
+  /* ⚠️ WOUND OUTWARD. Getting it backwards makes the stroke INVISIBLE rather than wrong: the faces
+     point into the cake, back faces are culled, and a full-weight stroke in front of the camera
+     renders as nothing at all while measuring perfectly. See strokeFacesOutward. */
+  for (let i = 0; i < n - 1; i++) {
+    for (let j = 0; j < m - 1; j++) {
+      const a = i * m + j, b = a + 1, c = a + m, d = c + 1;
+      idx.push(a, b, c, b, d, c);
+    }
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aThickness', new THREE.Float32BufferAttribute(thick, 1));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}
+
 /**
  * A brushstroke seated on a cylindrical wall.
  *
@@ -303,48 +356,11 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
-  const m = Math.max(3, p.across | 0);
-  const grid = strokeGrid(stroke, m);
-  const n = grid.length;
-  const pos = [], idx = [], thick = [];
-  const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
-  for (let i = 0; i < n; i++) {
-    const along = n > 1 ? i / (n - 1) : 0;
-    // `film` is the floor: even at zero thickness there is a layer, and it keeps its knife marks.
-    const load = brushLoad(along) * (p.film + (1 - p.film) * clamp01(p.weight));
-    for (let j = 0; j < m; j++) {
-      const u = j / (m - 1);
-      const [sx, y] = grid[i][j];                  // arc length round the cake, height up the wall
-      const h = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
-                * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
-      const th = sx / R;
-      const rad = R + h;
-      pos.push(Math.sin(th) * rad, baseY + y, Math.cos(th) * rad);
-      /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle
-         — because the middle is deliberately SCRAPED, a hollow between two ridges — and a real
-         stroke is at its most saturated exactly there. What thins the pigment is how much cream was
-         on the knife (`load`, which runs dry toward the lift) and the feathered EDGES where it
-         meets the cake. Not the ridge-and-hollow profile, which is relief, not quantity. */
-      thick.push(clamp01(load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u)));
-    }
-  }
-  /* ⚠️ WOUND OUTWARD, AND GETTING IT BACKWARDS MAKES THE STROKE INVISIBLE RATHER THAN WRONG. The
-     rows run UP the wall and the columns run round it, so (row × column) points INTO the cake: back
-     faces are culled, and a full-weight stroke dead in front of the camera rendered as nothing at
-     all. Nothing errors, the geometry measures correctly, and the tests pass — `strokeFacesOutward`
-     below is the one that would have caught it. */
-  for (let i = 0; i < n - 1; i++) {
-    for (let j = 0; j < m - 1; j++) {
-      const a = i * m + j, b = a + 1, c = a + m, d = c + 1;
-      idx.push(a, b, c, b, d, c);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('aThickness', new THREE.Float32BufferAttribute(thick, 1));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  return geo;
+  return buildStrokeMesh(stroke, p, {
+    R,
+    // Round the cake and up it: arc length becomes an angle, relief pushes outward.
+    place: (sx, y, h) => { const th = sx / R, rad = R + h; return [Math.sin(th) * rad, baseY + y, Math.cos(th) * rad]; },
+  });
 }
 
 /**
@@ -402,42 +418,12 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const stroke = brushStroke(flat, { width: p.width * R, seed: p.seed, tipWidth: tipFor(p), frayed: false });
   if (!stroke || !stroke.band?.length) return null;
 
-  const m = Math.max(3, p.across | 0);
-  const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
-  const n = grid.length;
-  const pos = [], idx = [], thick = [];
-  const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
-  for (let i = 0; i < n; i++) {
-    const load = brushLoad(n > 1 ? i / (n - 1) : 0) * (p.film + (1 - p.film) * clamp01(p.weight));
-    for (let j = 0; j < m; j++) {
-      const u = j / (m - 1);
-      const [gx, gz] = grid[i][j];
-      const along = n > 1 ? i / (n - 1) : 0;
-      const h = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
-                * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
-      /* `drape` off keeps the old behaviour for a flat surface with no rim to fall off — the BOARD,
-         where running past the edge of the tier is not running past anything. */
-      pos.push(...(p.drape === false ? [gx, y + h, gz] : drapePoint(gx, gz, h, R, y)));
-      /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle
-         — because the middle is deliberately SCRAPED, a hollow between two ridges — and a real
-         stroke is at its most saturated exactly there. What thins the pigment is how much cream was
-         on the knife (`load`, which runs dry toward the lift) and the feathered EDGES where it
-         meets the cake. Not the ridge-and-hollow profile, which is relief, not quantity. */
-      thick.push(clamp01(load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u)));
-    }
-  }
-  for (let i = 0; i < n - 1; i++) {
-    for (let j = 0; j < m - 1; j++) {
-      const a = i * m + j, b = a + 1, c = a + m, d = c + 1;
-      idx.push(a, b, c, b, d, c);
-    }
-  }
-  const geo = new THREE.BufferGeometry();
-  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  geo.setAttribute('aThickness', new THREE.Float32BufferAttribute(thick, 1));
-  geo.setIndex(idx);
-  geo.computeVertexNormals();
-  return geo;
+  return buildStrokeMesh(stroke, p, {
+    R,
+    /* Flat on the lid — and over the rim if the gesture reached it. `drape: false` is the BOARD,
+       which has no rim to fall off. */
+    place: (gx, gz, h) => (p.drape === false ? [gx, y + h, gz] : drapePoint(gx, gz, h, R, y)),
+  });
 }
 
 /* ── Placing a stroke by hand ─────────────────────────────────────────────────────────────────────
@@ -514,4 +500,45 @@ export function paintBrushColors(geo, color, under, { floor = 0.55, bite = 0.35 
   }
   geo.setAttribute('color', new THREE.BufferAttribute(out, 3));
   return geo;
+}
+
+/* ── What a hand actually does ───────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ STROKES DIFFER IN HEIGHT, AND THAT IS NOT A DETAIL. In the reference photograph the strokes are
+ * pulled up from the base and run out at wildly different heights — a short stubby one beside one
+ * reaching two thirds up the wall — and that unevenness is most of what stops a row of them reading
+ * as a fence. Ours were all the same length, so five strokes looked like five of the same object.
+ * Sandeep: *"they differ in height, can we try that?"*
+ *
+ * ⚠️ AND THEY START AT THE BOTTOM. A baker loads the knife at the base and pulls UP, so the bottom
+ * is where the cream is thickest and the strokes merge into one another; the top is where each one
+ * ran out. Starting them all at mid-wall, as ours did, puts the ragged end at both ends and the
+ * merge nowhere.
+ *
+ * Here rather than in the studio because it is knowledge about the GESTURE, not about one screen —
+ * the designer will want the same hand when this reaches a cake.
+ */
+export const BRUSH_GESTURE_DEFAULTS = {
+  at:       0,      // turns round the cake
+  rise:     0.02,   // where the pull starts, × wall height — at the base, where a knife lands
+  climb:    0.52,   // how far up it travels before the cream runs out
+  climbVar: 0.55,   // 0 … 1: how unequal those lengths are between strokes
+  sweep:    0.015,  // turns: how much it wanders round the cake as it climbs
+  bow:      0.012,  // turns: how much it bows out in the middle
+  points:   14,
+};
+
+export function brushGesture(opts = {}) {
+  const p = { ...BRUSH_GESTURE_DEFAULTS, ...opts };
+  const seed = p.seed ?? 1;
+  // Unequal lengths, deterministic: the same stroke comes back the same after a reload.
+  const climb = p.climb * (1 - p.climbVar / 2 + p.climbVar * seedFrac(seed, 211));
+  const rise  = p.rise * (0.4 + 1.2 * seedFrac(seed, 227));
+  const out = [];
+  for (let i = 0; i < Math.max(2, p.points); i++) {
+    const t = i / (Math.max(2, p.points) - 1);
+    out.push([p.at + p.sweep * t,
+              Math.min(0.97, rise + climb * t + Math.sin(Math.PI * t) * p.bow)]);
+  }
+  return out;
 }

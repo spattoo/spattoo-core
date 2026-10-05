@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
-         wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors,
+         wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
 const WALL = { R: 1, baseY: 0, wallH: 1 };
@@ -388,5 +388,42 @@ describe('coverage', () => {
   it('a stroke with no thickness attribute is left alone', () => {
     const bare = new (geo().constructor)();
     expect(paintBrushColors(bare, '#ff0000', '#fff').attributes.color).toBeUndefined();
+  });
+});
+
+/* ── What a hand actually does ───────────────────────────────────────────────────────────────────
+ * "they differ in height, can we try that?" — from a photograph where a short stubby stroke sits
+ * beside one reaching two thirds up the wall. Ours were all one length, so five strokes looked like
+ * five of the same object.
+ */
+describe('brushGesture', () => {
+  const topOf = seed => Math.max(...brushGesture({ seed }).map(([, v]) => v));
+
+  it('strokes run out at different heights', () => {
+    const tops = [1, 2, 3, 4, 5, 6, 7, 8].map(topOf);
+    expect(Math.max(...tops) - Math.min(...tops)).toBeGreaterThan(0.12);
+  });
+
+  /* ⚠️ AND THEY START AT THE BOTTOM. A baker loads at the base and pulls UP, so that is where the
+     cream is thickest and where strokes merge into one another. Starting them mid-wall puts the
+     ragged end at both ends and the merge nowhere. */
+  it('and every one of them starts at the base', () => {
+    for (const seed of [1, 2, 3, 4, 5]) expect(brushGesture({ seed })[0][1]).toBeLessThan(0.08);
+  });
+
+  it('never climbs off the top of the wall', () => {
+    for (const seed of [1, 2, 3, 4, 5]) {
+      expect(topOf(seed)).toBeLessThanOrEqual(0.97);
+      expect(Math.max(...brushGesture({ seed, climb: 2 }).map(([, v]) => v))).toBeLessThanOrEqual(0.97);
+    }
+  });
+
+  it('is deterministic, so a cake reopens as the cake that was made', () => {
+    expect(brushGesture({ seed: 3 })).toEqual(brushGesture({ seed: 3 }));
+  });
+
+  it('climbVar 0 makes them all the same, for a caller that wants a rule not a hand', () => {
+    const tops = [1, 2, 3, 4].map(s => Math.max(...brushGesture({ seed: s, climbVar: 0 }).map(([, v]) => v)));
+    expect(Math.max(...tops) - Math.min(...tops)).toBeLessThan(0.05);
   });
 });
