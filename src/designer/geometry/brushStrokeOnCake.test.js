@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
-         wallCoordsOf, grabOffset, dragStrokeTo,
+         wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
 const WALL = { R: 1, baseY: 0, wallH: 1 };
@@ -333,5 +333,60 @@ describe('overlapping strokes', () => {
     const solo = lowest(buildBrushStrokeOnWall({ ...base, layer: 0 }));
     const tenth = lowest(buildBrushStrokeOnWall({ ...base, layer: 10 }));
     expect(tenth - solo).toBeLessThan(BRUSH_ON_CAKE_DEFAULTS.lift * 0.35);
+  });
+});
+
+/* ── A stroke is semi-opaque ─────────────────────────────────────────────────────────────────────
+ * The thing a photograph of a real cake showed and three renders of relief did not: where the knife
+ * ran thin the cake shows through, and where it piled up the colour is full. A stroke painted one
+ * flat colour reads as vinyl however good its relief is.
+ */
+describe('coverage', () => {
+  const geo = () => buildBrushStrokeOnWall({ ...WALL, path: SWEEP, weight: 1, seed: 5 });
+
+  it('carries how much cream is at each point', () => {
+    const t = geo().attributes.aThickness;
+    expect(t).toBeTruthy();
+    expect(t.count).toBe(geo().attributes.position.count);
+  });
+
+  /* ⚠️ COVERAGE IS NOT HEIGHT, and driving it from the relief is the mistake worth pinning: the
+     middle of a stroke is deliberately SCRAPED — a hollow between two ridges — and a real stroke is
+     at its most saturated exactly there. Driven by height it washed out down the centre line. */
+  it('the scraped middle is still fully covered', () => {
+    const g = geo();
+    const t = g.attributes.aThickness, pos = g.attributes.position;
+    // Walk one row across the band, a third of the way along the stroke.
+    const m = BRUSH_ON_CAKE_DEFAULTS.across, row = Math.floor(10) * m;
+    const mid = t.getX(row + Math.floor(m / 2));
+    const quarter = t.getX(row + Math.floor(m / 4));
+    expect(mid).toBeGreaterThan(0.5);
+    expect(Math.abs(mid - quarter)).toBeLessThan(0.25);   // no groove down the colour
+  });
+
+  it('and it runs out toward the lift and at the edges', () => {
+    const g = geo();
+    const t = g.attributes.aThickness;
+    const m = BRUSH_ON_CAKE_DEFAULTS.across;
+    expect(t.getX(10 * m)).toBeLessThan(0.2);                       // the feathered edge
+    expect(t.getX(t.count - m + Math.floor(m / 2))).toBeLessThan(0.3); // the torn end
+  });
+
+  it('paints full strength where it is thick and washes toward the cake where it is thin', () => {
+    const painted = paintBrushColors(geo(), '#ff0000', '#ffffff');
+    const c = painted.attributes.color;
+    let strongest = 0, weakest = 1;
+    const t = painted.attributes.aThickness;
+    for (let v = 0; v < c.count; v++) {
+      const red = c.getX(v) - c.getY(v);          // distance from white, in the red channel
+      if (t.getX(v) > 0.8) strongest = Math.max(strongest, red);
+      if (t.getX(v) < 0.05) weakest = Math.min(weakest, red);
+    }
+    expect(strongest).toBeGreaterThan(weakest + 0.2);
+  });
+
+  it('a stroke with no thickness attribute is left alone', () => {
+    const bare = new (geo().constructor)();
+    expect(paintBrushColors(bare, '#ff0000', '#fff').attributes.color).toBeUndefined();
   });
 });

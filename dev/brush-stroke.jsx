@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat,
+import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors,
          BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 // Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
 // creamMaterialProps is THE cream material — the one every piped stroke on every cake already
@@ -67,11 +67,16 @@ function topPath(k) {
   return out;
 }
 
+const CAKE_COLOR = '#FBF8F3';
+
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
     : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
   ), [at, weight, seed, idx]);
+  /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
+     a flat colour never will. */
+  useMemo(() => geo && paintBrushColors(geo, color, CAKE_COLOR), [geo, color]);
   if (!geo) return null;
   return (
     <mesh geometry={geo} castShadow receiveShadow>
@@ -80,7 +85,7 @@ function Stroke({ at, weight, color, seed, idx }) {
           almost on the wall, and over a long grazing sweep the depth buffer loses: the wall punches
           through in stripes, which is what "breaking at extreme sweep" was. */}
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, color)} />
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, color)} color="#ffffff" vertexColors />
     </mesh>
   );
 }

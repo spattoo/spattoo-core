@@ -306,7 +306,7 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const m = Math.max(3, p.across | 0);
   const grid = strokeGrid(stroke, m);
   const n = grid.length;
-  const pos = [], idx = [];
+  const pos = [], idx = [], thick = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
   for (let i = 0; i < n; i++) {
     const along = n > 1 ? i / (n - 1) : 0;
@@ -320,6 +320,12 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
       const th = sx / R;
       const rad = R + h;
       pos.push(Math.sin(th) * rad, baseY + y, Math.cos(th) * rad);
+      /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle
+         — because the middle is deliberately SCRAPED, a hollow between two ridges — and a real
+         stroke is at its most saturated exactly there. What thins the pigment is how much cream was
+         on the knife (`load`, which runs dry toward the lift) and the feathered EDGES where it
+         meets the cake. Not the ridge-and-hollow profile, which is relief, not quantity. */
+      thick.push(clamp01(load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u)));
     }
   }
   /* ⚠️ WOUND OUTWARD, AND GETTING IT BACKWARDS MAKES THE STROKE INVISIBLE RATHER THAN WRONG. The
@@ -335,6 +341,7 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aThickness', new THREE.Float32BufferAttribute(thick, 1));
   geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
@@ -398,7 +405,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   const m = Math.max(3, p.across | 0);
   const grid = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear });
   const n = grid.length;
-  const pos = [], idx = [];
+  const pos = [], idx = [], thick = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
   for (let i = 0; i < n; i++) {
     const load = brushLoad(n > 1 ? i / (n - 1) : 0) * (p.film + (1 - p.film) * clamp01(p.weight));
@@ -411,6 +418,12 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
       /* `drape` off keeps the old behaviour for a flat surface with no rim to fall off — the BOARD,
          where running past the edge of the tier is not running past anything. */
       pos.push(...(p.drape === false ? [gx, y + h, gz] : drapePoint(gx, gz, h, R, y)));
+      /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle
+         — because the middle is deliberately SCRAPED, a hollow between two ridges — and a real
+         stroke is at its most saturated exactly there. What thins the pigment is how much cream was
+         on the knife (`load`, which runs dry toward the lift) and the feathered EDGES where it
+         meets the cake. Not the ridge-and-hollow profile, which is relief, not quantity. */
+      thick.push(clamp01(load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u)));
     }
   }
   for (let i = 0; i < n - 1; i++) {
@@ -421,6 +434,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
   }
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setAttribute('aThickness', new THREE.Float32BufferAttribute(thick, 1));
   geo.setIndex(idx);
   geo.computeVertexNormals();
   return geo;
@@ -465,4 +479,39 @@ export function dragStrokeTo(grab, point, opts = {}) {
     at:   ((w.at + (grab?.dAt ?? 0)) % 1 + 1) % 1,
     rise: Math.min(riseMax, Math.max(riseMin, w.rise + (grab?.dRise ?? 0))),
   };
+}
+
+/**
+ * Turn a stroke's thickness into vertex colours: full strength where the cream piled up, washing
+ * toward `under` — the colour of whatever it was painted on — where the knife ran thin.
+ *
+ * ⚠️ THIS IS MOST OF WHAT SAYS BUTTERCREAM, and it took a photograph of a real cake to see it. A
+ * stroke is SEMI-OPAQUE: where it is thin the cake shows through and the colour washes out, where it
+ * piled up the colour is full. Ours was one flat colour from end to end, which reads as vinyl
+ * however good the relief is — and relief was the only thing I had been tuning. Sandeep, three
+ * renders in: *"still concerned about the texture difference."*
+ *
+ * ⚠️ VERTEX COLOURS RATHER THAN TRANSPARENCY. A translucent material would need sorting against
+ * every stroke it overlaps and the cake behind it, for a result nobody could tell from this — and
+ * real buttercream is not transparent, it is THIN. You are seeing less pigment, not through it. The
+ * drip reaches the same conclusion for the same reason; see paintDripColors.
+ */
+export function paintBrushColors(geo, color, under, { floor = 0.55, bite = 0.35 } = {}) {
+  const t = geo?.attributes?.aThickness;
+  if (!t) return geo;
+  const a = new THREE.Color(color), b = new THREE.Color(under ?? '#ffffff');
+  const mix = new THREE.Color();
+  const out = new Float32Array(t.count * 3);
+  for (let v = 0; v < t.count; v++) {
+    /* Even the thinnest film carries some pigment — `floor` is how much, so a dry edge reads as a
+       wash rather than as a hole in the stroke. `bite` below 1 because pigment stacks FAST: the
+       first scrape of cream hides most of what is under it and the tenth adds almost nothing, so a
+       stroke is saturated across nearly all of its length and washes out only at the very ends and
+       edges. Against a photograph, a linear fade was far too pale over far too much of the stroke. */
+    const k = floor + (1 - floor) * Math.pow(clamp01(t.getX(v)), bite);
+    mix.copy(b).lerp(a, k);
+    out[v * 3] = mix.r; out[v * 3 + 1] = mix.g; out[v * 3 + 2] = mix.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(out, 3));
+  return geo;
 }
