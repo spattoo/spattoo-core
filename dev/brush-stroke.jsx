@@ -54,9 +54,6 @@ const GRAIN = +(P.get('grain') ?? D.grain);
 const LANES = +(P.get('lanes') ?? D.lanes);
 const ROWS  = +(P.get('rows')  ?? D.rows);
 const SEAM  = +(P.get('seam')  ?? D.seam);
-const LIP   = +(P.get('lip')   ?? D.lip);
-const SKON  = +(P.get('skirtOn') ?? D.skirtOn);
-const CLING = +(P.get('cling') ?? D.cling);
 const FLOOR = P.has('floor') ? +P.get('floor') : null;
 const BITE  = P.has('bite') ? +P.get('bite') : null;
 /* The band's own thickness. `weights` is the ROW of single strokes; a band has one. */
@@ -96,7 +93,7 @@ const BED = P.has('nobed') ? null : makeBrushBed({ R, wallH: TIER_H });
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, seam: SEAM, lip: LIP, skirtOn: SKON, cling: CLING, bed: BED })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, seam: SEAM, bed: BED })
   ), [at, weight, seed, idx]);
   /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
      a flat colour never will. */
@@ -134,17 +131,17 @@ function Band() {
        the lot puts a white sheen over a charcoal stroke and it renders mid-grey.
        `color="#ffffff"` so the per-vertex wash is what tints it — the albedo is already in the
        vertex colours — but sheen and roughness come from the real one. */
-    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow>
-      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
-        {/* ⚠️ THE MATERIAL PROBES, KEPT. ?nospec ?nosheen ?noenv each switch ONE term off, which is
+    /* ⚠️ THE MATERIAL PROBES, KEPT. ?nospec ?nosheen ?noenv each switch ONE term off, which is
             how the pale band down every stroke's edge was identified: measured across one scan line
             it is 143px with the default specular and 63px without, while sheen and envMapIntensity
             change it by nothing (the second confirming INVARIANTS #18). Three.js defaults
             specularIntensity to 1, so a cream edge presenting a grazing angle gets a WHITE Fresnel
             highlight — on a stroke whose edge ramps down to the wall that is a desaturated halo, not
             a glint. Left here because the fix belongs in creamMaterialProps, which every piped
-            stroke in the app shares, and that is not a change to make without re-measuring cream. */}
+            stroke in the app shares, and that is not a change to make without re-measuring cream. * */
+    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow>
+      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
         {...(P.has('nospec') ? { specularIntensity: 0 } : null)}
         {...(P.has('nosheen') ? { sheen: 0 } : null)}
         {...(P.has('noenv') ? { envMapIntensity: 0 } : null)} />
