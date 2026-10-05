@@ -66,6 +66,24 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   bed:       null,
   layer:     0,       // where this stroke comes in the order — later paints over earlier
   layerStep: 0.003,   // × R: how far each one rides above the one before it
+  /* ⚠️ HOW THICK THE NEW LAYER IS WHERE IT CROSSES AN OLD ONE, and it is the entire difference
+     between an overlap and a join. Laid exactly ON the cream below, the two surfaces meet
+     tangentially at the feathered edge and the seam is a colour cut with no step and no shadow.
+     This is doing double duty as the scale of "is there cream here at all", which is right: a
+     clearance smaller than the thing it is clearing is not one. Applies ONLY over cream — a lone
+     stroke is bit-identical with and without a bed, and there is a test holding that. */
+  seam:      0.012,   // × R: how far a stroke stands off the cream it is laid on
+  /* How far in from each edge the cream runs out. The first number is onto bare cake, the second
+     onto cream already laid — see brushRelief, and note that a stroke uses BOTH at once when one of
+     its edges is on a neighbour and the other is on the wall. */
+  skirt:     0.13,    // 0 … 1 of the width: the feathered edge on bare cake
+  skirtOn:   0.09,    // and the wall it leaves where it lifts off cream
+  /* ⚠️ AND ON CREAM IT DOES NOT RUN OUT AT ALL. A clearance alone is not an overlap: it puts the new
+     stroke a hair above the old one and then still TAPERS IT TO NOTHING at the edge, so the two
+     surfaces arrive at the same place and the seam is a colour boundary again — measured at 0.009R
+     against the stroke's own 0.09R of relief, which is a tenth, which is nothing. Cream dragged onto
+     cream stops at a height, because the blade is riding on a surface that is already there. */
+  lip:       0.55,    // 0 … 1: how much of its own height a stroke still has where it ends on cream
   /* ⚠️ THE THINNEST STROKE IS STILL A LAYER OF CREAM, NOT A DECAL. At thickness 0 the stroke was
      perfectly flat and Sandeep said so: *"when thickness is 0- it feels very smooth and does not
      look like cream."* He is right twice over — a knife wiped nearly dry still leaves the marks of
@@ -159,10 +177,24 @@ function alongWave(along, seed, salt) {
  * not do it together.
  *
  * `along` defaults to 0, so a caller that does not care gets exactly the old profile.
+ *
+ * ⚠️ `skirt` IS HOW FAR THE CREAM IS DRAGGED OUT BEFORE IT RUNS TO NOTHING, and it is NOT a constant
+ * of the knife — it is a fact about what the knife was dragged onto. Pulled across bare cake the
+ * cream thins out over a good fraction of the width, which is the soft edge every stroke here has
+ * had. Pulled across cream that is already there, it does not thin at all: the blade lifts off a
+ * surface at its own height and leaves a WALL. Feathered onto its neighbour instead, a stroke meets
+ * it tangentially and the overlap comes out as a colour boundary with no step, no shadow and nothing
+ * to say which one is on top — Sandeep: *"it looked like a separate piece than an overlap."*
  */
-export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge, { along = 0, seed = 1 } = {}) {
+export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge,
+                            { along = 0, seed = 1, skirt: sk = BRUSH_ON_CAKE_DEFAULTS.skirt,
+                              floor = 0 } = {}) {
   const t = clamp01(u);
-  const skirt = smoothstep(0, 0.13, t) * smoothstep(0, 0.13, 1 - t);   // down to the wall at both edges
+  const e = Math.max(1e-4, sk);
+  /* `floor` is where the cream ENDS rather than where it runs out: 0 is the feather onto bare cake,
+     and anything above it is a stroke that stops at a height because what it was dragged over is
+     already that high. */
+  const skirt = lerp(floor, 1, smoothstep(0, e, t) * smoothstep(0, e, 1 - t));
   // Where each crest sits, and how proud it is — independently, because the knife is not symmetrical.
   const dl = alongWave(along, seed, 21) * 0.09;
   const dr = alongWave(along, seed, 37) * 0.09;
@@ -316,26 +348,61 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const n = grid.length;
   const pos = [], idx = [], thick = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
+  const seam = p.seam * R;
+  let prev = null;                       // the previous row's stamps, for the half-steps between
   for (let i = 0; i < n; i++) {
     const along = n > 1 ? i / (n - 1) : 0;
     // `film` is the floor: even at zero thickness there is a layer, and it keeps its knife marks.
     const load = brushLoad(along) * (p.film + (1 - p.film) * clamp01(p.weight));
+    const row = bedPut ? [] : null;
     for (let j = 0; j < m; j++) {
       const u = j / (m - 1);
       const [gx, gy] = grid[i][j];
       /* ⚠️ THE BASE IS WHAT IS ALREADY HERE, not a global lift. Where nothing has been painted the
          stroke lies on the wall; where it crosses another it rides over it, and only there. */
-      const base = bedAt ? Math.max(skim, bedAt(gx, gy)) : skim;
-      const h = base + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed })
+      const bedH = bedAt ? bedAt(gx, gy) : 0;
+      /* How much cream is actually under this point — 0 on bare wall, 1 well inside a neighbour.
+         Everything about an overlap is conditioned on this, and nothing about a lone stroke is. */
+      const onCream = clamp01(bedH / (seam || 1e-9));
+      /* ⚠️ RIDING EXACTLY ON THE CREAM BELOW IS NOT AN OVERLAP, IT IS A JOIN. The relief feathers to
+         nothing at both edges, so a stroke laid on another meets it TANGENTIALLY: the two surfaces
+         become coplanar along the seam, there is no step to cast a shadow, and the depth buffer has
+         nothing to choose between either. It comes out as strips of coloured tape butted together —
+         Sandeep: *"it looked like a separate piece than an overlap."* A knife riding over set cream
+         does not blend into it, it lays a new layer ON it, and the thickness of that layer is the
+         whole tell. So the stroke clears the cream it crosses by a little, and by nothing at all
+         where there is no cream to clear. */
+      const base = Math.max(skim, bedH + seam * onCream);
+      const skirt = p.skirt + (p.skirtOn - p.skirt) * onCream;
+      const h = base + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt, floor: p.lip * onCream })
                 * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
       pos.push(...place(gx, gy, h));
-      if (bedPut) bedPut.push([gx, gy, h]);
+      /* ⚠️ AND THE GAPS BETWEEN THE ROWS ARE STAMPED TOO, not blurred over. A stroke samples densely
+         ACROSS itself and sparsely ALONG — forty rows over its length against forty-five points over
+         its width — while the bed's cells are the other way round, so a splat round enough to bridge
+         one direction smears three cells too far in the other. Widened until it bridged, the bed read
+         three times the true height around every stroke's rim and the next stroke rode high on
+         nothing, which is the complaint this whole mechanism exists to answer. Half-steps between
+         consecutive rows close the gap where the gap actually is. */
+      if (bedPut) {
+        if (prev) bedPut.push([(prev[j][0] + gx) / 2, (prev[j][1] + gy) / 2, Math.min(prev[j][2], h)]);
+        row.push([gx, gy, h]);
+        bedPut.push([gx, gy, h]);
+      }
       /* ⚠️ COVERAGE IS NOT HEIGHT. Driven by the local relief, the stroke washed out in the middle —
          because the middle is deliberately SCRAPED, a hollow between two ridges — and a real stroke
          is at its most saturated exactly there. What thins the pigment is how much cream was on the
-         knife and the feathered EDGES where it meets the cake. */
-      thick.push(clamp01(load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u)));
+         knife and the feathered EDGES where it meets the cake.
+         ⚠️ AND IT ONLY THINS TOWARDS THE CAKE WHERE THE CAKE IS WHAT IS UNDERNEATH. Thin cream is
+         translucent, which is most of what says buttercream — but the thing it lets through is
+         whatever it was laid on, and over another stroke that is CREAM, not the wall. Washed to the
+         cake's colour regardless, the edge of a stroke crossing its neighbour came out pale against
+         a saturated neighbour: a bright seam running the length of the overlap, which is exactly the
+         look of one shape pasted over another rather than laid on it. */
+      const cover = load * smoothstep(0, 0.16, u) * smoothstep(0, 0.16, 1 - u);
+      thick.push(clamp01(cover + (1 - cover) * onCream));
     }
+    if (bedPut) prev = row;
   }
   /* ⚠️ WOUND OUTWARD. Getting it backwards makes the stroke INVISIBLE rather than wrong: the faces
      point into the cake, back faces are culled, and a full-weight stroke in front of the camera
@@ -610,15 +677,21 @@ export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256 } = {}) 
   const splat = (sx, y, v) => {
     const fx = (((sx / w) % 1) + 1) % 1 * cols, fy = (y / wallH) * rows;
     const c0 = Math.round(fx), r0 = Math.round(fy);
-    /* ⚠️ AND THE SPLAT FALLS OFF. A flat max over the neighbourhood writes square plateaus with a
-       cliff at their rim, and a stroke climbing that cliff comes out serrated — visible on exactly
-       one edge of one stroke, which is how a plateau announces itself. A shoulder at the edge of the
-       stamp gives the next stroke something to climb rather than something to trip over. */
+    /* ⚠️ AND THE SPLAT FALLS OFF — BUT NOT FROM THE MIDDLE. A flat max over the neighbourhood writes
+       square plateaus with a cliff at their rim, and a stroke climbing that cliff comes out
+       serrated; a shoulder gives the next stroke something to climb rather than trip over. Started
+       at d = 0, though, that shoulder eats the HEIGHT: a cell whose own vertex missed it keeps only
+       the 0.66 its neighbour wrote, so the bed read 0.68–0.95 of the true surface right across a
+       stroke's middle — measured, after the seam it is supposed to clear simply failed to appear.
+       Under-reporting by a quarter of the relief is most of a seam's worth of error, and it is in
+       the direction that lets the stroke underneath come back through. Full value inside the core,
+       shoulder only outside it: the bed now says how high the cream is, and the clearance is the
+       only thing deciding how far above it the next stroke sits. */
     for (let dr = -2; dr <= 2; dr++) {
       for (let dc = -2; dc <= 2; dc++) {
         const d = Math.hypot(dc, dr);
         if (d > 2.2) continue;
-        const k = v * (1 - 0.34 * d);
+        const k = v * (1 - 0.34 * Math.max(0, d - 1));
         const i = clampR(r0 + dr) * cols + wrapC(c0 + dc);
         if (k > h[i]) h[i] = k;
       }

@@ -44,6 +44,9 @@ const RIDGE = +(P.get('ridge') ?? D.ridge);
 const GRAIN = +(P.get('grain') ?? D.grain);
 const LANES = +(P.get('lanes') ?? D.lanes);
 const ROWS  = +(P.get('rows')  ?? D.rows);
+const SEAM  = +(P.get('seam')  ?? D.seam);
+const LIP   = +(P.get('lip')   ?? D.lip);
+const SKON  = +(P.get('skirtOn') ?? D.skirtOn);
 /* ?top=1 — the SAME stroke laid on the cake top instead of the wall. A cream stroke goes on both,
    hugging either, and buildBrushStrokeOnFlat had never been looked at. */
 const TOP = P.has('top');
@@ -70,12 +73,16 @@ const CAKE_COLOR = '#FBF8F3';
 
 /* One bed for the whole wall: each stroke reads the cream already laid and rides on it, then stamps
    itself in for the next. Rebuilt whenever the set of strokes changes, so order stays honest. */
-const BED = makeBrushBed({ R, wallH: TIER_H });
+/* ?nobed — the CONTROL. Without it every stroke sits on the wall whatever is already there, so the
+   one underneath comes back up through the one on top: thin slivers of the wrong colour running the
+   length of the overlap, which is the artefact this whole mechanism exists to answer. Keep it
+   reachable; a fix with no way to see the fault is a fix nobody can check. */
+const BED = P.has('nobed') ? null : makeBrushBed({ R, wallH: TIER_H });
 
 function Stroke({ at, weight, color, seed, idx }) {
   const geo = useMemo(() => (TOP
     ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
-    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, bed: BED })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, seam: SEAM, lip: LIP, skirtOn: SKON, bed: BED })
   ), [at, weight, seed, idx]);
   /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
      a flat colour never will. */
@@ -102,6 +109,12 @@ function App() {
           render judged on this page had been lit unlike the cake it authors for (INVARIANTS #17).
           It is not what made the strokes read flat, but a page about height that throws away the
           cue for height has no business being the one we decide on. */}
+      {/* ⚠️ AND A SHADOW CANNOT CARRY THE SEAM, WHICH IS WORTH KNOWING BEFORE REACHING FOR ONE. A
+          probe key light with a 4-pixel-per-millimetre shadow camera — a 4096 map over a 4-unit
+          frustum against three's default 512 over ten — made no visible difference at an overlap.
+          SceneLights' key is nearly overhead, so what a stroke standing off its neighbour casts, it
+          casts onto itself. The step has to be read from SHADING, which is why the fix was the
+          stroke's own edge having a height rather than anything in the rig. */}
       <SceneLights shadows />
       <SceneEnv />
       <mesh position={[0, BOARD_H / 2, 0]} receiveShadow>

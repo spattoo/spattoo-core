@@ -501,3 +501,74 @@ describe('the striations are sampled finely enough to resolve', () => {
     expect(hi - lo).toBeGreaterThan(0.4);
   });
 });
+
+/* ⚠️ AN OVERLAP IS A STEP, AND A STEP IS THE ONLY THING THAT SAYS WHICH ONE IS ON TOP. Everything
+   here was green while the seam was invisible: the stroke was above its neighbour, by a number far
+   too small to see, and no test asked how far. Sandeep, twice, off two different renders: *"it
+   looked like a separate piece than an overlap."* */
+describe('a stroke laid across another ENDS on it', () => {
+  const gest = at => brushGesture({ at, seed: 11, sweep: 0.012, climb: 0.52 });
+  /* Heights of one mesh on a horizontal line, as [angle, height above the wall]. */
+  const sliceOf = (geo, R, yWant) => {
+    const p = geo.attributes.position, out = [];
+    for (let i = 0; i < p.count; i++) {
+      const y = p.getY(i); if (Math.abs(y - yWant) > 0.012) continue;
+      out.push([Math.atan2(p.getX(i), p.getZ(i)), Math.hypot(p.getX(i), p.getZ(i)) - R]);
+    }
+    return out.sort((a, b) => a[0] - b[0]);
+  };
+  const pair = (opts = {}) => {
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    const A = buildBrushStrokeOnWall({ ...WALL, bed, weight: 0.7, seed: 11, path: gest(-0.014), ...opts });
+    const B = buildBrushStrokeOnWall({ ...WALL, bed, weight: 1.0, seed: 18, path: gest(0.014), ...opts });
+    return { A, B };
+  };
+
+  it('the bed says how high the cream actually is, not a fraction of it', () => {
+    /* The splat used to fall off from its own centre, so a cell whose vertex missed it kept only
+       what a neighbour wrote — the bed read ~0.75 of the surface right across a stroke's middle,
+       which is most of a seam's worth of error and all of it in the direction that lets the stroke
+       underneath come back through. */
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    const g = buildBrushStrokeOnWall({ ...WALL, bed, weight: 0.8, seed: 11, path: gest(0) });
+    const p = g.attributes.position, m = BRUSH_ON_CAKE_DEFAULTS.across, n = p.count / m;
+    let worst = 1;
+    for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) {
+      /* The stroke's middle. Its feathered rim is a steep ramp read off a grid and will always come
+         back low there, which costs nothing: the rim is where a neighbour is barely on it anyway. */
+      if (j < m * 0.2 || j > m * 0.8) continue;
+      const k = i * m + j, h = Math.hypot(p.getX(k), p.getZ(k)) - 1;
+      if (h < 0.02) continue;
+      worst = Math.min(worst, bed.heightAt(Math.atan2(p.getX(k), p.getZ(k)), p.getY(k)) / h);
+    }
+    expect(worst).toBeGreaterThan(0.88);                        // it was 0.68 when the shoulder started at the middle
+  });
+
+  it('where it crosses, it stands clear of what is under it', () => {
+    const { A, B } = pair();
+    const y = 0.45, sa = sliceOf(A, 1, y), sb = sliceOf(B, 1, y);
+    const edge = sb[0];                                          // B's first point — its left edge
+    const under = sa.reduce((best, p) => (Math.abs(p[0] - edge[0]) < Math.abs(best[0] - edge[0]) ? p : best));
+    expect(Math.abs(under[0] - edge[0])).toBeLessThan(0.01);     // they really are at the same place
+    expect(edge[1] - under[1]).toBeGreaterThan(0.025);           // and B ends well above A
+  });
+
+  it('and it is the lip that does it, not the clearance alone', () => {
+    const { A: A0, B: B0 } = pair({ lip: 0 });
+    const y = 0.45;
+    const e0 = sliceOf(B0, 1, y)[0];
+    const u0 = sliceOf(A0, 1, y).reduce((b, p) => (Math.abs(p[0] - e0[0]) < Math.abs(b[0] - e0[0]) ? p : b));
+    expect(e0[1] - u0[1]).toBeLessThan(0.015);                   // tapering to the cream: a tenth of the relief
+  });
+
+  it('a stroke with nothing under it is untouched by any of it', () => {
+    const bed = makeBrushBed({ R: 1, wallH: 1 });
+    const lone = buildBrushStrokeOnWall({ ...WALL, bed, weight: 0.8, seed: 11, path: gest(0) });
+    const bare = buildBrushStrokeOnWall({ ...WALL, weight: 0.8, seed: 11, path: gest(0) });
+    const a = lone.attributes.position.array, b = bare.attributes.position.array;
+    expect(a.length).toBe(b.length);
+    let worst = 0;
+    for (let i = 0; i < a.length; i++) worst = Math.max(worst, Math.abs(a[i] - b[i]));
+    expect(worst).toBeLessThan(1e-9);
+  });
+});
