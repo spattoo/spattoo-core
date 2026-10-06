@@ -433,6 +433,8 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const n = grid.length;
   const merge = p.merge * R;        // how deep the dissolve reaches back from each finger's end
   const pos = [], idx = [], thick = [];
+  /* What lies under each vertex, kept so the rim can be dropped onto it — see the skirt below. */
+  const floor = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
   const seamMin = p.seamMin * R;
   let prev = null;                       // the previous row's stamps, for the half-steps between
@@ -484,6 +486,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          On bare wall `over` is 0 and this is the stroke's own profile, byte for byte. */
       const h = Math.max(own, over + (own - skim) * p.ride);
       pos.push(...place(gx, gy, h));
+      floor.push(Math.max(0, bedH));
       /* ⚠️ AND THE GAPS BETWEEN THE ROWS ARE STAMPED TOO, not blurred over. A stroke samples densely
          ACROSS itself and sparsely ALONG — forty rows over its length against forty-five points over
          its width — while the bed's cells are the other way round, so a splat round enough to bridge
@@ -567,11 +570,51 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
       idx.push(a, b, c, b, d, c);
     }
   }
+  /* ── The rim ─────────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ A STROKE WAS AN OPEN SHEET, AND ANYWHERE IT STOOD PROUD YOU COULD SEE UNDER IT. The grid
+   * above is a top surface and nothing else: no sides, no underside. On bare wall that is almost
+   * harmless, because the boundary feathers down to `skim` and the gap is 0.004R. Over a NEIGHBOUR
+   * it is not: the boundary is lifted to the cream below plus a clearance, so the sheet's edge hangs
+   * in the air and the material's DoubleSide draws its BACK face through the gap — lit from the
+   * wrong side, which is why it comes out pale. Sandeep, with one dark colour and a low camera:
+   * *"presently we are just adding relief on the backside i think… backside looks white."*
+   *
+   * So the boundary is walked once and dropped onto whatever is underneath it, closing the solid. A
+   * stroke is a SLAB of cream lying on a surface, not a decal floating over one. Zero-area where the
+   * edge was already touching, which is the whole of a lone stroke on bare wall — so this costs
+   * nothing there and only appears where something was actually open.
+   */
+  const ring = [];
+  for (let j = 0; j < m; j++) ring.push(j);                          // the first row
+  for (let i = 1; i < n; i++) ring.push(i * m + m - 1);              // down the right edge
+  for (let j = m - 2; j >= 0; j--) ring.push((n - 1) * m + j);       // back along the last row
+  for (let i = n - 2; i >= 1; i--) ring.push(i * m);                 // up the left edge
+  const skirtStart = pos.length / 3;
+  for (const v of ring) {
+    const gx = grid[Math.floor(v / m)][v % m];
+    pos.push(...place(gx[0], gx[1], floor[v]));
+    thick.push(thick[v]);
+  }
+  /* DoubleSide is already on the material, so the winding here is not load-bearing — which is worth
+     saying rather than leaving someone to wonder why it is not checked like the top surface is. */
+  for (let k = 0; k < ring.length; k++) {
+    const k2 = (k + 1) % ring.length;
+    const a = ring[k], b = ring[k2], c = skirtStart + k, d = skirtStart + k2;
+    idx.push(a, c, b, b, c, d);
+  }
+
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setAttribute('aThickness', new THREE.Float32BufferAttribute(thick, 1));
   geo.setIndex(idx);
   geo.computeVertexNormals();
+  /* ⚠️ WHERE THE TOP SURFACE ENDS, said once here rather than re-derived by every caller. The mesh
+     is the grid followed by the rim, so `across × rows` is no longer the whole of it — and eight
+     tests had that arithmetic inlined and broke the moment the rim arrived. Anything measuring the
+     SURFACE (its relief, its colour, its silhouette) wants this bound; the rim is a side wall and
+     answers none of those questions. */
+  geo.userData.topCount = n * m;
   return geo;
 }
 
@@ -1023,6 +1066,19 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
     if (geo) byColor[k].push(paintBrushColors(geo, colors[k], under, wash));
   }
   return byColor
-    .map((list, k) => ({ color: colors[k], geometry: list.length ? mergePenGeometries(list) : null }))
+    .map((list, k) => {
+      const geometry = list.length ? mergePenGeometries(list) : null;
+      /* ⚠️ HOW THE MERGED BUFFER IS LAID OUT, said here because after the merge nobody can work it
+         out. Every stroke in a band has the same grid and the same rim, so the part is `strokes`
+         blocks of `stride` vertices, each starting with `topCount` of top surface. Without this a
+         caller cannot tell a surface vertex from a side wall, nor read a column index off a vertex
+         number — which is exactly what a test tried to do and got NaN for. */
+      if (geometry && list[0]) {
+        geometry.userData.stride = list[0].attributes.position.count;
+        geometry.userData.topCount = list[0].userData.topCount;
+        geometry.userData.strokes = list.length;
+      }
+      return { color: colors[k], geometry };
+    })
     .filter(part => part.geometry);
 }

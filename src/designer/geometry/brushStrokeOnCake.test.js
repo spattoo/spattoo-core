@@ -77,7 +77,10 @@ describe('a stroke on the wall', () => {
     const pos = geo.attributes.position;
     for (let v = 0; v < pos.count; v++) {
       const r = Math.hypot(pos.getX(v), pos.getZ(v));
-      expect(r).toBeGreaterThanOrEqual(1);
+      /* ⚠️ A TOLERANCE, because the RIM sits exactly on the wall and `R + 0` comes back as
+         0.99999999 through a sine and a cosine. The claim is "nothing is inside the tier", and a
+         vertex 1e-8 inside it is not inside it. */
+      expect(r).toBeGreaterThanOrEqual(1 - 1e-6);
       expect(r).toBeLessThan(1 + BRUSH_ON_CAKE_DEFAULTS.lift * 1.2);
     }
   });
@@ -137,7 +140,7 @@ describe('a stroke on a flat surface', () => {
     const pos = geo.attributes.position;
     let lo = Infinity, hi = -Infinity;
     for (let v = 0; v < pos.count; v++) { lo = Math.min(lo, pos.getY(v)); hi = Math.max(hi, pos.getY(v)); }
-    expect(lo).toBeGreaterThanOrEqual(0.7);
+    expect(lo).toBeGreaterThanOrEqual(0.7 - 1e-6);   // the rim lands exactly on the plane
     expect(hi).toBeLessThan(0.7 + BRUSH_ON_CAKE_DEFAULTS.lift * 1.2);
   });
 });
@@ -161,7 +164,8 @@ describe('the release width varies between strokes', () => {
   const endWidth = seed => {
     const geo = buildBrushStrokeOnWall({ ...WALL, path: SWEEP, seed, weight: 1, across: 15 });
     const pos = geo.attributes.position, m = 15;
-    const base = pos.count - 2 * m;                 // the row before the torn fingers
+    /* ⚠️ FROM THE END OF THE TOP SURFACE, not of the buffer — the rim is appended after it. */
+    const base = geo.userData.topCount - 2 * m;     // the row before the torn fingers
     const p0 = [pos.getX(base), pos.getY(base), pos.getZ(base)];
     const p1 = [pos.getX(base + m - 1), pos.getY(base + m - 1), pos.getZ(base + m - 1)];
     return Math.hypot(p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]);
@@ -307,10 +311,12 @@ describe('a stroke that reaches the rim drapes down the wall', () => {
  */
 describe('overlapping strokes', () => {
   const base = { ...WALL, path: SWEEP, weight: 1, seed: 5 };
+  /* ⚠️ THE TOP SURFACE ONLY. The rim drops to whatever is underneath, so it is at the wall for every
+     layer by construction and would make this measure the same number every time. */
   const lowest = geo => {
     const pos = geo.attributes.position;
     let lo = Infinity;
-    for (let v = 0; v < pos.count; v++) lo = Math.min(lo, Math.hypot(pos.getX(v), pos.getZ(v)));
+    for (let v = 0; v < geo.userData.topCount; v++) lo = Math.min(lo, Math.hypot(pos.getX(v), pos.getZ(v)));
     return lo;
   };
 
@@ -374,7 +380,7 @@ describe('coverage', () => {
     const t = g.attributes.aThickness;
     const m = BRUSH_ON_CAKE_DEFAULTS.across;
     expect(t.getX(10 * m)).toBeGreaterThan(0.5);                       // the side: still cream
-    expect(t.getX(t.count - m + Math.floor(m / 2))).toBeLessThan(0.3); // the release: running out
+    expect(t.getX(g.userData.topCount - m + Math.floor(m / 2))).toBeLessThan(0.3); // the release: running out
   });
 
   it('the BODY is one colour — a brush does not carry white', () => {
@@ -409,7 +415,7 @@ describe('coverage', () => {
       const m = BRUSH_ON_CAKE_DEFAULTS.across;
       const t = g.attributes.aThickness, p = g.attributes.position;
       let lo = Infinity, hi = -Infinity;
-      for (let v = (m / 2) | 0; v < t.count; v += m) {
+      for (let v = (m / 2) | 0; v < g.userData.topCount; v += m) {
         if (t.getX(v) > 0.98) continue;                // untouched by the dissolve
         lo = Math.min(lo, p.getY(v)); hi = Math.max(hi, p.getY(v));
       }
@@ -599,7 +605,10 @@ describe('a stroke laid across another ENDS on it', () => {
 
     const p = B.attributes.position;
     let worst = Infinity, over = 0;
-    for (let i = 0; i < p.count; i++) {
+    /* ⚠️ THE TOP SURFACE ONLY. B's RIM is dropped onto whatever is beneath it — that is its whole
+       job, closing the solid — so it sits exactly ON A and measures as a 6e-8 penetration. The claim
+       here has always been about the surface not sinking below its neighbour. */
+    for (let i = 0; i < B.userData.topCount; i++) {
       const th = Math.atan2(p.getX(i), p.getZ(i)), y = p.getY(i);
       const h = Math.hypot(p.getX(i), p.getZ(i)) - 1;
       const under = before.heightAt(th, y);
@@ -825,23 +834,31 @@ describe('no stroke in a band is an outlier', () => {
   });
 
   it('and the tall vertices are not all crammed onto the edges', () => {
-    /* Where a stroke is thickest should be its own ridge, not the seam with its neighbour. */
-    const m = BRUSH_ON_CAKE_DEFAULTS.across;
+    /* Where a stroke is thickest should be its own ridge, not the seam with its neighbour.
+       ⚠️ READ THROUGH THE BAND'S OWN LAYOUT. A part comes back MERGED, so a vertex number says
+       nothing by itself: `stride` is how many vertices each stroke contributes and `topCount` how
+       many of those are top surface rather than rim. Inlining `i % across` over the whole buffer —
+       which is what this did before the rim existed — counts side walls as columns. */
     const parts = buildBrushBand({ R: 1, baseY: 0, wallH: 1.25, under: '#fff',
                                    colors: ['#a00', '#0a0', '#00a'], count: 18, climb: 0.52, weight: 0.5, seed: 5 });
-    const rows = [];
+    const m = BRUSH_ON_CAKE_DEFAULTS.across, rows = [];
     for (const part of parts) {
       const p = part.geometry.attributes.position;
-      for (let i = 0; i < p.count; i++) rows.push([Math.hypot(p.getX(i), p.getZ(i)) - 1, (i % m) / (m - 1)]);
+      const { stride, topCount, strokes } = part.geometry.userData;
+      for (let s = 0; s < strokes; s++) {
+        for (let k = 0; k < topCount; k++) {
+          const i = s * stride + k;
+          rows.push([Math.hypot(p.getX(i), p.getZ(i)) - 1, (k % m) / (m - 1)]);
+        }
+      }
     }
     const cut = q(rows.map(r => r[0]).sort((a, b) => a - b), 0.99);
     const tall = rows.filter(r => r[0] >= cut);
     const middle = tall.filter(r => r[1] > 0.25 && r[1] < 0.75).length;
     /* ⚠️ THE RATIO ABOVE IS THE LOAD-BEARING ONE; this is a sanity check on the shape of the
        distribution and its threshold is a judgement. The fault it was written for was 0% in the
-       middle with a p99/median of 3.7 — everything piled on the seams. Anything well clear of that
-       is fine, and `ride` (a stroke keeping some of its own surface over a neighbour) legitimately
-       puts a little height back at the overlaps while IMPROVING the ratio, 2.3 to 2.03. */
+       middle with a p99/median of 3.7 — everything piled on the seams. */
+    expect(tall.length).toBeGreaterThan(20);
     expect(middle / tall.length).toBeGreaterThan(0.08);
   });
 });
