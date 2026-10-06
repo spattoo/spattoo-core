@@ -103,7 +103,7 @@ export const WAFER_DEFAULTS = {
   shingle: 0.012, // × tier radius, per panel, wrapping
   nest:    0.85,  // 0 … 1: independent phases → one continuous crease rhythm
   jitter: 0.35,   // 0 … 1, how much the panels differ from one another
-  hem:    'straight',  // 'straight' | 'notch' | 'torn'
+  hem:    'straight',  // 'straight' | 'notch' | 'torn' | 'round' | 'petal' — see hemProfile
   notch:  0.10,   // × panel height, the depth of the zigzag when hem === 'notch'
   seed:   7,
   /* Rows down the panel. There is no column count any more: the creases ARE the columns, so
@@ -111,8 +111,21 @@ export const WAFER_DEFAULTS = {
   segH:   14,
 };
 
-/* The hem, as a fraction of the panel height at each column across the width.
- * 1 = the full drop. Straight is flat; notch is scissors; torn is a cut nobody measured. */
+/* ── The CUT: what shape the strip was cut into ──────────────────────────────────────────────────
+ *
+ * Returns, for a point across the width, what fraction of the full drop that part of the panel
+ * reaches. 1 is the whole drop. So a rectangle is flat 1, and every other cut is a curve or a line
+ * that takes some of it away.
+ *
+ * ⚠️ FOUR OF THESE ARE A HEM AND TWO ARE A SILHOUETTE, which is why the parameter is named for the
+ * cut rather than for the bottom edge. `straight`, `notch` and `torn` trim the bottom of a strip;
+ * `round` and `petal` make the piece a different SHAPE — a half-disc and a leaf — and those are the
+ * pieces in the domed reference, where the paper is cut as petals and laid in overlapping rings
+ * rather than hung as a fringe.
+ *
+ * All of them are evaluated per CREASE, so a curve resolves as finely as the pleat does: a petal
+ * with four folds is a crude polygon, with twelve it is a petal.
+ */
 function hemProfile(kind, u01, notch, rnd) {
   if (kind === 'notch') {
     // A zigzag with two teeth across the panel — image 1's hem, which is cut, so it is linear.
@@ -120,6 +133,21 @@ function hemProfile(kind, u01, notch, rnd) {
     return 1 - notch * t;
   }
   if (kind === 'torn') return 1 - notch * rnd;
+  /* A half-disc: longest down the middle, falling to nothing at both edges. `notch` keeps a flat
+     band at the top so the piece still has a straight glued edge — a true semicircle would come to
+     a point at its two top corners and have almost nothing to stick on with. */
+  if (kind === 'round') {
+    const t = (u01 - 0.5) * 2;
+    return notch + (1 - notch) * Math.sqrt(Math.max(0, 1 - t * t));
+  }
+  /* Fuller than a half-disc — a leaf rather than a fan blade. The exponent is the whole difference,
+     and it goes the opposite way to intuition: a half-disc is `^0.5`, so anything SMALLER keeps the
+     shoulders wide and anything larger pinches them. 0.62 was the first value here and made the
+     petal thinner than the half-disc, which is the opposite of what it is for. */
+  if (kind === 'petal') {
+    const t = (u01 - 0.5) * 2;
+    return notch + (1 - notch) * Math.pow(Math.max(0, 1 - t * t), 0.34);
+  }
   return 1;
 }
 

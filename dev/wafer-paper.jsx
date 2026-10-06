@@ -169,11 +169,11 @@ export default function Harness() {
         <Sl label="Jitter"        v={p.jitter} min={0}   max={1}   step={0.02} on={set('jitter')} />
 
         <Row label="Hem">
-          {['straight', 'notch', 'torn'].map(h => (
+          {['straight', 'notch', 'torn', 'round', 'petal'].map(h => (
             <Btn key={h} on={p.hem === h} onClick={() => setP(o => ({ ...o, hem: h }))}>{h}</Btn>
           ))}
         </Row>
-        <Sl label="Hem depth" v={p.notch} min={0} max={0.4} step={0.01} on={set('notch')} />
+        <Sl label="Cut depth / shoulder" v={p.notch} min={0} max={0.4} step={0.01} on={set('notch')} />
         <Sl label="Seed"      v={p.seed}  min={1} max={40}  step={1}    on={set('seed')} int />
 
         <Row label="Paper">

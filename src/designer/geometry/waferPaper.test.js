@@ -395,3 +395,62 @@ describe('the wander cannot fold a sheet through itself', () => {
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.05);
   });
 });
+
+/* ── The CUT, including the two that are a shape rather than a hem ───────────────────────────────
+ *
+ * The domed reference is not a fringe of strips: the paper is cut into petals and laid in
+ * overlapping rings. That is the same mechanism as the hem — how far each part of the piece drops —
+ * so `round` and `petal` join `straight`, `notch` and `torn` rather than becoming a second system.
+ */
+describe('the paper can be cut to a shape', () => {
+  const dropsAcross = (hem, notch = 0.1) => {
+    const folds = 12, rows = 5;
+    const g = waferPanel({ width: 1, height: 1, ripples: folds, segH: rows - 1, hem, notch,
+                           ripple: 0, sway: 0, curl: 0, splay: 0, taper: 0, meander: 0,
+                           rng: () => 0.5 });
+    const p = g.getAttribute('position');
+    /* The lowest point of each crease. ⚠️ BOTH creases of the last facet, or the right-hand EDGE of
+       the piece is never sampled — the first version of this read only each facet's left crease, so
+       it stopped at 11/12 of the way across and reported a symmetric cut as lopsided by 0.497. */
+    const drops = [];
+    for (let f = 0; f < folds; f++) {
+      for (const side of f === folds - 1 ? [0, 1] : [0]) {
+        let lo = Infinity;
+        const start = (f * 2 + side) * rows;
+        for (let i = 0; i < rows; i++) lo = Math.min(lo, p.getY(start + i));
+        drops.push(-lo);
+      }
+    }
+    return drops;
+  };
+
+  it('cuts a rectangle flat across', () => {
+    const d = dropsAcross('straight');
+    expect(Math.max(...d) - Math.min(...d)).toBeLessThan(1e-6);
+  });
+
+  /* A half-disc reaches furthest down the MIDDLE and falls away to both edges — which a hem cannot
+     do, and is what makes the domed cake's pieces read as petals rather than as a fringe. */
+  it('cuts a half-disc longest in the middle and shortest at both edges', () => {
+    const d = dropsAcross('round');
+    const mid = d[Math.floor(d.length / 2)];
+    expect(mid).toBeGreaterThan(d[0] * 1.5);
+    expect(mid).toBeGreaterThan(d[d.length - 1] * 1.5);
+    // Symmetric about the centre, because a cut piece is.
+    expect(Math.abs(d[0] - d[d.length - 1])).toBeLessThan(0.08);
+  });
+
+  /* ⚠️ `notch` keeps a flat band at the top of a round or petal cut. A true semicircle comes to a
+     point at both top corners and has almost nothing left to stick onto the cake with. */
+  it('leaves a shoulder to glue, never a point', () => {
+    for (const hem of ['round', 'petal']) {
+      expect(Math.min(...dropsAcross(hem, 0.25))).toBeGreaterThan(0.2);
+    }
+  });
+
+  it('makes a petal fuller than a half-disc', () => {
+    const r = dropsAcross('round', 0), p = dropsAcross('petal', 0);
+    const sum = (a) => a.reduce((s, v) => s + v, 0);
+    expect(sum(p)).toBeGreaterThan(sum(r));
+  });
+});
