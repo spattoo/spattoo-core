@@ -1,5 +1,17 @@
 import { useMemo, useState } from 'react';
+/* ⚠️ `?env=fallback` DELIBERATELY BREAKS THE LIGHTING, so the two can be told apart.
+ *
+ * Sandeep: "i think the environment HDR settings are very different in admin… so much exposure."
+ * The file is the same — both servers hand out the same 97886-byte lebombo_256.hdr — but a browser
+ * that fails to LOAD it falls back to drei's indoor `apartment` preset, silently, and that would
+ * look exactly like too much exposure. Serving the bytes does not prove the loader took them.
+ *
+ * So this renders the fallback on purpose. Compare it with the normal page: if admin looks like the
+ * fallback, admin is falling back and the console says so ("[spattoo/env] No assets base
+ * configured"). If admin looks like the normal page, the lighting is not the difference. */
 import './scene.js';
+import { configureEnvMap } from '../src/designer/canvas/envMap.js';
+if (new URLSearchParams(location.search).get('env') === 'fallback') configureEnvMap(null);
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -183,7 +195,12 @@ export default function Harness() {
           <color attach="background" args={[p.bg || '#efe7e2']} />
           {/* THE shared rig — see dev/grass.jsx and INVARIANTS #17. A harness lit differently from
               production cannot judge a material whose whole character is how light passes through it. */}
-          <SceneLights />
+          {/* ⚠️ `shadows` — SceneLights only casts when asked, and without it the key light lands on
+              every sheet and leaves no dark anywhere. The references are full of deep shadow BETWEEN
+              the sheets, and that is most of what separates one panel from the next on a white cake.
+              The harness ran without it while the admin studio had it, so the two were not the same
+              scene and I was judging from the wrong one. */}
+          <SceneLights shadows />
           <SceneEnv />
 
           {shapeKey === 'round' ? (
