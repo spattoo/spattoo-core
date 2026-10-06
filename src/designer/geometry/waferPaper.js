@@ -90,15 +90,27 @@ export const WAFER_DEFAULTS = {
    * phase, so the ribbons drift apart and together down the drop. Keep it small — at large values
    * neighbouring creases cross, and a crease that overtakes its neighbour is a sheet folded through
    * itself. */
-  /* ⚠️ DEFAULTS TO OFF, AND IT IS NOT FINISHED. The mechanism and its safety cap are right — creases
-   * stay ordered at every slider position, tested — but it does not yet reproduce the two flowing
-   * references, and I know why rather than guessing: the wander reads the panel's `phase`, which
-   * `nest` has already turned into a large position-derived number. So neighbouring PANELS wander
-   * in opposite directions and cross each other, even though creases stay ordered WITHIN a panel.
-   * The wander needs its own position-continuous phase, the way the crease rhythm got one. Until
-   * then this is a slider that does something interesting and not the thing it was added for. */
+  /* ⚠️ STILL DEFAULTS TO OFF, AND THE APPROACH IS NOW SUSPECT RATHER THAN MERELY UNFINISHED.
+   *
+   * The conflict with `nest` was real and is fixed below — the wander has its own phase, continuous
+   * around the perimeter, and the crease stagger counts globally instead of restarting at every
+   * sheet. That was worth doing and it did not rescue the look. Three attempts, three bad renders:
+   * staggered creases shredded, globally-phased creases shredded, whole-sheet wander with no
+   * stagger came out as a sheared diagonal comb.
+   *
+   * ⚠️ SO THE PREMISE IS PROBABLY WRONG, not the tuning. Displacing X by a function of height
+   * SHEARS the panel: its top stays put, its lower parts slide sideways, and a sheared rectangle
+   * leans. That is what every render has shown. Real wavy ribbons are not sheared sheets — the
+   * strip keeps its width and its CENTRELINE curves, which means sweeping the pleat profile along
+   * a wavy spine in a frame that rotates to follow it, not offsetting vertices in world X.
+   *
+   * That is a different panel builder, not another coefficient, so it is not being attempted as a
+   * fourth patch. Left in place because the mechanism, the safety cap and the phase separation are
+   * all correct and tested — and because switching it on is how the next person reproduces the
+   * failure in one click. */
   meander:  0.0,  // × width: how far a crease wanders sideways. 0 = the straight pleat
   meanders: 1.6,  // how many times it wanders down the drop
+  meanderLaps: 3, // how many times the wander cycles around the WHOLE cake — low is a slow swell
   skew:     0.35, // radians of phase between neighbouring creases
   shingle: 0.012, // × tier radius, per panel, wrapping
   nest:    0.85,  // 0 … 1: independent phases → one continuous crease rhythm
@@ -161,7 +173,7 @@ export function waferPanel({
   ripple = WAFER_DEFAULTS.ripple, ripples = WAFER_DEFAULTS.ripples,
   sway = WAFER_DEFAULTS.sway, sways = WAFER_DEFAULTS.sways, phase = 0,
   meander = WAFER_DEFAULTS.meander, meanders = WAFER_DEFAULTS.meanders,
-  skew = WAFER_DEFAULTS.skew,
+  skew = WAFER_DEFAULTS.skew, meanderPhase = 0, creaseOffset = 0,
   curl = WAFER_DEFAULTS.curl, splay = WAFER_DEFAULTS.splay,
   hem = WAFER_DEFAULTS.hem, notch = WAFER_DEFAULTS.notch,
   segH = WAFER_DEFAULTS.segH, rng = Math.random,
@@ -233,10 +245,22 @@ export function waferPanel({
     const open  = 0.35 + 0.65 * Math.sin(Math.PI * Math.pow(vvj, 0.75));
     const fold  = ripple * width * open * creaseDepth[j];
     const drift = sway * width * Math.sin(phase * 0.7 + vvj * sways * Math.PI * 2);
-    /* This crease's own wander. The `j * skew` term is the whole trick: give every crease the same
-       phase and the sheet swings as one plank, so they have to be staggered for the lines to flow
-       past one another. Scaled by the panel width so it is a shape, not a world distance. */
-    const snake = meander * width * Math.sin(phase + j * skewSafe + vvj * meanders * Math.PI * 2);
+    /* This crease's own wander.
+     *
+     * ⚠️ IT TAKES ITS OWN PHASE, NOT THE CREASE RHYTHM'S, and conflating the two is what made this
+     * unusable when it first landed. `phase` is what `nest` turns into a large position-derived
+     * number so the PLEAT runs continuously around the cake; feeding that to the wander as well
+     * made neighbouring panels snake in opposite directions and cross each other — creases stayed
+     * ordered within a panel and the sheets still passed through one another between panels.
+     * `meanderPhase` advances slowly and continuously around the perimeter instead, so adjacent
+     * panels wander very nearly in step.
+     *
+     * ⚠️ AND THE STAGGER COUNTS CREASES GLOBALLY, for the same reason. `j` restarts at 0 on every
+     * panel, so a per-panel `j * skew` jumped by the whole accumulated stagger at each boundary —
+     * continuous within a sheet, discontinuous exactly where two sheets meet, which is the one
+     * place it shows. `creaseOffset` is how many creases have already gone by. */
+    const snake = meander * width
+                * Math.sin(meanderPhase + (creaseOffset + j) * skewSafe + vvj * meanders * Math.PI * 2);
     // The bow across the whole sheet, so a pleated panel still curves around the cake.
     const bow   = curl * width * (Math.pow((u01 - 0.5) * 2, 2) - 1 / 3);
     /* ⚠️ NOTHING GOES INSIDE THE WALL. +Z is outward, so a negative z is a sheet passing THROUGH the
@@ -325,6 +349,12 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       ripple: vary(o.ripple, 0.5), ripples: vary(o.ripples, 0.35),
       sway: vary(o.sway, 0.7), sways: vary(o.sways, 0.4),
       meander: vary(o.meander, 0.4), meanders: vary(o.meanders, 0.3), skew: o.skew,
+      /* Continuous around the cake: `laps` full cycles over the whole perimeter, so the wander is a
+         slow global wave rather than a per-panel accident. */
+      meanderPhase: (s / perim.length) * o.meanderLaps * Math.PI * 2,
+      /* How many creases lie between the start of the perimeter and this panel, so the stagger does
+         not restart at every sheet. Creases sit `width × gap / folds` apart on the wall. */
+      creaseOffset: (s * Math.round(o.ripples)) / (o.width * gap),
       /* The crease rhythm carried around the cake rather than redrawn per panel: a panel's phase is
          where it SITS on the perimeter, so its creases continue its neighbour's. `nest` blends
          between that and an independent draw. */
