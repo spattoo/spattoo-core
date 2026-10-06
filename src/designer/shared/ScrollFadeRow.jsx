@@ -180,7 +180,22 @@ export function ScrollFadeRow({ children, style, fade = '255,253,249', wrapStyle
       {/* The inner box. Its margins are the lane — the arrows are anchored to the OUTER div, so
           nothing that scrolls here can ever pass beneath one. */}
       <div style={edges.over ? { marginLeft: LANE, marginRight: LANE } : undefined}>
-        <div ref={ref} className="spattoo-noscrollbar" style={style}>{children}</div>
+        {/* ⚠️ THE SCROLLING IS THE COMPONENT'S, NOT THE CALLER'S — and it was the caller's, which is
+            how a row named for scrolling came to have 26 call sites of which several did not scroll.
+            Everything else here already assumes a scroller: `read()` compares scrollWidth against
+            clientWidth to decide whether to show the arrows, and `step()` calls scrollBy on this
+            element. With `overflow-x: visible` all of that still RUNS — scrollWidth exceeds
+            clientWidth, so both arrows appear — and then pressing one does nothing while the chips
+            spill out of the card behind it.
+            ⚠️ WORSE, THEY TAKE THE CARD WITH THEM. `ChipPicker`'s row is `{display:'flex', gap:8}`,
+            so Frosting and Style spilled to 425px inside a 164px lane; the tier edit popup sets
+            `overflowY:'auto'` and nothing on x, which CSS computes as `auto` on BOTH axes, so the
+            whole card scrolled sideways. Reported 2026-10-06 with the card's contents slid off their
+            own edge.
+            Caller's style is spread AFTER, so the two rows that genuinely want `overflow:'hidden'`
+            still get it. */}
+        <div ref={ref} className="spattoo-noscrollbar"
+             style={{ overflowX: 'auto', scrollbarWidth: 'none', ...style }}>{children}</div>
       </div>
       {edges.left && <div aria-hidden="true" style={edgeStyle('left')} />}
       {edges.right && <div aria-hidden="true" style={edgeStyle('right')} />}

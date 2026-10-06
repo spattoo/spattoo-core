@@ -17717,8 +17717,16 @@ const s = {
      * removed. Reported twice, reasonably, as "the colour picker does not appear".
      *
      * This is not a stripes bug. A glaze tier's five marble stops, or any future section, hits the
-     * same wall on a short window; stripes were just the first thing tall enough to prove it. */
-    maxHeight: 'calc(100vh - 28px)', overflowY: 'auto', overscrollBehavior: 'contain',
+     * same wall on a short window; stripes were just the first thing tall enough to prove it.
+     *
+     * ⚠️ AND NAMING ONLY Y LET IT SCROLL SIDEWAYS. CSS computes an `overflow: visible` axis as
+     * `auto` whenever the other axis is not visible, so `overflowY:'auto'` alone made this card
+     * free to scroll horizontally too — and it did, once `ChipPicker`'s Frosting and Style rows
+     * spilled to 425px inside a 164px lane (fixed in ScrollFadeRow, which now owns its own
+     * `overflow-x`). Reported 2026-10-06 with the card's contents slid off their own left edge.
+     * This card scrolls in ONE direction; anything wide inside it brings its own scroller. */
+    maxHeight: 'calc(100vh - 28px)', overflowY: 'auto', overflowX: 'hidden',
+    overscrollBehavior: 'contain',
   },
   wheelHeader: {
     display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:14,
@@ -18017,7 +18025,13 @@ const s = {
     padding: '8px 8px 10px',
     boxShadow: '0 4px 24px rgba(107,45,66,0.18)',
     display: 'flex', flexDirection: 'column', gap: 7,
+    /* ⚠️ BOTH AXES ARE NAMED ON PURPOSE. `overflowY:'auto'` alone does NOT leave x alone: CSS
+       computes a `visible` value as `auto` when the other axis is not visible, so this card has
+       always been free to scroll sideways, and it did the moment a child overflowed — reported with
+       the whole panel slid off its own left edge. A card that scrolls vertically must never also
+       scroll horizontally; anything wide inside it owns its own scroller (ScrollFadeRow). */
     overflowY: 'auto',
+    overflowX: 'hidden',
     WebkitOverflowScrolling: 'touch',
     overscrollBehavior: 'contain',
     scrollbarWidth: 'none',
