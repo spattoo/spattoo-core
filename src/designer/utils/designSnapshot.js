@@ -45,7 +45,7 @@
 // and still missed these two, because it can only check the fields somebody remembered to put in its
 // fixture — the same remembering that fails here. So there is now a test that DERIVES what this list
 // must contain, by watching which tier keys toCanvasConfig actually reads. See designSnapshot.test.js.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'topCavity', 'topSpiral', 'brushBand'];
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'topCavity', 'topSpiral', 'brushBand', 'brushStrokes'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {

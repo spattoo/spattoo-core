@@ -38,7 +38,8 @@ import {
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
-import { buildBrushBand } from '../geometry/brushStrokeOnCake.js';
+import { buildBrushBand, buildBrushStrokeOnWall, brushGesture, paintBrushColors,
+         makeBrushBed, BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
 import { creamMaterialProps } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
@@ -2770,7 +2771,7 @@ function CakeScene({
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
   // component cannot pass on what it was never given — deleting these from the signature while
   // leaving them in the edit literal is what threw "onCloudClick is not defined".
-  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3011,7 +3012,7 @@ function CakeScene({
           // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
-          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
+          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
         }}
       />
       </group>
@@ -3151,6 +3152,45 @@ const NOOP = () => {};
  * the dissolve at each release varies vertex by vertex and no material can say that — while sheen
  * and roughness still come from the real colour.
  */
+/* ── Brushstrokes drawn by hand on one tier ──────────────────────────────────────────────────────
+ *
+ * The band above is one decision; these are strokes somebody DREW, so each is its own mesh with its
+ * own colour, its own thickness and its own click target. That last part is the point: a piece you
+ * cannot pick is a piece whose card can only ever describe the NEXT one, which is exactly what the
+ * cream pen got wrong before per-piece editing.
+ *
+ * ⚠️ ONE BED FOR THE SET, in the order they were drawn, so a later stroke rides over an earlier one
+ * the way it does in a band. Rebuilt whenever any of them changes: the bed ACCUMULATES, so keeping
+ * it would leave a dragged stroke's cream behind at the old place.
+ */
+function BrushStrokes({ strokes, tier, wallColour, onPick }) {
+  const built = useMemo(() => {
+    if (!strokes?.length) return [];
+    const bed = makeBrushBed({ R: tier.radius, wallH: tier.height });
+    return strokes.map(st => {
+      const geo = buildBrushStrokeOnWall({
+        R: tier.radius, baseY: tier.baseY, wallH: tier.height, bed,
+        width: st.width ?? BRUSH_ON_CAKE_DEFAULTS.width,
+        weight: st.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
+        seed: st.seed ?? 1,
+        path: brushGesture({ at: st.at ?? 0, rise: st.rise ?? 0.02, climb: st.climb ?? 0.42,
+                             climbVar: st.climbVar ?? 0, sweep: st.sweep ?? 0, bow: st.bow ?? 0,
+                             seed: st.seed ?? 1 }),
+      });
+      return geo ? { st, geo: paintBrushColors(geo, st.color ?? '#F6DCE2', wallColour) } : null;
+    }).filter(Boolean);
+  }, [strokes, tier.radius, tier.baseY, tier.height, wallColour]);
+
+  return built.map(({ st, geo }) => (
+    <mesh key={st.id} geometry={geo} castShadow receiveShadow
+      onClick={e => { e.stopPropagation(); onPick?.(st.id); }}>
+      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, st.color ?? '#F6DCE2')}
+        color="#ffffff" vertexColors />
+    </mesh>
+  ));
+}
+
 function BrushBand({ band, tier, wallColour }) {
   const parts = useMemo(() => (band ? buildBrushBand({
     R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, ...band,
@@ -3184,7 +3224,7 @@ function CakeContent({ config, scene, edit = null }) {
     onGroupMove, onMoveMany, stickerToolbar = null, stickerResize = null, isStickerMovable = () => true,
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
-    selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit,
+    selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit, onBrushStrokeClick,
     onCloudMove, onRainbowMove,
   } = edit ?? {};
 
@@ -3369,6 +3409,9 @@ function CakeContent({ config, scene, edit = null }) {
               treatment of the whole wall like dusting or foil, not a thing placed on it, so it
               raycasts to nothing and its card is reached from the tier. */}
           <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color} />
+          {/* And the hand-drawn ones. Clickable, because each has its own card. */}
+          <BrushStrokes strokes={tier.brushStrokes ?? []} tier={tier} wallColour={tier.color}
+            onPick={id => onBrushStrokeClick?.(i, id)} />
           {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
               the generator asks for { radius, topY, boardY } and does not care whether that is a
               whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
@@ -4085,7 +4128,7 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
-  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -4268,6 +4311,7 @@ export default function CakeCanvas({
         onGrassSelect={onGrassSelect}
         selectedGenerated={selectedGenerated}
         onCloudClick={onCloudClick}
+        onBrushStrokeClick={onBrushStrokeClick}
         onRainbowClick={onRainbowClick}
         onCloudMove={onCloudMove}
         onRainbowMove={onRainbowMove}

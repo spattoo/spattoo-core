@@ -164,6 +164,7 @@ export function toCanvasConfig(design) {
         topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
         topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
         brushBand:     t.brushBand ?? null,   // a ring of palette-knife brushstrokes round this tier's wall
+        brushStrokes:  t.brushStrokes ?? [],  // and the ones drawn by hand, each its own piece
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -714,6 +715,35 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       tiers: prev.tiers.map((t, i) =>
         i === index ? { ...t, clouds: typeof changes === 'function' ? changes(t.clouds ?? []) : changes } : t),
     }));
+  }
+
+  /* ── Hand-drawn brushstrokes ──────────────────────────────────────────────────────────────────
+   *
+   * A LIST, where the band is one object — and the difference is not a storage preference, it is
+   * what the two things ARE. A band is a decision ("thirty strokes, these three colours") and every
+   * stroke in it is derived; these are strokes somebody DREW, so each one is its own fact — where
+   * the hand went, how thick the cream was, what colour it was at the time. Deriving them would mean
+   * throwing away the drawing.
+   *
+   * ⚠️ WHICH IS ALSO WHY EACH ONE NEEDS ITS OWN CARD. Sandeep: *"just like we did for 'ill pipe it
+   * myself', we need to have separate child card for each stroke."* The pen hit this exactly: every
+   * piece carried its own colour and thickness from the day it was built, and what was missing was
+   * any way to say WHICH piece — so the tool's controls could only ever describe the NEXT stroke.
+   */
+  function updateTierBrushStrokes(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, brushStrokes: typeof changes === 'function' ? changes(t.brushStrokes ?? []) : changes } : t),
+    }));
+  }
+
+  function updateBrushStroke(index, id, patch) {
+    updateTierBrushStrokes(index, list => list.map(st => (st.id === id ? { ...st, ...patch } : st)));
+  }
+
+  function removeBrushStroke(index, id) {
+    updateTierBrushStrokes(index, list => list.filter(st => st.id !== id));
   }
 
   // ── Fondant letter blocks ───────────────────────────────────────────────────
@@ -1697,7 +1727,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
-    setTierBrushBand,
+    setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierRainbows, updateTierRainbows, updateTierClouds,

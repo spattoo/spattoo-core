@@ -2684,7 +2684,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3637,6 +3637,22 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      zone crash, and `npm run build` is green on one — that is a runtime event. */
   const [pickedBefore, setPickedBefore] = useState(null);
   const pickedStroke = design.piping.find(st => st.id === pickedStrokeId) ?? null;
+
+  /* ── One hand-drawn brushstroke, chosen on the cake ───────────────────────────────────────────
+   * The same three pieces of state the piped piece above needs, for the same reasons, so the two
+   * read as one idea rather than two: WHICH one is picked, what it looked like when it was picked
+   * (for Undo), and whether it has actually changed since (so Undo is only lit when it can do
+   * something). `before` is STATE and not a ref — render reads it to light the button, and a ref
+   * set in an effect mutates after the paint and schedules nothing, which is the bug that shipped
+   * on the piped version first. */
+  const [pickedBrush, setPickedBrush] = useState(null);          // { tier, id }
+  const [pickedBrushBefore, setPickedBrushBefore] = useState(null);
+  const pickedBrushStroke = pickedBrush
+    ? (design.tiers[pickedBrush.tier]?.brushStrokes ?? []).find(st => st.id === pickedBrush.id) ?? null
+    : null;
+  const brushChanged = !!pickedBrushStroke && !!pickedBrushBefore
+    && ['color', 'weight', 'width'].some(
+      k => JSON.stringify(pickedBrushStroke[k]) !== JSON.stringify(pickedBrushBefore[k]));
   /* Has this piece actually MOVED or CHANGED since it was chosen? A live comparison rather than a
      flag set by each writer: three controls and a drag can all change it, and a flag is one of them
      forgetting. An Undo that is always lit on a piece nobody has touched promises something it
@@ -6384,6 +6400,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // here but deliberately NOT depended on, or every edit would become the new "before" and Undo
     // would restore the state it had a moment ago, which is to say do nothing.
   }, [pickedStrokeId]);
+
+  /* The brushstroke's "before", on exactly the same terms: keyed on the SELECTION, never on the
+     design, or every edit would become the new before and Undo would restore the state it had a
+     moment ago — which is to say, do nothing. */
+  useEffect(() => {
+    setPickedBrushBefore(pickedBrush
+      ? (design.tiers[pickedBrush.tier]?.brushStrokes ?? []).find(st => st.id === pickedBrush.id) ?? null
+      : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: design is read, not depended on
+  }, [pickedBrush]);
 
   const wasPenSelectedRef = useRef(false);
   useEffect(() => {
@@ -14277,6 +14303,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* Clicking the cloud itself selects it — the card opens and its handle appears. Until
                  this, the only way in was the card, and the only way to the card was the stack: you
                  had to find the thing you were already looking at. */
+              onBrushStrokeClick={(tier, id) => setPickedBrush({ tier, id })}
               onCloudClick={(tier, id) => {
                 selectExclusive({ type: 'cloud', tierIndex: tier, id });
               }}
@@ -14482,6 +14509,54 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
             {/* Destructive, so the FIELD carries it — the same rule the pen card's Clear all follows. */}
             <button onClick={() => { removeStrokeById(pickedStroke.id); setPickedStrokeId(null); }}
+              style={{ ...s.deleteBtn, flex: 1, padding: '7px 0', fontSize: 11 }}>
+              Remove
+            </button>
+          </div>
+        </div>, document.body)}
+
+      {/* ── One hand-drawn brushstroke, chosen on the cake ──────────────────────────────────────
+          The piped piece's card one floor down, and deliberately the same card: same place on the
+          screen, same ✓ to leave, same Undo-and-Remove pair in the same order with the same glyphs
+          (INVARIANTS #14). A customer meets ONE idea of "this piece" in this product, not two that
+          look different because they were built in different months.
+
+          ⚠️ WHAT IT EDITS IS WHAT A STROKE OWNS. Colour and thickness — the two a hand actually
+          chooses while painting. Where it goes and how far it ran came from the DRAG, so they are
+          not controls here; changing them with a slider would be editing the drawing rather than
+          the cream. */}
+      {pickedBrushStroke && createPortal(
+        <div style={{ position: 'fixed', zIndex: 4200, right: isMobile ? 10 : EDIT_POPUP_RIGHT + EDIT_POPUP_W + 14,
+                      bottom: isMobile ? 'calc(env(safe-area-inset-bottom) + 86px)' : 'auto',
+                      top: isMobile ? 'auto' : 90, width: isMobile ? 'auto' : 196, left: isMobile ? 10 : 'auto',
+                      background: '#fff', borderRadius: 14, padding: 12,
+                      border: '1.5px solid #eadde2', boxShadow: '0 12px 44px rgba(0,0,0,0.24)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: INK, textTransform: 'uppercase',
+                           letterSpacing: 0.6, fontFamily: "'Quicksand',sans-serif" }}>This stroke</span>
+            <button type="button" onClick={() => setPickedBrush(null)} title="Done with this stroke"
+              style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+                       border: 'none', background: INK, color: '#fff', fontSize: 15, lineHeight: 1 }}>✓</button>
+          </div>
+          <ColorWheel color={pickedBrushStroke.color ?? '#F6DCE2'} compact
+            onChange={c => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { color: c })}
+            cakeColors={[...new Set(collectElementColors(design))]} width={152} />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+            {/* "Thickness", the baker's word for it, over the geometry's `weight` — the same split
+                the studio's slider makes and for the same reason. */}
+            <DialCell label="Thickness" value={pickedBrushStroke.weight ?? 0.18}
+              min={0} max={1} step={0.02} fmt={v => v.toFixed(2)}
+              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { weight: v })} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            <button onClick={() => { if (pickedBrushBefore) updateBrushStroke(pickedBrush.tier, pickedBrush.id, pickedBrushBefore); }}
+              disabled={!brushChanged}
+              style={brushChanged
+                ? { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11 }
+                : { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11, color: INK_MUTED, cursor: 'not-allowed' }}>
+              ↶ Undo
+            </button>
+            <button onClick={() => { removeBrushStroke(pickedBrush.tier, pickedBrush.id); setPickedBrush(null); }}
               style={{ ...s.deleteBtn, flex: 1, padding: '7px 0', fontSize: 11 }}>
               Remove
             </button>

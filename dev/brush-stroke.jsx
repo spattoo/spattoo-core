@@ -182,11 +182,20 @@ function DesignerCake() {
     tiers: [{
       radius: 1, height: 1.25, color: '#FBF8F3',
       frostingType: 'buttercream', frostingStyle: 'smooth',
-      brushBand: {
-        seed: SEED,
-        colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
-        ...(BAND ? { count: BAND } : null),
-      },
+      /* ?single — the hand-drawn list instead of the band, which is the other half of the
+         integration: a list of pieces, each its own mesh with its own click target and its own
+         card. Same page so the two shapes are compared on one cake rather than from memory. */
+      ...(P.has('single')
+        ? { brushStrokes: [0, 1, 2, 3].map(i => ({
+              id: `bs${i}`, at: -0.05 + i * 0.035, rise: 0.02, climb: 0.42, sweep: 0, bow: -0.2,
+              width: 0.3, weight: 0.18, seed: 11 + i * 7,
+              color: (BAND_COLORS.length ? BAND_COLORS : COLORS)[i % (BAND_COLORS.length || COLORS.length)],
+            })) }
+        : { brushBand: {
+              seed: SEED,
+              colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
+              ...(BAND ? { count: BAND } : null),
+            } }),
     }],
   };
   return <CakePreview design={design} autoRotate={false} shadows style={{ width: '100%', height: '100%' }} />;
