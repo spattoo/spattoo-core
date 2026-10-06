@@ -572,7 +572,9 @@ describe('a stroke laid across another ENDS on it', () => {
        underneath come back through. */
     const bed = makeBrushBed({ R: 1, wallH: 1 });
     const g = buildBrushStrokeOnWall({ ...WALL, bed, weight: 0.8, seed: 11, path: gest(0) });
-    const p = g.attributes.position, m = BRUSH_ON_CAKE_DEFAULTS.across, n = p.count / m;
+    /* ⚠️ THE TOP SURFACE ONLY — `p.count / across` stopped being a whole number of rows the moment
+       the rim was appended, so this walked off the end and came back NaN. */
+    const p = g.attributes.position, m = BRUSH_ON_CAKE_DEFAULTS.across, n = g.userData.topCount / m;
     let worst = 1;
     for (let i = 0; i < n; i++) for (let j = 0; j < m; j++) {
       /* The stroke's middle. Its feathered rim is a steep ramp read off a grid and will always come
@@ -859,6 +861,12 @@ describe('no stroke in a band is an outlier', () => {
        distribution and its threshold is a judgement. The fault it was written for was 0% in the
        middle with a p99/median of 3.7 — everything piled on the seams. */
     expect(tall.length).toBeGreaterThan(20);
-    expect(middle / tall.length).toBeGreaterThan(0.08);
+    /* ⚠️ "NOT ZERO", NOT A TUNED FRACTION. This threshold has had to move twice for changes that
+       were right — `ride` put height back at the overlaps, and a shorter `skirt` makes the edges
+       steeper, so both legitimately shift tall vertices towards the rim. A number that has to be
+       re-tuned whenever the geometry improves is not measuring the fault; it is tracking the
+       geometry. The fault was EXCLUSIVELY at the seams — 0% in the middle with a p99/median of 3.7 —
+       and the ratio assertion above is what holds the magnitude. */
+    expect(middle / tall.length).toBeGreaterThan(0.02);
   });
 });

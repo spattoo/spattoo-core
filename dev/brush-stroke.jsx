@@ -119,6 +119,11 @@ function Band() {
     R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
     colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
     count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: BAND_W, floor: FLOOR, bite: BITE, lift: LIFT,
+    /* The stroke's look, swept from the URL — see buildBrushBand. */
+    ...(P.has('lanes') ? { lanes: +P.get('lanes') } : null),
+    ...(P.has('grain') ? { grain: +P.get('grain') } : null),
+    ...(P.has('skirt') ? { skirt: +P.get('skirt') } : null),
+    ...(P.has('ridge') ? { ridge: +P.get('ridge') } : null),
     climb: CLIMB, sweep: SWEEP,
   }), []);
   if (!parts.length) return null;

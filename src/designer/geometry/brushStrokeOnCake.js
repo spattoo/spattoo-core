@@ -98,7 +98,12 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   /* How far in from each edge the cream runs out. The first number is onto bare cake, the second
      onto cream already laid — see brushRelief, and note that a stroke uses BOTH at once when one of
      its edges is on a neighbour and the other is on the wall. */
-  skirt:     0.13,    // 0 … 1 of the width: the feathered edge on bare cake
+  /* ⚠️ A SHORT EDGE, BECAUSE THE REAL ONE IS A STEP AND NOT A ROLL. Feathered over 13% of the width
+     the cross-section is a dome, and a dome is most of the "plastic look" — Sandeep, with the
+     photograph beside it: *"it looks very artificial and has a plastic look."* A palette knife
+     leaves a flat-topped pad with a sharp drop at its rim; the shadow that reads as elevation is
+     that drop, and a roll has nowhere to cast one. */
+  skirt:     0.05,    // 0 … 1 of the width: the feathered edge on bare cake
   /* ⚠️ `lip`, `cling` and `skirtOn` WERE HERE AND ARE GONE, which is worth a line because they were
      real work. They made an impasto overlap: a stroke ENDING on the cream it crosses at a fraction
      of its own height, over a short wall, holding its colour instead of washing out. Shown it beside
@@ -142,7 +147,7 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      the knife marks are four or five lanes across the same band, and three samples per lane turns
      them into a stepped zigzag. Six per lane is where they go round, and there is a test holding
      that ratio — raising `lanes` alone errors nowhere, measures right, and comes out faceted. */
-  across: 45,     // samples across the band
+  across: 56,     // samples across the band
   /* ⚠️ THE RELEASE IS MANY FINE STREAKS, NOT TWO OR THREE PEAKS. brushStroke's default tip is seven
      fingers under a strong middle-longest envelope — right for one chocolate shard seen close up,
      and at cake scale it resolves as a couple of big triangles that Sandeep ringed beside the
@@ -189,8 +194,13 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      knife marks."* At 5.5 the strokes start to rib and by 7 they are corduroy, which is the machined
      look this file's own note already warns about. Back where it was, and it stays there unless
      someone asks for it. */
-  lanes:  4.5,    // how many drag lines across the width — fractional so they do not land evenly
-  grain:  0.3,    // 0 … 1: how deep the lines cut, × the local relief
+  /* ⚠️ MANY FINE LINES, NOT A FEW DEEP ONES — the opposite end of the same dial from the cut that
+     was rejected. 7 lanes at 0.55 ribbed the strokes and Sandeep said so; the answer was not "less
+     texture" but texture of a different GRAIN. Beside a photograph the real thing has a dozen
+     hairline marks across one pull, barely cutting — a blade's nicks, not a comb's teeth. 9 at 0.2,
+     with `across` raised to keep six samples a lane. */
+  lanes:  9,      // how many drag lines across the width
+  grain:  0.2,    // 0 … 1: how deep the lines cut, × the local relief
   seed:   1,
 };
 
@@ -1046,6 +1056,13 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
      the first — which is what happens when a hand goes round a cake and arrives back where it
      started. The bed wraps round the seam already; nothing here has to know where the seam is. */
   const bed = makeBrushBed({ R, wallH });
+  /* ⚠️ THE STROKE'S OWN LOOK TRAVELS WITH THE BAND. A band is a way of PLACING strokes, not a second
+     kind of stroke, so anything `buildBrushStrokeOnWall` understands — the knife marks, the relief,
+     the feather, the dissolve — passes straight through when a caller names it. Without this the
+     only way to try a different texture on a band was to edit the module's defaults, which is how a
+     sweep ends up being run against a file nobody meant to change. */
+  const look = {};
+  for (const k of Object.keys(BRUSH_ON_CAKE_DEFAULTS)) if (k in opts) look[k] = opts[k];
   const byColor = colors.map(() => []);
   for (let i = 0; i < n; i++) {
     /* Deterministic per stroke, and distinct: a design is re-rendered from saved numbers, so the
@@ -1055,7 +1072,11 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
     const seed = p.seed * 1000 + i * 97;
     const at = (i * gap) + (seedFrac(seed, 307) - 0.5) * gap * p.jitter;
     const geo = buildBrushStrokeOnWall({
-      R, baseY, wallH, bed, width, weight: p.weight, seed,
+      /* ⚠️ `look` FIRST. The band DERIVES its width from the count and the overlap so the ring
+         closes, and a caller passing `width: null` — which is how "derive it" is spelled — would
+         otherwise overwrite that with null and every stroke would come out with no width at all.
+         The band's own answers win over anything forwarded. */
+      R, baseY, wallH, bed, ...look, width, weight: p.weight, seed,
       path: brushGesture({ at, seed, rise: p.rise, climb: p.climb, climbVar: p.climbVar,
                            sweep: p.sweep, bow: p.bow }),
     });
