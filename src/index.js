@@ -163,6 +163,7 @@ export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad,
          brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
          buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS,
          BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
+export { waferPanel, buildWaferSkirt, WAFER_DEFAULTS } from './designer/geometry/waferPaper.js';
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripColorAt, paintDripColors, buildDripFlood, DRIP_SPLIT_DEFAULTS } from './designer/geometry/chocolateDrip.js';
 // Piped grass (Wilton 233). Geometry + seats are separate on purpose: the renderer INSTANCES one
 // tuft across thousands of seats, so the admin studio tunes the tuft and previews the field.
