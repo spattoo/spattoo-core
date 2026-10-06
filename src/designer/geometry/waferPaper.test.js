@@ -315,3 +315,36 @@ describe('panels stack instead of crossing', () => {
     expect(z(1)).toEqual(z(1));              // and it is deterministic, like everything else here
   });
 });
+
+/* ── Nothing goes inside the cake ─────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"on the top, it shows the penetration into the cake."* +Z is outward in panel space, so
+ * a negative z is a sheet passing through the wall. `bow` and `fold` both swing either way and
+ * where they summed negative the panel sat inside the tier's radius — and above the rim that put
+ * paper over the cake's top FACE, which is where it showed.
+ *
+ * Worth a test because it is invisible from most angles: the cake hides it, right up until the
+ * camera goes over the top or the skirt stands proud of the rim.
+ */
+describe('a sheet never passes through the wall', () => {
+  it('keeps every vertex at or outside the wall, under any shaping', () => {
+    for (const o of [{}, { curl: 1 }, { curl: -1 }, { ripple: 0.9 }, { splay: 0.5 },
+                     { curl: 0.8, ripple: 0.8 }, { taper: 0.6, curl: 0.9 }]) {
+      const g = waferPanel({ width: 1, height: 1, ripples: 7, ...o });
+      const p = g.getAttribute('position');
+      let min = Infinity;
+      for (let i = 0; i < p.count; i++) min = Math.min(min, p.getZ(i));
+      expect(min).toBeGreaterThanOrEqual(-1e-9);
+    }
+  });
+
+  /* And it still stands OFF the wall — a clamp that flattened everything to z = 0 would pass the
+     test above and render a painted stripe. */
+  it('still stands proud of the wall where it is not resting on it', () => {
+    const g = waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 7 });
+    const p = g.getAttribute('position');
+    let max = -Infinity;
+    for (let i = 0; i < p.count; i++) max = Math.max(max, p.getZ(i));
+    expect(max).toBeGreaterThan(0.1);
+  });
+});

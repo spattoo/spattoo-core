@@ -171,7 +171,16 @@ export function waferPanel({
     const drift = sway * width * Math.sin(phase * 0.7 + vvj * sways * Math.PI * 2);
     // The bow across the whole sheet, so a pleated panel still curves around the cake.
     const bow   = curl * width * (Math.pow((u01 - 0.5) * 2, 2) - 1 / 3);
-    return { x: u + drift, y: -height * vvj, z: bow + fold + splay * height * vvj * vvj, u01 };
+    /* ⚠️ NOTHING GOES INSIDE THE WALL. +Z is outward, so a negative z is a sheet passing THROUGH the
+     * cake — which is what was happening: `bow` and `fold` both swing either way, and where they
+     * summed negative the panel sat inside the tier's radius. Above the rim that put paper over the
+     * cake's top FACE, which is where Sandeep saw it: looking down, spikes inside the ring.
+     *
+     * Clamping at 0 is not a cheat, it is what the paper does. A pleated sheet pressed onto a wall
+     * rests its VALLEYS against it and stands its ridges off; the valley cannot continue inward,
+     * there is cake there. The flat spots the clamp creates are the contact patches. */
+    const z = bow + fold + splay * height * vvj * vvj;
+    return { x: u + drift, y: -height * vvj, z: Math.max(0, z), u01 };
   };
 
   for (let f = 0; f < folds; f++) {
