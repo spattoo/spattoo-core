@@ -10,7 +10,7 @@ import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors, brush
 // creamMaterialProps is THE cream material — the one every piped stroke on every cake already
 // uses, with the calibrated albedo and the sheen. A brushstroke is buttercream; it asks the same
 // function rather than inventing a second opinion about what cream looks like.
-import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+import { SceneLights, SceneEnv, CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';
 /* ⚠️ THE ASSETS BASE, OR THIS PAGE IS LIT BY drei's INDOOR PRESET AND NOT BY THE CAKE'S OWN SKY.
    `check:harness-scene` passes without it — that gate keys on mounting CakePreview/CakeCanvas, and
    this page builds its own cylinder and mounts SceneLights/SceneEnv directly, so it slipped through
@@ -170,7 +170,30 @@ function Band() {
   ));
 }
 
+/* ?designer — THE INTEGRATION, not the geometry. Everything above builds a band and mounts it on a
+   cylinder this page drew itself; this mounts `CakePreview` on a DESIGN whose tier carries
+   `brushBand`, which is the whole chain the baker app runs: design -> toCanvasConfig -> CakeContent
+   -> BrushBand. A gate already proves every field toCanvasConfig emits is READ somewhere in that
+   file (cakeContent.test.js); only this proves the cake comes out with cream on it. */
+const DESIGNER = P.has('designer');
+
+function DesignerCake() {
+  const design = {
+    tiers: [{
+      radius: 1, height: 1.25, color: '#FBF8F3',
+      frostingType: 'buttercream', frostingStyle: 'smooth',
+      brushBand: {
+        seed: SEED,
+        colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
+        ...(BAND ? { count: BAND } : null),
+      },
+    }],
+  };
+  return <CakePreview design={design} autoRotate={false} shadows style={{ width: '100%', height: '100%' }} />;
+}
+
 function App() {
+  if (DESIGNER) return <DesignerCake />;
   return (
     <Canvas shadows camera={{ position: TOP ? [2.6, 2.0, 2.6] : [0, 1.4, 4.0], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
       <color attach="background" args={['#eceaf3']} />

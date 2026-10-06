@@ -32,6 +32,9 @@
 // `rainbows` is on it from the same day, for the same reason. Note the shape: an ARRAY, so `pickTierFields`
 // keeps it when present — an empty one is dropped, which is right, since no rainbows and no field
 // are the same cake. `clouds` is the same shape for the same reasons.
+// `brushBand` — the ring of palette-knife brushstrokes — is on this line from the day it ships, and
+// it is the case the list matters MOST for: the band is re-rendered from the numbers stored here, so
+// a design that lost them would not come back a plainer cake, it would come back a DIFFERENT one.
 // `topCavity` and `topSpiral` — the scraped edge and the turntable spiral — were the FOURTH and FIFTH
 // to be lost exactly as glaze, grass and creamLayers were. Sandeep: *"when i create a template with
 // scraped edge and spiral and when i load the cake again, scrap edge and spiral are not loading
@@ -42,7 +45,7 @@
 // and still missed these two, because it can only check the fields somebody remembered to put in its
 // fixture — the same remembering that fails here. So there is now a test that DERIVES what this list
 // must contain, by watching which tier keys toCanvasConfig actually reads. See designSnapshot.test.js.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'topCavity', 'topSpiral'];
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'topCavity', 'topSpiral', 'brushBand'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {

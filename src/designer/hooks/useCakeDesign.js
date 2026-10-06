@@ -163,6 +163,7 @@ export function toCanvasConfig(design) {
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
         topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
         topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
+        brushBand:     t.brushBand ?? null,   // a ring of palette-knife brushstrokes round this tier's wall
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -432,6 +433,25 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, topSpiral: changes === null ? undefined : { ...(t.topSpiral ?? {}), ...changes } }
+        : t),
+    }));
+  }
+
+  /* ── The brushstroke band ─────────────────────────────────────────────────────────────────────
+   *
+   * A ring of palette-knife strokes round one tier's wall. Same shape as `setTierSpiral` above: one
+   * object on the tier, merged with what is already there, and `null` to take it off.
+   *
+   * ⚠️ IT IS A TIER TREATMENT, NOT A LIST OF PLACED THINGS. Every stroke in the band is derived from
+   * the same handful of numbers — the palette, the count, the seed — so storing thirty strokes would
+   * be storing the same decision thirty times and inviting them to disagree. One object, re-rendered
+   * from its own seed, which is also what makes it come back as the SAME cake after a reload.
+   */
+  function setTierBrushBand(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, brushBand: changes === null ? undefined : { ...(t.brushBand ?? {}), ...changes } }
         : t),
     }));
   }
@@ -1677,6 +1697,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
+    setTierBrushBand,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierRainbows, updateTierRainbows, updateTierClouds,

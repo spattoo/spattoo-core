@@ -38,6 +38,8 @@ import {
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import { buildBrushBand } from '../geometry/brushStrokeOnCake.js';
+import { creamMaterialProps } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
   from '../geometry/rainbow.js';
@@ -3135,6 +3137,36 @@ const NOOP = () => {};
 // CakeScene and never risks being photographed. Nor is the ROOM — the floor and the studio background
 // are where a cake is SHOWN, not what it is. The board is on this side of that line: no cake stands on
 // its own, and it is what every board-level finish is placed against.
+/* ── A band of palette-knife brushstrokes round one tier ─────────────────────────────────────────
+ *
+ * The geometry is core's `buildBrushBand` — the same function the admin studio tunes against, never
+ * a second copy. What this adds is the only thing a renderer should: mounting it on the right tier
+ * with the right material.
+ *
+ * ⚠️ ONE MESH PER COLOUR, which is why `buildBrushBand` returns parts. `creamMaterialProps` takes
+ * its sheen from the cream's OWN colour, so a single material over the whole band puts a white sheen
+ * on a dark stroke and renders it the colour of wet concrete. Two to six draw calls for a tier.
+ *
+ * ⚠️ `color="#ffffff"` AND `vertexColors`, because the albedo is already in the vertex colours —
+ * the dissolve at each release varies vertex by vertex and no material can say that — while sheen
+ * and roughness still come from the real colour.
+ */
+function BrushBand({ band, tier, wallColour }) {
+  const parts = useMemo(() => (band ? buildBrushBand({
+    R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, ...band,
+  }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour]);
+  if (!parts?.length) return null;
+  return parts.map(part => (
+    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow raycast={() => {}}>
+      {/* DoubleSide because a painted layer's winding depends on which way the stroke happened to
+          run — the call CreamPen already makes for cream. polygonOffset because the thinnest film
+          sits almost on the wall and the depth buffer loses over a long grazing sweep. */}
+      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors />
+    </mesh>
+  ));
+}
+
 function CakeContent({ config, scene, edit = null }) {
   const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
@@ -3333,6 +3365,10 @@ function CakeContent({ config, scene, edit = null }) {
             />
             </DraggableGenerated>
           ))}
+          {/* The brushstroke band on THIS tier's wall. Not draggable and not clickable — it is a
+              treatment of the whole wall like dusting or foil, not a thing placed on it, so it
+              raycasts to nothing and its card is reached from the tier. */}
+          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color} />
           {/* Fondant clouds belonging to THIS tier. Same tier-scoped cake object as the rainbow —
               the generator asks for { radius, topY, boardY } and does not care whether that is a
               whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier

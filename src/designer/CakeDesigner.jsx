@@ -2684,7 +2684,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -6271,6 +6271,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'tool', tool: 'luster-dust' });
   }
 
+  /* ── The brushstroke band, from a catalogue row ───────────────────────────────────────────────
+   *
+   * Same shape as the dust and the pen above: the row carries a LOOK, not an object. What an admin
+   * tunes in the Brushstroke studio — the palette, how many strokes, how far they overlap, how thick
+   * and how long — lands on `placement_config.cream_brush`, and tapping the row puts that look on a
+   * tier. "Blush three-tone" and "Deep single" are then two ROWS over one generator rather than two
+   * presets buried in code, which is the whole reason for it being a row (INVARIANTS #1).
+   *
+   * ⚠️ THE ROW'S ID TRAVELS WITH THE DESIGN. `elementId` is not decoration: a template bundle finds
+   * its elements by scanning the saved design for uuids that match `cake_elements.id`
+   * (promotionBundle.elementIdsReferencedBy), so without it a template promoted to prod would render
+   * correctly — the geometry is code plus these numbers — while the row behind it stayed behind.
+   *
+   * ⚠️ AND THE SEED IS FIXED AT PLACEMENT, not re-rolled per render. A band is thirty strokes of
+   * seeded noise; a design that re-rolled would come back a different cake every time it was opened,
+   * which is the rule brushGesture already states for a single stroke. */
+  function addBrushBandFromRow(el) {
+    const i = rainbowTierIndex();
+    const tuned = el?.placement_config?.cream_brush ?? {};
+    setTierBrushBand(i, {
+      ...tuned,
+      elementId: el?.id ?? undefined,
+      seed: tuned.seed ?? (1 + Math.floor(Math.random() * 9999)),
+    });
+    selectExclusive({ type: 'tier', index: i });
+  }
+
   // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
   // Same shape as the dust: the pen is a way of DRAWING, not an object, so a row carries the LOOK —
   // the nozzle, the colour, how thick and how soft — and tapping it sets the pen to that and opens
@@ -6471,6 +6498,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     number_topper: addAgeFromRow,
     // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
     luster_dust: addDustFromRow,
+    /* A ring of palette-knife strokes round a tier's wall. A LOOK like the dust, not an object like
+       a rainbow — so it places instantly and is edited from the tier it is on. */
+    cream_brush: addBrushBandFromRow,
     cream_pen: addPenFromRow,
     /* One pen, two media. A separate KEY rather than a flag on the row, for two reasons:
        the key is the only thing an admin can author on Add Element (it writes `procedural` and

@@ -57,6 +57,12 @@ const NOT_DRAGGED = {
   // If a pattern ever becomes a single draggable unit, this entry goes and a registration replaces
   // it; today there is no pattern object with a position of its own to ask about.
   cream_pattern: 'piped pieces, not a positioned object — a placed heap is slid by the pen, not by this tool',
+  // A band is `tier.brushBand` — a ring of strokes round a whole wall, like the dusting and the
+  // foil. It has no position of its own: it IS the wall's treatment, derived from a palette, a
+  // count and a seed, so there is nothing to take hold of and nowhere else for it to go. Individual
+  // strokes ARE dragged, but only in the admin studio, where they are being authored rather than
+  // placed — and that drag goes through `dragStrokeTo`, which is already under contract.
+  cream_brush: 'a ring round the whole wall — the element has no position of its own',
 };
 
 const designer = read('src/designer/CakeDesigner.jsx');
