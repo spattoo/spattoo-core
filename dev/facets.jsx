@@ -57,15 +57,28 @@ const API = {
     await new Promise(r => setTimeout(r, 150));
     return DIET_ROWS(new URLSearchParams(location.search).get('egg') || 'both');
   },
+  /* ⚠️ REAL PICTURES, AND THEY HAD TO BE. Every `thumbnail_url` here was `null`, so the gallery
+     rendered five 🎂 placeholders — and the one question this door exists to answer is how big a
+     cake looks on a phone. Reported from the live storefront: "hardly able to see the complete
+     cake", against a grid that measured fine with no pictures in it. These are real captures,
+     square and 400x400, the shape the capture canvas stores, so the dead margin a cake carries
+     INSIDE its own thumbnail is visible here too — that margin is most of the complaint.
+     ⚠️ Two names are deliberately the same. The live catalogue has three cards reading "Football",
+     which is why the caption was dropped; a fixture where every name is distinct would have made
+     the caption look like it was working. */
   fetchStorefrontTemplates: async () => {
     await new Promise(r => setTimeout(r, 350));   // so the loading state is visible
     return [
-      { id: 't1', name: 'Two-tier Rosette', tier_count: 2, thumbnail_url: null },
-      { id: 't2', name: 'Classic Round',    tier_count: 1, thumbnail_url: null },
-      { id: 't3', name: 'Naked Berry',      tier_count: 1, thumbnail_url: null },
-      { id: 't4', name: 'Chocolate Drip',   tier_count: 2, thumbnail_url: null },
-      { id: 't5', name: 'Wedding Three',    tier_count: 3, thumbnail_url: null,
+      { id: 't1', name: 'Two-tier Rosette', tier_count: 2, thumbnail_url: '/thumbs/cake1.webp' },
+      { id: 't2', name: 'Butterfly cake',   tier_count: 1, thumbnail_url: '/thumbs/cake2.webp' },
+      { id: 't3', name: 'Naked Berry',      tier_count: 1, thumbnail_url: '/thumbs/cake3.webp' },
+      { id: 't4', name: 'Butterfly cake',   tier_count: 2, thumbnail_url: '/thumbs/cake4.webp' },
+      { id: 't5', name: 'Wedding Three',    tier_count: 3, thumbnail_url: '/thumbs/cake5.webp',
         attrs: { min_weight_kg: 3 } },
+      { id: 't6', name: 'Engagement',       tier_count: 1, thumbnail_url: '/thumbs/cake1.webp' },
+      { id: 't7', name: 'A photo a customer sent', type: 'photo', tier_count: null,
+        thumbnail_url: '/thumbs/cake3.webp' },
+      { id: 't8', name: 'Unicorn',          tier_count: 1, thumbnail_url: '/thumbs/cake5.webp' },
     ];
   },
   fetchStorefrontFlavours: async () => {
