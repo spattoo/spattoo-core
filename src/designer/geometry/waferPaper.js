@@ -78,6 +78,28 @@ export const WAFER_DEFAULTS = {
    *   the folds are deeper than the gap between panels. At 1 the crease rhythm is continuous around
    *   the whole cake and sheets cannot cross; at 0 every panel is independent, which is what was
    *   rendering. */
+  /* ── The crease lines WANDER ──────────────────────────────────────────────────────────────────
+   * Two more references, and both show what a straight pleat cannot: the fold lines snake from side
+   * to side as they fall, like water or wood grain. A straight crease reads as a folded fan; a
+   * wandering one reads as paper that was waved by hand, which is what these are.
+   *
+   * ⚠️ NOT `sway`. That moves the whole PANEL and leaves its creases parallel; this moves each
+   * CREASE within the panel, so the ribbons flow independently and the sheet still hangs straight.
+   *
+   * `skew` is what stops them moving as one body: adjacent creases are deliberately slightly out of
+   * phase, so the ribbons drift apart and together down the drop. Keep it small — at large values
+   * neighbouring creases cross, and a crease that overtakes its neighbour is a sheet folded through
+   * itself. */
+  /* ⚠️ DEFAULTS TO OFF, AND IT IS NOT FINISHED. The mechanism and its safety cap are right — creases
+   * stay ordered at every slider position, tested — but it does not yet reproduce the two flowing
+   * references, and I know why rather than guessing: the wander reads the panel's `phase`, which
+   * `nest` has already turned into a large position-derived number. So neighbouring PANELS wander
+   * in opposite directions and cross each other, even though creases stay ordered WITHIN a panel.
+   * The wander needs its own position-continuous phase, the way the crease rhythm got one. Until
+   * then this is a slider that does something interesting and not the thing it was added for. */
+  meander:  0.0,  // × width: how far a crease wanders sideways. 0 = the straight pleat
+  meanders: 1.6,  // how many times it wanders down the drop
+  skew:     0.35, // radians of phase between neighbouring creases
   shingle: 0.012, // × tier radius, per panel, wrapping
   nest:    0.85,  // 0 … 1: independent phases → one continuous crease rhythm
   jitter: 0.35,   // 0 … 1, how much the panels differ from one another
@@ -110,6 +132,8 @@ export function waferPanel({
   width = 1, height = 1, taper = WAFER_DEFAULTS.taper,
   ripple = WAFER_DEFAULTS.ripple, ripples = WAFER_DEFAULTS.ripples,
   sway = WAFER_DEFAULTS.sway, sways = WAFER_DEFAULTS.sways, phase = 0,
+  meander = WAFER_DEFAULTS.meander, meanders = WAFER_DEFAULTS.meanders,
+  skew = WAFER_DEFAULTS.skew,
   curl = WAFER_DEFAULTS.curl, splay = WAFER_DEFAULTS.splay,
   hem = WAFER_DEFAULTS.hem, notch = WAFER_DEFAULTS.notch,
   segH = WAFER_DEFAULTS.segH, rng = Math.random,
@@ -140,6 +164,18 @@ export function waferPanel({
   const folds = Math.max(1, Math.round(ripples));
   const rows  = Math.max(2, segH | 0) + 1;
 
+  /* ⚠️ THE WANDER IS BOUNDED BY THE CREASE SPACING, NOT BY THE PANEL WIDTH, and the first version
+   * was not — which rendered a shredded mess. Creases sit `width / folds` apart; the stagger moves
+   * neighbours relative to one another by about `meander × width × skew`. Let that exceed the
+   * spacing and a crease OVERTAKES its neighbour, which is a sheet folded through itself. At 16
+   * folds with meander 0.30 and skew 0.30 the relative movement was five times the gap.
+   *
+   * So the stagger is capped here rather than left to the caller to get right. The slider then
+   * cannot produce the failure at all: past the cap the sheet simply meanders as one body, which is
+   * a look (the broad snaking ribbons of the second reference) rather than a fault. */
+  const spacing  = 1 / folds;
+  const skewSafe = meander > 1e-6 ? Math.min(skew, (0.85 * spacing) / meander) : skew;
+
   // One depth per CREASE, drawn once. Varying it per crease is what stops a pleated sheet reading
   // as machine corrugation — a hand-folded strip is never evenly spaced.
   const creaseDepth = Array.from({ length: folds + 1 }, (_, j) =>
@@ -169,6 +205,10 @@ export function waferPanel({
     const open  = 0.35 + 0.65 * Math.sin(Math.PI * Math.pow(vvj, 0.75));
     const fold  = ripple * width * open * creaseDepth[j];
     const drift = sway * width * Math.sin(phase * 0.7 + vvj * sways * Math.PI * 2);
+    /* This crease's own wander. The `j * skew` term is the whole trick: give every crease the same
+       phase and the sheet swings as one plank, so they have to be staggered for the lines to flow
+       past one another. Scaled by the panel width so it is a shape, not a world distance. */
+    const snake = meander * width * Math.sin(phase + j * skewSafe + vvj * meanders * Math.PI * 2);
     // The bow across the whole sheet, so a pleated panel still curves around the cake.
     const bow   = curl * width * (Math.pow((u01 - 0.5) * 2, 2) - 1 / 3);
     /* ⚠️ NOTHING GOES INSIDE THE WALL. +Z is outward, so a negative z is a sheet passing THROUGH the
@@ -180,7 +220,7 @@ export function waferPanel({
      * rests its VALLEYS against it and stands its ridges off; the valley cannot continue inward,
      * there is cake there. The flat spots the clamp creates are the contact patches. */
     const z = bow + fold + splay * height * vvj * vvj;
-    return { x: u + drift, y: -height * vvj, z: Math.max(0, z), u01 };
+    return { x: u + drift + snake, y: -height * vvj, z: Math.max(0, z), u01 };
   };
 
   for (let f = 0; f < folds; f++) {
@@ -256,6 +296,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       width: vary(w, 0.35), height: h + rise, taper: o.taper,
       ripple: vary(o.ripple, 0.5), ripples: vary(o.ripples, 0.35),
       sway: vary(o.sway, 0.7), sways: vary(o.sways, 0.4),
+      meander: vary(o.meander, 0.4), meanders: vary(o.meanders, 0.3), skew: o.skew,
       /* The crease rhythm carried around the cake rather than redrawn per panel: a panel's phase is
          where it SITS on the perimeter, so its creases continue its neighbour's. `nest` blends
          between that and an independent draw. */

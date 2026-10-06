@@ -348,3 +348,50 @@ describe('a sheet never passes through the wall', () => {
     expect(max).toBeGreaterThan(0.1);
   });
 });
+
+/* ── A crease never overtakes its neighbour ───────────────────────────────────────────────────────
+ *
+ * The wander that makes a sheet flow is also the thing that can fold it through itself: creases sit
+ * `width / folds` apart, and staggering their phase moves neighbours relative to one another. Let
+ * that exceed the spacing and the ribbons cross. The first render with meander turned on did
+ * exactly that — 16 folds, relative movement five times the gap — and came out shredded.
+ *
+ * The cap lives in the geometry rather than in the caller, so a slider cannot produce it.
+ */
+describe('the wander cannot fold a sheet through itself', () => {
+  const ordered = (opts) => {
+    const folds = opts.ripples, rows = 9;
+    const g = waferPanel({ width: 1, height: 1, segH: rows - 1, sway: 0, curl: 0, splay: 0,
+                           taper: 0, ripple: 0.2, ...opts });
+    const p = g.getAttribute('position');
+    for (let i = 0; i < rows; i++) {
+      let prev = -Infinity;
+      for (let f = 0; f < folds; f++) {
+        const x = p.getX((f * 2) * rows + i);
+        if (x < prev - 1e-6) return false;      // this crease has overtaken the one to its left
+        prev = x;
+      }
+    }
+    return true;
+  };
+
+  it('keeps the creases in order at any meander the slider allows', () => {
+    for (const ripples of [4, 7, 11, 16]) {
+      for (const meander of [0, 0.2, 0.5, 0.9]) {
+        for (const skew of [0, 0.35, 0.8, 1.2]) {
+          expect(ordered({ ripples, meander, meanders: 2, skew })).toBe(true);
+        }
+      }
+    }
+  });
+
+  /* And it still wanders — a cap that killed the motion would pass the test above and render the
+     straight pleat it was added to escape. */
+  it('still moves the creases sideways', () => {
+    const p = waferPanel({ width: 1, height: 1, ripples: 7, meander: 0.5, meanders: 2, skew: 0.4,
+                           segH: 8, sway: 0, curl: 0, splay: 0, taper: 0 }).getAttribute('position');
+    const xs = [];
+    for (let i = 0; i < 9; i++) xs.push(p.getX(i));     // one crease, top to bottom
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.05);
+  });
+});
