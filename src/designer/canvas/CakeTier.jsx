@@ -149,7 +149,17 @@ const DEG = Math.PI / 180;
 // EXACTLY (roughness 0.85, sheen 0.4) so elements saved before this control are
 // unchanged. Read from placement_config (bottom_softness / top_softness); absent →
 // default. The PipingCalibrator keeps an identical copy so its preview matches.
-export { PIPING_SOFTNESS_DEFAULT } from '../geometry/creamMaterial.js';
+/* ⚠️ IMPORTED *AND* RE-EXPORTED, AND THE DIFFERENCE IS A CRASH. `export { X } from '…'` forwards a
+   name to this module's consumers and does NOT bind it in this module's own scope — so every use of
+   these five below was a ReferenceError the moment the line was evaluated. It shipped because the
+   file still compiled, the suite still passed, and the throw only happens when a cream surface is
+   actually rendered: Sandeep, loading a chocolate drip, got "PIPING_SOFTNESS_DEFAULT is not
+   defined" and a dead canvas. The names live in creamMaterial.js (a leaf module, so a studio can
+   import it without dragging the scene in); the re-export stays because every existing caller
+   imports them from here. */
+import { PIPING_SOFTNESS_DEFAULT, CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF,
+         creamAlbedo, creamMaterialProps } from '../geometry/creamMaterial.js';
+export { PIPING_SOFTNESS_DEFAULT };
 /* ⚠️ CREAM RECEIVES MORE LIGHT THAN THE WALL — measured, and it is NOT the wall's number. Cream runs
  * at roughness 0.85 with a sheen layer where the wall runs 0.68 with none, and a mid-grey #808080
  * renders 188,183,180 here against the wall's 180,173,168 and an asked 128. A reference light is a
@@ -170,7 +180,7 @@ export { PIPING_SOFTNESS_DEFAULT } from '../geometry/creamMaterial.js';
 /* Moved to geometry/creamMaterial.js — a LEAF module, so a studio can import the cream recipe
    without making this file an exported scene-lighting entry point (check:env-map). Re-exported here
    so every existing caller is untouched. */
-export { CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF, creamAlbedo, creamMaterialProps } from '../geometry/creamMaterial.js';
+export { CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF, creamAlbedo, creamMaterialProps };
 
 // ── Chocolate "gloss" → material ──────────────────────────────────────────────
 // A single 0–1 control for how wet the ganache reads: 0 = matte set chocolate,
