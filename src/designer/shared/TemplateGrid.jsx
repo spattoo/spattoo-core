@@ -48,17 +48,16 @@ const s = {
   },
   /* ⚠️ THE PICTURE IS THE WHOLE CARD — no caption row, so no bottom padding and no gap to hold one.
    *
-   * ⚠️ THE SQUARE IS WRONG, AND THE REASON GIVEN FOR IT WAS WRONG TOO. This said "the stored
+   * ⚠️ 3:2, AND IT WAS SQUARE FOR A REASON THAT WAS NOT TRUE. The note here said "the stored
    * thumbnails ARE square: the capture canvas is a fixed 400x400". The CANVAS is; what gets stored
    * is not. `captureThumbnailBlob` crops to the cake's alpha bounds and grows that rect to
-   * `THUMB_ASPECT` (3/2) before flattening, so the blob is 3:2 — measured 2026-10-06 by running the
-   * real `contentBounds` + `contentCrop` over six rendered cakes including a tall one, and every
-   * crop came out at 1.50. A 3:2 picture drawn `contain` in a square box therefore loses a THIRD of
-   * the box height to empty bands above and below. The storefront's gallery hit this and was fixed
-   * (`storefront/facets/DesignFacet.jsx`); this grid has the same third to win.
-   * NOT CHANGED HERE because it moves every designer-side template surface at once and that wants
-   * doing deliberately, with a look at the result. The fix is `aspectRatio: '3 / 2'` on `placeholder`
-   * and on the img, and nothing else. */
+   * `THUMB_ASPECT` (3/2) before flattening, so the blob is 3:2 — measured by running the real
+   * `contentBounds` + `contentCrop` over six rendered cakes including a tall one, every crop 1.50,
+   * and a real blob came back 551x367. A 3:2 picture drawn `contain` in a square box loses a THIRD
+   * of the box height to empty bands, which is what a baker sees as a cake floating in a lot of
+   * nothing. The storefront's gallery was fixed first; this was left for a deliberate pass, and
+   * Sandeep asked for it: "there is so much dead space on the desptop catalogue view as well."
+   * Changing the BOX, not the picture — nothing is cropped and no thumbnail is re-captured. */
   card: {
     border: '1.5px solid #999999', borderRadius: 12,
     overflow: 'hidden',
@@ -70,7 +69,7 @@ const s = {
   },
   cardOn: { borderColor: '#333333', boxShadow: '0 0 0 2px rgba(51,51,51,0.14)' },
   placeholder: {
-    width: '100%', aspectRatio: '1 / 1',
+    width: '100%', aspectRatio: '3 / 2',
     background: '#FAFAF8', display: 'flex',
     alignItems: 'center', justifyContent: 'center',
     fontSize: 32,
@@ -225,10 +224,14 @@ export default function TemplateGrid({
                    presentational hints — and with no author height, `height=180` BEATS
                    `aspect-ratio`: measured 171x180 instead of 171x171, a tile that was square in the
                    stylesheet and not on the screen. */
-                ? <img src={src} alt={t.name} width={180} height={180} loading="lazy" decoding="async"
+                  /* 180x120 — the ATTRIBUTES set the box the browser reserves before the picture
+                     arrives, so leaving them square reserved a third more height than the tile ends
+                     up having and every lazy row jumped as it loaded. They follow the 3:2 the CSS
+                     below asks for. */
+                ? <img src={src} alt={t.name} width={180} height={120} loading="lazy" decoding="async"
                        onError={onThumbError}
-                       /* 1/1 — see the note on `card`: the stored blob is 3:2, so this letterboxes. */
-                       style={{ width: '100%', height: 'auto', aspectRatio: '1 / 1', objectFit: 'contain',
+                       /* 3/2 — the stored blob's own shape; see the note on `card`. */
+                       style={{ width: '100%', height: 'auto', aspectRatio: '3 / 2', objectFit: 'contain',
                                 borderRadius: 8, background: '#FAFAF8', display: 'block' }} />
                 : <div style={s.placeholder} />
               }

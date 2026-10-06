@@ -126,13 +126,41 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
    * obvious way to do that is to paste the overlay into it — which is precisely how this codebase
    * ends up with two buttons that drift (root CLAUDE.md rule 1). Defined once here, where it can
    * still close over `busy`, `removing` and the two api calls. */
+  /* ⚠️ BOTH ACTIONS ON ONE ROW ALONG THE BOTTOM, and the delete used to be a lone icon in the
+   * top-right corner. That was Sandeep's own earlier placement, justified here as freeing the bottom
+   * row for the one control that needs words — and it cost the tile its whole top edge, which is the
+   * band a cake is actually drawn in. Reversed by him once the tiles tightened to the thumbnail's
+   * real 3:2 shape: "we dont have to block the row for delete button. bring delete button next to
+   * 'move to library' button." One absolutely-positioned row now, so the picture above it is never
+   * reserved for a control.
+   *
+   * The words take the room they need (`flex: 1`) and the icon takes a fixed square beside them;
+   * with no catalogue action the icon is simply the only thing in the row. Its label still lives in
+   * `aria-label`, so the action is announced and still testable.
+   *
+   * ⚠️ A JS COMMENT, NOT `{/* … *\/}`. This body is a parenthesised EXPRESSION, not JSX children, so
+   * a JSX comment here is a block statement and the file stops parsing — which it did, and the
+   * harness served an error page rather than a shelf. */
   const tileOverlay = (t) => (
-              <>
-                {/* ⚠️ AN ICON, TOP RIGHT — Sandeep asked for it there. It frees the bottom row for
-                    the one control that needs words, and the corner is genuinely free on this
-                    screen: Premium sits top-LEFT, and the ⤢ preview that owns top-right in the
-                    flyout is never drawn here (no `onPreview` is passed). The label lives in
-                    `aria-label`, so the action is still announced and still testable. */}
+              <div style={{ position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
+                            display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                {apiClient.updateBakerCatalogue && (
+                  <button
+                    type="button"
+                    aria-label={`Move ${t.name} to catalogue`}
+                    disabled={busy}
+                    onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
+                    style={{
+                      flex: 1, minWidth: 0,
+                      border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
+                      background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                      fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
+                      cursor: busy ? 'progress' : 'pointer',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}
+                  >Move to catalogue</button>
+                )}
+
                 {apiClient.deleteBakerTemplate && t.source === 'mine' && (
                   <button
                     type="button"
@@ -140,8 +168,7 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                     title={`Delete ${t.name}`}
                     onClick={(e) => { e.stopPropagation(); setPending(t); }}
                     style={{
-                      position: 'absolute', top: 6, right: 6, zIndex: 2,
-                      width: 26, height: 26, borderRadius: 8,
+                      flexShrink: 0, width: 28, height: 28, borderRadius: 8,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       border: '1.5px solid #FBCFCF',
                       background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
@@ -151,25 +178,7 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                     }}
                   ><TrashIcon size={14} /></button>
                 )}
-
-                {/* The one action that needs words, alone along the bottom now. */}
-                {apiClient.updateBakerCatalogue && (
-                  <button
-                    type="button"
-                    aria-label={`Move ${t.name} to catalogue`}
-                    disabled={busy}
-                    onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
-                    style={{
-                      position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
-                      border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
-                      background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-                      fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
-                      cursor: busy ? 'progress' : 'pointer',
-                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    }}
-                  >Move to catalogue</button>
-                )}
-              </>
+              </div>
   );
 
   /* ── What arrived this week, lifted to the top ───────────────────────────────────────────────
