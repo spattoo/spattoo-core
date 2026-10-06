@@ -6,6 +6,7 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import { buildWaferSkirt, WAFER_DEFAULTS } from '../src/designer/geometry/waferPaper.js';
+import { WAFER_PAPER_MATERIAL, waferFibreTexture } from '../src/designer/geometry/waferPaperMaterial.js';
 
 /* ── Does it read as wafer paper? Open /wafer-paper.html ─────────────────────────────────────────
  *
@@ -55,6 +56,8 @@ const REFS = {
 };
 
 function Skirt({ shape, p }) {
+  // One texture for the whole skirt, rebuilt only when the grain strength changes.
+  const fibre = useMemo(() => waferFibreTexture({ strength: p.fibre }), [p.fibre]);
   const geom = useMemo(() => buildWaferSkirt({
     shape, tierHeight: TIER.height, radius: TIER.radius,
     count: p.count, width: p.width, height: p.height, rise: p.rise, taper: p.taper,
@@ -68,13 +71,22 @@ function Skirt({ shape, p }) {
       {/* ⚠️ DoubleSide, because a sheet of paper has no back. A single-sided panel disappears the
           moment the cake turns and you are looking at its inside face — which is half of every
           panel on the far side of the cake. */}
-      {p.physical ? (
-        <meshPhysicalMaterial color={p.colour} side={THREE.DoubleSide} roughness={p.roughness}
-          transmission={p.transmission} thickness={0.02} ior={1.35}
-          transparent opacity={p.opacity} />
-      ) : (
+      {/* ⚠️ NO `transparent` / `opacity` HERE WHILE TRANSMISSION IS ON. That pair puts the mesh on
+          the alpha-blended path and throws the transmission away — which is why the first render
+          had two overlapping panels the same flat pink instead of getting denser where they cross.
+          `alpha` is kept as a SEPARATE mode so the two can be compared rather than argued about. */}
+      {p.alpha ? (
         <meshStandardMaterial color={p.colour} side={THREE.DoubleSide} roughness={p.roughness}
           transparent opacity={p.opacity} />
+      ) : (
+        <meshPhysicalMaterial
+          color={p.colour} side={THREE.DoubleSide}
+          roughness={p.roughness} transmission={p.transmission}
+          thickness={p.thickness} ior={WAFER_PAPER_MATERIAL.ior}
+          sheen={p.sheen} sheenRoughness={WAFER_PAPER_MATERIAL.sheenRoughness}
+          sheenColor="#ffffff" specularIntensity={p.specular}
+          roughnessMap={p.fibre > 0 ? fibre : null}
+          metalness={0} />
       )}
     </mesh>
   );
@@ -146,12 +158,16 @@ export default function Harness() {
         <Sl label="Seed"      v={p.seed}  min={1} max={40}  step={1}    on={set('seed')} int />
 
         <Row label="Paper">
-          <Btn on={p.physical} onClick={() => setP(o => ({ ...o, physical: true }))}>translucent</Btn>
-          <Btn on={!p.physical} onClick={() => setP(o => ({ ...o, physical: false }))}>opaque</Btn>
+          <Btn on={!p.alpha} onClick={() => setP(o => ({ ...o, alpha: 0 }))}>transmission</Btn>
+          <Btn on={!!p.alpha} onClick={() => setP(o => ({ ...o, alpha: 1 }))}>alpha (the old one)</Btn>
         </Row>
         <Sl label="Transmission" v={p.transmission} min={0} max={1} step={0.02} on={set('transmission')} />
-        <Sl label="Opacity"      v={p.opacity} min={0.4} max={1} step={0.02} on={set('opacity')} />
+        <Sl label="Thickness"    v={p.thickness} min={0.01} max={0.5} step={0.01} on={set('thickness')} />
         <Sl label="Roughness"    v={p.roughness} min={0.2} max={1} step={0.02} on={set('roughness')} />
+        <Sl label="Sheen (fibre lobe)" v={p.sheen} min={0} max={1} step={0.02} on={set('sheen')} />
+        <Sl label="Specular"     v={p.specular} min={0} max={1} step={0.02} on={set('specular')} />
+        <Sl label="Grain"        v={p.fibre} min={0} max={1} step={0.02} on={set('fibre')} />
+        <Sl label="Opacity (alpha mode)" v={p.opacity} min={0.4} max={1} step={0.02} on={set('opacity')} />
         <Row label="Colour">
           {['#ffffff', '#fbf7f2', '#f2766d', '#f6c6cf', '#d9c7f0'].map(c => (
             <button key={c} onClick={() => setP(o => ({ ...o, colour: c }))}
