@@ -847,6 +847,50 @@ export function brushGestureFromDrag(from, to, opts = {}) {
   };
 }
 
+/**
+ * The path of a stroke laid on a TOP surface, from where the hand went down to where it came up.
+ *
+ * ⚠️ A LID IS NOT A WALL, and the difference is not cosmetic. A wall is a cylinder, so a gesture on
+ * it is authored in TURNS and a fraction of the height — which is what makes one stroke the same
+ * stroke on a 6-inch tier and a 10-inch one. A lid is a disc: there is no "round" and no "up", only
+ * x and z from the axis, so the path is a list of points in units of R and `buildBrushStrokeOnFlat`
+ * takes it directly.
+ *
+ * ⚠️ WHICH IS ALSO WHY THERE IS NO BAND ON A TOP. A band is a RING round a wall; it closes because a
+ * wall closes. A lid has nothing to go round — Sandeep: *"only thing different is top surface does
+ * not have a band."* So the top gets hand-drawn strokes and only those.
+ *
+ * `bow` bends it, in the same units, because a hand drawing across a plate does not travel on a
+ * ruled line. Positive bows one way, negative the other.
+ */
+export function brushTopPath(a, b, { bow = 0, points = 14 } = {}) {
+  const n = Math.max(2, points);
+  const dx = b[0] - a[0], dz = b[1] - a[1];
+  /* Perpendicular to the travel, so the bow is across the stroke rather than along it. */
+  const len = Math.hypot(dx, dz) || 1;
+  const px = -dz / len, pz = dx / len;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const t = i / (n - 1), k = Math.sin(Math.PI * t) * bow;
+    out.push([a[0] + dx * t + px * k, a[1] + dz * t + pz * k]);
+  }
+  return out;
+}
+
+/**
+ * A top-surface stroke drawn by dragging: the two points, in units of R, or null for a tap.
+ *
+ * ⚠️ IN UNITS OF R, NOT WORLD UNITS, for the same reason the wall's gesture is in turns: a stroke
+ * stored in centimetres is a different stroke the moment the tier is a different size.
+ */
+export function brushTopFromDrag(from, to, { R = 1, minTravel = 0.04 } = {}) {
+  if (!(R > 0)) return null;
+  const a = [(from?.x ?? 0) / R, (from?.z ?? 0) / R];
+  const b = [(to?.x ?? 0) / R, (to?.z ?? 0) / R];
+  if (Math.hypot(b[0] - a[0], b[1] - a[1]) < minTravel) return null;   // a tap is a selection
+  return { ax: a[0], az: a[1], bx: b[0], bz: b[1] };
+}
+
 export function dragStrokeTo(grab, point, opts = {}) {
   const w = wallCoordsOf(point, opts);
   const { riseMin = 0.02, riseMax = 0.95 } = opts;

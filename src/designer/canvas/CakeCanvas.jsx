@@ -38,8 +38,9 @@ import {
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
-import { buildBrushBand, buildBrushStrokeOnWall, brushGesture, paintBrushColors,
-         makeBrushBed, BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
+import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
+         brushTopPath, paintBrushColors, makeBrushBed,
+         BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
 import { creamMaterialProps } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
@@ -3168,15 +3169,30 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
     if (!strokes?.length) return [];
     const bed = makeBrushBed({ R: tier.radius, wallH: tier.height });
     return strokes.map(st => {
-      const geo = buildBrushStrokeOnWall({
-        R: tier.radius, baseY: tier.baseY, wallH: tier.height, bed,
+      const common = {
+        R: tier.radius,
         width: st.width ?? BRUSH_ON_CAKE_DEFAULTS.width,
         weight: st.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
         seed: st.seed ?? 1,
-        path: brushGesture({ at: st.at ?? 0, rise: st.rise ?? 0.02, climb: st.climb ?? 0.42,
-                             climbVar: st.climbVar ?? 0, sweep: st.sweep ?? 0, bow: st.bow ?? 0,
-                             seed: st.seed ?? 1 }),
-      });
+      };
+      /* ⚠️ A LID IS NOT A WALL. The wall's gesture is authored in turns and a fraction of the
+         height, because a wall is a cylinder; the lid's is a list of x/z points in units of R,
+         because a disc has no "round" and no "up". Two builders, one for each, and the stored
+         stroke says which by carrying `surface`. The lid's one also DRAPES: a stroke drawn past
+         the rim falls down the side, which is what cream does when a knife runs off the edge.
+         ⚠️ NO BED ON THE TOP. The bed is a raster in the WALL's unrolled space; a lid stroke has no
+         coordinates in it, so handing it one would be asking the wrong surface how high it is. */
+      const geo = (st.surface ?? 'side') === 'top'
+        ? buildBrushStrokeOnFlat({
+            ...common, y: tier.baseY + tier.height,
+            path: brushTopPath([st.ax ?? -0.5, st.az ?? 0], [st.bx ?? 0.5, st.bz ?? 0], { bow: st.bow ?? 0 }),
+          })
+        : buildBrushStrokeOnWall({
+            ...common, baseY: tier.baseY, wallH: tier.height, bed,
+            path: brushGesture({ at: st.at ?? 0, rise: st.rise ?? 0.02, climb: st.climb ?? 0.42,
+                                 climbVar: st.climbVar ?? 0, sweep: st.sweep ?? 0, bow: st.bow ?? 0,
+                                 seed: st.seed ?? 1 }),
+          });
       return geo ? { st, geo: paintBrushColors(geo, st.color ?? '#F6DCE2', wallColour) } : null;
     }).filter(Boolean);
   }, [strokes, tier.radius, tier.baseY, tier.height, wallColour]);

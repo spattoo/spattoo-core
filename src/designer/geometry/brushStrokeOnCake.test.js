@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
-         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, paintBrushColors, brushGesture, makeBrushBed,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -958,5 +958,49 @@ describe('a stroke stays on the wall it is painted on', () => {
     let lo = Infinity;
     for (let i = 0; i < p.count; i++) lo = Math.min(lo, p.getY(i));
     expect(lo).toBeGreaterThanOrEqual(0.07 - 1e-5);
+  });
+});
+
+describe('a stroke on the TOP surface', () => {
+  /* ⚠️ A LID IS NOT A WALL — Sandeep: *"it is not restricted to only side, it should happen on top
+     surface also. only thing different is top surface does not have a band."* A band is a RING, and
+     it closes because a wall closes; a lid has nothing to go round. So the top gets hand-drawn
+     strokes and only those, authored as x/z points in units of R rather than as turns-and-height. */
+  const at = (x, z) => ({ x, y: 0, z });
+
+  it('a drag across the lid gives the two points, in units of R', () => {
+    const d = brushTopFromDrag(at(-0.6, 0.1), at(0.5, -0.2), { R: 2 });
+    expect(d.ax).toBeCloseTo(-0.3, 6);     // world -0.6 on a radius-2 tier is -0.3 of R
+    expect(d.bx).toBeCloseTo(0.25, 6);
+  });
+
+  it('a tap on the lid is not a stroke', () => {
+    expect(brushTopFromDrag(at(0.2, 0.2), at(0.21, 0.2), { R: 1 })).toBeNull();
+  });
+
+  it('the path runs from one point to the other', () => {
+    const path = brushTopPath([-0.5, 0], [0.5, 0.2], { bow: 0 });
+    expect(path[0]).toEqual([-0.5, 0]);
+    expect(path[path.length - 1][0]).toBeCloseTo(0.5, 6);
+    expect(path[path.length - 1][1]).toBeCloseTo(0.2, 6);
+  });
+
+  it('and `bow` bends it ACROSS the travel, not along it', () => {
+    /* Bowed along the travel it would only make the stroke longer, which is a different control. */
+    const straight = brushTopPath([-0.5, 0], [0.5, 0], { bow: 0 });
+    const bowed = brushTopPath([-0.5, 0], [0.5, 0], { bow: 0.2 });
+    const mid = Math.floor(straight.length / 2);
+    expect(Math.abs(bowed[mid][0] - straight[mid][0])).toBeLessThan(1e-9);  // not along
+    expect(Math.abs(bowed[mid][1] - straight[mid][1])).toBeGreaterThan(0.1); // across
+  });
+
+  it('it builds a mesh that lies on the lid', () => {
+    const geo = buildBrushStrokeOnFlat({ R: 1, y: 1.3, weight: 0.5, seed: 4,
+      path: brushTopPath([-0.4, 0], [0.4, 0.1], { bow: 0.05 }) });
+    expect(geo).toBeTruthy();
+    const p = geo.attributes.position;
+    let lo = Infinity;
+    for (let i = 0; i < geo.userData.topCount; i++) lo = Math.min(lo, p.getY(i));
+    expect(lo).toBeGreaterThan(1.0);     // on the lid, not down the side — this one never reached the rim
   });
 });

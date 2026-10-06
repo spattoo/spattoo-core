@@ -186,7 +186,17 @@ function DesignerCake() {
          integration: a list of pieces, each its own mesh with its own click target and its own
          card. Same page so the two shapes are compared on one cake rather than from memory. */
       ...(P.has('single')
-        ? { brushStrokes: [0, 1, 2, 3].map(i => ({
+        ? { brushStrokes: P.has('lid')
+              /* ?single&lid — strokes across the TOP. One deliberately runs past the rim, because
+                 the drape is the half of buildBrushStrokeOnFlat the wall never exercises. */
+              ? [0, 1, 2].map(i => ({
+                  id: `bt${i}`, surface: 'top',
+                  ax: -0.85 + i * 0.1, az: -0.45 + i * 0.45,
+                  bx: 0.5 + i * 0.35, bz: -0.3 + i * 0.4, bow: 0.06 - i * 0.05,
+                  width: 0.34, weight: 0.3, seed: 21 + i * 9,
+                  color: (BAND_COLORS.length ? BAND_COLORS : COLORS)[i % (BAND_COLORS.length || COLORS.length)],
+                }))
+              : [0, 1, 2, 3].map(i => ({
               id: `bs${i}`, at: -0.05 + i * 0.035, rise: 0.02, climb: 0.42, sweep: 0, bow: -0.2,
               width: 0.3, weight: 0.18, seed: 11 + i * 7,
               color: (BAND_COLORS.length ? BAND_COLORS : COLORS)[i % (BAND_COLORS.length || COLORS.length)],
