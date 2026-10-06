@@ -3012,6 +3012,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const q = elemSearch.trim().toLowerCase();
     return (els ?? []).filter(el => {
       if (el.placement_config?.pattern_only === true) return false;
+      /* ⚠️ THE CREAM LAYER IS AUTHORED ON THE TIER CARD, so it must not also sit in Decorations —
+         the same reasoning as `pattern_only` above, one step out: a decoration you place by
+         choosing it from a grid, and a property of the tier you set while editing that tier, are
+         two different gestures, and offering both for one element is how a baker ends up with the
+         band appearing from a place they did not expect. Reported 2026-10-06, with the row already
+         live on the tier card and the tile still in Finishes.
+
+         ⚠️ KEYED OFF THE SAME CONFIG BLOCK THE TIER CARD FINDS IT BY (`second_cream` — see
+         `creamElement`), NOT off a slug and NOT off a second admin flag. Two consequences, both
+         wanted: the rule needs no change to the element row, and the two surfaces cannot disagree,
+         because whatever the tier card claims is exactly what Decorations hides.
+
+         ⚠️ AND THE ROW MUST STAY ACTIVE. Switching the element off in admin is the obvious way to
+         clear it from Decorations and it takes the tier card's control with it — the card reads the
+         same active element. Tried and reported: "i went to admin and made cream layer element
+         inactive, then it disappeared from cake tier popup card also." Hidden here, active there. */
+      if (el.placement_config?.second_cream) return false;
       // Inside a category, show only that category — the dbs accumulate across every category
       // visited this session, so without this the second one opened would show the first as well.
       // Search deliberately ignores the category: someone typing "lion" wants the lion, not to be
