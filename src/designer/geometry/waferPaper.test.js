@@ -258,3 +258,60 @@ describe('the folds run top to bottom, not side to side', () => {
     }
   });
 });
+
+/* ── Sheets stack; they never pass through one another ───────────────────────────────────────────
+ *
+ * Sandeep: *"at few places it looks like the wafer papers are intersecting. that does not happen in
+ * real."* Two mechanisms answer it and both are easy to undo by accident, so both are pinned.
+ *
+ * ⚠️ NEITHER IS A PROOF OF NON-INTERSECTION. Panels overlap tangentially by design and their folds
+ * are deeper than the gap between them, so no shingle step could separate them outright — the real
+ * answer is that adjacent sheets NEST, ridge into valley, because each is pressed against the one
+ * already there. These check that the two mechanisms are present and doing what they claim; the
+ * render is still what says whether it is enough.
+ */
+describe('panels stack instead of crossing', () => {
+  const round = { kind: 'round', radius: 1 };
+  const radii = (opts) => {
+    const count = 8;
+    const g = buildWaferSkirt({ shape: round, tierHeight: 1, count, seed: 5, jitter: 0,
+                                ripple: 0, curl: 0, sway: 0, splay: 0, lean: 0, ...opts });
+    const p = g.getAttribute('position');
+    const per = p.count / count;
+    // The radius of each panel's pinned top edge — the shingle, with every shaping term off.
+    return Array.from({ length: count }, (_, k) => {
+      const i = k * per;
+      return Math.hypot(p.getX(i), p.getZ(i));
+    });
+  };
+
+  it('pushes each panel further out than the last, wrapping before it bulges', () => {
+    const r = radii({ shingle: 0.02, width: 2.2 });
+    const layers = Math.ceil(2.2) + 1;                 // how many overlap, so how many layers
+    expect(r[1]).toBeGreaterThan(r[0]);                // it shingles at all
+    expect(r[layers] ?? r[0]).toBeCloseTo(r[0], 5);    // and resets rather than ramping forever
+  });
+
+  it('sits every panel on one radius when the shingle is off', () => {
+    const r = radii({ shingle: 0, width: 2.2 });
+    expect(Math.max(...r) - Math.min(...r)).toBeLessThan(1e-6);
+  });
+
+  /* ⚠️ `nest` must make the crease phase a function of WHERE THE PANEL SITS, not of the RNG. A
+     random phase per panel is what put one sheet's ridge exactly where its neighbour's valley went,
+     which is an intersection the shingle cannot be deep enough to prevent.
+
+     ⚠️ ASSERTED AS AN EFFECT, NOT AS SEED-INDEPENDENCE, and the first version of this test got that
+     wrong and failed. Only the PHASE is positional — crease DEPTHS stay seeded deliberately, since
+     a hand-folded sheet is not evenly pleated — so two seeds never agree even at nest 1, and
+     demanding they do was a claim the feature does not make. */
+  it('changes the crease rhythm when nesting is turned on', () => {
+    const z = (nest) => {
+      const g = buildWaferSkirt({ shape: round, tierHeight: 1, count: 6, seed: 3, nest,
+                                  jitter: 0, ripple: 0.3, ripples: 5, lean: 0 });
+      return Array.from(g.getAttribute('position').array.slice(0, 60));
+    };
+    expect(z(1)).not.toEqual(z(0));
+    expect(z(1)).toEqual(z(1));              // and it is deterministic, like everything else here
+  });
+});

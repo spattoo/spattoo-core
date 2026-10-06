@@ -76,6 +76,7 @@ function Skirt({ shape, p }) {
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
     curl: p.curl, splay: p.splay, lean: p.lean,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
+    shingle: p.shingle, nest: p.nest,
   }), [shape, p]);
   if (!geom) return null;
   return (
@@ -159,6 +160,8 @@ export default function Harness() {
         <Sl label="Curl (bow)"    v={p.curl}   min={0}   max={1}   step={0.02} on={set('curl')} />
         <Sl label="Splay"         v={p.splay}  min={0}   max={0.6} step={0.02} on={set('splay')} />
         <Sl label="Lean"          v={p.lean}   min={-0.2} max={0.35} step={0.01} on={set('lean')} />
+        <Sl label="Shingle"       v={p.shingle} min={0} max={0.06} step={0.002} on={set('shingle')} />
+        <Sl label="Nest"          v={p.nest} min={0} max={1} step={0.05} on={set('nest')} />
         <Sl label="Jitter"        v={p.jitter} min={0}   max={1}   step={0.02} on={set('jitter')} />
 
         <Row label="Hem">

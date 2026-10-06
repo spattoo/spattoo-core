@@ -62,6 +62,24 @@ export const WAFER_DEFAULTS = {
   curl:   0.14,   // bow ACROSS the width, × width — the cupping that catches light
   splay:  0.03,   // hem pushed away from the wall, × panel height — paper hugs, it does not flare
   lean:   0.04,   // whole panel tilted out from vertical, radians
+  /* ── Sheets STACK; they never pass through one another ────────────────────────────────────────
+   * Sandeep: *"at few places it looks like the wafer papers are intersecting. that does not happen
+   * in real."* Two separate causes, and both needed fixing:
+   *
+   *   `shingle` — every panel sits a little further out than the one before, like roof tiles, so
+   *   there is a definite front-to-back ORDER. Without it every panel sits on the same radius and
+   *   only luck keeps two from occupying the same space. It wraps every few panels rather than
+   *   ramping all the way round, which would bulge the skirt by the time it got back to the start.
+   *
+   *   `nest` — the real one. Adjacent pleated sheets lie INTO each other: the ridge of one sits in
+   *   the valley of its neighbour, because each is pressed against the one already there. Random
+   *   per-panel phases guarantee the opposite — one sheet creasing outward exactly where the next
+   *   creases inward, which is an intersection no shingle step can be deep enough to prevent, since
+   *   the folds are deeper than the gap between panels. At 1 the crease rhythm is continuous around
+   *   the whole cake and sheets cannot cross; at 0 every panel is independent, which is what was
+   *   rendering. */
+  shingle: 0.012, // × tier radius, per panel, wrapping
+  nest:    0.85,  // 0 … 1: independent phases → one continuous crease rhythm
   jitter: 0.35,   // 0 … 1, how much the panels differ from one another
   hem:    'straight',  // 'straight' | 'notch' | 'torn'
   notch:  0.10,   // × panel height, the depth of the zigzag when hem === 'notch'
@@ -205,10 +223,16 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
   // ± a fraction of the value, so jitter=0 is "every panel identical" and the knob is linear.
   const vary = (base, amount = 1) => base * (1 + (rnd() * 2 - 1) * j * amount);
 
+  /* How many panels overlap one another tangentially, which is how many distinct shingle layers are
+     needed before the pattern may repeat. A panel `width` gaps wide covers that many neighbours. */
+  const layers = Math.max(2, Math.ceil(o.width) + 1);
+  const rOuter = radius || 1;
+
   const out = [];
   for (let k = 0; k < n; k++) {
     const s = (k + 0.5) * gap;
     const at = perim.at(s);
+    const lift = (k % layers) * o.shingle * rOuter;
     /* ── THE HEM IS LEVEL; THE CROWN IS RAGGED ───────────────────────────────────────────────────
      * Straight off the reference, and it is a fact about gravity rather than about cutting. The
      * sheets are long enough to reach the board and they REST on it, so their bottoms line up
@@ -222,7 +246,12 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
     const panel = waferPanel({
       width: vary(w, 0.35), height: h + rise, taper: o.taper,
       ripple: vary(o.ripple, 0.5), ripples: vary(o.ripples, 0.35),
-      sway: vary(o.sway, 0.7), sways: vary(o.sways, 0.4), phase: rnd() * Math.PI * 2,
+      sway: vary(o.sway, 0.7), sways: vary(o.sways, 0.4),
+      /* The crease rhythm carried around the cake rather than redrawn per panel: a panel's phase is
+         where it SITS on the perimeter, so its creases continue its neighbour's. `nest` blends
+         between that and an independent draw. */
+      phase: o.nest * (s / gap) * o.ripples * Math.PI * 2 * (1 - 1 / Math.max(1, o.width))
+           + (1 - o.nest) * rnd() * Math.PI * 2,
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd,
     });
@@ -236,7 +265,8 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
     m.makeRotationY(yaw);
     // Lean the panel out from the wall, about its own pinned top edge.
     m.multiply(new THREE.Matrix4().makeRotationX(-vary(o.lean, 1)));
-    m.setPosition(at.x, rise, at.z);
+    // Shingled outward along the wall's own normal, so a rect wall tiles as correctly as a round one.
+    m.setPosition(at.x + at.nx * lift, rise, at.z + at.nz * lift);
     panel.applyMatrix4(m);
     out.push(panel);
   }
