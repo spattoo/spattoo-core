@@ -213,12 +213,12 @@ export default function Harness() {
           {shapeKey === 'round' ? (
             <mesh position={[0, TIER.baseY + TIER.height / 2, 0]} castShadow receiveShadow>
               <cylinderGeometry args={[TIER.radius, TIER.radius, TIER.height, 72]} />
-              <meshStandardMaterial color={p.cake || p.colour} roughness={0.9} />
+              <meshStandardMaterial color={p.cake || '#f6efe4'} roughness={0.9} />
             </mesh>
           ) : (
             <mesh position={[0, TIER.baseY + TIER.height / 2, 0]} castShadow receiveShadow>
               <boxGeometry args={[SHAPES.sheet.halfW * 2, TIER.height, SHAPES.sheet.halfD * 2]} />
-              <meshStandardMaterial color={p.cake || p.colour} roughness={0.9} />
+              <meshStandardMaterial color={p.cake || '#f6efe4'} roughness={0.9} />
             </mesh>
           )}
 
