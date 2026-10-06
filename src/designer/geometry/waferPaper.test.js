@@ -29,7 +29,7 @@ describe('one panel', () => {
   });
 
   it('pins the top edge against every bend, including the extremes', () => {
-    for (const o of [{ splay: 2 }, { curl: 2 }, { ripple: 2 }, { taper: 0.9 }, { ripples: 9 }, { sway: 2 }]) {
+    for (const o of [{ splay: 2 }, { curl: 2 }, { ripple: 2 }, { taper: 0.9 }, { ripples: 9 }, { sway: 2 }, { ripples: 1 }]) {
       const g = waferPanel({ width: 0.3, height: 1, ...o });
       expect(bbox(g).hi[1]).toBeCloseTo(0, 6);
       expect(finite(g)).toBe(true);
@@ -55,18 +55,81 @@ describe('one panel', () => {
   /* A torn hem draws ONE number per column. Drawing inside the vertex loop gives every row of a
      column its own tear and shreds the panel into noise — it still renders, which is why this is
      worth a test: the failure looks like a texture, not like a bug. */
-  it('tears per column, so a column stays a straight line', () => {
-    // Every shaping term off: this is a claim about the HEM alone, and `drift` legitimately moves a
-    // column sideways as it falls, which would mask it.
-    const g = waferPanel({ width: 0.3, height: 1, hem: 'torn', notch: 0.4, segW: 4, segH: 4,
-                           ripple: 0, sway: 0, curl: 0, splay: 0, taper: 0, rng: () => 0.5 });
+  it('tears per crease, so a crease stays a straight line', () => {
+    /* A torn hem is a property of the FOLD, not of a vertex: one random number per crease. Drawn
+       per vertex instead, every row of a crease tears differently and the panel shreds into noise —
+       which still renders, and looks like a texture rather than like a bug. */
+    const folds = 4, rows = 5;
+    const g = waferPanel({ width: 0.3, height: 1, hem: 'torn', notch: 0.4, ripples: folds,
+                           segH: rows - 1, ripple: 0, sway: 0, curl: 0, splay: 0, taper: 0,
+                           rng: () => 0.5 });
     const p = g.getAttribute('position');
-    const cols = 5, rows = 5;
-    for (let i = 0; i < cols; i++) {
-      const xs = [];
-      for (let j = 0; j < rows; j++) xs.push(p.getX(j * cols + i));
-      expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(1e-6);
+    // Facet f holds its two creases as [f*rows*2 … +rows) and [… +rows … +2rows).
+    for (let f = 0; f < folds; f++) {
+      for (const side of [0, 1]) {
+        const start = (f * 2 + side) * rows;
+        const xs = [];
+        for (let i = 0; i < rows; i++) xs.push(p.getX(start + i));
+        expect(Math.max(...xs) - Math.min(...xs)).toBeLessThan(1e-6);
+      }
     }
+  });
+});
+
+/* ── The crease is the texture ────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ TWO RENDERS WENT OUT BEFORE THIS WAS RIGHT, and both looked like a material — just not this
+ * one. A fold in paper is C0: the position is continuous across it and the NORMAL IS NOT. A sine
+ * across the width plus `computeVertexNormals()` gives the opposite — a smooth corrugation whose
+ * normals are averaged straight through the fold — and that renders as satin.
+ *
+ * So each facet carries its own vertices. These two tests are the contract that buys: the seam is
+ * in the TOPOLOGY, and a later "optimise the duplicate vertices away" would silently return the
+ * satin.
+ */
+describe('a fold is a crease, not a wave', () => {
+  const folds = 5, rows = 7;
+  const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: folds, segH: rows - 1,
+                                   sway: 0, curl: 0, splay: 0, taper: 0, rng: () => 0.5 });
+
+  it('splits the vertices at every crease rather than sharing them', () => {
+    const g = panel();
+    // folds facets × 2 creases × rows. A shared-vertex grid would be (folds + 1) × rows.
+    expect(g.getAttribute('position').count).toBe(folds * 2 * rows);
+  });
+
+  /* The two halves of a crease sit in the SAME PLACE with DIFFERENT normals. That pair is the whole
+     definition of a fold, and it is what makes one side of the line catch the light and the other
+     fall dark — the structure the photograph is full of. */
+  it('is continuous in position and discontinuous in normal across a crease', () => {
+    const g = panel();
+    const p = g.getAttribute('position'), n = g.getAttribute('normal');
+    let checked = 0;
+    for (let f = 0; f < folds - 1; f++) {
+      const right = (f * 2 + 1) * rows;          // facet f's right crease
+      const left  = ((f + 1) * 2) * rows;        // facet f+1's left crease — the same crease
+      for (let i = 1; i < rows; i++) {
+        const a = right + i, b = left + i;
+        expect(Math.abs(p.getX(a) - p.getX(b))).toBeLessThan(1e-6);
+        expect(Math.abs(p.getY(a) - p.getY(b))).toBeLessThan(1e-6);
+        expect(Math.abs(p.getZ(a) - p.getZ(b))).toBeLessThan(1e-6);
+        const dot = n.getX(a) * n.getX(b) + n.getY(a) * n.getY(b) + n.getZ(a) * n.getZ(b);
+        expect(dot).toBeLessThan(0.999);         // not the same normal: there is a real crease here
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(10);
+  });
+
+  it('alternates which way each facet leans, so it reads as a concertina', () => {
+    const g = panel();
+    const p = g.getAttribute('position');
+    const mid = Math.floor(rows * 0.8);
+    const z = [];
+    for (let f = 0; f <= folds - 1; f++) z.push(p.getZ((f * 2) * rows + mid));
+    let flips = 0;
+    for (let i = 1; i < z.length; i++) if (Math.sign(z[i]) !== Math.sign(z[i - 1])) flips++;
+    expect(flips).toBeGreaterThanOrEqual(z.length - 2);
   });
 });
 
@@ -114,36 +177,39 @@ describe('the skirt round the cake', () => {
     expect(a.getAttribute('position').array).not.toEqual(c.getAttribute('position').array);
   });
 
-  /* `jitter` is the handmade-ness knob, so its two ends have to mean what they say. Measured per
-     PANEL rather than over the whole skirt: y is untouched by the yaw that stands each panel on the
-     wall, so each panel's own drop is directly comparable, while a single bbox over the merged mesh
-     would report the deepest panel and say nothing about the rest.
+  /* ── The hem is level; the crown is ragged ──────────────────────────────────────────────────────
+   *
+   * ⚠️ THIS WAS UPSIDE DOWN AND THE PHOTOGRAPH IS WHAT CAUGHT IT. Jittering the panel HEIGHT varies
+   * the bottom, which gave a sawtooth of spikes along the hem and a flat line at the top — the
+   * reference's silhouette exactly inverted. The sheets reach the board and REST on it, so their
+   * bottoms line up whatever else varies, and the leftover length stands up above the rim.
+   *
+   * So jitter must show at the TOP and never at the hem, and that is what these pin. Measured per
+   * panel, with `lean: 0` — a leaning panel rotates fold depth (Z) partly into height (Y), which
+   * would blur both readings. */
+  const extremes = (jitter, count = 10) => {
+    const g = buildWaferSkirt({ shape: round, tierHeight: 1, jitter, count, seed: 2, lean: 0 });
+    const p = g.getAttribute('position');
+    const per = p.count / count;
+    return Array.from({ length: count }, (_, k) => {
+      let lo = Infinity, hi = -Infinity;
+      for (let i = k * per; i < (k + 1) * per; i++) {
+        const y = p.getY(i); lo = Math.min(lo, y); hi = Math.max(hi, y);
+      }
+      return { lo, hi };
+    });
+  };
+  const spread = (xs) => Math.max(...xs) - Math.min(...xs);
 
-     ⚠️ Not asserted against WAFER_DEFAULTS.height, which was this test's first and wrong form. The
-     drop is `rise − height·cos(lean) + splay·height·sin(lean)`: the panel starts above the rim and
-     the lean both shortens the fall and swings the hem out. Expecting the bare height failed by
-     0.108 and the geometry was right — the assertion had simply never been worked through. */
-  it('makes every panel identical at jitter 0, and different above it', () => {
-    const perPanel = (jitter) => {
-      const count = 8;
-      /* ⚠️ `lean: 0`, and the reason is the interesting half of this test. Each panel gets its own
-         fold PHASE whatever the jitter — without that every panel's pleats line up and the cake
-         reads as stamped — and a leaning panel rotates its fold depth (Z) partly into height (Y).
-         So with the default lean the drops differ by ~0.003 at jitter 0, which is the phase showing
-         through, not the jitter. Zeroing the lean isolates the claim being made. */
-      const g = buildWaferSkirt({ shape: round, tierHeight: 1, jitter, count, seed: 2, lean: 0 });
-      const p = g.getAttribute('position');
-      const per = p.count / count;
-      return Array.from({ length: count }, (_, k) => {
-        let lo = Infinity;
-        for (let i = k * per; i < (k + 1) * per; i++) lo = Math.min(lo, p.getY(i));
-        return lo;
-      });
-    };
-    const same = perPanel(0);
-    expect(Math.max(...same) - Math.min(...same)).toBeLessThan(1e-6);
-    const varied = perPanel(0.5);
-    expect(Math.max(...varied) - Math.min(...varied)).toBeGreaterThan(0.05);
+  it('keeps every hem at the same height, however much it jitters', () => {
+    for (const j of [0, 0.5, 1]) {
+      expect(spread(extremes(j).map(e => e.lo))).toBeLessThan(1e-6);
+    }
+  });
+
+  it('puts the variation in the crown instead', () => {
+    expect(spread(extremes(0).map(e => e.hi))).toBeLessThan(1e-6);
+    expect(spread(extremes(0.6).map(e => e.hi))).toBeGreaterThan(0.01);
   });
 
   it('survives a count of one and a count of none', () => {
@@ -164,27 +230,28 @@ describe('the skirt round the cake', () => {
  * restore the version that looked wrong.
  */
 describe('the folds run top to bottom, not side to side', () => {
+  /* ⚠️ THE FIRST VERSION SWAYED THE PANEL SIDEWAYS AS IT FELL, and it was the wrong gesture —
+     broad sheets with a diagonal twist, no vertical structure, nothing that looked handled. A baker
+     PLEATS the strip: the folds run from the glued top edge down to the hem. */
+  const folds = 6, rows = 9;
+  const g = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: folds, segH: rows - 1,
+                               sway: 0, curl: 0, splay: 0, taper: 0, rng: () => 0.5 });
+
   it('varies depth ACROSS the width at a fixed height', () => {
-    const g = waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 3, sway: 0, curl: 0,
-                           splay: 0, taper: 0, segW: 24, segH: 6 });
-    const p = g.getAttribute('position');
-    const cols = 25;
-    const row = [];                                    // one row, halfway down
-    for (let i = 0; i < cols; i++) row.push(p.getZ(3 * cols + i));
-    expect(Math.max(...row) - Math.min(...row)).toBeGreaterThan(0.15);
+    const p = g().getAttribute('position');
+    const row = Math.floor(rows * 0.6), z = [];
+    for (let f = 0; f < folds; f++) z.push(p.getZ((f * 2) * rows + row));
+    expect(Math.max(...z) - Math.min(...z)).toBeGreaterThan(0.15);
   });
 
-  /* And the same fold stays put as the panel falls — a pleat is a line, not a travelling wave.
-     Allowing for `open`, which lets the pleat deepen toward the hem, the SIGN must not flip. */
-  it('keeps a fold on the same side of the panel all the way down', () => {
-    const g = waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 2, sway: 0, curl: 0,
-                           splay: 0, taper: 0, phase: 0.8, segW: 16, segH: 12 });
-    const p = g.getAttribute('position');
-    const cols = 17, rows = 13;
-    for (let i = 0; i < cols; i++) {
+  /* And a crease stays on the same side of the panel all the way down — a pleat is a line, not a
+     travelling wave. `open` lets it deepen toward the hem, so only the SIGN has to hold. */
+  it('keeps a crease on the same side of the panel all the way down', () => {
+    const p = g().getAttribute('position');
+    for (let f = 0; f < folds; f++) {
       const signs = new Set();
-      for (let j = 1; j < rows; j++) {                  // skip the pinned row, where open is small
-        const z = p.getZ(j * cols + i);
+      for (let i = 1; i < rows; i++) {
+        const z = p.getZ((f * 2) * rows + i);
         if (Math.abs(z) > 1e-3) signs.add(Math.sign(z));
       }
       expect(signs.size).toBeLessThanOrEqual(1);

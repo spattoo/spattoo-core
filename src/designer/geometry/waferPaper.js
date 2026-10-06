@@ -48,27 +48,26 @@ export const WAFER_DEFAULTS = {
      one thing at a time said the look wants FEWER, WIDER, more overlapped panels that hug the wall
      — which is also what the photographs show once you stop counting ribbons and start counting
      SHEETS. The ribbons in the references are fold lines, not pieces. */
-  count: 34,
-  width:  2.30,   // × the mean gap: >1 overlaps its neighbour, which is how every reference looks
-  height: 0.95,   // × tier height, measured down from the top edge
-  rise:   0.04,   // × tier height, how far the panel stands ABOVE the rim
-  taper:  0.18,   // 0 … 1, narrowing toward the hem
+  count: 30,
+  width:  2.20,   // × the mean gap: >1 overlaps its neighbour, which is how every reference looks
+  height: 1.00,   // × tier height, measured down from the top edge
+  rise:   0.10,   // × tier height, how far the panel stands ABOVE the rim
+  taper:  0.08,   // 0 … 1, narrowing toward the hem
   /* ⚠️ THE FOLDS ARE THE LOOK, AND THEY RUN TOP TO BOTTOM. See the note below — this was a
      sideways sway first, and it was the wrong gesture. */
-  ripple:  0.28,  // depth of the concertina, × panel width
-  ripples: 6.0,   // how many folds across the panel's width
-  sway:   0.10,   // the secondary lateral drift down the panel, × width
+  ripple:  0.26,  // depth of the concertina, × panel width
+  ripples: 11,    // how many CREASES across the panel — the reference is fine and dense
+  sway:   0.05,   // the secondary lateral drift down the panel, × width
   sways:  1.0,    // how many times it drifts
-  curl:   0.22,   // bow ACROSS the width, × width — the cupping that catches light
-  splay:  0.08,   // hem pushed away from the wall, × panel height — paper hugs, it does not flare
+  curl:   0.14,   // bow ACROSS the width, × width — the cupping that catches light
+  splay:  0.03,   // hem pushed away from the wall, × panel height — paper hugs, it does not flare
   lean:   0.04,   // whole panel tilted out from vertical, radians
   jitter: 0.35,   // 0 … 1, how much the panels differ from one another
   hem:    'straight',  // 'straight' | 'notch' | 'torn'
   notch:  0.10,   // × panel height, the depth of the zigzag when hem === 'notch'
   seed:   7,
-  /* Mesh density. 10 × 14 is enough for a sheet this thin: the silhouette comes from the hem and
-     the wave, and both are resolved long before the surface is. */
-  segW:   10,
+  /* Rows down the panel. There is no column count any more: the creases ARE the columns, so
+     `ripples` decides the across-width density and `segH` only has to resolve the drop. */
   segH:   14,
 };
 
@@ -95,73 +94,89 @@ export function waferPanel({
   sway = WAFER_DEFAULTS.sway, sways = WAFER_DEFAULTS.sways, phase = 0,
   curl = WAFER_DEFAULTS.curl, splay = WAFER_DEFAULTS.splay,
   hem = WAFER_DEFAULTS.hem, notch = WAFER_DEFAULTS.notch,
-  segW = WAFER_DEFAULTS.segW, segH = WAFER_DEFAULTS.segH, rng = Math.random,
+  segH = WAFER_DEFAULTS.segH, rng = Math.random,
 } = {}) {
-  const cols = Math.max(2, segW | 0) + 1;
-  const rows = Math.max(2, segH | 0) + 1;
-  const pos = new Float32Array(cols * rows * 3);
-  const uv  = new Float32Array(cols * rows * 2);
+  /* ── A FOLD IS A CREASE, NOT A WAVE, and this is the whole texture ─────────────────────────────
+   *
+   * Sandeep, twice: *"it does not look like wafer paper"*, then *"ours is not looking like paper
+   * still"*. The second time with the reference beside it, and the photograph says it plainly —
+   * every sheet is a run of FLAT facets meeting at sharp lines, with a bright edge on one side of
+   * each crease and a dark one on the other. That fine, high-contrast line structure is what the
+   * eye reads as folded paper.
+   *
+   * ⚠️ WHAT I HAD WAS `Math.sin` ACROSS THE WIDTH, SMOOTH-SHADED. Two faults compounding:
+   *   1. a sine has no crease — the surface curves continuously, which is a corrugation, not a
+   *      pleat. Corrugated anything reads as fabric or plastic sheet.
+   *   2. `computeVertexNormals()` then AVERAGES the normals right across it, so even the little
+   *      curvature there was came out as a soft gradient. Satin.
+   *
+   * A fold in paper is C0: position continuous, normal DISCONTINUOUS. You cannot get that from a
+   * smooth function and shared vertices — the crease has to be built. So each facet is emitted as
+   * its own strip with its OWN vertices, sharing nothing with its neighbours, and the normal jumps
+   * at every crease because there is nothing there to average with.
+   *
+   * The cost is vertices: `folds + 1` columns become `folds × 2`. At 6 folds that is 12 columns
+   * instead of 7 for a panel nobody counts triangles on, and it buys the only thing that made the
+   * material read wrong after the transmission was fixed.
+   */
+  const folds = Math.max(1, Math.round(ripples));
+  const rows  = Math.max(2, segH | 0) + 1;
 
-  // One random number per COLUMN for a torn hem, drawn once: drawing inside the vertex loop would
-  // give every row of the same column a different tear and shred the panel into noise.
-  const tear = Array.from({ length: cols }, () => rng());
+  // One depth per CREASE, drawn once. Varying it per crease is what stops a pleated sheet reading
+  // as machine corrugation — a hand-folded strip is never evenly spaced.
+  const creaseDepth = Array.from({ length: folds + 1 }, (_, j) =>
+    (j % 2 ? 1 : -1) * (0.75 + 0.5 * rng()));
+  // One hem per crease too, so a torn edge is a property of the fold rather than of a vertex.
+  const tear = Array.from({ length: folds + 1 }, () => rng());
 
-  let p = 0, t = 0;
-  for (let j = 0; j < rows; j++) {
-    const v = j / (rows - 1);                       // 0 at the pinned top edge, 1 at the hem
-    for (let i = 0; i < cols; i++) {
-      const u01 = i / (cols - 1);                   // 0 … 1 across the width
-      const drop = hemProfile(hem, u01, notch, tear[i]);
-      const vv = v * drop;                          // this column's own share of the drop
-      const w  = width * (1 - taper * vv);          // the panel narrows as it falls
-      const u  = (u01 - 0.5) * w;
+  const pos = [], uv = [], idx = [];
+  let base = 0;
 
-      /* ── THE CONCERTINA, which is the whole look ─────────────────────────────────────────────
-       * A baker does not bend the strip like a snake; they PLEAT it, running the folds from the
-       * top edge to the hem. That is why every reference reads as a curtain of narrow vertical
-       * ribbons even though each piece is a wide rectangle: the fold lines are the ribbons.
-       *
-       * ⚠️ THIS WAS A SIDEWAYS SWAY IN THE FIRST VERSION AND IT WAS THE WRONG GESTURE. Displacing
-       * the panel left and right as it descends makes a broad sheet with a diagonal twist in it,
-       * which is what the first render showed — no vertical structure anywhere, and nothing that
-       * looked like paper that had been handled. The fold is `sin` ACROSS the width (u), not along
-       * the drop (v). Same amplitude, same code, a completely different cake.
-       *
-       * It `settles` toward the hem rather than running at full depth: a pleat is pinched at the
-       * glued top edge and opens as it hangs, which is also what stops the folds from reading as
-       * machine corrugation. */
-      const open  = 0.35 + 0.65 * vv;
-      const fold  = ripple * width * open * Math.sin(phase + u01 * ripples * Math.PI * 2);
-      // The secondary drift: the whole panel leans a little left or right as it falls. Small, and
-      // SECONDARY — it is what keeps a wall of pleats from looking stamped, not the shape itself.
-      const drift = sway * width * Math.sin(phase * 0.7 + vv * sways * Math.PI * 2);
-      // The bow is across the WIDTH: a parabola, zero at the centre, so the two long edges lift
-      // toward the viewer and the middle stays back. This is what gives a flat sheet a highlight.
-      const bow  = curl * width * (Math.pow((u01 - 0.5) * 2, 2) - 1 / 3);
-      // The hem swings away from the wall. Quadratic, so the pinned top edge does not move at all:
-      // a linear term there would lift the panel off the buttercream it is stuck to.
-      const out  = splay * height * vv * vv;
+  // Where a crease sits across the panel, and how far it stands off the wall at height vv.
+  const creaseAt = (j, vv) => {
+    const u01 = j / folds;
+    const drop = hemProfile(hem, u01, notch, tear[j]);
+    const vvj  = vv * drop;
+    const w    = width * (1 - taper * vvj);
+    const u    = (u01 - 0.5) * w;
+    /* A pleat is pinched where it is glued, opens as it falls, and is PRESSED FLAT AGAIN where it
+     * meets the board — the sheet is resting on something. So `open` is a bump, not a ramp.
+     *
+     * ⚠️ IT WAS A RAMP, AND THE TEST SAID THE HEM WAS LEVEL WHILE THE RENDER SHOWED A SAWTOOTH.
+     * Both were right: the hem IS level in Y, and with the fold at its deepest exactly there, each
+     * crease's hem sits at a different DEPTH — which a camera looking slightly down projects as a
+     * zigzag. A test measuring Y cannot see that, and it is why the render still has to be looked
+     * at after the test goes green. Closing the pleat into the board fixes the silhouette and is
+     * also what the paper actually does. */
+    const open  = 0.35 + 0.65 * Math.sin(Math.PI * Math.pow(vvj, 0.75));
+    const fold  = ripple * width * open * creaseDepth[j];
+    const drift = sway * width * Math.sin(phase * 0.7 + vvj * sways * Math.PI * 2);
+    // The bow across the whole sheet, so a pleated panel still curves around the cake.
+    const bow   = curl * width * (Math.pow((u01 - 0.5) * 2, 2) - 1 / 3);
+    return { x: u + drift, y: -height * vvj, z: bow + fold + splay * height * vvj * vvj, u01 };
+  };
 
-      pos[p++] = u + drift;
-      pos[p++] = -height * vv;
-      pos[p++] = bow + out + fold;
-      uv[t++] = u01;
-      uv[t++] = 1 - vv;
+  for (let f = 0; f < folds; f++) {
+    for (let j = f; j <= f + 1; j++) {          // the facet's own two creases, its own vertices
+      for (let i = 0; i < rows; i++) {
+        const p = creaseAt(j, i / (rows - 1));
+        pos.push(p.x, p.y, p.z);
+        uv.push(p.u01, 1 - i / (rows - 1));
+      }
     }
-  }
-
-  const idx = [];
-  for (let j = 0; j < rows - 1; j++) {
-    for (let i = 0; i < cols - 1; i++) {
-      const a = j * cols + i, b = a + 1, c = a + cols, d = c + 1;
+    for (let i = 0; i < rows - 1; i++) {
+      const a = base + i, b = a + 1, c = base + rows + i, d = c + 1;
       idx.push(a, c, b, b, c, d);
     }
+    base += rows * 2;
   }
 
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-  g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pos), 3));
+  g.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(uv), 2));
   g.setIndex(idx);
+  // Smooth DOWN each facet, hard ACROSS every crease — which is exactly what the split vertices
+  // above buy. Nothing here needs `toNonIndexed`: the seam is in the topology, not in the shading.
   g.computeVertexNormals();
   return g;
 }
@@ -194,8 +209,18 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
   for (let k = 0; k < n; k++) {
     const s = (k + 0.5) * gap;
     const at = perim.at(s);
+    /* ── THE HEM IS LEVEL; THE CROWN IS RAGGED ───────────────────────────────────────────────────
+     * Straight off the reference, and it is a fact about gravity rather than about cutting. The
+     * sheets are long enough to reach the board and they REST on it, so their bottoms line up
+     * whatever else varies — while the tops stand above the rim by however much each strip had
+     * left over. Ragged at the top, level at the bottom.
+     *
+     * ⚠️ I HAD IT UPSIDE DOWN. Jittering `height` varies the HEM, which gave a sawtooth of spikes
+     * along the bottom and a flat line at the top — the photograph's silhouette inverted. So the
+     * jitter goes on the rise, and each panel's drop is derived from it: top moves, hem does not. */
+    const rise = vary(tierHeight * o.rise, 1);
     const panel = waferPanel({
-      width: vary(w, 0.35), height: vary(h, 0.25), taper: o.taper,
+      width: vary(w, 0.35), height: h + rise, taper: o.taper,
       ripple: vary(o.ripple, 0.5), ripples: vary(o.ripples, 0.35),
       sway: vary(o.sway, 0.7), sways: vary(o.sways, 0.4), phase: rnd() * Math.PI * 2,
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
@@ -211,7 +236,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
     m.makeRotationY(yaw);
     // Lean the panel out from the wall, about its own pinned top edge.
     m.multiply(new THREE.Matrix4().makeRotationX(-vary(o.lean, 1)));
-    m.setPosition(at.x, tierHeight * o.rise, at.z);
+    m.setPosition(at.x, rise, at.z);
     panel.applyMatrix4(m);
     out.push(panel);
   }

@@ -99,7 +99,7 @@ function fromUrl() {
   const q = new URLSearchParams(location.search);
   const out = {};
   for (const [k, v] of q) {
-    if (k === 'hem' || k === 'colour') { out[k] = v; continue; }
+    if (k === 'hem' || k === 'colour' || k === 'bg') { out[k] = v; continue; }
     const n = Number(v);
     if (Number.isFinite(n)) out[k] = n;
   }
@@ -177,9 +177,10 @@ export default function Harness() {
         </Row>
       </div>
 
-      <div style={{ flex: 1, position: 'relative', background: '#efe7e2' }}>
-        <Canvas shadows camera={{ position: [0, 2.2, 5.0], fov: 40 }} style={{ position: 'absolute', inset: 0 }}>
-          <color attach="background" args={['#efe7e2']} />
+      <div style={{ flex: 1, position: 'relative', background: p.bg || '#efe7e2' }}>
+        <Canvas shadows camera={{ position: [0, 2.2, 5.0], fov: 40 }}
+          gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
+          <color attach="background" args={[p.bg || '#efe7e2']} />
           {/* THE shared rig — see dev/grass.jsx and INVARIANTS #17. A harness lit differently from
               production cannot judge a material whose whole character is how light passes through it. */}
           <SceneLights />
@@ -199,10 +200,16 @@ export default function Harness() {
 
           <Skirt shape={SHAPES[shapeKey]} p={p} />
 
-          <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
-            <circleGeometry args={[7, 48]} />
-            <meshStandardMaterial color="#efe7e2" roughness={1} />
-          </mesh>
+          {/* ⚠️ THE FLOOR IS NOT SCENERY — it is the only thing in the scene that can RECEIVE the
+              key light's shadow. Without it the cake and the skirt are lit correctly and cast into
+              nothing, and the whole frame reads as flat and glaring however right the material is.
+              `?floor=0` reproduces a studio that forgot it. */}
+          {p.floor !== 0 && (
+            <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
+              <circleGeometry args={[7, 48]} />
+              <meshStandardMaterial color={p.bg || '#efe7e2'} roughness={1} />
+            </mesh>
+          )}
           <OrbitControls target={[0, TOP_Y * 0.55, 0]} />
         </Canvas>
       </div>
