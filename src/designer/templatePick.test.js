@@ -266,3 +266,44 @@ describe('the overlay does not eat the tap it is reporting', () => {
     expect(block).toMatch(/pointerEvents: 'none'/);
   });
 });
+
+/* ── The catalogue draws no template name, on any surface ────────────────────────────────────────
+ *
+ * Sandeep settled this for the grid — "we can actually skip showing the name. its difficult to name
+ * a lot of templates. thumbnail speaks." — and the hover card kept printing it anyway, reading
+ * `Vintage cake · 1-tier`: "on desktop catalogue also, when i hover on a template it shows the name.
+ * pls fix."
+ *
+ * ⚠️ WHAT MAKES IT WORTH A TEST IS THAT THE DECISION KEEPS LEAKING BACK. It has now been taken three
+ * times — the designer grid, the storefront gallery, this caption — and the caption survived the
+ * first two because it lives 14,000 lines from the grid it belongs to. A source assertion is what is
+ * available here (this module imports three.js), and it pins the two halves that matter: the name
+ * is not drawn, and it is still SAID.
+ */
+describe('no template name is drawn in the enlarged preview', () => {
+  it('the caption is the tier count, and only above one tier', () => {
+    expect(designer).toMatch(/templateTierCaption = \(tiers\) => \(Number\(tiers\) > 1 \? `\$\{tiers\} tiers` : ''\)/);
+  });
+
+  /* The exact string that was on screen. Both preview branches — the anchored hover card and the
+     centred sheet — built it the same way, so one regex catches either coming back. */
+  it('neither preview branch prints name · N-tier any more', () => {
+    expect(designer).not.toMatch(/tplPreview\.name\}\{tplPreview\.tiers/);
+    /* The exact old expression. Deliberately NOT a bare /-tier`/ — the note explaining this change
+       quotes the string it removed, so that pattern matches the comment and fails on a fixed file. */
+    expect(designer).not.toMatch(/` · \$\{tplPreview\.tiers\}-tier`/);
+  });
+
+  /* ⚠️ NOT DRAWN IS NOT THE SAME AS NOT THERE. With the caption gone the picture is all the enlarged
+     view has, so an empty alt would leave a screen reader with nothing to announce for the cake the
+     baker has just opened — the same trap the storefront gallery had to avoid. */
+  it('but the enlarged picture still carries it as alt', () => {
+    expect(designer).toMatch(/src=\{tplPreview\.src\} alt=\{tplPreview\.name \|\| ''\}/);
+  });
+
+  /* The grid's own note used to offer the enlarged preview as where you read a name. It cannot say
+     that any more, and a comment that lies is how the caption comes back. */
+  it('and TemplateGrid no longer promises the name is readable there', () => {
+    expect(grid).not.toMatch(/stays READABLE\s*\n?\s*in the enlarged preview/);
+  });
+});

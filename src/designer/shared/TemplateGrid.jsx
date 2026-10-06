@@ -253,8 +253,15 @@ export default function TemplateGrid({
                   ⚠️ THE NAME IS STILL HERE, IT IS JUST NOT DRAWN. It is the img's `alt` and the
                   preview button's label, so a screen reader still says which cake this is, and
                   `matchesTemplateSearch` still finds a template by a name nobody can see. Taking it
-                  out of the DOM would leave a grid of pictures nothing can name. It stays READABLE
-                  in the enlarged preview, which is how you tell those two Footballs apart. */}
+                  out of the DOM would leave a grid of pictures nothing can name.
+
+                  ⚠️ AND IT IS NO LONGER READABLE IN THE ENLARGED PREVIEW EITHER — this said it was,
+                  and offered that as how you tell those two Footballs apart. 2026-10-06, seeing it
+                  there: "on desktop catalogue also, when i hover on a template it shows the name.
+                  pls fix." The hover card now captions the tier count or nothing, and carries the
+                  name only as its own `alt` (`templateTierCaption` in CakeDesigner). So a name that
+                  distinguishes nothing is drawn nowhere, which is the decision applied properly
+                  rather than half. */}
               {t.offering === 'premium' && <span style={s.badge}>Premium</span>}
 
               {/* ⚠️ THE PHOTO IS THE ONE THAT BEHAVES DIFFERENTLY, so it is the one that is marked.

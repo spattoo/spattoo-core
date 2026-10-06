@@ -767,7 +767,25 @@ const STUBS = {
                         top_surface: 'stand', single_per_slot: true },
     default_color: '#F0DEB8', sort_order: 0,
   }] : []),
-  fetchTemplates:      async () => ([]),
+  /* ⚠️ AN EMPTY LIST MADE THE CATALOGUE FLYOUT UNOPENABLE TO LOOK AT. It returned `[]`, so the one
+     surface this harness is for — the real designer's chrome — had a Templates panel with nothing
+     in it, and the hover preview behind it could not be reached at all. Found while fixing that
+     preview's caption, which had survived two rounds of "don't show the name" precisely because
+     nothing could render it here. Real `captureThumbnailBlob` output, shared with dev/facets.jsx.
+     ⚠️ TWO ARE CALLED "Football" ON PURPOSE — that duplication is the whole argument for dropping
+     the name, so a fixture where every name is distinct would hide what the surface has to prove. */
+  fetchTemplates:      async () => ([
+    { id: 'tpl1', name: 'Vintage cake', tier_count: 1, source: 'mine',
+      thumbnail_url: '/thumbs/cake1.webp' },
+    { id: 'tpl2', name: 'Football',     tier_count: 2, source: 'mine',
+      thumbnail_url: '/thumbs/cake2.webp' },
+    { id: 'tpl3', name: 'Football',     tier_count: 1, source: 'global', offering: 'premium',
+      thumbnail_url: '/thumbs/cake3.webp' },
+    { id: 'tpl4', name: 'Butterfly',    tier_count: 3, source: 'global',
+      thumbnail_url: '/thumbs/cake4.webp' },
+    { id: 'tpl5', name: 'Unicorn',      tier_count: 1, source: 'global',
+      thumbnail_url: '/thumbs/cake5.webp' },
+  ]),
   fetchCakeShapes:     async () => ([]),
   fetchMaterials:      async () => ([]),
   fetchTextures:       async () => ([]),

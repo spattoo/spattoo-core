@@ -2527,6 +2527,28 @@ const STACK_RIGHT_MOBILE = STACK_TAB_W + 10;
  * exists to prevent ("Derived, so widening the handle never lands it on the panel").
  *
  * Desktop only by construction: both mobile branches override `width` before this is reached. */
+/* ── What the enlarged template preview says under the picture ───────────────────────────────────
+ *
+ * ⚠️ NOT THE NAME. It read `Vintage cake · 1-tier`, and the name is the one thing the catalogue has
+ * decided twice not to show. Sandeep, settling it for the grid: "we can actually skip showing the
+ * name. its difficult to name a lot of templates. thumbnail speaks. just the way canva app does." —
+ * and then, seeing it survive in the hover card: "on desktop catalogue also, when i hover on a
+ * template it shows the name. pls fix."
+ *
+ * ⚠️ THIS CLOSES THE ESCAPE HATCH `TemplateGrid` LEFT ITSELF. Its note said the name "stays READABLE
+ * in the enlarged preview, which is how you tell those two Footballs apart". That reading is gone
+ * on purpose: a name that distinguishes nothing is not worth a caption on any surface, and a reader
+ * going to that note should not be told otherwise. Corrected there too.
+ *
+ * ⚠️ THE NAME IS STILL SAID, JUST NOT DRAWN — it is the enlarged img's `alt`, so a screen reader can
+ * still name the cake it has just opened.
+ *
+ * What is left is the one fact a picture genuinely cannot carry, and only when there is something to
+ * say: a single tier is what a cake is unless told otherwise, so it earns no caption at all. Worded
+ * to match the storefront's own badge ("2 tiers", never "2-tier") — the same fact reads the same way
+ * on both sides of the app. */
+export const templateTierCaption = (tiers) => (Number(tiers) > 1 ? `${tiers} tiers` : '');
+
 const EDIT_POPUP_W       = 300;
 /* ⚠️ IT LEAVES THE HANDLE'S LANE, exactly as STACK_RIGHT_MOBILE does above, and for the same
  * reason: the collapse tab is parked on the right edge and the stack opens to its LEFT. At the old
@@ -13992,10 +14014,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       tplPreview.rect, size, window.innerWidth, window.innerHeight);
                     return (
                       <div style={{ ...s.templatePreview, left, top, width: size.w }}>
-                        <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
-                        <div style={s.templatePreviewCaption}>
-                          {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
-                        </div>
+                        {/* The name is the `alt`, not a caption — see `templateTierCaption`. */}
+                        <img src={tplPreview.src} alt={tplPreview.name || ''} style={s.templatePreviewImg} />
+                        {templateTierCaption(tplPreview.tiers) && (
+                          <div style={s.templatePreviewCaption}>{templateTierCaption(tplPreview.tiers)}</div>
+                        )}
                       </div>
                     );
                   })()
@@ -14013,10 +14036,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ ...s.templatePreview, position: 'relative', pointerEvents: 'auto',
                                   width: 'min(92vw, 420px)' }}
                       onClick={(e) => e.stopPropagation()}>
-                      <img src={tplPreview.src} alt="" style={s.templatePreviewImg} />
-                      <div style={s.templatePreviewCaption}>
-                        {tplPreview.name}{tplPreview.tiers ? ` · ${tplPreview.tiers}-tier` : ''}
-                      </div>
+                      <img src={tplPreview.src} alt={tplPreview.name || ''} style={s.templatePreviewImg} />
+                      {templateTierCaption(tplPreview.tiers) && (
+                        <div style={s.templatePreviewCaption}>{templateTierCaption(tplPreview.tiers)}</div>
+                      )}
 
                       {/* ── What a baker does with a photograph of their own work ─────────────────
                           Sandeep: "when baker taps on it, show it bigger with a button 'create
