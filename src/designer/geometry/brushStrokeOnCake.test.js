@@ -174,7 +174,14 @@ describe('the release width varies between strokes', () => {
   it('some strokes run out to a point and some stay nearly square', () => {
     const widths = [1, 2, 3, 4, 5, 6, 7, 8].map(endWidth);
     const spread = (Math.max(...widths) - Math.min(...widths)) / Math.max(...widths);
-    expect(spread).toBeGreaterThan(0.3);     // a fixed taper measures 0
+    /* ⚠️ MEASURED AGAINST THE AUTHORED RANGE, not against a number typed once. `tipMin`/`tipMax` say
+       how much the release width is allowed to vary; this test says the generator actually USES
+       that range. Written as a bare 0.3 it was really asserting the range of the day — and it broke
+       the moment the range was deliberately narrowed (0.30…0.95 to 0.60…1.00), which is a change to
+       the look and not a regression in the mechanism. A fixed taper still measures 0 and still
+       fails. */
+    const D = BRUSH_ON_CAKE_DEFAULTS;
+    expect(spread).toBeGreaterThan((1 - D.tipMin / D.tipMax) * 0.5);
   });
 
   it('and the same seed always releases the same width', () => {

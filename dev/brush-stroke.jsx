@@ -124,6 +124,11 @@ function Band() {
     ...(P.has('grain') ? { grain: +P.get('grain') } : null),
     ...(P.has('skirt') ? { skirt: +P.get('skirt') } : null),
     ...(P.has('ridge') ? { ridge: +P.get('ridge') } : null),
+    ...(P.has('breathe') ? { breathe: +P.get('breathe') } : null),
+    ...(P.has('tear') ? { tear: +P.get('tear') } : null),
+    ...(P.has('across') ? { across: +P.get('across') } : null),
+    ...(P.has('tipMin') ? { tipMin: +P.get('tipMin') } : null),
+    ...(P.has('tipMax') ? { tipMax: +P.get('tipMax') } : null),
     climb: CLIMB, sweep: SWEEP,
   }), []);
   if (!parts.length) return null;

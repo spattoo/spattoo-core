@@ -141,8 +141,11 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      every stroke at a hardcoded 0.42 of its width, which is invisible on one piece and obvious on a
      row of them. The top of this range is nearly square — a knife that still had plenty of cream on
      it when the hand lifted — and the bottom runs out to a point. */
-  tipMin: 0.30,
-  tipMax: 0.95,
+  /* ⚠️ AND THE RANGE STARTS HIGH, because a palette knife does not taper to a point. Beside the
+     photograph the pulls keep nearly their full width all the way up and then simply STOP on a
+     ragged edge; at 0.30 ours narrowed as they climbed and read as leaves. 0.60 to 1.00. */
+  tipMin: 0.60,
+  tipMax: 1.00,
   /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
      the knife marks are four or five lanes across the same band, and three samples per lane turns
      them into a stepped zigzag. Six per lane is where they go round, and there is a test holding
@@ -179,14 +182,17 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      and gives out, so the band swells and pinches as it travels. Without this the two edges stay
      exactly parallel, which is the "straight and smooth" Sandeep saw; the per-point jitter inside
      brushStroke is too fine and too small to read as anything but a slightly fuzzy ruler. */
-  breathe: 0.22,  // 0 … 1: how much the width swells and pinches along the stroke
+  /* ⚠️ A LITTLE, NOT A LOT — a loaded knife wanders, it does not ripple. At 0.22 every stroke had a
+     wavy outline and the band read as seaweed; the reference is straight-sided pads with angular
+     corners, and the swell is just enough that no two edges are parallel. */
+  breathe: 0.08,  // 0 … 1: how much the width swells and pinches along the stroke
   /* ⚠️ THE TEAR IS COHERENT, NOT PER-ROW. brushStroke jitters each point independently, which is
      right at a dozen hand-placed points and becomes WHITE NOISE at forty: adjacent rows alternate
      and the edge comes out as pinking shears — the "row of identical notches… a decorative zigzag,
      which reads as machined rather than broken" that file's own note warns about. So the per-point
      fraying is turned off and the edges are wandered here instead, in runs: chocolate and cream tear
      in lengths, not at every sample. */
-  tear:   0.3,    // 0 … 1: how deeply the trailing edge bites, in runs along the stroke
+  tear:   0.15,   // 0 … 1: how deeply the trailing edge bites, in runs along the stroke
   /* ⚠️ DEEPER MARKS WERE TRIED AND THEY LOOK WORSE, which is the whole note. "this is not good
      either" about a whole-cake render was about the OVERLAPS; I read it as the texture, swept
      4.5/0.3 · 7/0.55 · 8.5/0.7 · 10/0.8, picked 7/0.55 off a close-up and shipped it — Sandeep:
