@@ -21,6 +21,10 @@ const SURFACES = {
   cloud:  { on: 'cloud=1',  key: 'cloudcolor' },
   rainbow:{ on: 'rainbow=1', key: 'rainbowcolor' },
   drip:   { on: 'drip=1',   key: 'dripcolor' },
+  /* The SAME drip through the multi-chocolate path — tint white, vertex colours carrying the answer.
+     Both stops are the asked colour, so the split cannot muddy the reading and the only difference
+     from `drip` is the path. If these two disagree, the multi path is the bug. */
+  dripmulti: { on: 'drip=1', key: 'dripcolors', val: c => `${c},${c}` },
   rope:   { on: 'rope=1&bare=1', key: 'ropecolor' },
 };
 
@@ -38,7 +42,7 @@ const hex = (c) => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
 
 const grab = async (colour) => {
   await page.goto(`http://localhost:5190/garnish-on-cake.html?still=1&${S.on}`
-    + `&${S.key}=${encodeURIComponent(colour)}`, { waitUntil: 'networkidle' });
+    + `&${S.key}=${encodeURIComponent(S.val ? S.val(colour) : colour)}`, { waitUntil: 'networkidle' });
   await page.waitForTimeout(3000);
   return page.evaluate(() => {
     const cv = document.querySelector('canvas');

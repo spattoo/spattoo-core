@@ -188,15 +188,44 @@ export { CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF, creamAlbedo, creamMaterialProps }
 // together (the clearcoat is what sells "wet ganache" vs "plastic"). Mirrors the
 // cream "softness" idea but for chocolate. The admin drip studio keeps the same map.
 export const DRIP_GLOSS_DEFAULT = 0.85;
-/* ⚠️ THE GLOSSIEST SURFACE ON THE CAKE, and the most over-exposed: a mid-grey #808080 renders
- * 188,182,178 here against 180 on the tier wall and 156 on grass. The clearcoat is why — a wet
- * ganache carries a coat the wall does not. Measured for THIS material, like every other.
- * `SURFACE=drip node scripts/measure-surface-colour.mjs` prints the table.
+/* ⚠️ THE GLOSSIEST SURFACE ON THE CAKE, and the one where a divisor alone could never work.
+ * `albedoForLight` corrects a MULTIPLY; this material also ADDS. Measured with the mask held fixed
+ * and the albedo driven to pure black, the shipped drip rendered 84,73,62 — a floor no division can
+ * reach, because nothing times zero is 84. Every colour sat on top of it, which is why a saturated
+ * teal lost its red: #4EC5B0 asks for 78 there and the floor alone was 87, so the colour was
+ * unreachable before the pigment was even consulted. Reported as "the true colour is not showing on
+ * cake, both pink and blue are lighter than the ones i selected" (2026-10-06).
+ *
+ * ⚠️ THE FLOOR WAS TWO TERMS, AND THE BIGGER ONE WAS NOT THE CLEARCOAT. Switched off one at a time
+ * on the live material: clearcoat off → 58, base specular off → 50, both off → 7. So the coat was
+ * worth 26 and three.js's DEFAULT `specularIntensity: 1` was worth 34 — the same unasked-for white
+ * Fresnel the cream found (`CREAM_SPECULAR`). A dielectric under a clearcoat is mostly masked by the
+ * coat anyway, so dimming it costs nothing anyone can see.
+ *
+ * ⚠️ AND THE COAT WAS A VEIL, NOT A GLINT, which is what makes it safe to cut. On drip geometry —
+ * tubes, seen side-on — most of the surface sits at a grazing angle where Fresnel goes to 1, so the
+ * coat reflects the whole sky dome evenly instead of catching it in a highlight. Measured: at EVERY
+ * clearcoat setting from 0.82 down, the share of drip pixels above 235 was 0.0%. There was no
+ * highlight to lose; what came off was uniform grey.
+ *
+ * Together these put the floor at 36,31,26 — below the darkest channel a saturated colour asks for,
+ * which is the bar that matters. `SURFACE=drip node scripts/measure-surface-colour.mjs` prints the
+ * colour table; `SURFACE=dripmulti` does the same through the two-chocolate path.
  *
  * ⚠️ ONE CHOKEPOINT for every chocolate surface — the rim drip and the glaze tendrils both come
  * through here, so they cannot drift apart. */
-export const CHOCOLATE_REFERENCE_LIGHT = [2.352, 2.194, 2.093];
-export const CHOCOLATE_ROLLOFF = 2.0;
+export const CHOCOLATE_SPECULAR = 0.3;
+/* ⚠️ RE-MEASURED FOR THE MATERIAL BELOW, and the old [2.352, 2.194, 2.093] belonged to the old one.
+ * A reference light is solved against a surface's reflectance; cutting the floor changed it, so
+ * keeping the former number would have over-corrected every colour by exactly the veil that is no
+ * longer there. Two readings interpolated on mid-grey, per the recipe in shared/albedoForLight.js. */
+export const CHOCOLATE_REFERENCE_LIGHT = [2.653, 2.370, 2.243];
+/* ⚠️ SWEPT ON THE PALETTE, NOT ON GREY, and the sweep moved it off 2.0. Twelve real colours, mean
+ * absolute error per channel then worst channel: 1.5 → 12.3/54, 2.0 → 11.0/47, 2.5 → 10.6/42,
+ * 3.0 → 10.7/38, 4.0 → 11.1/33. 2.5 and 3.0 are a tie on the mean, so the worst channel decides —
+ * and the worst channel IS the reported fault, a saturated teal's red. `scripts/measure-drip-rolloff.mjs`
+ * runs it; re-run it after any change to this material. */
+export const CHOCOLATE_ROLLOFF = 3.0;
 
 export function chocolateMaterialProps(gloss, color) {
   const g = Math.min(1, Math.max(0, gloss ?? DRIP_GLOSS_DEFAULT));
@@ -204,8 +233,11 @@ export function chocolateMaterialProps(gloss, color) {
     color: albedoForLight(color, CHOCOLATE_REFERENCE_LIGHT, { rolloff: CHOCOLATE_ROLLOFF }),
     metalness:          0,
     roughness:          0.5 - 0.42 * g,    // 0.5 matte … 0.08 wet
-    clearcoat:          0.4 + 0.6 * g,     // 0.4 … 1.0 glassy
+    /* The wet read comes from `roughness` above; this layer only ever added a veil (see the note on
+       CHOCOLATE_SPECULAR), so it keeps the same shape over the gloss range at a quarter the weight. */
+    clearcoat:          0.05 + 0.30 * g,   // 0.05 … 0.35
     clearcoatRoughness: 0.28 - 0.16 * g,   // 0.28 … 0.12
+    specularIntensity:  CHOCOLATE_SPECULAR,
   };
 }
 
