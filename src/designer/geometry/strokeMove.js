@@ -32,10 +32,17 @@ const round = v => +v.toFixed(4);
  * @param opts.axis    the cake's centre in world XZ
  * @returns the moved points (a new array; the input is untouched)
  */
+/* Is this surface a FLAT one — a cake top, the board — rather than a wall?
+   ⚠️ ONE RULE, TWO READERS. The slide asks it to choose between moving on a plane and moving round a
+   cylinder; the pen asks it to choose which of an element's two authored rotations a stamped piece
+   gets. Two copies of 0.7 would drift, and the second reader is the one that shipped a rose swirl
+   lying face-down on a wall. */
+export const isUprightNormal = (normal) => Math.abs(normal?.[1] ?? 0) > 0.7;
+
 export function translateStroke(points, from, to, { normal = [0, 1, 0], axis = [0, 0] } = {}) {
   if (!Array.isArray(points) || !points.length || !from || !to) return points;
 
-  const upright = Math.abs(normal[1] ?? 0) > 0.7;
+  const upright = isUprightNormal(normal);
   return upright
     ? moveOnFlat(points, from, to)
     : moveOnWall(points, from, to, axis);
@@ -88,4 +95,16 @@ export function distanceToStroke(points, point) {
     if (d < best) best = d;
   }
   return best;
+}
+
+/* Where a stroke IS, as a list of points — one answer for a drawn path and for a stamped piece.
+   ⚠️ A STAMP CARRIES `points: []`. An empty array is neither null nor undefined, so the obvious
+   `st.points ?? [st.point]` chooses the empty list over the `point` that actually says where the
+   piece sits, and `distanceToStroke` then answers Infinity for it. Every press in Edit mode missed
+   every stamped piece because of that one `??`: a hand-piped piece could be neither chosen nor
+   slid, while a drawn line could be both. Length, not presence. Null when there is no position. */
+export function strokePoints(st) {
+  if (st?.points?.length) return st.points;
+  if (st?.point) return [st.point];
+  return null;
 }

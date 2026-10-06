@@ -22,6 +22,7 @@ import { useUploadLimits } from '../shared/useUploadLimits.js';
 import { Panel, Takeover, Z } from '../shared/Panel.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { DANGER, INK } from '../shared/tokens.js';
+import { PencilIcon } from '../shared/icons.jsx';
 
 // Max finished-cake photos the baker may attach when marking an order ready (mirrors the API cap).
 const MAX_FINISHED_PHOTOS = 3;
@@ -100,11 +101,7 @@ const LockGlyph = () => (
     <rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11 V8 a4 4 0 0 1 8 0 V11" />
   </svg>
 );
-const PencilGlyph = () => (
-  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-    <path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-  </svg>
-);
+const PencilGlyph = () => <PencilIcon size={15} />;
 
 // Icon + label control — white, light border, grey icon + text. No colour fill.
 // `variant='row'` (default) = icon + label inline (desktop, below the cake).
@@ -1672,7 +1669,12 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
   /* Opens Top-ups → Message credits. Only the no-email notice uses it, and it is optional: a host
      that cannot go there (the harness, admin) simply renders the notice without the way through
      rather than a button that does nothing. */
-  onOpenMessageCredits = null }) {
+  onOpenMessageCredits = null,
+  /* Which view is actually on screen. The rail lights Orders or Calendar from this, and it has to
+     be the LIVE value: this panel owns `view` and its own toggle changes it, so a rail reading only
+     the view it requested would be right until the baker used that toggle. Optional — a host that
+     does not care simply does not pass it. */
+  onViewChange = null }) {
   const isMobile = useNarrow(768);
   const [orders, setOrders]     = useState([]);
   const [loading, setLoading]   = useState(false);
@@ -1685,6 +1687,11 @@ export default function OrdersPanel({ open, onClose, onBack, onEditDesign, onNew
   // data, same filter path. It only exists when the host wired the counts endpoint.
   const hasCalendar = typeof apiClient?.fetchOrdersCalendar === 'function';
   const [view, setView] = useState(initialView === 'calendar' && hasCalendar ? 'calendar' : 'list');
+
+  /* Reported from ONE place rather than at each setView: there are five of them (mount, the reopen
+     effect, the segmented toggle, the back-from-filter button and the day-picked handler), and
+     telling the host at four of five is the shape of bug this prop exists to prevent. */
+  useEffect(() => { onViewChange?.(view); }, [view, onViewChange]);
 
   // A day picked in the calendar filters the list exactly the way the Dashboard's
   // "due today" card does. Held here so `externalFilter` (the host's) stays a pure
@@ -2124,12 +2131,4 @@ function StatusProgress({ status, onChange, disabled, readOnly = false, hideCanc
 }
 
 
-function PencilIcon({ size = 15 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
-    </svg>
-  );
-}
 

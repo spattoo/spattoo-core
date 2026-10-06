@@ -22,17 +22,40 @@ const lerp = (a, b, t) => a + (b - a) * t;
 /* The torn end. Walks from the left edge to the right one, pushing each point along the direction of
  * travel by a random amount — so the piece finishes in fingers of different lengths rather than on a
  * ruled line. Deeper in the middle, where the layer is thickest and lets go last. */
-function tipJag(pts, l, r, width, rnd) {
-  const n = 7;
+/* ⚠️ `fingers` AND `taper` ARE OPT-IN, and the defaults are the chocolate piece's, byte for byte.
+ * Seven fingers under a strong middle-longest envelope is the right end for a chocolate brushstroke
+ * — one snapped shard, seen close up. It is the wrong end for CREAM at cake scale: seven control
+ * points across a stroke resolve as two or three big triangles, and Sandeep ringed them against the
+ * photograph — *"some pieces stroke release are too artificial."* What a bristled release actually
+ * does is leave many fine streaks of uneven length with no overall shape to them, which is a higher
+ * finger count and a much weaker envelope.
+ *
+ * ⚠️ AND THE DRAW ORDER IS A CONTRACT, which is the other reason this is a parameter rather than a
+ * new number. `rnd()` is walked once per finger here and again by `ridgesAlong` below; changing the
+ * count for everyone would shift every draw after it and silently reshape every saved chocolate
+ * garnish. Defaulted, nothing moves. */
+function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42, jitter = 0, seed = 1) {
+  const n = Math.max(3, Math.round(fingers));
+  /* ⚠️ THE FINGERS ARE NOT EVENLY SPACED EITHER, and only varying their LENGTH leaves a saw: equal
+     pitch reads as a machined edge however random the heights are, which is the same corduroy trap
+     the striations hit. Bristles are irregular in both.
+     ⚠️ Its own hash, NOT `rnd()`, because `rnd` is walked in a fixed ORDER that `ridgesAlong` depends
+     on — taking draws here would shift every one after it and reshape saved pieces. Defaulted to 0,
+     so a chocolate stroke is untouched. */
+  const pitch = (i) => {
+    if (!jitter) return i / n;
+    const x = Math.sin((seed + 1) * 71.3 + i * 157.7) * 43758.5453;
+    return (i + (x - Math.floor(x) - 0.5) * jitter) / n;
+  };
   const a = pts[Math.max(0, pts.length - 3)], b = pts[pts.length - 1];
   const dx = b[0] - a[0], dy = b[1] - a[1];
   const len = Math.hypot(dx, dy) || 1;
   const ux = dx / len, uy = dy / len;                 // the way the hand was going
-  const reach = width * 0.42;                         // how far the longest finger runs on
+  const reach = width * reachOf;                      // how far the longest finger runs on
   const out = [];
   for (let i = 1; i < n; i++) {
-    const t = i / n;
-    const mid = 1 - Math.abs(t - 0.5) * 1.6;          // longest near the middle
+    const t = Math.min(0.995, Math.max(0.005, pitch(i)));
+    const mid = 1 - Math.abs(t - 0.5) * taper;        // longest near the middle, if asked
     const grab = Math.max(0, mid) * lerp(0.25, 1, rnd()) * reach;
     out.push([lerp(l[0], r[0], t) + ux * grab, lerp(l[1], r[1], t) + uy * grab]);
   }
@@ -53,7 +76,8 @@ function noise(seed) {
  *
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
-export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false } = {}) {
+export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false,
+                                    tipWidth, tipFingers, tipTaper, tipReach, tipJitter } = {}) {
   let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
 
@@ -95,7 +119,7 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
        width and ends in a curve — the soft blunt one at the front of the reference cake. */
     let w = closed ? width / 2
       : round ? (width / 2) * Math.sqrt(Math.max(0, 1 - Math.pow(Math.max(0, t - 0.55) / 0.45, 2)))
-      : blade ? bladeProfile(t, width) : halfWidth(t, width);
+      : blade ? bladeProfile(t, width) : halfWidth(t, width, tipWidth);
 
     /* Perpendicular to the direction of travel. On a ring the neighbours WRAP, or the first and last
        cross-sections face different ways and the join shows as a kink. */
@@ -136,7 +160,8 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
    * So the tip is a jagged run between the two edges: points that reach past the last cross-section
    * by varying amounts, deepest near the middle where the chocolate holds on longest. It is the same
    * seeded noise as the torn edge, so the same drawing comes back the same. */
-  const tip = closed ? [] : tipJag(pts, left[left.length - 1], right[right.length - 1], width, rnd);
+  const tip = closed ? [] : tipJag(pts, left[left.length - 1], right[right.length - 1], width, rnd,
+                                   tipFingers, tipTaper, tipReach, tipJitter, seed);
 
   const outline = [...left, ...tip, ...right.slice().reverse()];
   outline.push([...outline[0]]);
@@ -177,16 +202,29 @@ function turnRadius(pts, i) {
  * with its full edge, so it begins near full width rather than at nothing — broadest just past the
  * start where the pressure is greatest, then falling away and running out to a point. Read it as a
  * pressure curve, because that is what it is. */
-function halfWidth(t, width) {
+/* ⚠️ `tipWidth` IS HOW WIDE THE STROKE STILL IS WHERE IT IS LIFTED — named for the WIDTH, because
+ * `tip` is already the jagged END of the piece a few lines below and two of those in one function is
+ * a collision the build catches and a reader does not.
+ * It was, and it was a hardcoded 0.42 — so
+ * every stroke ever generated gave out at exactly the same fraction of its width, which is visible
+ * the moment you put five of them side by side. Sandeep: *"the width of the stroke release does not
+ * need to be same. there should be randomness. some can be looking as close rectangle, and thats
+ * real."* He is right about the real part: how much chocolate is left when the hand lifts depends on
+ * how much went on and how fast it moved, and a knife that still had plenty leaves a broad, nearly
+ * square end.
+ *
+ * ⚠️ DEFAULTED TO 0.42, WHICH IS NOT TIMIDITY. Every chocolate garnish already saved is a path and a
+ * seed regenerated on load, so changing this number reshapes pieces bakers have already made and
+ * approved. The caller that wants variety asks for it; the one that does not is byte-identical. */
+function halfWidth(t, width, tipWidth = 0.42) {
   const w = width / 2;
   /* ⚠️ NO SHOULDER. Holding full width and then tapering puts a corner where the two meet, and the
    * stroke comes out as a bottle: straight sides, a neck, a blunt top. A spatula never does that —
    * the chocolate starts being used up from the moment it lands, so the width falls STEADILY from
    * the landing to the tear. One smooth curve, no flat section to step off. */
   if (t < 0.1) return w * lerp(0.86, 1, t / 0.1);         // the landing, already broad
-  const TIP = 0.42;                                       // where the chocolate gives out
   const u = (t - 0.1) / 0.9;
-  return w * lerp(1, TIP, Math.pow(u, 1.5));              // slow at first, then away
+  return w * lerp(1, tipWidth, Math.pow(u, 1.5));         // slow at first, then away
 }
 
 export function bladeProfile(t, width) {

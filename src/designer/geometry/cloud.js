@@ -51,6 +51,14 @@ export const CLOUD_DEFAULTS = {
   yaw: 0,                   // 'top' and 'board': where round the cake, radians. 0 is the front
   standoff: 0,              // 'top' and 'board': how far out from the axis, × tier radius
   theta: 0,                 // 'side' only: where round the wall, radians. 0 is the front
+  /* ⚠️ 'side' ONLY, AND × THE TIER'S OWN HEIGHT rather than a world distance (INVARIANTS #8), so a
+     cloud halfway up a 4" tier is halfway up a 7" one. Without it a wall cloud had NOWHERE to be
+     but the board: `cloudBaseY('side')` answers `boardY`, so every cloud pressed on the wall sat on
+     the floor and could only slide round. Sandeep: *"by default it is sitting at the button. and it
+     does not move vertical direction when i scroll it vertically."*
+     0 is at the board, 1 is at the top rim. Not clamped tighter than that on purpose — the same
+     judgement the standoff makes: drag it to the rim and it hangs off the rim. */
+  rise: 0,
   color: '#FFFFFF',
 };
 
@@ -256,8 +264,12 @@ export function cloudBaseY(surface, { topY = 0, boardY = 0 } = {}) {
 export function cloudPlacement(params = {}, cake = {}) {
   const p = { ...CLOUD_DEFAULTS, ...params };
   const R = cake.radius ?? 1;
-  const baseY = cloudBaseY(p.surface, cake);
   const onWall = p.surface === 'side';
+  /* The wall is the one surface with somewhere to go UP. `cloudBaseY` answers where the surface is;
+     `rise` is how far up it from there, as a fraction of the wall's own height — which is the gap
+     between the two heights the caller already passes. */
+  const wallH = Math.max(0, (cake.topY ?? 0) - (cake.boardY ?? 0));
+  const baseY = cloudBaseY(p.surface, cake) + (onWall ? clamp01(p.rise ?? 0) * wallH : 0);
   const onTop = p.surface === 'top';
   const flat = p.variant === 'flat';
 
@@ -348,7 +360,12 @@ const wrapAngle = a => ((a % TAU) + TAU) % TAU;
 export function cloudHandleAt(params = {}, cake = {}) {
   const p = { ...CLOUD_DEFAULTS, ...params };
   const R = cake.radius ?? 1;
-  if (p.surface === 'side') return { surface: 'side', u: wrapU((p.theta ?? 0) / TAU), v: 0 };
+  /* ⚠️ `v` WAS A HARDCODED ZERO HERE, which is half of why a wall cloud could not be moved up: the
+     handle reported the floor whatever the cloud's actual height, so law 5 — handleAt and dragTo
+     are exact inverses — was broken before the drag was even asked. */
+  if (p.surface === 'side') {
+    return { surface: 'side', u: wrapU((p.theta ?? 0) / TAU), v: clamp01(p.rise ?? 0) };
+  }
 
   const { width } = cloudLobes(p, cake);
   const centerX = (p.offsetX ?? 0) * R;
@@ -374,7 +391,8 @@ export function cloudHandleAt(params = {}, cake = {}) {
  */
 export function cloudDragTo(params = {}, cake = {}, u = 0, v = 0) {
   const p = { ...CLOUD_DEFAULTS, ...params };
-  if (p.surface === 'side') return { theta: wrapAngle(u * TAU) };
+  // The wall takes BOTH: round it, and up it. Dropping `v` was the other half of the stuck cloud.
+  if (p.surface === 'side') return { theta: wrapAngle(u * TAU), rise: clamp01(v) };
 
   const R = cake.radius ?? 1;
   const scale = cake.handleRadius ?? R;

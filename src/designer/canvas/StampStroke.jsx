@@ -18,14 +18,19 @@ export default function StampStroke(props) {
   return <SafeGlb screen="StampStroke"><StampStrokeImpl {...props} /></SafeGlb>;
 }
 
-/* `userData` and the two pointer handlers are PASSED THROUGH, not decoration: a stamp has to be
+/* `userData` and the pointer handlers are PASSED THROUGH, not decoration: a stamp has to be
    able to act as a hit target. The cream pattern studio pipes onto what is already piped, which
    means a ray that strikes a placed piece must report that piece — its id, its stroke, and the
    direction it grew — rather than falling through to the cake behind it. Adding it here keeps ONE
    stamp renderer: the alternative was a second copy inside the studio, which is how a studio and
    the cake start shading the same cream two different ways (INVARIANTS #15). Absent on every
-   existing call site, where these are undefined and the mesh is exactly what it was. */
-function StampStrokeImpl({ stroke, url, color, softness, userData, onPointerDown, onPointerMove }) {
+   existing call site, where these are undefined and the mesh is exactly what it was.
+
+   ⚠️ `onClick` IS SEPARATE FROM `onPointerDown` AND BOTH ARE NEEDED. The pen stacks on pointer DOWN
+   — a press is where a new piece seats. Selecting a placed piece has to be a CLICK, because the
+   tier underneath is selected by its own R3F `onClick`, and stopping propagation on a pointerdown
+   does not stop a click. */
+function StampStrokeImpl({ stroke, url, color, softness, userData, onPointerDown, onPointerMove, onClick }) {
   const glbUrl = url || stroke.glbUrl;
   const { scene } = useGLTF(glbUrl);
 
@@ -64,7 +69,7 @@ function StampStrokeImpl({ stroke, url, color, softness, userData, onPointerDown
 
   return transforms.map((t, i) => (
     <mesh key={i} geometry={geo} position={t.pos} quaternion={t.quat} scale={t.scale} castShadow
-      userData={userData} onPointerDown={onPointerDown} onPointerMove={onPointerMove}>
+      userData={userData} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onClick={onClick}>
       <meshPhysicalMaterial {...mat} />
     </mesh>
   ));

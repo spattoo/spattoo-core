@@ -330,7 +330,14 @@ CAT_ELEMENTS.push({
      cream_piping fixture whose image_url is a real GLB: the studio stamps that mesh, and a
      data-URI would hand an SVG to the GLB loader (see the note above). The flag is the admin's
      per-element judgement that a piece survives being repeated; the pen's own door reads it too. */
-  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true },
+  /* ⚠️ THE ROTATIONS ARE REAL ONES, COPIED FROM THE `Rose Swirl` ROW IN dev (2026-10-03), because a
+     fixture with no rotation at all cannot reproduce the fault that matters here: an element authors
+     one attitude for a rim and ANOTHER for a wall, and the pen used to take the rim's for both. With
+     `top_rotation` absent, hand-piping on the side looked fine in the harness and lay face-down in
+     the app. A fixture that disagrees with the row proves the wrong thing, confidently. */
+  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true,
+                      top_surface: 'hug', rim: 'hug', side: 'hug',
+                      top_rotation: [0, 0, 0], bottom_rotation: [-89, -174, -180] },
   default_color: '#F5E6C8', sort_order: 16,
 });
 

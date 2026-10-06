@@ -27,7 +27,26 @@ function latestByDoc(events) {
   return m;
 }
 
-export function PrivacyDataSection({ apiClient }) {
+/**
+ * `show` splits the three blocks across two screens (2026-10-03).
+ *
+ *   'consents'  the agreement trail + optional data uses  → Settings
+ *   'deletion'  delete my account                         → My Account
+ *   'all'       every block, as it was
+ *
+ * ⚠️ WHY SPLIT A DPDP SURFACE AT ALL. Sandeep: "'delete my account' - should go to my account."
+ * Erasure is something a PERSON does to their own account; the consent trail is a record of what
+ * the BUSINESS agreed to. They read as one screen only because the law groups them, and a baker
+ * looking for "how do I close my account" was never going to look under a settings page about
+ * their shop.
+ *
+ * ⚠️ ONE COMPONENT, NOT TWO. Every block shares the same fetches, the same `busy`/`err` state and
+ * the same immediate-action contract, and splitting the FILE would have duplicated all of it — the
+ * copy that gets a fix and the copy that does not. `show` filters the render; nothing else moves.
+ */
+export function PrivacyDataSection({ apiClient, show = 'all' }) {
+  const showConsents = show === 'all' || show === 'consents';
+  const showDeletion = show === 'all' || show === 'deletion';
   const [loading, setLoading]   = useState(true);
   const [history, setHistory]   = useState([]);
   const [current, setCurrent]   = useState([]);
@@ -163,6 +182,8 @@ export function PrivacyDataSection({ apiClient }) {
         </div>
       )}
 
+      {showConsents && (
+      <>
       {/* 1. Your agreements */}
       <Section title="Your agreements">
         {history.length === 0 ? (
@@ -227,6 +248,11 @@ export function PrivacyDataSection({ apiClient }) {
         </Section>
       )}
 
+      </>
+      )}
+
+      {showDeletion && (
+      <>
       {/* 3. Delete my account (danger zone) */}
       <Section title="Delete my account">
         {pending ? (
@@ -278,6 +304,8 @@ export function PrivacyDataSection({ apiClient }) {
           For anything else, contact our Grievance Officer.
         </span>
       </Section>
+      </>
+      )}
     </>
   );
 }

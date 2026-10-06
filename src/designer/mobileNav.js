@@ -35,15 +35,14 @@
  * Uploads stays in the More sheet, deliberately. It was the natural second candidate, but at six
  * something has to give, and Templates is the one a baker reaches for at the start of every cake.
  *
- * ⚠️ Anything carrying a `menu` must be listed here. The strip renders submenus (RailSubmenu,
- * anchored upward); the More sheet has no surface for one, so a menu item in the sheet would open
- * nothing at all. Orders and Templates both carry one today, and both are primary. `strandedMenus`
- * below exists to make it loud rather than silent if that ever stops being true.
+ * ⚠️ AN ITEM CARRYING A `menu` NO LONGER HAS TO BE LISTED HERE — but understand what changed before
+ * relying on it. The strip renders submenus (RailSubmenu, anchored upward); the sheet could not, so
+ * a menu item in the sheet opened nothing at all. Templates gained a submenu on 2026-09-26 and
+ * survived only because it was already primary; Store gained one on 2026-10-03, was NOT, and was
+ * dead on every phone until 2026-10-04.
  *
- * ⚠️ TEMPLATES IS WHY THAT RULE EARNED ITS KEEP. It gained a submenu (Library · Catalogue)
- * on 2026-09-26 and is in this list already — but only because a baker reaches for it at the start
- * of every cake, not because anyone checked. Had it been secondary, the submenu would have rendered
- * into a sheet that cannot draw one, and the item would simply have done nothing.
+ * The sheet flattens one into rows under a heading now, so both placements work. What being listed
+ * here still buys is a slot in the strip — zero taps instead of one.
  */
 /* ⚠️ THE ORDER IS THE JOB, NOT THE HISTORY (INVARIANTS #12). Sandeep set it directly:
  *
@@ -53,7 +52,7 @@
  * beginnings, now adjacent), DECORATE it, then run the bakery (Orders, Dashboard). Templates arrived
  * last and was simply appended to the end, which put a starting move after two management ones.
  * Dashboard moves to the far end: it is the thing you glance at, not the thing you are doing. */
-export const MOBILE_PRIMARY = ['new', 'templates', 'elements', 'orders', 'dashboard'];
+export const MOBILE_PRIMARY = ['new', 'elements', 'templates', 'orders', 'dashboard'];
 
 /**
  * How many slots the strip has, More included. Six is the ceiling argued above: full-bleed slots
@@ -81,8 +80,7 @@ export const MOBILE_SLOTS = 6;
  *
  * So: when everything fits in `slots`, everything goes in the strip and `secondary` comes back
  * empty. The render site needs no change — it already draws More only when `secondary` is non-empty
- * — and a baker's eleven items still overflow exactly as before. `strandedMenus` stays correct too:
- * nothing can be stranded in a sheet that is not drawn.
+ * — and a baker's eleven items still overflow exactly as before.
  *
  * The absorbed items keep MOBILE_PRIMARY's order first, then the rail's own for the remainder, so
  * the strip still reads START → DECORATE → RUN THE BAKERY rather than in capability order.
@@ -94,11 +92,19 @@ export function splitMobileNav(railItems = [], { slots = MOBILE_SLOTS } = {}) {
   return { primary, secondary };
 }
 
-/**
- * Ids that carry a submenu but would land in the More sheet, which cannot render one.
- * Empty is the healthy answer. Called in dev so drift surfaces the moment it is introduced, rather
- * than as a baker reporting that a button does nothing.
+/* ── `strandedMenus` is gone, and so is what it guarded (2026-10-04) ────────────────────────────
+ *
+ * It returned the ids carrying a submenu that would land in the More sheet, "which cannot render
+ * one", and shouted in dev. That was true and it earned its keep: Store gained a menu on
+ * 2026-10-03 and went straight into the sheet as a tile that did NOTHING — a baker on a phone had
+ * no route to their shop, with a green suite and every gate passing.
+ *
+ * Its own message offered two remedies: "Add it to MOBILE_PRIMARY, or give the sheet a submenu."
+ * The second one is now done — the sheet flattens a stranded menu into rows under a heading, the
+ * same shape Chef's Desk and Settings have always used there. So the premise is false, and a guard
+ * whose premise is false is a permanent console error that teaches people to ignore the channel.
+ *
+ * What replaces it is structural rather than advisory: the sheet renders `secondary` through two
+ * COMPLEMENTARY filters — `!i.menu` as tiles, `i.menu` as sections — so every item lands in exactly
+ * one of them by construction. storeDestination.test.jsx pins that pair.
  */
-export function strandedMenus(railItems = []) {
-  return splitMobileNav(railItems).secondary.filter(i => i.menu).map(i => i.id);
-}

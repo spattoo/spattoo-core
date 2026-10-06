@@ -163,6 +163,8 @@ export function toCanvasConfig(design) {
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
         topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
         topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
+        brushBand:     t.brushBand ?? null,   // a ring of palette-knife brushstrokes round this tier's wall
+        brushStrokes:  t.brushStrokes ?? [],  // and the ones drawn by hand, each its own piece
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
       };
     }),
@@ -436,6 +438,25 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  /* ── The brushstroke band ─────────────────────────────────────────────────────────────────────
+   *
+   * A ring of palette-knife strokes round one tier's wall. Same shape as `setTierSpiral` above: one
+   * object on the tier, merged with what is already there, and `null` to take it off.
+   *
+   * ⚠️ IT IS A TIER TREATMENT, NOT A LIST OF PLACED THINGS. Every stroke in the band is derived from
+   * the same handful of numbers — the palette, the count, the seed — so storing thirty strokes would
+   * be storing the same decision thirty times and inviting them to disagree. One object, re-rendered
+   * from its own seed, which is also what makes it come back as the SAME cake after a reload.
+   */
+  function setTierBrushBand(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, brushBand: changes === null ? undefined : { ...(t.brushBand ?? {}), ...changes } }
+        : t),
+    }));
+  }
+
   // Tier gradient — same instance-level model as piping/stickers (eligibility is gated in the UI by
   // TIER_CAPS.gradient; the stops + balance live on the tier as tier.gradient = { mode, colors,
   // balance }). `color` stays the solid/stop-0 fallback. ≥2 stops = a gradient; fewer drops it back
@@ -694,6 +715,35 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       tiers: prev.tiers.map((t, i) =>
         i === index ? { ...t, clouds: typeof changes === 'function' ? changes(t.clouds ?? []) : changes } : t),
     }));
+  }
+
+  /* ── Hand-drawn brushstrokes ──────────────────────────────────────────────────────────────────
+   *
+   * A LIST, where the band is one object — and the difference is not a storage preference, it is
+   * what the two things ARE. A band is a decision ("thirty strokes, these three colours") and every
+   * stroke in it is derived; these are strokes somebody DREW, so each one is its own fact — where
+   * the hand went, how thick the cream was, what colour it was at the time. Deriving them would mean
+   * throwing away the drawing.
+   *
+   * ⚠️ WHICH IS ALSO WHY EACH ONE NEEDS ITS OWN CARD. Sandeep: *"just like we did for 'ill pipe it
+   * myself', we need to have separate child card for each stroke."* The pen hit this exactly: every
+   * piece carried its own colour and thickness from the day it was built, and what was missing was
+   * any way to say WHICH piece — so the tool's controls could only ever describe the NEXT stroke.
+   */
+  function updateTierBrushStrokes(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, brushStrokes: typeof changes === 'function' ? changes(t.brushStrokes ?? []) : changes } : t),
+    }));
+  }
+
+  function updateBrushStroke(index, id, patch) {
+    updateTierBrushStrokes(index, list => list.map(st => (st.id === id ? { ...st, ...patch } : st)));
+  }
+
+  function removeBrushStroke(index, id) {
+    updateTierBrushStrokes(index, list => list.filter(st => st.id !== id));
   }
 
   // ── Fondant letter blocks ───────────────────────────────────────────────────
@@ -1585,10 +1635,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   // Replace one stroke's points, keeping everything else about it. The whole of "slide a placed
   // stroke": the shape, colour, nozzle, seed and orientation are all unchanged and only WHERE it
   // sits moves. Keyed by id rather than index because Undo re-indexes the list.
-  function updateStrokePoints(id, points) {
+  /* ⚠️ THE ONE WRITER FOR A PIPED PIECE, and it MERGES. A hand-piped run is already a stroke of its
+     own with its own colour and thickness — nothing had to be remodelled for a customer to recolour
+     one — but the only writer used to be the drag, and it replaced `points` and nothing else. It
+     also could not move a STAMPED piece, which is positioned by `point`: one merging writer takes
+     both, and a patch of { color } cannot blank either. Merges, like updateTopper and updateGarnish.
+     Sandeep, after placing several and finding them fixed: *"when you click few cream elements and
+     when user selects each of them, can we make color and size changeable for each of them
+     separately?"* They always could be; there was no way to say which one. */
+  function updateStroke(id, patch) {
     setDesign(prev => ({
       ...prev,
-      piping: prev.piping.map(s => (s.id === id ? { ...s, points } : s)),
+      piping: prev.piping.map(s => (s.id === id ? { ...s, ...patch } : s)),
     }));
   }
   /* ⚠️ A FILL REPLACES THE LAST FILL, it does not stack on top of it. Each pass is a real stroke —
@@ -1613,6 +1671,15 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   function removeStroke() {
     setDesign(prev => ({ ...prev, piping: prev.piping.slice(0, -1) }));
+  }
+  /* ⚠️ ONE PIECE, BY ID, AND ITS FILLS GO WITH IT. `removeStroke` drops the LAST stroke, which is
+     the pen card's Undo and is the wrong tool for "get rid of this one" — a customer who chose a
+     piece in the middle of a run means that piece. Fills are tagged `fillOf` with their outline's
+     id, so deleting an outline without them would leave the filling of a shape that no longer
+     exists, floating on the cake with nothing to belong to. */
+  function removeStrokeById(id) {
+    if (!id) return;
+    setDesign(prev => ({ ...prev, piping: prev.piping.filter(s => s.id !== id && s.fillOf !== id) }));
   }
   function clearPiping() {
     setDesign(prev => ({ ...prev, piping: [] }));
@@ -1660,6 +1727,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
+    setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierRainbows, updateTierRainbows, updateTierClouds,
@@ -1671,7 +1739,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addAge, updateAge, duplicateAge, removeAge,
     addSticker, updateSticker, removeSticker, duplicateSticker,
     groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy,
-    addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping,
+    addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping,
     addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish,
     addTopper, updateTopper, removeTopper,
     resetDesign,

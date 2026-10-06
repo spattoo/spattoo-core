@@ -3,7 +3,7 @@ import { parseNotificationLink } from '../notifications/notificationLink.js';
 import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
-import { splitMobileNav, strandedMenus } from './mobileNav.js';
+import { splitMobileNav } from './mobileNav.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
@@ -31,15 +31,18 @@ import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADO
  * Air between the spatula's blade and the framed shot. Small enough that the frame still gets the
  * space, large enough that the two do not read as touching. */
 const FRAME_GAP = 16;
-/* The frame lives inside the canvas container, which begins at the nav COLUMN's right edge — so the
- * blade's overhang past this box is what has to be cleared, not the whole rail. Derived, because the
- * last hardcoded version of this number was right when it was written and wrong within two paddings.
+/* The frame lives inside the canvas container, which begins at the nav COLUMN's right edge — so
+ * what had to be cleared was the BLADE's overhang past that box, not the whole rail. There is no
+ * overhang now: RAIL_RIGHT IS padLeft + width, so the subtraction is provably zero and this is just
+ * the gap. Kept as the subtraction rather than simplified to FRAME_GAP, because the day anything is
+ * drawn outside the column again this goes back to doing real work on its own.
  */
 const FRAME_LEFT = `${RAIL_RIGHT - (RAIL.padLeft + RAIL.width) + FRAME_GAP}px`;
-import { Panel, Z } from '../shared/Panel.jsx';
+import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
+import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
+import { StoreIcon, ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -68,7 +71,7 @@ import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from 
 const BOARD_TOP_Y = 0.1;
 
 // The rail's minimum spacing between stacked items. Used by sidebarNav's `gap` AND as the floor for
-// the measured tools gap below the divider — one number, because the two groups sit in one column
+// the measured tools gap in the cluster below it — one number, because the two groups sit in one column
 // and any disagreement shows up as the bottom pair being crammed together on a short window.
 const RAIL_MIN_GAP = 2;
 /* The rail's PITCH, fixed rather than spread. space-evenly was tuned when the rail always held a
@@ -100,10 +103,54 @@ export function tourMayRun({ isCustomer, tourSeen, choseScratch }) {
   return tourSeen === false;
 }
 
+/* The rail's most it will ever open up — a CEILING, not a floor. Measured, not chosen: at a 900px
+   window the spread settled on 20.1px between items, and Sandeep picked that out of three heights
+   ("yes i mean 900px version"). `fde91ba9` had this same number right about the RHYTHM and wrong
+   about the role — it pinned the gap there and let the column overflow a short blade. */
 const RAIL_NAV_GAP = 20;
 /* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
    numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
 const PLAIN_RAIL_W = 52;
+
+/* ── What the rail looks like when you are NOT on it ────────────────────────────────────────────
+ *
+ * Sandeep: "menu items text looks dull, when you hover it, it becomes little brighter. but default
+ * one is very dull."
+ *
+ * ⚠️ MEASURED AGAINST THE RAIL'S OWN GRADIENT, not picked. The strip runs #121214 → #08080a →
+ * #020203 (shared/chrome.js), and white at the old values came out:
+ *
+ *     labels  rgba(255,255,255,0.50)   5.26 : 1 at the darkest stop
+ *     icons   rgba(255,255,255,0.45)   4.44 : 1  ← BELOW AA for small text, which 9px labels are
+ *
+ * So the icons were not merely dull, they were a contrast failure. 0.78 measures 11.5:1 and still
+ * leaves headroom: the ACTIVE item goes to #fff and keeps its rgba(255,255,255,0.14) pill, so "you
+ * are here" is still two signals ahead of "you are not".
+ *
+ * One token for both, because an icon and the word under it are one control — and because they
+ * drifted apart by 0.05 for no reason anybody recorded. */
+const RAIL_REST_INK = 'rgba(255,255,255,0.78)';
+
+/* ── What the rail is made of ────────────────────────────────────────────────────────────────────
+ *
+ * Seeded here and OVERLAID from the DB (rule 3), the same contract cream textures and materials
+ * already use: this is what the rail draws before `fetchRailSkins` answers, and on any host that
+ * cannot answer at all. It is the row migration 120 seeds as `chrome`, written twice on purpose —
+ * a default that only exists in a database is a rail that has no colour until a network call
+ * returns, and the first paint of every session would be the wrong one.
+ *
+ * ⚠️ `texture` IS A KEY, NOT A NAME (rule 2). The renderer switches on 'none' | 'grain'; it never
+ * asks which skin it is drawing. A fourth look wanting brushed metal is one more branch HERE and a
+ * row in admin — not a condition on `key === 'walnut'` spread through the paint.
+ */
+const DEFAULT_RAIL_SKIN = {
+  key: 'chrome',
+  stops: CHROME_STOPS.map(s2 => s2.color),
+  joint_at: null,
+  texture: 'none',
+  ink: RAIL_REST_INK,
+  ink_active: '#ffffff',
+};
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
@@ -281,9 +328,17 @@ const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 //                clicked "+" but hasn't picked its colour yet. It renders as a dashed "pick a colour"
 //                chip and isn't a real stop, so direction/balance stay hidden until it's filled.
 const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
+/* ⚠️ THREE, AND IT IS A DECISION RATHER THAN A LIMIT OF THE CODE. Sandeep, on the drip: *"it can
+   accept up to 3 colors. 2 colors is less, and many colors is not practical. lets confine it to 3."*
+   Two is a gender reveal and little else; past three a cake stops reading as a pour and starts
+   reading as a swatch card, and a baker has to actually make the thing. Named because the number
+   was written twice — the control hid its `+` at one copy while the ring popup's add handler
+   checked another, which is how a cap comes to disagree with itself. */
+export const PIPING_MAX_STOPS = 3;
+
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
                             modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange, pending = false,
-                            label = 'Gradient colors', maxStops = 3 }) {
+                            label = 'Gradient colors', maxStops = PIPING_MAX_STOPS }) {
   const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
     <div style={s.gradientBlock}>
@@ -1330,7 +1385,7 @@ function spatulaFramePath({
 // spatula behind the nav. The blade is wider than the handle, so it bulges out
 // (overflow visible, pointer-events none so it never blocks the canvas).
 // `lifted`: the rail is floating over a docked page, so the spatula casts a shadow onto it.
-function SpatulaFrame({ lifted = false }) {
+function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
   const ref = useRef(null);
   const [h, setH] = useState(720);
   useLayoutEffect(() => {
@@ -1360,10 +1415,32 @@ function SpatulaFrame({ lifted = false }) {
   const bladeBotY = h - 12;
   const bladeFullY = bladeBotY - 194;     // blade body height (per tuned design)
   const shoulderY  = bladeFullY - 65;     // shoulder span
+  /* ── Where the handle's material stops ───────────────────────────────────────────────────────
+   * A skin with `joint_at` is two materials: a wooden handle socketed into a silicone head, say.
+   * The fraction is OF THE HANDLE, not of the rail — the rail is drawn to whatever height it has,
+   * so a pixel would be wrong on every other window — and it is clamped to the straight part,
+   * because past the shoulder the silhouette is already widening into the head and a band there
+   * reads as a kink in the taper rather than as a joint.
+   *
+   * `null` is one material all the way down, which is what chrome and slate are. */
+  const jointSpan = shoulderY - 18 - capTopY;
+  const woodEndY  = skin.joint_at == null ? null : capTopY + jointSpan * Math.min(1, skin.joint_at + 0.38);
   const path = spatulaFramePath({
     W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+  });
+  /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
+     resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,
+     spread across its width and kept inside `handleHalf` so the clip never has to crop one. */
+  const grain = (skin.texture !== 'grain' || woodEndY == null) ? [] : Array.from({ length: 7 }, (_, i) => {
+    const t  = (i + 0.5) / 7;                       // 0..1 across the handle
+    const x  = cx - handleHalf + 6 + t * (handleHalf * 2 - 12);
+    const sw = 2.4 + ((i * 37) % 11) / 9;           // a little variety, from the index
+    const b1 = ((i * 53) % 13) - 6;                 // bow one way, then the other
+    const b2 = ((i * 29) % 11) - 5;
+    const y0 = capTopY + 10, y1 = woodEndY - 4, mid = (y0 + y1) / 2;
+    return { d: `M ${x} ${y0} C ${x + b1} ${mid * 0.6} ${x + b2} ${mid * 1.4} ${x + b1 * 0.4} ${y1}`, sw };
   });
   const swirls = [
     `M ${cx + 12} ${holeY - 16} C ${cx + 32} ${holeY + 10} ${cx + 8} ${holeY + 46} ${cx - 10} ${holeY + 34} C ${cx - 24} ${holeY + 24} ${cx - 14} ${holeY + 2} ${cx + 2} ${holeY}`,
@@ -1377,11 +1454,14 @@ function SpatulaFrame({ lifted = false }) {
         style={{ position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)', overflow: 'visible',
                  filter: lifted ? RAIL_LIFTED_SHADOW : 'none', transition: 'filter 0.2s' }}>
         <defs>
-          {/* The stops live in shared/chrome.js — panel headers render the same surface as CSS,
-              and "match the spatula" only holds if both read from one definition. */}
+          {/* ⚠️ THE SKIN'S OWN STOPS, SPREAD EVENLY — not CHROME_STOPS, which is now only the seed
+              for the default (see DEFAULT_RAIL_SKIN). Offsets are computed rather than stored so a
+              row may carry three stops or five without the schema caring; shared/chrome.js keeps
+              three and migration 120's chrome row writes four, and both have to render identically
+              or the default skin would not match the panel headers that read the same file. */}
           <linearGradient id="spat-body" x1="0" y1="0" x2="0" y2="1">
-            {CHROME_STOPS.map(({ offset, color }) => (
-              <stop key={offset} offset={offset} stopColor={color} />
+            {(woodEndY == null ? skin.stops : DEFAULT_RAIL_SKIN.stops).map((color, i, a) => (
+              <stop key={i} offset={a.length === 1 ? 0 : i / (a.length - 1)} stopColor={color} />
             ))}
           </linearGradient>
           <radialGradient id="spat-sheen" cx="0.36" cy="0.06" r="0.5">
@@ -1409,6 +1489,39 @@ function SpatulaFrame({ lifted = false }) {
             <feComposite in2="o" operator="in" result="sh" />
             <feComposite in="sh" in2="SourceAlpha" operator="in" />
           </filter>
+          {/* ── Wood ────────────────────────────────────────────────────────────────────────────
+              Three gradients rather than a texture image: an image would be a network request for
+              a 60px-wide strip, and at this size the thing that reads as wood is not grain detail
+              but the ROUNDNESS — a cylinder lit from the left. `spat-woodRound` is that, and it is
+              doing most of the work; the grain lines below are the garnish. */}
+          {/* ⚠️ DARK WALNUT, AND THE DARKNESS IS MEASURED. The first cut was a mid oak
+              (#3A2616 / #4C321C / #3C2717) and it looked like wood — but the rail's ink is white at
+              0.78, which reads 12.08:1 on the near-black head and collapsed to 2.61:1 at the oak's
+              lightest point. Every label on the handle was below AA for 9px text; the labels sit ON
+              this, so the material has to make room for them rather than the other way round.
+              Walked the same hue down: walnut 4.66, dark walnut 5.60, espresso 6.42. 5.60 keeps a
+              margin over the 4.5 floor while still reading as timber rather than as a dark bar. */}
+          <linearGradient id="spat-handle" x1="0" y1="0" x2="0" y2="1">
+            {skin.stops.map((color, i, a) => (
+              <stop key={i} offset={a.length === 1 ? 0 : i / (a.length - 1)} stopColor={color} />
+            ))}
+          </linearGradient>
+          <linearGradient id="spat-woodRound" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0"    stopColor="#000" stopOpacity="0.55" />
+            <stop offset="0.26" stopColor="#000" stopOpacity="0.06" />
+            <stop offset="0.44" stopColor="#fff" stopOpacity="0.13" />
+            <stop offset="0.70" stopColor="#000" stopOpacity="0.05" />
+            <stop offset="1"    stopColor="#000" stopOpacity="0.58" />
+          </linearGradient>
+          {/* The joint: a short fade back into the dark head rather than a hard line, because a
+              hard line at this width reads as a seam in the artwork instead of a ferrule. */}
+          <linearGradient id="spat-ferrule" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0"    stopColor="#000" stopOpacity="0" />
+            <stop offset="0.55" stopColor="#000" stopOpacity="0.55" />
+            {/* Into the HEAD's own first stop, so the joint disappears into whatever the head is
+                rather than into a near-black typed in when walnut was the only skin. */}
+            <stop offset="1"    stopColor={DEFAULT_RAIL_SKIN.stops[0]} stopOpacity="1" />
+          </linearGradient>
           <clipPath id="spat-sil"><path d={path} /></clipPath>
         </defs>
         <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
@@ -1423,6 +1536,31 @@ function SpatulaFrame({ lifted = false }) {
           </g>
           <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#spat-blurHole)" />
         </g>
+        {/* ── The handle is wood ──────────────────────────────────────────────────────────────────
+            Clipped to the silhouette and drawn as a plain rect over the handle's span, so the shape
+            stays the single authored path — nothing here can change the outline, only what is
+            inside it.
+
+            ⚠️ BEFORE THE SHADING BELOW, DELIBERATELY. The inner shadow, the edge specular and the
+            sheen are applied to the whole path afterwards, so the wood takes the same rounded edge
+            and the same light as the head. Painted after them it would sit on top as a sticker. */}
+        {woodEndY != null && (
+        <g clipPath="url(#spat-sil)">
+          <rect x={cx - handleHalf - 2} y={0} width={handleHalf * 2 + 4} height={woodEndY}
+                fill="url(#spat-handle)" />
+          {grain.map((g, i) => (
+            <path key={`g${i}`} d={g.d} fill="none" strokeWidth={g.sw} strokeLinecap="round"
+                  stroke={i % 2 ? 'rgba(22,13,6,0.38)' : 'rgba(168,128,86,0.16)'} />
+          ))}
+          {/* The cylinder. Last of the wood layers so it shades the grain too, which is what stops
+              the lines reading as stickers on a flat strip. */}
+          <rect x={cx - handleHalf - 2} y={0} width={handleHalf * 2 + 4} height={woodEndY}
+                fill="url(#spat-woodRound)" />
+          <rect x={cx - handleHalf - 2} y={woodEndY - 26} width={handleHalf * 2 + 4} height={28}
+                fill="url(#spat-ferrule)" />
+        </g>
+        )}
+
         {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
         <path d={path} fill="#000" filter="url(#spat-inner)" />
         <path d={path} fill="#000" filter="url(#spat-spec)" />
@@ -1446,9 +1584,9 @@ function SpatulaFrame({ lifted = false }) {
 // invisible — an item overflowing a row with no visible boundary looks exactly like an item that was
 // never added.
 //
-// The shape is not lost. The desktop rail still draws it (SpatulaFrame), where there is room for it,
-// and SpatulaMarkIcon below carries it into the phone's More button — so the charm moves to somewhere
-// it costs nothing instead of paying rent on the most contested 60px in the app.
+// The shape is not lost: SpatulaMarkIcon below carries it into the phone's More button — so the
+// charm lives somewhere it costs nothing instead of paying rent on contested space. The desktop rail
+// still draws it, where there is room for it.
 //
 // dev/mobile-nav.html holds the comparison this came from, with the numbers live.
 
@@ -1531,8 +1669,17 @@ function SheetBody({ children }) {
 }
 
 // ── Sidebar tooltip ───────────────────────────────────────────────────────────
-function SidebarTooltip({ label, children }) {
+// ⚠️ `suppressed` EXISTS BECAUSE A TOOLTIP OUTLIVES THE HOVER THAT OPENED A MENU.
+// The pointer is still over the avatar after the click, so the label stayed up — and it is
+// positioned `left: calc(100% + 12px)`, i.e. exactly over the menu that just appeared. It covered
+// Sign out: the item was rendered, hit-testable and invisible, which is the worst of the three.
+//
+// Not fixed with a z-index. The tooltip NAMES a collapsed rail icon, and an open menu already shows
+// that name in its own header — so while the menu is open the label is redundant as well as in the
+// way, and the honest fix is not to draw it rather than to draw it underneath.
+function SidebarTooltip({ label, suppressed = false, children }) {
   const [visible, setVisible] = useState(false);
+  const show = visible && !suppressed;
   return (
     <div style={{ position: 'relative', display: 'flex' }}
       onMouseEnter={() => setVisible(true)}
@@ -1554,8 +1701,8 @@ function SidebarTooltip({ label, children }) {
         boxShadow: '0 2px 10px rgba(0,0,0,0.25)',
         fontFamily: "'Quicksand', sans-serif",
         letterSpacing: 0.3,
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(-4px)',
+        opacity: show ? 1 : 0,
+        transform: show ? 'translateY(-50%) translateX(0)' : 'translateY(-50%) translateX(-4px)',
         transition: 'opacity 0.15s ease, transform 0.15s ease',
       }}>
         {label}
@@ -1564,78 +1711,633 @@ function SidebarTooltip({ label, children }) {
   );
 }
 
-// ── Change password modal ─────────────────────────────────────────────────────
-function ChangePasswordModal({ onClose, brandBtn, supabase, apiClient }) {
-  const [form, setForm] = useState({ newPassword: '', confirmPassword: '' });
-  const [loading, setLoading] = useState(false);
-  const [msg, setMsg] = useState(null);
+// ── Where the catalogue goes ─────────────────────────────────────────────────────────────────────
+//
+// ⚠️ THE CATALOGUE SCREEN ASSERTED SOMETHING IT NEVER CHECKED. Its help line says "Your customers
+// can see your catalogue", which is true only once the storefront is PUBLISHED — and for a new
+// baker, who is exactly the person that sentence is written for, it is false. They stock the shelf,
+// read that customers can see it, and nobody can. Sandeep: "for a new baker, he does not know where
+// this catalogue goes."
+//
+// So the gap was never the wording, it was that nothing on the screen knew whether the shop was
+// live. `storefront_published` rides on the baker profile the designer already holds.
+//
+// ⚠️ NOT A WIZARD, THOUGH ONE WAS ASKED FOR — "a wizard kind of (or any better representation)".
+// A wizard implies ordered steps, and these two are not ordered: a baker can publish an empty shop
+// or stock an unpublished one, and both are reasonable. A checklist states what is true now and
+// what is left, in any order, which is why the tick is computed rather than sequential.
+export function CatalogueStoreSteps({ published, onOpenStore }) {
+  const Step = ({ done, children, action }) => (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 9, textAlign: 'left' }}>
+      {/* A ring that fills, not a tick that appears: the empty state has to read as "not yet"
+          rather than as a missing icon. INVARIANTS #7 — it is legible at rest, with no hover. */}
+      <span aria-hidden style={{
+        flexShrink: 0, width: 15, height: 15, borderRadius: '50%', marginTop: 1,
+        border: `2px solid ${done ? '#2C4433' : '#C5D4C8'}`,
+        background: done ? '#2C4433' : 'transparent',
+      }} />
+      <span style={{ flex: 1, minWidth: 0, fontSize: 12, lineHeight: 1.5,
+                     color: done ? '#6B7280' : INK, fontWeight: done ? 600 : 700 }}>
+        {children}
+        {action}
+      </span>
+    </div>
+  );
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '14px 12px',
+                  background: 'rgba(255,255,255,0.92)', borderRadius: 10, margin: '2px -10px 0' }}>
+      {/* Sandeep's clause (b), kept as the reason the two steps are worth doing. */}
+      <div style={{ fontSize: 12, fontWeight: 800, color: INK }}>Your catalogue is your shop window.</div>
+      <Step done={false}>
+        Add cakes from Library, or upload your own photo.
+      </Step>
+      <Step done={!!published} action={!published && (
+        <button type="button" onClick={onOpenStore}
+          style={{ display: 'block', marginTop: 5, padding: '7px 12px', borderRadius: 9,
+                   border: '1.5px solid #C5D4C8', background: '#fff', cursor: 'pointer',
+                   fontFamily: "'Quicksand',sans-serif", fontSize: 12, fontWeight: 800, color: '#2C4433' }}>
+          Open Store to publish
+        </button>
+      )}>
+        {published
+          ? 'Your store is live — customers can see these cakes.'
+          : 'Publish your store, so customers can see them.'}
+      </Step>
+    </div>
+  );
+}
 
-  function setField(key, val) { setForm(f => ({ ...f, [key]: val })); }
+// ── My Account ────────────────────────────────────────────────────────────────────────────────
+// One screen for the things that are about the PERSON rather than the bakery: the number we reach
+// them on, and the password they sign in with. Both used to be elsewhere — the password behind a
+// menu item of its own, the phone nowhere at all — and a menu with one action in it is a menu that
+// has to grow a second one the moment anything is added.
+//
+// ⚠️ THE PHONE CHANGE IS NOT THE SIGN-IN OTP, AND MUST NEVER BECOME IT.
+// Every other OTP in this app is supabase.auth.signInWithOtp/verifyOtp, and what those return is a
+// SESSION. Pointed at a number the baker does not own yet, that signs them in as whoever DOES own
+// it — or, since shouldCreateUser defaults true, mints an empty auth user and signs them in as
+// that. Either way the baker loses the session they started in. Supabase's own phone_change is
+// real but writes the number onto auth.users, where it becomes a password-free door into the
+// bakery, because phone sign-in is switched on for the storefront. So the server mints and checks
+// its own code and grants nothing: spattoo-backend migrations/119 and routes/account.js.
+//
+// ⚠️ EVERYTHING IS VISIBLE AT ONCE (INVARIANTS #11). The current number sits directly above the
+// control that replaces it, and the password rules sit under the box they describe. Nothing here
+// is behind a tab: a baker opening this screen is here to change one of two things and should be
+// able to see both without discovering them.
+export function AccountPanel({ onClose, brandBtn, supabase, apiClient, userData, bakerEmail = null, canEditEmail = false, onProfileChanged, onPhoneChanged, isMobile = false, canDelete = false }) {
+  // ── Phone ────────────────────────────────────────────────────────────────────────────────────
+  // 'idle' → showing the current number. 'entry' → typing a new one. 'code' → proving it.
+  const [phoneStep,  setPhoneStep]  = useState('idle');
+  const [newPhone,   setNewPhone]   = useState('');
+  const [code,       setCode]       = useState('');
+  const [sentTo,     setSentTo]     = useState(null);
+  const [phoneBusy,  setPhoneBusy]  = useState(false);
+  const [phoneMsg,   setPhoneMsg]   = useState(null);
+  const [phoneNow,   setPhoneNow]   = useState(userData?.phone ?? null);
 
-  async function handleSubmit() {
-    if (form.newPassword !== form.confirmPassword) {
-      setMsg({ ok: false, text: 'Passwords do not match.' });
-      return;
-    }
-    // Full policy (length + character classes) is enforced by isPasswordValid, mirroring
-    // the Supabase Auth policy; the live checklist below shows each rule. canSubmit already
-    // gates on it, so this is a defensive backstop for any programmatic call path.
-    if (!isPasswordValid(form.newPassword)) {
-      setMsg({ ok: false, text: 'Password does not meet the requirements below.' });
-      return;
-    }
-    setLoading(true);
-    setMsg(null);
+  // ── Locked until you prove it is you ─────────────────────────────────────────────────────────
+  // ⚠️ THIS STATE IS A RENDERING DECISION AND NOTHING MORE. It decides what the baker SEES; it
+  // decides nothing about what the server accepts. Every write behind it — phone start, phone
+  // confirm, password — is independently gated by requireRecentPassword on the API, reading a claim
+  // Supabase signed. A lock that lived only here would stop nobody: the calls are reachable from a
+  // console with the same session.
+  //
+  // Read-only is also the better resting state on its own. "What number do we have for you" is a
+  // question worth answering without arming anything to change it.
+  const [unlocked,  setUnlocked]  = useState(false);
+  const [unlockPw,  setUnlockPw]  = useState('');
+  const [unlocking, setUnlocking] = useState(false);
+  const [unlockMsg, setUnlockMsg] = useState(null);
+  /* Which row asked for the password, or null. It is not a flag for "a prompt is open" any more —
+     it is WHICH edit the baker reached for, so proving it can carry them straight into that editor
+     rather than back to a screen they then have to press again. */
+  const [pendingEdit, setPendingEdit] = useState(null);   // 'email' | 'phone' | 'password' | null
+
+  const canReauth = !!apiClient?.reauthenticate;
+  /* PrivacyDataSection calls all three of these unguarded inside one Promise.all, so a host missing
+     any of them throws before the catch can see it. An older baker app simply shows no privacy
+     block rather than a broken panel. */
+  const privacyReady = !!(apiClient?.fetchConsentHistory && apiClient?.fetchLegalCurrent && apiClient?.fetchDeletionStatus);
+
+  async function unlock() {
+    setUnlocking(true); setUnlockMsg(null);
     try {
-      if (apiClient?.changePassword) {
-        await apiClient.changePassword(form.newPassword);
-      } else if (supabase) {
-        const { error } = await supabase.auth.updateUser({ password: form.newPassword });
-        if (error) throw error;
-      }
-      setMsg({ ok: true, text: 'Password updated. Signing you out…' });
-      // Supabase invalidates the session on password change — sign out cleanly
-      // so the user lands on the login screen and re-authenticates with the new password.
-      setTimeout(() => {
-        apiClient?.signOut?.() ?? supabase?.auth.signOut();
-      }, 1200);
-    } catch (err) {
-      setMsg({ ok: false, text: err.message || 'Failed to update password.' });
-      setLoading(false);
+      await apiClient.reauthenticate(unlockPw);
+      setUnlocked(true); setUnlockPw('');
+      // Straight into the editor they reached for. Proving who you are is a toll, not a destination.
+      if (pendingEdit === 'email')    { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailStep('entry'); }
+      if (pendingEdit === 'phone')    { setPhoneMsg(null); setPhoneStep('entry'); }
+      if (pendingEdit === 'password') { setPwMsg(null); setPwEditing(true); }
+      setPendingEdit(null);
+    } catch (e) {
+      setUnlockMsg(e?.message || 'That password is not right.');
+    } finally {
+      setUnlocking(false);
     }
   }
 
-  const mismatch = form.confirmPassword.length > 0 && form.newPassword !== form.confirmPassword;
-  const canSubmit = isPasswordValid(form.newPassword) && form.newPassword === form.confirmPassword && !loading;
+  /* ⚠️ ASKED WHEN THEY ACT, NOT WHEN THEY ARRIVE. A card sat at the top of this screen saying
+     "Confirm your password to change anything here" with an Edit button, and Sandeep named both
+     faults: "should we ask for singin once user tries to edit email or phone? instead of asking
+     upfront?" and "the edit button does not look like it is at the page level - thats the core
+     issue."
+
+     The second is the first wearing a costume. The card was a page-level control drawn as another
+     row in a stack of rows, so it read as a section about passwords sitting between the email and
+     the phone. Making it LOOK page-level was the wrong fix: the honest one is that a screen you
+     open to read your own details should not demand a password before it will show you anything —
+     it already shows them. The toll belongs on the act, not on the door.
+
+     Once paid it stands for the rest of the visit, which is also what the server does: its window
+     is 15 minutes (middleware/reauth.js), so re-asking per row would be friction this side
+     inventing a rule the other side does not have. */
+  function startEdit(which, open) {
+    if (unlocked || !canReauth) { open(); return; }
+    setUnlockMsg(null); setUnlockPw(''); setPendingEdit(which);
+  }
+
+  // The server is the authority on whether the unlock is still good, and it expires on its own
+  // clock. When it says so, drop back to the prompt rather than leaving a screen that looks
+  // editable and refuses every edit.
+  function handleWriteError(e, setMsg, which) {
+    if (e?.code === 'reauth_required' || e?.code === 'reauth_expired') {
+      /* ⚠️ CLOSE THE EDITOR IT HAPPENED IN, or the row draws the prompt AND the half-filled form
+         under it. The window can expire mid-flow — fifteen minutes is long enough to start a phone
+         change, wait for a text and come back — so this is a real state, not a defensive one. */
+      setUnlocked(false);
+      if (which === 'email')    setEmailStep('idle');
+      if (which === 'phone')    setPhoneStep('idle');
+      if (which === 'password') setPwEditing(false);
+      setPendingEdit(which ?? null);
+      setUnlockPw('');
+      setUnlockMsg('Please confirm your password again.');
+      return true;
+    }
+    setMsg({ ok: false, text: e?.message || 'Something went wrong.' });
+    return false;
+  }
+
+  // ── Password ─────────────────────────────────────────────────────────────────────────────────
+  const [pw,        setPw]        = useState({ next: '', confirm: '' });
+  // ── Where we email you ───────────────────────────────────────────────────────────────────────
+  // ⚠️ NULL IS A VALUE: it means "use my login address", which is what bakerNotifyEmail() already
+  // does and what 22 of 24 bakeries rely on. So the field starts BLANK with the login email as its
+  // placeholder, and clearing it restores the default rather than cutting the bakery off.
+  /* 'idle' → showing it. 'entry' → typing a new one. 'code' → proving it reaches them.
+     ⚠️ THE SAME THREE STEPS THE PHONE HAS, because it is the same question: an address Spattoo
+     writes orders, quotes and invoices to is not proved by somebody typing it correctly. */
+  const [emailStep,    setEmailStep]    = useState('idle');
+  const [emailCode,    setEmailCode]    = useState('');
+  const [emailSentTo,  setEmailSentTo]  = useState(null);
+  const [emailDraft,   setEmailDraft]   = useState(bakerEmail ?? '');
+  const [emailBusy,    setEmailBusy]    = useState(false);
+  const [emailMsg,     setEmailMsg]     = useState(null);
+  const [emailNow,     setEmailNow]     = useState(bakerEmail ?? null);
+  /* ⚠️ useState SEEDS ONCE, AND BOTH ROWS READ A PROP THAT ARRIVES LATE.
+     `bakerEmail` and `userData.phone` come from fetchBakerProfile, which resolves during designer
+     boot. The panel is mounted only when opened, so in almost every case the data is already there
+     — but "almost every case" is how this class of bug hides: open My Account inside that window
+     and the seed is null FOREVER, because nothing re-runs useState. A bakery that HAS set its own
+     address would then be shown the owner's with "Your sign-in address" under it, which is a quiet
+     lie about where their mail goes, and a baker with a number on file would read "Not set".
+
+     Syncing on the prop is the whole fix. It cannot fight a local edit: both setters already run on
+     save, so by the time the parent re-reads the profile it is sending back the value this panel
+     just wrote. */
+  useEffect(() => { setEmailNow(bakerEmail ?? null); }, [bakerEmail]);
+  useEffect(() => { setPhoneNow(userData?.phone ?? null); }, [userData?.phone]);
+
+  const [pwEditing, setPwEditing] = useState(false);
+  const [pwBusy,    setPwBusy]    = useState(false);
+  const [pwMsg,     setPwMsg]     = useState(null);
+
+  const canChangePhone = userData?.canChangePhone !== false && !!apiClient?.startPhoneChange;
+
+  // A half-typed number or password is work. Esc and a stray backdrop click must not take it
+  // (INVARIANTS #13) — the ✕ still closes, because nobody presses that by accident.
+  const dirty = phoneStep !== 'idle' || emailStep !== 'idle' || pwEditing || !!pendingEdit || pw.next.length > 0 || pw.confirm.length > 0 || unlockPw.length > 0;
+
+  async function sendCode() {
+    setPhoneBusy(true); setPhoneMsg(null);
+    try {
+      const r = await apiClient.startPhoneChange(newPhone.trim());
+      setSentTo(r?.to ?? null);
+      setCode('');
+      setPhoneStep('code');
+    } catch (e) {
+      if (!handleWriteError(e, setPhoneMsg, 'phone')) setPhoneMsg({ ok: false, text: e?.message || 'We could not send the code.' });
+    } finally {
+      setPhoneBusy(false);
+    }
+  }
+
+  async function verifyCode() {
+    setPhoneBusy(true); setPhoneMsg(null);
+    try {
+      const r = await apiClient.confirmPhoneChange(code.trim());
+      setPhoneNow(r?.phone ?? null);
+      setPhoneStep('idle');
+      setNewPhone(''); setCode(''); setSentTo(null);
+      setPhoneMsg({ ok: true, text: 'Your number is updated.' });
+      // The header, the storefront contact and anything else holding the old number read it from
+      // the profile, so the profile is what has to be re-read — not this component's copy.
+      onPhoneChanged?.();
+    } catch (e) {
+      if (!handleWriteError(e, setPhoneMsg, 'phone')) setPhoneMsg({ ok: false, text: e?.message || 'That code did not work.' });
+    } finally {
+      setPhoneBusy(false);
+    }
+  }
+
+  async function sendEmailCode() {
+    setEmailBusy(true); setEmailMsg(null);
+    try {
+      const next = emailDraft.trim();
+      /* Empty means "use my sign-in address", which needs no proof: it is the one Supabase verified
+         and this baker is signed in with. See the clear route. */
+      if (!next) {
+        await apiClient.clearBakerEmail();
+        setEmailNow(null); setEmailStep('idle');
+        setEmailMsg({ ok: true, text: 'Back to your sign-in address.' });
+        onProfileChanged?.();
+        return;
+      }
+      const r = await apiClient.startEmailChange(next);
+      setEmailSentTo(r?.to ?? null); setEmailCode(''); setEmailStep('code');
+    } catch (e) {
+      if (!handleWriteError(e, setEmailMsg, 'email')) setEmailMsg({ ok: false, text: e?.message || 'We could not send the code.' });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function confirmEmailCode() {
+    setEmailBusy(true); setEmailMsg(null);
+    try {
+      const r = await apiClient.confirmEmailChange(emailCode.trim());
+      setEmailNow(r?.email ?? null);
+      setEmailStep('idle'); setEmailDraft(''); setEmailCode(''); setEmailSentTo(null);
+      setEmailMsg({ ok: true, text: 'Confirmed — this is where we will email you.' });
+      onProfileChanged?.();
+    } catch (e) {
+      if (!handleWriteError(e, setEmailMsg, 'email')) setEmailMsg({ ok: false, text: e?.message || 'That code did not work.' });
+    } finally {
+      setEmailBusy(false);
+    }
+  }
+
+  async function savePassword() {
+    if (pw.next !== pw.confirm) { setPwMsg({ ok: false, text: 'Passwords do not match.' }); return; }
+    // Full policy (length + character classes) is enforced by isPasswordValid, mirroring the
+    // Supabase Auth policy; the live checklist below shows each rule. canSavePw already gates on
+    // it, so this is a defensive backstop for any programmatic call path.
+    if (!isPasswordValid(pw.next)) { setPwMsg({ ok: false, text: 'Password does not meet the requirements below.' }); return; }
+    setPwBusy(true); setPwMsg(null);
+    try {
+      if (apiClient?.changePassword) {
+        await apiClient.changePassword(pw.next);
+      } else if (supabase) {
+        const { error } = await supabase.auth.updateUser({ password: pw.next });
+        if (error) throw error;
+      }
+      setPwMsg({ ok: true, text: 'Password updated. Signing you out…' });
+      // Supabase invalidates the session on password change — sign out cleanly so the user lands
+      // on the login screen and re-authenticates with the new password.
+      setTimeout(() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); }, 1200);
+    } catch (err) {
+      if (!handleWriteError(err, setPwMsg, 'password')) setPwMsg({ ok: false, text: err.message || 'Failed to update password.' });
+      setPwBusy(false);
+    }
+  }
+
+  const mismatch   = pw.confirm.length > 0 && pw.next !== pw.confirm;
+  const canSavePw  = isPasswordValid(pw.next) && pw.next === pw.confirm && !pwBusy;
+  const name       = personName(userData, 'My Account');
+
+  /* The password prompt, drawn INSIDE the row that asked for it — so the question arrives where the
+     hand already is, and the row it belongs to is never in doubt. Returns null for every other row,
+     which is what lets each of the three call it unconditionally. */
+  /* ⚠️ A MESSAGE AFTER THE BUTTONS CAN FALL BELOW THE FOLD. Both code steps set one on a wrong
+     code — verified in the harness — and both rendered it at the FOOT of the card, under the
+     actions. On a phone the card is already tall by then (label, "changing to", instruction, input,
+     two buttons), so the one line that says why nothing happened was the first thing off-screen.
+     Sandeep: "it did not show me validation message... user does not know the reason."
+     It was shown. It was just shown somewhere he could not see.
+
+     So a code step renders its error directly under the INPUT, where the mistake is and where the
+     eye already is (INVARIANTS #11: narration beside the thing it narrates). */
+  const CodeError = ({ msg }) => (!msg || msg.ok ? null : (
+    <div style={{ fontSize: 11.5, fontWeight: 700, color: DANGER, lineHeight: 1.4 }}>{msg.text}</div>
+  ));
+
+  const UnlockPrompt = ({ which }) => (pendingEdit !== which ? null : (
+    <>
+      <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+        Enter your password to change this.
+      </div>
+      <input style={s.modalInput} type="password" autoFocus value={unlockPw} disabled={unlocking}
+        autoComplete="current-password" placeholder="Your password"
+        onChange={e => setUnlockPw(e.target.value)}
+        onKeyDown={e => e.key === 'Enter' && unlockPw && !unlocking && unlock()} />
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button type="button" style={s.accountGhostBtn} disabled={unlocking}
+          onClick={() => { setPendingEdit(null); setUnlockPw(''); setUnlockMsg(null); }}>
+          Cancel
+        </button>
+        <button type="button"
+          style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                   opacity: unlockPw && !unlocking ? 1 : 0.6 }}
+          disabled={!unlockPw || unlocking} onClick={unlock}>
+          {unlocking ? 'Checking…' : 'Continue'}
+        </button>
+      </div>
+      {unlockMsg && <div style={{ fontSize: 12, fontWeight: 600, color: DANGER }}>{unlockMsg}</div>}
+    </>
+  ));
+
+  // ⚠️ ONE CONTROL FOR BOTH ROWS. They shipped different: the number sat behind a "Change" button
+  // while the password fields were simply open, so two edits on one screen asked for two different
+  // gestures. Sandeep: "for mobile number and password, add a pencil icon next to them." A shared
+  // component is what keeps that true — a second copy is where the next difference comes from.
+  const EditPencil = ({ label, onClick }) => (
+    <button type="button" onClick={onClick} aria-label={label} title={label}
+      style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+               width: 30, height: 30, borderRadius: 9, cursor: 'pointer', color: '#2C4433',
+               border: '1.5px solid #C5D4C8', background: 'rgba(255,255,255,0.94)' }}>
+      <PencilIcon size={14} />
+    </button>
+  );
 
   return (
-    <Panel onClose={onClose} title="Change Password" width={380}>
+    <Panel onClose={onClose} title="My Account" width={400} guardUnsaved={dirty} isMobile={isMobile}>
+      {/* Who this is. */}
+      <PanelBlock>
+        <div style={{ fontSize: 14.5, fontWeight: 800, color: INK }}>{name}</div>
+      </PanelBlock>
+
+      {/* ── Where we email you ──────────────────────────────────────────────────────────────────
+          ⚠️ THIS IS NOT THE SIGN-IN ADDRESS, and the screen used to show that instead — the login
+          email with "You sign in with this address." under it. Sandeep: "in my account- we should
+          show the communicatio email only. user name cant be changed. so not editable." A field
+          nobody can act on is furniture; the one that CAN change is the one worth the space.
+
+          ⚠️ IT WRITES bakers.email, NOT the app-user's. The app-user's email IS the username, and
+          moving it would mean moving the Supabase auth identity — a different act with its own
+          confirmation. Nothing here touches it.
+
+          ⚠️ BLANK MEANS "USE MY SIGN-IN ADDRESS", and that is the live default: bakerNotifyEmail()
+          prefers bakers.email and falls back to the primary app-user, which is what 22 of the 24
+          bakeries on dev run on. So the placeholder is the login email rather than a backfilled
+          copy — a copy would stop following the moment the login address changed.
+
+          ⚠️ IT IS EVERY EMAIL WE SEND, not just orders: bakerNotifyEmail feeds order mail,
+          quote-accepted, trial reminders and billing events alike. The hint says so. */}
+      <PanelBlock>
+        <div style={s.fieldLabel}>WHERE WE EMAIL YOU</div>
+        {pendingEdit === 'email' ? <UnlockPrompt which="email" /> : emailStep === 'idle' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: 140, fontSize: 13.5, fontWeight: 700, color: INK, wordBreak: 'break-word' }}>
+              {emailNow || userData?.email || '—'}
+              {!emailNow && userData?.email && (
+                <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: '#9AA79F', marginTop: 2 }}>
+                  Your sign-in address
+                </span>
+              )}
+            </div>
+            {canEditEmail && (
+              <EditPencil label="Change where we email you"
+                onClick={() => startEdit('email', () => { setEmailMsg(null); setEmailDraft(emailNow ?? ''); setEmailStep('entry'); })} />
+            )}
+          </div>
+        ) : emailStep === 'entry' ? (
+          <>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              Orders, quotes and invoices all go here. We will email a code to make sure it reaches
+              you. Leave it blank to use your sign-in address.
+            </div>
+            <input style={s.modalInput} type="email" inputMode="email" autoFocus
+              placeholder={userData?.email || 'you@yourbakery.com'}
+              value={emailDraft} disabled={emailBusy}
+              onChange={e => setEmailDraft(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !emailBusy && sendEmailCode()} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={emailBusy}
+                onClick={() => { setEmailStep('idle'); setEmailDraft(emailNow ?? ''); setEmailMsg(null); }}>
+                Cancel
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: emailBusy ? 0.6 : 1 }}
+                disabled={emailBusy} onClick={sendEmailCode}>
+                {emailBusy ? 'Sending…' : (emailDraft.trim() ? 'Send code' : 'Use sign-in address')}
+              </button>
+            </div>
+          </>
+        ) : emailStep === 'code' ? (
+          <>
+            {/* The address they TYPED, not the server's mask of it — they wrote it a moment ago and
+                hiding most of it back confirms nothing. `emailSentTo` is the fallback. */}
+            <div style={{ fontSize: 12, color: INK_MUTED, wordBreak: 'break-word' }}>
+              Changing to <b style={{ color: INK }}>{emailDraft || emailSentTo}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              Enter the 6-digit code we emailed there.
+            </div>
+            <input style={{ ...s.modalInput, letterSpacing: 4, fontWeight: 700 }}
+              type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
+              placeholder="······" value={emailCode} disabled={emailBusy}
+              onChange={e => setEmailCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && emailCode.length === 6 && !emailBusy && confirmEmailCode()} />
+            <CodeError msg={emailMsg} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={emailBusy}
+                onClick={() => { setEmailStep('entry'); setEmailCode(''); setEmailMsg(null); }}>
+                Use another address
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: emailCode.length === 6 && !emailBusy ? 1 : 0.6 }}
+                disabled={emailCode.length !== 6 || emailBusy} onClick={confirmEmailCode}>
+                {emailBusy ? 'Checking…' : 'Confirm'}
+              </button>
+            </div>
+          </>
+        ) : null}
+        {emailMsg && !(emailStep === 'code' && !emailMsg.ok) && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: emailMsg.ok ? '#2e7d52' : DANGER }}>
+            {emailMsg.text}
+          </div>
+        )}
+      </PanelBlock>
+
+
+      {/* ── Mobile number ───────────────────────────────────────────────────────────────────── */}
+      <PanelBlock>
+        <div style={s.fieldLabel}>MOBILE NUMBER</div>
+
+        {pendingEdit === 'phone' && <UnlockPrompt which="phone" />}
+
+        {phoneStep === 'idle' && pendingEdit !== 'phone' && (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 14, fontWeight: 700, color: phoneNow ? INK : '#9AA79F' }}>
+                {phoneNow || 'Not set'}
+              </div>
+              {canChangePhone && (
+                <EditPencil label={phoneNow ? 'Change mobile number' : 'Add a mobile number'}
+                  onClick={() => startEdit('phone', () => { setPhoneMsg(null); setPhoneStep('entry'); })} />
+              )}
+            </div>
+            {!canChangePhone && (
+              <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+                Only the account owner can change the bakery's number.
+              </div>
+            )}
+          </>
+        )}
+
+        {phoneStep === 'entry' && pendingEdit !== 'phone' && (
+          <>
+            {/* What is being replaced stays visible while it is replaced (INVARIANTS #11) — a
+                screen that hides the old number asks the baker to remember what they are editing. */}
+            <div style={{ fontSize: 12, color: INK_MUTED }}>
+              Now: <b style={{ color: INK }}>{phoneNow || 'not set'}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              We will text a code to the new number to make sure it reaches you.
+            </div>
+            <input style={s.modalInput} type="tel" inputMode="tel" autoFocus
+              placeholder="+91 98765 43210" value={newPhone} disabled={phoneBusy}
+              onChange={e => setNewPhone(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && newPhone.trim() && !phoneBusy && sendCode()} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={phoneBusy}
+                onClick={() => { setPhoneStep('idle'); setNewPhone(''); setPhoneMsg(null); }}>
+                Cancel
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: newPhone.trim() && !phoneBusy ? 1 : 0.6 }}
+                disabled={!newPhone.trim() || phoneBusy} onClick={sendCode}>
+                {phoneBusy ? 'Sending…' : 'Send code'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phoneStep === 'code' && pendingEdit !== 'phone' && (
+          <>
+            <div style={{ fontSize: 12, color: INK_MUTED }}>
+              Changing to <b style={{ color: INK }}>{newPhone || sentTo}</b>
+            </div>
+            <div style={{ fontSize: 11.5, color: INK_MUTED, lineHeight: 1.5 }}>
+              Enter the 6-digit code we texted you.
+            </div>
+            <input style={{ ...s.modalInput, letterSpacing: 4, fontWeight: 700 }}
+              type="text" inputMode="numeric" autoComplete="one-time-code" maxLength={6} autoFocus
+              placeholder="······" value={code} disabled={phoneBusy}
+              onChange={e => setCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={e => e.key === 'Enter' && code.length === 6 && !phoneBusy && verifyCode()} />
+            <CodeError msg={phoneMsg} />
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" style={s.accountGhostBtn} disabled={phoneBusy}
+                onClick={() => { setPhoneStep('entry'); setCode(''); setPhoneMsg(null); }}>
+                Use another number
+              </button>
+              <button type="button"
+                style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '10px', fontSize: 13,
+                         opacity: code.length === 6 && !phoneBusy ? 1 : 0.6 }}
+                disabled={code.length !== 6 || phoneBusy} onClick={verifyCode}>
+                {phoneBusy ? 'Checking…' : 'Verify'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {phoneMsg && !(phoneStep === 'code' && !phoneMsg.ok) && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: phoneMsg.ok ? '#2e7d52' : DANGER }}>
+            {phoneMsg.text}
+          </div>
+        )}
+      </PanelBlock>
+
+      {/* ── Password ────────────────────────────────────────────────────────────────────────── */}
+      <PanelBlock>
+        <div style={s.fieldLabel}>PASSWORD</div>
+        {/* Shown but inert while locked, rather than hidden. A control that appears only once you
+            have already got past a gate teaches nobody that it exists — the same reasoning
+            PlateButton's note gives for a disabled Undo over an absent one. */}
+        {pendingEdit === 'password' ? <UnlockPrompt which="password" /> : !pwEditing ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: INK, letterSpacing: 2 }}>••••••••</div>
+            <EditPencil label="Change password"
+              onClick={() => startEdit('password', () => { setPwMsg(null); setPwEditing(true); })} />
+          </div>
+        ) : (
+        <>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>New password</span>
-          <input style={s.modalInput} type="password" value={form.newPassword}
-            onChange={e => setField('newPassword', e.target.value)} disabled={loading} autoFocus />
-          <PasswordChecklist password={form.newPassword} />
+          <input style={s.modalInput} type="password" value={pw.next} disabled={pwBusy}
+            autoComplete="new-password"
+            onChange={e => setPw(p => ({ ...p, next: e.target.value }))} />
+          <PasswordChecklist password={pw.next} />
         </label>
         <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           <span style={s.fieldLabel}>Confirm new password</span>
-          <input style={s.modalInput} type="password" value={form.confirmPassword}
-            onChange={e => setField('confirmPassword', e.target.value)} disabled={loading}
-            onKeyDown={e => e.key === 'Enter' && canSubmit && handleSubmit()} />
+          <input style={s.modalInput} type="password" value={pw.confirm} disabled={pwBusy}
+            autoComplete="new-password"
+            onChange={e => setPw(p => ({ ...p, confirm: e.target.value }))}
+            onKeyDown={e => e.key === 'Enter' && canSavePw && savePassword()} />
           {mismatch && (
             <span style={{ fontSize: 11.5, fontWeight: 700, color: DANGER, fontFamily: "'Quicksand',sans-serif" }}>
               Passwords do not match.
             </span>
           )}
         </label>
-        {msg && (
-          <div style={{ fontSize: 12, fontWeight: 600, color: msg.ok ? '#2e7d52' : DANGER }}>
-            {msg.text}
+        {pwMsg && (
+          <div style={{ fontSize: 12, fontWeight: 600, color: pwMsg.ok ? '#2e7d52' : DANGER }}>
+            {pwMsg.text}
           </div>
         )}
-        <button style={{ ...s.orderBtn, ...(brandBtn || {}), marginTop: 4, opacity: canSubmit ? 1 : 0.6 }}
-          disabled={!canSubmit} onClick={handleSubmit}>
-          {loading ? 'Updating...' : 'Update Password'}
-        </button>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" style={s.accountGhostBtn} disabled={pwBusy}
+            onClick={() => { setPwEditing(false); setPw({ next: '', confirm: '' }); setPwMsg(null); }}>
+            Cancel
+          </button>
+          <button type="button"
+            style={{ ...s.orderBtn, ...(brandBtn || {}), flex: 1, padding: '11px', fontSize: 13,
+                     opacity: canSavePw ? 1 : 0.6 }}
+            disabled={!canSavePw} onClick={savePassword}>
+            {pwBusy ? 'Updating…' : 'Update password'}
+          </button>
+        </div>
+        </>
+        )}
+      </PanelBlock>
+
+      {/* ── Closing your account ────────────────────────────────────────────────────────────────
+          Sandeep: "'delete my account' - should go to my account." It lived on the Store Settings
+          page inside Privacy & Data, which is where the LAW groups it — beside the consent trail.
+          But erasure is something a PERSON does to their own account, and a baker looking for how
+          to close theirs was never going to find it by scrolling a form about their shop.
+
+          ⚠️ GATED ON THE CAPABILITY, not merely shown. POST /api/baker/account/delete is
+          `requireCapability('account:delete')` — owner-only — so for a staff member this control
+          could never do anything but 403, and this codebase's own rule is that a button which
+          cannot work is worse than no button.
+
+          ⚠️ THE CONSENT TRAIL STAYED BEHIND, in Settings. The two halves of the old screen answer
+          different questions: what this BUSINESS agreed to, and whether this PERSON wants out. */}
+      {privacyReady && (
+        /* ⚠️ `show` FOLLOWS THE CAPABILITY, it does not hide the whole block.
+           The agreement trail is something any app-user may read; erasure is owner-only, because
+           POST /api/baker/account/delete is requireCapability('account:delete') and a control that
+           could only ever 403 is worse than no control. Gating the whole section on `account:delete`
+           would have taken the agreements away from staff who could read them yesterday. */
+        <PrivacyDataSection apiClient={apiClient} show={canDelete ? 'all' : 'consents'} />
+      )}
     </Panel>
   );
 }
@@ -1841,15 +2543,50 @@ const CANVAS_INSET_STACK = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 10;
 /** The colour wheel sits clear to the stack's LEFT — one more step out than the canvas. */
 const WHEEL_DODGE_STACK  = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 20;
 
+/* ⚠️ CALENDAR LEFT THIS MENU (2026-10-04) and is a rail item of its own. Sandeep: "calendar is an
+   important feature and it deserves an independant menu."
+
+   It is still the same PANEL in a different view — OrdersPanel owns both and the data, the filter
+   path and the fetch are shared — so what moved is the door, not the screen. It is not duplicated
+   here as well: a second door to the same room is worse than a longer walk to one. */
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
-  { id: 'orders-calendar', label: 'Calendar',  view: 'calendar' },
 ];
 
 // The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
 // Every rail menu (Orders submenu, Settings, profile) goes through here, so a new one cannot
 // accidentally ship the white card that belongs under the mobile header.
+/* ── One row of a menu, wherever that menu is drawn ──────────────────────────────────────────────
+ *
+ * A menu item appears in three places — RailSubmenu, the desktop rail menu, and the mobile More
+ * sheet. They were three copies of the same four lines, which is how `badge` ended up supported in
+ * two of them and not the third.
+ *
+ * ⚠️ `gutter` IS WHY THIS IS A COMPONENT AND NOT A SNIPPET. Giving one item an icon indents only
+ * that item: "Share my store" sat 72px right of "Store Settings" above it, because the others had
+ * nothing in the slot. So the icon column is reserved for EVERY item in a menu that has any icon,
+ * and for none in a menu that has none — which is a decision about the whole list, and therefore
+ * cannot be made by a row rendering itself. Measured in a harness on the rail's own ground, not
+ * reasoned about; the misalignment is invisible in the source.
+ */
+function MenuItemRow({ item, gutter, style, onClick, role }) {
+  return (
+    <button key={item.id} role={role} style={style} onClick={onClick}>
+      {gutter && (
+        <span aria-hidden style={{ width: 15, flexShrink: 0, display: 'inline-flex', alignItems: 'center' }}>
+          {item.icon}
+        </span>
+      )}
+      <span style={{ flex: 1, minWidth: 0 }}>{item.label}</span>
+      {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
+    </button>
+  );
+}
+
+// True when any item in this menu carries an icon — see MenuItemRow's note on `gutter`.
+const menuHasIcons = items => (items ?? []).some(i => i.icon);
+
 function RailMenu({ style, children }) {
   return (
     <div className="spattoo-rail-menu" style={style ? { ...s.railDropdown, ...style } : s.railDropdown}>
@@ -1930,9 +2667,8 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
         <RailMenu style={anchor}>
           <div style={s.railDropdownSection}>{label}</div>
           {items.map(item => (
-            <button key={item.id} style={s.railDropdownItem} onClick={() => onSelect(item)}>
-              {item.label}
-            </button>
+            <MenuItemRow key={item.id} item={item} gutter={menuHasIcons(items)}
+              style={s.railMenuItemWithIcon} onClick={() => onSelect(item)} />
           ))}
         </RailMenu>
       )}
@@ -1948,7 +2684,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStrokePoints, setStrokeFill, removeStroke, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -2614,7 +3350,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // flag per menu, so a nav item gets a submenu purely by declaring `menu` in the config.
   const [navMenuId, setNavMenuId] = useState(null);
   const [addUserModal,        setAddUserModal]        = useState(false);
-  const [changePasswordModal, setChangePasswordModal] = useState(false);
+  const [accountPanelOpen, setAccountPanelOpen] = useState(false);
   const [colorGuideOpen,      setColorGuideOpen]      = useState(false);
   const [printStudioOpen,     setPrintStudioOpen]     = useState(false);
   // Blaze+ (edible_print_studio). Hidden rather than shown-and-locked — one convention for "your
@@ -2667,6 +3403,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      EXISTING key rather than uploading a second copy of the same cake. */
   const [manualOrderPhoto,    setManualOrderPhoto]    = useState(null);
   const [ordersInitialView,   setOrdersInitialView]   = useState('list');  // which Orders view the rail asked for ('list' | 'calendar')
+  const [ordersView,          setOrdersView]          = useState('list');  // which one it is SHOWING — the panel reports it
   // Holds the quote result after a successful customer submit; read when the
   // OrderModal success screen is dismissed so the host can react (redirect to a
   // share screen). A ref so it survives the submit→close render gap.
@@ -2684,7 +3421,25 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [captureMenuOpen,    setCaptureMenuOpen]    = useState(false);   // desktop "Capture ⋯" → photo / reel
   const [customersFilter,     setCustomersFilter]     = useState(null);
   const [dashboardOpen,       setDashboardOpen]       = useState(false);
-  const [settingsPanelOpen,   setSettingsPanelOpen]   = useState(false);
+  /* ⚠️ A SCOPE, NOT A BOOLEAN — because there are two destinations now and only one page.
+     `null` closed, `'store'` the shop, `'settings'` the app. One state rather than two booleans so
+     the two cannot both be open: they are the same docked page, and a second one would render on
+     top of the first with no way back to it. */
+  /* ── Which rail skin this person is drawing ──────────────────────────────────────────────────
+     Seeded from DEFAULT_RAIL_SKIN so the FIRST PAINT has a colour: a rail that waits for a network
+     call before it knows what it is made of flashes the wrong one on every load.
+
+     ⚠️ THE SERVER DECIDES WHICH, NOT THIS. `served` already has the entitlement applied
+     (lib/railSkin.js), so a baker who chose Walnut and dropped off Blaze gets chrome back here
+     without the client knowing anything about plans. Resolving it on the client would be a second
+     copy of a billing rule, and the quieter one. */
+  const [railSkin, setRailSkin] = useState(DEFAULT_RAIL_SKIN);
+  /* How many looks there are to choose BETWEEN. Starts at 1 so the Settings entry is absent until
+     the answer arrives: an entry that appears a second after the menu opens is worse than one that
+     was never there. */
+  const [railSkinCount, setRailSkinCount] = useState(1);
+  const [settingsScope,       setSettingsScope]       = useState(null);
+  const settingsPanelOpen = settingsScope !== null;
   const [flavoursPanelOpen,   setFlavoursPanelOpen]   = useState(false);
   /* ⚠️ THE CATALOGUE IS THE FLYOUT, NOT A PAGE. It was a docked settings page for a day — rows with
      toggles and a Remove — and that screen is gone: Catalogue is what the rail's Templates opens,
@@ -2861,6 +3616,54 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const turnCameraRef    = useRef(null);   // spin the cake from a button — see the pen editor
   // Draw or slide: one pen, two gestures, and they cannot share a drag. See the toggle in the pen card.
   const [penMove, setPenMove] = useState(false);
+  /* ⚠️ WHICH PIPED PIECE THE SMALL CARD IS EDITING. A hand-piped run has always carried its own
+     colour and thickness; what was missing was a way to say WHICH one. Null means none chosen and
+     the card is absent — it is not a panel that sits there empty. */
+  const [pickedStrokeId, setPickedStrokeId] = useState(null);
+  /* ⚠️ THE PIECE AS IT WAS WHEN IT WAS CHOSEN, so the small card's Undo has something to go back to.
+     One level, deliberately: it means "put this piece back the way I found it", which is the thing a
+     customer actually wants after trying three colours on it.
+     ⚠️ AND IT MUST NOT DEPEND ON `design.piping`. Re-snapshotting whenever the design changes would
+     capture each edit as it happened, and Undo would restore the state it had a moment ago — which
+     is to say, do nothing. It is keyed on the SELECTION alone, which is exactly when a new "before"
+     is wanted.
+     ⚠️ STATE, NOT A REF, AND THAT DISTINCTION IS THE WHOLE BUG I SHIPPED FIRST. `pieceChanged` reads
+     this DURING RENDER to light the Undo button. A ref set inside an effect mutates after the paint
+     and schedules nothing, so the button kept whatever it was painted with: Undo sat enabled on a
+     piece nobody had touched, and the DOM only caught up when something else happened to re-render.
+     Found by reading the rendered attribute (`disabled` was never set) rather than the value I
+     expected. Anything render reads must be state.
+     ⚠️ DECLARED ABOVE `pieceChanged`, WHICH READS IT: a `const` below its reader is a temporal dead
+     zone crash, and `npm run build` is green on one — that is a runtime event. */
+  const [pickedBefore, setPickedBefore] = useState(null);
+  const pickedStroke = design.piping.find(st => st.id === pickedStrokeId) ?? null;
+
+  /* ── One hand-drawn brushstroke, chosen on the cake ───────────────────────────────────────────
+   * The same three pieces of state the piped piece above needs, for the same reasons, so the two
+   * read as one idea rather than two: WHICH one is picked, what it looked like when it was picked
+   * (for Undo), and whether it has actually changed since (so Undo is only lit when it can do
+   * something). `before` is STATE and not a ref — render reads it to light the button, and a ref
+   * set in an effect mutates after the paint and schedules nothing, which is the bug that shipped
+   * on the piped version first. */
+  const [pickedBrush, setPickedBrush] = useState(null);          // { tier, id }
+  const [pickedBrushBefore, setPickedBrushBefore] = useState(null);
+  const pickedBrushStroke = pickedBrush
+    ? (design.tiers[pickedBrush.tier]?.brushStrokes ?? []).find(st => st.id === pickedBrush.id) ?? null
+    : null;
+  const brushChanged = !!pickedBrushStroke && !!pickedBrushBefore
+    && ['color', 'weight', 'width'].some(
+      k => JSON.stringify(pickedBrushStroke[k]) !== JSON.stringify(pickedBrushBefore[k]));
+  /* Has this piece actually MOVED or CHANGED since it was chosen? A live comparison rather than a
+     flag set by each writer: three controls and a drag can all change it, and a flag is one of them
+     forgetting. An Undo that is always lit on a piece nobody has touched promises something it
+     cannot do (rule 7 — if it does something it must look like it does something). */
+  const pieceChanged = !!pickedStroke && !!pickedBefore
+    && ['color', 'thickness', 'point', 'points'].some(
+      k => JSON.stringify(pickedStroke[k]) !== JSON.stringify(pickedBefore[k]));
+  /* ⚠️ THE LAST PIECE PLACED, so switching to Edit pre-selects it. The common move after putting a
+     piece down is to recolour THAT piece, and making the customer hunt for it on the cake first is
+     the friction that made this feature necessary in the first place. */
+  const lastStrokeIdRef = useRef(null);
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
@@ -3095,6 +3898,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const initials = userData
     ? `${(userData.firstName || '')[0] || ''}${(userData.lastName || '')[0] || ''}`.toUpperCase() || '?'
     : '?';
+
+  // What the avatar does, in ONE place. The header and the rail both show it, and a baker who
+  // learns it on a laptop must meet the same thing on a phone — two handlers is two chances for
+  // that to stop being true.
+  //
+  // ⚠️ IT OPENS THE MENU, NOT THE SCREEN. It opened My Account directly for a while, because the
+  // menu it replaced held one real action and a menu with one item is a lid on a box with one
+  // thing inside. That was right until Sign out came back out of the account screen — Sandeep:
+  // "this screen is not the right place for signout button ... there should be two options -
+  // 1. My account 2. Signout." Sign out is not an account detail, it is a way out of the app, and
+  // burying it at the foot of a screen you open to edit something costs a tap every time.
+  const openAccount = useCallback(() => { setProfileOpen(o => !o); }, []);
   const isMobile = windowWidth <= 640;
   /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
    * bottom edge, so the shot stays visible while it is being described.
@@ -3302,11 +4117,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // edge, so it takes a short form rather than an ellipsis — a truncated label is worse than a
     // shorter honest one, and "Decor" is what a baker says out loud anyway.
     { id: 'new',        label: 'New Cake',    icon: null,                        requires: 'design:create', short: 'New' },
-    { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
+    /* ⚠️ DECORATIONS SITS SECOND, BESIDE New Cake — Dashboard used to. Sandeep: "decorations should
+       be near to the new cake menu. instead of dashboard. we will have decorations there. and
+       dashboard will come above the settings."
+
+       It is a frequency argument, and INVARIANTS #12 is the rule it comes from: lay a surface out by
+       how often each control is used, not by the order the features were built. Decorating is what a
+       baker does all day and it was third; Dashboard is a glance, once or twice, and it held the
+       slot nearest the one control everybody presses. */
+    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     /* ⚠️ CARRIES A SUBMENU NOW, so tapping it no longer opens the browse flyout — `openRailItem`
        returns early for any item with a `menu` ("a submenu is not a destination yet"). Browse is the
-       first item inside instead. Templates is in MOBILE_PRIMARY, which is what `strandedMenus`
-       requires of anything carrying a menu: the phone strip can draw one, the More sheet cannot. */
+       first item inside instead. Templates is in MOBILE_PRIMARY, so the phone strip draws its
+       submenu directly; an item with a menu that lands in the More sheet is flattened into rows
+       there instead (see the sheet). */
     /* ⚠️ A ONE-ITEM MENU IS NOT A MENU. A CUSTOMER has `design:create` but not `store:manage`, so
        their `templatesMenu` holds Catalogue alone — and `openRailItem` returns early for anything
        carrying a `menu`, which would put their only template surface behind an extra tap into a
@@ -3314,7 +4138,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
        which is what `openRailItem`'s `id === 'templates'` branch already does. */
     { id: 'templates',  label: 'Templates',   icon: <TemplatesIcon size={20} />, requires: 'design:create',
       ...(templatesMenu.length > 1 ? { menu: templatesMenu } : null) },
-    { id: 'elements',   label: 'Decorations', icon: <ElementsIcon size={20} />,  requires: 'design:create', short: 'Decor' },
     // Uploads sits in the RAIL, not inside Decorations: it is a PLACE you go (your own images —
     // photos, decorations), not a kind of decoration. It is also where uploading now happens, so
     // burying it three taps deep inside another panel made no sense.
@@ -3323,6 +4146,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // Orders rather than as its own rail destination. Declared as `menu` config — any nav item gets
     // a submenu the same way.
     { id: 'orders',     label: 'Orders',      icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
+    /* ⚠️ GATED ON THE HOST METHOD, not only on the capability. OrdersPanel decides whether a
+       calendar exists at all with `typeof apiClient?.fetchOrdersCalendar === 'function'` and falls
+       back to the list when it does not — so without the same gate here this item would open the
+       list while saying Calendar, which is the dead-button rule with the failure hidden. */
+    ...(apiClient?.fetchOrdersCalendar
+      ? [{ id: 'calendar', label: 'Calendar', icon: <CalendarIcon size={20} />, requires: 'order:view' }]
+      : []),
     { id: 'customers',  label: 'Customers',   icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
     ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
     /* ⚠️ NOT FOR A CUSTOMER. Sandeep: "for customer login - 'share' option is not needed."
@@ -3336,11 +4166,45 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
        Leaves a customer FOUR items, which still fits the phone strip's six slots, so More stays
        absent there — see splitMobileNav. */
+    /* ⚠️ THIS WAS `Share`, AND IT IS NOW THE SHOP ITSELF. Sandeep: "store is an important part of
+       spattoo. and setting a store needs to stand individual under menu. not hidden under the
+       setting tab. Lets make the 'share' button to 'Store' with a store icon."
+
+       Sharing did not go away — it became an item INSIDE here, next to Publish, which is the moment
+       a baker first has something worth sharing. A rail slot that only ever did one thing now opens
+       everything the shop is, and Settings keeps what is genuinely about the app.
+
+       The menu entries are gated separately: `store:manage` owns the shop's configuration, while
+       Share is handed to anyone who may design, exactly as the old rail item was. */
     ...(orderMode === 'customer'
       ? []
-      : [{ id: 'share', label: 'Share', icon: <ShareIcon size={20} />, requires: 'design:create' }]),
+      : [{ id: 'store', label: 'Store', icon: <StoreIcon size={20} />, requires: 'design:create',
+          menu: [
+            ...(hasCap('store:manage') ? [
+              { id: 'store-settings', label: 'Store Settings', open: () => setSettingsScope('store'), active: settingsScope === 'store' },
+              { id: 'store-flavours', label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
+                badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
+            ] : []),
+            /* The same mark the rail carried when sharing WAS the rail item — it did not change
+               job, only address, and an icon that moves with it says so. */
+            { id: 'store-share', label: 'Share my store', icon: <ShareIcon size={15} />, open: () => onShareStore?.() },
+          ] }]),
     ...(CODESIGN_UI_ENABLED && codesign.live && role !== 'customer'
       ? [{ id: 'codesign', label: 'Design Together', icon: <CoDesignIcon size={20} />, requires: 'design:create' }] : []),
+    /* ⚠️ DASHBOARD IS LAST, which puts it at the foot of the nav — directly above the tools cluster
+       that holds Chef's Desk and Settings. That is what "above the settings" means here.
+
+       ⚠️ IT STAYS IN railItems RATHER THAN MOVING INTO THAT CLUSTER, and the cluster's own note says
+       why: "this cluster is the persistent TOOLS a baker reaches for regardless of what is on the
+       canvas, while nav is DESTINATIONS". A dashboard is a destination. Two other things would have
+       broken too — the cluster sits OUTSIDE the scroller, so anything added there is pinned and
+       costs fixed height on a short window; and splitMobileNav reads railItems, so leaving would
+       have deleted Dashboard from the phone strip entirely.
+
+       The cost, stated: Chef's Desk sits between Dashboard and Settings, so it is above Settings
+       rather than immediately above it. Putting it literally adjacent would mean breaking the
+       grouping rule above. */
+    { id: 'dashboard',  label: 'Dashboard',   icon: <DashboardIcon size={20} />, requires: 'order:view' },
     // ── "Take a tour" is not a rail item ──────────────────────────────────────────────────────
     // Removed from the rail: the column is short of vertical room (the hang-hole came out for the
     // same reason), and a tour is the one entry here that a baker needs once rather than daily.
@@ -3358,15 +4222,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      CURRENT value and took its early return for menu-carrying items. Result: Templates opened
      neither the flyout nor a submenu. Measured in the browser: zero `.spattoo-rail-menu` elements
      after clicking it, with the button list unchanged.
-     ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and
-     `strandedMenus` only looks for a menu stranded in the More sheet — not for one that never
-     reaches the renderer. */
-  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode]);
+     ⚠️ No gate catches this. check:bindings and 2,295 tests were green throughout, and nothing
+     looks for a menu that never reaches the renderer. */
+  ].filter(item => hasCap(item.requires)), [ordersMenu, templatesMenu, codesign.live, role, capabilities, orderMode, settingsScope, flavoursPanelOpen, flavoursUncurated, onShareStore, apiClient]);
 
-  /* ── The tools below the divider must sit on the nav's rhythm ────────────────────────────────
+  /* ── The tools cluster must sit on the nav's rhythm ──────────────────────────────────────────
    * sidebarNav is `flex: 1` with `justify-content: space-evenly`, so its items spread to fill the
    * blade — 68px apart on a 900px window, tightening toward the bare 2px gap on a short one. The
-   * tools group below the divider is a plain stack, so it sat at its natural 49px however tall the
+   * tools group below it is a plain stack, so it sat at its natural 49px however tall the
    * window was. On a laptop that reads as Chef's Desk and Settings being crammed together while
    * everything above them is evenly spaced.
    *
@@ -3385,6 +4248,30 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * dependency changes when the rail finally mounts. Everything else was correct and the gap simply
    * stayed at its default. Storing the node in state re-runs the effect the moment it appears. */
   const [railNavEl, setRailNavEl] = useState(null);
+  /* ── The nav's own gap: spread to the 900px rhythm, never past it ─────────────────────────────
+   * Computed rather than declared — see sidebarNav for why neither a fixed pitch nor a spread works
+   * alone. Read off `clientHeight`, which is set by `flex: 1` from the space the blade has, NOT by
+   * this gap — so widening the gap cannot feed back into the measurement that produced it. The
+   * tools group below does form a loop (its own height shortens the nav), and that one is already
+   * damped where toolGap is computed. */
+  const [navGap, setNavGap] = useState(RAIL_MIN_GAP);
+  useLayoutEffect(() => {
+    const nav = railNavEl;
+    if (isMobile || !nav) return undefined;
+    const measure = () => {
+      const items = [...nav.querySelectorAll('button')];
+      if (items.length < 2) return;
+      const total = items.reduce((a2, el) => a2 + el.getBoundingClientRect().height, 0);
+      if (total <= 0 || nav.clientHeight <= 0) return;
+      const room = (nav.clientHeight - total) / (items.length - 1);
+      const next = Math.max(RAIL_MIN_GAP, Math.min(RAIL_NAV_GAP, Math.floor(room)));
+      setNavGap(prev => (Math.abs(prev - next) >= 1 ? next : prev));
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(nav);
+    return () => ro.disconnect();
+  }, [railNavEl, isMobile, railItems.length]);
   // 2, because that is sidebarNav's own `gap` — its floor when the viewport is too short to spread.
   // Floored at 4 instead, the two groups settled 2px apart on any window under ~750px: the nav had
   // bottomed out at its gap and this one had bottomed out at a different number.
@@ -3427,7 +4314,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // entry is added to one of them and not the other".
   //
   // ⚠️ FLAT, not nested. The More sheet has no surface for a submenu (mobileNav.js says so, and
-  // `strandedMenus` exists to make a violation loud), so the sheet renders these ITEMS under a
+  // a submenu cannot be anchored there), so the sheet renders these ITEMS under a
   // heading rather than a button that would open something the sheet cannot draw.
   const toolMenus = useMemo(() => [
     {
@@ -3441,11 +4328,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       id: 'settings', label: 'Settings', icon: <GearIcon size={20} />,
       items: [
         ...(hasCap('store:manage') ? [
-          // `active`: this destination is open, so the rail lights its menu — the rail says where you are.
-          { id: 'store',     label: 'Store Settings', open: () => setSettingsPanelOpen(true), active: settingsPanelOpen },
-          // The badge rides the DATA, so both surfaces show it. It used to be typed into each copy.
-          { id: 'flavours',  label: 'Flavours', open: () => setFlavoursPanelOpen(true), active: flavoursPanelOpen,
-            badge: flavoursUncurated ? { text: 'all on', title: 'Every flavour is switched on by default' } : null },
+          /* ⚠️ STORE SETTINGS AND FLAVOURS LEFT THIS MENU (2026-10-03) — they are on the rail's own
+             Store item now. What stays here is what is about the APP rather than the shop: how
+             orders reach the baker, and the agreements their business has signed.
+             `active`: this destination is open, so the rail lights its menu — the rail says where
+             you are. */
+          { id: 'orders-delivery', label: 'Orders & Delivery', open: () => setSettingsScope('settings'), active: settingsScope === 'settings' },
+          /* Its own entry, because it had none: the chooser was inside the page above and nobody
+             looking for "how my menu bar looks" would open one called Orders & Delivery.
+             ⚠️ ONLY WHEN THERE IS SOMETHING TO CHOOSE. With one look active (migration 122) this
+             entry would open a page showing the rail they are already looking at. */
+          ...(railSkinCount > 1
+            ? [{ id: 'appearance', label: 'Menu bar', open: () => setSettingsScope('appearance'), active: settingsScope === 'appearance' }]
+            : []),
           /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
              for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
              three template screens are Templates ▸ Browse · Library · Catalogue on the rail — the
@@ -3476,21 +4371,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      them for its `active` flags — Catalogue lights while the flyout is open, Library while its page
      is. Miss one and the rail goes on showing the previous state: a destination you are looking at
      that the nav says you are not in. */
-  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsPanelOpen, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen]);
+  ].filter(m => m.items.length), [printStudioEnabled, flavoursUncurated, capabilities, settingsScope, flavoursPanelOpen, templatesOpen, libraryPanelOpen, billingPanelOpen, topUpsPanelOpen, railSkinCount]);
 
   // Where each rail item goes on a phone: four in the strip, the rest behind More. The reasoning
   // and the submenu invariant live in mobileNav.js, which is tested — the two surfaces sharing one
   // list is the whole point, and the last time they did not, Uploads went missing from the phone.
   const { primary: mobilePrimary, secondary: mobileSecondary } = useMemo(() => splitMobileNav(railItems), [railItems]);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
-
-  useEffect(() => {
-    if (!import.meta.env?.DEV) return;
-    const stranded = strandedMenus(railItems);
-    if (stranded.length) {
-      console.error(`[nav] ${stranded.join(', ')} carries a submenu but sits in the More sheet, which has no surface to render one. Add it to MOBILE_PRIMARY, or give the sheet a submenu.`);
-    }
-  }, [railItems]);
 
   // What tapping one DOES. One function, both surfaces — the phone's copy of this had also lost
   // 'uploads', so even re-adding the item to the mobile array would have drawn a dead button.
@@ -3515,7 +4402,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    */
   const leaveOpenPanels = () => {
     setDashboardOpen(false);
-    setSettingsPanelOpen(false);
+    setSettingsScope(null);
     setFlavoursPanelOpen(false);
     /* ⚠️ THIS ONE SAVES AS YOU TAP, so a rail click closing it loses nothing — which is exactly why
        it was built that way. The note above says a docked panel holding unsaved work would have to
@@ -3557,9 +4444,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (id === 'tools')     openTools();
     if (id === 'templates') openTemplates();
     if (id === 'dashboard') setDashboardOpen(true);
+    if (id === 'calendar')  openOrdersPanel('calendar');
     if (id === 'customers') setCustomersPanelOpen(true);
     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
-    if (id === 'share')     onShareStore?.();
+
     if (id === 'codesign')  setCodesignPanelOpen(true);
   };
 
@@ -3571,6 +4459,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     : id === 'templates' ? templatesOpen
     : id === 'tools'     ? toolsOpen
     : id === 'codesign'  ? codesignPanelOpen
+    /* ⚠️ READS THE PANEL'S LIVE VIEW, not the one the rail asked for. OrdersPanel owns `view` and
+       its own toggle changes it without the rail being told — so lighting this from
+       `ordersInitialView` would be right until the baker pressed that toggle, and then quietly
+       wrong. `onViewChange` reports it back instead. */
+    : id === 'calendar'  ? (ordersPanelOpen && ordersView === 'calendar')
     : id === 'dashboard' ? dashboardOpen
     : id === 'customers' ? customersPanelOpen
     : id === 'invite'    ? invitePanelOpen
@@ -3599,8 +4492,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         setTourSeen(me?.tourSeen === true);
         // Avatar initials: in customer mode fetchBakerProfile returns no `user`, so
         // /api/me is where the logged-in principal's name comes from (baker or customer).
+        // MERGE, never replace. This effect and the fetchBakerProfile one below both write
+        // userData and neither can know which resolves last; a wholesale write here dropped
+        // `phone` and `canChangePhone` — which only /baker/profile carries — whenever /api/me
+        // happened to land second, and the account screen then offered no number to change.
         if (me?.firstName || me?.lastName) {
-          setUserData({ firstName: me.firstName, lastName: me.lastName, email: me.email });
+          setUserData(d => ({ ...d, firstName: me.firstName, lastName: me.lastName, email: me.email }));
         }
       }).catch(() => {});
     }
@@ -3680,6 +4577,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       if (user) setUserData(user);
     } catch { /* keep the last good profile */ }
   }, [apiClient]);
+
+  const refreshRailSkin = useCallback(() => {
+    if (!apiClient?.fetchRailSkins) return;
+    apiClient.fetchRailSkins()
+      .then(r => {
+        setRailSkinCount((r?.skins ?? []).length);
+        const row = (r?.skins ?? []).find(sk => sk.key === r?.served);
+        // An answer naming a skin the list does not contain is a server and a client that disagree;
+        // the default is the honest thing to draw rather than a half-applied look.
+        setRailSkin(row ? { ...DEFAULT_RAIL_SKIN, ...row } : DEFAULT_RAIL_SKIN);
+      })
+      .catch(() => {});   // a failed lookup keeps the default — the rail must never not render
+  }, [apiClient]);
+  useEffect(() => { refreshRailSkin(); }, [refreshRailSkin]);
 
   useEffect(() => {
     if (apiClient?.fetchBakerProfile) {
@@ -5376,6 +6287,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'tool', tool: 'luster-dust' });
   }
 
+  /* ── The brushstroke band, from a catalogue row ───────────────────────────────────────────────
+   *
+   * Same shape as the dust and the pen above: the row carries a LOOK, not an object. What an admin
+   * tunes in the Brushstroke studio — the palette, how many strokes, how far they overlap, how thick
+   * and how long — lands on `placement_config.cream_brush`, and tapping the row puts that look on a
+   * tier. "Blush three-tone" and "Deep single" are then two ROWS over one generator rather than two
+   * presets buried in code, which is the whole reason for it being a row (INVARIANTS #1).
+   *
+   * ⚠️ THE ROW'S ID TRAVELS WITH THE DESIGN. `elementId` is not decoration: a template bundle finds
+   * its elements by scanning the saved design for uuids that match `cake_elements.id`
+   * (promotionBundle.elementIdsReferencedBy), so without it a template promoted to prod would render
+   * correctly — the geometry is code plus these numbers — while the row behind it stayed behind.
+   *
+   * ⚠️ AND THE SEED IS FIXED AT PLACEMENT, not re-rolled per render. A band is thirty strokes of
+   * seeded noise; a design that re-rolled would come back a different cake every time it was opened,
+   * which is the rule brushGesture already states for a single stroke. */
+  function addBrushBandFromRow(el) {
+    const i = rainbowTierIndex();
+    const tuned = el?.placement_config?.cream_brush ?? {};
+    setTierBrushBand(i, {
+      ...tuned,
+      elementId: el?.id ?? undefined,
+      seed: tuned.seed ?? (1 + Math.floor(Math.random() * 9999)),
+    });
+    selectExclusive({ type: 'tier', index: i });
+  }
+
   // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
   // Same shape as the dust: the pen is a way of DRAWING, not an object, so a row carries the LOOK —
   // the nozzle, the colour, how thick and how soft — and tapping it sets the pen to that and opens
@@ -5409,11 +6347,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // remembering where it came from there is no return: the zone tiles, the colour and the size
       // for the ring version are all behind a card the customer can no longer find.
       stampCardId: el.cardId,
-      // How the ring stands this piece up. Without it a shell authored lying on its side is piped
-      // lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
-      // The RIM (top) config, because drawing on the cake is the case that surface answers: feet on
-      // the surface, leaning along it. The board variant is the same piece rotated for a plate.
-      stampRotation: pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
+      /* How the ring stands this piece up. Without it a shell authored lying on its side is piped
+         lying on its side — the same element ringed round a rim stands, hand-piped it fell over.
+
+         ⚠️ TWO ROTATIONS, BECAUSE AN ELEMENT IS AUTHORED PER SURFACE AND A PEN DRAWS ON BOTH. This
+         passed only the RIM figure, reasoning that "drawing on the cake is the case that surface
+         answers" — which is true of the top and false of the wall, and the wall is where a customer
+         pipes a spray down the side. Rose Swirl is the worked example: `top_rotation [0,0,0]`
+         because the rim needs none, `bottom_rotation [-89,-174,-180]` to stand it against a wall.
+         Handed the rim figure everywhere, every swirl piped on the side lay face-down and read as a
+         flat petal — reported as the pen using a different nozzle from the element chosen, which is
+         exactly what it looks like. The seat normal decides which one applies, at commit. */
+      /* ⚠️ `rotation` ON TOP, `bottomRotation` ON THE BOTTOM — the two branches of
+         pipingPlacementFromConfig do NOT return the same key, and reading `.rotation` off the bottom
+         one gives `undefined`. My first cut did exactly that, so the side value was null, the
+         fallback took the rim figure again and the fix changed nothing while looking right. */
+      stampRotation:     pipingPlacementFromConfig(el.placement_config, true).rotation        ?? null,
+      stampRotationSide: pipingPlacementFromConfig(el.placement_config, false).bottomRotation ?? null,
       // ── Size it like PIPING, not like a rope ─────────────────────────────────────────────────
       // `thickness` on the pen is a rope DIAMETER, and the stamp scales to it: target = 2×thickness.
       // At the pen's own default that is 0.104 against a ring shell's 0.24 × 1.2 = 0.288, so the
@@ -5445,7 +6395,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Coming back to the pen always starts in DRAW. A tool that remembers it was left in move mode
   // greets the next visit by doing nothing when you drag, which reads as broken.
   useEffect(() => {
-    if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) setPenMove(false);
+    setPickedBefore(pickedStrokeId ? (design.piping.find(st => st.id === pickedStrokeId) ?? null) : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see pickedBefore: design.piping is read
+    // here but deliberately NOT depended on, or every edit would become the new "before" and Undo
+    // would restore the state it had a moment ago, which is to say do nothing.
+  }, [pickedStrokeId]);
+
+  /* The brushstroke's "before", on exactly the same terms: keyed on the SELECTION, never on the
+     design, or every edit would become the new before and Undo would restore the state it had a
+     moment ago — which is to say, do nothing. */
+  useEffect(() => {
+    setPickedBrushBefore(pickedBrush
+      ? (design.tiers[pickedBrush.tier]?.brushStrokes ?? []).find(st => st.id === pickedBrush.id) ?? null
+      : null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- see above: design is read, not depended on
+  }, [pickedBrush]);
+
+  const wasPenSelectedRef = useRef(false);
+  useEffect(() => {
+    const isPen = selectedEl?.type === 'tool' && selectedEl.tool === 'pen';
+    if (!isPen) {
+      setPenMove(false);
+      /* ⚠️ THE PIECE CARD GOES AWAY WHEN THE PEN IS PUT DOWN, OR WHEN SOMETHING ELSE IS SELECTED —
+         it describes one piped piece and must never hover over a tier's card, editing something the
+         customer can no longer see. But NOT on every change: choosing a piece straight off the cake
+         CLEARS the selection rather than setting one, so `selectedEl` is null in that case and the
+         pick has to survive it. Hence two tests rather than "the selection changed". */
+      if (wasPenSelectedRef.current || selectedEl) setPickedStrokeId(null);
+    }
+    wasPenSelectedRef.current = isPen;
   }, [selectedEl]);
 
   /* ⚠️ The More sheet must not survive a selection, now that the strip can leave.
@@ -5469,7 +6447,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   function pipeWithCreamAgain() {
     setPenStyle(prev => ({ ...prev, stampId: null, stampUrl: null, stampRegular: false,
-                           stampName: null, stampCardId: null, stampRotation: null, stampLean: 0,
+                           stampName: null, stampCardId: null, stampRotation: null,
+                           stampRotationSide: null, stampLean: 0,
                            thickness: PEN_DEFAULT_THICKNESS }));
   }
 
@@ -5545,6 +6524,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     number_topper: addAgeFromRow,
     // Both are LOOKS rather than objects — see addDustFromRow and addPenFromRow.
     luster_dust: addDustFromRow,
+    /* A ring of palette-knife strokes round a tier's wall. A LOOK like the dust, not an object like
+       a rainbow — so it places instantly and is edited from the tier it is on. */
+    cream_brush: addBrushBandFromRow,
     cream_pen: addPenFromRow,
     /* One pen, two media. A separate KEY rather than a flag on the row, for two reasons:
        the key is the only thing an admin can author on Add Element (it writes `procedural` and
@@ -6094,6 +7076,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // overlap (min-centre distance ≈ one tile, STICKER_SIZE × scale). One scatter card with a density +
   // surface chooser manages the set.
   const SCATTER_DEFAULT_COUNT = 12;
+  /* How many scattered instances the renderer can carry before the cake stops responding. See the
+     measurement beside `scatterMaxCount`, which is the only place this is used. */
+  const SCATTER_RENDER_BUDGET = 1000;
   // Per-instance size for scatter: the element's own configured r (admin-controlled), default 0.5
   // when unset. No element-type branch — just the config value. Tunable on the card afterwards.
   function scatterScaleFor(element) {
@@ -6182,7 +7167,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        (measured: 2733 at size 0.1, 1214 at 0.15, 683 at 0.2). The area maths is the real ceiling and
        it already scales with Size, so it is now the only one: the dial's maximum means "as full as
        this strip gets", in both modes, at whatever size the baker chose. */
-    return Math.max(12, Math.floor((area / footprint) * 0.7));
+    /* ⚠️ AND A SECOND CEILING, BECAUSE "FITS" AND "DRAWS" ARE DIFFERENT QUESTIONS. The area maths
+       answers how many pieces the surface HOLDS. Nothing in it knows that every scattered piece is
+       its own sticker in `design.stickers` — its own component, its own mesh, its own draw call —
+       so the dial happily offered 2,715 on a top at sprinkle size and 9,761 on a wall, and the page
+       stopped responding. Sandeep: *"sprinkles — when added a cluster of many like 3000 or more,
+       page is freezing."*
+
+       Measured in the designer, stepping the Count dial (headless, no GPU, so these are pessimistic
+       — the SHAPE is what transfers, and it is linear in both):
+
+           count    placing    per frame            count    placing    per frame
+              55     179 ms        55 ms             1358    2442 ms       688 ms
+             272     433 ms       160 ms             2036    3608 ms       967 ms
+             815    1036 ms       404 ms             2715    5160 ms      1297 ms
+
+       Placing is quadratic three times over — the seat search checks every seat already taken, and
+       `addSticker`/`updateSticker` each copy the whole array per piece — but the frame cost is what
+       makes it read as FROZEN rather than slow: at 2,715 the cake redraws about once a second, for
+       as long as it is on screen.
+
+       ⚠️ 1,000 IS A JUDGEMENT ANCHORED ON THREE THINGS WE KNOW, not on the numbers above, which were
+       taken without a GPU. It is comfortably past the flat 400 that was removed for being too few
+       ("count 400 is too less in case of band. band can be very thick"); it is twelve times the
+       largest scatter set in any saved template or order (84); and it is a third of where the freeze
+       was reported. Raise it when a scatter set draws as ONE instanced mesh rather than N
+       components, which is the fix this number is standing in for.
+
+       ⚠️ IT CAPS THE DIAL, NOT THE CAKE. A design already carrying more keeps what it has — clamping
+       on load would silently re-pose somebody's approved cake, which is the objection that shaped
+       migration 118. You simply cannot ask for more. */
+    return Math.max(12, Math.min(SCATTER_RENDER_BUDGET, Math.floor((area / footprint) * 0.7)));
   }
   // The count a NEW scatter seeds with — the element's admin-authored default
   // (placement_config.scatter_count), falling back to SCATTER_DEFAULT_COUNT. Config-driven, never a
@@ -10390,40 +11405,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
         </>}
 
-        {/* ── Draw or slide ────────────────────────────────────────────────────────────────────
-            One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
-            pressing the cake to draw over it are the same press. So it is a mode, said out loud,
-            rather than a modifier key nobody would find on a phone.
-            Sliding moves the WHOLE stroke and keeps its shape: it is the unit you drew, and the unit
-            a ring already is. Until this, a border a few millimetres too low cost you the whole line.
-        */}
         {/* ⚠️ CREAM ONLY. "Draw" is a gesture you make against the cake with a pen; an acrylic
             topper is a cut sheet that is placed, never drawn, so on a topper these two buttons named
             a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
-            sure what are intended for". */}
-        {w.style !== 'acrylic' && <>
-        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
-          {[['Draw', false], ['Move', true]].map(([label, val]) => (
-            <button key={label} onClick={() => setPenMove(val)}
-              style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
-                       /* Black, like every other pressed state in this app. This was the last green
-                          toggle on a card — and `penMove` is the PEN's mode (declared once, read by
-                          the canvas as penDrawMode/penMoveMode), surfaced here, so it should not
-                          have carried a tone of its own in the first place. */
-                       border: `1.5px solid ${penMove === val ? INK : LINE}`,
-                       background: penMove === val ? INK : SURFACE,
-                       color: penMove === val ? SURFACE : INK,
-                       fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
-              {label}
-            </button>
-          ))}
-        </div>
-        {penMove && (
-          <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
-            Drag a piped line to slide it. It keeps its shape and stays on the cake.
-          </div>
-        )}
-        </>}
+            sure what are intended for". The row itself is renderPenModeRow — shared with the pen
+            card, which is where hand-piping happens. */}
+        {w.style !== 'acrylic' && renderPenModeRow()}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         {/* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
@@ -10862,6 +11849,80 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  /* ── Draw or Edit ─────────────────────────────────────────────────────────────────────────
+     ⚠️ ONE ROW, TWO CARDS. This toggle lived only on the WRITING card, and the mode it switches is
+     the PEN's — so hand-piping, which is the whole reason the mode exists, had no way to reach it.
+     Reported as exactly that: pieces placed by tapping could not be recoloured, because Edit mode
+     was unreachable from the Cream Pen card. Extracted rather than copied (root CLAUDE.md rule 1).
+
+     One pen, two gestures, and a drag cannot mean both — pressing a placed line to move it and
+     pressing the cake to draw over it are the same press. So it is a mode, said out loud, rather
+     than a modifier key nobody would find on a phone. Sliding moves the WHOLE stroke and keeps its
+     shape: it is the unit you drew, and the unit a ring already is.
+
+     ⚠️ CREAM ONLY on the writing card — "Draw" is a gesture you make against the cake with a pen;
+     an acrylic topper is a cut sheet that is placed, never drawn. The caller gates that. */
+  function renderPenModeRow() {
+    return (
+      <>
+        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+          {/* ⚠️ "EDIT", NOT "MOVE", BECAUSE IT DOES BOTH NOW — tap a piece to choose it, drag to
+              slide it. The two cannot live in Draw: in stamp mode a TAP IS THE PLACEMENT GESTURE
+              ("clicked on cake few times so a few cream elements added"), so a tap that also
+              selected would make it impossible to place a piece overlapping one already there,
+              which is how a cluster gets built. One meaning per gesture per mode.
+              Entering Edit pre-selects the piece placed last: the usual next move after putting one
+              down is to recolour THAT one, and hunting for it on the cake first is the friction this
+              whole feature exists to remove. */}
+          {[['Draw', false], ['Edit', true]].map(([label, val]) => (
+            <button key={label} onClick={() => {
+                setPenMove(val);
+                setPickedStrokeId(val ? (lastStrokeIdRef.current ?? null) : null);
+              }}
+              style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
+                       /* Black, like every other pressed state in this app. This was the last green
+                          toggle on a card — and `penMove` is the PEN's mode (declared once, read by
+                          the canvas as penDrawMode/penMoveMode), surfaced here, so it should not
+                          have carried a tone of its own in the first place. */
+                       border: `1.5px solid ${penMove === val ? INK : LINE}`,
+                       background: penMove === val ? INK : SURFACE,
+                       color: penMove === val ? SURFACE : INK,
+                       fontWeight: 800, fontSize: 11, fontFamily: "'Quicksand',sans-serif" }}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {/* ⚠️ THE EXPLANATION USED TO SIT BEHIND THE MODE IT EXPLAINED. This line was gated on
+            `penMove`, so it only appeared once you were already IN Edit — and the toggle above says
+            "Edit" without saying what it edits. A baker piped a few pieces, tapped one to recolour
+            it, and got another piece stamped on top: in stamp mode A TAP IS THE PLACEMENT GESTURE,
+            which is deliberate (see the note on the buttons) and gives no hint that selecting is
+            possible at all. Reported as exactly that — not knowing Edit is how you pick up a piece
+            you already piped.
+
+            It is the mirror of the rule PlateButton states: "a control that appears only once you
+            have already needed it teaches nobody it exists". Here it was the explanation.
+
+            So both modes get a line, and Draw's points FORWARD. No new surface, and it stays beside
+            the control it describes rather than below the thing it narrates (INVARIANTS #11).
+
+            ⚠️ THE DRAW LINE SAYS NOTHING ABOUT HOW YOU DRAW, and that is not brevity. This row is
+            shared by TWO cards: the pen, where a tap STAMPS a piece, and writing, where you drag
+            letters. "Tap the cake to place a piece" is true of one and false of the other — my
+            first cut said it and would have been wrong on every writing card. What both have in
+            common is the thing the baker could not find, so that is all it claims.
+
+            On the pen card this row only renders once something is piped (see the caller), so the
+            line arrives exactly when there is something to edit. */}
+        <div style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4, marginTop: 5 }}>
+          {penMove
+            ? 'Tap a piped piece to change its colour and size. Drag one to slide it.'
+            : 'To recolour or move what you have piped, switch to Edit.'}
+        </div>
+      </>
+    );
+  }
+
   function renderPenBody() {
     /* ⚠️ THE COPY FOLLOWS THE MEDIUM. The card said "Cream Pen" and "Cream colour" while piping
        chocolate — the medium reached the renderer and not a word of the interface, which is the kind
@@ -11061,6 +12122,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </span>
           </span>
         </label>
+
+        {/* ⚠️ ONLY ONCE SOMETHING IS PLACED. Edit with an empty cake is a mode that can do nothing,
+            and on a first visit the only thing to say is "drag on the cake". It appears the moment
+            there is a piece to edit, which is also the moment it is wanted. */}
+        {!!design.piping.length && renderPenModeRow()}
 
         <div style={{ fontSize: 11, fontWeight: 700, color: '#6b8c74', marginTop: 10 }}>
           {design.piping.length} stroke{design.piping.length === 1 ? '' : 's'}
@@ -12030,9 +13096,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 What stays is what has to be glanceable rather than reachable: notifications, the
                 credits readout, and the avatar. Both menus are settings-shaped — visited
                 occasionally, on purpose — which is exactly what More is for. */}
+            {/* ⚠️ THE AVATAR OPENS THE ACCOUNT SCREEN, IT NO LONGER OPENS A MENU.
+                The menu held one real action — Change Password — and a menu with one item in it
+                is a lid on a box with one thing inside. Now that an app-user also owns a phone
+                number we can change, the honest shape is a screen, and `accountMenuRole` decides
+                which of the two this person gets.
+
+                A CUSTOMER still gets the menu, because they have no account to edit: they signed
+                in by OTP and have no password, and the phone they proved belongs to the enquiry,
+                not to a profile they can rewrite here. */}
             <div style={{ position: 'relative' }} ref={profileRef}>
               <button style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
-                onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+                aria-label={role === 'customer' ? 'Account menu' : 'My account'}
+                onClick={() => { openAccount(); setSettingsOpen(false); }}>
                 {initials}
               </button>
               {profileOpen && (
@@ -12042,7 +13118,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {userData?.email && <div style={s.dropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.dropdownDivider} />
-                  {role !== 'customer' && <button style={s.dropdownItem} onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>Change Password</button>}
+                  {/* A CUSTOMER gets no account screen: they signed in by OTP, have no password,
+                      and the phone they proved belongs to the enquiry rather than to a profile. */}
+                  {role !== 'customer' && (
+                    <button style={s.dropdownItem}
+                      onClick={() => { setAccountPanelOpen(true); setProfileOpen(false); }}>My Account</button>
+                  )}
                   <button style={s.dropdownItem} onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>Sign out</button>
                 </div>
               )}
@@ -12120,16 +13201,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         {/* ── Sidebar ── */}
         <div style={plainRail ? { ...s.sidebar, ...s.sidebarPlain } : s.sidebar}>
-          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} />}
-          <div style={plainRail ? { ...s.sidebarInner, ...s.sidebarInnerPlain } : s.sidebarInner}>
-          <nav className="spattoo-rail-nav" ref={setRailNavEl} style={s.sidebarNav}>
+          {!plainRail && <SpatulaFrame lifted={dockedPageOpen} skin={railSkin} />}
+          <div style={s.sidebarInner}>
+          <nav className="spattoo-rail-nav" ref={setRailNavEl} style={{ ...s.sidebarNav, gap: navGap }}>
             {railItems.map(({ id, label, short, icon, menu }) => {
               const active = railItemActive(id, menu);
               const isNew  = id === 'new';
               const button = (
                 <button key={id} style={plainRail ? { ...s.navItem, ...s.navItemPlain } : s.navItem} data-tour={id}
                   onClick={() => openRailItem(id, menu)}>
-                  <span style={{ ...s.sidebarBtn, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: '#fff' } : {}), ...(active ? s.sidebarBtnActive : {}) }}>
+                  <span style={{ ...s.sidebarBtn, color: railSkin.ink, ...(isNew ? { borderRadius: '50%', border: '1.8px solid rgba(255,255,255,0.45)', color: railSkin.ink_active } : {}), ...(active ? { ...s.sidebarBtnActive, color: railSkin.ink_active } : {}) }}>
                     {isNew
                       ? <svg width={20} height={20} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round">
                           <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -12144,7 +13225,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       (Dashboard 48.8 and Customers 48.8 are baker-only, on the 64px spatula).
                       `short` already exists for exactly this — the phone strip added it, and the note
                       there says a shorter honest label beats a truncated one. Reused, not reinvented. */}
-                  <span style={{ ...s.navLabel, ...(active ? { color: '#fff' } : {}) }}>
+                  <span style={{ ...s.navLabel, color: active ? railSkin.ink_active : railSkin.ink }}>
                     {plainRail ? (short ?? label) : label}
                   </span>
                 </button>
@@ -12170,12 +13251,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           </nav>
 
-          <div style={s.sidebarDivider} />
 
           {/* gap is measured from the nav above — see toolGap. */}
-          <div style={{ padding: '8px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: toolGap }}>
+          <div style={{ padding: '0 0 8px', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: toolGap }}>
             {/* ── Chef's Desk — baker fulfilment tools (Color Guide, Edible Print Studio, …) ────────
-                BELOW the divider, with Settings and Profile, and deliberately not inside <nav>.
+                OUTSIDE the <nav>, with Settings and Profile, and deliberately so.
                 The nav scrolls (sidebarNav: overflowY auto) with its scrollbar hidden on purpose — a
                 scrollbar in a 64px rail is worse than none. Chef's Desk was the LAST item in it, so
                 on a viewport too short for the full rail it sat below the fold with no scrollbar, no
@@ -12190,9 +13270,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 + RailMenu, the same two shared components, rather than its own dropdown. */}
             {/* Both menus, from the ONE list. Labelled like every item above them: icon-only they
                 asked a baker to recognise a crossed-whisk glyph or hover to find out, in a rail where
-                nothing else does. They sit below the divider because they are TOOLS rather than
+                nothing else does. They sit apart from the nav because they are TOOLS rather than
                 destinations — a grouping distinction, never a reason to name them differently — and
-                outside the scroller, so a short viewport cannot put them below the fold. */}
+                outside the scroller, so a short viewport cannot put them below the fold.
+
+                ⚠️ THAT SPLIT IS STRUCTURAL AND STILL HERE; only the rule that drew it is gone.
+                Sandeep: "user does not care about that boundary... the boundary does not add any
+                value. lets the menu items flow without that." The <nav> still scrolls and this
+                cluster still cannot be scrolled away — which is the bug the separation fixed, and
+                a 1px line was never what fixed it. */}
             {canManageStore && toolMenus.map(menu => {
               const isChefs = menu.id === 'chefsdesk';
               const open = isChefs ? chefsDeskOpen : settingsOpen;
@@ -12212,11 +13298,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <RailMenu style={{ top: 'auto', bottom: 0 }}>
                       <div style={s.railDropdownSection}>{menu.label}</div>
                       {menu.items.map(item => (
-                        <button key={item.id} style={s.railDropdownItem}
-                                onClick={() => { leaveOpenPanels(); item.open(); }}>
-                          {item.label}
-                          {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
-                        </button>
+                        <MenuItemRow key={item.id} item={item} gutter={menuHasIcons(menu.items)}
+                          style={s.railMenuItemWithIcon}
+                          onClick={() => { leaveOpenPanels(); item.open(); }} />
                       ))}
                     </RailMenu>
                   )}
@@ -12224,11 +13308,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               );
             })}
 
+            {/* Same door as the header's avatar — see the note there. openAccount() is shared so
+                the two cannot drift into opening different things. */}
             <div style={{ position: 'relative' }} ref={profileRef}>
-              <SidebarTooltip label={personName(userData, 'Profile')}>
+              <SidebarTooltip label={personName(userData, 'Profile')} suppressed={profileOpen}>
                 <button
                   style={{ ...s.sidebarProfileBtn, background: brandPrimary }}
-                  onClick={() => { setProfileOpen(o => !o); setSettingsOpen(false); }}>
+                  aria-label={role === 'customer' ? 'Account menu' : 'My account'}
+                  onClick={() => { openAccount(); setSettingsOpen(false); }}>
                   {initials}
                 </button>
               </SidebarTooltip>
@@ -12241,10 +13328,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     {userData?.email && <div style={s.railDropdownEmail}>{userData.email}</div>}
                   </div>
                   <div style={s.railDropdownDivider} />
-                  {role !== 'customer' && <button style={s.railDropdownItem}
-                    onClick={() => { setChangePasswordModal(true); setProfileOpen(false); }}>
-                    Change Password
-                  </button>}
+                  {role !== 'customer' && (
+                    <button style={s.railDropdownItem}
+                      onClick={() => { setAccountPanelOpen(true); setProfileOpen(false); }}>
+                      My Account
+                    </button>
+                  )}
                   <button style={s.railDropdownItem}
                     onClick={() => { apiClient?.signOut?.() ?? supabase?.auth.signOut(); setProfileOpen(false); }}>
                     Sign out
@@ -12672,6 +13761,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                covering the strip it exists for. `10` and `-10` do both. */
                             padding: '4px 10px', margin: '2px -10px 0' }}>
                 {cataloguePhotoBusy ? 'Adding your photo…' : 'Create your catalogue by selecting cakes from Library or upload your own. Your customers can see your catalogue.'}
+                {/* ⚠️ THE SENTENCE ABOVE IS DICTATED AND UNCHANGED — this is an ADDITION, not an
+                    edit. It says customers can see the catalogue, which is true only once the shop
+                    is live; rather than qualify his words, the condition it depends on is stated
+                    beneath them. Only when it is NOT live: a line telling a published baker their
+                    shop is published is noise on every visit. */}
+                {!cataloguePhotoBusy && bakerData?.storefront_published === false && hasCap('store:manage') && (
+                  <div style={{ marginTop: 6, color: INK, fontWeight: 700 }}>
+                    Your store is not live yet.{' '}
+                    <button type="button" onClick={() => { setTemplatesOpen(false); setSettingsScope('store'); }}
+                      style={{ padding: 0, border: 'none', background: 'none', cursor: 'pointer',
+                               fontFamily: "'Quicksand',sans-serif", fontSize: 12, fontWeight: 800,
+                               color: '#2C4433', textDecoration: 'underline' }}>
+                      Publish it in Store
+                    </button>{' '}
+                    so customers can see these cakes.
+                  </div>
+                )}
               </div>
             )}
             {cataloguePhotoError && (
@@ -12788,8 +13894,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {/* ⚠️ THREE DIFFERENT EMPTINESSES, and only one of them is the baker's to act on.
                     A customer is never told to go to Library or to upload — they cannot do either,
                     and naming a screen they have no way to open reads as a broken app. */}
+                {/* ⚠️ `templates` IS THE CATALOGUE — fetchTemplates returns it, and loadTemplates
+                    says so: "An empty array now means the catalogue is empty". So the FIRST branch
+                    is the one every new baker lands on, and it used to read "No templates yet": a
+                    statement of fact that names nothing to do and never mentions the storefront the
+                    shelf feeds. Sandeep: "for a new baker, he does not know where this catalogue
+                    goes."
+
+                    The second branch — a stocked catalogue with nothing shown and no filters on —
+                    keeps the dictated sentence it always had. */}
                 {templates.length === 0
-                  ? 'No templates yet'
+                  ? (hasCap('store:manage')
+                      ? <CatalogueStoreSteps
+                          published={bakerData?.storefront_published}
+                          onOpenStore={() => { setTemplatesOpen(false); setSettingsScope('store'); }}
+                        />
+                      : 'No cakes to show yet.')
                   : hasCap('store:manage')
                     /* ⚠️ SANDEEP'S WORDS, VERBATIM — restored 2026-09-28. He dictated this sentence
                        and I paraphrased it: dropped the "can" from "can see" (which changes it from
@@ -13183,6 +14303,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* Clicking the cloud itself selects it — the card opens and its handle appears. Until
                  this, the only way in was the card, and the only way to the card was the stack: you
                  had to find the thing you were already looking at. */
+              onBrushStrokeClick={(tier, id) => setPickedBrush({ tier, id })}
               onCloudClick={(tier, id) => {
                 selectExclusive({ type: 'cloud', tierIndex: tier, id });
               }}
@@ -13233,11 +14354,51 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onWritingClick={id => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false); selectExclusive({ type: 'writing', id }); setElementsOpen(false); }}
               onWritingMove={(id, moves) => updateWriting(id, moves)}
               selectedWritingId={selectedWritingId}
+              /* ⚠️ A PIECE CHOSEN WITH THE PEN AWAY OPENS THE PEN, because the pen card IS that
+                 piece's parent — and clearing the selection instead left the customer holding a
+                 card with two controls on it and no way back to Undo, Clear or Done. Sandeep, after
+                 removing the ring that the piping card was built around: *"when i select the piping
+                 piece which is pipied using the hand piping - it opens the small opoup. but the
+                 parent popup is never opened."* A ring card dies with its ring; hand-piped strokes
+                 outlive it, and they still have somewhere to belong.
+
+                 ⚠️ IN EDIT, NOT DRAW. Arriving in Draw would mean the next tap on the cake PLACES a
+                 piece, and someone who just tapped an existing one to change its colour is editing,
+                 not piping. Edit also makes the second tap mean what they expect: choose another
+                 piece.
+
+                 The pen's own picks leave the selection alone — it is already the pen. */
+              onPickStroke={id => {
+                setPickedStrokeId(id);
+                if (!(selectedEl?.type === 'tool' && selectedEl.tool === 'pen')) {
+                  selectExclusive({ type: 'tool', tool: 'pen' });
+                  setPenMove(true);
+                }
+              }}
               penDrawMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && !penMove}
               penMoveMode={selectedEl?.type === 'tool' && selectedEl.tool === 'pen' && penMove}
-              onMoveStroke={updateStrokePoints}
+              /* ⚠️ THE MERGING WRITER, because a slide now has to write `point` for a stamped piece
+                 and `points` for a drawn line. `updateStrokePoints` only ever wrote the latter. */
+              onMoveStroke={updateStroke}
               penStyle={penStyle}
-              onAddStroke={addStroke}
+              /* ⚠️ PLACING A PIECE SELECTS IT. Sandeep, after piping a cake of them and finding the
+                 colour unreachable: *"i cannot change color after i click to pipe them."* The
+                 per-piece card existed, behind a mode toggle he had no reason to press — and the
+                 big CREAM COLOUR wheel sitting beside it only ever coloured the NEXT piece, so the
+                 obvious control looked broken. Now the card is already open on the thing just put
+                 down, which is the moment you want to recolour it; the next tap places another and
+                 the card follows. Edit mode stays for going back to a piece from earlier, and for
+                 sliding one.
+
+                 ⚠️ `addStroke` seeds the id itself, so the only way to know which piece was made is
+                 to make the id here and pass it in — the hook merges a given id rather than
+                 inventing a second one. */
+              onAddStroke={st => {
+                const id = crypto.randomUUID();
+                lastStrokeIdRef.current = id;
+                addStroke({ ...st, id });
+                setPickedStrokeId(id);
+              }}
               dustMode={selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust'}
               dustSelected={{ tier: dustTier, idx: dustSel }}
               onDustMove={(tier, idx, u, v) => updateDustSplash(tier, idx, { u, v })}
@@ -13289,6 +14450,118 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cameraPosition={isMobile ? CAMERA_POSITION_MOBILE : CAMERA_POSITION}
             />
           </Suspense>
+          {/* ⚠️ RENDERED BESIDE THE CANVAS, NOT INSIDE THE PIPING CARD. It lived in the ring
+              card's tree first, which meant it could only ever appear while that card was open —
+              and hand-piping happens on the PEN card, so it never appeared at all. It belongs to
+              the cake, like the selection it describes. */}
+      {/* ── One piped piece, chosen on the cake ────────────────────────────────────────────────
+          ⚠️ IT SITS OVER THE CARD RATHER THAN REPLACING IT, which is Sandeep's call and the right
+          one: *"lets make it sit over. that gives the opportunity to always click on 'done with
+          piping'."* A card that swapped itself out would hide the way back out of the pen.
+
+          ⚠️ EVERY PIECE CARRIES ITS OWN COLOUR AND THICKNESS ALREADY — `DEFAULT_STROKE` has had both
+          since the pen was built. Nothing was remodelled to make these editable; what was missing
+          was any way to say WHICH piece, so the pen's own controls could only ever describe the
+          NEXT stroke. That is why a customer who placed several could not change one of them.
+
+          The tick is the only way out, deliberately: it is also what returns the piping card to
+          being the active one on a phone. */}
+      {pickedStroke && createPortal(
+        <div style={{ position: 'fixed', zIndex: 4200, right: isMobile ? 10 : EDIT_POPUP_RIGHT + EDIT_POPUP_W + 14,
+                      bottom: isMobile ? 'calc(env(safe-area-inset-bottom) + 86px)' : 'auto',
+                      top: isMobile ? 'auto' : 90, width: isMobile ? 'auto' : 196, left: isMobile ? 10 : 'auto',
+                      background: '#fff', borderRadius: 14, padding: 12,
+                      border: '1.5px solid #eadde2', boxShadow: '0 12px 44px rgba(0,0,0,0.24)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: INK, textTransform: 'uppercase',
+                           letterSpacing: 0.6, fontFamily: "'Quicksand',sans-serif" }}>
+              {pickedStroke.kind === 'stamprope' || (pickedStroke.points?.length ?? 0) > 1
+                ? 'This run' : 'This piece'}
+            </span>
+            <button type="button" onClick={() => setPickedStrokeId(null)}
+              title="Done with this piece"
+              style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+                       border: 'none', background: INK, color: '#fff', fontSize: 15, lineHeight: 1 }}>✓</button>
+          </div>
+          <ColorWheel color={pickedStroke.color ?? '#ffffff'} compact
+            onChange={c => updateStroke(pickedStroke.id, { color: c })}
+            cakeColors={[...new Set(collectElementColors(design))]} width={152} />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+            <DialCell label="Size" value={pickedStroke.thickness ?? 0.03}
+              min={0.04} max={0.34} step={0.005} fmt={v => v.toFixed(3)}
+              onChange={v => updateStroke(pickedStroke.id, { thickness: v })} />
+          </div>
+          {/* ── Undo and Remove, for THIS piece ────────────────────────────────────────────────
+              The same pair the pen card offers, meaning the same things one scale down: Undo puts
+              the piece back the way it was when it was chosen, Remove takes that one piece off the
+              cake. The pen card's Undo drops the LAST stroke and its Clear all wipes every one of
+              them — neither is "this one", which is what a customer means while looking at a card
+              headed THIS PIECE.
+              ⚠️ Same glyph, same tones, same order as that row on purpose (INVARIANTS #14): a
+              customer meets one Undo in this tool, not two that look different. */}
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            <button onClick={() => { if (pickedBefore) updateStroke(pickedStroke.id, pickedBefore); }}
+              disabled={!pieceChanged}
+              style={pieceChanged
+                ? { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11 }
+                : { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11, color: INK_MUTED, cursor: 'not-allowed' }}>
+              ↶ Undo
+            </button>
+            {/* Destructive, so the FIELD carries it — the same rule the pen card's Clear all follows. */}
+            <button onClick={() => { removeStrokeById(pickedStroke.id); setPickedStrokeId(null); }}
+              style={{ ...s.deleteBtn, flex: 1, padding: '7px 0', fontSize: 11 }}>
+              Remove
+            </button>
+          </div>
+        </div>, document.body)}
+
+      {/* ── One hand-drawn brushstroke, chosen on the cake ──────────────────────────────────────
+          The piped piece's card one floor down, and deliberately the same card: same place on the
+          screen, same ✓ to leave, same Undo-and-Remove pair in the same order with the same glyphs
+          (INVARIANTS #14). A customer meets ONE idea of "this piece" in this product, not two that
+          look different because they were built in different months.
+
+          ⚠️ WHAT IT EDITS IS WHAT A STROKE OWNS. Colour and thickness — the two a hand actually
+          chooses while painting. Where it goes and how far it ran came from the DRAG, so they are
+          not controls here; changing them with a slider would be editing the drawing rather than
+          the cream. */}
+      {pickedBrushStroke && createPortal(
+        <div style={{ position: 'fixed', zIndex: 4200, right: isMobile ? 10 : EDIT_POPUP_RIGHT + EDIT_POPUP_W + 14,
+                      bottom: isMobile ? 'calc(env(safe-area-inset-bottom) + 86px)' : 'auto',
+                      top: isMobile ? 'auto' : 90, width: isMobile ? 'auto' : 196, left: isMobile ? 10 : 'auto',
+                      background: '#fff', borderRadius: 14, padding: 12,
+                      border: '1.5px solid #eadde2', boxShadow: '0 12px 44px rgba(0,0,0,0.24)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontSize: 10, fontWeight: 800, color: INK, textTransform: 'uppercase',
+                           letterSpacing: 0.6, fontFamily: "'Quicksand',sans-serif" }}>This stroke</span>
+            <button type="button" onClick={() => setPickedBrush(null)} title="Done with this stroke"
+              style={{ width: 30, height: 30, borderRadius: '50%', cursor: 'pointer', flexShrink: 0,
+                       border: 'none', background: INK, color: '#fff', fontSize: 15, lineHeight: 1 }}>✓</button>
+          </div>
+          <ColorWheel color={pickedBrushStroke.color ?? '#F6DCE2'} compact
+            onChange={c => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { color: c })}
+            cakeColors={[...new Set(collectElementColors(design))]} width={152} />
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+            {/* "Thickness", the baker's word for it, over the geometry's `weight` — the same split
+                the studio's slider makes and for the same reason. */}
+            <DialCell label="Thickness" value={pickedBrushStroke.weight ?? 0.18}
+              min={0} max={1} step={0.02} fmt={v => v.toFixed(2)}
+              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { weight: v })} />
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+            <button onClick={() => { if (pickedBrushBefore) updateBrushStroke(pickedBrush.tier, pickedBrush.id, pickedBrushBefore); }}
+              disabled={!brushChanged}
+              style={brushChanged
+                ? { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11 }
+                : { ...s.neutralBtn, flex: 1, padding: '7px 0', fontSize: 11, color: INK_MUTED, cursor: 'not-allowed' }}>
+              ↶ Undo
+            </button>
+            <button onClick={() => { removeBrushStroke(pickedBrush.tier, pickedBrush.id); setPickedBrush(null); }}
+              style={{ ...s.deleteBtn, flex: 1, padding: '7px 0', fontSize: 11 }}>
+              Remove
+            </button>
+          </div>
+        </div>, document.body)}
           {/* ── The name, as it will be burned in ────────────────────────────────────────────────
               Inside the 9:16 box and nowhere else, so it moves and scales with the frame.
 
@@ -13731,8 +15004,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </>)}
                     </div>
                   )}
-                  </div>
 
+                  {/* ⚠️ INSIDE THE GAPPED COLUMN, because the gap is this container's job and not
+                      the button's. It used to sit after the column's close with nothing between it
+                      and the Spiral row above — touching to the pixel, the identical fault the note
+                      above describes between Scraped edge and Spiral, reported the same way:
+                      Sandeep, *"see 'spiral' and 'cream band' options are touching. leave space like
+                      we have for other options."* Fixing it with a margin on the button would put
+                      the spacing on a control that DISAPPEARS on a square tier and when no cream
+                      element exists, leaving the next thing to re-derive it — which is the reasoning
+                      the column was created with. One container, one rule, three children. */}
                   {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
                     *
                     * Sandeep: "cream layer is sitting in finish category. its actually a cream
@@ -13828,6 +15109,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </span>
                     </button>
                   )}
+                  </div>
+
                 </>
               ) });
             }
@@ -14364,7 +15647,82 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   })}
                 </ScrollFadeRow>
               )}
+              {/* ⚠️ THE NAME OF THE SELECTED RING, UNDER THE TILES — not down with the controls.
+                  It went below "I'll pipe it myself" when the control row moved there, and read as a
+                  heading for the hand-piping block it had nothing to do with. Sandeep: *"below the
+                  'ill pipe it myself' there is RIM text showing. i think this text is to show what is
+                  selected from the preview. i think it should be above."* He is right: it names which
+                  TILE is chosen, so it belongs to the tiles. The controls further down inherit it.
+                  Shown only when there is a choice — one candidate needs no label to tell it apart. */}
+              {candidates.length > 1 && (
+                <div style={{ fontSize: 8.5, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif",
+                              textTransform: 'uppercase', letterSpacing: 0.5, marginTop: 2 }}>
+                  {candidates.find(c => c.tierIndex === activeRing.tierIndex && c.zone === activeRing.zone)?.label}
+                </div>
+              )}
 
+              {/* ── "I'll pipe it myself" ──────────────────────────────────────────────────────
+                  Every tile above answers "which BORDER does this ring go round". Between them they
+                  cover a rim and a board, which is most of what gets piped and nowhere near all of
+                  it — a baker pipes wherever they want, and until now the zone list was the entire
+                  vocabulary a customer had.
+
+                  Offered here rather than as its own decoration because it is the SAME shape and the
+                  same decision: you are choosing where this piping goes, and "anywhere I draw" is one
+                  of the answers. A separate card would have made it a different product.
+
+                  Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
+                  put the cake in draw mode and then stamp nothing at all, which reads as the drawing
+                  being broken. */}
+              {/* ── Gated on the element, not on the designer ─────────────────────────────────
+                  `hand_piping` is ticked per element in admin, by whoever calibrated it. Not every
+                  piping element survives being repeated along a freehand line: a wrap band is ONE
+                  pre-formed ring and a drip is a procedural curtain, both rings by nature, and
+                  stamping either along a squiggle produces something nobody would pipe. A shell or
+                  a rosette repeats happily.
+                  Absent means OFF. An element nobody has considered does not get the feature by
+                  default — the alternative is offering it everywhere and finding out on a customer's
+                  cake which elements it ruins. */}
+              {!!pipingPopupEl.placement_config?.hand_piping
+                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
+                  <button
+                    onClick={() => pipeItMyself(pipingPopupEl)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
+                             border: '1.5px solid #999999', background: '#fff',
+                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
+                    {/* A hand-drawn squiggle with beads along it — the line you draw, and this shape
+                        repeating down it. The zone tiles are all rings; this one must not look like
+                        another ring or it reads as a seventh border. */}
+                    <svg width="26" height="18" viewBox="0 0 34 20" fill="none" aria-hidden focusable="false"
+                         style={{ flexShrink: 0 }}>
+                      <path d="M2 14C6 4 11 4 15 10s9 6 13 -4" stroke="#c9c1b4" strokeWidth="1.6"
+                            strokeLinecap="round" strokeDasharray="2.6 2.6" />
+                      {[[3.4, 12.4], [8.2, 6.4], [13.2, 8.2], [18.4, 12], [23.6, 11.2], [28.4, 5.2]].map(([cx, cy], i) => (
+                        <circle key={i} cx={cx} cy={cy} r="2.4" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.2" />
+                      ))}
+                    </svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>I'll pipe it myself</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
+                        Draw anywhere on the cake and this shape repeats along your line.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
+              {/* ⚠️ THE CONTROLS SIT BELOW EVERY WAY OF APPLYING THIS PIPING, NOT ABOVE ONE OF THEM.
+                 They used to come first — Colour, Size, Radial, then Ring/Single, then "I'll pipe it
+                 myself" underneath. So the row a customer reaches for sat ABOVE the choice it serves,
+                 and above a button that replaces the whole card. Sandeep: *"when 'ill pipe myself'
+                 option is choosen, color picker, size etc should work for that option. and also move
+                 the color, size, radial etc to below the button."*
+                 ⚠️ HAND-PIPING KEEPS ITS OWN CONTROLS, and they are not these. Choosing it swaps this
+                 card for the pen's, which carries Size, Spacing, Lean and a colour wheel writing to
+                 `penStyle` — the thing a stamped run actually renders from. These edit the RING, which
+                 is why the row is headed with the ring's name: below the choices, and still saying
+                 which one it belongs to. */}
               {/* Controls for the SELECTED ring only. With the tiles side by side the old vertical
                   order no longer says which ring a colour belongs to, so one ring at a time is not a
                   reduction — it is what makes the row legible. */}
@@ -14554,6 +15912,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         <body> so it escapes the card's narrow, backdrop-blurred scroll container
                         (a backdrop-filter ancestor would otherwise trap a fixed-positioned child).
                         Anchored to the left of the tapped Color dot, clamped to the viewport. */}
+
                     {pipingColorKey === `${card.cardId}-${zone}-${tierIndex}` && pipingColorAnchor && createPortal(
                       (() => {
                         const PAD = 14;
@@ -14568,7 +15927,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         // screen whenever the swatch sat low enough to expose it.
                         // Gradient eligibility is CONFIG only — the piping element's allowed_actions.gradient.
                         // Stops/mode live on the ring layer (p.gradient); `color` is the solid/stop-0 fallback.
-                        const gradEligible = !!pipingPopupEl?.allowed_actions?.gradient;
+                        /* ⚠️ A DRIP IS ALWAYS ELIGIBLE, AND IT IS NOT THE SAME SENTENCE AS A RING'S.
+                           `allowed_actions.gradient` asks whether a GLB ring may be swept through
+                           several colours — an authored judgement per element. A chocolate drip has
+                           no GLB and no sweep: the stops are the CHOCOLATES in the pour, split along
+                           a wandering seam (see dripColorAt). Sandeep, at a cake poured pink one
+                           side and blue the other: *"we should allow multi color drip."* Reusing the
+                           stop list rather than inventing a second one is what makes the control,
+                           the storage and the save path already exist. */
+                        const gradEligible = isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
                         const gStops  = p.gradient?.colors?.length ? p.gradient.colors : [color];
                         const gMode   = p.gradient?.mode ?? 'swirl';
                         const gActive = Math.min(gradStop, Math.max(0, gStops.length - 1));
@@ -14597,9 +15964,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             />
                             {gradEligible && (
                               <GradientControls
+                                /* A drip has no sweep direction to choose — two ganaches meet where
+                                   they meet — so the mode row is empty and GradientControls hides
+                                   it on `modes.length > 1`. */
+                                label={isDrip ? 'Chocolates' : 'Gradient colors'}
+                                modes={isDrip ? [] : undefined}
                                 stops={gStops} activeStop={gActive} mode={gMode}
                                 onSelectStop={setGradStop}
-                                onAddStop={() => { if (gStops.length >= 3) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
+                                onAddStop={() => { if (gStops.length >= PIPING_MAX_STOPS) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
                                 onRemoveStop={i => { writePipingGradient(tierIndex, zone, gStops.filter((_, idx) => idx !== i), gMode); setGradStop(0); }}
                                 onModeChange={m => writePipingGradient(tierIndex, zone, gStops, m)}
                               />
@@ -14691,57 +16063,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })}
-              {/* ── Or put it where you like ────────────────────────────────────────────────────
-                  Every tile above answers "which BORDER does this ring go round". Between them they
-                  cover a rim and a board, which is most of what gets piped and nowhere near all of
-                  it — a baker pipes wherever they want, and until now the zone list was the entire
-                  vocabulary a customer had.
-
-                  Offered here rather than as its own decoration because it is the SAME shape and the
-                  same decision: you are choosing where this piping goes, and "anywhere I draw" is one
-                  of the answers. A separate card would have made it a different product.
-
-                  Only when there is a GLB to repeat. A piping pattern that resolves to nothing would
-                  put the cake in draw mode and then stamp nothing at all, which reads as the drawing
-                  being broken. */}
-              {/* ── Gated on the element, not on the designer ─────────────────────────────────
-                  `hand_piping` is ticked per element in admin, by whoever calibrated it. Not every
-                  piping element survives being repeated along a freehand line: a wrap band is ONE
-                  pre-formed ring and a drip is a procedural curtain, both rings by nature, and
-                  stamping either along a squiggle produces something nobody would pipe. A shell or
-                  a rosette repeats happily.
-                  Absent means OFF. An element nobody has considered does not get the feature by
-                  default — the alternative is offering it everywhere and finding out on a customer's
-                  cake which elements it ruins. */}
-              {!!pipingPopupEl.placement_config?.hand_piping
-                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
-                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
-                  <button
-                    onClick={() => pipeItMyself(pipingPopupEl)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
-                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
-                             border: '1.5px solid #999999', background: '#fff',
-                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
-                    {/* A hand-drawn squiggle with beads along it — the line you draw, and this shape
-                        repeating down it. The zone tiles are all rings; this one must not look like
-                        another ring or it reads as a seventh border. */}
-                    <svg width="26" height="18" viewBox="0 0 34 20" fill="none" aria-hidden focusable="false"
-                         style={{ flexShrink: 0 }}>
-                      <path d="M2 14C6 4 11 4 15 10s9 6 13 -4" stroke="#c9c1b4" strokeWidth="1.6"
-                            strokeLinecap="round" strokeDasharray="2.6 2.6" />
-                      {[[3.4, 12.4], [8.2, 6.4], [13.2, 8.2], [18.4, 12], [23.6, 11.2], [28.4, 5.2]].map(([cx, cy], i) => (
-                        <circle key={i} cx={cx} cy={cy} r="2.4" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.2" />
-                      ))}
-                    </svg>
-                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>I'll pipe it myself</span>
-                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
-                        Draw anywhere on the cake and this shape repeats along your line.
-                      </span>
-                    </span>
-                  </button>
-                </div>
-              )}
               {/* Card-level Remove — takes the whole decoration off the cake (every tier × zone), the same
                   action the sticker/cluster/foil/cream cards offer. The per-zone checkboxes above stay as
                   the fine-grained control. Config-gated on allowed_actions.delete; hidden when it isn't
@@ -14896,7 +16217,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={s.mobileSheet} role="menu">
               <div style={s.mobileSheetGrip} />
               <div style={s.mobileSheetGrid}>
-                {mobileSecondary.map(({ id, icon, label }) => (
+                {/* ⚠️ ONLY THE ITEMS THAT ARE A DESTINATION. One carrying a menu is drawn flat
+                    below instead — see the note there. A tile here calls `openRailItem(id)` with no
+                    menu, and for a menu-carrying item that resolves to nothing at all: the handler
+                    has no branch for it, so the tap is silently swallowed. */}
+                {mobileSecondary.filter(i => !i.menu).map(({ id, icon, label }) => (
                   <button key={id} role="menuitem"
                           style={{ ...s.mobileSheetItem, ...(railItemActive(id) ? s.mobileSheetItemOn : {}) }}
                           onClick={() => { setMobileMoreOpen(false); openRailItem(id); }}>
@@ -14906,10 +16231,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ))}
               </div>
 
+              {/* ── A nav item that carries a menu, flattened ────────────────────────────────────
+                  ⚠️ THIS WAS A REAL DEAD END, not a tidiness fix. Store gained a submenu on
+                  2026-10-03 and is not in MOBILE_PRIMARY, so on a phone it landed in this sheet as
+                  a tile — and tapping it did NOTHING, because the tile calls `openRailItem(id)`
+                  without a menu and the handler has no branch for Store. A baker on a phone had no
+                  route to their shop at all.
+
+                  Nothing failed: the suite was green and `check:narrow` passed. The dev-only
+                  `strandedMenus` warning had been shouting about it in the console the whole time,
+                  and I only saw it on opening dev/rail.html to photograph something else. That
+                  guard is retired now — see mobileNav.js for why, and for what replaced it.
+
+                  The remedy is the one the sheet already uses for Chef's Desk and Settings
+                  directly below — rows under a heading — rather than a second idea about what a
+                  stranded menu should do. */}
+              {mobileSecondary.filter(i => i.menu).map(item => (
+                <div key={item.id} style={s.mobileSheetSection}>
+                  <div style={s.mobileSheetSectionTitle}>{item.label}</div>
+                  {item.menu.map(sub => (
+                    <MenuItemRow key={sub.id} item={sub} gutter={menuHasIcons(item.menu)}
+                      role="menuitem" style={s.mobileSheetRow}
+                      onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); sub.open(); }} />
+                  ))}
+                </div>
+              ))}
+
               {/* ── Chef's Desk and Settings, arrived from the header ────────────────────────────
                   Rendered FLAT, as rows under a heading, because the sheet has no surface for a
-                  submenu — mobileNav.js states that invariant and `strandedMenus` shouts when a
-                  nav item breaks it. A button here that opened a dropdown would open nothing.
+                  submenu. A button here that opened a dropdown would open nothing.
 
                   Rows rather than grid tiles: these have no icons of their own, and inventing five
                   glyphs to make them fit a three-across grid would be decoration standing in for
@@ -14918,11 +16268,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div key={menu.id} style={s.mobileSheetSection}>
                   <div style={s.mobileSheetSectionTitle}>{menu.label}</div>
                   {menu.items.map(item => (
-                    <button key={item.id} role="menuitem" style={s.mobileSheetRow}
-                            onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); item.open(); }}>
-                      {item.label}
-                      {item.badge && <span style={s.needsLook} title={item.badge.title}>{item.badge.text}</span>}
-                    </button>
+                    <MenuItemRow key={item.id} item={item} gutter={menuHasIcons(menu.items)}
+                      role="menuitem" style={s.mobileSheetRow}
+                      onClick={() => { setMobileMoreOpen(false); leaveOpenPanels(); item.open(); }} />
                   ))}
                 </div>
               ))}
@@ -15385,13 +16733,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         />
       )}
 
-      {/* ── Change Password modal ── */}
-      {changePasswordModal && (
-        <ChangePasswordModal
-          onClose={() => setChangePasswordModal(false)}
+      {/* ── My Account ── */}
+      {accountPanelOpen && (
+        <AccountPanel
+          onClose={() => setAccountPanelOpen(false)}
           brandBtn={brandBtn}
           supabase={supabase}
           apiClient={apiClient}
+          userData={userData}
+          isMobile={isMobile}
+          canDelete={hasCap('account:delete')}
+          // bakers.email — null means "use my sign-in address", which is the live default.
+          bakerEmail={bakerData?.email ?? null}
+          // PATCH /baker/profile is requireCapability('store:manage'), so an ungated pencil could
+          // only ever 403 for a staff member.
+          canEditEmail={hasCap('store:manage')}
+          onProfileChanged={refreshBakerProfile}
+          // A changed number has to reach everything else holding the old one, and the profile is
+          // where they all read it from — so re-read that rather than patching copies.
+          onPhoneChanged={refreshBakerProfile}
         />
       )}
 
@@ -15520,13 +16880,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {/* ── Settings panel ── */}
       <SettingsPanel
         open={settingsPanelOpen}
-        onClose={() => setSettingsPanelOpen(false)}
+        scope={settingsScope ?? 'all'}
+        onClose={() => setSettingsScope(null)}
         // The same share card the sidebar opens — the customiser offers it too, since a baker who
         // has just published is the one person who does not yet know their storefront address.
         onShareStore={onShareStore}
         // The publish review's "Review my flavours". Closes Settings on the way so the baker lands
         // ON the flavour list rather than behind it — the customiser has already closed itself.
-        onReviewFlavours={() => { setSettingsPanelOpen(false); setFlavoursPanelOpen(true); }}
+        onReviewFlavours={() => { setSettingsScope(null); setFlavoursPanelOpen(true); }}
         // "Upgrade to publish" on a premium theme preview, and "Upgrade to Blaze" on a paused
         // theme's notice. Straight to billing — by the time a baker has previewed their own shop in
         // a theme and reached for Publish, an explainer screen in between is a step that loses
@@ -15536,7 +16897,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // publishing, so withholding it would leave a staff member pressing a button that closes
         // the panel and does nothing. A dead control is worse than one that opens a screen they may
         // not be able to act on.
-        onUpgrade={() => { setSettingsPanelOpen(false); setBillingPanelOpen(true); }}
+        onUpgrade={() => { setSettingsScope(null); setBillingPanelOpen(true); }}
+        // The rail redraws itself from the server's answer; the panel does not own what it looks like.
+        onRailSkinChanged={refreshRailSkin}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}
@@ -15558,6 +16921,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         externalFilter={ordersFilter}
         initialOrderId={newOrderId}
         initialView={ordersInitialView}
+        onViewChange={setOrdersView}
         bakerTimezone={bakerData?.timezone ?? null}
         // For the finished-photo editor's optional mark. Absent = the "add your name" tool is not
         // offered at all, rather than offered and writing nothing.
@@ -15813,9 +17177,19 @@ const s = {
 
   // Left column (sidebar only — the logo lives in desktopHeader). Extra left padding +
   // raised stacking give the spatula blade room to bulge left and overlap the canvas.
+  /* ⚠️ NO VERTICAL PADDING — the strip runs the full height of its column. Sandeep: "you can extend
+     the menu bar little downwards. no harm."
+
+     The 12px top and bottom were holding a spatula off the edges, where a floating silhouette wanted
+     air around it. A strip wants the opposite: it is a sidebar, and the 24px it was giving back is
+     the difference between the ninth item fitting and "Dashboard" being sliced through its
+     descenders on a 760-tall window. Measured at 900 / 860 / 800 / 760 / 720.
+
+     `padLeft` is 0 too, so this is a flush left column — kept as the token rather than dropped, so
+     the day anything needs to sit left of the rail there is still one number that moves it. */
   leftCol: {
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    padding: `12px 0 12px ${RAIL.padLeft}px`, flexShrink: 0,
+    padding: `0 0 0 ${RAIL.padLeft}px`, flexShrink: 0,
     position: 'relative', zIndex: 5,
   },
 
@@ -15825,7 +17199,7 @@ const s = {
   // the text fallback is 18, so a fixed offset put each of them at a different distance from the
   // rule. Centred, every one of them sits in the middle of the row by construction.
   desktopLogo: {
-    position: 'absolute', top: 0, left: 120, height: DESKTOP_HEADER_H, zIndex: 6,
+    position: 'absolute', top: 0, left: RAIL.padLeft + RAIL.width + 16, height: DESKTOP_HEADER_H, zIndex: 6,
     display: 'flex', alignItems: 'center', pointerEvents: 'none',
   },
   desktopHeaderRule: {
@@ -15933,9 +17307,21 @@ const s = {
     paddingBottom: 10, marginBottom: -10,
   },
 
-  // Sidebar — spatula-shaped: the SVG silhouette (SpatulaFrame) is drawn behind,
-  // this is just the 64px handle-width positioning context. The blade bulges out
-  // (overflow visible). Nav + controls live in sidebarInner, above the silhouette.
+  /* ── Sidebar — spatula-shaped ────────────────────────────────────────────────────────────────
+   * The SVG silhouette (SpatulaFrame) is drawn behind; this is the 64px handle-width positioning
+   * context. The blade bulges out past it (overflow visible). Nav and controls live in
+   * sidebarInner, above the silhouette.
+   *
+   * ⚠️ IT WAS A STRAIGHT STRIP FOR HALF A MORNING (2026-10-04) and the round trip is worth keeping.
+   * The strip was asked for on a space argument — the cap costs 48px of clearance, "worth a whole
+   * menu item" — and it did buy that back. Then Sandeep looked at it: "i feel like spatula was
+   * better looking. but the only problem is we should extend that little below so that we can
+   * accomodate the calendar now."
+   *
+   * So the room came from somewhere the shape was not using: the 30px under the last item and
+   * leftCol's 12/12, none of which the silhouette needs, because items OVERLAY the blade rather
+   * than sit above it. See sidebarInner. The lesson is that the cap's 48 was the only part of that
+   * cost which was actually geometry. */
   sidebar: {
     width: RAIL.width, minWidth: RAIL.width, margin: 0,
     position: 'relative', overflow: 'visible',
@@ -15946,9 +17332,28 @@ const s = {
     position: 'relative', zIndex: 1,
     flex: 1, width: '100%',
     display: 'flex', flexDirection: 'column', alignItems: 'center',
-    // 96 cleared the cap AND the hang-hole (whose bottom edge was y=71). With the hole gone the
-    // clearance is the cap's own bottom at y=38, plus breathing room — worth a whole menu item.
-    padding: '48px 0 30px',
+    /* 96 cleared the cap AND the hang-hole; 48 cleared the cap alone once the hole went — "worth a
+       whole menu item" either way, and spent on a silhouette. With the strip there is no cap to
+       clear, so this is ordinary breathing room and the column starts 34px higher.
+
+       ⚠️ THE TOP 48 IS GEOMETRY, NOT TASTE. SpatulaFrame draws its cap from y=8 to y=38 and the
+       handle is only 60px wide there, narrowing into a rounded arc — so an icon placed above 38
+       hangs off the silhouette rather than sitting on it. 48 clears that bottom edge with room.
+
+       ⚠️ THE BOTTOM IS 10, NOT THE 30 IT WAS. Sandeep, bringing the shape back: "the only problem
+       is we should extend that little below so that we can accomodate the calendar now." Items
+       OVERLAY the blade — it is 122px wide against a 64px column — so the space below them was
+       never structural, it was air. Twenty-four of it comes back, and leftCol's 12/12 (removed with
+       the strip, kept removed) gives 24 more: 48px more room for items than the shape had before
+       Calendar existed.
+
+       ⚠️ 6 IS SWEPT, NOT CHOSEN. The last label lands within a pixel of the scroller's edge and
+       `space-evenly` rounds differently at each height, so the clipping is not monotonic in this
+       number: measured across 1000 / 900 / 880 / 860 / 840 / 820 / 800 / 780 / 760, a bottom of 10
+       clips by 1px and 4 clips by 3px, while 6 clears every one of them with 3px to spare. Re-sweep
+       if an item is ever added or removed — a value that works by rounding has to be re-measured,
+       not reasoned about. */
+    padding: '48px 0 6px',
     minHeight: 0,             // see sidebarNav — without this the rail grows and the blade is cut
   },
   /* ── The plain bar a CUSTOMER gets ──────────────────────────────────────────────────────────
@@ -15978,6 +17383,9 @@ const s = {
   startChoiceTitle: { fontSize: 14, fontWeight: 800, color: '#2C4433' },
   startChoiceBody:  { fontSize: 12, fontWeight: 600, color: '#4A5D51', lineHeight: 1.35 },
 
+  /* ⚠️ ONLY THE WIDTH NOW. The surface, radius and shadow moved up to `sidebar` when the baker's
+     rail became a strip too — this bar was always the same thing minus a silhouette, and with the
+     silhouette gone the only difference left is that a customer's is thinner. */
   sidebarPlain: {
     width: PLAIN_RAIL_W, minWidth: PLAIN_RAIL_W,
     background: chromeGradient(180),
@@ -15988,19 +17396,12 @@ const s = {
   /* nowrap is a GUARD, not the fix — `short` is. Without it a label longer than the box wraps under
      the icon and pushes the next item down, which is worse than a clip and harder to notice. */
   navItemPlain: { width: 48, whiteSpace: 'nowrap' },
-  /* 48px of top padding bought clearance for the spatula's CAP (see sidebarInner). A plain bar has
-     no cap, so that space is simply lost — a whole menu item's worth, per the note there. */
-  sidebarInnerPlain: { padding: '14px 0 22px' },
-  sidebarDivider: {
-    height: 1, width: 32,
-    background: 'rgba(255,255,255,0.10)',
-    margin: '6px 0', flexShrink: 0,
-  },
+
   // The rail holds ~12 items and they are flexShrink:0, so its intrinsic height is ~823px. A flex
   // item defaults to min-height:auto — it will not shrink below its content — so on any viewport
   // shorter than roughly 847px the whole chain (nav → sidebarInner → sidebar) grew PAST the page,
   // and `page`'s overflow:hidden ate the difference. What it ate was the bottom of the spatula:
-  // SpatulaFrame draws its SVG to the sidebar's measured clientHeight, so the blade was rendered
+  // The silhouette was drawn to the sidebar's measured clientHeight, so its blade rendered
   // below the fold. Reported on a MacBook Air (~760-800px of viewport once Chrome's chrome and the
   // bookmarks bar are gone); invisible on a 27" iMac, which has the height to spare.
   //
@@ -16013,14 +17414,27 @@ const s = {
     flex: 1, width: '100%', minHeight: 0,
     display: 'flex', flexDirection: 'column',
     alignItems: 'center', justifyContent: 'flex-start',
-    // A FIXED pitch, not a spread. The items keep one rhythm whatever the viewport and whatever the
-    // principal can do, so five items read as a menu rather than as a column with holes in it. The
-    // tools group below the divider still matches, because toolGap MEASURES the rendered pitch rather
-    // than assuming it — see the note above that effect.
-    //
-    // ⚠️ This also retires the scroll-origin trap the old note warned about: centred/spread content in
-    // a scroller can strand its first item above the origin, and flex-start cannot.
-    padding: '4px 0', gap: RAIL_NAV_GAP,
+    /* ⚠️ THE GAP IS COMPUTED, because neither a spread nor a fixed pitch is right on its own.
+
+     * A FIXED pitch (fde91ba9) gives the column a hard intrinsic height — every item is
+     * flexShrink:0 — so on a short blade it overflows, and `scrollbarWidth: none` means nothing says
+     * so. The LAST item is silently unreachable, and that item is Share. Sandeep, on production:
+     * "on the spatula menu- above the chef's desk, share button is hiding", and on dev, where the
+     * build is newer, "share button is completely invisible" — one bug at two versions.
+     *
+     * A SPREAD never overflows, but it opens up without limit: measured at 9px between items on a
+     * 780px window, 20px at 900, 38px at 1100. The 1100 case is the "column with holes in it" that
+     * fde91ba9 was right to object to, and it is worse for a customer's five items.
+     *
+     * So: spread UNTIL the 900px rhythm, then stop. `navGap` clamps
+     * (clientHeight - itemsTotal) / (n - 1) between RAIL_MIN_GAP and RAIL_NAV_GAP, which compresses
+     * on a short window so nothing is ever hidden and holds one rhythm on a tall one. CSS cannot
+     * express a capped gap — space-evenly always fills what exists — so it is measured.
+     *
+     * flex-start rather than space-evenly, because an explicit gap and a spread would fight. That
+     * also keeps the scroll-origin trap retired, which is the one thing fde91ba9 genuinely fixed:
+     * centred or spread content in a scroller can strand its first item above the origin. */
+    padding: '4px 0',
     overflowY: 'auto', scrollbarWidth: 'none',   // a scrollbar in a 64px rail is worse than none
   },
   // Stacked nav item: icon box on top, label below.
@@ -16033,7 +17447,7 @@ const s = {
   },
   navLabel: {
     fontSize: 9, fontWeight: 700, lineHeight: 1,
-    color: 'rgba(255,255,255,0.5)', letterSpacing: 0.2,
+    color: RAIL_REST_INK, letterSpacing: 0.2,
     transition: 'color 0.15s',
   },
   sidebarBtn: {
@@ -16043,7 +17457,7 @@ const s = {
     // thumb one, so the 44px touch floor does not apply here (the phone strip keeps its 44).
     width: 34, height: 34, borderRadius: 11,
     display: 'flex', alignItems: 'center', justifyContent: 'center',
-    color: 'rgba(255,255,255,0.45)',
+    color: RAIL_REST_INK,
     transition: 'background 0.15s, color 0.15s',
     flexShrink: 0,
   },
@@ -16073,6 +17487,11 @@ const s = {
   railDropdown:        RAIL_MENU.surface,
   railDropdownSection: RAIL_MENU.section,
   railDropdownItem:    RAIL_MENU.item,
+  /* The same item, laid out as a row so an icon can sit beside the label.
+     ⚠️ A separate key rather than flex on MENU_SHAPE.item: the AVATAR menus share that shape and
+     have no icons, and widening a token to suit one caller is how a token stops meaning one thing.
+     `gap` only shows when there is an icon to separate, so icon-less items are unchanged. */
+  railMenuItemWithIcon: { ...RAIL_MENU.item, display: 'flex', alignItems: 'center', gap: 9, width: '100%' },
   railDropdownUserInfo: RAIL_MENU.userInfo,
   railDropdownName:    RAIL_MENU.name,
   railDropdownEmail:   RAIL_MENU.email,
@@ -16420,6 +17839,22 @@ const s = {
     fontSize: 13, fontFamily: "'Quicksand',sans-serif", color: '#222',
     outline: 'none', width: '100%', boxSizing: 'border-box',
   },
+
+  /* ── The account screen's two plain buttons ─────────────────────────────────────────────────
+   * Rule 7: a clickable has to LOOK clickable at rest, on a phone, with no hover to help it.
+   * Both of these therefore carry their own border and ground rather than relying on being
+   * recognised as text that happens to respond. Borrowed from `catalogueAction` — same border,
+   * same ink — so the app keeps one secondary button rather than growing a second dialect.
+   *
+   * ⚠️ Not NavRow: these DO something here, they do not go somewhere. NavRow's chevron promises a
+   * screen, and promising one that never arrives is worse than a plain button. */
+  accountGhostBtn: {
+    padding: '8px 14px', borderRadius: 10,
+    border: '1.5px solid #C5D4C8', background: 'rgba(255,255,255,0.94)',
+    fontSize: 12, fontWeight: 800, color: '#2C4433',
+    fontFamily: "'Quicksand',sans-serif", cursor: 'pointer', letterSpacing: 0.3,
+  },
+
   offeringBtn: {
     flex: 1, padding: '7px 0', borderRadius: 10, border: '1.5px solid #999999',
     fontSize: 11, fontWeight: 700, cursor: 'pointer', letterSpacing: 0.3,
@@ -16563,7 +17998,14 @@ const s = {
   },
   // Which tile the controls below are editing. Bordered rather than tinted: the tile is mostly a
   // photograph of a cake, and a wash over it would change the colour being judged.
-  previewTileOn: { border: `1.5px solid ${INK}`, background: 'rgba(0,0,0,0.04)' },
+  /* ⚠️ IT HAS TO BEAT THE TILE'S OWN BORDER, AND IT DID NOT. PreviewTile draws a 1.5px INK border
+     when a ring is CHECKED, so on a card with both rings on the cake this read as a 1.5px INK border
+     against a 1.5px INK border plus a 4% tint — a difference nobody can see. Sandeep, having picked
+     the board and watched the colour land on the rim: *"there is only one color picker for both top
+     and side... color picker should work for which ever is selected."* It did; nothing said which
+     one that was. A selection that cannot be distinguished from "applied" is not a selection. */
+  previewTileOn: { border: `2.5px solid ${INK}`, background: 'rgba(44,68,51,0.10)',
+                   boxShadow: `0 0 0 1px ${INK}` },
   editPopup: {
     position: 'absolute',
     right: EDIT_POPUP_RIGHT, top: 12,

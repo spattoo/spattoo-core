@@ -23,7 +23,7 @@ import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rec
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { seatHalfDepth } from '../geometry/seating.js';
-import { buildDripGeometry, buildDripWeb, dripRenderParams } from '../geometry/chocolateDrip.js';
+import { buildDripGeometry, buildDripWeb, dripRenderParams, buildDripFlood, paintDripColors } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
@@ -149,7 +149,17 @@ const DEG = Math.PI / 180;
 // EXACTLY (roughness 0.85, sheen 0.4) so elements saved before this control are
 // unchanged. Read from placement_config (bottom_softness / top_softness); absent →
 // default. The PipingCalibrator keeps an identical copy so its preview matches.
-export const PIPING_SOFTNESS_DEFAULT = 0.7;
+/* ⚠️ IMPORTED *AND* RE-EXPORTED, AND THE DIFFERENCE IS A CRASH. `export { X } from '…'` forwards a
+   name to this module's consumers and does NOT bind it in this module's own scope — so every use of
+   these five below was a ReferenceError the moment the line was evaluated. It shipped because the
+   file still compiled, the suite still passed, and the throw only happens when a cream surface is
+   actually rendered: Sandeep, loading a chocolate drip, got "PIPING_SOFTNESS_DEFAULT is not
+   defined" and a dead canvas. The names live in creamMaterial.js (a leaf module, so a studio can
+   import it without dragging the scene in); the re-export stays because every existing caller
+   imports them from here. */
+import { PIPING_SOFTNESS_DEFAULT, CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF,
+         creamAlbedo, creamMaterialProps } from '../geometry/creamMaterial.js';
+export { PIPING_SOFTNESS_DEFAULT };
 /* ⚠️ CREAM RECEIVES MORE LIGHT THAN THE WALL — measured, and it is NOT the wall's number. Cream runs
  * at roughness 0.85 with a sheen layer where the wall runs 0.68 with none, and a mid-grey #808080
  * renders 188,183,180 here against the wall's 180,173,168 and an asked 128. A reference light is a
@@ -167,26 +177,10 @@ export const PIPING_SOFTNESS_DEFAULT = 0.7;
  * higher albedo a smaller divisor produces. The wall hit the same wall (predicted 1.163, rendered
  * 142). Take a second reading with the first guess in place and interpolate; do not re-derive this
  * by division and assume the arithmetic is the answer. */
-export const CREAM_REFERENCE_LIGHT = [3.254, 2.974, 2.679];
-export const CREAM_ROLLOFF = 2.0;   // same reason as the wall: pale cream must not go grey
-
-/* The same correction the solid colour gets, exposed so a GRADIENT's stops can take it too — a
- * gradient replaces the base colour per pixel, so uncorrected stops would render a gradient in
- * different colours from the solid it stands in for. */
-export const creamAlbedo = (color) =>
-  albedoForLight(color, CREAM_REFERENCE_LIGHT, { rolloff: CREAM_ROLLOFF });
-
-export function creamMaterialProps(softness, color) {
-  const s = Math.min(1, Math.max(0, softness ?? PIPING_SOFTNESS_DEFAULT));
-  const albedo = creamAlbedo(color);
-  return {
-    color: albedo,
-    roughness:      0.5 + 0.5 * s,   // 0.5 wet … 0.85 (default) … 1.0 matte
-    sheen:          (0.4 / 0.7) * s, // 0 … 0.4 (default) … ~0.571 velvety
-    sheenRoughness: 0.9,
-    sheenColor:     albedo,
-  };
-}
+/* Moved to geometry/creamMaterial.js — a LEAF module, so a studio can import the cream recipe
+   without making this file an exported scene-lighting entry point (check:env-map). Re-exported here
+   so every existing caller is untouched. */
+export { CREAM_REFERENCE_LIGHT, CREAM_ROLLOFF, creamAlbedo, creamMaterialProps };
 
 // ── Chocolate "gloss" → material ──────────────────────────────────────────────
 // A single 0–1 control for how wet the ganache reads: 0 = matte set chocolate,
@@ -194,15 +188,44 @@ export function creamMaterialProps(softness, color) {
 // together (the clearcoat is what sells "wet ganache" vs "plastic"). Mirrors the
 // cream "softness" idea but for chocolate. The admin drip studio keeps the same map.
 export const DRIP_GLOSS_DEFAULT = 0.85;
-/* ⚠️ THE GLOSSIEST SURFACE ON THE CAKE, and the most over-exposed: a mid-grey #808080 renders
- * 188,182,178 here against 180 on the tier wall and 156 on grass. The clearcoat is why — a wet
- * ganache carries a coat the wall does not. Measured for THIS material, like every other.
- * `SURFACE=drip node scripts/measure-surface-colour.mjs` prints the table.
+/* ⚠️ THE GLOSSIEST SURFACE ON THE CAKE, and the one where a divisor alone could never work.
+ * `albedoForLight` corrects a MULTIPLY; this material also ADDS. Measured with the mask held fixed
+ * and the albedo driven to pure black, the shipped drip rendered 84,73,62 — a floor no division can
+ * reach, because nothing times zero is 84. Every colour sat on top of it, which is why a saturated
+ * teal lost its red: #4EC5B0 asks for 78 there and the floor alone was 87, so the colour was
+ * unreachable before the pigment was even consulted. Reported as "the true colour is not showing on
+ * cake, both pink and blue are lighter than the ones i selected" (2026-10-06).
+ *
+ * ⚠️ THE FLOOR WAS TWO TERMS, AND THE BIGGER ONE WAS NOT THE CLEARCOAT. Switched off one at a time
+ * on the live material: clearcoat off → 58, base specular off → 50, both off → 7. So the coat was
+ * worth 26 and three.js's DEFAULT `specularIntensity: 1` was worth 34 — the same unasked-for white
+ * Fresnel the cream found (`CREAM_SPECULAR`). A dielectric under a clearcoat is mostly masked by the
+ * coat anyway, so dimming it costs nothing anyone can see.
+ *
+ * ⚠️ AND THE COAT WAS A VEIL, NOT A GLINT, which is what makes it safe to cut. On drip geometry —
+ * tubes, seen side-on — most of the surface sits at a grazing angle where Fresnel goes to 1, so the
+ * coat reflects the whole sky dome evenly instead of catching it in a highlight. Measured: at EVERY
+ * clearcoat setting from 0.82 down, the share of drip pixels above 235 was 0.0%. There was no
+ * highlight to lose; what came off was uniform grey.
+ *
+ * Together these put the floor at 36,31,26 — below the darkest channel a saturated colour asks for,
+ * which is the bar that matters. `SURFACE=drip node scripts/measure-surface-colour.mjs` prints the
+ * colour table; `SURFACE=dripmulti` does the same through the two-chocolate path.
  *
  * ⚠️ ONE CHOKEPOINT for every chocolate surface — the rim drip and the glaze tendrils both come
  * through here, so they cannot drift apart. */
-export const CHOCOLATE_REFERENCE_LIGHT = [2.352, 2.194, 2.093];
-export const CHOCOLATE_ROLLOFF = 2.0;
+export const CHOCOLATE_SPECULAR = 0.3;
+/* ⚠️ RE-MEASURED FOR THE MATERIAL BELOW, and the old [2.352, 2.194, 2.093] belonged to the old one.
+ * A reference light is solved against a surface's reflectance; cutting the floor changed it, so
+ * keeping the former number would have over-corrected every colour by exactly the veil that is no
+ * longer there. Two readings interpolated on mid-grey, per the recipe in shared/albedoForLight.js. */
+export const CHOCOLATE_REFERENCE_LIGHT = [2.653, 2.370, 2.243];
+/* ⚠️ SWEPT ON THE PALETTE, NOT ON GREY, and the sweep moved it off 2.0. Twelve real colours, mean
+ * absolute error per channel then worst channel: 1.5 → 12.3/54, 2.0 → 11.0/47, 2.5 → 10.6/42,
+ * 3.0 → 10.7/38, 4.0 → 11.1/33. 2.5 and 3.0 are a tie on the mean, so the worst channel decides —
+ * and the worst channel IS the reported fault, a saturated teal's red. `scripts/measure-drip-rolloff.mjs`
+ * runs it; re-run it after any change to this material. */
+export const CHOCOLATE_ROLLOFF = 3.0;
 
 export function chocolateMaterialProps(gloss, color) {
   const g = Math.min(1, Math.max(0, gloss ?? DRIP_GLOSS_DEFAULT));
@@ -210,8 +233,11 @@ export function chocolateMaterialProps(gloss, color) {
     color: albedoForLight(color, CHOCOLATE_REFERENCE_LIGHT, { rolloff: CHOCOLATE_ROLLOFF }),
     metalness:          0,
     roughness:          0.5 - 0.42 * g,    // 0.5 matte … 0.08 wet
-    clearcoat:          0.4 + 0.6 * g,     // 0.4 … 1.0 glassy
+    /* The wet read comes from `roughness` above; this layer only ever added a veil (see the note on
+       CHOCOLATE_SPECULAR), so it keeps the same shape over the gloss range at a quarter the weight. */
+    clearcoat:          0.05 + 0.30 * g,   // 0.05 … 0.35
     clearcoatRoughness: 0.28 - 0.16 * g,   // 0.28 … 0.12
+    specularIntensity:  CHOCOLATE_SPECULAR,
   };
 }
 
@@ -688,6 +714,7 @@ export function TopPipingRing(props) {
   // GLB impl), NOT a per-element-type renderer.
   if (props.drip) return (
     <TopDripRing topY={props.topY} radius={props.radius} color={props.color}
+      colors={props.dripColors}
       gloss={props.dripGloss} lengthMul={props.dripLength} flood={props.dripFlood} config={props.dripConfig}
       selected={props.selected} onClick={props.onClick} />
   );
@@ -702,36 +729,78 @@ export function TopPipingRing(props) {
 // The drip geometry (web arches + runs) is built from the tier's REAL radius+topY so it scales to any
 // tier. The rolled rim bead is a torus the consumer adds with the same material (matching the admin
 // drip studio). Customer controls: colour, gloss, length (a multiplier on the authored base run).
-export function TopDripRing({ topY, radius, color = '#3a2117', gloss = DRIP_GLOSS_DEFAULT,
+export function TopDripRing({ topY, radius, color = '#3a2117', colors = null, gloss = DRIP_GLOSS_DEFAULT,
   lengthMul = 1, flood = false, config = null, selected = false, onClick }) {
   // ONE derivation of the scaled params + startDrop/lip — shared with the relief sampler (chocolateDrip.js).
   const cfgKey = JSON.stringify(config ?? {});
   const { params, startDrop, lipR, s } = useMemo(
     () => dripRenderParams(config, radius, lengthMul), [cfgKey, radius, lengthMul]);
+  const floodH = 0.03 * s;
+
+  /* ── One chocolate or several ──────────────────────────────────────────────────────────────────
+   * `colors` is the authored list; `color` is what every drip before this one was, and stays the
+   * answer when there is one. A single-colour drip must come out byte-identical to what it was, so
+   * the multi path is entered only when there is genuinely more than one.
+   *
+   * ⚠️ THE CALIBRATION RUNS PER COLOUR, HERE, AND NOT INSIDE THE PAINTER. `chocolateMaterialProps`
+   * puts the chosen colour through `albedoForLight` before the renderer ever sees it — that is what
+   * makes a chosen pink come out as that pink under this scene's light (INVARIANTS #16). Painting
+   * raw hexes into the verts would have given the two-colour drip a different pink from the
+   * one-colour drip of the same hex, for no reason a customer could see. One function decides what
+   * a colour looks like; it is called twice instead of once.
+   */
+  const list  = (Array.isArray(colors) && colors.length ? colors : [color]).filter(Boolean);
+  const multi = list.length > 1;
+  const listKey = list.join('|');
+  const albedos = useMemo(
+    () => list.map(c => albedoForLight(c, CHOCOLATE_REFERENCE_LIGHT, { rolloff: CHOCOLATE_ROLLOFF })),
+    [listKey]);
+
+  /* The geometries are memoised on SHAPE and the paint is a separate pass over the same objects, so
+     changing a colour never rebuilds a drip — and `paintDripColors` strips the attribute again when
+     the list drops back to one. */
+  const splitOpts = { R: radius, seed: params.seed ?? 1 };
+  const floodGeo = useMemo(() => buildDripFlood({ R: radius, h: floodH }), [radius, floodH]);
   const dripsGeo = useMemo(() => buildDripGeometry({ R: radius, topY, startDrop, ...params }), [radius, topY, startDrop, params]);
   const webGeo   = useMemo(() => buildDripWeb({ R: radius, topY, ...params }), [radius, topY, params]);
-  const mat = chocolateMaterialProps(gloss, color);
-  const emissive = selected ? color : '#000000', emissiveIntensity = selected ? 0.15 : 0;
-  const floodH = 0.03 * s;
+  /* The bead is a torus the consumer owns, and it has to be a real geometry rather than a JSX
+     primitive now: a vertex colour cannot be painted onto something React makes on the fly. */
+  const beadGeo  = useMemo(() => new THREE.TorusGeometry(radius, lipR, 16, 128)
+                                   .rotateX(Math.PI / 2), [radius, lipR]);
+  useMemo(() => {
+    for (const g of [floodGeo, dripsGeo, webGeo, beadGeo]) paintDripColors(g, albedos, splitOpts);
+  }, [floodGeo, dripsGeo, webGeo, beadGeo, listKey, radius, splitOpts.seed]);
+
+  const mat = chocolateMaterialProps(gloss, list[0] ?? color);
+  // With vertex colours the material tint MULTIPLIES them, so it steps back to white and lets the
+  // verts carry the answer. Single colour keeps the exact material it always had.
+  const matProps = multi ? { ...mat, color: '#ffffff', vertexColors: true } : mat;
+  /* ⚠️ THE MATERIAL IS REMADE WHEN THIS SWITCHES, AND THAT IS NOT TIDINESS. `vertexColors` is a
+     SHADER-COMPILE flag: setting it on a material that already exists changes nothing until
+     `needsUpdate` is set, and R3F only assigns props. Adding a second chocolate therefore turned the
+     tint white — which it has to, for the verts to carry the colour — while the shader went on
+     ignoring the attribute, and the whole drip rendered white. It painted correctly the entire time;
+     the proof was `painted true,true,true,true` beside a white cake. A `key` is how R3F is told to
+     build a new material rather than re-dress the old one. */
+  const matKey = multi ? 'vc' : 'solid';
+  const emissive = selected ? (list[0] ?? color) : '#000000', emissiveIntensity = selected ? 0.15 : 0;
   return (
     <group onClick={onClick}>
       {/* optional top flood — a thin chocolate pool covering the tier top inside the rim */}
       {flood && (
-        <mesh position={[0, topY + floodH / 2, 0]} castShadow>
-          <cylinderGeometry args={[radius, radius, floodH, 96]} />
-          <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        <mesh position={[0, topY + floodH / 2, 0]} geometry={floodGeo} castShadow>
+          <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
         </mesh>
       )}
       {/* rolled rim bead at the very edge */}
-      <mesh position={[0, topY, 0]} rotation={[Math.PI / 2, 0, 0]} castShadow>
-        <torusGeometry args={[radius, lipR, 16, 128]} />
-        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+      <mesh position={[0, topY, 0]} geometry={beadGeo} castShadow>
+        <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
       <mesh geometry={webGeo} castShadow>
-        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
       <mesh geometry={dripsGeo} castShadow>
-        <meshPhysicalMaterial {...mat} emissive={emissive} emissiveIntensity={emissiveIntensity} />
+        <meshPhysicalMaterial key={matKey} {...matProps} emissive={emissive} emissiveIntensity={emissiveIntensity} />
       </mesh>
     </group>
   );
@@ -1764,6 +1833,15 @@ export default function CakeTier({
       wrap={p.wrap ?? false} wrapTilt={p.wrapTilt ?? 0} wrapSize={p.wrapSize ?? 1}
       drip={p.drip ?? false} dripConfig={p.dripConfig ?? null}
       dripGloss={p.dripGloss ?? DRIP_GLOSS_DEFAULT} dripLength={p.dripLength ?? 1} dripFlood={p.dripFlood ?? false}
+      /* ⚠️ THE CHOCOLATES LIVE IN `gradient.colors`, WHICH IS NOT A FILING COMPROMISE. That field is
+         already "the colours this ring is made of", already saved and reloaded with the layer, and
+         already has a built control with add, remove and select (GradientControls). A second list
+         beside it would have meant a second storage field, a second save path and a second stop
+         picker, to express the same sentence. A drip reads them as two ganaches poured against each
+         other; a GLB ring reads them as a sweep. Same data, different renderer — which is the whole
+         shape of INVARIANTS #1.
+         Below two, there is nothing to split and `color` is the answer it has always been. */
+      dripColors={p.gradient?.colors?.length >= 2 ? p.gradient.colors : null}
       selected={highlightPipingId != null ? p.cardId === highlightPipingId : topPipingSelected}
       canMove={pipingMovable(p)}
       onMoveInstance={onPipingInstanceMove ? (index, angle) => onPipingInstanceMove('rim', p.layerId, index, angle) : null}

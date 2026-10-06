@@ -59,6 +59,21 @@ describe('a saved design comes back as the same cake', () => {
       stripes: { palette: ['#F1EEDC', '#ABD76B'], count: 16, weights: [1, 1], softness: 0.18, wobble: 0.3 },
       topCavity: { on: true, lip: 0.07, seed: 42 },
       topSpiral: { on: true, turns: 5, rise: 0.018, seed: 7 },
+      /* ⚠️ THE SEED AND THE ELEMENT ID MATTER AS MUCH AS THE PALETTE. The band is thirty strokes of
+         seeded noise re-derived on every render, so losing the seed does not come back a plainer
+         cake — it comes back a DIFFERENT one. And `elementId` is what carries the catalogue row into
+         a template bundle, which finds its elements by scanning the design for uuids. */
+      /* The hand-drawn list, beside the band: two strokes so a list that round-trips its first entry
+         and drops the rest cannot look identical to a working one. */
+      brushStrokes: [
+        { id: 'bs1', at: 0.1, rise: 0.02, climb: 0.42, sweep: 0.01, bow: -0.2,
+          width: 0.3, weight: 0.18, seed: 11, color: '#B24A63' },
+        { id: 'bs2', at: 0.2, rise: 0.05, climb: 0.3, sweep: -0.01, bow: 0,
+          width: 0.26, weight: 0.4, seed: 18, color: '#8EC5E8' },
+      ],
+      brushBand: { elementId: '0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0', seed: 4213,
+                   colors: ['#B24A63', '#F6DCE2'], count: 30, overlap: 0.35,
+                   weight: 0.18, sweep: 0, climb: 0.42, bow: -0.2 },
       glaze: { colors: ['#2a1810'], flow: 2 },
       dusting: { splashes: [{ u: 0.2, v: 0.4 }], color: '#d4af37' },
       foil: { flakes: [{ u: 0.1, v: 0.3 }], finish: 'gold' },
@@ -154,7 +169,7 @@ describe('a saved design comes back as the same cake', () => {
 
   // Named individually as well as in the whole-config check above, so a failure says WHICH element
   // type was lost rather than printing two large objects and leaving you to diff them.
-  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds', 'topCavity', 'topSpiral']) {
+  for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds', 'topCavity', 'topSpiral', 'brushBand', 'brushStrokes']) {
     it(`tier.${key} survives`, () => {
       expect(roundTrip(FULL).tiers[0][key]).toEqual(FULL.tiers[0][key]);
     });

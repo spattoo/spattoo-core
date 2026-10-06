@@ -211,7 +211,15 @@ const design = {
              * GLB is needed to render one. */
             topPipings: _q.has('drip')
               ? [{ layerId: 'd1', drip: true, dripLength: 1.2,
-                   color: _q.get('dripcolor') || '#3a2117' }]
+                   color: _q.get('dripcolor') || '#3a2117',
+                   /* ⚠️ `?dripcolors=a,b` ENTERS THE MULTI PATH, which is a different renderer: the
+                      tint goes white and vertex colours carry the answer. A measurement of the
+                      single-colour drip says nothing about it.
+                      ⚠️ AND THE CHOCOLATES LIVE IN `gradient.colors` — see CakeTier's note at
+                      `dripColors=`. Inventing a `dripColors` key here renders the DEFAULT brown and
+                      the diff reads 0px, which looks like "no surface" rather than "wrong field". */
+                   gradient: _q.get('dripcolors')
+                     ? { colors: _q.get('dripcolors').split(',').filter(Boolean) } : null }]
               : [],
             bottomPipings: [],
             /* ⚠️ `?foil=1` PUTS GOLD LEAF ON THE WALL, because a finish does not only add shards — it
@@ -374,8 +382,11 @@ const design = {
  * of this investigation drew and shipped a scene-wide change on.
  * Dev harness only; nothing in `src/` reads these. */
 function SceneProbe() {
-  const { scene, gl } = useThree();
-  useEffect(() => { window.__scene = scene; window.__gl = gl; }, [scene, gl]);
+  /* ⚠️ THE CAMERA TOO, so a probe can REDRAW after changing a material. Reading the live material
+     back (INVARIANTS #18) proves a knob is bound; it does not say what the knob is worth. Answering
+     that needs a second frame, and `?still=1` has stopped the loop that would have drawn one. */
+  const { scene, gl, camera } = useThree();
+  useEffect(() => { window.__scene = scene; window.__gl = gl; window.__camera = camera; }, [scene, gl, camera]);
   return null;
 }
 

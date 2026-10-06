@@ -11,7 +11,7 @@ import TemplateGrid from '../designer/shared/TemplateGrid.jsx';
    three for exactly this; a private copy here would drift from the flyout the first time either
    changed. `nameBySlug` is not passed: it only adds tag DISPLAY names, and since words are matched
    one at a time, "baby shower" still finds the slug `baby-shower`. */
-import { matchesTemplateSearch } from '../designer/templateFilter.js';
+import { matchesTemplateSearch, splitRecent, RECENT_DAYS } from '../designer/templateFilter.js';
 import { TrashIcon } from '../shared/icons.jsx';
 
 /* ── Spattoo templates — the library a baker stocks their catalogue from ─────────────────────────
@@ -42,6 +42,28 @@ import { TrashIcon } from '../shared/icons.jsx';
    it is the SAME function the Catalogue flyout picks with, so "start from a template" has one
    implementation rather than two that drift. Absent (a host that only manages a catalogue) means the
    tiles are not pickable, and TemplateGrid then drops the pointer cursor by itself. */
+/* ── A heading over a shelf ──────────────────────────────────────────────────────────────────────
+ * Small, quiet and NOT a control: it names what the run of tiles below it is, and the hint says why
+ * those and not others, because "Recent" on its own invites "recent how?" — the question the window
+ * exists to answer. The count is here for the same reason the page's own count line carries one: a
+ * baker scanning a wall of pictures cannot tell four from six at a glance.
+ *
+ * Plain text rather than a NavRow or a Disclosure: nothing here opens, and rule 7 cuts both ways —
+ * something that does NOT do anything must not look like it does.
+ */
+function SectionHead({ label, hint, count }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap',
+                  marginTop: 4, marginBottom: 2 }}>
+      <span style={{ fontSize: 11, fontWeight: 800, letterSpacing: 0.9, textTransform: 'uppercase',
+                     color: '#2C4433' }}>{label}</span>
+      <span style={{ fontSize: 11, fontWeight: 700, color: '#9CA3AF' }}>
+        {count}{hint ? ` · ${hint}` : ''}
+      </span>
+    </div>
+  );
+}
+
 export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate, pickingId = null, primaryColor = INK, accentColor = '#333333' }) {
   const isMobile = useIsMobile();
   const [rows,    setRows]    = useState(null);
@@ -100,6 +122,76 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
     [unchosen, query],
   );
 
+  /* ⚠️ ONE overlay, not one per grid. The Recent section draws a SECOND TemplateGrid, and the
+   * obvious way to do that is to paste the overlay into it — which is precisely how this codebase
+   * ends up with two buttons that drift (root CLAUDE.md rule 1). Defined once here, where it can
+   * still close over `busy`, `removing` and the two api calls. */
+  const tileOverlay = (t) => (
+              <>
+                {/* ⚠️ AN ICON, TOP RIGHT — Sandeep asked for it there. It frees the bottom row for
+                    the one control that needs words, and the corner is genuinely free on this
+                    screen: Premium sits top-LEFT, and the ⤢ preview that owns top-right in the
+                    flyout is never drawn here (no `onPreview` is passed). The label lives in
+                    `aria-label`, so the action is still announced and still testable. */}
+                {apiClient.deleteBakerTemplate && t.source === 'mine' && (
+                  <button
+                    type="button"
+                    aria-label={`Delete ${t.name}`}
+                    title={`Delete ${t.name}`}
+                    onClick={(e) => { e.stopPropagation(); setPending(t); }}
+                    style={{
+                      position: 'absolute', top: 6, right: 6, zIndex: 2,
+                      width: 26, height: 26, borderRadius: 8,
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      border: '1.5px solid #FBCFCF',
+                      background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                      color: '#B91C1C', padding: 0,
+                      cursor: removing ? 'not-allowed' : 'pointer',
+                      WebkitTapHighlightColor: 'transparent',
+                    }}
+                  ><TrashIcon size={14} /></button>
+                )}
+
+                {/* The one action that needs words, alone along the bottom now. */}
+                {apiClient.updateBakerCatalogue && (
+                  <button
+                    type="button"
+                    aria-label={`Move ${t.name} to catalogue`}
+                    disabled={busy}
+                    onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
+                    style={{
+                      position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
+                      border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
+                      background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
+                      fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
+                      cursor: busy ? 'progress' : 'pointer',
+                      whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    }}
+                  >Move to catalogue</button>
+                )}
+              </>
+  );
+
+  /* ── What arrived this week, lifted to the top ───────────────────────────────────────────────
+   * The shelf is ordered `sort_order, name` — how you BROWSE it, which says nothing about what is
+   * new. A baker's commonest errand here is "put the design I just saved into my catalogue", and
+   * that design lands wherever its name falls among forty others.
+   *
+   * ⚠️ LIFTED OUT, NOT PINNED AND ALSO LEFT BELOW. Every tile on this screen is a picture with no
+   * caption — the panel's own note says "the picture identifies the cake" — so the same cake drawn
+   * twice is two identical tiles with no way to tell they are one thing. Tapping one and watching
+   * the other stay put is the bug that would produce. This panel already holds the matching rule
+   * one level up ("a template should appear either in library or in catalogue at a given time");
+   * appearing twice on the SAME shelf is the same mistake in miniature.
+   *
+   * ⚠️ NOT WHILE SEARCHING. A query is a different question — "where is the football one" — and the
+   * answer to it is one ranked shelf, not two that split the matches by age. `searching` collapses
+   * back to a single grid.
+   *
+   * Memoised on `shown` for the identity reason the comment above gives: TemplateGrid's reveal hook
+   * restarts the grid at the top when the array it is handed changes identity. */
+  const { recent, rest } = useMemo(() => splitRecent(shown), [shown]);
+
   /* Optimistic, then reconciled. The tile leaves on the tap — a grid that waits for a round trip
      before showing anything reads as a dead control — and the previous set is restored if the call
      fails, so the screen never claims something the server did not accept.
@@ -149,6 +241,12 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
   // The SHELF's size, not the search result's — see the two lists above.
   const available = unchosen.length;
   const searching = query.trim().length > 0;
+  /* ⚠️ BELOW `searching`, not beside `recent` where it reads better. `const` is not hoisted, so
+     declaring this next to the split put it in `searching`'s temporal dead zone and the panel threw
+     "Cannot access 'searching' before initialization" the moment it mounted — a blank Library. It
+     built clean and check:bindings passed it: the name IS declared, 90 lines further down. Only
+     opening the screen found it. */
+  const sectioned = !searching && recent.length > 0;
 
   return (
     <>
@@ -212,8 +310,15 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                   starts where the gap ends, so there is no visual breathing space at all. Widening
                   the container gap would move every other pair on this page; this row is the one
                   that needs the room, so it asks for it itself. */}
+              {/* ⚠️ `flexShrink: 0`, and it is load-bearing on a phone. The page body is a flex
+                  COLUMN, so this row is a flex item and shrank to its own `minHeight: 20` once the
+                  content below it got taller — while its children, wrapped onto two lines at 390px,
+                  kept their real height and drew OUTSIDE the box. The count line landed on top of
+                  the Recent heading. Nothing errored and the desktop layout was perfect, because
+                  there the row never wraps. (Same family as the earlier "search box is touching the
+                  cake tiles": this row's height has been the fragile one on this screen.) */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, minHeight: 20,
-                            flexWrap: 'wrap', marginBottom: 10 }}>
+                            flexWrap: 'wrap', marginBottom: 10, flexShrink: 0 }}>
                 <input
                   value={query}
                   onChange={e => setQuery(e.target.value)}
@@ -272,8 +377,34 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                   showed both states. The same tile the Catalogue flyout uses, where a tap loads a
                   design instead; the grid knows nothing about catalogues, and what a tap MEANS is
                   this screen's business. */}
+              {sectioned && (
+                <>
+                  <SectionHead
+                    label="Recent"
+                    hint={`added in the last ${RECENT_DAYS} days`}
+                    count={recent.length}
+                  />
+                  <TemplateGrid
+                    templates={recent}
+                    isMobile={isMobile}
+                    busyId={pickingId}
+                    onPick={onPickTemplate}
+                    overlay={tileOverlay}
+                  />
+                  {/* ⚠️ "Previous", and it does NOT license sorting this list by date. Sandeep chose
+                      the word over "Everything else", which read as leftovers for a shelf a baker is
+                      about to choose from. It is accurate about WHICH cakes are here — the ones from
+                      before this week — and the one thing to know is that the list below keeps the
+                      server's `sort_order, name` browsing order, not a chronology. The obvious
+                      "tidy-up" is to make the word literal by sorting newest-first; that replaces
+                      Spattoo's authored browse order with a changelog, on the larger of the two
+                      shelves. Change the word before you change the order. */}
+                  {rest.length > 0 && <SectionHead label="Previous" count={rest.length} />}
+                </>
+              )}
+
               <TemplateGrid
-                templates={shown}
+                templates={sectioned ? rest : shown}
                 isMobile={isMobile}
                 /* The wait belongs to CakeDesigner (it owns the canvas and the fetch), so the id
                    comes in rather than being tracked twice. */
@@ -291,51 +422,7 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                    named button. So the tile is pickable again, and the picture means "show me this
                    cake", exactly as it does in the Catalogue flyout — the same handler, passed in. */
                 onPick={onPickTemplate}
-                overlay={(t) => (
-                  <>
-                    {/* ⚠️ AN ICON, TOP RIGHT — Sandeep asked for it there. It frees the bottom row for
-                        the one control that needs words, and the corner is genuinely free on this
-                        screen: Premium sits top-LEFT, and the ⤢ preview that owns top-right in the
-                        flyout is never drawn here (no `onPreview` is passed). The label lives in
-                        `aria-label`, so the action is still announced and still testable. */}
-                    {apiClient.deleteBakerTemplate && t.source === 'mine' && (
-                      <button
-                        type="button"
-                        aria-label={`Delete ${t.name}`}
-                        title={`Delete ${t.name}`}
-                        onClick={(e) => { e.stopPropagation(); setPending(t); }}
-                        style={{
-                          position: 'absolute', top: 6, right: 6, zIndex: 2,
-                          width: 26, height: 26, borderRadius: 8,
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          border: '1.5px solid #FBCFCF',
-                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-                          color: '#B91C1C', padding: 0,
-                          cursor: removing ? 'not-allowed' : 'pointer',
-                          WebkitTapHighlightColor: 'transparent',
-                        }}
-                      ><TrashIcon size={14} /></button>
-                    )}
-
-                    {/* The one action that needs words, alone along the bottom now. */}
-                    {apiClient.updateBakerCatalogue && (
-                      <button
-                        type="button"
-                        aria-label={`Move ${t.name} to catalogue`}
-                        disabled={busy}
-                        onClick={(e) => { e.stopPropagation(); addToCatalogue(t); }}
-                        style={{
-                          position: 'absolute', left: 6, right: 6, bottom: 6, zIndex: 2,
-                          border: '1.5px solid #C5D4C8', borderRadius: 8, padding: '4px 6px',
-                          background: 'rgba(255,255,255,0.94)', boxShadow: '0 1px 4px rgba(0,0,0,0.18)',
-                          fontSize: 10.5, fontWeight: 800, color: '#2C4433', fontFamily: 'inherit',
-                          cursor: busy ? 'progress' : 'pointer',
-                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                        }}
-                      >Move to catalogue</button>
-                    )}
-                  </>
-                )}
+                overlay={tileOverlay}
               />
 
               {/* Says what the buttons do, once, under the grid — the tiles carry no caption. */}

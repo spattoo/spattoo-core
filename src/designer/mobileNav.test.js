@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { MOBILE_PRIMARY, MOBILE_SLOTS, splitMobileNav, strandedMenus } from './mobileNav.js';
+import { MOBILE_PRIMARY, MOBILE_SLOTS, splitMobileNav } from './mobileNav.js';
 
 // WHY THIS EXISTS. The phone bar and the desktop rail used to keep separate copies of the item list.
 // They drifted, Uploads reached the rail and never reached the phone, and a baker had no route to
@@ -16,7 +16,7 @@ const RAIL = [
   { id: 'uploads',   label: 'Uploads' },
   { id: 'orders',    label: 'Orders',          menu: [{ id: 'orders-list', label: 'Orders' }] },
   { id: 'customers', label: 'Customers' },
-  { id: 'share',     label: 'Share' },
+  { id: 'store',     label: 'Store' },
 ];
 
 describe('splitMobileNav', () => {
@@ -43,17 +43,17 @@ describe('splitMobileNav', () => {
                      { id: 'invite', label: 'Invite' }];
     expect(limited.length).toBeGreaterThan(MOBILE_SLOTS);   // so More is still in play
     const { primary } = splitMobileNav(limited);
-    expect(primary.map(i => i.id)).toEqual(['new', 'templates', 'elements']);
+    expect(primary.map(i => i.id)).toEqual(['new', 'elements', 'templates']);
     expect(primary.every(Boolean)).toBe(true);
   });
 
   // A CUSTOMER's rail: design:create + element:manage only. Five items, six slots — More would have
-  // hidden Uploads and Share behind a tap while three slots sat beside them.
-  const CUSTOMER = RAIL.filter(i => ['new', 'templates', 'elements', 'uploads', 'share'].includes(i.id));
+  // hidden Uploads and Store behind a tap while three slots sat beside them.
+  const CUSTOMER = RAIL.filter(i => ['new', 'templates', 'elements', 'uploads', 'store'].includes(i.id));
 
   it('puts everything in the strip when it fits, and leaves nothing behind More', () => {
     const { primary, secondary } = splitMobileNav(CUSTOMER);
-    expect(primary.map(i => i.id)).toEqual(['new', 'templates', 'elements', 'uploads', 'share']);
+    expect(primary.map(i => i.id)).toEqual(['new', 'elements', 'templates', 'uploads', 'store']);
     expect(secondary).toEqual([]);           // the render draws More only when this is non-empty
     expect(primary.length).toBeLessThanOrEqual(MOBILE_SLOTS);
   });
@@ -62,7 +62,7 @@ describe('splitMobileNav', () => {
     expect(RAIL.length).toBeGreaterThan(MOBILE_SLOTS);
     const { primary, secondary } = splitMobileNav(RAIL);
     expect(primary.map(i => i.id)).toEqual(MOBILE_PRIMARY);
-    expect(secondary.map(i => i.id)).toEqual(['uploads', 'customers', 'share']);
+    expect(secondary.map(i => i.id)).toEqual(['uploads', 'customers', 'store']);
   });
 
   it('loses nothing either way', () => {
@@ -78,14 +78,18 @@ describe('splitMobileNav', () => {
   });
 });
 
-describe('strandedMenus', () => {
-  it('is empty for the real rail — Orders carries the only submenu, and it is primary', () => {
-    expect(strandedMenus(RAIL)).toEqual([]);
-    expect(MOBILE_PRIMARY).toContain('orders');
-  });
+describe('a menu in the More sheet', () => {
+  /* ⚠️ `strandedMenus` USED TO LIVE HERE and its tests with it. It reported ids that carried a
+     submenu and landed in the sheet, which could not draw one — real, and it caught Store being
+     dead on every phone for a day. The sheet flattens such a menu into rows now, so the condition
+     it reported is no longer a fault and the guard is gone (mobileNav.js says why).
 
-  it('names an item whose submenu would be unreachable in the More sheet', () => {
-    const withDrift = [...RAIL, { id: 'reports', label: 'Reports', menu: [{ id: 'r1', label: 'Weekly' }] }];
-    expect(strandedMenus(withDrift)).toEqual(['reports']);
+     What is still worth pinning is that the split itself is total: every item goes to exactly one
+     half, which is the invariant the original Uploads bug broke. */
+  it('still puts every item in exactly one half', () => {
+    const { primary, secondary } = splitMobileNav(RAIL);
+    const ids = [...primary, ...secondary].map(i => i.id).sort();
+    expect(ids).toEqual(RAIL.map(i => i.id).sort());
+    expect(new Set(ids).size).toBe(ids.length);
   });
 });

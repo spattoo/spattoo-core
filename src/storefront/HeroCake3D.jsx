@@ -28,8 +28,12 @@ const DRIP_CFG = {
 const DRIP_GLOSS = 0.21;   // studio "Gloss"
 const DRIP_FLOOD = true;   // studio "Flood top" — a thin pool covering the cake top inside the rim
 
-// Same glossy-ganache material the studio uses (copied from CakeTier.chocolateMaterialProps so this
-// file stays lean and doesn't pull the whole designer tier module).
+/* ⚠️ A COPY THAT HAS DIVERGED, and knowingly. It was taken from `CakeTier.chocolateMaterialProps` to
+   keep this file off the designer tier module; that function has since had its clearcoat cut and its
+   base specular dimmed, and it runs the colour through `albedoForLight` — none of which is here,
+   because every one of those numbers was MEASURED against the designer's rig and this hero is a
+   different scene with a reference light nobody has measured. Copying them across would be a guess
+   wearing a measurement's clothes. Measure this scene before syncing it. */
 function chocoMat(gloss, color) {
   const g = Math.min(1, Math.max(0, gloss));
   return { color, metalness: 0, roughness: 0.5 - 0.42 * g, clearcoat: 0.4 + 0.6 * g, clearcoatRoughness: 0.28 - 0.16 * g };

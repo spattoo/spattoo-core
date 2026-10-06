@@ -812,7 +812,12 @@ export function springRange(params = {}) {
   const p = { ...RAINBOW_DEFAULTS, ...params };
   const pinnedOnTop = p.footLeft === 'top' || p.footRight === 'top';
   const min = pinnedOnTop ? 1 : 0;
-  const max = p.surface === 'side' ? 1 : 1.4;
+  /* ⚠️ 1.8 OVER THE CAKE, AND THE NUMBER IS TASTE WHERE THE WALL'S IS ARITHMETIC. The side ceiling
+     of 1 is forced — `spring` IS the drag's `v` there. This one is only how high a baker might want
+     the arch to start, and 1.4 was my guess at that. Sandeep, with a unicorn under the arch:
+     *"springs at max allowed is only 1.4. can we make it up to 1.8?"* Nothing maps it over the cake,
+     so the only cost of raising it is a taller rainbow. */
+  const max = p.surface === 'side' ? 1 : 1.8;
   return max > min ? { min, max, step: 0.02 } : null;
 }
 

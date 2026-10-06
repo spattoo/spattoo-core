@@ -287,3 +287,195 @@ export function makeDripReliefSampler({ params, R, height, startDrop }) {
     return relief;
   };
 }
+
+/* ── Two chocolates in one pour ──────────────────────────────────────────────────────────────────
+ *
+ * Sandeep, at a gender-reveal cake poured pink one side and blue the other: *"we should allow multi
+ * color drip. when the top is also flooded, then we should devide the top area between colors. and
+ * the split should be natual, like a liquid, not geometry like of equal parts. should look like
+ * natual."*
+ *
+ * ⚠️ THE BOUNDARY IS THE WHOLE FEATURE, AND AN ANGLE IS NOT ONE. Two colours split at exactly θ=0
+ * and θ=π is a pie chart: a dead straight radius across the top and a ruler-straight line down the
+ * wall, which reads as masking tape rather than as two sauces poured against each other. What makes
+ * it liquid is that the line WANDERS — and wanders by more in the open middle of the top than at the
+ * rim, because that is where a pour has room to spread before it meets the edge it is held by.
+ *
+ * ⚠️ SO THE WOBBLE IS DAMPED TOWARD THE RIM, AND THAT IS NOT A LOOK, IT IS WHAT MAKES THE TOP AND
+ * THE SIDE AGREE. The drips hanging off the edge have to be the colour of the flood directly above
+ * them, or the cake reads as two unrelated decorations. Both ask this one function, and at the rim
+ * (r → R) the answer is nearly the same angle for both, so the split arrives at the edge and runs
+ * straight down. The alternative — one rule for the top and another for the wall — is how they come
+ * to disagree at exactly the place everybody looks.
+ *
+ * ⚠️ AND THE BLEED IS NARROW. A wide blend is an airbrushed gradient, which is a different product;
+ * two ganaches meeting leave a short mixed seam and then stop. `bleed` is a fraction of a full turn.
+ *
+ * Deterministic from `seed`, like every other number in this file: a drip that reshuffles its split
+ * between renders is a different cake each time it is looked at (see makeRng).
+ */
+export const DRIP_SPLIT_DEFAULTS = {
+  axis:   0.35,    // turns: which way the pour runs. Not 0, so the seam is not square to the camera.
+  wobble: 0.26,    // × the cake radius: how far the seam wanders either side of straight
+  bleed:  0.05,    // × the cake radius: the width of the mixed seam where two ganaches meet
+};
+
+/* How far the seam wanders, at a point `t` ALONG its own length (in radii). Three incommensurate
+   waves, so the line never repeats across the cake — the same reasoning the rope's swell uses. */
+function seamWander(t, seed) {
+  return Math.sin(t * 2.1 + seed * 1.7)
+       + Math.sin(t * 3.9 + seed * 3.1) * 0.42
+       + Math.sin(t * 6.7 + seed * 5.9) * 0.18;
+}
+
+/**
+ * Which chocolate a point belongs to.
+ *
+ * @returns {{ i: number, j: number, t: number }} — blend `t` from colour `i` to colour `j`.
+ *
+ * ⚠️ THE SEAM RUNS ACROSS THE CAKE, IT DOES NOT RADIATE FROM THE MIDDLE. My first cut split by
+ * ANGLE, which is the obvious reading of "divide the top between the colours" and is wrong in a way
+ * that only a render shows: colouring by θ makes the boundary a RADIUS by construction, so two
+ * chocolates meet at the centre as two wedges. That is a pie chart — precisely the *"geometry like
+ * of equal parts"* Sandeep ruled out — and no amount of wobble on the angle fixes it, because every
+ * wobbled radius is still a radius. The reference is one wandering line crossing the whole top, pink
+ * one side and blue the other.
+ *
+ * So the field is a PROJECTION onto a direction, not a turn: `d` is how far along the pour a point
+ * lies, and the bands are slices of that. The wander is a function of the distance ACROSS the pour,
+ * which is what makes the line wavy ALONG its length rather than merely rotated.
+ *
+ * ⚠️ AND THE SAME FUNCTION ANSWERS FOR THE WALL, WHICH IS WHY A DRIP MATCHES THE FLOOD ABOVE IT.
+ * A drip hangs just proud of the rim, so it projects onto the same axis and lands in the same band
+ * as the chocolate directly above. The seam crosses the rim at two opposite points and the drips
+ * change colour there — which is exactly what the reference cake does. One rule for the top and
+ * another for the side is how they come to disagree at the place everybody looks.
+ */
+export function dripColorAt(x, z, { n = 2, seed = 1, R = 1, axis, wobble, bleed } = {}) {
+  if (!(n > 1)) return { i: 0, j: 0, t: 0 };
+  const ax = axis   ?? DRIP_SPLIT_DEFAULTS.axis;
+  const w  = wobble ?? DRIP_SPLIT_DEFAULTS.wobble;
+  const b  = bleed  ?? DRIP_SPLIT_DEFAULTS.bleed;
+  const r  = R || 1;
+
+  const a = ax * TAU;
+  const dirX = Math.sin(a), dirZ = Math.cos(a);
+  // Along the pour, and across it — both in radii, so a 6" and a 10" cake split the same way.
+  const along  = (x * dirX + z * dirZ) / r;
+  const across = (x * -dirZ + z * dirX) / r;
+
+  // −1 … 1 across the cake, pushed about by the wander. Clamped, so a drip hanging past the rim
+  // belongs to the band it fell from rather than to one beyond the edge.
+  const d = Math.max(-1, Math.min(1, along + seamWander(across, seed) * (w / 1.6)));
+  const u = (d + 1) / 2;                      // 0 … 1
+
+  const span = 1 / n;                         // each chocolate owns this much of the way across
+  const i    = Math.max(0, Math.min(n - 1, Math.floor(u / span)));
+  // Distance to the seam ABOVE this band, in the same units as `bleed`.
+  const seamAt = (i + 1) * span;
+  const gap    = (seamAt - u) * 2;             // back into radii (u spans 2 radii)
+  const half   = b / 2;
+  if (i < n - 1 && gap < half) {
+    return { i, j: i + 1, t: smoothstep(0, 1, (half - gap) / (2 * half)) };
+  }
+  const seamBelow = i * span;
+  const gapBelow  = (u - seamBelow) * 2;
+  if (i > 0 && gapBelow < half) {
+    return { i: i - 1, j: i, t: smoothstep(0, 1, 0.5 + gapBelow / (2 * half)) };
+  }
+  return { i, j: i, t: 0 };
+}
+
+/**
+ * Paint a drip mesh with its chocolates, as vertex colours.
+ *
+ * ⚠️ VERTEX COLOURS RATHER THAN SEPARATE MESHES PER COLOUR, because the boundary runs THROUGH the
+ * geometry: splitting the web into two meshes would need the seam cut exactly, and a cut seam is a
+ * visible edge — the one thing a liquid join must not have. One mesh, one material, the colour
+ * carried on the verts and multiplied in. The material keeps `color: white` and `vertexColors: true`.
+ */
+export function paintDripColors(geo, colors, opts = {}) {
+  if (!geo?.attributes?.position) return geo;
+  /* ⚠️ AND IT TAKES THE PAINT OFF AGAIN. Geometry here is memoised on its SHAPE, so the same object
+     survives a colour change — drop from two chocolates back to one and a stale `color` attribute
+     would keep tinting a mesh whose material has gone back to a flat colour. */
+  if (!Array.isArray(colors) || colors.length < 2) { geo.deleteAttribute('color'); return geo; }
+  const pos = geo.attributes.position;
+  const rgb = colors.map(c => new THREE.Color(c));
+  const out = new Float32Array(pos.count * 3);
+  const mix = new THREE.Color();
+  for (let v = 0; v < pos.count; v++) {
+    const { i, j, t } = dripColorAt(pos.getX(v), pos.getZ(v), { ...opts, n: colors.length });
+    mix.copy(rgb[i]);
+    if (t > 0) mix.lerp(rgb[j], t);
+    out[v * 3] = mix.r; out[v * 3 + 1] = mix.g; out[v * 3 + 2] = mix.b;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(out, 3));
+  return geo;
+}
+
+/**
+ * The pool of chocolate flooding the tier top, as a mesh the split can actually be seen on.
+ *
+ * ⚠️ A `cylinderGeometry` CAP CANNOT CARRY THIS. Three's cylinder closes its ends with a fan — one
+ * vertex at the centre and one ring at the edge — so a boundary painted across it can only ever be a
+ * straight line from the middle to the rim, whatever the wander says. That is the pie chart the
+ * split exists to avoid, and it would have looked correct in code and wrong on the cake. Concentric
+ * rings give the line somewhere to bend.
+ *
+ * The underside is omitted: it sits on the cake top and is never seen, and the rings are the only
+ * reason this exists.
+ */
+/* ⚠️ THE RESOLUTION IS SET BY THE SEAM, NOT BY THE DISC. A flat pool needs almost no geometry — two
+   rings would draw it — but the chocolates' boundary is painted on these verts, so the mesh is as
+   fine as the line has to be smooth. At 18 rings the seam came out as a visible sawtooth where it
+   ran nearly along a ring: the colour was right and the EDGE was faceted, which reads as a cut-out
+   rather than a pour. 44 x 192 is ~8.5k verts for one disc, which is nothing beside the drips
+   themselves, and the step disappears. */
+export function buildDripFlood({ R = 1, h = 0.03, rings = 44, segs = 192 } = {}) {
+  const pos = [], idx = [];
+  const yTop = h / 2, yBot = -h / 2;
+  // ── Top face, ring by ring ──
+  pos.push(0, yTop, 0);                                  // centre
+  for (let ri = 1; ri <= rings; ri++) {
+    const r = R * (ri / rings);
+    for (let si = 0; si < segs; si++) {
+      const a = (si / segs) * TAU;
+      pos.push(Math.sin(a) * r, yTop, Math.cos(a) * r);
+    }
+  }
+  const ringStart = ri => 1 + (ri - 1) * segs;           // vertex index of the first vert in ring ri
+  /* ⚠️ THE CENTRE FAN WINDS THE SAME WAY AS THE RINGS. Reversed, it faces DOWNWARDS and back-face
+     culling opens a small hole at the middle of the pool — the cake's own colour showing through a
+     disc that is supposed to be chocolate. Visible as a dot, easy to read as a lighting artefact. */
+  for (let si = 0; si < segs; si++) {
+    idx.push(0, ringStart(1) + si, ringStart(1) + ((si + 1) % segs));
+  }
+  for (let ri = 1; ri < rings; ri++) {
+    for (let si = 0; si < segs; si++) {
+      const a = ringStart(ri) + si, b = ringStart(ri) + ((si + 1) % segs);
+      const c = ringStart(ri + 1) + si, d = ringStart(ri + 1) + ((si + 1) % segs);
+      idx.push(a, d, b, a, c, d);
+    }
+  }
+  // ── The thin wall at the edge, so the pool has a visible depth where it meets the rim bead ──
+  const wallTop = pos.length / 3;
+  for (let si = 0; si < segs; si++) {
+    const a = (si / segs) * TAU;
+    pos.push(Math.sin(a) * R, yTop, Math.cos(a) * R);
+  }
+  const wallBot = pos.length / 3;
+  for (let si = 0; si < segs; si++) {
+    const a = (si / segs) * TAU;
+    pos.push(Math.sin(a) * R, yBot, Math.cos(a) * R);
+  }
+  for (let si = 0; si < segs; si++) {
+    const n = (si + 1) % segs;
+    idx.push(wallTop + si, wallBot + si, wallTop + n, wallTop + n, wallBot + si, wallBot + n);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+  geo.setIndex(idx);
+  geo.computeVertexNormals();
+  return geo;
+}

@@ -4,7 +4,7 @@ import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { pickSeat } from '../geometry/penSeat.js';
 import { snapStroke } from '../geometry/strokeSnap.js';
-import { translateStroke, distanceToStroke } from '../geometry/strokeMove.js';
+import { translateStroke, distanceToStroke, strokePoints, isUprightNormal } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
 import StampStroke from './StampStroke.jsx';
@@ -25,7 +25,7 @@ import StampStroke from './StampStroke.jsx';
 // handler reads that tag and disables rotate when you press on the cake (so you draw) and
 // leaves it on for empty space (so you rotate). The pen itself doesn't touch orbit.
 
-function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, softness, heapHeight, medium }) {
+function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, softness, heapHeight, medium, onClick }) {
   const geo = useMemo(
     () => (kind === 'heap'
       ? buildPipingHeap(point, normal, nozzle, thickness, heapHeight)
@@ -34,7 +34,7 @@ function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, sof
   );
   if (!geo) return null;
   return (
-    <mesh geometry={geo} castShadow>
+    <mesh geometry={geo} castShadow onClick={onClick}>
       {/* DoubleSide keeps the fan caps lit regardless of winding (cream is opaque) */}
       {/* Cream or chocolate — the table answers it, so there is no branch here and a third medium
           is a row rather than an edit. A stroke saved before media existed has no `medium` and
@@ -46,7 +46,7 @@ function StrokeMesh({ kind, points, point, normal, nozzle, color, thickness, sof
 
 const CatcherMat = () => <meshBasicMaterial transparent opacity={0} depthWrite={false} />;
 
-export default function CreamPen({ piping = [], drawMode = false, moveMode = false, penStyle, tierData = [], board, onAddStroke, onMoveStroke }) {
+export default function CreamPen({ piping = [], drawMode = false, moveMode = false, penStyle, tierData = [], board, onAddStroke, onMoveStroke, onPickStroke }) {
   const { gl, camera, scene } = useThree();
   const [live, setLive] = useState([]);          // Vector3[] — seated centerline of the in-progress stroke
   const activeRef = useRef(null);                // { tierIndex } while drawing, else null
@@ -103,13 +103,22 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
       const hit = [-1, null];
       let best = Infinity;
       for (const st of pipingRef.current) {
-        const pts = st.points ?? (st.point ? [st.point] : null);
+        const pts = strokePoints(st);   // see strokeMove.js — a stamp's `points` is EMPTY
         if (!pts) continue;
         const d = distanceToStroke(pts, s.p.toArray());
         const reach = Math.max(0.12, (st.thickness ?? 0.03) * 3);
         if (d < best && d < reach) { best = d; hit[0] = d; hit[1] = st; }
       }
-      if (hit[1]) moveRef.current = { id: hit[1].id, from: s.p.toArray(), original: hit[1].points };
+      /* ⚠️ `moved: false` IS WHAT SEPARATES A TAP FROM A DRAG, and the same press has to be able to
+         become either — you cannot know which it is until the pointer does or does not travel. The
+         grab is armed here; `onMove` sets `moved` the first time it actually slides the piece, and
+         `onUp` reads it: moved means it was a drag and the slide is the whole gesture, unmoved means
+         it was a tap and the piece is being CHOSEN. Deciding at press time would make selecting
+         impossible (every press would slide) or sliding impossible (every press would select). */
+      /* `single` says which FIELD the slide writes back. A stamp is positioned by `point`; writing
+         its moved position into `points` moved nothing and left the piece where it was. */
+      if (hit[1]) moveRef.current = { id: hit[1].id, from: s.p.toArray(), original: strokePoints(hit[1]),
+                                      single: !hit[1].points?.length, moved: false };
       return;
     }
 
@@ -128,12 +137,16 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
         const m = moveRef.current;
         const s = seatAt(ev.clientX, ev.clientY);
         if (!s) return;
+        m.moved = true;
         const st = pipingRef.current.find(x => x.id === m.id);
         // Replayed from the ORIGINAL points every frame, never from the live ones — accumulating
         // would turn every intermediate pointermove into another displacement.
-        onMoveStroke?.(m.id, translateStroke(m.original, m.from, s.p.toArray(), {
+        const moved = translateStroke(m.original, m.from, s.p.toArray(), {
           normal: st?.normal ?? [0, 1, 0], axis: [0, 0],
-        }));
+        });
+        /* A PATCH, not a points array — see `single` above. The writer merges, so a stamp's `point`
+           and a drawn line's `points` each go back to the field that positions them. */
+        onMoveStroke?.(m.id, m.single ? { point: moved[0] } : { points: moved });
         return;
       }
       if (!activeRef.current) return;
@@ -173,7 +186,14 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
     };
 
     const onUp = () => {
-      if (moveRef.current) { moveRef.current = null; return; }
+      if (moveRef.current) {
+        /* A press that never travelled is a tap: the customer pointed at a piece rather than moving
+           it. Reported up so the card can edit THAT piece — its colour and thickness are its own. */
+        const m = moveRef.current;
+        moveRef.current = null;
+        if (!m.moved) onPickStroke?.(m.id);
+        return;
+      }
       if (!activeRef.current) return;
       const { tierIndex, normal } = activeRef.current;
       activeRef.current = null;
@@ -211,8 +231,19 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
             // redraw identically after a reload, and penStyle is live UI state that will have moved
             // on — a border piped in stamp mode would come back jittered because the pen was back on
             // cream by then. Same reason the points are stored rather than recomputed.
+            /* ⚠️ THE ROTATION IS CHOSEN BY THE SURFACE, AND STORED. An element authors one attitude
+               for a rim and another for a wall; the pen draws on both, so taking the rim's
+               everywhere laid every piece flat against the side. Resolved HERE, where the seat
+               normal is known, and written onto the stroke for the same reason `regular` and
+               `medium` are: penStyle is live UI state that will have moved on by the time this is
+               reloaded, and a stroke has to redraw identically for ever. */
+            /* `nrm ?? [0,1,0]` matches what the stroke itself stores when the start missed — the
+               rope branch below writes `normal: nrm || [0,1,0]` — so an unknown surface is treated
+               as the top by BOTH, rather than by one of them. */
+            const rotation = (isUprightNormal(nrm ?? [0, 1, 0]) ? s.stampRotation : s.stampRotationSide)
+                             ?? s.stampRotation ?? null;
             const stamp = { ...base, stampId: s.stampId, glbUrl: s.stampUrl, seed, regular: !!s.stampRegular,
-                            rotation: s.stampRotation ?? null, lean: s.stampLean ?? 0,
+                            rotation, lean: s.stampLean ?? 0,
                             // Carried for the X-Ray report: a hand-piped run is the SAME element as
                             // its ring, and the sheet has to be able to name it.
                             stampName: s.stampName ?? null };
@@ -239,7 +270,7 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
       window.removeEventListener('pointerup', onUp);
       window.removeEventListener('pointercancel', onUp);
     };
-  }, [drawMode, moveMode, gl, camera, scene, onAddStroke, onMoveStroke]);
+  }, [drawMode, moveMode, gl, camera, scene, onAddStroke, onMoveStroke, onPickStroke]);
 
   // ── The pointer has to SAY you can draw ────────────────────────────────────────────────────────
   // Draw mode changed nothing about the canvas: same arrow, same cake, and the only clue was a line
@@ -278,6 +309,36 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
     return () => { el.style.cursor = prev; };
   }, [drawMode, moveMode, gl]);
 
+  /* ── Choosing a piece with the pen PUT AWAY ─────────────────────────────────────────────────
+   *
+   * ⚠️ A PLACED PIECE WAS ONLY CLICKABLE WHILE THE PEN WAS OUT, so once piping ended the cream was
+   * scenery: a click went straight through it to the TIER behind, which selected the tier and
+   * opened its colour card. Sandeep, at exactly that: *"after adding cream with clicks. lateer if i
+   * click on the cream, it does not have a pointer."* What you can see you can grab (INVARIANTS #10
+   * law 4), and nothing about a piece stops being true when the tool is put down.
+   *
+   * ⚠️ NOT WHILE DRAWING, AND THAT IS NOT AN OVERSIGHT. In draw mode a press on cream PIPES ONTO
+   * cream — that is how a mane is built, and it is the one thing the seat rule exists for. A
+   * handler here would eat that press and make stacking impossible. Move mode has its own,
+   * distance-based pick (a tap chooses, a drag slides), so this is for neither mode: the pen is
+   * away entirely.
+   *
+   * `stopPropagation` is what keeps the tier from being selected underneath; without it the piece
+   * and the tier both answer one click, and the tier's card is the one that opens. */
+  const pickAway = (id) => ((drawMode || moveMode || !id) ? undefined : (e) => {
+    /* ⚠️ A CLICK, NOT A PRESS, AND THE TIER IS WHY. The tier is selected by its own R3F `onClick`
+       (CakeCanvas), and stopping propagation on a pointerdown does not stop a click — so a
+       pointerdown handler here fired, stopped nothing, and the tier's card opened anyway, which is
+       the bug it was meant to fix.
+       ⚠️ AND `e.delta` IS THE DRAG GUARD. A drag on the cake ROTATES it, and the drag ends over
+       whatever happens to be under the pointer — without this, spinning the cake to look at the
+       back selects whichever piece you let go over. R3F measures the travel since the press for
+       exactly this; the tier does the same thing one level up with its own pointer ref. */
+    if (e.delta > 5) return;
+    e.stopPropagation();
+    onPickStroke?.(id);
+  });
+
   // Leaving draw mode mid-stroke drops the in-progress stroke.
   useEffect(() => { if (!drawMode) { activeRef.current = null; setLive([]); } }, [drawMode]);
   useEffect(() => { if (!moveMode) moveRef.current = null; }, [moveMode]);
@@ -296,8 +357,9 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
            sends the next piece off sideways. A piece laid on another follows the one BELOW it,
            which is what a hand does. */
         ? <StampStroke key={s.id ?? i} stroke={s}
-            userData={{ isPenSeat: true, strokeId: s.id, grow: s.normal }} />
-        : <StrokeMesh key={s.id ?? i} {...s} />))}
+            userData={{ isPenSeat: true, strokeId: s.id, grow: s.normal }}
+            onClick={pickAway(s.id)} />
+        : <StrokeMesh key={s.id ?? i} {...s} onClick={pickAway(s.id)} />))}
 
       {/* Live preview: swept rope/heap only. In stamp mode the stamps appear on release
           (loading + tiling a GLB every pointermove would stutter the drag).

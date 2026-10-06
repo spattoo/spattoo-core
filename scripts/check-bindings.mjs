@@ -152,6 +152,41 @@ for (const rel of files) {
     console.error(`✗ check:bindings — ${rel} does not parse: ${e.message}`);
     process.exit(1);
   }
+  /* ── `export { X } from '…'` FORWARDS A NAME, IT DOES NOT BIND ONE ──────────────────────────
+   *
+   * ⚠️ AND THIS GATE WAS BLIND TO IT BY ITS OWN CONSTRUCTION. Everything below reads esbuild's
+   * OUTPUT, and esbuild rewrites a re-export into an import plus an export — so the name arrives
+   * looking perfectly declared. Meanwhile the real module has no such binding, and every use of it
+   * in that file is a ReferenceError the moment it is evaluated.
+   *
+   * It shipped exactly that way: extracting creamMaterial.js left CakeTier.jsx re-exporting five
+   * names it also USES. The file compiled, 2,674 tests passed, and the throw waited for somebody to
+   * render a cream surface — Sandeep, opening a chocolate drip: "PIPING_SOFTNESS_DEFAULT is not
+   * defined", and a dead canvas with a Try again button.
+   *
+   * So this one question is asked of the RAW source, before esbuild can hide the answer.
+   */
+  const comments = raw.replace(/\/\*[\s\S]*?\*\//g, m => ' '.repeat(m.length))
+                      .replace(/\/\/[^\n]*/g, m => ' '.repeat(m.length));
+  for (const m of comments.matchAll(/export\s*\{([^}]*)\}\s*from\s*['"][^'"]+['"]/g)) {
+    for (const part of m[1].split(',')) {
+      // `export { a as b } from …` forwards under `b`; the LOCAL name was never bound either way.
+      const name = part.trim().split(/\s+as\s+/)[0].trim();
+      if (!/^[A-Za-z_$][\w$]*$/.test(name)) continue;
+      /* Is it used anywhere in this file OTHER than inside that export statement — and other than
+         in an IMPORT, because re-exporting a name while importing it under an alias is the correct
+         way to do this and must not be reported. `export { envProps } from './envMap.js'` beside
+         `import { envProps as _envProps } from './envMap.js'` is right, and the first cut of this
+         check called it a crash. */
+      const elsewhere = comments
+        .replace(m[0], ' '.repeat(m[0].length))
+        .replace(/import\s[\s\S]*?from\s*['"][^'"]+['"]/g, x => ' '.repeat(x.length));
+      if (new RegExp(`(?:^|[^\\w$.])${name}(?:[^\\w$]|$)`).test(elsewhere)) {
+        problems.push({ rel, name, reExport: true });
+      }
+    }
+  }
+
   const declared = declaredNames(src);
   // ── Called, OR read ───────────────────────────────────────────────────────────────────────────
   // It only ever looked at CALL sites — `name(` — and that missed the very crash it exists for.
@@ -201,6 +236,13 @@ const unique = problems.filter(p => {
   return true;
 });
 
+for (const p of unique) {
+  if (p.reExport) {
+    p.note = 'is RE-EXPORTED (`export { … } from`) and also used here — a re-export forwards a name '
+           + 'to importers, it does not bind it in this file. Import it as well.';
+  }
+}
+
 if (!unique.length) {
   console.log(`✓ check:bindings — every name called is declared (${files.length} files)`);
   process.exit(0);
@@ -209,7 +251,9 @@ if (!unique.length) {
 console.error('✗ check:bindings — a name is called but nothing declares it.\n');
 console.error('  This is a ReferenceError at RUN time. It builds, it deploys, and it throws when');
 console.error('  somebody opens the page.\n');
-for (const p of unique) console.error(`   • ${relative('', p.rel)}  →  ${p.name}(…)`);
+for (const p of unique) console.error(p.note
+  ? `   • ${relative('', p.rel)}  →  ${p.name} ${p.note}`
+  : `   • ${relative('', p.rel)}  →  ${p.name}(…)`);
 console.error('\n  If one of these is a false positive, the check is too crude — widen declaredNames,');
 console.error('  do not silence the line.');
 process.exit(1);

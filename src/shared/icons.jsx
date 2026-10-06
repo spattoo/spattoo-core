@@ -120,6 +120,48 @@ export function TrashIcon({ size = 16 }) {
   );
 }
 
+// A shop with its awning out: the baker's own storefront, as a destination.
+//
+// ⚠️ IT ECHOES Shopfront.jsx RATHER THAN BEING INVENTED. The storefront hero already draws a
+// facade with a scalloped awning and calls it "a patisserie trope that nobody owns" — that is this
+// product's picture of a shop, and the rail should point at it with the same shape. INVARIANTS #14:
+// an icon means the same thing everywhere, so the one on the rail and the one the customer lands on
+// are the same idea.
+//
+// The scallops are deliberately NOT here. At 20px a scalloped edge is four grey pixels; the hero
+// can afford the detail because it is drawn 300px wide. What survives at rail size is the slanted
+// awning, the box and the door, so that is what is kept.
+export function StoreIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M3.2 8.2 5.4 3.6h13.2l2.2 4.6" />
+      <path d="M4.8 8.2V20.4h14.4V8.2" />
+      <path d="M9.6 20.4v-6.2h4.8v6.2" />
+    </svg>
+  );
+}
+
+// A pencil over a page corner: change the thing next to this.
+//
+// ⚠️ LIFTED, NOT DRAWN. It already existed THREE times when the account screen wanted a fourth —
+// CustomersPanel and OrdersPanel held byte-identical copies, and OrdersPanel held a SECOND,
+// DIFFERENT glyph beside them (a plain pencil with an underline). So a baker already met two
+// different "edit" icons in one app, which is precisely the drift INVARIANTS #14 names: an icon
+// means the same thing everywhere, and the way to keep that true is one definition.
+//
+// The pencil-on-page is the one kept: it was the shape in two of the three places, and it reads as
+// "edit this record" rather than "draw", which matters on a screen that also has a drawing tool.
+export function PencilIcon({ size = 14 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+    </svg>
+  );
+}
+
 export function ChevronRightIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"

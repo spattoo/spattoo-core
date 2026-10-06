@@ -23,3 +23,7 @@ dist
 # A reference cake photo for dev/edible-prints.html. A real one is a CUSTOMER'S, and a fixture is
 # not a reason to commit one — drop any photo here to see the crop previews.
 dev/photo.jpg
+
+# Reference photographs for dev/ harnesses. Local only: they are other people's work
+# (Instagram/Pinterest cakes) and have no business in our git history.
+dev/refs/

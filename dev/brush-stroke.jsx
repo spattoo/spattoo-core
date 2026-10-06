@@ -1,0 +1,249 @@
+import React, { useMemo } from 'react';
+import { createRoot } from 'react-dom/client';
+import * as THREE from 'three';
+import { Canvas } from '@react-three/fiber';
+import { OrbitControls } from '@react-three/drei';
+import { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, paintBrushColors, brushGesture, makeBrushBed,
+         buildBrushBand, brushBandCount,
+         BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
+// Both live in CakeCanvas — they ARE what production mounts, which is the whole point of using them.
+// creamMaterialProps is THE cream material — the one every piped stroke on every cake already
+// uses, with the calibrated albedo and the sheen. A brushstroke is buttercream; it asks the same
+// function rather than inventing a second opinion about what cream looks like.
+import { SceneLights, SceneEnv, CakePreview } from '../src/designer/canvas/CakeCanvas.jsx';
+/* ⚠️ THE ASSETS BASE, OR THIS PAGE IS LIT BY drei's INDOOR PRESET AND NOT BY THE CAKE'S OWN SKY.
+   `check:harness-scene` passes without it — that gate keys on mounting CakePreview/CakeCanvas, and
+   this page builds its own cylinder and mounts SceneLights/SceneEnv directly, so it slipped through
+   the net while reading as compliant. It cost: every judgement on this page about cream texture and
+   about overlaps was made under the wrong environment, which is the exact failure scene.js was
+   written to end and whose cost it already lists. Side-effect import; see that file. */
+import './scene.js';
+
+import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
+
+/* ── Brushstrokes painted on a cake wall ─────────────────────────────────────────────────────────
+ *
+ * The tight loop for the studio of the same name in admin — same geometry, imported, never copied.
+ * This page exists to answer one question a slider cannot: does WEIGHT read as a thicker knife, or
+ * just as a taller bump? So it shows a row of strokes at rising weight, side by side on one cake,
+ * which is the only way to see where "merges with the surface" turns into "stands proud".
+ *
+ * ?weights=0,0.25,0.5,0.75,1  · ?width=0.3 · ?seed=1
+ * Lit by SceneLights/SceneEnv — the designer's own rig, because relief judged under other lights is
+ * the wrong relief and relief is the entire subject.
+ */
+const P = new URLSearchParams(location.search);
+const R = 1, TIER_H = 1.25, BOARD_R = 1.5, BOARD_H = 0.07;
+const WEIGHTS = (P.get('weights') ?? '0,0.25,0.5,0.75,1').split(',').map(Number);
+const WIDTH = +(P.get('width') ?? D.width);
+const SEED = +(P.get('seed') ?? 1);
+/* ?gap — how far apart the strokes sit, in turns. Below the stroke's own width they OVERLAP, which
+   is the thing to look at: a brushed cake is strokes laid across each other, not stripes. */
+const GAP = +(P.get('gap') ?? 0.052);
+/* ⚠️ THE DEFAULTS COME FROM THE GEOMETRY, NOT FROM A COPY HERE. Written as literals, this page kept
+   serving the OLD lift after the real default was raised — so the render I was judging was the
+   harness's opinion rather than the module's, which is the whole thing a harness must not do. */
+const LIFT = +(P.get('lift') ?? D.lift);
+const ACROSS = +(P.get('across') ?? D.across);
+const SWEEP = +(P.get('sweep') ?? 0.012);
+const CLIMB = +(P.get('climb') ?? 0.52);
+/* The relief knobs, so a sweep varies the ONE thing it is asking about. Same rule as ?lift — read
+   from the module when the URL is silent, never re-stated here. */
+const RIDGE = +(P.get('ridge') ?? D.ridge);
+const GRAIN = +(P.get('grain') ?? D.grain);
+const LANES = +(P.get('lanes') ?? D.lanes);
+const ROWS  = +(P.get('rows')  ?? D.rows);
+const SEAM  = +(P.get('seam')  ?? D.seam);
+const FLOOR = P.has('floor') ? +P.get('floor') : null;
+const BITE  = P.has('bite') ? +P.get('bite') : null;
+/* The band's own thickness. `weights` is the ROW of single strokes; a band has one. */
+const BAND_W = +(P.get('w') ?? 0.75);
+/* ?top=1 — the SAME stroke laid on the cake top instead of the wall. A cream stroke goes on both,
+   hugging either, and buildBrushStrokeOnFlat had never been looked at. */
+const TOP = P.has('top');
+const COLORS = ['#F6DCE2', '#8EC5E8', '#F4C542', '#E8788F', '#B79CE0', '#3FAE8E'];
+
+/* ⚠️ A BRUSHSTROKE ON A CAKE RUNS UP THE WALL, NOT ROUND IT. My first cut swept each stroke
+   horizontally AND spaced them horizontally, so they fought for the same circumference and most of
+   them ended up round the back. Every reference cake is the same: short vertical pulls, side by
+   side, because that is the way a hand moves against a tier you are turning. */
+const path = (at, seed) => brushGesture({ at, seed, sweep: SWEEP, climb: CLIMB });
+
+/* On the top, the gesture is drawn in units of R from the axis rather than round-and-up. */
+function topPath(k) {
+  const out = [];
+  for (let i = 0; i < 14; i++) {
+    const t = i / 13;
+    // Deliberately past the rim at the far end, so the drape is what this page shows.
+    out.push([-0.72 + 2.05 * t, -0.52 + k * 0.26 + Math.sin(Math.PI * t) * 0.07]);
+  }
+  return out;
+}
+
+const CAKE_COLOR = '#FBF8F3';
+
+/* One bed for the whole wall: each stroke reads the cream already laid and rides on it, then stamps
+   itself in for the next. Rebuilt whenever the set of strokes changes, so order stays honest. */
+/* ?nobed — the CONTROL. Without it every stroke sits on the wall whatever is already there, so the
+   one underneath comes back up through the one on top: thin slivers of the wrong colour running the
+   length of the overlap, which is the artefact this whole mechanism exists to answer. Keep it
+   reachable; a fix with no way to see the fault is a fix nobody can check. */
+const BED = P.has('nobed') ? null : makeBrushBed({ R, wallH: TIER_H });
+
+function Stroke({ at, weight, color, seed, idx }) {
+  const geo = useMemo(() => (TOP
+    ? buildBrushStrokeOnFlat({ R, y: BOARD_H + TIER_H, path: topPath(idx), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, layer: idx })
+    : buildBrushStrokeOnWall({ R, baseY: BOARD_H, wallH: TIER_H, path: path(at, seed), width: WIDTH, weight, seed, lift: LIFT, across: ACROSS, ridge: RIDGE, grain: GRAIN, lanes: LANES, rows: ROWS, seam: SEAM, bed: BED })
+  ), [at, weight, seed, idx]);
+  /* Thin where the knife ran dry, so the cake shows through — the thing the reference photo has and
+     a flat colour never will. */
+  useMemo(() => geo && paintBrushColors(geo, color, CAKE_COLOR), [geo, color]);
+  if (!geo) return null;
+  return (
+    <mesh geometry={geo} castShadow receiveShadow>
+      {/* DoubleSide because a painted layer's winding depends on which way the stroke happens to
+          run — the same call CreamPen makes for cream. polygonOffset because the thinnest film sits
+          almost on the wall, and over a long grazing sweep the depth buffer loses: the wall punches
+          through in stripes, which is what "breaking at extreme sweep" was. */}
+      <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, color)} color="#ffffff" vertexColors />
+    </mesh>
+  );
+}
+
+const BAND = P.has('band') ? (+P.get('band') || 18) : 0;
+const BAND_COLORS = (P.get('colors') ?? '').split(',').filter(Boolean);
+
+function Band() {
+  const parts = useMemo(() => buildBrushBand({
+    R, baseY: BOARD_H, wallH: TIER_H, under: CAKE_COLOR, seed: SEED,
+    colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
+    count: BAND, width: WIDTH === D.width ? null : WIDTH, weight: BAND_W, floor: FLOOR, bite: BITE, lift: LIFT,
+    /* The stroke's look, swept from the URL — see buildBrushBand. */
+    ...(P.has('lanes') ? { lanes: +P.get('lanes') } : null),
+    ...(P.has('grain') ? { grain: +P.get('grain') } : null),
+    ...(P.has('skirt') ? { skirt: +P.get('skirt') } : null),
+    ...(P.has('ridge') ? { ridge: +P.get('ridge') } : null),
+    ...(P.has('breathe') ? { breathe: +P.get('breathe') } : null),
+    ...(P.has('tear') ? { tear: +P.get('tear') } : null),
+    ...(P.has('across') ? { across: +P.get('across') } : null),
+    ...(P.has('tipMin') ? { tipMin: +P.get('tipMin') } : null),
+    ...(P.has('tipMax') ? { tipMax: +P.get('tipMax') } : null),
+    climb: CLIMB, sweep: SWEEP,
+  }), []);
+  if (!parts.length) return null;
+  console.log('[band]', brushBandCount({ count: BAND, colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3) }),
+              'strokes ·', parts.reduce((n, p) => n + p.geometry.attributes.position.count, 0),
+              'verts ·', parts.length, 'draw calls');
+  return parts.map(part => (
+    /* ⚠️ THE MATERIAL IS TUNED TO THIS PART'S COLOUR, which is the whole reason the band comes back
+       in parts. `creamMaterialProps` takes a sheen colour FROM the cream's colour; one material for
+       the lot puts a white sheen over a charcoal stroke and it renders mid-grey.
+       `color="#ffffff"` so the per-vertex wash is what tints it — the albedo is already in the
+       vertex colours — but sheen and roughness come from the real one. */
+    /* ⚠️ THE MATERIAL PROBES, KEPT. ?nospec ?nosheen ?noenv each switch ONE term off, which is
+            how the pale band down every stroke's edge was identified: measured across one scan line
+            it is 143px with the default specular and 63px without, while sheen and envMapIntensity
+            change it by nothing (the second confirming INVARIANTS #18). Three.js defaults
+            specularIntensity to 1, so a cream edge presenting a grazing angle gets a WHITE Fresnel
+            highlight — on a stroke whose edge ramps down to the wall that is a desaturated halo, not
+            a glint. Left here because the fix belongs in creamMaterialProps, which every piped
+            stroke in the app shares, and that is not a change to make without re-measuring cream. * */
+    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow>
+      {/* ⚠️ ?flat — THE DECOMPOSITION PROBE, and the one that ends an argument. meshBasic draws the
+          vertex colours with NO lighting, so whatever pale is left is pigment and everything that
+          disappears was shading. Measured at thickness 0 over three scan lines: 356 pale pixels as
+          shipped, 291 with specular off, 297 with specular AND sheen off, 144 unlit. So roughly
+          144 pigment, 65 specular, and the rest plain diffuse light on a curved white wall.
+          Also measured and FLAT — neither moved it, so neither is the cause: seamMin 0.0015 to
+          0.008 (356/354/356/356) and skim 0.004 to 0.025 (356/355/361). Clearance is not the
+          mechanism, which is worth knowing before anyone reaches for it again. */}
+      {P.has('flat')
+        ? <meshBasicMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1} color="#ffffff" vertexColors />
+        : <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
+            polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
+            {...(P.has('nospec') ? { specularIntensity: 0 } : null)}
+            {...(P.has('nosheen') ? { sheen: 0 } : null)}
+            {...(P.has('noenv') ? { envMapIntensity: 0 } : null)} />}
+    </mesh>
+  ));
+}
+
+/* ?designer — THE INTEGRATION, not the geometry. Everything above builds a band and mounts it on a
+   cylinder this page drew itself; this mounts `CakePreview` on a DESIGN whose tier carries
+   `brushBand`, which is the whole chain the baker app runs: design -> toCanvasConfig -> CakeContent
+   -> BrushBand. A gate already proves every field toCanvasConfig emits is READ somewhere in that
+   file (cakeContent.test.js); only this proves the cake comes out with cream on it. */
+const DESIGNER = P.has('designer');
+
+function DesignerCake() {
+  const design = {
+    tiers: [{
+      radius: 1, height: 1.25, color: '#FBF8F3',
+      frostingType: 'buttercream', frostingStyle: 'smooth',
+      /* ?single — the hand-drawn list instead of the band, which is the other half of the
+         integration: a list of pieces, each its own mesh with its own click target and its own
+         card. Same page so the two shapes are compared on one cake rather than from memory. */
+      ...(P.has('single')
+        ? { brushStrokes: P.has('lid')
+              /* ?single&lid — strokes across the TOP. One deliberately runs past the rim, because
+                 the drape is the half of buildBrushStrokeOnFlat the wall never exercises. */
+              ? [0, 1, 2].map(i => ({
+                  id: `bt${i}`, surface: 'top',
+                  ax: -0.85 + i * 0.1, az: -0.45 + i * 0.45,
+                  bx: 0.5 + i * 0.35, bz: -0.3 + i * 0.4, bow: 0.06 - i * 0.05,
+                  width: 0.34, weight: 0.3, seed: 21 + i * 9,
+                  color: (BAND_COLORS.length ? BAND_COLORS : COLORS)[i % (BAND_COLORS.length || COLORS.length)],
+                }))
+              : [0, 1, 2, 3].map(i => ({
+              id: `bs${i}`, at: -0.05 + i * 0.035, rise: 0.02, climb: 0.42, sweep: 0, bow: -0.2,
+              width: 0.3, weight: 0.18, seed: 11 + i * 7,
+              color: (BAND_COLORS.length ? BAND_COLORS : COLORS)[i % (BAND_COLORS.length || COLORS.length)],
+            })) }
+        : { brushBand: {
+              seed: SEED,
+              colors: BAND_COLORS.length ? BAND_COLORS : COLORS.slice(0, 3),
+              ...(BAND ? { count: BAND } : null),
+            } }),
+    }],
+  };
+  return <CakePreview design={design} autoRotate={false} shadows style={{ width: '100%', height: '100%' }} />;
+}
+
+function App() {
+  if (DESIGNER) return <DesignerCake />;
+  return (
+    <Canvas shadows camera={{ position: TOP ? [2.6, 2.0, 2.6] : [0, 1.4, 4.0], fov: 38 }} gl={{ antialias: true, preserveDrawingBuffer: true }}>
+      <color attach="background" args={['#eceaf3']} />
+      {/* ⚠️ `shadows` IS NOT DECORATION HERE — RELIEF IS THE WHOLE SUBJECT OF THIS PAGE. SceneLights
+          defaults it OFF and the live designer mounts `<SceneLights shadows />`, so every brushstroke
+          render judged on this page had been lit unlike the cake it authors for (INVARIANTS #17).
+          It is not what made the strokes read flat, but a page about height that throws away the
+          cue for height has no business being the one we decide on. */}
+      {/* ⚠️ AND A SHADOW CANNOT CARRY THE SEAM, WHICH IS WORTH KNOWING BEFORE REACHING FOR ONE. A
+          probe key light with a 4-pixel-per-millimetre shadow camera — a 4096 map over a 4-unit
+          frustum against three's default 512 over ten — made no visible difference at an overlap.
+          SceneLights' key is nearly overhead, so what a stroke standing off its neighbour casts, it
+          casts onto itself. The step has to be read from SHADING, which is why the fix was the
+          stroke's own edge having a height rather than anything in the rig. */}
+      <SceneLights shadows />
+      <SceneEnv />
+      <mesh position={[0, BOARD_H / 2, 0]} receiveShadow>
+        <cylinderGeometry args={[BOARD_R, BOARD_R, BOARD_H, 64]} />
+        <meshStandardMaterial color="#EDE7DA" roughness={0.85} />
+      </mesh>
+      <mesh position={[0, BOARD_H + TIER_H / 2, 0]} castShadow receiveShadow>
+        <cylinderGeometry args={[R, R, TIER_H, 96]} />
+        <meshStandardMaterial color="#FBF8F3" roughness={0.75} />
+      </mesh>
+      {/* ?band=18&colors=#F6DCE2,#8EC5E8 — the whole tier at once, which is the thing a baker asks
+          for. One mesh: see buildBrushBand on why this is a merge and not an InstancedMesh. */}
+      {BAND ? <Band /> : WEIGHTS.map((w, i) => (
+        <Stroke key={i} idx={i} at={(i - (WEIGHTS.length - 1) / 2) * GAP} weight={w} color={COLORS[i % COLORS.length]} seed={SEED + i * 7} />
+      ))}
+      <OrbitControls target={[0, BOARD_H + TIER_H * 0.5, 0]} enablePan={false} />
+    </Canvas>
+  );
+}
+createRoot(document.getElementById('root')).render(<App />);

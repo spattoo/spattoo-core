@@ -158,7 +158,14 @@ export { ELEMENT_WIRE_DEFAULTS, WIRE_ANGLE, WIRE_LENGTH, WIRE_BEND, WIRE_WAVES, 
   from './designer/geometry/elementWire.js';
 // Procedural chocolate-drip geometry — exported so the admin drip studio tunes against the SAME code
 // the designer (CakeTier) renders (no duplicated drip maths).
-export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP } from './designer/geometry/chocolateDrip.js';
+export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad, brushStriation,
+         strokeFacesOutward, wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors,
+         brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
+         buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS,
+         BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
+export { waferPanel, buildWaferSkirt, WAFER_DEFAULTS } from './designer/geometry/waferPaper.js';
+export { WAFER_PAPER_MATERIAL, waferFibreTexture } from './designer/geometry/waferPaperMaterial.js';
+export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripColorAt, paintDripColors, buildDripFlood, DRIP_SPLIT_DEFAULTS } from './designer/geometry/chocolateDrip.js';
 // Piped grass (Wilton 233). Geometry + seats are separate on purpose: the renderer INSTANCES one
 // tuft across thousands of seats, so the admin studio tunes the tuft and previews the field.
 export { buildGrassTuft, grassSeats, grassTriangleCount, GRASS_DEFAULTS } from './designer/geometry/grass.js';
@@ -171,6 +178,16 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
  * background, so it is in the render — a studio that paints a different colour behind a transparent
  * canvas is judging its subject against a surround no cake has. */
 export { SceneLights, SceneEnv, SceneBackground } from './designer/canvas/CakeCanvas.jsx';
+/* ⚠️ A HOST THAT MOUNTS SceneEnv MUST BE ABLE TO SAY WHERE THE MAP IS, and until this it could not.
+   SceneLights and SceneEnv were both on this surface and `configureEnvMap` was not, so spattoo-admin
+   — which mounts them in a dozen studios — had no way to reach it and every studio fell back to
+   drei's indoor preset. Half an interface is how that went unnoticed: the studios looked compliant,
+   `check:studio-scene` passed, and the lighting was wrong in all of them. */
+export { configureEnvMap, envProps } from './designer/canvas/envMap.js';
+/* THE cream material — one answer to "what does cream look like", so a studio cannot form a second
+   opinion about it. From the LEAF module rather than from CakeTier: exporting it from there makes
+   CakeTier an exported scene-lighting entry point and check:env-map rightly demands the HDRI. */
+export { creamMaterialProps, creamAlbedo, PIPING_SOFTNESS_DEFAULT } from './designer/geometry/creamMaterial.js';
 export { DESIGNER_GROUND, SELECTION_COLOR } from './designer/constants.js';
 /* THE selection cue for a placed object (INVARIANTS #14). A border rather than a tint, because an
  * emissive highlight is additive and corrupts the very albedo it is advertising — which matters most
@@ -205,7 +222,7 @@ export {
   toConfig as fondantToConfig, FONDANT_BUILD_VERSION,
 } from './designer/geometry/fondantParts.js';
 export { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, iconTiers } from './designer/decorations/RainbowArrangements.jsx';
-export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, archCenterX, requiredStandoff, rainbowBoardReach, rainbowFootReach, rainbowHandleAt, rainbowDragTo, wrapToWall, fitOnTopScale, rainbowGuide, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
+export { rainbowBands, bandGeometry, bandPath, bandRadius, legFootY, archCenterX, requiredStandoff, rainbowBoardReach, rainbowFootReach, rainbowHandleAt, rainbowDragTo, wrapToWall, fitOnTopScale, rainbowGuide, springRange, RAINBOW_DEFAULTS } from './designer/geometry/rainbow.js';
 export { default as RainbowArch } from './designer/canvas/RainbowArch.jsx';
 // Fondant letter blocks. Layout is separate from the renderer for the same reason grass's is: one
 // word in, N placements out, and nothing downstream owns a single block.

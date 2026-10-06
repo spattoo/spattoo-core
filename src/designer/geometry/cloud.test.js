@@ -378,7 +378,7 @@ describe('a cloud faces the front wherever it is dragged', () => {
 // The cloud has TWO live freedoms on the cake top, unlike the rainbow's one, so this is where the
 // contract's "no dead freedom" question earns its keep on a two-dimensional drag.
 movableContract('cloud', {
-  positionKeys: ['yaw', 'standoff', 'theta'],
+  positionKeys: ['yaw', 'standoff', 'theta', 'rise'],
   pointsOf: (p, cake) => cloudPlacement(p, cake).lobes.map(l => l.position),
   cases: [
     {
@@ -401,11 +401,19 @@ movableContract('cloud', {
       freedoms: [
         { label: 'round the wall', drag: (p, c, u) => cloudDragTo(p, c, u, 0),
           targets: [0, 0.2, 0.4, 0.6, 0.8] },
+        /* ⚠️ THE FREEDOM THAT WAS NOT THERE. The wall had ONE, and the cloud sat on the board with
+           no way off it — `cloudDragTo` dropped `v` and `cloudHandleAt` answered a hardcoded
+           `v: 0`, so the pair were not inverses and nothing noticed, because a freedom that is
+           never declared is never tested. Reported from a cake: *"i cannot move it vertically on
+           the cake sideways... it does not move vertical direction when i scroll it vertically."* */
+        { label: 'up the wall', drag: (p, c, v) => cloudDragTo(p, c, 0.25, v),
+          targets: [0, 0.2, 0.4, 0.6, 0.8, 1] },
       ],
     },
   ],
   roundTrip: (moved, cake, target, f) => {
     const back = cloudHandleAt(moved, cake);
-    expect(f.label === 'out from the middle' ? back.v : back.u).toBeCloseTo(target, 6);
+    const vertical = f.label === 'out from the middle' || f.label === 'up the wall';
+    expect(vertical ? back.v : back.u).toBeCloseTo(target, 6);
   },
 });

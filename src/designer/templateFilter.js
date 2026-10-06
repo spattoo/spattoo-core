@@ -178,3 +178,45 @@ export function templateMatches(t, { q, tags, weight, age }, nameBySlug) {
   }
   return true;
 }
+
+/* ── What is NEW on the shelf ────────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"in the templates library. we should always show recent 5 templates on the top under
+ * the section recent. or i think the best way is show the last 7 days."*
+ *
+ * The library is ordered `sort_order, name` — a browsing order that says nothing about what is new.
+ * So a design a baker saved ten minutes ago lands wherever its name falls among forty others, and
+ * the commonest reason to open the screen (put the thing I just made into my catalogue) is a hunt.
+ *
+ * ⚠️ A WINDOW, NOT A COUNT, and the difference is what the heading is allowed to claim. "The most
+ * recent 5" always fills, which sounds safer and is worse: on a shelf nobody has added to since
+ * August it puts five cakes from August under a heading that says Recent, and a heading that lies
+ * on a quiet week teaches a baker to ignore it on the week it is true. A window can be EMPTY, and
+ * empty is the honest answer to "what is new" when nothing is — so the caller draws no section at
+ * all rather than an empty one.
+ *
+ * ⚠️ NOT CAPPED. If fifteen cakes landed this week then fifteen cakes are what is new, and trimming
+ * to five would hide ten of them behind a heading that just told the baker where new things go.
+ * The main shelf keeps everything else, so the screen never grows a second copy of itself.
+ *
+ * `now` is injected rather than read here so the rule can be tested at a fixed instant — a test
+ * that builds its fixtures from the real clock passes at 23:59 and fails at 00:01.
+ */
+export const RECENT_DAYS = 7;
+
+export function splitRecent(list, { now = Date.now(), days = RECENT_DAYS } = {}) {
+  const cutoff = now - days * 24 * 60 * 60 * 1000;
+  const recent = [], rest = [];
+  for (const t of list ?? []) {
+    const at = Date.parse(t?.created_at ?? '');
+    // ⚠️ NO DATE → NOT RECENT, never the other way round. An older API does not send `created_at`
+    // (it was added for this), and a NaN compared with `>` is false — but relying on that is how a
+    // later "tidy up" inverts it. A shelf where everything is new is a shelf with no Recent section,
+    // which is exactly what a host that cannot answer the question should show.
+    (Number.isFinite(at) && at >= cutoff ? recent : rest).push(t);
+  }
+  // Newest first WITHIN the section only. `rest` keeps the server's browsing order untouched —
+  // sorting it by date would quietly replace the shelf's organisation with a changelog.
+  recent.sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+  return { recent, rest };
+}

@@ -21,9 +21,24 @@ describe('what is in the bag', () => {
     const choc  = MEDIA.chocolate.material({ softness: 0.85 }, '#4A2C1B');
     const cream = MEDIA.cream.material({ softness: 0.85 }, '#ffffff');
     expect(choc.roughness).toBeLessThan(cream.roughness);
-    expect(choc.clearcoat).toBeGreaterThan(0.9);
+    /* ⚠️ THAT THERE IS A LACQUER LAYER, NOT HOW THICK IT IS. This read `> 0.9` and failed the day the
+       coat was measured: on drip geometry it produced NO highlight — 0.0% of pixels above 235 at
+       every setting — only a uniform grey veil that put a black drip at 89, which no albedo divisor
+       can reach. Cutting it is what let a saturated colour render as itself. The claim this test
+       exists for is the CONTRAST with cream, and a number pinned to one tuning pass was never it. */
+    expect(choc.clearcoat).toBeGreaterThan(0);
     expect(cream.clearcoat).toBeUndefined();      // cream has sheen, not a lacquer layer
     expect(cream.sheen).toBeGreaterThan(0);
+  });
+
+  /* ⚠️ three.js DEFAULTS `specularIntensity` TO 1, AND NOBODY ASKED FOR IT. On a dielectric that is a
+   * white Fresnel wash which goes to full strength at grazing angles — and chocolate piping is tubes,
+   * which are grazing almost everywhere you look at them. Measured on the drip it was the LARGEST
+   * single term in the additive floor, bigger than the clearcoat: switching it off alone took a black
+   * drip from 84 to 50. Cream found the same thing (`CREAM_SPECULAR`). If this ever reads 1 again,
+   * every chocolate colour has quietly gone pale. */
+  it('dims the base specular that three.js would otherwise default to 1', () => {
+    expect(MEDIA.chocolate.material({ softness: 0.85 }, '#4A2C1B').specularIntensity).toBeLessThan(0.5);
   });
 
   /* ⚠️ THE RHYTHM COMES FROM THE TIP, NOT FROM THIS TABLE. An earlier version declared
