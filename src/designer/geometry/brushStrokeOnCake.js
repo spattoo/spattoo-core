@@ -689,7 +689,17 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   const geo = buildStrokeMesh(stroke, p, {
     R,
     // Round the cake and up it: arc length becomes an angle, relief pushes outward.
-    place: (sx, y, h) => { const th = sx / R, rad = R + h; return [Math.sin(th) * rad, baseY + y, Math.cos(th) * rad]; },
+    /* ⚠️ NOTHING ON A WALL GOES ABOVE THE WALL. `brushGesture` clamps the PATH to 0.97 of the tier,
+       which is not the same as clamping the mesh: the torn fingers reach on past the last
+       cross-section along the direction of travel, so a stroke drawn steeply upward sent spikes out
+       over the rim and into the air. Caught by drawing one, not by a test — the band never draws
+       steeply enough. Clamped here rather than in the gesture because how far the fingers reach is
+       the stroke's business and the wall's height is the wall's. */
+    place: (sx, y, h) => {
+      const yy = Math.min(wallH, Math.max(0, y));
+      const th = sx / R, rad = R + h;
+      return [Math.sin(th) * rad, baseY + yy, Math.cos(th) * rad];
+    },
     bedAt: p.bed ? ((sx, y) => p.bed.heightAt(sx, y)) : null,
     bedPut: put,
   });
@@ -795,6 +805,48 @@ export function grabOffset(stroke, point, opts) {
 }
 
 /** The stroke's new origin for a pointer now at `point`. Clamped up the wall, wrapped round it. */
+/**
+ * A stroke drawn by dragging: the gesture the hand just made, from where it went down to where it
+ * came up.
+ *
+ * ⚠️ A DRAG IS A DIRECTION, NOT A POSITION, which is the whole difference between this and
+ * `dragStrokeTo` above. That one MOVES a stroke that already exists and keeps its shape; this one
+ * SHAPES a new one from the travel — where the knife landed, how far up it went, and how far round
+ * it wandered on the way. Sandeep: *"user should be able to use mouse/touch and drag to add
+ * strokes. it should following the draw direction."*
+ *
+ * ⚠️ AND IT WORKS IN THE SAME UNITS THE GESTURE IS AUTHORED IN — turns round the cake and a
+ * fraction of the wall — so a stroke drawn on a 6-inch tier is the same stroke on a 10-inch one.
+ * Pixels would tie it to the camera.
+ *
+ * ⚠️ THE SEAM IS THE TRAP. `at` wraps at 1, so a drag across it reads as three quarters of a turn
+ * backwards unless the shorter way round is taken deliberately. Dragged from 0.98 to 0.02, `sweep`
+ * is +0.04 and not -0.96.
+ *
+ * Returns null for a tap — a press that travelled nowhere is a selection, not a stroke, and the
+ * same mistake with closed shapes is already written up in hand-piping.md.
+ */
+export function brushGestureFromDrag(from, to, opts = {}) {
+  const { minTravel = 0.02, riseMin = 0.01, riseMax = 0.95 } = opts;
+  const a = wallCoordsOf(from, opts), b = wallCoordsOf(to, opts);
+  let sweep = b.at - a.at;
+  if (sweep > 0.5) sweep -= 1;                 // the short way round the seam
+  if (sweep < -0.5) sweep += 1;
+  const climb = b.rise - a.rise;
+  if (Math.hypot(sweep * Math.PI * 2, climb) < minTravel) return null;
+  return {
+    at:    ((a.at % 1) + 1) % 1,
+    rise:  Math.min(riseMax, Math.max(riseMin, a.rise)),
+    climb,
+    sweep,
+    /* ⚠️ `climbVar` AND `bow` ARE ZERO, and that is the point of drawing one by hand. The band
+       randomises both so thirty strokes do not look stamped; a stroke somebody DREW should be the
+       stroke they drew, and the hand already put the variation in. */
+    climbVar: 0,
+    bow: 0,
+  };
+}
+
 export function dragStrokeTo(grab, point, opts = {}) {
   const w = wallCoordsOf(point, opts);
   const { riseMin = 0.02, riseMax = 0.95 } = opts;

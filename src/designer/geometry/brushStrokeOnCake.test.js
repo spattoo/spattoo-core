@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
-         wallCoordsOf, grabOffset, dragStrokeTo, paintBrushColors, brushGesture, makeBrushBed,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, paintBrushColors, brushGesture, makeBrushBed,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -875,5 +875,88 @@ describe('no stroke in a band is an outlier', () => {
        geometry. The fault was EXCLUSIVELY at the seams — 0% in the middle with a p99/median of 3.7 —
        and the ratio assertion above is what holds the magnitude. */
     expect(middle / tall.length).toBeGreaterThan(0.02);
+  });
+});
+
+describe('a stroke drawn by dragging', () => {
+  /* The wall this is drawn on: a unit tier, base at 0. */
+  const W = { baseY: 0, wallH: 1 };
+  /* A point on the wall at `turns` round and `rise` up — the inverse of wallCoordsOf. */
+  const at = (turns, rise) => ({
+    x: Math.sin(turns * Math.PI * 2), z: Math.cos(turns * Math.PI * 2), y: rise,
+  });
+
+  it('starts where the hand went down', () => {
+    const g = brushGestureFromDrag(at(0.2, 0.1), at(0.22, 0.5), W);
+    expect(g.at).toBeCloseTo(0.2, 5);
+    expect(g.rise).toBeCloseTo(0.1, 5);
+  });
+
+  it('climbs and sweeps by what the hand travelled', () => {
+    const g = brushGestureFromDrag(at(0.2, 0.1), at(0.24, 0.6), W);
+    expect(g.climb).toBeCloseTo(0.5, 5);
+    expect(g.sweep).toBeCloseTo(0.04, 5);
+  });
+
+  it('runs DOWNWARD when the hand did', () => {
+    /* A knife pulled down the wall is a stroke pulled down the wall. Clamping this to "up" would be
+       the control deciding what the hand meant. */
+    const g = brushGestureFromDrag(at(0.5, 0.8), at(0.5, 0.3), W);
+    expect(g.climb).toBeLessThan(0);
+  });
+
+  it('takes the SHORT way round the seam', () => {
+    /* ⚠️ `at` wraps at 1, so a drag of four hundredths of a turn across the seam reads as
+       ninety-six hundredths BACKWARDS if the difference is taken naively — a stroke that shoots off
+       round the cake from a flick of the wrist. */
+    const g = brushGestureFromDrag(at(0.98, 0.1), at(0.02, 0.5), W);
+    expect(g.sweep).toBeCloseTo(0.04, 5);
+    const back = brushGestureFromDrag(at(0.02, 0.1), at(0.98, 0.5), W);
+    expect(back.sweep).toBeCloseTo(-0.04, 5);
+  });
+
+  it('a tap is not a stroke', () => {
+    /* Measured as distance TRAVELLED, which hand-piping.md already records as the only honest test:
+       a gesture that ends where it began has zero displacement and is a selection. */
+    expect(brushGestureFromDrag(at(0.3, 0.4), at(0.3, 0.4), W)).toBeNull();
+    expect(brushGestureFromDrag(at(0.3, 0.4), at(0.3005, 0.401), W)).toBeNull();
+  });
+
+  it('and what it returns actually builds a stroke that goes that way', () => {
+    /* The gesture is only right if the MESH follows it — the two have drifted before. */
+    const g = brushGestureFromDrag(at(0.0, 0.1), at(0.03, 0.7), W);
+    const geo = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, weight: 0.5, seed: 3,
+                                         path: brushGesture({ ...g, seed: 3 }) });
+    const p = geo.attributes.position;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < geo.userData.topCount; i++) { lo = Math.min(lo, p.getY(i)); hi = Math.max(hi, p.getY(i)); }
+    expect(lo).toBeLessThan(0.2);          // it starts low, where the hand went down
+    expect(hi).toBeGreaterThan(0.6);       // and reaches where the hand came up
+  });
+});
+
+describe('a stroke stays on the wall it is painted on', () => {
+  /* ⚠️ FOUND BY DRAWING ONE, which is the point of the drag. `brushGesture` clamps the PATH to 0.97
+     of the tier, and that is not the mesh: the torn fingers reach past the last cross-section along
+     the direction of travel, so a steep upward drag threw spikes out over the rim into the air. The
+     band never draws steeply enough to hit it, so no existing test could have. */
+  const steep = brushGesture({ at: 0, seed: 5, rise: 0.75, climb: 0.9, climbVar: 0, sweep: 0.01, bow: 0 });
+
+  it('no part of it rises above the tier, however steeply it was drawn', () => {
+    const g = buildBrushStrokeOnWall({ R: 1, baseY: 0.07, wallH: 1.25, weight: 0.8, seed: 5, path: steep });
+    const p = g.attributes.position;
+    let hi = -Infinity;
+    for (let i = 0; i < p.count; i++) hi = Math.max(hi, p.getY(i));
+    /* 1e-5, not 1e-9: positions live in a Float32Array, so 1.32 comes back as 1.32000005. */
+    expect(hi).toBeLessThanOrEqual(0.07 + 1.25 + 1e-5);
+  });
+
+  it('and none of it sinks below the base', () => {
+    const down = brushGesture({ at: 0, seed: 5, rise: 0.1, climb: -0.9, climbVar: 0, sweep: 0.01, bow: 0 });
+    const g = buildBrushStrokeOnWall({ R: 1, baseY: 0.07, wallH: 1.25, weight: 0.8, seed: 5, path: down });
+    const p = g.attributes.position;
+    let lo = Infinity;
+    for (let i = 0; i < p.count; i++) lo = Math.min(lo, p.getY(i));
+    expect(lo).toBeGreaterThanOrEqual(0.07 - 1e-5);
   });
 });
