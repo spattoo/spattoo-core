@@ -106,6 +106,12 @@ const FRAG_COMMON = [
  * so the wall takes the gradient and the particles keep the colour the compositor gave them. */
 const FRAG_COMMON_MASKED = FRAG_COMMON + '\nuniform sampler2D uGMask;';
 
+/* How many full turns the swirl makes between the base of the form and its top. One is the whole
+   point of the mode: the colour band starts facing one way and comes back round having climbed the
+   dollop once, which is the attitude cream leaves a star tip in. Less than one does not read as a
+   swirl; more reads as stripes. */
+const SWIRL_TURNS = 1.0;
+
 const gradBody = (masked) => `#include <color_fragment>
 {
   float gt;
@@ -113,9 +119,26 @@ const gradBody = (masked) => `#include <color_fragment>
     gt = (vGradLocal.y - uGMin.y) / max(uGSize.y, 1e-4);
   } else if (uGMode == 2) {     // linear: side to side
     gt = (vGradLocal.x - uGMin.x) / max(uGSize.x, 1e-4);
-  } else {                      // swirl: angle around the vertical axis through the centre.
+  } else {                      // swirl: a HELIX about the vertical axis through the centre.
+    /* ⚠️ THE MIRROR USED TO MAKE THIS A SECOND "LINEAR", and it took a cake to see it. The old
+       line was 1.0 - abs(ang / PI): 1 at +X, 0 at -X, folded so the two ends of the circle meet
+       without a seam. Folded, though, it is no longer an angle at all — it is a monotonic ramp
+       along X, which is the exact axis mode 2 uses. The two modes differed only in the SHAPE of
+       the ramp, so they rendered 9.8 mean delta apart on a piped rim ring where either against
+       Vertical measured 38-49. Sandeep: "swirl and linear look almost the same."
+
+       It survived because swirl is only offered on stickers and piping rings, and neither wraps
+       the Y axis: a dollop is a compact blob and a sticker is near-flat, so atan2(z, x) collapses
+       to "which side of the YZ plane". A tall cylinder would have shown it, and a tier wall — the
+       one surface that would — is vertical-only.
+
+       cos is periodic, so the two ends meet with no seam and no mirror is needed; the HEIGHT term
+       is what makes this a swirl rather than a sweep. Colours wind round the form as they climb
+       it, which is what a two-tone star tip extrudes, and no amount of flattening the mesh can
+       turn a helix back into a side-to-side ramp. */
     float ang = atan(vGradLocal.z - uGCenter.z, vGradLocal.x - uGCenter.x); // -PI..PI
-    gt = 1.0 - abs(ang / 3.14159265359);  // mirror so ±PI meet (no hard seam): 0 .. 1 .. 0
+    float h   = (vGradLocal.y - uGMin.y) / max(uGSize.y, 1e-4);             // 0 base .. 1 top
+    gt = 0.5 - 0.5 * cos(ang + h * ${SWIRL_TURNS.toFixed(1)} * 6.28318530718);
   }
   gt = clamp(gt, 0.0, 1.0);
   // Balance bias: remap gt by gt^k where k = log(balance)/log(0.5). balance 0.5 → k=1 (identity,
