@@ -6277,7 +6277,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            presses both see the same list and the second lands exactly on the first. */
         theta: cur.length * 1.15,
         float: (BALLOON_PLACEMENT_DEFAULTS.float ?? 0.75) + cur.length * 0.22,
-        tilt: (cur.length % 2 ? -1 : 1) * (0.06 + cur.length * 0.03) },
+        rollAngle: (cur.length % 2 ? -1 : 1) * (0.06 + cur.length * 0.03) },
     ]);
     selectExclusive({ type: 'balloon', tierIndex: i, id });
   }
@@ -6302,7 +6302,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return [...cur, { ...src, id: copyId,
         theta: (src.theta ?? 0) + 1.15,
         float: Math.min(2.0, (src.float ?? BALLOON_PLACEMENT_DEFAULTS.float ?? 0.75) + 0.22),
-        tilt: -(src.tilt ?? 0) }];
+        // Both axes mirror, so a duplicate leans away from its original whichever way that leant.
+        tiltAngle: -(src.tiltAngle ?? 0),
+        rollAngle: -(src.rollAngle ?? src.tilt ?? 0) }];
     });
     selectExclusive({ type: 'balloon', tierIndex, id: copyId });
   }
@@ -6317,7 +6319,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      keeps every procedural card asking this function rather than deciding for itself. */
   function instanceActions(elementId) {
     const a = elementById.get(elementId)?.allowed_actions ?? {};
-    return { delete: a.delete ?? true, duplicate: a.duplicate ?? true };
+    /* `tilt` joins them on the same default and for the same reason — and it is read the way the
+       sticker path reads it (`allowed_actions.tilt !== false`, see canTilt), so one element cannot
+       mean two things depending on which card is open. */
+    return { delete: a.delete ?? true, duplicate: a.duplicate ?? true, tilt: a.tilt ?? true };
   }
 
   // The canvas resolves the pointer against the lid and hands back the patch already in the
@@ -12783,7 +12788,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ['Size', 'scale', ba.min ?? BALLOON_SIZE_RANGE.min, ba.max ?? BALLOON_SIZE_RANGE.max,
                               ba.step ?? BALLOON_SIZE_RANGE.step, v => v.toFixed(2)],
             ...(stickOn ? [['Height', 'float', 0.15, 2.0, 0.05, v => v.toFixed(2)]] : []),
-            ['Lean', 'tilt', -0.4, 0.4, 0.02, v => v.toFixed(2)],
           ].map(([label, key, min, max, step, fmt]) => (
             <DialCell key={key} label={label}
               value={ba[key] ?? BALLOON_PLACEMENT_DEFAULTS[key] ?? BALLOON_DEFAULTS[key]}
@@ -12791,6 +12795,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onChange={v => set({ [key]: v })} />
           ))}
         </ScrollFadeRow>
+
+        {/* ⚠️ FOUR DIRECTIONS, AND IT IS THE SHARED CONTROL RATHER THAN A SECOND DIAL. A single
+            "Lean" dial could only ever lean two ways — Sandeep: *"should be able to tilt in 4
+            directions. right now only one 'Lean' option available and that changes only in 2
+            directions."* `TiltRow` is what this codebase already means by a four-way tilt (↑↓
+            front/back, ←→ left/right, ±70° in 10° steps), it is what every sticker uses, and
+            adopting its field names is what let the balloon take it without a translation layer.
+            Two more dials would have been two more degrees in a row of numbers; the arrows map
+            straight onto what is on screen.
+            ⚠️ Gated on the ROW. `allowed_actions.tilt` defaults true exactly as it does for a
+            sticker, so an admin who unticks "tilt" takes the control away — it was previously
+            shown whatever the row said, which is the dead-config fault twice over. */}
+        {instanceActions(ba.elementId).tilt && (
+          <div style={{ marginTop: 10 }}>
+            <TiltRow tiltAngle={ba.tiltAngle ?? 0}
+                     rollAngle={ba.rollAngle ?? ba.tilt ?? BALLOON_PLACEMENT_DEFAULTS.rollAngle ?? 0}
+                     onChange={patch => set(patch)} />
+          </div>
+        )}
 
         {/* ⚠️ THE CARD SHIPPED WITH NO WAY OFF THE CAKE. Every other decoration's card ends here and
             this one did not, so a balloon could be placed, coloured and sized and then only removed

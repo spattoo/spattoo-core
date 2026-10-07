@@ -3550,26 +3550,12 @@ function CakeContent({ config, scene, edit = null }) {
                 const v = Math.min(1, Math.hypot(hit.x, hit.z) / against);
                 return balloonDragTo(ba, { radius: tier.radius }, u, v);
               }}>
-              {selectedGenerated?.kind === 'balloon' && selectedGenerated.id === ba.id && (() => {
-                const pl = balloonPlacement(ba, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
-                // One point and its own size: a balloon is a single body, so the box is its bounds
-                // about that point rather than a hull over lobes.
-                const r = (ba.width ?? 0.62) * (tier.radius || 1) * 0.55 * (ba.scale ?? 1) * 0.5;
-                const h = (tier.radius || 1) * 0.55 * (ba.scale ?? 1);
-                const [x, y, z] = pl.position;
-                const b = generatedBounds([
-                  { x: x - r, y, z: z - r },
-                  { x: x + r, y: y + h, z: z + r },
-                ], 0.03);
-                return b && (
-                  <group position={b.centre}>
-                    <SelectionBox width={b.width} height={b.height} depth={b.depth} />
-                  </group>
-                );
-              })()}
+              {/* The selection cue rides INSIDE FondantBalloon, so it inherits the lean rather
+                  than being rebuilt out here from the placement — see the note there. */}
               <FondantBalloon
                 key={ba.id}
                 params={ba}
+                selected={selectedGenerated?.kind === 'balloon' && selectedGenerated.id === ba.id}
                 cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
               />
             </DraggableGenerated>

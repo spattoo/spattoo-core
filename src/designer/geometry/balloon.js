@@ -143,7 +143,19 @@ export const BALLOON_PLACEMENT_DEFAULTS = Object.freeze({
   theta: 0,
   standoff: 0.42,   // off-centre by default: three balloons in a cluster is the reference, and a
                     // first one dead in the middle leaves nowhere for the second to go but outward
-  tilt: 0.1,        // radians. Balloons on picks lean; a row of upright ones reads as a fence
+  /* ── The two lean axes ────────────────────────────────────────────────────────────────────────
+   * Named exactly as a STICKER names them — `tiltAngle` front/back, `rollAngle` left/right — so
+   * the shared four-arrow control (TiltRow) drives both without anything translating between a
+   * balloon's words and a sticker's. Radians. Balloons on picks lean; a row of upright ones reads
+   * as a fence, so one axis starts slightly off vertical.
+   *
+   * ⚠️ `tilt` WAS THE SINGLE AXIS, and it only ever leaned two ways — Sandeep: *"right now only
+   * one 'Lean' option available and that changes only in 2 directions."* It is promoted to
+   * `rollAngle` in `balloonPlacement` (the Z axis it always was), which is the ONE place that
+   * knows the old key exists: no saved design needs migrating and no other caller branches on
+   * which of the two it has. */
+  tiltAngle: 0,
+  rollAngle: 0.1,
   scale: 1,
   /* ── The pick ─────────────────────────────────────────────────────────────────────────────────
    * ⚠️ THE BALLOON CARRIES ITS OWN, AND I SAID TWICE THAT IT WOULD NOT. The element-stick row
@@ -178,7 +190,17 @@ export function balloonPlacement(params = {}, cake = {}) {
   const th = p.theta ?? 0;
   return {
     position: [Math.sin(th) * out, (cake.topY ?? 0) + (p.float ?? 0) * R, Math.cos(th) * out],
-    tilt: p.tilt ?? 0,
+    /* ⚠️ THE LEGACY `tilt` IS PROMOTED HERE AND NOWHERE ELSE. It was the Z axis, so it becomes
+       `rollAngle`; a balloon saved before the second axis existed therefore leans exactly as far
+       as it did, in the same plane, with no migration. Read in this order so an explicit
+       `rollAngle` always wins over the old key. */
+    tiltAngle: p.tiltAngle ?? 0,
+    /* ⚠️ RESOLVED OFF `params`, NOT OFF `p` — and the difference is every balloon ever saved. `p`
+       has already been merged over BALLOON_PLACEMENT_DEFAULTS, so `p.rollAngle` is never nullish:
+       it is the default 0.1, which would shadow the legacy key and leave a stored `tilt: 0.25`
+       rendering as 0.1. The precedence has to be decided on what the CALLER actually passed; the
+       default is only the last resort. A test pins exactly this. */
+    rollAngle: params?.rollAngle ?? params?.tilt ?? p.rollAngle ?? 0,
     scale: p.scale ?? 1,
     /* The pick's foot, so a caller drawing the stand-in rod — or the X-Ray working out what it is
        pushed into — does not re-derive where the lid is. One place says where it is (law 1). */

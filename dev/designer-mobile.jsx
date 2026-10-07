@@ -407,7 +407,11 @@ CAT_ELEMENTS.push({
   element_type_id: 'et-topper', category_id: 'cat-party',
   image_url: CAT_THUMB('#f3b9bd'), thumbnail_url: CAT_THUMB('#f3b9bd'), thumb_key: null,
   allowed_zones: ['top_surface'],
-  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: true },
+  /* ⚠️ `tilt` OMITTED, because migration 127 omits it — and omitted means ALLOWED (the sticker
+     convention is `allowed_actions.tilt !== false`). The fixture said `tilt: false` while the real
+     row said nothing, so the harness and the cake disagreed about the one capability this card was
+     about to grow a control for. */
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: true },
   placement_config: { procedural: 'balloon', scale: { min: 0.6, max: 1.8, step: 0.05 } },
   default_color: '#F4EFE6', sort_order: 31,
 });

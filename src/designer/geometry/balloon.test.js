@@ -237,3 +237,41 @@ describe('the drag plane is the balloon, not the lid', () => {
     expect(standoffFromPlane(CAKE2.topY)).toBe(1);
   });
 });
+
+describe('a balloon leans on two axes', () => {
+  // Sandeep: "should be able to tilt in 4 directions. right now only one 'Lean' option available
+  // and that changes only in 2 directions."
+  it('carries a front/back axis and a left/right one', () => {
+    const pl = balloonPlacement({ tiltAngle: 0.3, rollAngle: -0.2 }, CAKE);
+    expect(pl.tiltAngle).toBeCloseTo(0.3, 6);
+    expect(pl.rollAngle).toBeCloseTo(-0.2, 6);
+  });
+
+  it('is upright on both axes when nothing is set', () => {
+    const pl = balloonPlacement({ tiltAngle: 0, rollAngle: 0 }, CAKE);
+    expect(pl.tiltAngle).toBe(0);
+    expect(pl.rollAngle).toBe(0);
+  });
+
+  /* ⚠️ THE BACK-COMPAT ONE. `tilt` was the single axis and it was the Z one, so a design saved
+     before the second axis existed must lean exactly as far as it did, in the same plane. Promoted
+     in balloonPlacement and nowhere else — if this breaks, every balloon on every saved cake
+     silently stands up straight. */
+  it('promotes a legacy `tilt` to the left/right axis', () => {
+    const pl = balloonPlacement({ tilt: 0.25 }, CAKE);
+    expect(pl.rollAngle).toBeCloseTo(0.25, 6);
+    expect(pl.tiltAngle).toBe(0);
+  });
+
+  it('lets an explicit rollAngle win over the legacy key', () => {
+    const pl = balloonPlacement({ tilt: 0.25, rollAngle: -0.4 }, CAKE);
+    expect(pl.rollAngle).toBeCloseTo(-0.4, 6);
+  });
+
+  // Law 3: lean is LOOK, not position. Neither axis may move the balloon.
+  it('leans without moving', () => {
+    const upright = balloonPlacement({ theta: 0.9, standoff: 0.5 }, CAKE).position;
+    const leaning = balloonPlacement({ theta: 0.9, standoff: 0.5, tiltAngle: 0.5, rollAngle: -0.5 }, CAKE).position;
+    expect(leaning).toEqual(upright);
+  });
+});

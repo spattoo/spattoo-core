@@ -1,5 +1,6 @@
 import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
+import SelectionBox from './SelectionBox.jsx';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import { getFondantNormalMap } from '../shared/textures/fondantTexture.js';
 import {
@@ -43,12 +44,17 @@ const FONDANT_TILE = 0.18;
 const BALLOON_REFERENCE_LIGHT = [2.219, 1.793, 1.505];
 const BALLOON_ROLLOFF = 2.0;
 
+// Clearance between the body and its selection cue, in the balloon's LOCAL units (the body is 1
+// tall), so it scales with the balloon instead of crowding a small one and swamping a large one.
+const BOX_PAD = 0.1;
+
 export default function FondantBalloon({
   params = {},
   cake,                      // { radius, topY, boardY }
   roughness = 0.8,           // fondant: matte, with just enough sheen to read as sugar not chalk
   metalness = 0,
   fondant = true,
+  selected = false,          // draws the selection cue INSIDE this component's own transform
 }) {
   const p = { ...BALLOON_DEFAULTS, ...BALLOON_PLACEMENT_DEFAULTS, ...params };
   const place = useMemo(() => balloonPlacement(p, cake ?? {}), [JSON.stringify(p), JSON.stringify(cake)]);
@@ -78,7 +84,16 @@ export default function FondantBalloon({
   const stickR   = ((p.stickWidth ?? 0.012) * (cake?.radius ?? 1)) / scale;
 
   return (
-    <group position={place.position} rotation={[0, p.theta ?? 0, place.tilt]} scale={scale}>
+    /* ⚠️ THE LEAN IS OUTSIDE THE YAW, and that is what makes four arrows mean four directions.
+       This was one group, `rotation={[0, theta, tilt]}` — and with three's XYZ order that composes
+       as Ry(theta)·Rz(tilt), so the lean was applied in the balloon's own frame and THEN swung
+       round by where it sits on the cake. A balloon at the front leaned along world X, one at the
+       side along world Z. Fine for a single authored number; incoherent for a control, where "left"
+       has to stay left wherever the balloon is. The lean now sits above the yaw, in cake space, and
+       the yaw below it only decides which way the body faces — which on a surface of revolution is
+       the grain and the knot. */
+    <group position={place.position} rotation={[place.tiltAngle, 0, place.rollAngle]} scale={scale}>
+      <group rotation={[0, p.theta ?? 0, 0]}>
       {/* ⚠️ THE PICK, DRAWN HERE. The element-stick row property is for STICKERS — it is read off
           `sticker.stick` in that render path, which a procedural decoration never enters. A balloon
           without this floats in mid-air, which is exactly what shipped before Sandeep saw it.
@@ -103,6 +118,27 @@ export default function FondantBalloon({
           normalScale={grain ? new THREE.Vector2(1.5, 1.5) : undefined}
         />
       </mesh>
+      </group>
+      {/* ⚠️ THE CUE IS DRAWN HERE, INSIDE THE LEAN — which is what SelectionBox's own note asks for:
+          "a sibling of whatever rendered the element — so it inherits that element's position,
+          facing, tilt and scale for free". The balloon's box used to be built in CakeCanvas,
+          OUTSIDE this group, from the placement position alone. Upright that reads as a snug box;
+          leaning, the balloon walks straight out of a cue that stays bolt upright, which is law 4
+          ("what you can grab is what you can see") breaking in front of the customer. It was only
+          ever a little wrong because the one Lean axis reached ±23°; at the shared ±70° it is
+          obvious. Drawn here it cannot drift, and `check:movable` rule 3 — no SelectionBox group
+          carrying its own rotation — is satisfied by construction rather than by care.
+
+          Local units: the geometry spans y 0..1 and ±width/2, and this group already carries the
+          scale, so the box is authored in the balloon's own numbers and never re-derives them. */}
+      {selected && (
+        <SelectionBox
+          width={(p.width ?? BALLOON_DEFAULTS.width) + BOX_PAD}
+          depth={(p.width ?? BALLOON_DEFAULTS.width) + BOX_PAD}
+          height={(p.height ?? BALLOON_DEFAULTS.height) + BOX_PAD}
+          centerY={((p.height ?? BALLOON_DEFAULTS.height) + BOX_PAD) / 2}
+        />
+      )}
     </group>
   );
 }
