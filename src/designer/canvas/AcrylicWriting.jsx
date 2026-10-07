@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
-import { writingPlaceAt, writingSurface } from '../geometry/surface.js';
+import { writingPlaceAt, writingSurface, writingText } from '../geometry/surface.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
 import { acrylicCfg, acrylicFitAspect } from '../geometry/acrylicConfig.js';
 import AcrylicWord from './AcrylicWord.jsx';
@@ -144,8 +144,12 @@ export default function AcrylicWriting({
   // cannot be sized from the span. `grabH` until the first build lands.
   const standH = Math.max(rise ?? 0, grabH);
 
+  /* ⚠️ `writingText`, NOT `writing.text` — CAPITAL LETTERS is applied by the RENDERER (the textarea
+     only shows it as CSS), and this one used to skip it, so the toggle worked on piped cream and did
+     nothing on acrylic. A JS comment, not `{/* … *\/}`: this body is a parenthesised expression, not
+     JSX children, and a JSX comment here stops the file parsing. */
   const word = (
-    <AcrylicWord font={font} text={writing.text} cfg={cfg} finish={finish}
+    <AcrylicWord font={font} text={writingText(writing)} cfg={cfg} finish={finish}
                  pose={pose} span={maxW} mount={{}} onRise={setRise} />
   );
 

@@ -1,6 +1,10 @@
 // Pull the X-Ray-relevant bits out of a saved design snapshot.
 import { normalizeHex } from './gelLibrary.js';
 import { decorationWhat } from './decorationLabel.js';
+/* ⚠️ THE SHEET MUST SAY WHAT THE CAKE SAYS. CAPITAL LETTERS is a design field the RENDERER applies —
+   the stored text is left as typed — so printing `w.text` here puts "baby" on a worksheet for a cake
+   that reads BABY, and the baker pipes the sheet. Same single derivation both renderers use. */
+import { writingText } from '../../designer/geometry/surface.js';
 
 // The cake board is a hardcoded render constant, not part of the design — and we
 // deliberately exclude it from the cream-colour table.
@@ -243,7 +247,7 @@ export function harvestPlaceables(design) {
   ));
 
   writingList(design).forEach((w, idx) => {
-    if (w?.text) push(finishing, `Message — "${w.text}"`, 'cream pen', `writing-${w.id ?? idx}`);
+    if (w?.text) push(finishing, `Message — "${writingText(w)}"`, 'cream pen', `writing-${w.id ?? idx}`);
   });
 
   // ── One line per JOB, not per stroke ────────────────────────────────────────────────────────

@@ -84,6 +84,11 @@ function App() {
   const [w, setW] = useState({
     id: 1, style: 'acrylic',
     text: q.get('text') ?? 'Ava',
+    /* ⚠️ `?caps=1` — CAPITAL LETTERS is a RENDERER's job, and this page could not show whether the
+       renderer did it. The textarea in Texts only applies `text-transform` as CSS, so the stored
+       text stays as typed and each material has to uppercase it itself; acrylic did not, and the
+       toggle silently worked on piped cream only. Nothing here could have caught that. */
+    uppercase: q.has('caps'),
     font: q.get('face') ?? 'great_vibes',
     acrylicFinish: 'gold',
     // After the default, or the default wins — the whole point of the override.

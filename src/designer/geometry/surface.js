@@ -650,6 +650,25 @@ export function writingPlaceAt({ surface, sideRect, sideWidth, minSideY, maxSide
  * clamped the drag to one wall and took away something bakers were already doing. That rule now
  * applies to every material by construction rather than by each one remembering it.
  */
+/* ── The letters a message actually renders ──────────────────────────────────────────────────────
+ *
+ * ⚠️ ONE DERIVATION, BECAUSE TWO DRIFTED. `CAPITAL LETTERS` is a design field (`writing.uppercase`)
+ * and the textarea only shows it as CSS `text-transform` — the stored text is untouched, so every
+ * renderer has to apply it. `CreamWriting` did; `AcrylicWriting` passed `writing.text` straight
+ * through. So the toggle worked on piped cream and did nothing on acrylic: the field read BABY and
+ * the cake said Baby (reported 2026-10-07, on an acrylic topper).
+ *
+ * It lives beside `writingSurface` because that is already the one place both materials ask about a
+ * message, and a third material (fondant) must not have to rediscover this. INVARIANTS #15 — the
+ * preview and the thing previewed ask ONE function — applies between two RENDERERS just as much.
+ *
+ * Returns '' for an absent message so a caller's own `.trim()` guard still reads naturally.
+ */
+export function writingText(writing) {
+  const t = writing?.text ?? '';
+  return writing?.uppercase ? t.toUpperCase() : t;
+}
+
 export function writingSurface({
   writing, tiers, topY, topRadius, shape = 'round', width = 0, depth = 0, boardRadius = 0,
 }) {
