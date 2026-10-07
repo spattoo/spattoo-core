@@ -79,6 +79,22 @@ const API = {
       { id: 't7', name: 'A photo a customer sent', type: 'photo', tier_count: null,
         thumbnail_url: '/thumbs/cake3.webp' },
       { id: 't8', name: 'Unicorn',          tier_count: 1, thumbnail_url: '/thumbs/cake5.webp' },
+      /* ⚠️ MORE THAN `SEARCH_FROM`, because the box only appears once the shelf outgrows a screen —
+         at eight it is correctly absent and a run would "pass" having never rendered it. */
+      { id: 't9',  name: 'Jungle friends',  tier_count: 1, thumbnail_url: '/thumbs/cake2.webp',
+        tag_slugs: ['animals'] },
+      /* ⚠️ A CAKE WHOSE NAME SAYS NOTHING ABOUT WHAT IS ON IT. `search_slugs` is derived server-side
+         from the design — the decorations, their tags, and the words piped on the cake — and it is
+         the whole reason this gallery reuses the designer's search instead of matching `name`:
+         "if a cake has ranbow in it, and the template is named 'kids birthday cake', when user
+         searches the template with rainbow, it does not show up." Searching `rainbow` must find
+         THIS row, and nothing in its name would. */
+      { id: 't10', name: 'Kids birthday cake', tier_count: 2, thumbnail_url: '/thumbs/cake3.webp',
+        tag_slugs: ['birthday'], search_slugs: ['rainbow', 'cloud'] },
+      { id: 't11', name: 'First year',      tier_count: 1, thumbnail_url: '/thumbs/cake4.webp',
+        attrs: { min_age: 1, max_age: 2 } },
+      { id: 't12', name: 'Teen party',      tier_count: 1, thumbnail_url: '/thumbs/cake1.webp',
+        attrs: { min_age: 13, max_age: 18 } },
     ];
   },
   fetchStorefrontFlavours: async () => {

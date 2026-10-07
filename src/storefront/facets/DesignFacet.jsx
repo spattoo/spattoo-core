@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PhotoDoor from './PhotoDoor.jsx';
+/* ⚠️ THE DESIGNER'S OWN SEARCH, not a `name.includes(q)` of this gallery's own. That helper already
+   knows what searching a cake catalogue means and every bit of it was reported by a baker: age
+   phrases are pulled out and RANGE-tested (`4 years` must not match a 12-year template through its
+   "1"), filler words are dropped so "cake for 4 years girl" returns something, every word has to
+   match some field rather than one field matching the whole query, and `search_slugs` carries what
+   is ON the cake — Sandeep's own gap: "if a cake has ranbow in it, and the template is named 'kids
+   birthday cake', when user searches the template with rainbow, it does not show up." A second
+   implementation here would have had to re-learn all of that from the same reports. */
+import { matchesTemplateSearch } from '../../designer/templateFilter.js';
 
 // ── The design facet ────────────────────────────────────────────────────────────────────────────
 // Three doors onto the same field. The customer picks the one they recognise themselves in, and
@@ -134,8 +143,14 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
 // route does not serve it: it is what a browsing customer least needs and a competitor most wants.
 // Whoever actually starts from one asks for it by id.
 
+/* How many cakes before a search box earns its row. Two columns, so this is about two screens on a
+   phone — below it the grid IS the index and a box is clutter; above it a customer is scrolling
+   through pictures with no words on them, which is what was reported. */
+const SEARCH_FROM = 8;
+
 function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selectedId }) {
   const [state, setState] = useState({ loading: true, templates: [], error: null });
+  const [query, setQuery] = useState('');
   /* The photograph being looked at, large. Null is the grid. Local rather than lifted because
      nothing outside this door needs to know a customer is squinting at a picture. */
   const [photo, setPhoto] = useState(null);
@@ -147,6 +162,13 @@ function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selected
       .catch(e => alive && setState({ loading: false, templates: [], error: e.message }));
     return () => { alive = false; };
   }, [api]);
+
+  /* ⚠️ ABOVE THE EARLY RETURNS — `state.loading` bails out three lines down and a hook cannot sit
+     under one (check:hooks). */
+  const shown = useMemo(
+    () => (query.trim() ? state.templates.filter(t => matchesTemplateSearch(t, query)) : state.templates),
+    [state.templates, query],
+  );
 
   if (state.loading) return <div style={s.note}>Fetching cakes…</div>;
 
@@ -220,8 +242,41 @@ function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selected
         <span style={s.galleryHint}>Cakes {bakerName} can make</span>
       </div>
 
+      {/* ── Search ───────────────────────────────────────────────────────────────────────────────
+          ⚠️ IT SEARCHES WHAT THE CARDS NO LONGER SAY, and that is the point rather than an
+          awkwardness. The gallery dropped its captions on 2026-10-06 — "its difficult to name a lot
+          of templates. thumbnail speaks" — so a customer cannot read a name anywhere here. The name
+          is still in the DOM as the picture's `alt` and still searchable, which is exactly how the
+          designer's own catalogue has worked since it dropped captions first.
+
+          ⚠️ ONLY ONCE THE SHELF OUTGROWS A SCREEN. A box over four cakes is a control that costs a
+          row of a phone to answer a question nobody has — and the gallery is two columns, so about
+          eight cakes is where scrolling starts. Below that the pictures ARE the index. Above it,
+          hunting through 33 thumbnails with no words on them is the complaint this answers.
+
+          ⚠️ AND IT STAYS ON SCREEN ONCE IT HAS APPEARED, even when a query narrows the list to two —
+          keyed on the fetched catalogue, never on `shown`. Keyed on the filtered list it would
+          vanish under the customer mid-type, taking their query with it. */}
+      {state.templates.length > SEARCH_FROM && (
+        <input
+          type="search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder={`Search ${bakerName}'s cakes…`}
+          aria-label="Search cakes"
+          style={s.search}
+        />
+      )}
+
+      {!shown.length && (
+        <div style={s.note}>
+          <div>Nothing matching “{query.trim()}”.</div>
+          <button type="button" style={s.back} onClick={() => setQuery('')}>Clear the search</button>
+        </div>
+      )}
+
       <div style={s.grid}>
-        {state.templates.map(t => {
+        {shown.map(t => {
           const isPhoto = t.type === 'photo';
           return (
             /* ⚠️ A PHOTO OPENS, A DESIGN PICKS, and the two must not be one gesture. Picking a
@@ -281,6 +336,13 @@ const s = {
      fit however narrow it gets, and the 170 only starts to bind once there is room for a third —
      i.e. on a tablet or a desktop, where a third column is wanted. One expression, no breakpoint,
      and no number that has to be re-guessed per device. */
+  /* The storefront's own palette, not the app's chrome — same reasoning as every other control on
+     this sheet (see the note in TemplateGrid about why these two galleries stay apart). */
+  search: {
+    width: '100%', boxSizing: 'border-box', padding: '9px 12px', marginBottom: 2,
+    fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit', color: '#2A241F',
+    border: '1.5px solid #E7DFD5', borderRadius: 10, outline: 'none', background: '#fff',
+  },
   grid: { display: 'grid', gap: 10,
           gridTemplateColumns: 'repeat(auto-fill, minmax(min(170px, (100% - 10px) / 2), 1fr))' },
   /* ⚠️ THE PICTURE IS THE WHOLE CARD. No caption row, so no padding to inset it and no gap to hold
