@@ -180,6 +180,45 @@ export const CAMERA_POSITION        = [0, 4.85, 6.95];
 export const CAMERA_POSITION_MOBILE = [0, 5.36, 7.91];
 export const CAMERA_FOV             = 42;
 
+/* ── Which way the thumbnail camera looks ────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE THUMBNAIL IS NOT A PICTURE OF THE STUDIO. It is drawn on its own off-screen canvas with no
+ * floor and no backdrop, and framed by `FitCakeCamera`, which fits the DISTANCE to the cake's
+ * bounding sphere every frame. Only the DIRECTION was fixed — one hardcoded vector, dead front and
+ * low — so every template in the catalogue was photographed from the same place.
+ *
+ * Sandeep: "some times cake's interesting decorations are on the top (hugging) or a message written
+ * on the top. that needs to be highlighted. not from the front which capturrs size. some cakes need
+ * to be covered both top and side, so a slightly tilted angle works here."
+ *
+ * ⚠️ `front` IS EXACTLY WHAT SHIPPED — az 0°, el 22.3° is the old `(0, CAMERA_POSITION[1] - 2,
+ * CAMERA_POSITION[2])` normalised, so a template saved without touching the control is framed
+ * byte-identically to one saved last week. A new default would have re-shot the whole catalogue the
+ * next time anybody re-saved.
+ *
+ * ⚠️ AND `top` IS NOT 90°. Straight down, a round cake is a disc: the side it was decorated on is
+ * gone, and the silhouette goes square, which the 3:2 thumbnail crop then letterboxes. 72° keeps a
+ * sliver of wall under the top — enough to read as a cake rather than a circle — which is also what
+ * makes the crop behave. Measured, not guessed: see the table in the Save as Template panel's note. */
+export const THUMB_VIEWS = {
+  front:    { label: 'Front',        az: 0,  el: 22.3 },
+  tilt:     { label: 'Tilted',       az: 22, el: 45   },
+  top:      { label: 'Top',          az: 0,  el: 72   },
+};
+export const THUMB_VIEW_DEFAULT = { az: 0, el: 22.3 };
+/* Elevation is clamped rather than wrapped: past vertical the cake turns upside down, and below the
+   board you photograph its underside. Azimuth is free — a cake goes all the way round. */
+export const THUMB_EL_MIN = -5;
+export const THUMB_EL_MAX = 85;
+/* {az, el} in DEGREES → a unit direction FROM the cake TOWARD the camera. Degrees because they are
+   stored on a template and read by a person; the renderer is the only thing that wants radians. */
+export const thumbViewDir = (view) => {
+  const az = ((view?.az ?? THUMB_VIEW_DEFAULT.az) * Math.PI) / 180;
+  const el = ((view?.el ?? THUMB_VIEW_DEFAULT.el) * Math.PI) / 180;
+  const c = Math.cos(el);
+  return [Math.sin(az) * c, Math.sin(el), Math.cos(az) * c];
+};
+
 // ── Top cap ───────────────────────────────────────────────────────────────────
 // CakeTier renders a thin cap disc (height 0.02) on top of each tier so the
 // top face has a slightly smoother sheen. Balls placed on the top surface must

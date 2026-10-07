@@ -2589,6 +2589,35 @@ function CameraCapture({ cameraRef }) {
   return null;
 }
 
+/* ── Where the baker is standing, in the thumbnail's own terms ───────────────────────────────────
+ *
+ * Reports the LIVE camera as {az, el} degrees so the Save as Template panel can open on the view the
+ * cake is already being looked at. Sandeep's second option was "the current view is captured" — this
+ * is the useful half of it without the studio's floor and backdrop ending up in the picture.
+ *
+ * ⚠️ A REF, WRITTEN ON A FRAME, NOT STATE. The camera moves continuously while somebody orbits; the
+ * only moment anybody reads this is when the panel opens, so re-rendering the designer on every
+ * frame to carry a number nothing is displaying would be the whole cost and none of the benefit.
+ *
+ * ⚠️ RELATIVE TO THE ORBIT TARGET, not to the origin. The camera aims at the cake's middle, which
+ * sits above the board — measuring the elevation from (0,0,0) would report a flatter angle than the
+ * one on screen, and the thumbnail would open a few degrees below where the baker left it. */
+function CameraAngleReport({ angleRef, orbitRef }) {
+  useFrame(({ camera }) => {
+    if (!angleRef) return;
+    const t = orbitRef?.current?.target;
+    const dx = camera.position.x - (t?.x ?? 0);
+    const dy = camera.position.y - (t?.y ?? 0);
+    const dz = camera.position.z - (t?.z ?? 0);
+    const len = Math.hypot(dx, dy, dz) || 1;
+    angleRef.current = {
+      az: (Math.atan2(dx, dz) * 180) / Math.PI,
+      el: (Math.asin(dy / len) * 180) / Math.PI,
+    };
+  });
+  return null;
+}
+
 function CameraPositionSync({ position }) {
   const { camera } = useThree();
   useEffect(() => {
@@ -4049,7 +4078,7 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
   return null;
 }
 
-function FitCakeCamera({ groupRef, renderNowRef }) {
+function FitCakeCamera({ groupRef, renderNowRef, viewDir = null }) {
   const { camera, gl, scene } = useThree();
   const fit = () => {
     const g = groupRef.current;
@@ -4061,12 +4090,21 @@ function FitCakeCamera({ groupRef, renderNowRef }) {
     const R = _fitSphere.radius || 3;
     const halfFov = (CAMERA_FOV / 2) * Math.PI / 180;
     const dist = (R / Math.sin(halfFov)) * 1.08;   // 1.08 = small breathing margin
-    _fitDir.set(0, CAMERA_POSITION[1] - 2, CAMERA_POSITION[2]).normalize();
+    /* ⚠️ THE DISTANCE IS FITTED, THE DIRECTION IS CHOSEN — which is why letting a baker pick an angle
+       is this one line and not a new camera. Whatever way it looks from, the fit above still frames
+       the whole cake off its bounding sphere. `THUMB_VIEWS.front` is the vector this used to hold
+       literally, so an un-chosen thumbnail is framed exactly as it was. */
+    if (viewDir) _fitDir.set(viewDir[0], viewDir[1], viewDir[2]).normalize();
+    else _fitDir.set(0, CAMERA_POSITION[1] - 2, CAMERA_POSITION[2]).normalize();
     camera.position.copy(c).addScaledVector(_fitDir, dist);
     camera.lookAt(c);
     camera.updateProjectionMatrix();
   };
   useFrame(fit);
+
+  /* Re-fit the moment the direction changes rather than waiting for the next animation frame: the
+     popup's preview must move under the baker's finger, and this canvas renders on demand. */
+  useEffect(() => { fit(); }, [viewDir?.[0], viewDir?.[1], viewDir?.[2]]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Draw a frame ON DEMAND, so a capture photographs the cake as it is NOW.
   //
@@ -4093,18 +4131,50 @@ function FitCakeCamera({ groupRef, renderNowRef }) {
 // `renderNowRef` is handed back to the caller, who calls it immediately before capturing. Optional:
 // a host that never captures (or captures while visibly on screen) can leave it out and nothing
 // changes. See FitCakeCamera for why a capture cannot simply trust that a frame exists.
-export function CakeThumbnailCanvas({ config, containerRef, renderNowRef }) {
+/* ⚠️ `visible` BRINGS THIS CANVAS ON SCREEN; IT DOES NOT MAKE A SECOND ONE. The Save as Template
+ * panel shows the baker what will be saved, and the only honest way to do that is to show THE
+ * CANVAS THAT IS SAVED — a second preview beside it is a third camera for one cake and drifts
+ * (INVARIANTS #2, #15). So this stays one component with one mount: parked off-screen while nobody
+ * is looking, and moved into the panel, larger, when somebody is.
+ *
+ * ⚠️ THE VISIBLE BOX IS THE CAPTURE FRAME, AND I FIRST WROTE THE OPPOSITE HERE. R3F sizes the
+ * drawing buffer from the element, so showing this at 428×285 makes the captured frame 428×285 —
+ * not the off-screen 400×400. Measured, after claiming otherwise in this very comment: 409×279.
+ *
+ * That turns out to be the better frame rather than a regression, and it settles a question worth
+ * recording. A thumbnail is stored as `contentCrop` grown to 3:2, and the worry about a TOP view was
+ * that a cake seen from above is a disc — square bounds, which a 3:2 box then letterboxes at the
+ * sides (exactly the dead space the storefront gallery was just fixed for). In a square 400×400
+ * frame there is little room to grow the crop sideways; in a 3:2 one there is. Measured on the real
+ * canvas, every preset lands at 1.50: Front bounds 159×125 → crop 216×144, Tilted 153×150 → 253×168,
+ * Top 149×149 → 250×167. The square silhouette was real; the letterboxing was not.
+ *
+ * ⚠️ `dpr` IS PINNED SO THE STORED PICTURE IS NOT A PROPERTY OF THE BAKER'S MONITOR. Left to the
+ * device, the same cake saved on a retina laptop and a cheap monitor stores thumbnails at double and
+ * single resolution — already true of the off-screen path, and not worth carrying forward into the
+ * one a baker now aims deliberately. */
+export function CakeThumbnailCanvas({ config, containerRef, renderNowRef, viewDir = null,
+                                      visible = false, size = 400 }) {
   const groupRef = useRef();
+  /* ⚠️ 3:2, NOT A HEIGHT I PICKED. A stored thumbnail is the content crop grown to `THUMB_ASPECT`
+     (3/2) and the gallery draws it in a 3:2 box, so a preview at any other shape frames more than it
+     keeps — it was 1.68 at first, which is a preview quietly promising width it does not store.
+     `size` is the cap for a short window rather than the shape. */
+  const box = visible
+    ? { position: 'relative', width: '100%', aspectRatio: '3 / 2', maxHeight: size,
+        borderRadius: 12, overflow: 'hidden' }
+    : { position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 };
   return (
-    <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
+    <div ref={containerRef} style={box}>
       <Canvas
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
         camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
-        style={{ width: 400, height: 400 }}
+        dpr={visible ? 2 : undefined}
+        style={visible ? { width: '100%', height: '100%' } : { width: 400, height: 400 }}
       >
         <group ref={groupRef}><CakeThumbnailScene config={config} /></group>
-        <FitCakeCamera groupRef={groupRef} renderNowRef={renderNowRef} />
+        <FitCakeCamera groupRef={groupRef} renderNowRef={renderNowRef} viewDir={viewDir} />
       </Canvas>
     </div>
   );
@@ -4176,6 +4246,9 @@ export function CakePreview({
 }
 
 export default function CakeCanvas({
+  /* Filled every frame with the LIVE view as {az, el} degrees, so the Save as Template panel can
+     open on the angle the cake is already being looked at. Optional — previews pass nothing. */
+  cameraAngleRef = null,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -4305,6 +4378,7 @@ export default function CakeCanvas({
       }}
     >
       <CameraCapture cameraRef={cameraRef} />
+      <CameraAngleReport angleRef={cameraAngleRef} orbitRef={orbitRef} />
       <CameraProbe orbitRef={orbitRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} turnCameraRef={turnCameraRef} orbitRef={orbitRef} />

@@ -983,7 +983,13 @@ const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
     id: 'w1', style: 'acrylic', text: 'Happy Birthday', font: 'parisienne',
-    surface: 'side', sideY: 1.0, fit: 0.9, acrylicFinish: 'gold', color: '#ffffff',
+    /* ⚠️ `?stack=top` PUTS THE MESSAGE ON THE TOP, which is the case the thumbnail angle exists for:
+       "sometimes cake's interesting decorations are on the top (hugging) or a message written on the
+       top. that needs to be highlighted. not from the front which capturrs size." A side message is
+       visible from the shipped front angle, so a run using one cannot tell a fixed camera from a
+       working one. */
+    surface: PARAMS.get('stack') === 'top' ? 'top' : 'side',
+    sideY: 1.0, fit: 0.9, acrylicFinish: 'gold', color: '#ffffff',
   }],
 } : null;
 

@@ -47,7 +47,8 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITING_COLOR } from './constants.js';
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITING_COLOR,
+         THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } from './geometry/surface.js';
@@ -3253,6 +3254,44 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // pipingTarget: { tierIndex, zone } — triggers in-canvas style picker
   const [pipingTarget, setPipingTarget] = useState(null);
   const [saveModal, setSaveModal] = useState(false);
+  /* ── Which way the saved thumbnail looks ───────────────────────────────────────────────────────
+   * Degrees, because a person reads them and they ride on the template. `null` means "not chosen",
+   * which is deliberately NOT the same as the front preset: it is what every template saved before
+   * this carries, and it keeps the shipped framing without claiming anybody picked it. */
+  const [thumbView, setThumbView] = useState(THUMB_VIEW_DEFAULT);
+  /* Dragging the preview to aim it. A ref, not state: this moves on every pointer event and the only
+     thing that has to re-render is `thumbView` itself. */
+  const thumbDrag = useRef(null);
+  /* The LIVE view, reported by the canvas every frame (see `CameraAngleReport`). */
+  const cameraAngleRef = useRef(null);
+  /* ⚠️ OPEN ON THE VIEW THE BAKER IS ALREADY LOOKING AT. Sandeep's second option was "the current
+   * view is captured" — this is the useful half of it: the panel starts where the cake is on screen,
+   * so "turn it the way you want it, then save" works, while the picture still comes from the
+   * thumbnail canvas rather than the studio (no floor, no backdrop, and the alpha the crop needs).
+   * Clamped to the same bounds the drag uses: a baker can orbit under the board, and a thumbnail
+   * shot from below is not a thumbnail anybody meant to take. */
+  const openSaveModal = () => {
+    const a = cameraAngleRef.current;
+    if (a && Number.isFinite(a.az) && Number.isFinite(a.el)) {
+      setThumbView({ az: a.az, el: Math.min(THUMB_EL_MAX, Math.max(THUMB_EL_MIN, a.el)) });
+    }
+    setSaveModal(true);
+  };
+  const onThumbDragStart = (e) => {
+    thumbDrag.current = { x: e.clientX, y: e.clientY, az: thumbView.az, el: thumbView.el };
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+  };
+  const onThumbDragMove = (e) => {
+    const d = thumbDrag.current;
+    if (!d) return;
+    /* ⚠️ THE CAKE FOLLOWS THE FINGER, which means the AZIMUTH GOES THE OTHER WAY. Dragging right
+       should spin the cake's left side toward you — the camera orbits left. Signed the obvious way
+       round, the cake runs away from the drag, which reads as broken rather than inverted. */
+    const az = d.az - (e.clientX - d.x) * 0.4;
+    const el = Math.min(THUMB_EL_MAX, Math.max(THUMB_EL_MIN, d.el + (e.clientY - d.y) * 0.3));
+    setThumbView({ az, el });
+  };
+  const onThumbDragEnd = () => { thumbDrag.current = null; };
   // After a template saves, offer to film it — see handleSaveTemplate. Separate from saveMsg so the
   // modal can stay open on a success it would otherwise close itself out of.
   const [reelOffer, setReelOffer] = useState(false);
@@ -14649,6 +14688,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ref={frameRef}>
           <Suspense fallback={<CakeSpinnerFill label="Loading 3D cake…" />}>
             <CakeCanvas
+              cameraAngleRef={cameraAngleRef}
               // Non-null only while the reel panel is open. Paints the scene's sky and floor one
               // colour and puts the editing furniture away — see CakeScene's filmGround.
               filmGround={framing ? takeGround : null}
@@ -16499,7 +16539,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); handleOrder(); }}>
                   {editingOrder ? 'Update Design' : 'Create order for customer'}
                 </button>
-                {hasCap('template:manage') && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); setSaveModal(true); }}>
+                {hasCap('template:manage') && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); openSaveModal(); }}>
                   Save as Template
                 </button>}
                 {hasCap('customer:manage') && <button style={SHEET_ITEM} onClick={() => { setActionsMenuOpen(false); handleShareDraft(); }}>
@@ -16536,7 +16576,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
             {hasCap('template:manage') && <button
               style={{ ...s.orderBtn, ...brandBtn, width: 'auto', flex: 1, whiteSpace: 'nowrap', opacity: 0.75, ...(isMobile ? { padding: '10px', fontSize: 13 } : { padding: '9px 16px', fontSize: 13 }) }}
-              onClick={() => setSaveModal(true)}>
+              onClick={openSaveModal}>
               Save as Template
             </button>}
             {hasCap('customer:manage') && <button
@@ -16734,8 +16774,64 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       )}
 
       {/* ── Save as Template modal ── */}
+      {/* ⚠️ 460, NOT 380, AND `isMobile` — the panel now holds a picture somebody has to AIM, and
+          Sandeep said so before it was built: "if its too small on that popup, user would not be
+          able to currectly position it. make sure if in good size for user." At 380 the 3:2 preview
+          was 348x232; at 460 it is 428x285, which is the difference between nudging a cake and
+          guessing. On a phone `Panel` is a full-width bottom sheet, bigger again — but only if it is
+          TOLD it is on a phone, and this was the one Panel in the file that never passed the flag.
+          ⚠️ A JS COMMENT WOULD NOT FIT HERE EITHER: this is JSX children, so `{/* … *\/}` is right —
+          one line further in, inside `{saveModal && ( … )}`, it is an expression and stops the parse.
+          That has now cost three rounds in this file. */}
       {saveModal && (
-        <Panel onClose={closeSaveModal} title="Save as Template" width={380}>
+        <Panel onClose={closeSaveModal} title="Save as Template" width={460} isMobile={isMobile}>
+            {/* ── What will actually be saved ───────────────────────────────────────────────────
+                ⚠️ THIS IS THE CAPTURE, NOT A PICTURE OF IT. The same `CakeThumbnailCanvas` whose
+                buffer `captureThumbnailBlob` reads, moved here from off-screen and made big enough
+                to aim. A lookalike preview would be a third camera for one cake, and the first
+                time either moved they would disagree about what a baker is choosing.
+
+                ⚠️ AND IT IS NOT THE STUDIO VIEW EITHER, which was the other option on the table.
+                This canvas has no floor, no backdrop and a transparent alpha — and that alpha is
+                load-bearing: `captureThumbnailBlob` crops to the cake's alpha bounds, and its own
+                note says that once flattened onto white the cake and the background cannot be told
+                apart. Photographing the live studio would have put the room in every tile and lost
+                the crop that makes them frame alike. */}
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, marginBottom: 6 }}>THUMBNAIL</div>
+            <div
+              style={{ position: 'relative', background: '#FAF6F0', borderRadius: 12,
+                       border: '1.5px solid #EDE5DB', overflow: 'hidden',
+                       cursor: thumbDrag.current ? 'grabbing' : 'grab', touchAction: 'none' }}
+              onPointerDown={onThumbDragStart}
+              onPointerMove={onThumbDragMove}
+              onPointerUp={onThumbDragEnd}
+              onPointerCancel={onThumbDragEnd}
+            >
+              <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef}
+                renderNowRef={thumbRenderNowRef} viewDir={thumbViewDir(thumbView)}
+                visible size={isMobile ? 240 : 285} />
+            </div>
+            {/* ⚠️ PRESETS BECAUSE DRAGGING TO A KNOWN ANGLE IS FIDDLY, and the whole complaint was
+                that a message on the TOP never shows. One tap gets there; the drag is for the cake
+                that wants something between. */}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              {Object.entries(THUMB_VIEWS).map(([k, v]) => {
+                const on = Math.abs(thumbView.az - v.az) < 0.5 && Math.abs(thumbView.el - v.el) < 0.5;
+                return (
+                  <button key={k} type="button" onClick={() => setThumbView({ az: v.az, el: v.el })}
+                    style={{ flex: 1, padding: '7px 0', borderRadius: 8, cursor: 'pointer',
+                             fontFamily: 'inherit', fontSize: 12, fontWeight: 800,
+                             border: `1.5px solid ${on ? INK : '#999999'}`,
+                             background: on ? INK : '#fff', color: on ? '#fff' : INK }}>
+                    {v.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div style={{ fontSize: 11, color: '#8a7a80', marginTop: 6, marginBottom: 10 }}>
+              Drag the cake to choose the angle this template is shown at.
+            </div>
+
             <input
               style={s.modalInput}
               placeholder="Template name..."
@@ -17454,8 +17550,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       )}
 
 
-      {/* Off-screen thumbnail canvas — no floor, transparent background */}
-      <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef} renderNowRef={thumbRenderNowRef} />
+      {/* Off-screen thumbnail canvas — no floor, transparent background.
+          ⚠️ MOUNTED ONLY WHILE THE SAVE PANEL IS SHUT, because the panel mounts the SAME component
+          to show the baker what will be saved. Two mounts would be two canvases and
+          `thumbContainerRef` would hold whichever rendered last — so the picture on screen and the
+          picture captured could differ, which is the one thing this feature exists to stop. */}
+      {!saveModal && (
+        <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef}
+          renderNowRef={thumbRenderNowRef} viewDir={thumbViewDir(thumbView)} />
+      )}
 
       {/* Floating sticker ghost while pointer-dragging from elements panel */}
       {dragGhost && (
