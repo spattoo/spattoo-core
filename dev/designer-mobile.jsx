@@ -1020,6 +1020,23 @@ const stackDesign = PARAMS.has('stack') ? {
 } : null;
 
 const STRIPE_KEY = PARAMS.get('stripes');
+/* ── A 2-tier cake whose BOTTOM tier is striped, with FEWER stripes than colours ─────────────────
+ *
+ * `?stripes2=1`. The reported bug needed all three: two tiers (so the striped one is not the only
+ * one), the stripes on the BOTTOM (so a tier-index mix-up would show), and — the actual cause — a
+ * `count` BELOW the palette length, which is what `expandPalette` truncates. With count ≥ colours
+ * every swatch renders and the picker looks perfectly fine. */
+const stripes2Design = PARAMS.has('stripes2') ? {
+  tiers: [
+    { color: '#F1EEDC', radius: 1.4, height: 1.45, shape: 'round',
+      frostingType: 'buttercream', frostingStyle: 'smooth',
+      stripes: { palette: ['#F5E6A3', '#F2B48A', '#E8A0B0', '#7FD4C1', '#C0392B'],
+                 count: 3, softness: 1, wobble: 0.15 } },
+    { color: '#F3E3E8', radius: 1.0, height: 1.2, shape: 'round',
+      frostingType: 'buttercream', frostingStyle: 'smooth' },
+  ],
+} : null;
+
 const stripedDesign = STRIPE_KEY ? {
   tiers: [{
     color: '#F1EEDC', radius: 1.2, height: 1.45, shape: 'round',
@@ -1065,5 +1082,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? rainbow2Design ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

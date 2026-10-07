@@ -482,8 +482,17 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
             <DialCell label="Hand-scraped" value={wobble} min={0} max={1} step={0.01}
               fmt={v => v.toFixed(2)} onChange={v => onWobbleChange(v)} />
           </ScrollFadeRow>
+          {/* ⚠️ "REPEAT" IS ONLY TRUE ONE WAY ROUND, and it used to be said both ways. The palette
+              cycles to FILL the count, so fewer colours than stripes repeat — but MORE colours than
+              stripes are dropped off the end, and telling somebody their five colours repeat while
+              two of them are not on the cake is the sentence that makes a truncated palette look
+              like a broken colour picker. Adding a colour now raises the count (see writeGradient),
+              so this state is only reachable by deliberately dialling Stripes below the palette —
+              and then it says so. */}
           <div style={s.stripeHint}>
-            {count === colours ? 'One stripe per colour.' : `Your ${colours} colours repeat.`}
+            {count === colours ? 'One stripe per colour.'
+              : count < colours ? `Only the first ${count} of your ${colours} colours are used — raise Stripes to see them all.`
+              : `Your ${colours} colours repeat.`}
             {' '}An odd number matches top and bottom. A little hand-scrape reads as iced by hand.
           </div>
         </div>
@@ -8969,8 +8978,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * that is left. Leaving a one-colour stripe set behind would render as a solid cake that a baker
      * cannot turn back into stripes without knowing to add a colour first. */
     if (stripesOn) {
-      if (clean.length >= 2) setTierStripes(selectedEl.index, { palette: clean });
-      else { setTierStripes(selectedEl.index, null); handleColorChange(clean[0] ?? gradTarget.color); }
+      if (clean.length >= 2) {
+        /* ⚠️ A COLOUR YOU ADDED HAS TO BE REACHABLE, and it was not. `expandPalette` fills `count`
+           stripes by CYCLING the palette — `p[i % p.length]` — so with five colours and a count of
+           three it returns the first three and the fourth and fifth are simply never drawn. Adding a
+           colour, or editing one past the count, then changed nothing on the cake and there was
+           nothing on screen to say why. Reported exactly that way: "when i change the colors from
+           below color pickers, its not changing."
+           ⚠️ RAISED, NEVER LOWERED. Growing the palette past the count is unambiguous — you added a
+           colour to see it — while a palette SHORTER than the count is the feature working: two
+           colours over six stripes is a striped cake, and dropping the count to 2 there would undo
+           the stripes. Removing a colour therefore leaves `count` alone. */
+        const count = tierStripes?.count ?? STRIPE_DEFAULTS.count;
+        setTierStripes(selectedEl.index, {
+          palette: clean,
+          ...(clean.length > count ? { count: clean.length } : null),
+        });
+      } else { setTierStripes(selectedEl.index, null); handleColorChange(clean[0] ?? gradTarget.color); }
       return;
     }
     // Tier and sticker share the model; route to the matching setter. Both drop the gradient and
