@@ -91,3 +91,44 @@ describe('the solid', () => {
     expect(BALLOON_DEFAULTS.height).toBe(1);
   });
 });
+
+/* ── The collar is a rim, not a bump ──────────────────────────────────────────────────────────────
+ *
+ * Sandeep, against the photograph: *"there is a small ring below the balloon in the reference image
+ * - i dont see it in our case."* Zoomed, it is a short flat-ended cylinder lying across the bottom
+ * of each balloon, wider than the stick. A hemisphere — which is what was there — reads as a bump
+ * and disappears at the size a balloon is actually seen at.
+ *
+ * What makes it read is the STRAIGHT WALL: two corners catching the light rather than one curve.
+ * These pin that, because "round it off a bit" is exactly the tidy-up that would undo it.
+ */
+describe('the collar', () => {
+  const at = (p, y) => p.filter(v => Math.abs(v.y - y) < 1e-6).map(v => v.x);
+
+  it('stands on a flat base rather than closing to a point', () => {
+    const p = balloonProfile({ height: 1, knot: 0.1, collar: 0.06 });
+    expect(at(p, 0).length).toBeGreaterThanOrEqual(2);     // axis AND rim at y = 0: a flat disc
+    expect(Math.max(...at(p, 0))).toBeCloseTo(0.1, 6);
+  });
+
+  /* ⚠️ A STRAIGHT WALL, so the rim has corners. Two samples at the same radius and different
+     heights is what that means geometrically. */
+  it('runs straight up before stepping back in', () => {
+    const p = balloonProfile({ height: 1, knot: 0.1, collar: 0.06 });
+    const onRim = p.filter(v => Math.abs(v.x - 0.1) < 1e-6);
+    expect(onRim.length).toBeGreaterThanOrEqual(2);
+    expect(Math.max(...onRim.map(v => v.y))).toBeCloseTo(0.06, 6);
+  });
+
+  it('is wider than the waist, or it is not a rim at all', () => {
+    const p = balloonProfile({ height: 1, knot: 0.1, collar: 0.06, neck: 0.17 });
+    const waist = Math.min(...p.filter(v => v.y > 0.07 && v.y < 0.3).map(v => v.x));
+    expect(0.1).toBeGreaterThan(waist);
+  });
+
+  it('disappears cleanly at 0, which is the shape this started as', () => {
+    const p = balloonProfile({ height: 1, collar: 0 });
+    for (const v of p) expect(Number.isFinite(v.x) && Number.isFinite(v.y)).toBe(true);
+    expect(p.filter(v => Math.abs(v.y) < 1e-6).length).toBeGreaterThanOrEqual(2);
+  });
+});

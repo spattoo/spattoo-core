@@ -64,7 +64,9 @@ export default function Harness() {
         <Sl label="Belly height"   v={p.belly} min={0.25} max={0.85} step={0.01} on={set('belly')}
             hint="Above 0.5 is a balloon; at 0.5 it is an egg." />
         <Sl label="Neck"           v={p.neck}  min={0.05} max={0.6} step={0.01} on={set('neck')} />
-        <Sl label="Knot"           v={p.knot}  min={0} max={0.18} step={0.005} on={set('knot')} />
+        <Sl label="Collar radius" v={p.knot}  min={0} max={0.18} step={0.005} on={set('knot')} />
+        <Sl label="Collar height" v={p.collar} min={0} max={0.15} step={0.005} on={set('collar')}
+            hint="The tied neck. A rim with two corners, not a bump — at 0 it is gone." />
         <Sl label="Crown"          v={p.crown} min={0} max={1} step={0.02} on={set('crown')}
             hint="0 is a teardrop, 1 is a dome." />
         <Sl label="Profile samples" v={p.segments} min={4} max={30} step={1} on={set('segments')} int />

@@ -36,7 +36,17 @@ export const BALLOON_DEFAULTS = Object.freeze({
   width:  0.74,    // widest diameter, × height — fondant balloons are rounder than real latex ones
   belly:  0.58,    // 0 … 1 up the body: where the widest point sits
   neck:   0.17,    // waist radius before the knot, × the widest radius
-  knot:   0.085,   // the nub's radius, × height
+  knot:   0.085,   // the collar's radius, × height
+  /* ⚠️ THE COLLAR IS A RIM, NOT A BALL, and the first version got that wrong. Sandeep: "there is a
+   * small ring below the balloon in the reference image - i dont see it in our case." Zooming the
+   * photograph shows what it is: a short, flat-ended cylinder lying across the bottom of each
+   * balloon, clearly wider than the stick. That is the tied neck — the pinched end folded over and
+   * cut flat — and side-on it reads as a BAR. A hemisphere, which is what was there, reads as a
+   * bump and disappears at balloon scale.
+   *
+   * `collar` is how tall that rim stands, × height. At 0 the bottom closes as a dome and the ring
+   * is gone, which is the shape this started as. */
+  collar: 0.055,
   crown:  0.86,    // 0 … 1: how blunt the top is
   segments: 14,    // profile samples per section — the silhouette is a curve, so this is what shows
   radial:  48,
@@ -47,7 +57,8 @@ export const BALLOON_DEFAULTS = Object.freeze({
 export function balloonProfile({
   height = BALLOON_DEFAULTS.height, width = BALLOON_DEFAULTS.width,
   belly = BALLOON_DEFAULTS.belly, neck = BALLOON_DEFAULTS.neck,
-  knot = BALLOON_DEFAULTS.knot, crown = BALLOON_DEFAULTS.crown,
+  knot = BALLOON_DEFAULTS.knot, collar = BALLOON_DEFAULTS.collar,
+  crown = BALLOON_DEFAULTS.crown,
   segments = BALLOON_DEFAULTS.segments,
 } = {}) {
   const maxR  = (width * height) / 2;
@@ -55,15 +66,29 @@ export function balloonProfile({
   const bellyY = Math.max(0.02, Math.min(0.98, belly)) * height;
   const pts = [];
 
-  // ── The knot: a small ball under the neck, closed at the bottom so the solid has no hole.
-  const knotTop = knotR * 1.25;
-  for (let i = 0; i <= segments / 2; i++) {
-    const t = i / (segments / 2);                 // 0 at the very bottom, 1 where it meets the neck
-    pts.push(new THREE.Vector2(knotR * Math.sin(t * Math.PI * 0.5), knotTop * (1 - Math.cos(t * Math.PI * 0.5))));
+  /* ── The collar: the tied neck, a short flat-ended rim the stick comes out of ─────────────────
+   * Built as a flat base, a straight wall, then a step back in — so from the side it is a BAR with
+   * two corners catching the light, which is what the photograph shows. A dome here reads as a
+   * bump and vanishes at the size a balloon is actually seen. */
+  const collarH = Math.max(0, collar) * height;
+  pts.push(new THREE.Vector2(0, 0));                       // closed, flat bottom — no hole
+  pts.push(new THREE.Vector2(knotR, 0));                   // out to the rim
+  if (collarH > 1e-6) {
+    pts.push(new THREE.Vector2(knotR, collarH));           // straight wall: the bar's two corners
   }
+  const knotTop = collarH + knotR * 0.35;                  // the short shoulder off the rim
 
-  // ── Neck into belly: the inflated part swells away from the waist.
-  const waistR = Math.max(knotR * 1.05, neck * maxR);
+  /* ── Neck into belly: the inflated part swells away from the waist.
+   *
+   * ⚠️ THE WAIST MUST BE ABLE TO PINCH NARROWER THAN THE COLLAR, and it could not — the floor here
+   * was `knotR * 1.05`, which forced the neck to be WIDER than the rim it sits on, so the rim could
+   * never flare and never read as a ring. Backwards, and a test comparing the two found it.
+   *
+   * ⚠️ AND THE WAIST POINT ITSELF IS EMITTED. The swell loop used to start at i = 1, so the
+   * narrowest radius existed in the arithmetic and never reached the profile: the thinnest emitted
+   * point was already a seventh of the way up the swell. The pinch was real and invisible. */
+  const waistR = Math.max(knotR * 0.45, neck * maxR);
+  pts.push(new THREE.Vector2(waistR, knotTop));
   for (let i = 1; i <= segments; i++) {
     const t = i / segments;
     const y = knotTop + (bellyY - knotTop) * t;
