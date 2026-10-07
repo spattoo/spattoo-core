@@ -1485,7 +1485,7 @@ const SECOND_CREAM_GOLD_NORMAL_SCALE = new THREE.Vector2(0.7, 0.7);
 
 // One band. `order` pushes it radially proud of lower layers so the lips stack without
 // z-fighting; it wears the same cream grain as the wall, plus optional gold-leaf trim.
-function SecondCreamBand({ layer, radius, yBase, height, grain }) {
+function SecondCreamBand({ layer, radius, yBase, height, grain, onCreamClick }) {
   const order = layer.order ?? 0;
   const baseR = radius + order * SECOND_CREAM_STACK_STEP;
   // NB: `height` (prop) is the WALL height; the band's own thickness is layer.height → bandHeight.
@@ -1504,8 +1504,12 @@ function SecondCreamBand({ layer, radius, yBase, height, grain }) {
   // multiply), so a low floor browns the creases — lift it so the crinkle reads as gold, not mud.
   const goldMaps = useMemo(() => (gold.on ? makeGoldLeafMaps({ seed, lumFloor: 0.5 }) : null), [gold.on, seed]);
 
+  /* ⚠️ `stopPropagation` IS THE WHOLE POINT, NOT A FORMALITY. The band is drawn INSIDE the tier's
+     group, which carries the tier's own `onClick` — so without this a click on the cream selects the
+     TIER, which is exactly what it did: a baker opening a saved template, tapping the band they can
+     see, and getting the tier card. Same contract as `onTopPipingClick` on the rim ring. */
   return (
-    <group>
+    <group onClick={onCreamClick ? (e) => { e.stopPropagation(); onCreamClick(e); } : undefined}>
       <mesh geometry={bandGeo} castShadow>
         {/* ⚠️ `layer.softness ?? 0.85` — the fallback is the value this was hardcoded to, so every
             saved band renders exactly as before. It became a parameter so the colour correction could
@@ -1534,14 +1538,17 @@ function SecondCreamBand({ layer, radius, yBase, height, grain }) {
 
 // All second-cream bands on a (round) tier. The grain matches the wall's (constant
 // physical cell size across tier sizes) so the bands read as the SAME buttercream.
-function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensity }) {
+function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensity, onCreamClick }) {
   const grain = useMemo(
     () => grainNormalMap(grainKey, 2 * Math.PI * radius, height, grainDensity),
     [grainKey, radius, height, grainDensity],
   );
   if (!layers?.length) return null;
+  /* The INDEX, not the layerId — the cream card selects a band by position (`setCreamSel`), so
+     handing it anything else would mean a second lookup that can disagree with the card's own. */
   return layers.map((layer, idx) => (
-    <SecondCreamBand key={layer.layerId ?? idx} layer={layer} radius={radius} yBase={yBase} height={height} grain={grain} />
+    <SecondCreamBand key={layer.layerId ?? idx} layer={layer} radius={radius} yBase={yBase} height={height}
+      grain={grain} onCreamClick={onCreamClick ? (e) => onCreamClick(e, idx) : null} />
   ));
 }
 
@@ -1586,6 +1593,10 @@ export default function CakeTier({
   onPipingInstanceMove = null,
   onPipingLayerHeight = null,
   pipingMovable = () => true,
+  /* (e, bandIndex) => void — a click on a raised cream band. Absent (previews, the thumbnail scene,
+     the pattern builder) leaves the bands inert and the tier's own onClick answering, which is what
+     every caller did before this existed. */
+  onCreamClick = null,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -1997,7 +2008,7 @@ export default function CakeTier({
       )}
       {!isPrism && (
         <SecondCreamLayers layers={creamLayers ?? []} radius={radius} yBase={yBase} height={height}
-          grainKey={mat.grain} grainDensity={mat.grainDensity} />
+          grainKey={mat.grain} grainDensity={mat.grainDensity} onCreamClick={onCreamClick} />
       )}
       {!isPrism && topFinishMaps && (
         <TopFoilDecal maps={topFinishMaps} radius={radius - 0.02} y={topY + 0.02}

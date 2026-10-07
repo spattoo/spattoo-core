@@ -950,6 +950,17 @@ const styledDesign = STYLE_KEY ? {
        note span has no overflow guard. Hardcoded to buttercream, this harness could only ever show
        the shortest-but-one value, so the one case that can actually spill was untestable. */
     frostingType: PARAMS.get('frosting') || 'buttercream', frostingStyle: STYLE_KEY,
+    /* ⚠️ `?creamband=1` — A BAND ALREADY ON THE CAKE, WITH THE CATALOGUE NEVER FETCHED. That is the
+       state a template restores to, and it is the one the band-click fix is about: `creamElement` is
+       found by scanning LOADED elements, and a saved design draws its bands without loading any. A
+       run that seeds the band through the tier card first has already fetched the catalogue, so it
+       cannot reach the reported case at all — it would pass while a baker's first tap did nothing.
+       The shape mirrors what `addCreamToTier` writes; anything absent falls back to
+       SECOND_CREAM_DEFAULTS, exactly as a real saved band does. */
+    ...(PARAMS.has('creamband') ? {
+      creamLayers: [{ layerId: 'cl-1', color: '#D98BA6', fillSide: 'below',
+                      height: 0.5, lift: 0.04, noise: 0.05, seed: 7, order: 0 }],
+    } : null),
   }],
 } : null;
 

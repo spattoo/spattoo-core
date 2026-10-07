@@ -2746,6 +2746,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // The New-cake shape grid. Open = the customer pressed New and has not chosen yet; the current cake is
   // still on screen and still intact behind it.
   const [shapePickerOpen, setShapePickerOpen] = useState(false);
+  /* A click on a cream band that arrived before the catalogue did — see `handleCreamSelect`. Held as
+     state rather than a ref because the effect that replays it has to re-run when `creamElement`
+     appears, and a ref does not re-render. */
+  const [pendingCream, setPendingCream] = useState(null);
   // Second cream layer ("Cream layer" finish element) — which tier the card edits + which band is selected.
   const [creamTier, setCreamTier] = useState(0);
   const [creamSel, setCreamSel] = useState(0);
@@ -6868,6 +6872,67 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     openPipingPopup(el, { cardId });
   }
 
+  /* ── Opening the cream card ────────────────────────────────────────────────────────────────────
+   *
+   * ONE function, and it now answers FOUR affordances: the tier card's "Cream layer" row, the tap
+   * and drag paths from the drawer, and — since 2026-10-07 — a click on the band itself. The row's
+   * own note already said "one function, three affordances, so there is no second implementation to
+   * drift"; a fourth caller was the moment to stop copying its body.
+   *
+   * ⚠️ SEEDS ONLY WHEN THERE IS NOTHING THERE. Pressing the row on a tier that already has bands
+   * must REOPEN, not add a fourth band to a tier with three — the bug the row's own comment records.
+   * A click on the canvas can only ever land on a band that exists, so it always takes the reopen
+   * path; the branch is kept in one place rather than split by caller.
+   */
+  function openCreamCard(tierIndex, bandIndex = 0) {
+    if (!creamElement) return;
+    focusEditor('decoration');
+    const bands = design.tiers[tierIndex]?.creamLayers ?? [];
+    if (bands.length) {
+      setCreamTier(tierIndex);
+      /* Clamp rather than trust: the index comes from the renderer's own array, but a band removed
+         between render and click would otherwise select a band that is not there. */
+      setCreamSel(Math.min(Math.max(0, bandIndex), bands.length - 1));
+    } else addCreamToTier(tierIndex);
+    selectExclusive({ type: 'cream', elementId: creamElement.id });
+  }
+
+  /* A click on a raised cream band on the cake.
+   *
+   * Sandeep: "when a cake is loaded from templates which has cream layer- and if user clicks on the
+   * cream layer area, pointer should be available for cream layer." Before this the band was drawn
+   * inside the tier's group with no handler of its own, so the click bubbled and selected the TIER —
+   * the band was the one thing on the cake you could see and not reach.
+   *
+   * ⚠️ THE CATALOGUE HAS TO BE LOADED FIRST, and on a template this is the common case rather than
+   * an edge. `creamElement` is found by scanning loaded elements, and the catalogue is lazy — a cake
+   * restored from a template draws its bands from the saved design without ever fetching the
+   * elements, so a baker who clicks the band before opening Decorations finds `creamElement` null
+   * and nothing happens. `handleTierClick` already learned this (see its note); the same applies
+   * here. Not awaited — the fetch is one per session and the click must not wait on a network call.
+   */
+  function handleCreamSelect(tierIndex, bandIndex) {
+    // While the pen is out the cake is a CANVAS, not a set of things to select — as handleTierClick
+    // and handleTopPipingSelect both have it.
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
+    /* ⚠️ REMEMBER THE CLICK, DO NOT SWALLOW IT. Returning here and merely kicking off the fetch
+       would make the first tap on a band do nothing visible and the second one work — on a template,
+       which is the reported case, that first tap is the one a baker makes. The intent is parked and
+       replayed when the catalogue lands.
+       ⚠️ AND IT CANNOT BE `loadElementsIfNeeded().then(openCreamCard)`: `creamElement` is derived
+       from state at render time, so the callback would close over the null it was called with. */
+    if (!creamElement) { setPendingCream({ tierIndex, bandIndex }); loadElementsIfNeeded(); return; }
+    openCreamCard(tierIndex, bandIndex);
+  }
+
+  /* The parked click, once the catalogue has landed. Cleared whether or not it fires, so a fetch
+     that comes back without a cream element does not leave an intent waiting for a later one. */
+  useEffect(() => {
+    if (!pendingCream) return;
+    if (creamElement) openCreamCard(pendingCream.tierIndex, pendingCream.bandIndex);
+    if (!elementTypesLoading) setPendingCream(null);
+  }, [pendingCream, creamElement, elementTypesLoading]);   // eslint-disable-line react-hooks/exhaustive-deps
+
   function handleTopPipingSelect(tierIndex, layerId) {
     // While the pen is out the cake is a CANVAS, not a set of things to select — see
     // handleTierClick. A ring or a decoration under the nozzle is something you are drawing over.
@@ -8020,6 +8085,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * hook exercises the real guard (the pen owns the cake while drawing) instead of side-stepping
      * it — a test door that skips the thing it is testing is worse than none. */
     window.__selectTier = (i) => { handleTierClick(i); return true; };
+    /* ⚠️ "THE CATALOGUE HAS NOT BEEN FETCHED" IS A PRECONDITION, NOT A DETAIL, and nothing could
+     * state it. Several controls are guarded on an element found by scanning LOADED elements —
+     * `creamElement` is one — and a cake restored from a template draws its decoration from the
+     * saved design without ever fetching the catalogue. So the interesting case is the COLD one, and
+     * a script that happens to warm it first (by opening Decorations, or by seeding the band through
+     * the tier card) passes while a baker's first tap does nothing. Without this the band-click
+     * script could only report "unknown" for the one condition its second case exists to establish. */
+    window.__creamElementLoaded = () => !!creamElement;
     /* Which flake the FINISH thinks is selected. This is the discriminator between "the tap missed
      * the shard" and "the tap hit it and something else stole the selection afterwards": onFoilSelect
      * sets these two indices, so they move if and only if the grab sphere was actually hit. From the
@@ -14326,6 +14399,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onDeselect={handleDeselect}
               selectedPiping={selectedPiping}
               highlightPipingId={elementStackOpen ? expandedPipingId : null}
+              onCreamSelect={handleCreamSelect}
               onTopPipingSelect={handleTopPipingSelect}
               onBottomPipingSelect={handleBottomPipingSelect}
               pipingTarget={pipingTarget}
@@ -15130,15 +15204,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       style={{ ...s.neutralBtn, width: '100%', justifyContent: 'space-between', gap: 8,
                                minHeight: 44, background: 'transparent', color: '#666',
                                border: '1.5px solid #999999' }}
-                      onClick={() => {
-                        focusEditor('decoration');
-                        /* First press seeds a band so something appears immediately — the tap and
-                           drag paths both do this. Later presses only REOPEN the card on this tier:
-                           seeding again would quietly add a fourth band to a tier that has three. */
-                        if (tier?.creamLayers?.length) { setCreamTier(selectedEl.index); setCreamSel(0); }
-                        else addCreamToTier(selectedEl.index);
-                        selectExclusive({ type: 'cream', elementId: creamElement.id });
-                      }}
+                      /* `openCreamCard` — the same function the band's own click calls. This used to
+                         carry its own copy of the seed-or-reopen branch; a fourth affordance was the
+                         point at which a second copy would have drifted. */
+                      onClick={() => openCreamCard(selectedEl.index, 0)}
                     >
                       <span>Cream layer</span>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#8a7a80' }}>

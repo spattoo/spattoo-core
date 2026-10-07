@@ -2742,7 +2742,7 @@ function CakeScene({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   orbitRef,
-  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   // Drag a single-mode piping piece round its ring: (tierIndex, zone, layerId, index, angle) => void.
@@ -3000,7 +3000,7 @@ function CakeScene({
         edit={{
           orbitRef, gestureOnStickerRef,
           selectedTier, onTierClick, onDeselect,
-          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, pipingToolbar,
+          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, pipingToolbar,
           onPipingInstanceMove, onPipingLayerHeight, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
@@ -3232,7 +3232,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedTopperId = null, onTopperSelect = NOOP, onTopperMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
-    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
+    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP, onCreamSelect = NOOP,
     onPipingInstanceMove = null, onPipingLayerHeight = null, isPipingMovable = () => true,
     selectedTextId = null, onTextSelect = NOOP, onTextMove = NOOP, onTextContentChange = NOOP, textToolbar = null,
     selectedAgeId = null, onAgeSelect, onAgeMove,
@@ -3326,6 +3326,9 @@ function CakeContent({ config, scene, edit = null }) {
             onPipingInstanceMove={onPipingInstanceMove
               ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
               : null}
+            /* A click on a raised cream band opens the cream card on THIS tier, at the band that was
+               tapped — the same shape as the rim ring's handler above it. */
+            onCreamClick={(e, bandIndex) => { e.stopPropagation(); onCreamSelect(i, bandIndex); }}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTierClick(i); }}
@@ -4117,7 +4120,7 @@ export default function CakeCanvas({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   autoRotate = false,
-  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onPipingInstanceMove = null,
@@ -4256,6 +4259,10 @@ export default function CakeCanvas({
         onDeselect={()  => { if (!pointerRef.current.dragged) onDeselect(); }}
         selectedPiping={selectedPiping}
         highlightPipingId={highlightPipingId}
+        /* ⚠️ FORWARD EVERY ARG. The two piping guards beside this one take `i` and drop the layerId
+           they were handed; cream carries the band index the same way, and losing it would open the
+           card on band 0 whichever band was tapped. Spread, so the guard stays a guard. */
+        onCreamSelect={(...a) => { if (!pointerRef.current.dragged) onCreamSelect(...a); }}
         onTopPipingSelect={i => { if (!pointerRef.current.dragged) onTopPipingSelect(i); }}
         onBottomPipingSelect={i => { if (!pointerRef.current.dragged) onBottomPipingSelect(i); }}
         pipingTarget={pipingTarget}
