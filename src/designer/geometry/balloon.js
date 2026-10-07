@@ -31,12 +31,20 @@ import * as THREE from 'three';
  * (INVARIANTS #8) — the caller scales, this never carries a world dimension.
  */
 
+/* ⚠️ SET IN THE STUDIO AND SIGNED OFF, not derived. Sandeep tuned these against the reference and
+ * sent the panel back: "shows in the screenshot are the defaults." Changing one is a look decision,
+ * so it is made where the look is visible — /elements/balloon in admin — and pasted here, never
+ * nudged from a diff.
+ *
+ * The next move for these is a DB overlay on the element's own row (INVARIANTS #1a), which is where
+ * `placement_config.balloon` already carries them for the catalogue entry; this stays the seed a
+ * row with nothing authored falls back to. */
 export const BALLOON_DEFAULTS = Object.freeze({
   height: 1,       // apex to the bottom of the knot
-  width:  0.74,    // widest diameter, × height — fondant balloons are rounder than real latex ones
-  belly:  0.58,    // 0 … 1 up the body: where the widest point sits
-  neck:   0.17,    // waist radius before the knot, × the widest radius
-  knot:   0.085,   // the collar's radius, × height
+  width:  0.62,    // widest diameter, × height — fondant balloons are rounder than real latex ones
+  belly:  0.61,    // 0 … 1 up the body: where the widest point sits
+  neck:   0.26,    // waist radius before the knot, × the widest radius
+  knot:   0.095,   // the collar's radius, × height
   /* ⚠️ THE COLLAR IS A RIM, NOT A BALL, and the first version got that wrong. Sandeep: "there is a
    * small ring below the balloon in the reference image - i dont see it in our case." Zooming the
    * photograph shows what it is: a short, flat-ended cylinder lying across the bottom of each
