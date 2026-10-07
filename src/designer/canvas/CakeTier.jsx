@@ -5,7 +5,7 @@ import { useThree } from '@react-three/fiber';
 import { useGLTF } from '@react-three/drei';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
-import { applyGradient } from '../shared/color/gradientMaterial.js';
+import { applyGradient, alternateStops, alternateColorAt } from '../shared/color/gradientMaterial.js';
 import { shellMatrix } from './shellMatrix.js';
 import { applyStripes, areStripesActive, stripeColors } from '../shared/color/stripeMaterial.js';
 import { applyGlaze, GLAZE_DEFAULTS } from '../shared/glaze/glazeMaterial.js';
@@ -526,17 +526,39 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
 
-  // Split the ring by version, keeping each shell's ORIGINAL index alongside it. The index is what
-  // a drag writes back through (`instances[i].angle`), and an instanced hit reports a position
-  // within its own mesh — so without this an A-shell drag would move whichever B-shell shared its
-  // instance number.
-  const groups = { A: { ver: A, ry: ryA, mesh: meshA, placements: [], indices: [] },
-                   B: { ver: B, ry: ryB, mesh: meshB, placements: [], indices: [] } };
+  /* ⚠️ A RING SPLITS BY VERSION *AND* BY COLOUR, and for the identical reason: an instanced draw
+     takes ONE geometry and ONE material. Alternating versions was already a second mesh because A
+     and B are different geometries; alternating colours is a further split because red and blue are
+     different materials. A ring of shells in two shapes and three colours is six draw calls for
+     however many pieces — still a constant, still far below the per-shell meshes this replaced.
+
+     ⚠️ ALTERNATING IS A SOLID PER PIECE, NOT A GRADIENT ON ONE. Each group is handed its own flat
+     colour and `gradient: null`, so nothing reaches `applyGradient` and no shader is patched. The
+     cycle is `i % stops.length` over the shell's ORIGINAL ring index, which is what makes two stops
+     read red, blue, red, blue and three read red, blue, green repeating — and what keeps the
+     sequence anchored to the ring rather than to whichever version each piece happens to be. */
+  const altCols = alternateStops(gradient);
+  const nCols = altCols ? altCols.length : 1;
+  const vers = { A: { ver: A, ry: ryA, mesh: meshA }, B: { ver: B, ry: ryB, mesh: meshB } };
+
+  // Split the ring, keeping each shell's ORIGINAL index alongside it. The index is what a drag
+  // writes back through (`instances[i].angle`), and an instanced hit reports a position within its
+  // own mesh — so without this an A-shell drag would move whichever B-shell shared its instance
+  // number. The colour split multiplies the number of meshes, so it multiplies this hazard too.
+  const groups = new Map();
   positions.forEach((u, i) => {
-    const isB = altActive && B && pattern[i % L] === 'B';
-    const g = isB ? groups.B : groups.A;
+    const vk = (altActive && B && pattern[i % L] === 'B') ? 'B' : 'A';
+    const v = vers[vk];
+    const ci = altCols ? i % nCols : 0;
+    const key = `${vk}:${ci}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = { ...v, color: altCols ? alternateColorAt(gradient, i) : color, gradient: altCols ? null : gradient,
+            placements: [], indices: [] };
+      groups.set(key, g);
+    }
     let pos = u.pos;
-    if (isB && (dRadialB || dYB)) {
+    if (vk === 'B' && (dRadialB || dYB)) {
       const [px, , pz] = u.pos;
       const len = Math.hypot(px, pz) || 1;
       pos = [px + (px / len) * dRadialB, u.pos[1] + dYB, pz + (pz / len) * dRadialB];
@@ -545,12 +567,18 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
     g.indices.push(i);
   });
 
-  return ['A', 'B'].map(k => {
-    const g = groups[k];
-    if (!g.ver || !g.placements.length) return null;
+  /* Emitted in a fixed version-then-colour order rather than in `Map` insertion order, which would
+     otherwise depend on where round the ring each colour first appeared — a stable React key list
+     matters more than the three lines it costs. */
+  const order = [];
+  for (const vk of ['A', 'B']) for (let ci = 0; ci < nCols; ci++) order.push(`${vk}:${ci}`);
+
+  return order.map(k => {
+    const g = groups.get(k);
+    if (!g || !g.ver || !g.placements.length) return null;
     return (
       <InstancedShells key={k} geometry={g.ver.geometry} shellScale={g.ver.shellScale}
-        placements={g.placements} color={color} softness={softness} gradient={gradient} selected={selected}
+        placements={g.placements} color={g.color} softness={softness} gradient={g.gradient} selected={selected}
         dragHandler={dragHandler
           ? (e) => { const i = g.indices[e.instanceId ?? 0]; if (i != null) dragHandler(i)(e); }
           : null}

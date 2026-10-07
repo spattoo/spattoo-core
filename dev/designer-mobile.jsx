@@ -323,7 +323,11 @@ CAT_ELEMENTS.push({
      is a mask IMAGE url. The THUMBNAIL is the picture; image_url is the geometry. */
   image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
-  allowed_actions: { color: true, delete: true, resize: true },
+  /* ⚠️ `gradient: true`, because the real row has it and this one did not — so the whole
+     multi-colour editor (stops, Swirl/Vertical/Linear, and now Alternating) was unreachable in the
+     harness, and `gradEligible` quietly rendered the popup without it. A fixture that disagrees
+     with the DB row proves the wrong thing: the controls looked absent rather than broken. */
+  allowed_actions: { color: true, delete: true, resize: true, gradient: true },
   /* ⚠️ `hand_piping` IS WHAT PUTS THIS PIECE IN THE CREAM PATTERN STUDIO, and no fixture carried
      it before — so the studio's thumbnail grid could only ever render its empty state here, and
      the one thing worth looking at was unreachable. Ticked on THIS row because it is the only

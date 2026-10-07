@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
+import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
@@ -322,14 +323,17 @@ const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 // the one place the gradient editor UI lives — there is no per-element-type copy.
 //   stops      : array of hex strings (1 = solid, 2–3 a gradient)
 //   activeStop : index the wheel is currently editing
-//   mode       : 'swirl' | 'vertical' | 'linear'
+//   mode       : 'swirl' | 'vertical' | 'linear' | 'alternate'. The first three are shader
+//                sweeps; 'alternate' paints whole PIECES in turn and only a ring can do it —
+//                see ALTERNATE_MODE. A caller that has no pieces leaves it out of `modes`.
 //   modes      : which directions to offer (default all three); a single entry fixes the direction
 //                and hides the toggle (the cake base is vertical-only).
 //   balance    : 0..1 blend bias (0.5 = even). Omit to hide the balance slider (sticker/piping today).
 //   pending    : when true the LAST entry in `stops` is an empty placeholder (a null) — the user
 //                clicked "+" but hasn't picked its colour yet. It renders as a dashed "pick a colour"
 //                chip and isn't a real stop, so direction/balance stay hidden until it's filled.
-const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
+const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear',
+                      [ALTERNATE_MODE]: 'Alternating' };
 /* ⚠️ THREE, AND IT IS A DECISION RATHER THAN A LIMIT OF THE CODE. Sandeep, on the drip: *"it can
    accept up to 3 colors. 2 colors is less, and many colors is not practical. lets confine it to 3."*
    Two is a gender reveal and little else; past three a cake stops reading as a pour and starts
@@ -339,7 +343,7 @@ const MODE_LABELS = { swirl: 'Swirl', vertical: 'Vertical', linear: 'Linear' };
 export const PIPING_MAX_STOPS = 3;
 
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
-                            modes = ['swirl', 'vertical', 'linear'], balance, onBalanceChange, pending = false,
+                            modes = GRADIENT_MODES, balance, onBalanceChange, pending = false,
                             label = 'Gradient colors', maxStops = PIPING_MAX_STOPS }) {
   const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
@@ -383,7 +387,10 @@ function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, on
           ))}
         </div>
       )}
-      {realCount >= 2 && balance != null && (
+      {/* ⚠️ NO BALANCE WHEN ALTERNATING. Balance biases which stop dominates a BLEND, and an
+          alternating ring has no blend to bias — every piece is one flat colour. Left visible it
+          would be a dial that moved and changed nothing. */}
+      {realCount >= 2 && balance != null && mode !== ALTERNATE_MODE && (
         /* ⚠️ AN OffsetDial, NOT A SizeDial, and the choice is not cosmetic. Balance is a POSITION
            BETWEEN TWO ENDS (primary ↔ secondary), not a magnitude: SizeDial's band tapers thin→thick
            to mean small→large, which would claim this quantity grows. OffsetDial fills from a marked
@@ -16366,6 +16373,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            stop list rather than inventing a second one is what makes the control,
                            the storage and the save path already exist. */
                         const gradEligible = isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
+                        /* ⚠️ ALTERNATING IS OFFERED ONLY WHERE THERE ARE PIECES TO ALTERNATE, and
+                           the test is which RENDER PATH this layer takes, not which zone it is in.
+                           Piping has exactly two zones and both are rings — Sandeep: *"this works
+                           for top and board rings"* — so the zone needs no test. What does need one
+                           is the finish: a wrap band is one re-routed strip, a swag is a bent
+                           festoon, and a decoration ring keeps the GLB's own materials. None of the
+                           three is made of pieces this file colours, so offering the mode there
+                           would be a button that silently did nothing. `renderShells` is the only
+                           path that can honour it, and these are the three things that bypass it. */
+                        const altCapable = !isDrip && !p.wrap && !p.bend
+                                        && (p.finish ?? 'cream') !== 'element';
                         const gStops  = p.gradient?.colors?.length ? p.gradient.colors : [color];
                         const gMode   = p.gradient?.mode ?? 'swirl';
                         const gActive = Math.min(gradStop, Math.max(0, gStops.length - 1));
@@ -16398,7 +16416,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                    they meet — so the mode row is empty and GradientControls hides
                                    it on `modes.length > 1`. */
                                 label={isDrip ? 'Chocolates' : 'Gradient colors'}
-                                modes={isDrip ? [] : undefined}
+                                modes={isDrip ? [] : (altCapable ? [...GRADIENT_MODES, ALTERNATE_MODE] : GRADIENT_MODES)}
                                 stops={gStops} activeStop={gActive} mode={gMode}
                                 onSelectStop={setGradStop}
                                 onAddStop={() => { if (gStops.length >= PIPING_MAX_STOPS) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
@@ -18079,9 +18097,14 @@ const s = {
     width: 30, height: 30, borderRadius: '50%', border: '1.5px dashed #999', background: '#fff',
     color: '#666', fontSize: 18, lineHeight: '26px', padding: 0, cursor: 'pointer',
   },
-  gradientModes: { display: 'flex', gap: 6, width: '100%', justifyContent: 'center' },
+  /* ⚠️ IT WRAPS, because the row grew a fourth chip and "ALTERNATING" is twice the word the
+     other three are. Four `flex: 1` buttons in a 216px popup give each ~48px, which squashes
+     the longest label into an unreadable stack of letters on exactly the screen that matters
+     (root CLAUDE.md rule 5). A basis plus wrap puts them 2×2 when they do not fit on one
+     line and leaves the three-mode callers — sticker, tier — on a single row as before. */
+  gradientModes: { display: 'flex', flexWrap: 'wrap', gap: 6, width: '100%', justifyContent: 'center' },
   gradientMode: {
-    flex: 1, fontSize: 10, fontWeight: 700, letterSpacing: 0.3, padding: '6px 4px',
+    flex: '1 1 auto', minWidth: 62, fontSize: 10, fontWeight: 700, letterSpacing: 0.3, padding: '6px 4px',
     borderRadius: 8, border: '1.5px solid #999999', background: '#fff', color: '#444',
     cursor: 'pointer', textTransform: 'uppercase',
   },

@@ -19,6 +19,51 @@ import * as THREE from 'three';
 export const GRADIENT_MODES = ['swirl', 'vertical', 'linear'];
 const MODE_INDEX = { swirl: 0, vertical: 1, linear: 2 };
 
+/* ── Alternating: the one multi-colour mode that is NOT a blend ──────────────────────────────────
+ *
+ * The three modes above are sweeps — the shader mixes between stops across a surface, because that
+ * is what two creams loaded side by side in one bag actually do. Alternating is a different thing a
+ * baker does with the same two creams: pipe a shell in red, change bags, pipe the next in blue, and
+ * round the ring. There is no blend anywhere in it. Sandeep: *"so one piece red and next piece
+ * blue, next red and next blue."*
+ *
+ * ⚠️ IT IS DELIBERATELY NOT IN `GRADIENT_MODES`, and that list is not an oversight to tidy up.
+ * `GRADIENT_MODES` is the set of SHADER modes — every entry has a `MODE_INDEX` and a branch in
+ * `gradBody`. Adding 'alternate' to it would give it `MODE_INDEX['alternate'] ?? 0`, which is
+ * swirl: a ring asked to alternate would quietly render a swirl and nothing anywhere would
+ * disagree. The split happens per PIECE, in the renderer that knows what a piece is.
+ *
+ * ⚠️ WHICH IS ALSO WHY `applyGradient` TREATS IT AS "NO GRADIENT". A surface that cannot split
+ * itself into pieces — a tier wall, a wrap band, a swag strip, a sticker — has nothing to
+ * alternate, so the honest fallback is the solid colour it would otherwise have, not a sweep the
+ * customer never asked for. Only the ring renderer acts on this mode; everything else sees a
+ * material with no gradient on it at all. */
+export const ALTERNATE_MODE = 'alternate';
+
+export function isAlternating(gradient) {
+  return isGradientActive(gradient) && gradient?.mode === ALTERNATE_MODE;
+}
+
+/* The colours an alternating ring cycles through, in order, or null when this gradient is not an
+ * alternating one. Two stops give red/blue/red/blue; three give red/blue/green repeating — the
+ * cycle is just the stop list, so `PIPING_MAX_STOPS` caps it with no second number to keep in
+ * step. Filtered because a pending "+" stop is a null until its colour is picked. */
+export function alternateStops(gradient) {
+  if (!isAlternating(gradient)) return null;
+  const stops = gradient.colors.filter(Boolean);
+  return stops.length >= 2 ? stops : null;
+}
+
+/* THE cycle, stated once: which colour the piece at ring index `i` is piped in, or null when this
+ * gradient does not alternate. The renderer groups pieces by it rather than asking per piece, but
+ * it must group by the SAME answer this gives — so the modulo lives here and not at the call site,
+ * where a second copy would be free to disagree about whether the count or the index wraps. */
+export function alternateColorAt(gradient, i) {
+  const stops = alternateStops(gradient);
+  if (!stops) return null;
+  return stops[((i % stops.length) + stops.length) % stops.length];
+}
+
 // A gradient only renders when the user has actually picked ≥2 stops; otherwise the element falls
 // back to its solid `color` exactly as before.
 export function isGradientActive(gradient) {
@@ -135,7 +180,9 @@ function ensureUniforms(mat) {
  * only exists when the material has a map. Passing a mask to a material without one would not
  * compile, so the flag rides the cache key. */
 export function applyGradient(mat, gradient, bbox, albedo = (c) => c, mask = null) {
-  const active = isGradientActive(gradient);
+  // Alternating is per-piece, not per-pixel — see ALTERNATE_MODE. There is nothing for the shader
+  // to do, and pretending otherwise would paint a swirl nobody asked for.
+  const active = isGradientActive(gradient) && !isAlternating(gradient);
 
   if (!active) {
     if (mat.userData.__gradOn) {            // was on → tear down and recompile to the stock program
