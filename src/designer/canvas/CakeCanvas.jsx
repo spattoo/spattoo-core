@@ -48,7 +48,7 @@ import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
 import FondantCloud from './FondantCloud.jsx';
 import FondantBalloon from './FondantBalloon.jsx';
 import { cloudHandleAt, cloudDragTo, cloudPlacement } from '../geometry/cloud.js';
-import { balloonDragTo, balloonPlacement } from '../geometry/balloon.js';
+import { balloonDragTo, balloonPlacement, BALLOON_PLACEMENT_DEFAULTS } from '../geometry/balloon.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
@@ -3499,11 +3499,21 @@ function CakeContent({ config, scene, edit = null }) {
               onClick={() => onBalloonClickEdit?.(i, ba.id)}
               onOrbitEnable={orbitEnableFor(`__balloon__${ba.id}`)}
               onMove={patch => onBalloonMove?.(i, ba.id, patch)}
-              /* The lid, and only the lid. A balloon is pushed into the TOP: there is no wall case
-                 to resolve and no board case, so this is the plane the pick goes through — read at
-                 the tier's own lid height, never re-derived. */
+              /* ⚠️ RESOLVED AT THE BALLOON'S OWN HEIGHT, NOT AT THE LID — and resolving at the lid is
+                 why it could not be moved at all. A balloon floats a stick's length ABOVE the
+                 surface it stands on, so a ray through the thing you are grabbing crosses the lid
+                 plane well behind it. `hypot` then exceeded the radius, `standoff` clamped to 1,
+                 and the balloon pinned itself to the rim and stayed there however far the pointer
+                 travelled. It read as "it will not move".
+
+                 This is INVARIANTS #10 law 4 — what you can grab is what you can see — and note
+                 that the movable contract CANNOT catch it: law 5 asks handleAt and dragTo to invert
+                 each other, and they do. The fault is in the plane the canvas picks, which is
+                 neither of them. A cloud never showed it because a cloud sits ON the surface it
+                 resolves against; this is the first decoration that does not. */
               resolve={ray => {
-                const planeY = tier.baseY + tier.height;
+                const planeY = tier.baseY + tier.height
+                  + (ba.float ?? BALLOON_PLACEMENT_DEFAULTS.float ?? 0.75) * (tier.radius || 1);
                 const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
                 if (!hit) return null;
                 const against = tier.radius || 1;

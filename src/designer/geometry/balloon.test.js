@@ -194,3 +194,46 @@ describe('where it sits', () => {
     expect(Object.keys(patch).sort()).toEqual(['standoff', 'theta']);
   });
 });
+
+/* ── Grabbing it must not move it ─────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"cant move the balloon."* The wiring was all present — handlers threaded, contract
+ * registered, law 5 passing — and it still could not be dragged, because the canvas resolved the
+ * pointer against the LID while the balloon floats a stick's length above it.
+ *
+ * ⚠️ THE MOVABLE CONTRACT CANNOT SEE THIS, which is the part worth keeping. Law 5 asks `handleAt`
+ * and `balloonDragTo` to invert each other and they do, exactly. The fault is in which PLANE the
+ * canvas intersects before it calls either — neither function knows a plane exists. A cloud never
+ * exposed it because a cloud sits ON the surface it resolves against; the balloon is the first
+ * decoration that does not.
+ *
+ * So this models the canvas's own arithmetic: cast a ray from the designer's real camera through
+ * the balloon, intersect each candidate plane, and hand the result to the drag. Dragging a thing to
+ * where it already is must give back what it already had.
+ */
+describe('the drag plane is the balloon, not the lid', () => {
+  const CAM = { x: 0, y: 4.85, z: 6.95 };          // CAMERA_POSITION
+  const CAKE2 = { radius: 1.2, topY: 1.5, boardY: 0.1 };
+  const BA = { ...BALLOON_PLACEMENT_DEFAULTS, theta: 0.6, standoff: 0.42, float: 0.75 };
+
+  // Where the canvas would land the pointer, if it resolved against a plane at height `planeY`.
+  const standoffFromPlane = (planeY) => {
+    const [bx, by, bz] = balloonPlacement(BA, CAKE2).position;   // the point being grabbed
+    const dir = { x: bx - CAM.x, y: by - CAM.y, z: bz - CAM.z };
+    const t = (planeY - CAM.y) / dir.y;                          // ray-plane intersection
+    const hx = CAM.x + dir.x * t, hz = CAM.z + dir.z * t;
+    return balloonDragTo(BA, CAKE2, Math.atan2(hx, hz) / (Math.PI * 2),
+                         Math.min(1, Math.hypot(hx, hz) / CAKE2.radius)).standoff;
+  };
+
+  it('gives back the standoff it already had, when resolved at the balloon', () => {
+    const atBalloon = CAKE2.topY + BA.float * CAKE2.radius;
+    expect(standoffFromPlane(atBalloon)).toBeCloseTo(BA.standoff, 6);
+  });
+
+  /* ⚠️ And at the lid it pins to the rim, which is what "it will not move" looked like: every drag
+     answers 1, so the balloon sits at the edge and stops responding however far the pointer goes. */
+  it('pins to the rim when resolved at the lid — the bug, pinned so it cannot come back', () => {
+    expect(standoffFromPlane(CAKE2.topY)).toBe(1);
+  });
+});
