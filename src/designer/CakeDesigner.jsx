@@ -62,7 +62,7 @@ import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from '
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands, springRange } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
-import { BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAULTS, balloonDragTo } from './geometry/balloon.js';
+import { BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAULTS, BALLOON_SIZE_RANGE, balloonDragTo } from './geometry/balloon.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
 import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
@@ -6216,6 +6216,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         elementId: el?.id ?? null,
         elementName: el?.name ?? null,
         color: el?.default_color || '#F4EFE6',
+        /* ⚠️ THE ADMIN'S SIZE BOUNDS, BAKED ON AT PLACE TIME. `placement_config.scale {min,max,step}`
+           is authored in Manage Elements and is the only statement of how big this element may be;
+           a card that hard-codes a range silently ignores it, which INVARIANTS #5b records as a
+           fault already paid for twice ("a hand-rolled slider once hard-coded 0.25–3.0 and silently
+           ignored config; the old canvas handle did the same").
+           Baked rather than looked up, for the reason the stick depth is baked: what reaches the
+           canvas and the card then already carries the number, and a design saved today still has
+           it if the row changes tomorrow. */
+        ...scaleRangeOf(el, BALLOON_SIZE_RANGE.min, BALLOON_SIZE_RANGE.max, BALLOON_SIZE_RANGE.step),
         /* Each one a step further round and a touch taller than the last, so a second balloon is
            visibly a second balloon rather than a redraw of the first — and three of them read as
            the cluster the reference is. Taken from the LIVE list inside the updater, or two quick
@@ -12684,7 +12693,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             the admin's. */}
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
-            ['Size', 'scale', 0.5, 2.2, 0.05, v => v.toFixed(2)],
+            /* ⚠️ SIZE OBEYS THE ROW, NOT THIS FILE. min/max/step come off the instance, where
+               addBalloon baked `placement_config.scale` from Manage Elements — so an admin who sets
+               a balloon's range gets that range, and nothing here may quietly widen it.
+               `check:element-size` is what keeps it that way. */
+            ['Size', 'scale', ba.min ?? BALLOON_SIZE_RANGE.min, ba.max ?? BALLOON_SIZE_RANGE.max,
+                              ba.step ?? BALLOON_SIZE_RANGE.step, v => v.toFixed(2)],
             ...(stickOn ? [['Height', 'float', 0.15, 2.0, 0.05, v => v.toFixed(2)]] : []),
             ['Lean', 'tilt', -0.4, 0.4, 0.02, v => v.toFixed(2)],
           ].map(([label, key, min, max, step, fmt]) => (

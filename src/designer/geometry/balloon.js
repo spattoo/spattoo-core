@@ -161,6 +161,11 @@ export const BALLOON_PLACEMENT_DEFAULTS = Object.freeze({
   stickColor: '#D8C9A6',
 });
 
+/* What a balloon's size control offers when the element row authors nothing. The DEFAULT only —
+ * `placement_config.scale {min,max,step}` in Manage Elements overrides every part of it, and
+ * `scaleRangeOf` is the one function that resolves the two (INVARIANTS #5b). */
+export const BALLOON_SIZE_RANGE = Object.freeze({ min: 0.5, max: 2.2, step: 0.05 });
+
 const TAU = Math.PI * 2;
 const clamp01 = (n) => Math.max(0, Math.min(1, n));
 const wrapAngle = (a) => ((a % TAU) + TAU) % TAU;
