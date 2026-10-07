@@ -6241,6 +6241,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     clearAllSelections();
   }
 
+  /* ⚠️ A DUPLICATE THAT LANDS ON ITS ORIGINAL LOOKS LIKE A BUTTON THAT DID NOTHING. Staggered by
+     exactly the step addBalloon uses for the second balloon it places — round by 1.15 and up by
+     0.22 — so a copy reads as the cluster the reference photo is rather than hiding inside the one
+     it came from. The lean flips, which is what makes three of them look tied to one hand.
+     Everything else is copied verbatim, the row's baked `min`/`max`/`step` included, so the copy
+     obeys the same admin range as the original (INVARIANTS #5b). Height is clamped to the dial's
+     own ceiling: duplicating five times must not walk a balloon past where its control can reach. */
+  function duplicateBalloon(tierIndex, id) {
+    const copyId = `ba-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    updateTierBalloons(tierIndex, cur => {
+      const src = cur.find(b => b.id === id);
+      if (!src) return cur;
+      return [...cur, { ...src, id: copyId,
+        theta: (src.theta ?? 0) + 1.15,
+        float: Math.min(2.0, (src.float ?? BALLOON_PLACEMENT_DEFAULTS.float ?? 0.75) + 0.22),
+        tilt: -(src.tilt ?? 0) }];
+    });
+    selectExclusive({ type: 'balloon', tierIndex, id: copyId });
+  }
+
+  /* What the admin said ONE placed procedural decoration may do, read off the catalogue row it was
+     placed from. Both default TRUE, resolved the same way `useCakeDesign` resolves a sticker's and
+     for the reason recorded there: every decoration on every cake can be taken off and copied
+     today, so a capability that arrived defaulting to false would silently freeze all of them. Only
+     an explicit `false` in Manage Elements pins one to the cake.
+     ⚠️ Hard-coding the button instead is how admin's "deletable" checkbox becomes dead config — the
+     exact fault `useCakeDesign` already paid for once on stickers. `check:element-delete` is what
+     keeps every procedural card asking this function rather than deciding for itself. */
+  function instanceActions(elementId) {
+    const a = elementById.get(elementId)?.allowed_actions ?? {};
+    return { delete: a.delete ?? true, duplicate: a.duplicate ?? true };
+  }
+
   // The canvas resolves the pointer against the lid and hands back the patch already in the
   // balloon's own words, exactly as it does for a cloud — re-deriving where the lid is here would
   // be a second definition of it.
@@ -12597,12 +12630,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             style={{ width: 40, height: 28, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
         </div>
 
-        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-          <button onClick={() => removeCloud(card.tierIndex, cl.id)}
-            style={{ ...s.deleteBtn, flex: 1 }}>
-            Remove from cake
-          </button>
-        </div>
+        {/* Gated on the row like the balloon's, not hard-coded: admin's "deletable" tick was dead
+            config here. Unticking it is the only thing that takes this button away. */}
+        {instanceActions(cl.elementId).delete && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+            <button onClick={() => removeCloud(card.tierIndex, cl.id)}
+              style={{ ...s.deleteBtn, flex: 1 }}>
+              Remove from cake
+            </button>
+          </div>
+        )}
       </>
     );
   }
@@ -12708,6 +12745,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onChange={v => set({ [key]: v })} />
           ))}
         </ScrollFadeRow>
+
+        {/* ⚠️ THE CARD SHIPPED WITH NO WAY OFF THE CAKE. Every other decoration's card ends here and
+            this one did not, so a balloon could be placed, coloured and sized and then only removed
+            by hunting it down in the element stack. Duplicate rides beside it, the footer the text
+            and number-topper cards already use. Both ask the ROW, never this file. */}
+        {(() => {
+          const act = instanceActions(ba.elementId);
+          if (!act.delete && !act.duplicate) return null;
+          return (
+            <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+              {act.duplicate && (
+                <button onClick={() => duplicateBalloon(card.tierIndex, ba.id)}
+                  style={{ ...s.neutralBtn, flex: 1 }}>
+                  Duplicate
+                </button>
+              )}
+              {act.delete && (
+                <button onClick={() => removeBalloon(card.tierIndex, ba.id)}
+                  style={{ ...s.deleteBtn, flex: 1 }}>
+                  Remove from cake
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </>
     );
   }
@@ -12855,12 +12917,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
 
-        <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-          <button onClick={() => removeRainbow(card.tierIndex, rb.id)}
-            style={{ ...s.deleteBtn, flex: 1 }}>
-            Remove from cake
-          </button>
-        </div>
+        {/* Gated on the row, for the reason the cloud's is. */}
+        {instanceActions(rb.elementId).delete && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+            <button onClick={() => removeRainbow(card.tierIndex, rb.id)}
+              style={{ ...s.deleteBtn, flex: 1 }}>
+              Remove from cake
+            </button>
+          </div>
+        )}
       </>
     );
   }

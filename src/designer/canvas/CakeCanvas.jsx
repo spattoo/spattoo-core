@@ -4401,6 +4401,16 @@ export default function CakeCanvas({
         onRainbowClick={onRainbowClick}
         onCloudMove={onCloudMove}
         onRainbowMove={onRainbowMove}
+        /* ⚠️ DECLARING A PROP IS NOT THREADING IT. CakePreview took onBalloonClick and
+            onBalloonMove, CakeScene took them and put them in its `edit` literal, and CakeContent
+            read them off `edit` — every end of the chain was right and the middle link was never
+            written, so both arrived `undefined`. Clicking the balloon raycast cleanly to its grab
+            mesh and called nothing; dragging it resolved a correct patch and handed it nowhere.
+            Nothing threw, nothing logged, and the drag fix committed in f6afdbdc was real but
+            unreachable. When a handler "does nothing", probe whether it is DEFINED before assuming
+            the geometry missed. */
+        onBalloonClick={onBalloonClick}
+        onBalloonMove={onBalloonMove}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

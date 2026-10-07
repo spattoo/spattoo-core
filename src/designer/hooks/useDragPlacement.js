@@ -14,11 +14,22 @@ import { pointerRay } from '../utils/raycasting.js';
 // is shared so the leave-handler doesn't re-enable orbit mid-drag.
 export function useDragPlacement({ gl, camera, onMove, onClick, onOrbitEnable, resolve }) {
   const pressedRef = useRef(false);
+  const hoverRef = useRef(false);
+
+  // ⚠️ THE CURSOR IS THE ONLY RESTING AFFORDANCE A DECORATION ON THE CANVAS HAS (root CLAUDE.md
+  // rule 7, "if it does something, it must look like it does something"). A cloud, a rainbow and a
+  // balloon are meshes in a 3D scene — there is no border to press and no row to highlight, so with
+  // the arrow left unchanged the whole cake reads as scenery and nobody learns the parts are live.
+  // It belongs HERE and not on the balloon: every draggable decoration comes through this hook, so
+  // one copy gives all of them the affordance and none of them can quietly lose it. `pointer` on
+  // hover because a tap opens the card; `grabbing` while pressed because a drag moves it.
+  const setCursor = v => { const el = gl?.domElement; if (el) el.style.cursor = v; };
 
   const onDown = e => {
     e.stopPropagation();
     pressedRef.current = true;
     onOrbitEnable?.(false);
+    setCursor('grabbing');
     try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
     let didDrag = false;
     const start = { x: e.clientX, y: e.clientY };
@@ -34,6 +45,9 @@ export function useDragPlacement({ gl, camera, onMove, onClick, onOrbitEnable, r
     function up(ev) {
       pressedRef.current = false;
       onOrbitEnable?.(true);
+      // Back to the hover cursor if the pointer is still over the mesh, and to the page's own if
+      // the drag carried it off — a release elsewhere fires no leave event to tidy up after it.
+      setCursor(hoverRef.current ? 'pointer' : '');
       if (!didDrag && onClick) onClick(ev);
       canvas.removeEventListener('pointermove', move);
       canvas.removeEventListener('pointerup', up);
@@ -44,8 +58,11 @@ export function useDragPlacement({ gl, camera, onMove, onClick, onOrbitEnable, r
 
   const grabProps = {
     userData: { isStickerHitPlane: true },
-    onPointerEnter: e => { e.stopPropagation(); onOrbitEnable?.(false); },
-    onPointerLeave: e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable?.(true); },
+    onPointerEnter: e => { e.stopPropagation(); hoverRef.current = true; onOrbitEnable?.(false); setCursor('pointer'); },
+    onPointerLeave: e => {
+      e.stopPropagation(); hoverRef.current = false;
+      if (!pressedRef.current) { onOrbitEnable?.(true); setCursor(''); }
+    },
     onPointerDown: onDown,
     onClick: e => e.stopPropagation(),
   };

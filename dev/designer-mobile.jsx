@@ -387,6 +387,27 @@ CAT_ELEMENTS.push({
   default_color: '#f5a3b8', sort_order: 25,
 });
 
+/* ⚠️ A BALLOON ROW, for the same reason as the cloud and rainbow rows above: a procedural element
+ * that cannot be reached here hides every bug in it. Three were hidden exactly that way — the drag
+ * resolving against the wrong plane, a missing edit card, and no delete — and all three were found
+ * by Sandeep on a real cake rather than here, which is the harness's job and not his.
+ *
+ * `allowed_actions` carries what the real row carries (migration 127): colour and duplicate ON,
+ * which is what makes this row able to show whether the card honours them. */
+CAT_ELEMENTS.push({
+  /* ⚠️ `e31`, and `e26` is TAKEN — "Heart on a pick" already has it. A duplicate id in a fixture
+   * does not throw; it shadows, and the shadowed row is the one you are not looking at.
+   * `cat-party` because that is where migration 127 puts this element. A fixture filed under a
+   * category the real row is not in proves the wrong thing about where a customer finds it. */
+  id: 'e31', name: 'Balloon', description: 'a fondant balloon on a pick',
+  element_type_id: 'et-topper', category_id: 'cat-party',
+  image_url: CAT_THUMB('#f3b9bd'), thumbnail_url: CAT_THUMB('#f3b9bd'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { procedural: 'balloon', scale: { min: 0.6, max: 1.8, step: 0.05 } },
+  default_color: '#F4EFE6', sort_order: 31,
+});
+
 /* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
  * made the foil tap-to-reopen bug unverifiable, found the same way.
  *
@@ -737,7 +758,9 @@ const STUBS = {
     : PARAMS.has('cream')
     ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
     : (PARAMS.has('football') || PARAMS.has('catalog'))
-    ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
+    ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' },
+       // The balloon's real home (migration 127), so the harness reaches it the way a customer does.
+       { id: 'cat-party', name: 'Party & shapes', slug: 'party-shapes', sort_order: 1, element_type_id: 'et-topper' }] : []),
   /* ⚠️ `?cream=1` — THE CREAM LAYER ELEMENT, because an empty catalogue hides a feature rather than
    * breaking it, and that is the worse failure. The tier panel's "Cream layer" row is guarded on
    * `creamElement` (found by scanning loaded elements for `placement_config.second_cream`), so with
