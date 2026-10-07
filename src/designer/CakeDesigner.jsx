@@ -190,7 +190,7 @@ import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
 import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS, cutAssembly } from './geometry/acrylicConfig.js';
-import { writingScaleFrom } from './geometry/writingScale.js';
+import { writingScaleFrom, writingMaxFit } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
 import { CAVITY_DEFAULTS } from './geometry/topCavity.js';
@@ -11769,8 +11769,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                stored on every saved design and every template, so changing what a number MEANS
                would resize board messages on work that is already out there. A wider range changes
                nothing that exists and lets the ones that need it grow. */
+            /* ⚠️ THE CEILING IS THE SMALLER OF WHAT AN ADMIN AUTHORED AND WHAT THE SURFACE CAN HOLD.
+               On the top the builder fills the width, so `fit` 1.0 is a block as wide as the cake and
+               its corners are outside the circle — see `writingMaxFit`. The authored max still wins
+               everywhere it is the tighter of the two, so a row is never overruled upward. */
             { k: 'Size', dial: 'size', v: w.fit ?? writingFit(w.style),
-              min: writingScale.min, max: writingScale.max, step: writingScale.step,
+              min: writingScale.min, max: writingMaxFit(surface, writingScale.max), step: writingScale.step,
               fmt: v => v.toFixed(2), set: v => setWriting({ fit: v }) },
             /* ⚠️ Rotate is SIGNED and centres on 0° — square to the cake. Its zero mark is the value
                a baker most wants to get back to. */
