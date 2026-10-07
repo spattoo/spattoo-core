@@ -7845,8 +7845,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * ⚠️ IT ALSO RESETS. An instance that is no longer chosen goes back to the base size, so dialling
    * Big ones down actually removes them rather than leaving orphans at the large size. */
-  function setScatterBigCount(elementId, zone, target) {
-    const group = isSideZoneName(zone) ? 'side' : 'top';
+  function setScatterBigCount(elementId, zone, tierIndex, target) {
+    const group = scatterGroupKey(zone, tierIndex);
     const el = elementById.get(elementId);
     const instances = design.stickers
       .filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === group)
@@ -7895,9 +7895,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      `scatterBaseScaleOf(all, el)` — deliberately spanning both groups, per its own note — so a
      caller that wants the old fan-everything behaviour still has it, and the dial simply never
      asks for it. */
-  function setScatterSize(elementId, zone, v) {
+  function setScatterSize(elementId, zone, tierIndex, v) {
     const el = elementById.get(elementId);
-    const grp = zone == null ? null : (isSideZoneName(zone) ? 'side' : 'top');
+    // zone null still means "every set of this element" — the one caller that wants that.
+    const grp = zone == null ? null : scatterGroupKey(zone, tierIndex);
     const all = design.stickers.filter(s => s.elementId === elementId && s.scatter
       && (grp == null || scatterGroupOf(s) === grp));
     if (!el || !all.length) return;
@@ -7917,10 +7918,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * card came from a re-place that dropped one of them (a block of one colour, a whole surface at
    * the large size, a shrink eating the big ones), so all three are read BEFORE the removal and
    * restored after. */
-  function setScatterBand(elementId, zone, on) {
+  function setScatterBand(elementId, zone, tierIndex, on) {
     const el = elementById.get(elementId);
     if (!el || !isSideZoneName(zone)) return;
-    const grp = 'side';
+    const grp = scatterGroupKey(zone, tierIndex);
     const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
     if (!instances.length || scatterIsBand(elementId, grp) === !!on) return;
     const count   = instances.length;
@@ -7928,7 +7929,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // The SIDE's own palette — banding the side must not reach the top's colours.
     const palette = scatterPaletteOf(elementId, grp);
     const bigs    = scatterBigCountOf(elementId, grp);
-    const tierIndex = instances[0].tierIndex ?? scatterTierForZone(zone);
+    /* The tier comes from the caller now. It used to be read off `instances[0]` with
+       `scatterTierForZone` as the fallback — which was the only way to know, back when every wall
+       instance shared one group. The group IS the tier now, so every instance here is already on
+       it and re-deriving would just be a second opinion. */
     instances.forEach(s => removeSticker(s.id));
     const ids = scatterInstances(el, zone, tierIndex, count, scale, [], palette, !!on);
     /* ⚠️ MARK THE BIG ONES ON THE RETURNED IDS, NOT BY CALLING setScatterBigCount.
@@ -8132,15 +8136,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     clusterInstances(el, seed.tierIndex, seedCenter, count, clusterId, palette, finish);
   }
 
-  // Top vs side are INDEPENDENT scatter sets of the same element (sprinkles on both at once). Group
-  // an instance by surface so a count/toggle touches only that surface's instances.
-  const scatterGroupOf = s => isSideZoneName(s.zone) ? 'side' : 'top';
+  /* Each SURFACE is an independent scatter set of the same element (sprinkles on the top and both
+   * walls at once), so an instance is grouped by the surface it sits on and a count, a size or a
+   * toggle touches only that set.
+   *
+   * ⚠️ A WALL IS PER TIER, AND THIS USED TO SAY ONLY 'side'. Every side instance on the cake
+   * therefore shared one group however many tiers it had, so a second wall could not hold its own
+   * count, size, palette or band — and the card never offered one anyway, because it hard-coded a
+   * single Side surface onto the bottom tier. Sandeep hit the same hole on composed elements first:
+   * *"in admin i configured it for top, side and middle tier. however it does not show on the
+   * middle tier."* The tier is part of WHICH SURFACE THIS IS, so it belongs in the key.
+   *
+   * The top keeps a bare 'top': there is one top surface on a cake, so there is nothing to
+   * distinguish, and keying it by tier would churn every saved design for no gain. */
+  const scatterGroupKey = (zone, tierIndex) =>
+    isSideZoneName(zone) ? `side-${tierIndex ?? 0}` : 'top';
+  const scatterGroupOf = s => scatterGroupKey(s.zone, s.tierIndex);
 
   // Reconcile ONE surface's scatter count: add randomly-seated instances (spaced from that surface's
   // existing ones, matching their mode/scale/colour) or remove its newest — never regenerate, so
   // dragged positions survive (the decor_pattern/group "edit as a set" rule).
-  function setScatterDensity(elementId, zone, target) {
-    const grp = isSideZoneName(zone) ? 'side' : 'top';
+  function setScatterDensity(elementId, zone, tierIndex, target) {
+    const grp = scatterGroupKey(zone, tierIndex);
     const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
     const cur = instances.length;
     if (target === cur || !instances.length) return;
@@ -8183,14 +8200,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Toggle a whole surface's scatter set on/off (the card's surface checkbox — like piping's rim/board,
   // INVARIANTS #3a/#6). ON scatters a default batch on that (tier×surface), sharing the element's
   // existing size/colour; OFF removes just that surface's instances. Surfaces come from allowed_zones.
-  function toggleScatterSurface(elementId, zone, on) {
+  function toggleScatterSurface(elementId, zone, tierIndex, on) {
     const el = elementById.get(elementId);
     if (!el) return;
-    const grp = isSideZoneName(zone) ? 'side' : 'top';
+    const grp = scatterGroupKey(zone, tierIndex);
     const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
     if (on) {
       if (all.some(s => scatterGroupOf(s) === grp)) return;   // already present
-      const tierIndex = scatterTierForZone(zone);
+      /* ⚠️ THE TIER COMES FROM THE SURFACE THAT WAS TICKED. It used to come from
+         `scatterTierForZone`, which answers "side → the bottom tier" — so even once the card
+         offered an upper wall, ticking it would have scattered onto the bottom one. */
       /* ⚠️ THE BASE SIZE, NOT `all[0].scale`. The third and last call site of the first-instance
          trap the comment below already records for colour — and the one I missed when fixing the
          other two. `all` spans BOTH surfaces, so with big ones on the top, `all[0]` could be a big
@@ -8248,8 +8267,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        and `setScatterBigCount` is otherwise unreachable from the page, so the one thing most likely
        to be wrong (which instances turn big, at what size, and whether 0 truly changes nothing)
        could not be looked at. Same argument as `__tapElementById`. */
-    window.__setScatterBig   = (elementId, zone, n) => { setScatterBigCount(elementId, zone, n); return true; };
-    window.__scatterBigCount = (elementId, group) => scatterBigCountOf(elementId, group);
+    window.__setScatterBig   = (elementId, zone, n, tierIndex) => { setScatterBigCount(elementId, zone, tierIndex ?? scatterTierForZone(zone), n); return true; };
+    /* ⚠️ THE HOOKS PREDATE PER-TIER WALL GROUPS, and `scripts/shoot-scatter-rows.mjs` still says
+       'side'. A bare surface name resolves to the group actually on the cake (else the default
+       tier), so existing scripts keep working; a caller that knows the tier passes 'side-1'
+       straight through. Kept here rather than in the real functions: the app always knows which
+       surface it means, and a resolver inside them would let a guess reach a baker's cake. */
+    const devGroup = (elementId, g) => {
+      if (g == null || g === 'top' || /^side-\d+$/.test(g)) return g;
+      if (g === 'side') {
+        const hit = design.stickers.find(x => x.elementId === elementId && x.scatter && isSideZoneName(x.zone));
+        return scatterGroupKey(ZONES.SIDE, hit ? hit.tierIndex : scatterTierForZone(ZONES.SIDE));
+      }
+      return g;
+    };
+    window.__scatterBigCount = (elementId, group) => scatterBigCountOf(elementId, devGroup(elementId, group));
     /* The other three paths a size mix can be destroyed on — resize, density, and ticking a second
        surface. Each calls the SAME function the card does, never a re-implementation: a hook that
        repeated the logic would agree with itself and prove nothing. Without these, "the mix survives
@@ -8258,11 +8290,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        "set the size" could no longer express what the dial does — and a hook whose shape has drifted
        from the control is a hook that proves the wrong thing. Pass null for the old both-surfaces
        write, which is still what seeding a new surface uses. */
-    window.__setScatterSize    = (elementId, zone, v) => { setScatterSize(elementId, zone, v); return true; };
+    window.__setScatterSize    = (elementId, zone, v, tierIndex) => { setScatterSize(elementId, zone, tierIndex ?? scatterTierForZone(zone), v); return true; };
     window.__scatterSizeOf     = (elementId, group) => {
       const el = elementById.get(elementId);
+      const g = devGroup(elementId, group);
       const set = design.stickers.filter(s => s.elementId === elementId && s.scatter
-        && (group == null || scatterGroupOf(s) === group));
+        && (g == null || scatterGroupOf(s) === g));
       return set.length ? scatterBaseScaleOf(set, el) : null;
     };
     /* The colour MODE, through the card's own writers. Same argument as `__setScatterPalette` right
@@ -8272,30 +8305,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        "make it multi" could not express the thing that was wrong — the top recolouring with the
        band. Pass null for every instance of the element, which is what the old behaviour was. */
     window.__setScatterMulti   = (elementId, group, on) => { setScatterMulti(elementId, group, on); return true; };
-    window.__scatterIsMulti    = (elementId, group) => scatterIsMulti(elementId, group ?? null);
-    window.__scatterPaletteOf  = (elementId, group) => scatterPaletteOf(elementId, group ?? null);
+    window.__scatterIsMulti    = (elementId, group) => scatterIsMulti(elementId, devGroup(elementId, group) ?? null);
+    window.__scatterPaletteOf  = (elementId, group) => scatterPaletteOf(elementId, devGroup(elementId, group) ?? null);
     /* The ceiling the Count dial offers, so "400 is too few for a band" is checkable as a number
        rather than by eye. Takes the LIVE size, which is what the card now passes. */
     window.__scatterMaxCount   = (elementId, group) => {
       const el = elementById.get(elementId);
-      const zone = group === 'side' ? ZONES.SIDE : ZONES.TOP_SURFACE;
+      const g = devGroup(elementId, group);
+      const isSide = String(g).startsWith('side');
+      const zone = isSide ? ZONES.SIDE : ZONES.TOP_SURFACE;
       const set = design.stickers.filter(s => s.elementId === elementId && s.scatter
-        && scatterGroupOf(s) === group);
+        && scatterGroupOf(s) === g);
+      const tier = isSide ? Number(String(g).split('-')[1] ?? 0) : scatterTierForZone(zone);
       const scale = set.length ? scatterBaseScaleOf(set, el) : scatterScaleFor(el);
-      return scatterMaxCount(zone, scatterTierForZone(zone), scale,
-        scatterIsBand(elementId, group) ? scatterBandFracFor(el) : null);
+      return scatterMaxCount(zone, tier, scale,
+        scatterIsBand(elementId, g) ? scatterBandFracFor(el) : null);
     };
-    window.__setScatterDensity = (elementId, zone, n) => { setScatterDensity(elementId, zone, n); return true; };
-    window.__scatterSurface    = (elementId, zone, on) => { toggleScatterSurface(elementId, zone, on); return true; };
+    window.__setScatterDensity = (elementId, zone, n, tierIndex) => { setScatterDensity(elementId, zone, tierIndex ?? scatterTierForZone(zone), n); return true; };
+    window.__scatterSurface    = (elementId, zone, on, tierIndex) => { toggleScatterSurface(elementId, zone, tierIndex ?? scatterTierForZone(zone), on); return true; };
     /* The base band, through the card's own function — a Chip is clickable from a script, but the
        probe then depends on finding it by label, and the point of these hooks is to drive the real
        path without the UI in the way. */
-    window.__setScatterBand    = (elementId, zone, on) => { setScatterBand(elementId, zone, on); return true; };
+    window.__setScatterBand    = (elementId, zone, on, tierIndex) => { setScatterBand(elementId, zone, tierIndex ?? scatterTierForZone(zone), on); return true; };
     /* The palette, through the card's own writer. Driving the `<input type="color">` swatches from a
        script means synthesising change events on a native picker, and the rainbow is the whole point
        of the base band — untested, "multi-colour works" would have been a guess. */
     window.__setScatterPalette = (elementId, group, colours) => { setScatterPalette(elementId, group ?? null, colours); return true; };
-    window.__scatterIsBand     = (elementId, group) => scatterIsBand(elementId, group);
+    window.__scatterIsBand     = (elementId, group) => scatterIsBand(elementId, devGroup(elementId, group));
     /* ⚠️ THE TAP PATH FOR ONE INSTANCE, which nothing could reach. Same argument as
        `__tapElementById`: a sprinkle on a spinning 3D wall cannot be aimed by a script, so the whole
        toolbar path — select one, then press its Remove — was unreachable, and that is exactly where
@@ -10032,12 +10068,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const canColor = !!caps?.color;
     const el = elementById.get(card.elementId);
     const scR = scaleRangeOf(el, 0.1, 4, 0.05);   // dial bounds + increment from config
-    const zones = el?.allowed_zones ?? [];
-    // Allowed surfaces (config-driven). Sprinkles can occupy SEVERAL at once, so each is an
-    // INDEPENDENT checkbox (like piping's rim/board) — not a single-select move. INVARIANTS #3a/#6.
-    const surfaces = [];
-    if (zones.includes(ZONES.TOP_SURFACE)) surfaces.push({ group: 'top', zone: ZONES.TOP_SURFACE, label: 'Top', placement: 'top', tierIndex: scatterTierForZone(ZONES.TOP_SURFACE) });
-    if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) surfaces.push({ group: 'side', zone: ZONES.SIDE, label: 'Side', placement: 'side', tierIndex: scatterTierForZone(ZONES.SIDE) });
+    /* Allowed surfaces, from `placementSlots` — the ONE function that turns allowed_zones into the
+       places an element may occupy. Sprinkles can occupy SEVERAL at once, so each is an INDEPENDENT
+       checkbox (like piping's rim/board), not a single-select move. INVARIANTS #3a/#6.
+
+       ⚠️ THIS USED TO BUILD ITS OWN LIST: Top, plus ONE Side pinned to `scatterTierForZone`, which
+       answers "the bottom tier". An element ticked for the middle tier in Manage Elements therefore
+       offered no middle tier here either — the same fault as the composed card, found by the gate
+       written for that one. A wall belongs to a TIER, so there is a wall surface per tier.
+
+       Board and rim slots are filtered out rather than offered: a scatter seats against a top or a
+       wall, and `scatterMaxCount`/`scatterInstances` model those two surfaces only. Dropping them
+       here is a stated limit; it was previously an accident of the list having no branch. */
+    const surfaces = placementSlots(el, design.tiers.length)
+      .filter(slot => slot.zone === ZONES.TOP_SURFACE || isSideZoneName(slot.zone))
+      .map(slot => ({ ...slot,
+        group: scatterGroupKey(slot.zone, slot.tierIndex),
+        label: slotLabel(slot, design.tiers.length > 1) }));
     const onSurfaces = surfaces.filter(su => all.some(s => scatterGroupOf(s) === su.group));
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -10101,10 +10148,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                * it would be claiming a focus that does not exist. */
               return (
                 <div key={su.zone}
-                     onClick={e => { if (e.target.closest('label')) return; toggleScatterSurface(card.elementId, su.zone, !on); }}
+                     onClick={e => { if (e.target.closest('label')) return; toggleScatterSurface(card.elementId, su.zone, su.tierIndex, !on); }}
                      style={s.previewTile}>
                 <PreviewTile checked={on}
-                  onToggle={() => toggleScatterSurface(card.elementId, su.zone, !on)} label={su.label} height={74}
+                  onToggle={() => toggleScatterSurface(card.elementId, su.zone, su.tierIndex, !on)} label={su.label} height={74}
                   locked={false}>
                   {/* mode read by zone (no literal/default) so the preview matches the renderer */}
                   <TopperPreview parts={scatterPreviewParts(el, su.zone, suSize)} placement={su.placement} mode={zoneMode(el?.placement_config, su.zone)} tiers={canvasConfig.tiers} tierIndex={su.tierIndex} />
@@ -10132,14 +10179,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ⚠️ MULTI-COLOUR NEEDED NOTHING BUILT. The Colours row below already derives a palette
                 from the instances and cycles it across them, with no cap on how many you add, so a
                 rainbow mix works here exactly as it does on a full-wall scatter. */}
-            {onSurfaces.some(su => su.group === 'side') && (
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                <span style={s.editPanelLabel}>Side</span>
-                <Chip label="Band at the base" isMobile={isMobile}
-                      active={scatterIsBand(card.elementId, 'side')}
-                      onClick={() => setScatterBand(card.elementId, ZONES.SIDE, !scatterIsBand(card.elementId, 'side'))} />
-              </div>
-            )}
+            {/* ⚠️ THE BAND CHIP MOVED INTO THE PER-SURFACE ROW BELOW. It lived here, asked
+                `scatterIsBand(elementId, 'side')` and wrote through a hard-coded 'side' group —
+                one chip for every wall on the cake. With a wall set per tier that is no longer a
+                thing you can say: banding the bottom tier would have reported and rewritten the
+                second tier's set too. A band is a property of ONE wall's scatter, so the control
+                belongs beside that wall's own Count, Big ones and Size. */}
           </div>
         )}
         {/* ── ONE ROW PER SURFACE ─────────────────────────────────────────────────────────────────
@@ -10195,6 +10240,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           return (
             <div key={`dials-${su.group}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {onSurfaces.length > 1 && <span style={s.editPanelLabel}>{su.label}</span>}
+              {/* Only a wall has a base to band against. */}
+              {isSideZoneName(su.zone) && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+                  <Chip label="Band at the base" isMobile={isMobile}
+                        active={scatterIsBand(card.elementId, su.group)}
+                        onClick={() => setScatterBand(card.elementId, su.zone, su.tierIndex,
+                                                      !scatterIsBand(card.elementId, su.group))} />
+                </div>
+              )}
               <ScrollFadeRow style={s.previewRow} fade="255,255,255">
                 {/* Count is per ACTIVE SURFACE — a denser top than side is a real choice.
                     A count, so integer fmt and rounded on write.
@@ -10210,7 +10264,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <DialCell label="Count"
                   value={c} min={1} max={Math.max(c, maxCount)} step={1}
                   fmt={v => String(Math.round(v))}
-                  onChange={v => setScatterDensity(card.elementId, su.zone, Math.round(v))} />
+                  onChange={v => setScatterDensity(card.elementId, su.zone, su.tierIndex, Math.round(v))} />
                 {/* ── Big ones ──────────────────────────────────────────────────────────────────
                     A few larger sprinkles mixed through the small ones — the pearls among the dots.
 
@@ -10225,7 +10279,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
                   min={0} max={inSet} step={1}
                   fmt={v => String(Math.round(v))}
-                  onChange={v => setScatterBigCount(card.elementId, su.zone, Math.round(v))} />
+                  onChange={v => setScatterBigCount(card.elementId, su.zone, su.tierIndex, Math.round(v))} />
                 {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
                     instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
                     was uniform and would silently WIPE a mix now — one nudge and every pearl becomes a
@@ -10235,7 +10289,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     ⚠️ AND IT IS SCOPED TO THIS SURFACE now — the zone goes in, so dialling the side
                     leaves the top where the baker put it. */}
                 <DialCell label="Size" value={suSize} min={scR.min} max={scR.max} step={scR.step}
-                  onChange={v => setScatterSize(card.elementId, su.zone, v)} />
+                  onChange={v => setScatterSize(card.elementId, su.zone, su.tierIndex, v)} />
               </ScrollFadeRow>
               {/* ── Colours, not Colour — and PER SURFACE ──────────────────────────────────────
                   Sandeep: "i actually wanted color sprinkles only for the band. but on the top also

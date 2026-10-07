@@ -31,10 +31,11 @@
 // It is a smell detector, like check:movable's grep half, and says so rather than claiming proof.
 //
 // ── THE BASELINE ────────────────────────────────────────────────────────────────────────────────
-// The scatter card has the same shape and the same missing tier, but fixing it is not a rename: a
-// scatter set is grouped by SURFACE ('top' / 'side'), so per-tier slots change what a group means
-// and how a set is re-seated. Listed with the date — visible debt that only shrinks, never a silent
-// waiver — the way check:element-size lists its two.
+// Empty, and it should stay that way. The scatter card was listed here for a day: it had the same
+// hand-built wall surface and the same missing tier, and fixing it meant changing what a scatter
+// GROUP is (from 'side' to 'side-<tier>') rather than renaming a call. Sandeep: *"pls fix it for
+// scatter as well pls."* Done, so the list is empty — which is the only end state a baseline should
+// have.
 //
 // Run via `npm run check:placement-slots` (in `npm run verify`).
 
@@ -47,11 +48,9 @@ const SRC = join(ROOT, 'src');
 // placement.js IS the definition; it is the only file allowed to build a slot.
 const OWNER = 'designer/placement.js';
 
-/* Baselined 2026-10-07 — the scatter card's two surfaces. Each entry is `file:nearest-identifier`,
-   not a line number, which would rot on the next edit above it. */
-const BASELINE = new Set([
-  'designer/CakeDesigner.jsx:renderScatterBody',
-]);
+/* Entries are `file:nearest-identifier`, never a line number, which would rot on the next edit
+   above it. Empty since 2026-10-07. */
+const BASELINE = new Set([]);
 
 function walk(dir, out = []) {
   for (const name of readdirSync(dir)) {
