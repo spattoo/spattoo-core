@@ -73,9 +73,25 @@ export default function FondantBalloon({
   useEffect(() => () => grain?.dispose(), [grain]);
 
   const scale = (p.scale ?? 1) * (cake?.radius ?? 1) * 0.55;
+  // How much pick is showing: lid to the balloon's base, in world units.
+  const stickLen = Math.max(0, place.position[1] - place.footY);
+  const stickR   = ((p.stickWidth ?? 0.012) * (cake?.radius ?? 1)) / scale;
 
   return (
     <group position={place.position} rotation={[0, p.theta ?? 0, place.tilt]} scale={scale}>
+      {/* ⚠️ THE PICK, DRAWN HERE. The element-stick row property is for STICKERS — it is read off
+          `sticker.stick` in that render path, which a procedural decoration never enters. A balloon
+          without this floats in mid-air, which is exactly what shipped before Sandeep saw it.
+
+          Inside the tilted group on purpose: a leaning balloon leans ON its pick, so the rod turns
+          with it. Its length is the float, so "how high it rides" and "how much stick is showing"
+          cannot disagree — divided by the group's scale because the group is already scaled. */}
+      {p.stick !== false && stickLen > 1e-3 && (
+        <mesh position={[0, -stickLen / (2 * scale), 0]} castShadow>
+          <cylinderGeometry args={[stickR, stickR, stickLen / scale, 10]} />
+          <meshStandardMaterial color={p.stickColor ?? '#D8C9A6'} roughness={0.6} metalness={0} />
+        </mesh>
+      )}
       <mesh geometry={geo} castShadow receiveShadow>
         <meshStandardMaterial
           color={albedoForLight(p.color ?? '#F4EFE6', BALLOON_REFERENCE_LIGHT, { rolloff: BALLOON_ROLLOFF })}

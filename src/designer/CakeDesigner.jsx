@@ -9091,6 +9091,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       name: (t.clouds.length > 1 ? `Cloud ${n + 1}` : 'Cloud'), thumb: null,
     });
   }));
+  // One card per balloon, same rule as the clouds and rainbows: each carries its own colour, size
+  // and place, so one shared card could only ever edit one of them and would be the wrong one.
+  design.tiers.forEach((t, tierIndex) => (t.balloons ?? []).forEach((ba, n) => {
+    decorationCards.unshift({
+      key: `balloon-${ba.id}`, type: 'balloon', id: ba.id, tierIndex,
+      name: (t.balloons.length > 1 ? `Balloon ${n + 1}` : 'Balloon'), thumb: null,
+    });
+  }));
   design.tiers.forEach((t, tierIndex) => (t.rainbows ?? []).forEach((rb, n) => {
     decorationCards.unshift({
       key: `rainbow-${rb.id}`, type: 'rainbow', id: rb.id, tierIndex,
@@ -9366,6 +9374,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
       : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
+      : card.type === 'balloon'       ? { type: 'balloon', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'topper'        ? { type: 'topper', id: card.id }
       : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
@@ -12612,6 +12621,74 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //
   // And no position control: where it stands is dragged, which is the whole reason the handle
   // exists.
+  /* ── The balloon's card ───────────────────────────────────────────────────────────────────────
+   * Sandeep: *"balloon element does not have a popup card?"* It did not — the balloon placed,
+   * selected and dragged, and there was nowhere to change its colour or its size. A decoration you
+   * can put on a cake and cannot then edit is half a decoration, and the gap is invisible from the
+   * code: nothing errors, the card list simply has no entry.
+   *
+   * Dials in one scrolling row, not stacked sliders — the request Sandeep has made four times, and
+   * which the cloud and rainbow cards missed because earlier sweeps only covered PROCEDURAL cards.
+   * A balloon is not one of those either, so it would have missed it again. */
+  function renderBalloonBody(card) {
+    const ba = design.tiers[card.tierIndex]?.balloons?.find(b => b.id === card.id);
+    if (!ba) return null;
+    const set = changes => updateTierBalloons(card.tierIndex, cur =>
+      cur.map(b => (b.id === ba.id ? { ...b, ...changes } : b)));
+    const stickOn = ba.stick !== false;
+
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Drag it on the cake to move it round.
+        </div>
+
+        {/* THE colour control, not a row of swatches (root CLAUDE.md rule 1). A balloon's colour is
+            the whole point of it — the reference is three on one cake — which is why its row carries
+            `color: true` where the cloud's does not. */}
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 10 }}>
+          <ColorWheel color={ba.color ?? '#F4EFE6'} onChange={c => set({ color: c })}
+            cakeColors={[...new Set(collectElementColors(design))]
+              .filter(c => c.toLowerCase() !== (ba.color ?? '#F4EFE6').toLowerCase())} />
+        </div>
+
+        {/* ⚠️ THE PICK IS ON BY DEFAULT AND SAYS SO HERE. Sandeep: "lets by default add stick (by
+            default is should be ticked). and stick height adjustable." A fondant balloon without
+            one is not a thing a baker makes, so the switch starts on — and turning it off is a
+            deliberate act, for a balloon sitting ON something rather than above it. */}
+        <label style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer',
+                        marginTop: 12, justifyContent: 'center' }}>
+          <button type="button" role="switch" aria-checked={stickOn}
+            onClick={() => set({ stick: !stickOn })}
+            style={{ width: 38, height: 22, borderRadius: 11, cursor: 'pointer', padding: 0,
+                     border: '1.5px solid #999999', background: stickOn ? INK : '#fff',
+                     position: 'relative' }}>
+            <span style={{ position: 'absolute', top: 2, left: stickOn ? 18 : 2, width: 15, height: 15,
+                           borderRadius: '50%', background: stickOn ? '#fff' : INK, transition: 'left 0.15s' }} />
+          </button>
+          <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>On a pick</span>
+        </label>
+
+        {/* ⚠️ "How high" IS the stick length, which is why there is one dial and not two. The pick
+            runs from the lid to the balloon's base, so a second number could only ever disagree
+            with the first. Hidden when the pick is off, because then it measures nothing. */}
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+          {[
+            ['Size', 'scale', 0.5, 2.2, 0.05, v => v.toFixed(2)],
+            ...(stickOn ? [['How high', 'float', 0.15, 2.0, 0.05, v => v.toFixed(2)]] : []),
+            ['Lean', 'tilt', -0.4, 0.4, 0.02, v => v.toFixed(2)],
+            ['Width', 'width', 0.4, 1.0, 0.02, v => v.toFixed(2)],
+          ].map(([label, key, min, max, step, fmt]) => (
+            <DialCell key={key} label={label}
+              value={ba[key] ?? BALLOON_PLACEMENT_DEFAULTS[key] ?? BALLOON_DEFAULTS[key]}
+              min={min} max={max} step={step} fmt={fmt}
+              onChange={v => set({ [key]: v })} />
+          ))}
+        </ScrollFadeRow>
+      </>
+    );
+  }
+
   function renderRainbowBody(card) {
     const rb = design.tiers[card.tierIndex]?.rainbows?.find(r => r.id === card.id);
     /* What the Springs-at dial may offer, or null when it would be dead. The rule lives in
@@ -15682,6 +15759,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
                            : card.type === 'cloud' ? renderCloudBody(card)
+                           : card.type === 'balloon' ? renderBalloonBody(card)
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()

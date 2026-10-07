@@ -145,7 +145,20 @@ export const BALLOON_PLACEMENT_DEFAULTS = Object.freeze({
                     // first one dead in the middle leaves nowhere for the second to go but outward
   tilt: 0.1,        // radians. Balloons on picks lean; a row of upright ones reads as a fence
   scale: 1,
-  float: 0.75,      // × tier radius, how far above the lid the balloon's base rides on its pick
+  /* ── The pick ─────────────────────────────────────────────────────────────────────────────────
+   * ⚠️ THE BALLOON CARRIES ITS OWN, AND I SAID TWICE THAT IT WOULD NOT. The element-stick row
+   * property (`elementStick.js` → `stickFor`) is real and is the right answer — for a STICKER. It
+   * is read in the sticker render path off `sticker.stick`, and a procedural decoration never goes
+   * through it: a balloon lives in `tier.balloons[]` and is drawn by FondantBalloon, which that
+   * path never sees. So "the pick comes from the row" was wrong about this element, and a balloon
+   * with no stick is a balloon floating in mid-air, which is what shipped.
+   *
+   * `float` is the stick: how far the base rides above the lid IS how much pick is showing, so one
+   * number says it and there is nothing for two to disagree about. */
+  stick: true,      // on by default — a fondant balloon without one is not a thing a baker makes
+  float: 0.75,      // × tier radius: how high it rides, which is the pick's visible length
+  stickWidth: 0.012, // × tier radius
+  stickColor: '#D8C9A6',
 });
 
 const TAU = Math.PI * 2;
