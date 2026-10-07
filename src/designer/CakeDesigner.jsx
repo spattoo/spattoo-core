@@ -62,6 +62,7 @@ import { garnishDragTo, garnishPlacementOptions, garnishSeat, fanSpread } from '
 import Segmented from '../shared/Segmented.jsx';
 import { RAINBOW_DEFAULTS, rainbowDragTo, rainbowBands, springRange } from './geometry/rainbow.js';
 import { CLOUD_DEFAULTS, cloudDragTo } from './geometry/cloud.js';
+import { BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAULTS, balloonDragTo } from './geometry/balloon.js';
 import { elementStick, STICK_SCALE } from './geometry/elementStick.js';
 import { elementWire, WIRE_BEND, WIRE_SWEEP, WIRE_LENGTH, WIRE_WAVES, WIRE_TWIST, WIRE_ANGLE } from './geometry/elementWire.js';
 import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape } from './decorations/RainbowArrangements.jsx';
@@ -2739,7 +2740,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -6198,6 +6199,46 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     selectExclusive({ type: 'cloud', tierIndex: i, id });
   }
 
+  /* ── A fondant balloon on a pick ──────────────────────────────────────────────────────────────
+   * Same shape as addCloud, because it is the same kind of thing: a procedural element the admin
+   * row carries tuned numbers for, placed on the top tier and selected so its card opens.
+   *
+   * ⚠️ IT ADDS NO STICK. The pick is authored on the element's own Manage Elements row, with its
+   * bury depth, and placing one here would be a second answer to how long it is. */
+  function addBalloon(el) {
+    const i = Math.max(0, design.tiers.length - 1);
+    const tuned = el?.placement_config?.balloon ?? {};
+    const id = `ba-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    updateTierBalloons(i, cur => [
+      ...cur,
+      { ...BALLOON_DEFAULTS, ...BALLOON_PLACEMENT_DEFAULTS, ...tuned, id,
+        // The catalogue element, so the X-Ray can find its guide — see addCloud and addRainbow.
+        elementId: el?.id ?? null,
+        elementName: el?.name ?? null,
+        color: el?.default_color || '#F4EFE6',
+        /* Each one a step further round and a touch taller than the last, so a second balloon is
+           visibly a second balloon rather than a redraw of the first — and three of them read as
+           the cluster the reference is. Taken from the LIVE list inside the updater, or two quick
+           presses both see the same list and the second lands exactly on the first. */
+        theta: cur.length * 1.15,
+        float: (BALLOON_PLACEMENT_DEFAULTS.float ?? 0.75) + cur.length * 0.22,
+        tilt: (cur.length % 2 ? -1 : 1) * (0.06 + cur.length * 0.03) },
+    ]);
+    selectExclusive({ type: 'balloon', tierIndex: i, id });
+  }
+
+  function removeBalloon(tierIndex, id) {
+    updateTierBalloons(tierIndex, cur => cur.filter(b => b.id !== id));
+    clearAllSelections();
+  }
+
+  // The canvas resolves the pointer against the lid and hands back the patch already in the
+  // balloon's own words, exactly as it does for a cloud — re-deriving where the lid is here would
+  // be a second definition of it.
+  function handleBalloonMove(tierIndex, id, patch) {
+    updateTierBalloons(tierIndex, cur => cur.map(b => (b.id === id ? { ...b, ...patch } : b)));
+  }
+
   function removeCloud(tierIndex, id) {
     updateTierClouds(tierIndex, cur => cur.filter(c => c.id !== id));
     clearAllSelections();
@@ -6587,6 +6628,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     letter_blocks: addNameBlocks,
     rainbow: addRainbow,
     cloud: addCloud,
+    balloon: addBalloon,
     writing: addWritingFromRow,
     // `number_topper`, never `age`. This key is DATA — it sits in placement_config on the row and an
     // admin reads it on screen, so it is not the internal name it looks like. The same reasoning
@@ -14480,6 +14522,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               isPipingMovable={isPipingMovable}
               selectedGenerated={
                 selectedEl?.type === 'cloud' || selectedEl?.type === 'rainbow'
+                  || selectedEl?.type === 'balloon'
                   ? { kind: selectedEl.type, id: selectedEl.id }
                   : null}
               /* Clicking the cloud itself selects it — the card opens and its handle appears. Until
@@ -14492,8 +14535,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onRainbowClick={(tier, id) => {
                 selectExclusive({ type: 'rainbow', tierIndex: tier, id });
               }}
+              onBalloonClick={(tier, id) => {
+                selectExclusive({ type: 'balloon', tierIndex: tier, id });
+              }}
               onCloudMove={handleCloudMove}
               onRainbowMove={handleRainbowMove}
+              onBalloonMove={handleBalloonMove}
               grassMode={selectedEl?.type === 'grass'}
               grassSelected={grassSelected}
               onGrassMove={handleGrassMove}

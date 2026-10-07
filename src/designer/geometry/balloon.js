@@ -125,3 +125,56 @@ export function buildBalloon(opts = {}) {
   g.computeVertexNormals();
   return g;
 }
+
+/* ── Where a balloon sits on the cake ────────────────────────────────────────────────────────────
+ *
+ * ⚠️ IT STANDS ON THE LID, NOT AGAINST THE WALL, and that is the whole reason its freedoms are
+ * simpler than a cloud's. A balloon is pushed into the top on a pick; there is nowhere to go UP
+ * because the pick's own bury decides that, and it is authored on the element row (elementStick.js)
+ * rather than here. So the two numbers that move it are the two the lid has: round, and out.
+ *
+ *   `theta`     round the cake, in radians
+ *   `standoff`  out from the centre, × the tier radius. 0 is the middle, 1 is the rim.
+ *
+ * `tilt` and `scale` are LOOK, not position, and the contract's law 3 is what keeps them out of a
+ * drag: a drag that quietly changed the lean would be a decoration that reshapes itself when moved.
+ */
+export const BALLOON_PLACEMENT_DEFAULTS = Object.freeze({
+  theta: 0,
+  standoff: 0.42,   // off-centre by default: three balloons in a cluster is the reference, and a
+                    // first one dead in the middle leaves nowhere for the second to go but outward
+  tilt: 0.1,        // radians. Balloons on picks lean; a row of upright ones reads as a fence
+  scale: 1,
+  float: 0.75,      // × tier radius, how far above the lid the balloon's base rides on its pick
+});
+
+const TAU = Math.PI * 2;
+const clamp01 = (n) => Math.max(0, Math.min(1, n));
+const wrapAngle = (a) => ((a % TAU) + TAU) % TAU;
+
+/** Where the balloon's base sits, in cake space, plus how it leans. */
+export function balloonPlacement(params = {}, cake = {}) {
+  const p = { ...BALLOON_PLACEMENT_DEFAULTS, ...params };
+  const R = cake.radius ?? 1;
+  const out = clamp01(p.standoff) * R;
+  const th = p.theta ?? 0;
+  return {
+    position: [Math.sin(th) * out, (cake.topY ?? 0) + (p.float ?? 0) * R, Math.cos(th) * out],
+    tilt: p.tilt ?? 0,
+    scale: p.scale ?? 1,
+    /* The pick's foot, so a caller drawing the stand-in rod — or the X-Ray working out what it is
+       pushed into — does not re-derive where the lid is. One place says where it is (law 1). */
+    footY: cake.topY ?? 0,
+  };
+}
+
+/** Law 5's one half: where the grab handle is, in the surface's own (u, v). */
+export function balloonHandleAt(params = {}, cake = {}) {
+  const p = { ...BALLOON_PLACEMENT_DEFAULTS, ...params };
+  return { surface: 'top', u: wrapAngle(p.theta ?? 0) / TAU, v: clamp01(p.standoff ?? 0) };
+}
+
+/** Law 5's other half, and an exact inverse of it — which the contract checks rather than trusts. */
+export function balloonDragTo(params = {}, cake = {}, u = 0, v = 0) {
+  return { theta: wrapAngle(u * TAU), standoff: clamp01(v) };
+}

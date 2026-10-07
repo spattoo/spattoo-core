@@ -202,6 +202,14 @@ const design = {
               ? [{ id: 'cl1', surface: 'top', u: 0.5, v: 0.3, scale: 1.6,
                    color: _q.get('cloudcolor') || '#FFFFFF' }]
               : [],
+            /* ⚠️ `?balloon=1` — so the balloon's reference light can be MEASURED rather than borrowed.
+             * It floats above the lid on a pick, which is not the light a cloud lying on the cake
+             * gets, and INVARIANTS #16 is explicit that every surface carries its own number.
+             * Measured by `SURFACE=balloon node scripts/measure-surface-colour.mjs`. */
+            balloons: _q.has('balloon')
+              ? [{ id: 'ba1', standoff: 0.2, theta: 0, tilt: 0, scale: 1.4,
+                   color: _q.get('ballooncolor') || '#FFFFFF' }]
+              : [],
             rainbows: _q.has('rainbow')
               ? [{ id: 'rb1', u: 0.5, scale: 1.1,
                    colors: Array(6).fill(_q.get('rainbowcolor') || '#F5A3B8') }]

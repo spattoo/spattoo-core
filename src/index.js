@@ -163,7 +163,8 @@ export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad,
          brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
          buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS,
          BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
-export { balloonProfile, buildBalloon, BALLOON_DEFAULTS } from './designer/geometry/balloon.js';
+export { balloonProfile, buildBalloon, BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAULTS,
+         balloonPlacement, balloonHandleAt, balloonDragTo } from './designer/geometry/balloon.js';
 export { waferPanel, buildWaferSkirt, WAFER_DEFAULTS } from './designer/geometry/waferPaper.js';
 export { WAFER_PAPER_MATERIAL, waferFibreTexture } from './designer/geometry/waferPaperMaterial.js';
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripColorAt, paintDripColors, buildDripFlood, DRIP_SPLIT_DEFAULTS } from './designer/geometry/chocolateDrip.js';

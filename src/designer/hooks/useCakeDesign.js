@@ -157,6 +157,7 @@ export function toCanvasConfig(design) {
         // this config, not the design.
         rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
         clouds:       t.clouds ?? [],            // fondant clouds sitting on/against THIS tier
+        balloons:     t.balloons ?? [],          // fondant balloons on picks above THIS tier
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
@@ -718,6 +719,21 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) =>
         i === index ? { ...t, clouds: typeof changes === 'function' ? changes(t.clouds ?? []) : changes } : t),
+    }));
+  }
+
+  // ── Fondant balloons ────────────────────────────────────────────────────────
+  // Same shape as the clouds above, and for the same reason: a LIST, on the TIER. Every balloon
+  // measurement is a ratio of the tier it belongs to, and several go up at once — the reference is
+  // three of them at different heights, which is the normal case rather than the exception.
+  //
+  // Their own field rather than a slot on the cloud: a balloon stands OFF the cake on a pick while
+  // a cloud lies against it, so they share no position, no surface and no freedoms.
+  function updateTierBalloons(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, balloons: typeof changes === 'function' ? changes(t.balloons ?? []) : changes } : t),
     }));
   }
 
@@ -1735,6 +1751,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierRainbows, updateTierRainbows, updateTierClouds,
+    updateTierBalloons,
     setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,

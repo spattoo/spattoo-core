@@ -132,3 +132,65 @@ describe('the collar', () => {
     expect(p.filter(v => Math.abs(v.y) < 1e-6).length).toBeGreaterThanOrEqual(2);
   });
 });
+
+import { movableContract } from './movableContract.js';
+import { BALLOON_PLACEMENT_DEFAULTS, balloonPlacement, balloonHandleAt, balloonDragTo } from './balloon.js';
+
+const CAKE = { radius: 1.2, topY: 1.5, boardY: 0.1 };
+
+/* ⚠️ REGISTERED, AND THE GATE CHECKS THE REGISTRATION RATHER THAN THE BEHAVIOUR. `check:movable`
+ * reads PROCEDURAL_TOOLS and fails the build if a movable tool has none — and the suite below is
+ * what makes the registration worth having. Laws 2, 3 and 5 are what it can ask; 1 and 4 are claims
+ * about the renderer and are mine to keep. */
+movableContract('balloon', {
+  positionKeys: ['theta', 'standoff'],
+  cases: [{
+    label: 'on the cake top, on its pick',
+    params: { ...BALLOON_PLACEMENT_DEFAULTS },
+    cake: CAKE,
+    freedoms: [
+      /* ⚠️ NO 1 IN THE ROUND TARGETS. On a circle u = 0 and u = 1 are the SAME PLACE, so offering
+         both asks the drag to reach one spot twice — and the contract rightly reported seven
+         targets collapsing to six, and a round trip that answered 0 for 1. The geometry was
+         correct and the test was asking a nonsense question. */
+      { label: 'round the cake', drag: (p, c, t) => balloonDragTo(p, c, t, 0.42),
+        targets: [0, 0.125, 0.25, 0.5, 0.75, 0.9] },
+      { label: 'out to the rim', drag: (p, c, t) => balloonDragTo(p, c, 0.3, t),
+        targets: [0, 0.25, 0.5, 0.75, 1] },
+    ],
+  }],
+  // The balloon's own base, which is the point a drag is supposed to move and nothing else.
+  pointsOf: (p, c) => {
+    const { position } = balloonPlacement(p, c);
+    return [{ x: position[0], y: position[1], z: position[2] }];
+  },
+  /* Law 5: the handle and the drag are exact inverses — asked, not assumed. The suite CALLS this,
+     so it is a function that asserts; supplying the two functions as an object (which reads like
+     configuration) throws "roundTrip is not a function" and the law silently never runs. */
+  roundTrip: (moved, cake, target, f) => {
+    const back = balloonHandleAt(moved, cake);
+    expect(f.label === 'out to the rim' ? back.v : back.u).toBeCloseTo(target, 6);
+  },
+});
+
+describe('where it sits', () => {
+  it('rides above the lid, never inside it', () => {
+    const { position, footY } = balloonPlacement({}, CAKE);
+    expect(position[1]).toBeGreaterThan(CAKE.topY);
+    expect(footY).toBe(CAKE.topY);
+  });
+
+  it('puts standoff 0 in the middle and 1 at the rim', () => {
+    const mid = balloonPlacement({ standoff: 0, theta: 0.7 }, CAKE).position;
+    expect(Math.hypot(mid[0], mid[2])).toBeCloseTo(0, 6);
+    const rim = balloonPlacement({ standoff: 1, theta: 0.7 }, CAKE).position;
+    expect(Math.hypot(rim[0], rim[2])).toBeCloseTo(CAKE.radius, 5);
+  });
+
+  /* ⚠️ A DRAG MOVES IT AND NOTHING ELSE (law 3). `tilt` and `scale` are LOOK — a drag that nudged
+     the lean would be a decoration that reshapes itself when you move it. */
+  it('writes only position keys when dragged', () => {
+    const patch = balloonDragTo({ ...BALLOON_PLACEMENT_DEFAULTS }, CAKE, 0.3, 0.8);
+    expect(Object.keys(patch).sort()).toEqual(['standoff', 'theta']);
+  });
+});

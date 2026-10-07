@@ -46,7 +46,9 @@ import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
   from '../geometry/rainbow.js';
 import FondantCloud from './FondantCloud.jsx';
+import FondantBalloon from './FondantBalloon.jsx';
 import { cloudHandleAt, cloudDragTo, cloudPlacement } from '../geometry/cloud.js';
+import { balloonDragTo, balloonPlacement } from '../geometry/balloon.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
@@ -2772,7 +2774,7 @@ function CakeScene({
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
   // component cannot pass on what it was never given — deleting these from the signature while
   // leaving them in the edit literal is what threw "onCloudClick is not defined".
-  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3013,7 +3015,8 @@ function CakeScene({
           // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
-          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
+          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick,
         }}
       />
       </group>
@@ -3241,7 +3244,7 @@ function CakeContent({ config, scene, edit = null }) {
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit, onBrushStrokeClick,
-    onCloudMove, onRainbowMove,
+    onCloudMove, onRainbowMove, onBalloonClick: onBalloonClickEdit, onBalloonMove,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -3483,6 +3486,51 @@ function CakeContent({ config, scene, edit = null }) {
               <FondantCloud
                 key={cl.id}
                 params={cl}
+                cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
+              />
+            </DraggableGenerated>
+          ))}
+          {/* Fondant balloons belonging to THIS tier — on picks, standing OFF the lid rather than
+              lying against it, which is why their only freedoms are round and out. The height they
+              float at is the pick's, authored on the element row; nothing here invents a stick. */}
+          {(tier.balloons ?? []).map(ba => (
+            <DraggableGenerated
+              key={`ba-hit-${ba.id}`}
+              onClick={() => onBalloonClickEdit?.(i, ba.id)}
+              onOrbitEnable={orbitEnableFor(`__balloon__${ba.id}`)}
+              onMove={patch => onBalloonMove?.(i, ba.id, patch)}
+              /* The lid, and only the lid. A balloon is pushed into the TOP: there is no wall case
+                 to resolve and no board case, so this is the plane the pick goes through — read at
+                 the tier's own lid height, never re-derived. */
+              resolve={ray => {
+                const planeY = tier.baseY + tier.height;
+                const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
+                if (!hit) return null;
+                const against = tier.radius || 1;
+                const u = Math.atan2(hit.x, hit.z) / (Math.PI * 2);
+                const v = Math.min(1, Math.hypot(hit.x, hit.z) / against);
+                return balloonDragTo(ba, { radius: tier.radius }, u, v);
+              }}>
+              {selectedGenerated?.kind === 'balloon' && selectedGenerated.id === ba.id && (() => {
+                const pl = balloonPlacement(ba, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
+                // One point and its own size: a balloon is a single body, so the box is its bounds
+                // about that point rather than a hull over lobes.
+                const r = (ba.width ?? 0.62) * (tier.radius || 1) * 0.55 * (ba.scale ?? 1) * 0.5;
+                const h = (tier.radius || 1) * 0.55 * (ba.scale ?? 1);
+                const [x, y, z] = pl.position;
+                const b = generatedBounds([
+                  { x: x - r, y, z: z - r },
+                  { x: x + r, y: y + h, z: z + r },
+                ], 0.03);
+                return b && (
+                  <group position={b.centre}>
+                    <SelectionBox width={b.width} height={b.height} depth={b.depth} />
+                  </group>
+                );
+              })()}
+              <FondantBalloon
+                key={ba.id}
+                params={ba}
                 cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
               />
             </DraggableGenerated>
@@ -4152,7 +4200,7 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
-  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
