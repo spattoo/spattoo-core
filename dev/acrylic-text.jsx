@@ -103,15 +103,18 @@ function App() {
     ...(q.has('legs')   ? { legs:   Number(q.get('legs')) }   : {}),
     ...(q.has('leglen') ? { legLen: Number(q.get('leglen')) } : {}),
     ...(q.has('bury')   ? { bury:   Number(q.get('bury')) }   : {}),
-    color: '#ffffff', finish: 'cream',
+    /* `?color=` so a FONDANT letter can be judged. The default white-on-white is the honest starting
+       state but tells you nothing about the paste's grain or how it sits in the light. */
+    color: q.get('color') ?? '#ffffff', finish: 'cream',
   });
   const set = (c) => setW(p => ({ ...p, ...c }));
-  const Renderer = w.style === 'acrylic' ? AcrylicWriting : CreamWriting;
+  /* Both CUT Looks go to the cut renderer — the canvas dispatches the same way. */
+  const Renderer = w.style === 'acrylic' || w.style === 'fondant' ? AcrylicWriting : CreamWriting;
 
   return (
     <div style={{ height: '100%', display: 'flex' }}>
       <div style={{ width: 290, padding: 18, background: '#fff', borderRight: '1.5px solid #E8E4DC', overflowY: 'auto' }}>
-        <h1 style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Texts — acrylic Look</h1>
+        <h1 style={{ fontSize: 15, fontWeight: 800, marginBottom: 4 }}>Texts — the cut Looks</h1>
         <p style={{ fontSize: 11.5, color: '#6E8577', lineHeight: 1.5, marginBottom: 14 }}>
           The same message object in two materials. Switching Look keeps the text, the surface and
           the place — only what it is made of changes. <b>Drag it</b> to move it: height and angle
@@ -121,9 +124,23 @@ function App() {
                style={{ width: '100%', padding: '8px 10px', fontSize: 14, fontFamily: 'inherit',
                         border: '1.5px solid #D8E0DA', borderRadius: 8, marginBottom: 12 }} />
         <div style={row}><span style={lab}>Look</span>
-          {seg([['cream', 'Piped cream'], ['acrylic', 'Acrylic']], w.style,
-               k => set({ style: k, font: k === 'acrylic' ? 'great_vibes' : 'ems_allure',
-                          tracking: k === 'acrylic' ? faceFit('great_vibes') : 0 }))}</div>
+          {/* ⚠️ FONDANT IS HERE BECAUSE IT IS THE SAME OBJECT. This page mounts the real
+              AcrylicWriting, so the one thing it can show that nothing else can is the SAME message
+              switching material with its surface and place untouched — which is the claim the Look
+              toggle makes. With only two Looks it could not show the third contradicting it. */}
+          {seg([['cream', 'Piped cream'], ['acrylic', 'Acrylic'], ['fondant', 'Fondant']], w.style,
+               k => set({ style: k, font: k === 'cream' ? 'ems_allure' : 'great_vibes',
+                          tracking: k === 'cream' ? 0 : faceFit('great_vibes') }))}</div>
+        {w.style === 'fondant' && w.surface === 'top' && (
+          <div style={row}><span style={lab}>On top</span>
+            {seg([['hug', 'Hug'], ['stand', 'Stand']], w.topPose ?? 'hug', k => set({ topPose: k }))}</div>
+        )}
+        {w.style === 'fondant' && (
+          <div style={row}><span style={lab}>Colour</span>
+            <input type="color" value={w.color ?? '#F4EFE6'} onChange={e => set({ color: e.target.value })}
+                   style={{ width: 54, height: 28, border: '1.5px solid #D8E0DA', borderRadius: 7, background: '#fff' }} />
+          </div>
+        )}
         <div style={row}><span style={lab}>Surface</span>
           {seg([['top', 'Top'], ['side', 'Side'], ['board', 'Board']], w.surface, k => set({ surface: k }))}</div>
         {w.style === 'acrylic' && (
@@ -159,7 +176,14 @@ function App() {
             {Math.round(w.fit * 100)}%</span></div>
       </div>
       <div style={{ flex: 1 }}>
-        <Canvas shadows camera={{ position: [0, 2.9, 8.4], fov: 32 }}>
+        {/* ⚠️ `preserveDrawingBuffer` SO THE PAGE CAN BE MEASURED. Without it the WebGL buffer is
+            cleared after compositing, so reading the canvas back through `drawImage` returns a blank
+            frame — for every input, including a control, which reads as "nothing changed" rather
+            than as a broken probe. That cost a round on the CAPITAL LETTERS fix, and
+            `measure-fondant-letters.mjs` needs real pixels to solve a reference light at all. The
+            cost is one extra buffer on a dev harness. */}
+        <Canvas shadows camera={{ position: [0, 2.9, 8.4], fov: 32 }}
+                gl={{ preserveDrawingBuffer: true }}>
           <color attach="background" args={['#EDEAE3']} />
           <SceneLights shadows />
           <SceneEnv />

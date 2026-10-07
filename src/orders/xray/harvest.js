@@ -246,8 +246,14 @@ export function harvestPlaceables(design) {
     `age-${a?.id ?? idx}`,
   ));
 
+  /* ⚠️ THE TOOL FOLLOWS THE LOOK. This said 'cream pen' for every message, which was already wrong
+     for an acrylic topper — nobody pipes perspex — and became wronger with fondant: the sheet would
+     have told a baker to reach for a piping bag to make a cut-out. The tool is what the baker picks
+     up, so it has to name the material the message is actually made of. */
+  const WRITING_TOOL = { acrylic: 'acrylic topper', fondant: 'fondant cutter' };
   writingList(design).forEach((w, idx) => {
-    if (w?.text) push(finishing, `Message — "${writingText(w)}"`, 'cream pen', `writing-${w.id ?? idx}`);
+    if (w?.text) push(finishing, `Message — "${writingText(w)}"`,
+                      WRITING_TOOL[w?.style] ?? 'cream pen', `writing-${w.id ?? idx}`);
   });
 
   // ── One line per JOB, not per stroke ────────────────────────────────────────────────────────

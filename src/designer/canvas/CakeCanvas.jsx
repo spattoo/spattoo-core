@@ -3508,7 +3508,12 @@ function CakeContent({ config, scene, edit = null }) {
         /* ⚠️ Dispatched on the message's own `style` KEY, never on its surface or its font. Cream and
            acrylic are the same message in two materials — same text, same placement, same drag — so
            switching Look keeps what was typed and where it was put. */
-        const Renderer = w.style === 'acrylic' ? AcrylicWriting : CreamWriting;
+        /* ⚠️ EVERY CUT LOOK GOES TO THE CUT RENDERER. Acrylic and fondant are one word cut from one
+           sheet in two materials (see AcrylicWord's `medium`); only piped cream is laid by a nozzle
+           and wants its own builder. A `=== 'acrylic'` test here would have sent fondant quietly to
+           CreamWriting, which would have rendered it — as piped icing, convincingly, in the wrong
+           material. */
+        const Renderer = w.style === 'acrylic' || w.style === 'fondant' ? AcrylicWriting : CreamWriting;
         return (
         <Renderer
           key={w.id}

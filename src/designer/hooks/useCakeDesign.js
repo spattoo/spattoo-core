@@ -225,8 +225,12 @@ const DEFAULT_WRITING = {
   /* The material this message is made of. 'cream' is the default and the ONLY value every existing
      saved design has, so an absent key must keep meaning cream — a message that silently became
      acrylic on load would rewrite cakes people had already ordered. */
-  style: 'cream',            // 'cream' | 'acrylic'
+  style: 'cream',            // 'cream' | 'acrylic' | 'fondant'  (see WRITING_LOOKS in CakeDesigner)
   acrylicFinish: 'gold',     // acrylic only: a key into TOPPER_FINISHES, not a colour
+  /* Fondant only, and only on the TOP, where both readings are things bakers make: 'hug' lies on the
+     icing, 'stand' goes up on prongs. Absent means hug. Acrylic has no equivalent — a perspex sheet
+     lying flat on a cake top is not a product — so this is not a shared pose field. */
+  topPose: 'hug',
   text: '', font: 'ems_allure', color: '#ffffff',
   thickness: 0.03, fit: WRITING_FIT.cream, softness: 0.7,
   curve: 0, lineSpacing: 1.4,

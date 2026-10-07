@@ -47,7 +47,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit } from './constants.js';
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITING_COLOR } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } from './geometry/surface.js';
@@ -502,12 +502,41 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
  * and it was spending a third of the surface chooser on a choice nobody makes. Piped cream on the
  * board is common and keeps all three.
  */
-const WRITING_SURFACES = {
-  cream:   ['top', 'side', 'board'],
-  acrylic: ['top', 'side'],
+/* ── The three Looks a message can be made of ────────────────────────────────────────────────────
+ *
+ * ⚠️ A ROW, NOT A BRANCH (rule 2). This was two surface lists and a scattering of
+ * `w.style === 'acrylic'` tests, which is why adding fondant touched eleven places. A Look now
+ * declares what it IS and the card reads that: the toggle is built from this table, and the
+ * question the controls actually ask is `cut`, not "is it acrylic".
+ *
+ * `cut`  — the word is CUT FROM A ROLLED SHEET and placed: acrylic from perspex, fondant from paste.
+ *          Both take the outline faces, a sheet thickness nobody drags, and the stand/lay/flat poses.
+ *          Piped cream is laid down by a nozzle, so it takes the centreline faces, a curve, a line
+ *          gap and the pen — none of which mean anything to a shape cut with a cutter.
+ *
+ * ⚠️ `cut` IS NOT "IS IT ACRYLIC", AND THAT DISTINCTION IS THE WHOLE POINT. Every control that read
+ * `!== 'acrylic'` meant "cream only" and would have silently switched itself on for fondant — a
+ * Curve dial on a cutter-cut letter, a Thickness slider writing a field the builder does not read.
+ */
+const WRITING_LOOKS = {
+  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: false },
+  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: true  },
+  /* Fondant goes everywhere cream does — it is paste, and a flat letter sits on a drum as happily as
+     on the cake. On the TOP it is the one Look with a choice to make, because both readings are real
+     things bakers do: HUG (lying on the icing, the common one) or STAND (propped upright on prongs).
+     Sandeep: "fondant letters can go on both side,top and board. on top, fondant letters can hug or
+     stand." Acrylic has no such choice — a perspex sheet lying flat on a cake top is not a thing. */
+  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: true  },
 };
 const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
-const writingSurfaces = (style) => WRITING_SURFACES[style] ?? WRITING_SURFACES.cream;
+const writingSurfaces = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).surfaces;
+/* Is this Look cut from a sheet? The question every control on the card actually asks. */
+const writingIsCut = (style) => !!(WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).cut;
+/* The top-surface pose, fondant's only extra decision. 'hug' lies on the icing; 'stand' goes up on
+   prongs. Default hug — it is what most fondant lettering on a cake top actually is, and it needs no
+   supports to look right. */
+const FONDANT_TOP_POSE_DEFAULT = 'hug';
+const writingTopPose = (w) => (w?.topPose === 'stand' ? 'stand' : FONDANT_TOP_POSE_DEFAULT);
 
 function writingStyleSwitch(w, style) {
   if (style === (w.style ?? 'cream')) return {};
@@ -515,7 +544,7 @@ function writingStyleSwitch(w, style) {
    * surface, and a message left on one the new material does not do would sit there with nothing
    * in the chooser showing as chosen. Only when it is actually invalid — 'top' and 'side' carry. */
   const surface = writingSurfaces(style).includes(w.surface ?? 'top') ? null : { surface: 'top' };
-  if (style === 'acrylic') {
+  if (writingIsCut(style)) {
     /* ⚠️ Only an OUTLINE face is carried across, and a centreline one is not — even though it is
      * valid in both lists. Allure as PIPED CREAM is a delicate script; Allure cut from acrylic is a
      * monoline swept at a fixed width, and at a name's size that comes out as a fat blob nobody
@@ -527,6 +556,10 @@ function writingStyleSwitch(w, style) {
      * because that is what a message is seeded with, not because anyone chose it — and 80% of a cake
      * top cut out of acrylic is a fence, not a topper. Carrying the other material's untouched
      * default across the switch is exactly what made every message land on Allure. */
+    /* ⚠️ `WRITING_FIT.acrylic` FOR BOTH CUT LOOKS, and that is a size not a material: it is "what
+       fraction of the cake a cut word should span", and a fondant word cut with the same cutters at
+       the same scale wants the same answer. A second entry here would be two numbers nobody could
+       tell apart, drifting the first time either was touched. */
     return { style, font, tracking: faceFit(font), fit: WRITING_FIT.acrylic, ...surface };
   }
   return { style, font: CREAM_FONTS.some(f => f.key === w.font) ? w.font : DEFAULT_CREAM_FONT,
@@ -11422,7 +11455,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {!w.lockLook && (<>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Look</div>
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
-          {[{ k: 'cream', label: 'Piped cream' }, { k: 'acrylic', label: 'Acrylic' }].map(st => (
+          {/* From WRITING_LOOKS, so a fourth material is a row rather than another button here. */}
+          {Object.entries(WRITING_LOOKS).map(([k, L]) => ({ k, label: L.label })).map(st => (
             <button key={st.k}
               onClick={() => setWriting(writingStyleSwitch(w, st.k))}
               style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
@@ -11456,11 +11490,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           isMobile={isMobile}
           label="Lettering font"
           value={w.font ?? ''}
-          items={(w.style === 'acrylic'
+          items={(writingIsCut(w.style)
             ? Object.entries(TOPPER_FACES).map(([key, f]) => ({ key, label: f.label }))
             : CREAM_FONTS
           ).map(f => ({ id: f.key, label: f.label }))}
-          onChange={k => setWriting({ font: k, ...(w.style === 'acrylic' ? { tracking: faceFit(k) } : {}) })}
+          onChange={k => setWriting({ font: k, ...(writingIsCut(w.style) ? { tracking: faceFit(k) } : {}) })}
         />
 
         {/* An acrylic finish is a MATERIAL, not a colour — mirror gold is nothing but its
@@ -11483,9 +11517,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </>}
 
+        {/* ── Fondant: a colour, and on the top the one pose decision ─────────────────────────
+            ⚠️ A COLOUR, NOT A FINISH — the opposite call from acrylic's, and for the opposite
+            reason. Mirror gold is nothing but its reflections, so acrylic offers materials; fondant
+            is white paste with gel kneaded through it, so the only question is which hue. The
+            metallic toggle that rides with the cream wheel is deliberately not here: it turns piped
+            icing shimmery, and there is no such thing as metallic fondant off the roll.
+            The wheel is always open rather than behind a swatch, because unlike cream there is no
+            Gold/Silver alternative for it to sit beside — a chooser of one is not a chooser. */}
+        {w.style === 'fondant' && <>
+          {surface === 'top' && <>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>On the top</div>
+            <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
+              {[{ k: 'hug', label: 'Hug the cake' }, { k: 'stand', label: 'Stand up' }].map(o => (
+                <button key={o.k} onClick={() => setWriting({ topPose: o.k })}
+                  style={{ flex: 1, padding: '6px 0', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
+                    background: writingTopPose(w) === o.k ? INK : 'transparent',
+                    color: writingTopPose(w) === o.k ? '#fff' : INK }}>
+                  {o.label}
+                </button>
+              ))}
+            </div>
+          </>}
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
+          <div style={{ display: 'flex', justifyContent: 'center' }}>
+            <ColorWheel color={w.color ?? FONDANT_WRITING_COLOR} onChange={c => setWriting({ color: c })}
+              cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? FONDANT_WRITING_COLOR).toLowerCase())}
+              width={152} />
+          </div>
+        </>}
+
 {/* ⚠️ CREAM ONLY. Colour/Gold/Silver tint piped icing; an acrylic finish is a MATERIAL chosen
             above, and showing both put two colour controls on one card where only one did anything. */}
-        {w.style !== 'acrylic' && <>
+        {!writingIsCut(w.style) && <>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>Colour</div>
         <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexShrink: 0, padding: '2px 0' }}>
           {[
@@ -11522,7 +11586,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             a mode that did not exist and did nothing when pressed. Reported as exactly that: "not
             sure what are intended for". The row itself is renderPenModeRow — shared with the pen
             card, which is where hand-piping happens. */}
-        {w.style !== 'acrylic' && renderPenModeRow()}
+        {!writingIsCut(w.style) && renderPenModeRow()}
 
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8, marginBottom: 6 }}>Adjust</div>
         {/* ⚠️ CREAM ONLY, and this one is a manufacturing number rather than a taste. For acrylic it
@@ -11573,7 +11637,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                it is the SHEET, seeded in ACRYLIC_DEFAULTS and overlaid by an admin — not something a
                customer should drag. It also wrote `thickness` while the acrylic builder reads
                `sheet`, so it moved a number nothing consumed. */
-            ...(w.style !== 'acrylic' ? [
+            ...(!writingIsCut(w.style) ? [
               { k: 'Thickness', dial: 'size', v: w.thickness ?? 0.03, min: 0.008, max: 0.07, step: 0.002,
                 fmt: v => v.toFixed(3), set: v => setWriting({ thickness: v }) },
               /* ⚠️ CREAM ONLY, and NOT simply mis-wired — do not "fix" this by pointing it at
@@ -11605,7 +11669,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                per face against a cutter's minimum detail — topperFaces.js records a Parisienne
                topper reading "Bithday", correct by every measure and unreadable. That is not a
                taste, and a customer dragging it would be dragging a manufacturing tolerance. */
-            ...(w.style === 'acrylic' && surface !== 'side' ? [
+            /* ⚠️ ONLY WHAT IS ACTUALLY STANDING. Legs are the prongs that hold a cut word upright,
+               so they belong to the `stand` pose and not to the surface: a fondant word HUGGING the
+               top is lying on the icing and has nothing to stand on, and offering it a leg count
+               would be a control that moves a number the build never reads in that pose. */
+            ...(writingIsCut(w.style) && surface !== 'side' && !(w.style === 'fondant' && writingTopPose(w) === 'hug') ? [
               { k: 'Legs', dial: 'size', v: w.legs ?? ACRYLIC_DEFAULTS.legs, min: 0, max: 4, step: 1,
                 fmt: v => (Math.round(v) === 0 ? 'none' : `${Math.round(v)}`),
                 set: v => setWriting({ legs: Math.round(v) }) },
@@ -11624,14 +11692,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ] : []),
             /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
                from a sheet; bending the baseline is a piped-writing idea. */
-            ...(surface !== 'side' && w.style !== 'acrylic' ? [
+            ...(surface !== 'side' && !writingIsCut(w.style) ? [
               { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
                 fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
             ] : []),
             /* Same again: acrylic reads `lineGap`, this writes `lineSpacing`, and on a topper the
                rows nest until they meet rather than sitting on a baseline — bounded by the shapes,
                not by taste. Cream only until someone decides what a customer may do to it. */
-            ...(isMultiline && w.style !== 'acrylic' ? [
+            ...(isMultiline && !writingIsCut(w.style) ? [
               { k: 'Line gap', dial: 'size', v: w.lineSpacing ?? 1.4, min: 1, max: 2.2, step: 0.05,
                 fmt: v => `${v.toFixed(2)}×`, set: v => setWriting({ lineSpacing: v }) },
             ] : []),

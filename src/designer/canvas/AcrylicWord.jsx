@@ -2,10 +2,44 @@ import React, { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { topperShapes, components, bridgeLoose } from '../geometry/topperShape.js';
 import { drawTopperMatcap } from '../geometry/topperMatcap.js';
+import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
+import { FONDANT_WRITING_COLOR } from '../constants.js';
+import { albedoForLight } from '../shared/albedoForLight.js';
 
-/* ── A word cut from one sheet of acrylic ────────────────────────────────────────────────────────
+/* ⚠️ MEASURED FOR FONDANT LETTERING, and it is NOT inherited from anything. `buildSolidWallMaterial`
+ * takes its colour raw — correct for a relief cut-out's side walls, which were calibrated as part of
+ * the print's own exposure model — but a letter standing in the open on a cake wall is a different
+ * surface, and a reference light belongs to the surface (INVARIANTS #16). Uncorrected, a mid-grey
+ * #808080 rendered 193,189,189 here: a chosen deep rose came back as a pale pink, and a saturated
+ * teal lost 105 points on red.
+ *
+ * Solved the way the recipe in shared/albedoForLight.js asks for: a divisor swept with mid-grey
+ * pre-corrected (1.0 → 193, 2.2 → 147, 2.8 → 132, 4.0 → 112) and the two readings that straddle 128
+ * interpolated, rather than one division — which overshoots, because the pipeline is not a pure
+ * multiply end to end. `scripts/measure-fondant-letters.mjs` prints the table; re-run it after any
+ * change to the HDRI, the scene intensity, or SOLID_FINISHES.fondant. */
+export const FONDANT_REFERENCE_LIGHT = [3.033, 2.813, 2.791];
+/* ⚠️ SWEPT ON THE PALETTE, NOT ON GREY (INVARIANTS #16). Six real colours — two pinks, a teal, a
+ * green, a blush and a dark chocolate — mean absolute error per channel then worst channel:
+ * 1.5 → 16.8/63, 2.0 → 13.8/54, 2.5 → 12.1/47, 3.0 → 11.5/42, 3.5 → 11.1/38, 4.5 → 11.7/34.
+ * 3.5 is the knee: the best mean, with the worst channel still improving. Past it the trade reverses
+ * — 4.5 buys 4 points of worst case by taking the mean back up and pulling a pale blush from −17 to
+ * −21 on red, because a higher rolloff means LESS correction exactly where pale colours live.
+ * ⚠️ AND MY FIRST SWEEP OF THIS WAS WORTHLESS: it passed pre-corrected colours to the harness while
+ * the renderer was already correcting, so every reading was corrected twice and the "best" rolloff
+ * was whichever least compounded the error. Vary the constant, not the input. */
+export const FONDANT_ROLLOFF = 3.5;
+
+/* ── A word cut from one sheet ───────────────────────────────────────────────────────────────────
  *
  * ONE renderer for every place a topper goes, because they are one object.
+ *
+ * ⚠️ THE SHEET IS ACRYLIC *OR* FONDANT, and the name of this file is historical. `medium` picks the
+ * material and nothing else: a fondant letter is cut from rolled paste with the same cutters, in the
+ * same outline faces, standing on the same prongs or lying on the same flat — so the geometry, the
+ * fit, the poses and the legs are all literally the same object. Forking a `FondantWord` would have
+ * copied 100 lines of build to change a `<material>`, which is rule 1 with the serial numbers filed
+ * off. Not renamed because `AcrylicWord` is exported from src/index.js and admin imports it.
  *
  * ⚠️ FLAT MEANS FLAT AGAINST THE WALL, and the standoff is the look — not a defect to design around.
  *
@@ -30,6 +64,9 @@ import { drawTopperMatcap } from '../geometry/topperMatcap.js';
  */
 export default function AcrylicWord({
   font, text, cfg = {}, finish = 'gold', pose = 'stand', mount = {}, span = 1.76, castShadow = true,
+  /* 'acrylic' (a baked matcap, see below) | 'fondant' (a lit physical material with the fondant
+     grain). Default acrylic, so every existing caller — admin's studio included — is untouched. */
+  medium = 'acrylic', color = FONDANT_WRITING_COLOR,
   onRise,
 }) {
   const built = useMemo(() => {
@@ -122,6 +159,30 @@ export default function AcrylicWord({
   }, [finish]);
   useEffect(() => () => matcap.dispose(), [matcap]);
 
+  /* ⚠️ FONDANT IS LIT, WHERE ACRYLIC IS BAKED — the opposite choice from the matcap below, and the
+   * right one for the opposite reason. A matcap exists because a perspex topper's whole appearance
+   * IS a stock reflection, and tying that to the scene coupled it to every other metal. Fondant has
+   * no reflection to speak of: it is matte paste at roughness 0.97 whose look is its own colour, its
+   * grain, and the shadow it sits in. Baking that would freeze the cake's light into the letters.
+   *
+   * ⚠️ AND IT IS THE SAME FONDANT AS EVERY OTHER FONDANT ON THE CAKE. `buildSolidWallMaterial` is
+   * what a relief cut-out's walls already use (`SOLID_FINISHES.fondant` — roughness, env, and the
+   * shared grain normal map), so a fondant letter and a fondant bow are the same surface by
+   * construction rather than by two tables agreeing. Built here and disposed with the component, as
+   * the matcap is: the factory clones the grain texture precisely so a caller can own it. */
+  const fondantMat = useMemo(
+    () => (medium === 'fondant'
+      ? buildSolidWallMaterial('fondant',
+          albedoForLight(color || FONDANT_WRITING_COLOR, FONDANT_REFERENCE_LIGHT, { rolloff: FONDANT_ROLLOFF }), 0)
+      : null),
+    [medium, color],
+  );
+  useEffect(() => () => {
+    if (!fondantMat) return;
+    fondantMat.normalMap?.dispose();
+    fondantMat.dispose();
+  }, [fondantMat]);
+
   if (!built) return null;
   /* ⚠️ MATCAP, NOT A LIT MATERIAL — the finish is baked, see `topperMatcap.js`. The topper never
    * reflected the cake, only a stock HDRI, and drawing from `scene.environment` coupled it to every
@@ -133,7 +194,9 @@ export default function AcrylicWord({
    * a lit material and this element no longer has one. The table still owns the finish LIST and its
    * labels, and `topperMatcap.js` keys off the same names, so adding a finish still means one entry
    * in each. Do not re-introduce a lit material to honour those numbers; they are the old model. */
-  const mat = <meshMatcapMaterial matcap={matcap} />;
+  const mat = fondantMat
+    ? <primitive object={fondantMat} attach="material" />
+    : <meshMatcapMaterial matcap={matcap} />;
 
   if (pose === 'stand') {
     const { topY = 0 } = mount;

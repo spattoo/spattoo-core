@@ -719,7 +719,11 @@ const STUBS = {
    *
    * allowed_zones includes `board`; allowed_actions has resize TRUE and tilt FALSE. The panel showed
    * the opposite of both. Only a placed element can settle why. */
-  fetchElementTypes:   async () => (PARAMS.has('cream') ? [{
+  fetchElementTypes:   async () => (PARAMS.has('writing') ? [{
+    id: 'et-writing', slug: 'writing', name: 'Texts', sort_order: 0,
+    placement_rules: { zones: ['top', 'side', 'board'], per_tier: false, max_per_zone: 4, top_tier_only: false, requires_frosting: false },
+    default_allowed_actions: { move: true, color: true, style: true, delete: true, resize: true, duplicate: false },
+  }] : PARAMS.has('cream') ? [{
     id: 'et-cream', slug: 'cream_layer', name: 'Cream layer', sort_order: 0,
     placement_rules: { zones: ['side'], per_tier: true, max_per_zone: 4, top_tier_only: false, requires_frosting: true },
     default_allowed_actions: { move: false, color: true, style: false, delete: true, resize: false, duplicate: false },
@@ -728,7 +732,9 @@ const STUBS = {
     placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 1, top_tier_only: true, requires_frosting: false },
     default_allowed_actions: { move: true, color: true, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
   }] : []),
-  fetchElementCategories: async () => (PARAMS.has('cream')
+  fetchElementCategories: async () => (PARAMS.has('writing')
+    ? [{ id: 'cat-messages', name: 'Messages', slug: 'messages', sort_order: 0, element_type_id: 'et-writing' }]
+    : PARAMS.has('cream')
     ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
     : (PARAMS.has('football') || PARAMS.has('catalog'))
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
@@ -744,7 +750,21 @@ const STUBS = {
    * lives only in the dev database (no migration or API source defines it). `addCreamToTier` seeds
    * `lift`/`noise`/`height`/`fill_side` and the card reads `height_range`; anything absent falls back
    * to SECOND_CREAM_DEFAULTS, which is the point of seeding only what the admin authored. */
-  fetchElements:       async () => (PARAMS.has('cream') ? [{
+  /* ⚠️ `?writing=1` — THE TEXTS CARD, which nothing here could open. It is a catalogue element
+     (`placement_config.procedural === 'writing'`), so with `fetchElements` returning [] the whole
+     card — the Look toggle, the fonts, the finishes, CAPITAL LETTERS — was unreachable in the one
+     harness that mounts the real designer. `dev/acrylic-text.jsx` mounts the RENDERER, which is a
+     different half: it cannot show a control that is missing from the card. Both halves matter, and
+     the capital-letters bug lived in the seam between them. */
+  fetchElements:       async () => (PARAMS.has('writing') ? [{
+    id: 'writing-el-1', name: 'Texts',
+    image_url: null, thumbnail_url: null, thumb_key: null,
+    element_type_id: 'et-writing', category_id: 'cat-messages',
+    allowed_zones: ['top', 'side', 'board'],
+    allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+    placement_config: { procedural: 'writing', scale: { min: 0.2, max: 1, step: 0.05 } },
+    default_color: '#ffffff', sort_order: 0,
+  }] : PARAMS.has('cream') ? [{
     id: 'cream-el-1', name: 'Cream layer',
     image_url: null, thumbnail_url: null, thumb_key: null,
     element_type_id: 'et-cream', category_id: 'cat-finishes',

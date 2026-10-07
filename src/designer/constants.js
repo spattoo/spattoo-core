@@ -94,6 +94,12 @@ export const NOMINAL_MM_PER_UNIT = (8 * 25.4) / 2.4;   // ≈ 84.7
  */
 export const WRITING_FIT = Object.freeze({ cream: 0.8, acrylic: 0.4 });
 
+/* The colour a fondant message starts at — plain white paste, before any gel is kneaded through it,
+ * which is what a baker reaches for and the one shade that reads as fondant rather than as a choice
+ * somebody already made for them. A seed, not a rule: it is the ColorWheel's starting position and
+ * the renderer's fallback, so the two cannot disagree about an untouched message. */
+export const FONDANT_WRITING_COLOR = '#F4EFE6';
+
 // The starting size for a message of this material — the cream one for a message that does not say,
 // because an absent `style` has always meant cream (see DEFAULT_WRITING).
 export const writingFit = (style) => WRITING_FIT[style] ?? WRITING_FIT.cream;
