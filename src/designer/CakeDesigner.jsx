@@ -6224,6 +6224,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     clearAllSelections();
   }
 
+  /* ── Moving a rainbow to another tier ────────────────────────────────────────────────────────
+   *
+   * Sandeep: "for a 2 tier cake, i cant place the rainbow on the below tier sidewise."
+   *
+   * ⚠️ A RAINBOW IS A TIER'S, AND NOTHING COULD CHANGE WHICH. `addRainbow` lands it on the top tier
+   * — the right default, and on a one-tier cake the only answer — and after that the tier was fixed
+   * for the life of the decoration. The drag cannot move it either, and that is structural rather
+   * than an oversight: it resolves against the tier's own TOP PLANE and reports (u, v) — how far
+   * round, and how far out from the middle — so it is a map of one tier by construction. On a
+   * two-tier cake that left the lower wall unreachable: pick "On the wall" and the arch goes on the
+   * upper tier, which is not where a wall rainbow usually belongs.
+   *
+   * ⚠️ REMOVE THEN ADD, NOT A FIELD. The tier is not stored on the rainbow; it IS which tier's
+   * `rainbows` list holds it. Both calls take a function of the current list (the contract
+   * `updateTierRainbows` states), so the two updates compose instead of one reading the list as it
+   * was before the other.
+   *
+   * ⚠️ THE CARD FOLLOWS ON ITS OWN. `decorationCards` is derived from the design every render and
+   * keyed `rainbow-${id}`, so the key is unchanged and the open card simply re-reads the new tier —
+   * nothing has to re-point it. The SELECTION does need moving: it carries `tierIndex`, and left
+   * behind it would highlight a rainbow that is no longer there. */
+  function moveRainbowToTier(fromTier, id, toTier) {
+    if (fromTier === toTier) return;
+    const rb = design.tiers[fromTier]?.rainbows?.find(r => r.id === id);
+    if (!rb) return;
+    updateTierRainbows(fromTier, cur => cur.filter(r => r.id !== id));
+    updateTierRainbows(toTier, cur => [...cur, rb]);
+    selectExclusive({ type: 'rainbow', tierIndex: toTier, id });
+  }
+
   // ── Fondant clouds ──────────────────────────────────────────────────────────
   // Its own element, never a checkbox on the rainbow: clouds turn up without one, several at a time,
   // on the top and the sides and the board. The pair arrives together as a decor_pattern instead.
@@ -8178,6 +8208,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* ⚠️ THE WHOLE DESIGN, for the decorations that live ON A TIER rather than in a flat list. A
+     * rainbow's tier is not a field on the rainbow — it IS which tier's `rainbows` holds it — so
+     * "did it move tiers" cannot be read from the object, only from the shape around it. The same
+     * goes for clouds, balloons and cream bands. `__getStickers` answers for the flat list; this
+     * answers for everything else, and a card highlighting the right number proves only that a
+     * button took a click. */
+    window.__design = () => design;
     /* Big-sprinkle mix. The control is a DialCell — a drag, which a script cannot aim precisely —
        and `setScatterBigCount` is otherwise unreachable from the page, so the one thing most likely
        to be wrong (which instances turn big, at what size, and whether 0 truly changes nothing)
@@ -12889,7 +12926,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Drag it on the cake to move it round.
         </div>
 
+        {/* ⚠️ WHICH TIER IS PART OF "where it goes", so it sits with it rather than in its own group.
+            `FinishTierPicker` is the picker the foil, cream-layer and dust cards already use — it
+            hides itself on a one-tier cake, which is most of them, so this costs nothing where there
+            is no choice to make. A second copy for one more card is what that component exists to
+            stop. */}
         <div style={{ marginTop: 8 }}>
+          {design.tiers.length > 1 && (
+            <div style={{ marginBottom: 8 }}>
+              <FinishTierPicker tiers={design.tiers} tier={card.tierIndex}
+                onPick={i => moveRainbowToTier(card.tierIndex, rb.id, i)} />
+            </div>
+          )}
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginBottom: 6 }}>Where it goes</div>
           {/* "Where it goes", not "Arrangement" — that was the studio's word for it, carried into the
               customer's card without being questioned. A customer is not arranging anything; they are

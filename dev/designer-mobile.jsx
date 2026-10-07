@@ -987,6 +987,24 @@ const sideStickerDesign = PARAMS.has('sidesticker') ? {
   }],
 } : null;
 
+/* ── A TWO-TIER cake with a rainbow already on it ────────────────────────────────────────────────
+ *
+ * `?rainbow2=1`. A rainbow is a TIER's — which tier is decided when it is placed — and the bug
+ * reported here was that nothing could change it: "for a 2 tier cake, i cant place the rainbow on
+ * the below tier sidewise." Reaching that state by hand means a catalogue, the Decorations drawer
+ * and a tap on a 3D wall; seeded in the design it is one URL, and the second tier is the whole point
+ * (on a one-tier cake the tier picker correctly hides itself and proves nothing). */
+const rainbow2Design = PARAMS.has('rainbow2') ? {
+  tiers: [
+    { color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' },
+    { color: '#FFFFFF', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
+      rainbows: [{ id: 'rb1', surface: 'side', footLeft: 'board', footRight: 'board',
+                   spring: 0.18, theta: -0.09, proud: 0.02, scale: 0.75, flatten: 0,
+                   bands: 6, innerRadius: 0.30, thickness: 0.12,
+                   colors: ['#E8A0B0', '#F2C79A', '#F5E6A3', '#A8D5A2', '#9EC5E8', '#C3AEE0'] }] },
+  ],
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -1047,5 +1065,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? rainbow2Design ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );
