@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { acrylicCfg, cutAssembly } from './acrylicConfig.js';
 
 /* ── A third Look is a ROW, and every control asks `cut` rather than "is it acrylic" ─────────────
  *
@@ -74,5 +75,61 @@ describe('fondant is the same cut word in another material', () => {
   it('and its colour is calibrated for this surface', () => {
     expect(word).toMatch(/FONDANT_REFERENCE_LIGHT = \[3\.033, 2\.813, 2\.791\]/);
     expect(word).toMatch(/albedoForLight\(color \|\| FONDANT_WRITING_COLOR, FONDANT_REFERENCE_LIGHT/);
+  });
+});
+
+/* ── A cut medium brings its own manufacture, and acrylic's is not lettering ─────────────────────
+ *
+ * Sandeep: "for fondant, some acrylic options are appearing. like legs and the bridge line. these
+ * options should not be available for fondant."
+ *
+ * ⚠️ WHAT MAKES THIS WORTH PINNING is that all three are easy to read as decisions about the WORD
+ * and none of them is. A perspex word is cut from ONE sheet, so it has to hang together (`bridge`
+ * drops stems between parts the cutter would otherwise drop), sit on something (`bar`) and push into
+ * the icing (`legs`). Fondant is cut letter by letter with a cutter and laid on by hand: no stems,
+ * no bar, no prongs, and a standing word resting on its own baseline.
+ */
+describe('fondant is cut letter by letter, so it has no acrylic hardware', () => {
+  const standing = { standing: true };
+
+  it('acrylic standing still gets its bar, bridge and legs', () => {
+    const cfg = acrylicCfg({ font: 'great_vibes' }, { ...standing, medium: 'acrylic' });
+    expect(cfg.bar).toBe(true);
+    expect(cfg.bridge).toBe(true);
+    expect(cfg.legs).toBeGreaterThan(0);
+  });
+
+  it('fondant standing gets none of them', () => {
+    const cfg = acrylicCfg({ font: 'great_vibes' }, { ...standing, medium: 'fondant' });
+    expect(cfg.bar).toBe(false);
+    expect(cfg.bridge).toBe(false);
+    expect(cfg.legs).toBe(0);
+  });
+
+  /* ⚠️ THE MEDIUM VETOES RATHER THAN DEFAULTS. These values live on the MESSAGE, so a cake saved as
+     acrylic and switched to fondant still carries `legs: 2` — and a `??` would let it ride across
+     and leave a prong behind on a material that has none. */
+  it('and a message carrying acrylic values cannot drag them across the switch', () => {
+    const carried = { font: 'great_vibes', legs: 2, bar: true, bridge: true };
+    const cfg = acrylicCfg(carried, { ...standing, medium: 'fondant' });
+    expect(cfg.legs).toBe(0);
+    expect(cfg.bar).toBe(false);
+    expect(cfg.bridge).toBe(false);
+  });
+
+  /* The card reads the SAME table the builder does, so a control can never be offered for a thing
+     the geometry will not build. */
+  it('the card asks that table rather than the pose', () => {
+    expect(cutAssembly('fondant').legs).toBe(false);
+    expect(cutAssembly('acrylic').legs).toBe(true);
+    expect(designer).toMatch(/cutAssembly\(w\.style\)\.legs/);
+    expect(designer).not.toMatch(/w\.style === 'fondant' && writingTopPose\(w\) === 'hug'/);
+  });
+
+  /* ⚠️ AND `style` HAS TO BE A MEMO DEPENDENCY. The cfg decides all three off the medium, so without
+     it a message already on screen keeps its acrylic assembly when the Look changes. */
+  it('the renderer rebuilds its cfg when the Look changes', () => {
+    expect(writing).toMatch(/medium: writing\.style === 'fondant' \? 'fondant' : 'acrylic'/);
+    expect(writing).toMatch(/writing\.legs, writing\.legLen, writing\.bury, writing\.minDetail,[\s\S]{0,400}?writing\.style,/);
   });
 });

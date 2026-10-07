@@ -52,27 +52,54 @@ export const ACRYLIC_DEFAULTS = Object.freeze({
   defaultFinish: DEFAULT_TOPPER_FINISH,
 });
 
+/* ── What each cut medium is ASSEMBLED with ──────────────────────────────────────────────────────
+ *
+ * ⚠️ THREE OF THESE NUMBERS DESCRIBE ACRYLIC'S MANUFACTURE, NOT LETTERING. A perspex word is cut
+ * from ONE sheet on a machine, so it has to hang together and hold itself up: `bridge` drops thin
+ * stems between parts that would otherwise fall out of the cutter, `bar` is the baseline strip they
+ * all sit on, and `legs` are the prongs that push into the icing. None of the three is a decision
+ * anybody makes about the word — they are what the material costs you.
+ *
+ * Fondant costs you none of them. It is cut letter by letter with a cutter and laid on by hand, so
+ * there is nothing to bridge, no bar to sit on and no prong to push in — a standing fondant word
+ * rests on its own baseline. Sandeep: "for fondant, some acrylic options are appearing. like legs
+ * and the bridge line. these options should not be available for fondant."
+ *
+ * A table rather than `if (medium === 'fondant')` scattered through the builder: a fourth cut medium
+ * is a row, and the card reads the same row to decide which controls to offer, so the controls and
+ * the geometry cannot disagree about what a material has.
+ */
+export const CUT_ASSEMBLY = {
+  acrylic: { bridge: true,  bar: true,  legs: true  },
+  fondant: { bridge: false, bar: false, legs: false },
+};
+export const cutAssembly = (medium) => CUT_ASSEMBLY[medium] ?? CUT_ASSEMBLY.acrylic;
+
 /* The `cfg` an AcrylicWord wants, resolved from the message and the pose.
  *
  * Every fallback is ACRYLIC_DEFAULTS — never a literal here — so there is exactly one answer to
  * "what is the bar ratio if nobody said", and it is the one an admin can overlay.
  */
-export function acrylicCfg(writing = {}, { standing = true } = {}) {
+export function acrylicCfg(writing = {}, { standing = true, medium = 'acrylic' } = {}) {
   const d = ACRYLIC_DEFAULTS;
   const face = TOPPER_FACES[writing.font] ? writing.font : d.face;
+  /* ⚠️ THE MEDIUM VETOES, IT DOES NOT DEFAULT. A `?? ` here would let a saved acrylic `legs: 2` ride
+     across when a message is switched to fondant — the value is on the message, and the Look is not
+     allowed to leave a prong behind. */
+  const a = cutAssembly(medium);
   return {
     tracking: writing.tracking ?? faceFit(face),
     stroke:   writing.stroke   ?? d.stroke,
     weight:   writing.weight   ?? d.weight,
     lineGap:  writing.lineGap  ?? d.lineGap,
     maxLines: writing.maxLines ?? d.maxLines,
-    bridge:   writing.bridge   ?? d.bridge,
+    bridge:   a.bridge && (writing.bridge ?? d.bridge),
     thickness: writing.sheet ?? (standing ? d.sheetStand : d.sheetFlat),
     // Legs and a bar belong to standing. A flat piece has nothing to push into and prongs would
     // point at the customer, so the pose decides and the authored count only says how many.
-    bar:      standing && (writing.bar ?? true),
+    bar:      a.bar && standing && (writing.bar ?? true),
     barRatio: writing.barRatio ?? d.barRatio,
-    legs:     standing ? (writing.legs ?? d.legs) : 0,
+    legs:     a.legs && standing ? (writing.legs ?? d.legs) : 0,
     legLen:   writing.legLen ?? d.legLen,
     bury:     writing.bury   ?? d.bury,
   };

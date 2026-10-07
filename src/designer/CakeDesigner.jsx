@@ -189,7 +189,7 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
-import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS } from './geometry/acrylicConfig.js';
+import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS, cutAssembly } from './geometry/acrylicConfig.js';
 import { writingScaleFrom } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
 import { SizeDial } from './shared/SizeDial.jsx';
@@ -11814,11 +11814,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                per face against a cutter's minimum detail — topperFaces.js records a Parisienne
                topper reading "Bithday", correct by every measure and unreadable. That is not a
                taste, and a customer dragging it would be dragging a manufacturing tolerance. */
-            /* ⚠️ ONLY WHAT IS ACTUALLY STANDING. Legs are the prongs that hold a cut word upright,
-               so they belong to the `stand` pose and not to the surface: a fondant word HUGGING the
-               top is lying on the icing and has nothing to stand on, and offering it a leg count
-               would be a control that moves a number the build never reads in that pose. */
-            ...(writingIsCut(w.style) && surface !== 'side' && !(w.style === 'fondant' && writingTopPose(w) === 'hug') ? [
+            /* ⚠️ LEGS ARE ACRYLIC'S, NOT "every cut Look's". They are the prongs that hold a perspex
+               word up, and they come with a baseline bar and bridge stems — all three are what
+               cutting a word from ONE sheet costs you, not decisions about lettering. Fondant is cut
+               letter by letter and laid on by hand, so it has none of them and a standing fondant
+               word rests on its own baseline. Sandeep: "for fondant, some acrylic options are
+               appearing. like legs and the bridge line. these options should not be available for
+               fondant."
+               ⚠️ READ FROM `CUT_ASSEMBLY`, the same table the BUILDER reads, so the control and the
+               geometry cannot disagree about what a material has. My first version gated this on the
+               pose — legs for a standing fondant word — which still offered a prong count the build
+               had no use for. */
+            ...(writingIsCut(w.style) && surface !== 'side' && cutAssembly(w.style).legs ? [
               { k: 'Legs', dial: 'size', v: w.legs ?? ACRYLIC_DEFAULTS.legs, min: 0, max: 4, step: 1,
                 fmt: v => (Math.round(v) === 0 ? 'none' : `${Math.round(v)}`),
                 set: v => setWriting({ legs: Math.round(v) }) },

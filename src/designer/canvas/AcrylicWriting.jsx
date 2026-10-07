@@ -133,12 +133,19 @@ export default function AcrylicWriting({
    * because the render before it had returned early and run one hook fewer. That is what
    * `check:hooks` exists for, and running a different gate instead of that one is how it shipped. */
   const cfg = useMemo(() => ({
-    ...acrylicCfg(writing, { standing }),
+    /* The MEDIUM decides what the word is assembled with — see `CUT_ASSEMBLY`. Fondant is cut letter
+       by letter, so it gets no bridge stems, no baseline bar and no prongs. */
+    ...acrylicCfg(writing, { standing, medium: writing.style === 'fondant' ? 'fondant' : 'acrylic' }),
     fitAspect: acrylicFitAspect(writing, maxW, mmPerUnit),
   }), [
     writing.font, writing.tracking, writing.stroke, writing.weight, writing.lineGap,
     writing.maxLines, writing.bridge, writing.sheet, writing.bar, writing.barRatio,
     writing.legs, writing.legLen, writing.bury, writing.minDetail,
+    /* ⚠️ `style` IS A DEPENDENCY NOW, and leaving it out is the quiet half of this bug: the cfg
+       decides the bar, the bridge and the legs off the medium, so switching Look on a message that
+       is already on screen would keep the acrylic assembly until something else happened to
+       invalidate the memo. */
+    writing.style,
     standing, maxW, mmPerUnit,
   ]);
 
