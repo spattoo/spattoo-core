@@ -10935,36 +10935,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        *
        * ⚠️ Spin stays CONDITIONAL inside the row (top surface only — see the note below), so a side
        * decoration gets the Size row alone rather than a caption with nothing under it. */
-      /* ⚠️ Declared HERE, above the Size row, because that row now READS it. Depth (radialOffset) is
-       * side-only: a photo frame is a flat print that must stay flush on the wall, so it is
-       * config-gated on photoMask exactly like the Fold control on foldable. */
-      const isSide = (sticker?.zone === 'side' || sticker?.zone === 'middle_tier') && !sticker?.photoMask;
-      /* ⚠️ ONE COMPANION SLOT BESIDE Size, and WHICH control fills it depends on where the decoration
-       * sits. Sandeep: "when the TOP checkbox is selected, spin control looks correct. but when i
-       * checked the SIDE checkbox, spin is back on the below line."
+      /* ⚠️ ONE COMPANION SLOT BESIDE Size, and only Spin fills it now. Sandeep: "when the TOP checkbox
+       * is selected, spin control looks correct. but when i checked the SIDE checkbox, spin is back
+       * on the below line." The slot exists because a second control was taking a whole extra row,
+       * and it held Spin on the top surface and Depth on the side — mutually exclusive by zone, so
+       * one slot served both.
        *
-       * What he is seeing on SIDE is Depth, not Spin — Spin is top-surface only — but the complaint
-       * is the same one and it is right: the second control was taking a whole extra row again. The
-       * two are MUTUALLY EXCLUSIVE BY ZONE (a sticker is on the top surface or on the side, never
-       * both), so a single companion slot serves both and no row is ever spent on one label plus two
-       * small buttons.
+       * ⚠️ DEPTH IS GONE, AND IT WAS A LEFTOVER RATHER THAN A CONTROL. Sandeep: "i saw a control
+       * knob 'depth' for some image sticker elements. for images it does not make sense. we dont
+       * need to control the depth. it always hugs the cake." He is right, and it is true of the 3D
+       * pieces too: how far a decoration stands off the wall is MEASURED now, not nudged. The side
+       * seat comes from `zoneSeat` → `sideProud` with its magnitude taken from half the model's own
+       * rendered depth (`seatHalfDepth`), an overlapping piping band is cleared automatically
+       * (`sidePipingClearance`), and a wire's standoff is computed from the wire. `radialOffset` was
+       * the hand-cranked version of all three, from before any of them were measured — and on a flat
+       * print, which has no depth to seat, it could only ever lift the picture off the icing it is
+       * printed on.
+       *
+       * ⚠️ THE FIELD STAYS, AND THAT IS NOT A HALF-MEASURE. `radialOffset` is still read in
+       * `CakeCanvas` and still written by admin's CreateTemplate, so a cake already saved with a
+       * nudge renders exactly where it was — removing the control must not move somebody's ordered
+       * cake. What is gone is the customer's ability to add a new one.
        *
        * The NAME is the cell's caption now, not a span inside the row, so it no longer needs the
        * marginLeft that used to separate it from the dial. */
-      const companionLabel = sticker?.zone === 'top_surface' ? 'Spin' : isSide ? 'Depth' : null;
+      const companionLabel = sticker?.zone === 'top_surface' ? 'Spin' : null;
       const companionCtls =
         sticker?.zone === 'top_surface' ? (() => {
           const rot = sticker?.rotation ?? 0;
           return [
             <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
             <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
-          ];
-        })()
-        : isSide ? (() => {
-          const ro = sticker?.radialOffset ?? 0;
-          return [
-            <button key="ro-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.max(0, +(ro - 0.05).toFixed(2)) })}>−</button>,
-            <button key="ro+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { radialOffset: Math.min(0.6, +(ro + 0.05).toFixed(2)) })}>+</button>,
           ];
         })()
         : [];

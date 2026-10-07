@@ -932,6 +932,30 @@ const reloadDesign = PARAMS.has('reload')
  * colour wheel's dodge, the collapse handle) could not be looked at. A writing is the cheapest thing
  * that populates it: no element row, no asset, no catalogue.
  */
+/* ── A sticker already ON the wall, so its CARD can be opened ────────────────────────────────────
+ *
+ * `?sidesticker=1`. The decoration card's controls are computed from the instance's `zone`, and a
+ * side sticker was unreachable here: placing one means opening Decorations, loading a catalogue and
+ * aiming at a spinning 3D wall. So the one card a customer edits a decoration from could not be
+ * looked at, which is how a control nobody wanted ("Depth", a hand-nudge from before the seat was
+ * measured) sat on it unnoticed. Seeded in the design instead, the way a reloaded order arrives.
+ *
+ * ⚠️ `imageUrl` IS A PICTURE, NOT A GLB — the reported case is "image sticker elements", and the two
+ * take different branches in the renderer (`isGlb`). A .glb here would prove the wrong one. */
+const sideStickerDesign = PARAMS.has('sidesticker') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: [{
+    id: 'sk1', elementId: 'img-el-1', name: 'Butterfly',
+    /* `?sidesticker=top` puts the same picture on the TOP, because Spin and Depth shared one
+       companion slot beside Size — so removing Depth has to be checked against Spin still filling
+       it, not only against Depth being gone. */
+    imageUrl: '/thumbs/cake1.webp',
+    zone: PARAMS.get('sidesticker') === 'top' ? 'top_surface' : 'side', tierIndex: 0,
+    theta: 0, y: 0.7, x: 0, z: 0, size: 1, radialOffset: 0, rotation: 0,
+    allowedActions: { move: true, color: false, delete: true, resize: true, duplicate: true },
+  }],
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -986,5 +1010,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );
