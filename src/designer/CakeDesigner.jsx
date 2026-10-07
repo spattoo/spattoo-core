@@ -12670,15 +12670,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span style={{ fontSize: 12, fontWeight: 700, color: INK }}>On a pick</span>
         </label>
 
-        {/* ⚠️ "How high" IS the stick length, which is why there is one dial and not two. The pick
-            runs from the lid to the balloon's base, so a second number could only ever disagree
-            with the first. Hidden when the pick is off, because then it measures nothing. */}
+        {/* ⚠️ "Height" IS the stick length, which is why there is one dial and not two. The pick runs
+            from the lid to the balloon's base, so a second number could only ever disagree with the
+            first. Hidden when the pick is off, because then it measures nothing.
+
+            ⚠️ NO WIDTH DIAL, DELIBERATELY. Sandeep: "width is not needed. pls remove it. size is
+            enough." It is the right cut, and the line it draws is whose decision each number is:
+            `width` is the balloon's PROPORTION — how fat a balloon is — which is authored once in
+            the studio and carried on the element row, the same as belly, crown and the collar. A
+            customer choosing how big their balloon is has no business restating what shape a
+            balloon is, and two ways to change the silhouette is two ways for the row's authored
+            look to be undone one cake at a time. `scale` is the customer's number; the shape is
+            the admin's. */}
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             ['Size', 'scale', 0.5, 2.2, 0.05, v => v.toFixed(2)],
-            ...(stickOn ? [['How high', 'float', 0.15, 2.0, 0.05, v => v.toFixed(2)]] : []),
+            ...(stickOn ? [['Height', 'float', 0.15, 2.0, 0.05, v => v.toFixed(2)]] : []),
             ['Lean', 'tilt', -0.4, 0.4, 0.02, v => v.toFixed(2)],
-            ['Width', 'width', 0.4, 1.0, 0.02, v => v.toFixed(2)],
           ].map(([label, key, min, max, step, fmt]) => (
             <DialCell key={key} label={label}
               value={ba[key] ?? BALLOON_PLACEMENT_DEFAULTS[key] ?? BALLOON_DEFAULTS[key]}
