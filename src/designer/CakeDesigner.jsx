@@ -307,6 +307,22 @@ function pipingPlacementChanged(current, next, isTop) {
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
+/* What a placement slot is CALLED, stated once. Both the sticker chooser and the composed-element
+ * (pattern) card name the same slots, and a second copy of these rules is a second chance to call
+ * a board "Top".
+ *
+ * ⚠️ ZONE BEFORE PLACEMENT, and the order is the whole point. A board slot carries
+ * `placement: 'top'` deliberately — it stands on a flat surface and reuses the entire top-surface
+ * seat, drag and renderer — so a label read off `placement` calls it "Top" and the panel shows two
+ * tiles both named Top. Zone is what the baker is choosing; placement is how it is drawn. */
+function slotLabel(slot, multiTier) {
+  const tier = TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`;
+  if (slot.zone === ZONES.RIM)   return multiTier ? `${tier} edge` : 'Edge';
+  if (slot.zone === ZONES.BOARD) return 'Board';
+  if (slot.placement === 'top')  return 'Top';
+  return multiTier ? `${tier} side` : 'Side';
+}
+
 // ── Shared controls, moved out of this file ───────────────────────────────────
 // SizeDial      → shared/SizeDial.jsx      — THE size control.
 // ColorWheel    → shared/ColorWheel.jsx    — THE colour control.
@@ -8207,7 +8223,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const a = pool.find(e => isGlb(e) && zoneMode(e.placement_config, 'top_surface') === 'stand')
       ?? pool.find(e => isGlb(e) && e.placement_config?.single_per_slot)
       ?? pool.find(isGlb) ?? pool[0];
-    const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
+    /* ⚠️ ALL THREE ZONES, because the real composed rows carry them and this said `['top_surface']`.
+       A fixture narrower than the row cannot reach the bug the row has: the middle tier went
+       missing from this very card and the harness could only ever show it one tile. */
+    const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)',
+      allowed_zones: ['top_surface', 'side', 'middle_tier'],
       placement_config: { parts_deletable: false, parts: [
         { element_id: a.id, dx: -0.8, dz: 0 }, { element_id: a.id, dx: 0.8, dz: 0, mirror: true } ] } };
     handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
@@ -9173,7 +9193,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         if (seenPattern.has(st.patternId)) return;
         seenPattern.add(st.patternId);
         const patEl = elementById.get(st.patternElementId);
-        decorationCards.push({ key: `pattern-${st.patternId}`, type: 'pattern', patternId: st.patternId, patternElementId: st.patternElementId, name: patEl?.name ?? st.name ?? 'Decoration', currentZone: st.zone, thumb: patEl?.thumbnail_url ?? null });
+        decorationCards.push({ key: `pattern-${st.patternId}`, type: 'pattern', patternId: st.patternId, patternElementId: st.patternElementId, name: patEl?.name ?? st.name ?? 'Decoration', currentZone: st.zone, currentTierIndex: st.tierIndex ?? 0, thumb: patEl?.thumbnail_url ?? null });
       } else if (isMultiSlotEl(st.elementId)) {
         if (seenDecorEl.has(st.elementId)) return;
         seenDecorEl.add(st.elementId);
@@ -9570,17 +9590,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const pe = elementById.get(p.element_id);
       return pe ? { glbUrl: pe.image_url, baseRotation: facingOffsetRadians(pe.placement_config), r: pe.placement_config?.r ?? 2.5, dx: p.dx ?? 0, dz: p.dz ?? 0, mirror: p.mirror === true } : null;
     }).filter(Boolean);
-    const zones = patEl?.allowed_zones ?? [];
-    const tiles = [];
-    if (zones.includes(ZONES.TOP_SURFACE)) tiles.push({ zone: ZONES.TOP_SURFACE, placement: 'top', label: 'Top', tierIndex: (canvasConfig.tiers?.length ?? 1) - 1 });
-    if (zones.includes(ZONES.SIDE) || zones.includes(ZONES.MIDDLE_TIER)) tiles.push({ zone: ZONES.SIDE, placement: 'side', label: 'Side', tierIndex: 0 });
+    /* ⚠️ THE SLOTS COME FROM `placementSlots`, NOT FROM A LIST BUILT HERE. This card used to read
+       `allowed_zones` itself and push exactly two tiles: Top, and one Side hard-coded to
+       `tierIndex: 0`. So a composed element ticked for the middle tier in Manage Elements offered
+       no middle tier on the cake — Sandeep: *"in admin i configured it for top, side and middle
+       tier. however it does not show on the middle tier."* It also silently dropped `rim` and
+       `board` entirely, because the hand-written list had no branch for them.
+
+       `placementSlots` is the ONE function that turns an element's allowed_zones into the slots it
+       may occupy: a side slot PER TIER, the board as a single cake-wide slot, the rim per tier. It
+       is tested, and every other surface already asks it. A second derivation of the same question
+       can only ever drift from it — which is exactly what this was. `check:placement-slots` now
+       fails any hand-built slot. */
+    const tierCount = canvasConfig.tiers?.length ?? 1;
+    const multiTier = tierCount > 1;
+    const tiles = placementSlots(patEl, tierCount)
+      .map(slot => ({ ...slot, label: slotLabel(slot, multiTier) }));
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Surface — drag each piece on the cake to fine-tune.</div>
         {tiles.map(t => {
-          const active = card.currentZone === t.zone || (t.zone === ZONES.SIDE && card.currentZone === ZONES.MIDDLE_TIER);
+          /* ⚠️ A ZONE NO LONGER IDENTIFIES A TILE. With one side slot per tier, "side" matches
+             several tiles, so the tier has to be compared too or every side tile ticks at once.
+             `middle_tier` still reads as `side` because placementSlots resolves both to the same
+             wall slot — the zone pair is an authoring distinction, not two different places. */
+          const sameZone = card.currentZone === t.zone
+            || (t.zone === ZONES.SIDE && card.currentZone === ZONES.MIDDLE_TIER);
+          const active = sameZone && (card.currentTierIndex ?? 0) === t.tierIndex;
           return (
-            <div key={t.zone} role="button" onClick={() => { if (!active) changePatternZone(card, t.zone, t.tierIndex); }} style={{ cursor: active ? 'default' : 'pointer' }}>
+            <div key={t.key} role="button" onClick={() => { if (!active) changePatternZone(card, t.zone, t.tierIndex); }} style={{ cursor: active ? 'default' : 'pointer' }}>
               <div style={{ width: '100%', height: 110, borderRadius: 10, overflow: 'hidden', border: `2px solid ${active ? INK : '#cdccd3'}`, background: '#cfcdd6' }}>
                 <TopperPreview parts={parts} placement={t.placement} tiers={canvasConfig.tiers} tierIndex={t.tierIndex} />
               </div>
@@ -10364,15 +10402,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const poses = zoneModes(pc, slot.zone, 'hug');
       return poses.map(mode => ({ ...slot, mode, poseChoice: poses.length > 1 }));
     }).map(slot => {
-      const label = slot.zone === ZONES.RIM
-          ? (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} edge` : 'Edge')
-        // ⚠️ Before `placement`, not after. A board slot carries placement 'top' ON PURPOSE — it
-        // stands on a flat surface and reuses the whole top-surface seat/drag/renderer — so a label
-        // read off `placement` called it "Top" and the panel showed two tiles both named Top.
-        // Zone is what the baker is choosing; placement is how it is drawn.
-        : slot.zone === ZONES.BOARD ? 'Board'
-        : slot.placement === 'top' ? 'Top'
-        : (multiTier ? `${TIER_LABELS[slot.tierIndex] ?? `Tier ${slot.tierIndex + 1}`} side` : 'Side');
+      const label = slotLabel(slot, multiTier);
       const checked = instance
         ? onSlot(instance, slot)
         : !!design.stickers.find(s => s.elementId === elId && onSlot(s, slot));

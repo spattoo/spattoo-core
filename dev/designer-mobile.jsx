@@ -416,6 +416,30 @@ CAT_ELEMENTS.push({
   default_color: '#F4EFE6', sort_order: 31,
 });
 
+/* ⚠️ A COMPOSED ELEMENT (two pieces placed as one), which nothing here could express — and the gap
+ * is exactly why the middle tier went missing from the composed card unnoticed. `__placeTestPattern`
+ * exists, but it builds a THROWAWAY pattern object that never enters `elementById`, so the card's
+ * `elementById.get(card.patternElementId)` comes back undefined and the placement tiles render as
+ * nothing at all. The harness could therefore only ever show that card with no tiles, which looks
+ * the same whether the tiles are missing, wrong, or right.
+ *
+ * A real catalogue row is what the card actually reads: any element whose `placement_config.parts`
+ * is a non-empty array places through `placePattern`. Two mirrored copies of the heart GLB, the
+ * shape unicorn eyes are. `allowed_zones` carries all three the real row carries, because a fixture
+ * narrower than the row cannot reach the row's bug. */
+CAT_ELEMENTS.push({
+  id: 'e32', name: 'Eyes (pair)', description: 'a composed element — two mirrored pieces',
+  element_type_id: 'et-topper', category_id: 'cat-party',
+  image_url: CAT_THUMB('#2b2b2b'), thumbnail_url: CAT_THUMB('#2b2b2b'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true },
+  placement_config: { parts_deletable: false, scale: { min: 0.5, max: 2, step: 0.05 },
+                      top_surface: 'stand', side: 'hug',
+                      parts: [{ element_id: 'e26', dx: -0.8, dz: 0 },
+                              { element_id: 'e26', dx: 0.8, dz: 0, mirror: true }] },
+  default_color: '#2b2b2b', sort_order: 32,
+});
+
 /* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
  * made the foil tap-to-reopen bug unverifiable, found the same way.
  *
