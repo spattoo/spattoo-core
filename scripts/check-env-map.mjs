@@ -63,15 +63,12 @@ const ACCEPTED = {
     '⚠️ KNOWN GAP — admin mounts this directly and has no assets base to pass. Colour authored here '
     + 'is judged under drei apartment, not the shipped lebombo. See CardCutoutStudio.jsx and '
     + 'INVARIANTS #17. Fixing it needs a VITE_ASSETS_BASE in both admin deployments.',
-  'src/designer/geometry/pipingMedia.js':
-    'NOT A COMPONENT — a material RECIPE table (MEDIA / DEFAULT_MEDIUM / mediumOf). It mounts '
-    + 'nothing, renders nothing and contains no JSX: a caller gets material props for a mesh that '
-    + 'the HOST scene lights, so there is no scene here to configure and nowhere to configure it. '
-    + 'It trips the transitive test only because creamMaterialProps lives in CakeTier.jsx, which '
-    + 'is a component file — the import reaches a FILE that lights a scene, not a scene. The '
-    + 'cleaner fix is to move that pure function out of CakeTier into a plain module, which would '
-    + 'drop this entry and stop pulling the whole tier renderer into any bundle that only wanted a '
-    + 'colour curve. Until then this is a reason, not a gap.',
+  /* ⚠️ `pipingMedia.js` WAS HERE AND ITS OWN REASON PREDICTED ITS REMOVAL: "the cleaner fix is to
+     move that pure function out of CakeTier into a plain module, which would drop this entry".
+     `creamMaterialProps` now lives in geometry/creamMaterial.js, and once this script stopped
+     reading COMMENTS as imports the entry stopped being needed — the staleness check below said so
+     before anyone thought to look. An allowlist that expires on its own is the only kind worth
+     keeping. */
 };
 
 // ── Which exported modules can reach the env map ────────────────────────────────────────────────
@@ -95,11 +92,19 @@ const resolveImport = (from, spec) => {
   return null;
 };
 
-// Reaches the env map if it imports envMap.js or SafeEnvironment, directly or through anything in src/.
+/* Reaches the env map if it imports envMap.js or SafeEnvironment, directly or through anything in
+   src/.
+   ⚠️ CODE ONLY, FOR THE REASON `codeOnly` ALREADY EXISTS. That helper was written because the
+   `configureEnvMap(` check matched prose and a commented-out call left the gate green — but this
+   walk still read raw text, so the mirror-image fault was live: a file that merely NAMES
+   SafeEnvironment in a comment counted as one that lights a scene. Proven the day SafeEnvironment
+   was split into its own module, when the note in TextureErrorBoundary.jsx SAYING it had moved was
+   enough to keep every importer of SafeGlb flagged. A gate that reads comments as code is wrong in
+   both directions; this one was only fixed in one. */
 const lightsAScene = (file, seen = new Set()) => {
   if (!file || seen.has(file) || !existsSync(file)) return false;
   seen.add(file);
-  const s = readFileSync(file, 'utf8');
+  const s = codeOnly(readFileSync(file, 'utf8'));
   if (/canvas\/envMap\.js/.test(s) || /\bSafeEnvironment\b/.test(s)) return true;
   for (const m of s.matchAll(/from '(\.[^']+)'/g)) {
     if (lightsAScene(resolveImport(file, m[1]), seen)) return true;

@@ -12,7 +12,8 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // the rendered text changes.
 import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
-import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
+import { SafeGlb } from './TextureErrorBoundary.jsx';
+import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
 import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';

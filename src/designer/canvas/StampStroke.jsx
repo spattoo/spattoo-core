@@ -2,7 +2,14 @@ import { useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { stampTransforms } from '../geometry/creamPen.js';
-import { creamMaterialProps } from './CakeTier.jsx';
+/* ⚠️ FROM ITS REAL HOME, NOT VIA THE RENDERER. CakeTier.jsx re-exports `creamMaterialProps` for
+   convenience, and importing it from there drags a module that CAN LIGHT A SCENE into anything that
+   touches a stamp — which `check:env-map` correctly refused the moment this component was put on the
+   package's public surface so the calibrator could tune `side_rotation` against the real pen. The
+   recipe is pure and lives in geometry/; taking it from there costs nothing and keeps this file
+   honest about what it depends on. Same lesson as shellGeo.js: the fix is for the maths to stop
+   being reached through a renderer, not for the gate to grow an exception. */
+import { creamMaterialProps } from '../geometry/creamMaterial.js';
 import { extractGeo } from './shellGeo.js';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 

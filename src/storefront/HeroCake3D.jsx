@@ -1,7 +1,7 @@
 import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls, ContactShadows } from '@react-three/drei';
-import { SafeEnvironment } from '../designer/canvas/TextureErrorBoundary.jsx';
+import { SafeEnvironment } from '../designer/canvas/safeEnvironment.jsx';
 import { envProps } from '../designer/canvas/envMap.js';
 import * as THREE from 'three';
 import { SceneLoader } from '../designer/canvas/CakeSpinner.jsx';

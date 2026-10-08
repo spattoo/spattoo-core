@@ -172,6 +172,39 @@ export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripC
 // tuft across thousands of seats, so the admin studio tunes the tuft and previews the field.
 export { buildGrassTuft, grassSeats, grassTriangleCount, GRASS_DEFAULTS } from './designer/geometry/grass.js';
 export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
+
+/* ── The pen's own stamp renderer, so a studio can calibrate the WALL ─────────────────────────────
+ *
+ * ⚠️ EXPORTED SO THE CALIBRATOR DOES NOT GROW A THIRD STAMP RENDERER. `side_rotation` is the wall's
+ * attitude for a hand-piped piece, and it cannot be tuned against a ring preview: a ring keeps the
+ * piece upright in world space and yaws it outward, while the pen aligns its up-axis to the surface
+ * normal. Calibrating one against the other is how `stampRotationSide` came to be reading the
+ * board's figure in the first place.
+ *
+ * This component already IS the answer — it prepares the GLB exactly as a ring does (`extractGeo`,
+ * which bakes the +90° X turn), measures footprint/height/bbox the same way, and hands the lot to
+ * `stampTransforms`. Its own header records what happened the last time a second preparation
+ * existed: "a hand-piped shell started a quarter turn out from a ringed one, and every attempt to
+ * fix the orientation by adjusting the ROTATION was correcting the wrong side of the difference."
+ *
+ * Safe on the public surface: it lights nothing (no SceneLights, no Environment), so `check:env-map`
+ * has nothing to object to — unlike CakeTier.jsx, which is why `shellGeo.js` exists.
+ */
+export { default as StampStroke } from './designer/canvas/StampStroke.jsx';
+/* The height a ring normalises a shell to, as a fraction of the tier radius. Exported so a studio
+   can size a hand-piped preview to match the rings beside it instead of picking a number: the pen
+   sizes a `regular` stamp by HEIGHT (`target = 2 x thickness`), so `thickness = radius x
+   SHELL_HEIGHT_FRAC / 2` puts a stamp and a ring shell at the same scale. INVARIANTS #8 — a studio
+   must not hardcode a world dimension it can derive. */
+export { SHELL_HEIGHT_FRAC } from './designer/canvas/pipingMetrics.js';
+/* ⚠️ `stampTransforms` IS DELIBERATELY NOT EXPORTED BESIDE IT. Exporting it was speculative — the
+   calibrator needs the COMPONENT, not the maths — and doing so immediately failed admin's
+   `check:no-geometry-copy`, which found an older copy of the name in FreehandPenStudio.jsx:
+   `stampTransforms(points, size, spacing, footprint, seed)` against core's `(stroke, metrics)`,
+   with its own `surfaceNormalAt` and no rotation, lean or post-rotation seat. That copy predates
+   this and is a real finding, but reconciling two different signatures is its own change with its
+   own risk, and shipping an export nobody needs in order to force it is the wrong order. Export it
+   when something here actually needs it, and port the studio in the same change. */
 // The shipping light rig. Exported so an admin studio tunes a look under the SAME lights the designer
 // renders it under — a colour picked beneath a brighter key is simply the wrong colour, and the
 // designer's own rig carries a note about exactly that overexposure washing the cake top toward white.

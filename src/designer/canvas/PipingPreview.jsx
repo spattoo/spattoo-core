@@ -1,7 +1,7 @@
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { SafeEnvironment } from './TextureErrorBoundary.jsx';
+import { SafeEnvironment } from './safeEnvironment.jsx';
 import { envProps } from './envMap.js';
 import { TopPipingRing, BottomPipingRing } from './CakeTier.jsx';
 import { PIPING_FRONT_ANGLE } from '../constants.js';
