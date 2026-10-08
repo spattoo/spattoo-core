@@ -121,6 +121,7 @@ section below (§1–§4) is the authoritative detail for its keys.
   "top_single_angle":         0,                      // RADIANS (single mode seed)
   "top_single_max":           12,
   "top_flip":                 false,
+  "max_depth":                0.16,                   // radial ceiling (fraction of tier radius)
   "top_rotation":             [0, 0, 0],              // DEGREES
   "top_radial_offset":        0,
   "top_y_offset":             0,
@@ -336,6 +337,7 @@ Piping has a **top** (rim) and **bottom** (board) set with identical shapes — 
 |---|---|---|---|
 | `top_flip` / `bottom_flip` | bool | top `false`, bottom `true` | Flip the ring's facing. |
 | `top_rotation` / `bottom_rotation` | `[x,y,z]` **degrees** | `null` | Facing rotation. **Degrees** — the canonical convention the decor `rotation` field is being unified onto (piping was already degrees; converted to radians at render in `renderShells`, `CakeTier.jsx`). |
+| `max_depth` | number (fraction of tier radius) | `0.16` | **The ring's radial ceiling** — how far a shell may reach off the wall, which is what stops raising Size from walking the cream off a small tier. Shared by both zones: it describes the MESH's room to grow, not a per-surface placement, so there is no `top_`/`bottom_` pair. ⚠️ **This is the value that silently ate `scale.max` until 2026-10-08.** It was a constant in `shellGeo.js` that no row could reach: the Rosette authored `scale { min: 1, max: 5 }`, the dial travelled to 5.00, and the render came out byte-identical to 2.00 — 0 changed pixels of 252,000 — because the cap bound at 1.40. If a Size range looks dead at the top, this is the number to raise. Read in `capShellScale` (`shellGeo.js`); gated by `check:element-size` rule 4 and asserted behaviourally in `shellGeo.test.js`. |
 | `top_radial_offset` / `bottom_…` | number | `null` | Push the ring out from / into the wall. |
 | `top_y_offset` / `bottom_…` | number | `null` | Raise/lower the ring. |
 | `top_spacing` / `bottom_…` | number | `null` | Gap between repeats. |
@@ -495,6 +497,7 @@ The complete `cake_elements` row — `placement_config` is one field of it. Writ
     "top_single_angle":         0,                        // RADIANS
     "top_single_max":           12,
     "top_flip":                 false,
+    "max_depth":                0.16,                     // radial ceiling (fraction of tier radius)
     "top_rotation":             [0, 0, 0],                // DEGREES
     "top_radial_offset":        0,
     "top_y_offset":             0,

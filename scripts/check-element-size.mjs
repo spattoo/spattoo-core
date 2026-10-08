@@ -154,6 +154,40 @@ for (const rel of FILES) {
   }
 }
 
+/* Rule 4: the shell size cap is resolved through the row, never left to its default.
+   ⚠️ THE RULE THE FIRST THREE COULD NOT STATE. `capShellScale` bounded every piping shell by a
+   module-scope 0.16 that no row could reach, so an admin's `scale: { min: 1, max: 5 }` rendered as
+   one size from 1.40 up — the dial moved, the cake did not, and all three rules above were green
+   because none of them looks past the control. The ceiling is a row value now; a call that omits
+   it silently takes the default rail back.
+   ⚠️ AND IT IS STILL ONLY ONE FUNCTION WIDE. A gate that matches a name cannot state "an authored
+   value reaches the pixels" — the fifth variant need only be spelled differently. The behavioural
+   assertions in shellGeo.test.js are what actually hold that line; this catches the specific
+   regression of dropping the argument again. */
+const SIZED_BY_ROW = ['capShellScale', 'buildShellGeo'];
+const ARITY = { capShellScale: 5, buildShellGeo: 6 };
+for (const rel of FILES) {
+  const src = maskComments(readFileSync(join(ROOT, rel), 'utf8'));
+  for (const fn of SIZED_BY_ROW) {
+    const re = new RegExp(`(?<![A-Za-z_.])${fn}\\s*\\(`, 'g');
+    let m;
+    while ((m = re.exec(src))) {
+      if (/export function\s*$/.test(src.slice(Math.max(0, m.index - 24), m.index))) continue;
+      // Walk to the matching ')' and count top-level commas — the call's real arity.
+      let depth = 0, args = 1, i = m.index + m[0].length - 1;
+      for (; i < src.length; i++) {
+        const c = src[i];
+        if (c === '(' || c === '[' || c === '{') depth++;
+        else if (c === ')' || c === ']' || c === '}') { depth--; if (depth === 0) break; }
+        else if (c === ',' && depth === 1) args++;
+      }
+      if (args >= ARITY[fn]) continue;
+      problems.push({ rel, line: src.slice(0, m.index).split('\n').length,
+                      key: `${rel}:${fn}`, row: true, fn, args });
+    }
+  }
+}
+
 /* Rule 3: a default SIZE is read off the row, never written out.
    INVARIANTS line 23 — "`placement_config.r` — default scale (never hard-coded; never force a
    value)". Rules 1 and 2 both look at the CONTROL; this one looks at the value the control starts
@@ -188,6 +222,13 @@ if (problems.length) {
       console.error('     Use the element: pipingScaleFor(el) / scatterScaleFor(el) / el.placement_config.r.\n');
       continue;
     }
+    if (p.row) {
+      console.error(`     ${p.fn}() is called with ${p.args} argument(s) and takes the element's`);
+      console.error('     placement_config last. Without it the shell falls back to the built-in');
+      console.error('     0.16 radial rail, which silently overrides whatever scale.max the admin');
+      console.error('     authored — the dial moves and the cake does not. Pass the row.\n');
+      continue;
+    }
     if (p.dial) {
       console.error(`     <SizeDial size={${p.what}}> declares no bounds, so the component's own`);
       console.error('     0.5-2 applies and placement_config.scale {min,max,step} reaches nothing.');
@@ -206,6 +247,13 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log(`✓ check:element-size — ${checked} dial row(s) and ${dials} SizeDial(s) read their bounds `
-          + `from the element row, and no default size is hard-coded `
-          + `(${BASELINE.size + DIAL_BASELINE.size} baselined)`);
+/* ⚠️ THE MESSAGE SAYS ONLY WHAT WAS CHECKED. It used to end "and no default size is hard-coded" —
+   a claim about the whole repo that three syntax rules cannot support. The fault was planted in the
+   renderer twice and this line printed both times, which is worse than silence: it is why nobody
+   looked further. Name the rules, name their reach, and point at the thing that does cover the
+   rest. */
+console.log(`✓ check:element-size — ${checked} dial row(s) and ${dials} SizeDial(s) take their `
+          + `bounds from an expression; ${seeds} literal default size(s) beside an element row; `
+          + `every size-capping call passes the row (${BASELINE.size + DIAL_BASELINE.size} baselined).`
+          + `\n   Scope: four SYNTACTIC rules over src/designer. A ceiling applied downstream under `
+          + `any other name is outside them — shellGeo.test.js asserts that behaviourally.`);

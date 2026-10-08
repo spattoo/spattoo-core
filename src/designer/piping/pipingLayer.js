@@ -101,6 +101,9 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
     return {
       flipTop:           pc.top_flip          ?? false,
       rotation:          pc.top_rotation       ?? null,
+      // The radial ceiling this element authorised. Shared by both zones: it describes the MESH's
+      // room to grow, not a per-surface placement, so there is no top_/bottom_ pair.
+      maxDepth:          pc.max_depth          ?? null,
       extraRadialOffset: pc.top_radial_offset  ?? null,
       yOffset:           pc.top_y_offset        ?? null,
       spacing:           pc.top_spacing         ?? null,
@@ -120,6 +123,7 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
   return {
     flipBottom:        pc.bottom_flip          ?? true,
     bottomRotation:    pc.bottom_rotation      ?? null,
+    maxDepth:          pc.max_depth            ?? null,   // see the rim branch
     extraRadialOffset: pc.bottom_radial_offset ?? null,
     yOffset:           pc.bottom_y_offset      ?? null,
     spacing:           pc.bottom_spacing       ?? null,

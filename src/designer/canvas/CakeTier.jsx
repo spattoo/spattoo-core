@@ -23,7 +23,6 @@ import { buildShellGeo, capShellScale, wallPerimeter, extractGeo } from './shell
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
-import { seatHalfDepth } from '../geometry/seating.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams, buildDripFlood, paintDripColors } from '../geometry/chocolateDrip.js';
 import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/secondCreamLayer.js';
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
@@ -264,12 +263,15 @@ const GLYPH_PIPE_INSET_FRAC = 0.45;
 // buildShellGeo does (shellScale / bbWidth / bbDepth + world extents), so ringPositions and the editor
 // clamps treat it identically, plus `scene` / `minY` for the base-seated render. Height-normalised to
 // SHELL_HEIGHT_FRAC of the tier radius (× user size), sharing the same depth cap as cream shells.
-function buildDecorationShell(scene, radius, sizeFactor) {
+function buildDecorationShell(scene, radius, sizeFactor, placementConfig = null) {
   if (!scene) return null;
   const box = new THREE.Box3().setFromObject(scene);
   const size = new THREE.Vector3(); box.getSize(size);
   const sc1 = (radius * SHELL_HEIGHT_FRAC) / (size.y || 1);
-  const sc  = capShellScale(sc1, sizeFactor, size.z || 1e-3, radius);
+  /* The row's ceiling reaches this path too. It shares the cream shells' cap by design ("sharing
+     the same depth cap as cream shells", above) — so it shared the bug as well: an element-finish
+     ring ignored its own scale.max exactly like a cream one. Found by the gate, not by me. */
+  const sc  = capShellScale(sc1, sizeFactor, size.z || 1e-3, radius, placementConfig);
   return {
     scene, minY: box.min.y, isElement: true,
     shellScale: sc, bbWidth: size.x, bbDepth: size.z,
@@ -794,6 +796,9 @@ function TopPipingRingImpl({
   topY, radius, glbPath, color = '#ffffff', sizeFactor = 1,
   softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   topRotation       = [0, 0, 0],
+  // The row's radial ceiling (`placement_config.max_depth`), passed through to the size cap. Null
+  // keeps shellGeo's default, so a row that authors nothing renders exactly as it always has.
+  maxDepth          = null,
   extraRadialOffset = 0,
   yOffset           = 0,
   flipTop = false,
@@ -814,23 +819,31 @@ function TopPipingRingImpl({
 
   const tr0 = topRotation?.[0] ?? 0, tr2 = topRotation?.[2] ?? 0;
   const A = useMemo(() => finish === 'element'
-    ? buildDecorationShell(scene, radius, sizeFactor)
-    : buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2]),
-    [finish, scene, flipTop, radius, sizeFactor, tr0, tr2]);
-  const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
-    [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
+    ? buildDecorationShell(scene, radius, sizeFactor, { max_depth: maxDepth })
+    : buildShellGeo(scene, flipTop, radius, sizeFactor, [tr0, 0, tr2], { max_depth: maxDepth }),
+    [finish, scene, flipTop, radius, sizeFactor, tr0, tr2, maxDepth]);
+  /* ⚠️ THE ALTERNATE GETS THE SAME CEILING AND THE SAME TILT. It was built with neither, so an
+     alternating ring sized its two pieces by different rules — invisible while every alternate
+     was a near-twin of its partner, wrong the moment one of them was authored tilted. */
+  const B = useMemo(() => (altEnabled
+    ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor, [tr0, 0, tr2], { max_depth: maxDepth }) : null),
+    [altEnabled, sceneAlt, altFlip, radius, sizeFactor, tr0, tr2, maxDepth]);
 
   // Publish this rim shell's exact post-tilt radial reach (relative to the rim edge, as radius
   // fractions) so the editor's radial control stops the ring precisely when its outer/inner edge
   // touches a neighbouring ring or the rim — matching the rendered pixels, not the raw bbox.
   useEffect(() => {
     if (A && glbPath && radius) {
-      const halfRaw = (A.bbDepth * A.shellScale) / 2;   // the render's positioning `half`
+      /* ⚠️ THE SAME NUMBER THE SEAT USES, or the editor's clamps stop the ring somewhere the
+         pixels are not. This read the UNTILTED `bbDepth` while the seat below had already moved to
+         the tilted reach — one component disagreeing with itself, which is how the radial clamp
+         came to be measured against a box the renderer no longer draws. */
+      const halfRaw = A.worldMaxZ;   // the render's positioning reach (see `off`, below)
       // `outerFrac` = how far the shell's OUTER face stands proud of the wall (radius fraction),
       // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
       // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
       // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
-      const off = Math.min(-seatHalfDepth(A.bbDepth * A.shellScale) + extraRadialOffset, -seatHalfDepth(A.bbDepth * A.shellScale));
+      const off = Math.min(-halfRaw + extraRadialOffset, -halfRaw);
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
@@ -859,8 +872,17 @@ function TopPipingRingImpl({
        the first two were the decoration ring's seat height and its ignored X/Z.
        For an untilted shell `worldMaxZ - worldMinZ` IS `bbDepth * shellScale`, so nothing that
        authors no rotation moves by a hair. */
-    const half = seatHalfDepth(A.worldMaxZ - A.worldMinZ);   // half the shell's TILTED depth
-    let   o    = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
+    /* ⚠️ THE PIECE'S OWN OUTER REACH, NOT HALF ITS BOX. `-half` puts the outer face on the rim
+       only while the shell is symmetric about its origin in Z — and `extractGeo` puts the origin
+       at the piece's BASE, so a tilt destroys that symmetry. Laid face-up with -90° about X this
+       disc spans Z -1.90..0 instead of -0.45..+0.45: every bit of it is on one side of the origin,
+       `half` is 0.95 where the real outward reach is 0, and the ring lands a further half-depth
+       inside the rim with icing showing between it and the edge. Sandeep, with the screenshot:
+       *"why is it not on the rim? why inside"*.
+       `worldMaxZ` IS `half` for an untilted shell (asserted in shellGeo.test.js), so this is the
+       same number everywhere it was already right. */
+    const reach = A.worldMaxZ;                                   // outward reach past the origin
+    let   o     = Math.min(-reach + extraRadialOffset, -reach);  // outer face ≤ cake edge
     // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
     if (shape?.strokeW) o = Math.max(o, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     return o;
@@ -939,6 +961,7 @@ function BottomPipingRingImpl({
   yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, tierHeight = 0,
   softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   bottomRotation    = [0, 0, 0],
+  maxDepth          = null,   // see the matching prop on the rim ring
   extraRadialOffset = 0,
   yOffset           = 0,
   flipBottom = true,
@@ -959,11 +982,12 @@ function BottomPipingRingImpl({
 
   const br0 = bottomRotation?.[0] ?? 0, br2 = bottomRotation?.[2] ?? 0;
   const A = useMemo(() => finish === 'element'
-    ? buildDecorationShell(scene, radius, sizeFactor)
-    : buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2]),
+    ? buildDecorationShell(scene, radius, sizeFactor, { max_depth: maxDepth })
+    : buildShellGeo(scene, flipBottom, radius, sizeFactor, [br0, 0, br2], { max_depth: maxDepth }),
     [finish, scene, flipBottom, radius, sizeFactor, br0, br2]);
-  const B = useMemo(() => (altEnabled ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor) : null),
-    [altEnabled, sceneAlt, altFlip, radius, sizeFactor]);
+  const B = useMemo(() => (altEnabled
+    ? buildShellGeo(sceneAlt, altFlip, radius, sizeFactor, [br0, 0, br2], { max_depth: maxDepth }) : null),
+    [altEnabled, sceneAlt, altFlip, radius, sizeFactor, br0, br2, maxDepth]);
 
   // Publish this shell's exact rendered extents (as radius fractions) for the editor's clamps:
   // vertical reach for the Height clamp, post-tilt radial reach for the radial clamp — so the
@@ -992,8 +1016,10 @@ function BottomPipingRingImpl({
   // Hoisted for the drag — see the matching note on the top ring.
   const off = useMemo(() => {
     if (!A) return 0;
-    const half = (A.worldMaxZ - A.worldMinZ) / 2;   // tilted depth — see the rim seat above
-    let   o    = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+    // The piece's own INWARD reach — the mirror of the rim seat above, and identical to half the
+    // depth whenever the shell is symmetric about its origin. Puts the inner face on the wall.
+    const reach = -A.worldMinZ;
+    let   o     = reach + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
     if (shape?.strokeW) o = Math.min(o, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     return o;
@@ -1823,6 +1849,7 @@ export default function CakeTier({
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
+      maxDepth={p.maxDepth ?? null}
       extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
       yOffset={(p.yOffset ?? 0) + (p.userYOffset ?? 0)}
       flipTop={p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false)}
@@ -1862,6 +1889,7 @@ export default function CakeTier({
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}
+      maxDepth={p.maxDepth ?? null}
       extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
       yOffset={p.bend
         ? height * BEND_ANCHOR_FRAC + (p.userYOffset ?? 0)   // festoon: wall anchor + baked/nudged offset
