@@ -146,3 +146,41 @@ describe('the edit bag agrees at both ends', () => {
       .toEqual([]);
   });
 });
+
+/* ── The board is the cake's, not the tier's ─────────────────────────────────────────────────────
+ *
+ * A cloud lives in `tier.clouds[]` and is handed its tier's numbers. `boardY` used to be passed as
+ * `tier.baseY` — which IS the board for tier 0, and is the lid of the tier below for every tier
+ * above it. So a second-tier cloud sent to "On the board" was laid on the join between the tiers.
+ * Sandeep: "when pluffy cloud is chooses 'on the board', it stays on the middle."
+ *
+ * ⚠️ A GEOMETRY UNIT TEST CANNOT SEE THIS. `cloudBaseY('board', …)` returned `boardY` then and
+ * returns it now — it was right all along, given the right number. The fault was entirely in what
+ * the caller handed it, and the caller is JSX. So it is asserted here, where this suite already
+ * reads the source for exactly that kind of question.
+ */
+describe('a cloud is given the cake board, not its own tier base', () => {
+  // The JSX that renders the clouds belonging to one tier.
+  const cloudBlock = (() => {
+    const start = SOURCE.indexOf('(tier.clouds ?? []).map(');
+    expect(start, 'the per-tier cloud block should exist in CakeCanvas.jsx').toBeGreaterThan(-1);
+    return SOURCE.slice(start, SOURCE.indexOf('(tier.balloons ?? []).map(', start));
+  })();
+
+  it('passes the board constant, never the tier base, as boardY', () => {
+    expect(cloudBlock).toMatch(/boardY:\s*board \? BOARD_TOP_Y : tier\.baseY/);
+    // The old spelling. A tier's base is only the board on the bottom tier.
+    expect(cloudBlock).not.toMatch(/boardY:\s*tier\.baseY\s*[,}]/);
+  });
+
+  it('still passes the tier base separately, as the foot of that tier wall', () => {
+    // Without this a wall cloud on an upper tier would stand on the board and rise the whole cake.
+    expect(cloudBlock).toMatch(/baseY:\s*tier\.baseY/);
+  });
+
+  it('names the board height rather than repeating 0.1', () => {
+    expect(SOURCE).toMatch(/BOARD_TOP_Y/);
+    // The board mesh's own thickness defines that height; it must not be written out again.
+    expect(SOURCE).not.toMatch(/args=\{\[board\.width, 0\.1, board\.depth\]\}/);
+  });
+});

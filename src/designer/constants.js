@@ -247,6 +247,16 @@ export const FLAT_STICKER_Y_OFFSET  = 0.025;  // lift above cake top surface —
 // — but referencing them by name means a slug rename never needs a code change.
 
 // Cake surfaces an element can be placed on.
+/* The top face of the cake board, in world units — where the tier stack starts.
+ *
+ * ⚠️ FOUR COPIES OF THIS NUMBER EXISTED. `BOARD_TOP_Y` in CakeDesigner, `BOARD_Y` in FinishHandles,
+ * and two bare `0.1`s in CakeCanvas (one of them the board mesh's own thickness, which is what
+ * DEFINES it: a 0.1-tall slab centred at 0.05 tops out exactly here). They agreed, which is the
+ * only reason nothing had broken — but a cloud asking "where is the board" had no one place to ask,
+ * and ended up asking its own tier instead. One name, imported.
+ */
+export const BOARD_TOP_Y = 0.1;
+
 export const ZONES = Object.freeze({
   TOP_SURFACE: 'top_surface',
   SIDE:        'side',

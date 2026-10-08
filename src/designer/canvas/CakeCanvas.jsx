@@ -35,7 +35,7 @@ import {
   DESIGNER_GROUND,
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
-  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
+  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
@@ -3298,13 +3298,13 @@ function CakeContent({ config, scene, edit = null }) {
           board-level finish (a ring of grass, letter blocks at the foot, writing on the board) is
           placed against, so drawing it anywhere else left those standing on nothing. */}
       {board && (board.kind === 'rect' ? (
-        <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
+        <RoundedBox position={[0, BOARD_TOP_Y / 2, 0]} args={[board.width, BOARD_TOP_Y, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
           onClick={onBoardClick}>
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </RoundedBox>
       ) : (
         <mesh position={[0, 0.05, 0]} castShadow receiveShadow onClick={onBoardClick}>
-          <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
+          <cylinderGeometry args={[board.radius, board.radius, BOARD_TOP_Y, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
       ))}
@@ -3491,7 +3491,7 @@ function CakeContent({ config, scene, edit = null }) {
                     tier.height > 0 ? (hit.y - tier.baseY) / tier.height : 0);
                 }
                 const onTop = (cl.surface ?? 'top') === 'top';
-                const planeY = onTop ? tier.baseY + tier.height : (board ? 0.1 : tier.baseY);
+                const planeY = onTop ? tier.baseY + tier.height : (board ? BOARD_TOP_Y : tier.baseY);
                 const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
                 if (!hit) return null;
                 const against = onTop ? (tier.radius || 1) : (board?.radius ?? tier.radius ?? 1);
@@ -3500,7 +3500,8 @@ function CakeContent({ config, scene, edit = null }) {
                 return cloudDragTo(cl, { radius: tier.radius, handleRadius: against }, u, v);
               }}>
               {selectedGenerated?.kind === 'cloud' && selectedGenerated.id === cl.id && (() => {
-                const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
+                const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height,
+                                               baseY: tier.baseY, boardY: board ? BOARD_TOP_Y : tier.baseY });
                 const pts = pl.lobes.flatMap(l => [
                   { x: l.position.x - l.r, y: l.position.y - l.r, z: l.position.z - l.r },
                   { x: l.position.x + l.r, y: l.position.y + l.r, z: l.position.z + l.r },
@@ -3515,7 +3516,11 @@ function CakeContent({ config, scene, edit = null }) {
               <FondantCloud
                 key={cl.id}
                 params={cl}
-                cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
+                /* `baseY` is the foot of THIS tier's wall; `boardY` is the cake's board. The two are
+                   the same height on the bottom tier and differ on every tier above it — see
+                   cloudBaseY. Passing one for both put a second-tier board cloud on the join. */
+                cake={{ radius: tier.radius, topY: tier.baseY + tier.height,
+                        baseY: tier.baseY, boardY: board ? BOARD_TOP_Y : tier.baseY }}
               />
             </DraggableGenerated>
           ))}
@@ -3599,7 +3604,7 @@ function CakeContent({ config, scene, edit = null }) {
           shp={tierShape(topTier)}
           tiers={tierData}
           boardRadius={board.radius}
-          boardY={0.1}
+          boardY={BOARD_TOP_Y}
           boardShp={board}
           onClick={() => onWritingClick?.(w.id)}
           onMove={moves => onWritingMove?.(w.id, moves)}
@@ -3631,7 +3636,7 @@ function CakeContent({ config, scene, edit = null }) {
         onPickStroke={onPickStroke}
         penStyle={penStyle}
         tierData={tierData}
-        board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
+        board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: BOARD_TOP_Y } : undefined}
         onAddStroke={onAddStroke}
       />
 

@@ -49,7 +49,7 @@ import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
 import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITING_COLOR,
-         THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir } from './constants.js';
+         THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } from './geometry/surface.js';
@@ -71,7 +71,7 @@ import { RAINBOW_ARRANGEMENTS, ArrangementTile, arrangementOf, arrangementShape 
 import { CalendarLayoutTile } from './decorations/CalendarLayoutTile.jsx';
 import { NAME_BLOCK_DEFAULTS, nameBlockRun, nameBlockYaw, boardRunRadius } from './geometry/nameBlocks.js';
 // The board's top surface — where the tier stack starts (see CakeScene). Blocks stand on it.
-const BOARD_TOP_Y = 0.1;
+// BOARD_TOP_Y is imported from constants.js — one definition, see the note there.
 
 // The rail's minimum spacing between stacked items. Used by sidebarNav's `gap` AND as the floor for
 // the measured tools gap in the cluster below it — one number, because the two groups sit in one column
@@ -9645,6 +9645,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>Surface — drag each piece on the cake to fine-tune.</div>
+        {/* ── The surfaces, side by side ───────────────────────────────────────────────────────
+            ⚠️ A ROW, like every other preview on this panel. These were full-width 110px tiles in a
+            COLUMN, so three surfaces cost ~390px of a phone to show three small cakes and a lot of
+            grey — and the controls under them were off the bottom of the sheet. Sandeep: "see the
+            mobile view, preview taking lot of space. for most of the elements preview is a
+            horizontal scrollable row. pls make the same here also. its difficult to validate each
+            control like this."
+            The reasoning is already written out on `PlacementChooser`, which sits in this same file
+            and had the identical problem: "the tile was full-width while the cake inside it used the
+            middle ~40%". Same fix, same `s.previewRow` / `s.previewTile` / `ScrollFadeRow`, so the
+            two placement surfaces read alike instead of each having its own idea.
+            ⚠️ NOT `PreviewTile` ITSELF, because these are not checkboxes: a pattern lives on exactly
+            ONE surface and tapping MOVES it, where PlacementChooser's slots tick independently. The
+            layout is shared; the gesture is not. */}
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
         {tiles.map(t => {
           /* ⚠️ A ZONE NO LONGER IDENTIFIES A TILE. With one side slot per tier, "side" matches
              several tiles, so the tier has to be compared too or every side tile ticks at once.
@@ -9654,14 +9669,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             || (t.zone === ZONES.SIDE && card.currentZone === ZONES.MIDDLE_TIER);
           const active = sameZone && (card.currentTierIndex ?? 0) === t.tierIndex;
           return (
-            <div key={t.key} role="button" onClick={() => { if (!active) changePatternZone(card, t.zone, t.tierIndex); }} style={{ cursor: active ? 'default' : 'pointer' }}>
-              <div style={{ width: '100%', height: 110, borderRadius: 10, overflow: 'hidden', border: `2px solid ${active ? INK : '#cdccd3'}`, background: '#cfcdd6' }}>
+            <div key={t.key} role="button" onClick={() => { if (!active) changePatternZone(card, t.zone, t.tierIndex); }}
+                 style={{ ...s.previewTile, ...(active ? s.previewTileOn : {}), cursor: active ? 'default' : 'pointer' }}>
+              <div style={{ width: '100%', height: 74, borderRadius: 9, overflow: 'hidden', background: '#cfcdd6' }}>
                 <TopperPreview parts={parts} placement={t.placement} tiers={canvasConfig.tiers} tierIndex={t.tierIndex} />
               </div>
-              <span style={{ display: 'block', marginTop: 4, fontSize: 10, fontWeight: 700, color: active ? INK : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.5, fontFamily: "'Quicksand',sans-serif" }}>{t.label}{active ? ' ✓' : ''}</span>
+              <span style={{ display: 'block', marginTop: 4, fontSize: 9.5, fontWeight: 700, color: active ? INK : '#8a7a80', textAlign: 'center', textTransform: 'uppercase', letterSpacing: 0.4, fontFamily: "'Quicksand',sans-serif", lineHeight: 1.2 }}>{t.label}{active ? ' ✓' : ''}</span>
             </div>
           );
         })}
+        </ScrollFadeRow>
         <button onClick={() => removePattern(card)} style={{ ...s.deleteBtn, marginTop: 6, alignSelf: 'flex-start' }}>Remove from cake</button>
       </div>
     );
@@ -12757,6 +12774,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const set = changes => updateTierClouds(card.tierIndex, cur =>
       cur.map(c => (c.id === cl.id ? { ...c, ...changes } : c)));
 
+    /* ⚠️ THE BOARD BELONGS TO THE CAKE, NOT TO A TIER — and a cloud on an upper tier did not know
+       that. A cloud lives in `tier.clouds[]`, and every height it is drawn at comes from the tier
+       that holds it: `boardY` is passed as `tier.baseY`, which IS the board for tier 0 and is the
+       tier BELOW's lid for anything above. So picking "On the board" on a second-tier cloud laid it
+       on the join between the tiers. Sandeep: *"when pluffy cloud is chooses 'on the board', it
+       stays on the middle."*
+
+       Moving the cloud to tier 0 fixes the whole family at once instead of threading a second
+       height through the geometry: the tier it belongs to then supplies the right board height, the
+       right radius to stand outside of, and the right size (a cloud is scaled by its tier's radius),
+       and the drag — which already resolved against the real board plane, and so disagreed with the
+       render — lines up with it for free. `placementSlots` says the same thing about the board in
+       its own words: "ONE slot for the whole cake, not one per tier ... tierIndex 0".
+
+       Only the BOARD moves. "On top" and "On the wall" name a surface each tier has of its own, so
+       a cloud on the second tier's wall stays on the second tier. */
+    const setWhere = (patch) => {
+      const toBoard = patch.surface === 'board' && card.tierIndex !== 0;
+      if (!toBoard) { set(patch); return; }
+      const moved = { ...cl, ...patch };
+      updateTierClouds(card.tierIndex, cur => cur.filter(c => c.id !== cl.id));
+      updateTierClouds(0, cur => [...cur, moved]);
+      selectExclusive({ type: 'cloud', tierIndex: 0, id: cl.id });
+    };
+
     // The two kinds are different OBJECTS, not one at two sizes — balls pressed together against a
     // single piece cut with a knife — so each tile carries its whole shape, the way the rainbow's
     // tiles do. Rows come with it: a cut piece is rolled out flat, so stacking it would describe
@@ -12799,7 +12841,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {group('Kind', KINDS, it => (cl.variant ?? 'puff') === it.key, it => set(it.p))}
         {/* A cloud pressed on a wall is a cut piece — a bunch of balls does not press flat — so
             picking the wall picks the kind with it rather than leaving an impossible pair. */}
-        {group('Where it goes', WHERE, it => (cl.surface ?? 'top') === it.key, it => set(it.p))}
+        {group('Where it goes', WHERE, it => (cl.surface ?? 'top') === it.key, it => setWhere(it.p))}
 
         {/* ⚠️ FOUR DIALS IN ONE SCROLLING ROW, not four stacked full-width sliders. Sandeep, for the
             fourth time: "why are we still seeing sliders? i have been asking to convert them to
