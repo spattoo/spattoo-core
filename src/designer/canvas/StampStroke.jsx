@@ -2,7 +2,8 @@ import { useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
 import * as THREE from 'three';
 import { stampTransforms } from '../geometry/creamPen.js';
-import { creamMaterialProps, extractGeo } from './CakeTier.jsx';
+import { creamMaterialProps } from './CakeTier.jsx';
+import { extractGeo } from './shellGeo.js';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 
 // ── GLB stamp stroke ─────────────────────────────────────────────────────────
