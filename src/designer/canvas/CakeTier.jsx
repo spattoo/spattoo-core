@@ -850,7 +850,16 @@ function TopPipingRingImpl({
   // lands on the angle of a slightly different outline than the one it is drawn on.
   const off = useMemo(() => {
     if (!A) return 0;
-    const half = seatHalfDepth(A.bbDepth * A.shellScale);   // half the shell's measured depth (shared seat rule)
+    /* ⚠️ THE TILTED DEPTH, NOT THE UPRIGHT ONE. `bbDepth` is measured before the authored rotation,
+       and `buildShellGeo` already publishes the tilt-aware reach beside it (`worldMaxZ`/`worldMinZ`,
+       "radial reach … AFTER the tilt") — the editor's clamps two blocks down use those while this
+       seat used the raw box, so one function disagreed with itself. On a model laid face-up with
+       -90° about X the two differ by a factor of five (0.403 upright against 1.902 tilted), which
+       seats the whole ring at the wrong radius. Third measurement today taken from an untilted box;
+       the first two were the decoration ring's seat height and its ignored X/Z.
+       For an untilted shell `worldMaxZ - worldMinZ` IS `bbDepth * shellScale`, so nothing that
+       authors no rotation moves by a hair. */
+    const half = seatHalfDepth(A.worldMaxZ - A.worldMinZ);   // half the shell's TILTED depth
     let   o    = Math.min(-half + extraRadialOffset, -half);   // outer face ≤ cake edge
     // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
     if (shape?.strokeW) o = Math.max(o, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
@@ -983,7 +992,7 @@ function BottomPipingRingImpl({
   // Hoisted for the drag — see the matching note on the top ring.
   const off = useMemo(() => {
     if (!A) return 0;
-    const half = (A.bbDepth / 2) * A.shellScale;
+    const half = (A.worldMaxZ - A.worldMinZ) / 2;   // tilted depth — see the rim seat above
     let   o    = half + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
     if (shape?.strokeW) o = Math.min(o, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
