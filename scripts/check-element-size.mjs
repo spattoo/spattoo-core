@@ -40,17 +40,29 @@
 //
 // Run via `npm run check:element-size` (in `npm run verify`).
 
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-/* ⚠️ pipingLayer.js JOINED THE LIST LATE, and the omission cost a fix. Three of the four places
-   that seeded a ring's size lived in CakeDesigner and were fixed together; the fourth was the
-   shared factory in this file, which the gate was not even reading. Found by Sandeep asking whether
-   ANY code drove piping size from config — the answer was no, and the gate could not have said so.
-   A gate that scans one file can only ever vouch for one file. */
-const FILES = ['src/designer/CakeDesigner.jsx', 'src/designer/piping/pipingLayer.js'];
+
+/** Every source file under src/designer, tests excluded — the gate's own reach. */
+function walkDesigner(dir = join(ROOT, 'src/designer'), out = []) {
+  for (const name of readdirSync(dir)) {
+    const full = join(dir, name);
+    if (statSync(full).isDirectory()) walkDesigner(full, out);
+    else if (/\.jsx?$/.test(name) && !/\.test\./.test(name)) out.push(relative(ROOT, full));
+  }
+  return out;
+}
+/* ⚠️ THE WHOLE DESIGNER, because a named file list is how the fourth piping seed hid. Three of the
+   four places that seeded a ring's size lived in CakeDesigner and were fixed together; the fourth
+   was the shared factory in pipingLayer.js, which this gate was not even reading — it printed a
+   confident tick while vouching for one file. Sandeep found it by ASKING whether any code drove
+   piping size from config at all, which a gate should have been able to answer.
+   Walking the tree means the next module cannot opt out by existing. Measured before widening:
+   zero new findings, once rule 3 asks whether an element row is actually in scope. */
+const FILES = walkDesigner();
 
 /* Baselined 2026-10-07. Each entry is the control's label and the card it sits in — not a line
    number, which would rot on the next edit above it. */
@@ -149,9 +161,17 @@ for (const rel of FILES) {
    element object is in scope at every one of these sites, so there is always something to ask. */
 for (const rel of FILES) {
   const src = maskComments(readFileSync(join(ROOT, rel), 'utf8'));
-  src.split('\n').forEach((line, i) => {
+  const lines = src.split('\n');
+  lines.forEach((line, i) => {
     const m = line.match(/(?<![A-Za-z])size:\s*(-?\d+(?:\.\d+)?)\s*[,}]/);
     if (!m) return;
+    /* ⚠️ ONLY WHERE AN ELEMENT ROW IS IN SCOPE. Widened naively this rule found 21 "faults", and 15
+       of them were topperPresets.js — a preset's own `size: 0.4` IS its value, not a default
+       somebody authored in Manage Elements. The row is what makes a literal a fault; without one
+       there is nothing being ignored. A gate that cries wolf on correct code teaches people to
+       add exemptions, which is how a gate dies. */
+    const near = lines.slice(Math.max(0, i - 6), i + 3).join(' ');
+    if (!/placement_config|default_color|\bel\b|\belement\b/.test(near)) return;
     seeds++;
     problems.push({ rel, line: i + 1, key: `${rel}:size`, seed: true, value: m[1] });
   });
