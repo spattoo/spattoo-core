@@ -128,9 +128,21 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
     swagDepth:         pc.bottom_swag_depth    ?? null,
     swagTilt:          pc.bottom_swag_tilt     ?? null,
     arrangement,
+    /* ⚠️ `finish` WAS MISSING HERE, and the board quietly ignored `bottom_ring_finish` for its whole
+       life. The rim branch returned it; this one returned everything else. So a rosette authored
+       `ring_finish: "element"` on both zones kept its GLB's own materials on the RIM and fell back
+       to the cream path on the BOARD — where the shells are recoloured to `default_color`. Same
+       element, same hex, two colours on one cake. Sandeep: *"why was the color also different for
+       top?"* — the rim was the one behaving; the board was dropping its config.
+       ⚠️ `...drip` too. A drip is rim-only (`const drip` above resolves to `{ drip: false }` here),
+       but the spread was omitted, so a board layer carried `drip: undefined` rather than a stated
+       false. Falsy either way, which is exactly why it went unnoticed — and why the test below
+       compares the two branches' KEY SETS rather than their behaviour. */
+    finish,
     ...alt,
     ...bend,
     ...wrap,
+    ...drip,
     ...seed,
   };
 }

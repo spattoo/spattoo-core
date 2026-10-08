@@ -73,3 +73,80 @@ describe('arrangements offered', () => {
     expect(pipingAllowedArrangements(BOTH, true).length).toBe(1);
   });
 });
+
+/* ── The two branches answer the SAME QUESTIONS ──────────────────────────────────────────────────
+ *
+ * `pipingPlacementFromConfig` is one function with two returns — rim and board — each reading its
+ * own `top_*` / `bottom_*` keys. Twenty-odd fields, written out twice, and nothing checked that the
+ * two lists matched.
+ *
+ * ⚠️ THEY DID NOT. The board branch returned everything except `finish`, so `bottom_ring_finish`
+ * was resolved and then thrown away: a rosette authored `ring_finish: "element"` kept its GLB's own
+ * materials on the rim and fell back to the recoloured cream path on the board. One element, one
+ * hex, two colours on the same cake, and no error anywhere. `...drip` was missing too.
+ *
+ * Comparing KEY SETS rather than values is the point. The values legitimately differ per zone —
+ * that is what the zones are for — but a field present on one side and absent on the other is
+ * always a bug, and it is the only shape this fault can take.
+ */
+describe('rim and board return the same fields', () => {
+  const FULL = {
+    top_ring_finish: 'element', bottom_ring_finish: 'element',
+    top_rotation: [1, 2, 3], bottom_rotation: [4, 5, 6],
+    top_flip: false, bottom_flip: true,
+    top_radial_offset: -0.06, bottom_radial_offset: 0.2,
+    top_y_offset: -0.02, bottom_y_offset: 0.09,
+    top_spacing: 1, bottom_spacing: 1,
+    top_arrangement: 'ring', bottom_arrangement: 'ring',
+  };
+
+  /* ⚠️ FOUR FIELDS ARE DELIBERATELY NAMED PER ZONE, and they are listed rather than the comparison
+     being loosened. The renderer reads `flipTop`/`rotation` on a rim and `flipBottom`/
+     `bottomRotation` on a board, and piping-borders.md already records the hazard that creates:
+     "reading `.rotation` off the bottom gives undefined, which a `??` fallback then quietly
+     replaces with the rim figure". Naming them keeps the test able to catch a FORGOTTEN field —
+     which is the fault that actually happened — while permitting the split that is on purpose. */
+  const PER_ZONE_NAMES = ['flipTop', 'flipBottom', 'rotation', 'bottomRotation'];
+
+  /* ⚠️ A DRIP IS A RIM FEATURE. The board states `drip: false` and carries no drip SETTINGS,
+     because it has none to carry — so its sub-fields are a real asymmetry rather than an omission.
+     `drip` itself is compared: both zones must say whether they have one, and the board's silence
+     on that was part of the bug this suite exists for. */
+  const isDripSetting = k => k.startsWith('drip') && k !== 'drip';
+
+  it('neither branch carries a field the other lacks', () => {
+    const keys = isTop => Object.keys(pipingPlacementFromConfig(FULL, isTop))
+      .filter(k => !PER_ZONE_NAMES.includes(k) && !isDripSetting(k)).sort();
+    const rim = keys(true), board = keys(false);
+    const onlyRim = rim.filter(k => !board.includes(k));
+    const onlyBoard = board.filter(k => !rim.includes(k));
+    expect({ onlyRim, onlyBoard }).toEqual({ onlyRim: [], onlyBoard: [] });
+  });
+
+  it('both zones DO state a flip and a rotation, under their own names', () => {
+    const rim = pipingPlacementFromConfig(FULL, true);
+    const board = pipingPlacementFromConfig(FULL, false);
+    expect(rim.flipTop).toBe(false);
+    expect(board.flipBottom).toBe(true);
+    expect(rim.rotation).toEqual([1, 2, 3]);
+    expect(board.bottomRotation).toEqual([4, 5, 6]);
+  });
+
+  /* ⚠️ THE ONE THAT ACTUALLY BIT. Named separately so a failure says what broke rather than
+     printing a key diff somebody has to interpret. */
+  it('the board honours bottom_ring_finish', () => {
+    expect(pipingPlacementFromConfig(FULL, false).finish).toBe('element');
+    expect(pipingPlacementFromConfig(FULL, true).finish).toBe('element');
+  });
+
+  it('falls back to cream on both zones when nothing is authored', () => {
+    expect(pipingPlacementFromConfig({}, false).finish).toBe('cream');
+    expect(pipingPlacementFromConfig({}, true).finish).toBe('cream');
+  });
+
+  it('a shared ring_finish reaches both zones', () => {
+    const pc = { ring_finish: 'element' };
+    expect(pipingPlacementFromConfig(pc, true).finish).toBe('element');
+    expect(pipingPlacementFromConfig(pc, false).finish).toBe('element');
+  });
+});
