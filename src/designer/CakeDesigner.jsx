@@ -6657,8 +6657,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          pipingPlacementFromConfig do NOT return the same key, and reading `.rotation` off the bottom
          one gives `undefined`. My first cut did exactly that, so the side value was null, the
          fallback took the rim figure again and the fix changed nothing while looking right. */
-      stampRotation:     pipingPlacementFromConfig(el.placement_config, true).rotation        ?? null,
-      stampRotationSide: pipingPlacementFromConfig(el.placement_config, false).bottomRotation ?? null,
+      /* ⚠️ THREE SURFACES, NOT TWO. `side_rotation` is the wall's own attitude, falling back to the
+         board's so nothing authored before it moves. The board and a side BORDER share a frame
+         (both face outward off the wall); the pen on a wall does not — it aligns the piece's
+         up-axis to the surface normal. See the note on `sideRotation` in pipingLayer.js. */
+      stampRotation:     pipingPlacementFromConfig(el.placement_config, true).rotation ?? null,
+      stampRotationSide: (() => {
+        const b = pipingPlacementFromConfig(el.placement_config, false);
+        return b.sideRotation ?? b.bottomRotation ?? null;
+      })(),
       // ── Size it like PIPING, not like a rope ─────────────────────────────────────────────────
       // `thickness` on the pen is a rope DIAMETER, and the stamp scales to it: target = 2×thickness.
       // At the pen's own default that is 0.104 against a ring shell's 0.24 × 1.2 = 0.288, so the

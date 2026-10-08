@@ -106,7 +106,13 @@ describe('rim and board return the same fields', () => {
      "reading `.rotation` off the bottom gives undefined, which a `??` fallback then quietly
      replaces with the rim figure". Naming them keeps the test able to catch a FORGOTTEN field —
      which is the fault that actually happened — while permitting the split that is on purpose. */
-  const PER_ZONE_NAMES = ['flipTop', 'flipBottom', 'rotation', 'bottomRotation'];
+  /* ⚠️ `sideRotation` IS A FIFTH, AND IT IS BOTTOM-ONLY RATHER THAN RENAMED. The four above are the
+     same concept under two names; this one has no rim counterpart at all, because there is no wall
+     above the rim for a pen to draw on. It is listed here — not excluded by loosening the filter —
+     for the reason this block already gives: the test must stay able to catch a field someone
+     FORGOT, and every exception that is spelled out keeps that power while an exception that is
+     inferred throws it away. */
+  const PER_ZONE_NAMES = ['flipTop', 'flipBottom', 'rotation', 'bottomRotation', 'sideRotation'];
 
   /* ⚠️ A DRIP IS A RIM FEATURE. The board states `drip: false` and carries no drip SETTINGS,
      because it has none to carry — so its sub-fields are a real asymmetry rather than an omission.
@@ -148,5 +154,32 @@ describe('rim and board return the same fields', () => {
     const pc = { ring_finish: 'element' };
     expect(pipingPlacementFromConfig(pc, true).finish).toBe('element');
     expect(pipingPlacementFromConfig(pc, false).finish).toBe('element');
+  });
+});
+
+/* ── The wall gets its own attitude ──────────────────────────────────────────────────────────────
+ *
+ * A piping RING has two zones, rim and board, and a side border is a board ring lifted up the wall
+ * — both face outward off the wall, so one rotation serves both honestly. The PEN is a third case:
+ * on a wall it aligns the piece's up-axis to the surface normal, a different frame from the ring's.
+ * `stampRotationSide` read the BOARD's figure, so a rosette authored [0,0,0] for its board border
+ * came out back-on when hand-piped. Sandeep: *"it should be 90 degrees different from board"*.
+ */
+describe('side_rotation', () => {
+  it('is published for the bottom surface', () => {
+    const p = pipingPlacementFromConfig({ side_rotation: [90, 0, 0], bottom_rotation: [0, 0, 0] }, false);
+    expect(p.sideRotation).toEqual([90, 0, 0]);
+    expect(p.bottomRotation).toEqual([0, 0, 0]);   // the board is untouched by it
+  });
+
+  it('is absent when not authored, so the read site can fall back to the board', () => {
+    const p = pipingPlacementFromConfig({ bottom_rotation: [-89, -174, -180] }, false);
+    expect(p.sideRotation).toBeNull();
+    expect(p.bottomRotation).toEqual([-89, -174, -180]);
+  });
+
+  it('is a BOTTOM-surface key — the rim branch does not carry it', () => {
+    const p = pipingPlacementFromConfig({ side_rotation: [90, 0, 0] }, true);
+    expect(p.sideRotation).toBeUndefined();
   });
 });

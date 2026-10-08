@@ -123,6 +123,19 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
   return {
     flipBottom:        pc.bottom_flip          ?? true,
     bottomRotation:    pc.bottom_rotation      ?? null,
+    /* ⚠️ THE WALL IS NOT THE BOARD, AND IT WAS BORROWING THE BOARD'S ATTITUDE. A piping RING has
+       only two zones (rim, board) and a side border is a board ring lifted up the wall — both face
+       outward off the wall, so one rotation legitimately serves both. The PEN is a third case: on a
+       wall it aligns the piece's up-axis to the SURFACE NORMAL, so "up" points out of the cake,
+       which is a different frame from the ring's "upright in world, yawed outward". The same
+       numbers mean different things in the two, and `stampRotationSide` was reading the board's.
+       Rose Swirl's [-89,-174,-180] happens to satisfy both; a rosette authored [0,0,0] for the
+       board renders back-on when hand-piped. Sandeep: *"if i want to hand pipe on side, its not
+       same as board. it should be 90 degrees different from board."*
+       Absent falls back to the board figure, so every element authored before this renders exactly
+       as it did — the fallback lives at the read site, which is the only place that knows the pen
+       is asking. */
+    sideRotation:      pc.side_rotation        ?? null,
     maxDepth:          pc.max_depth            ?? null,   // see the rim branch
     extraRadialOffset: pc.bottom_radial_offset ?? null,
     yOffset:           pc.bottom_y_offset      ?? null,
