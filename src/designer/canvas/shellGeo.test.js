@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildShellGeo, capShellScale, extractGeo } from './shellGeo.js';
+import { buildShellGeo, capShellScale, extractGeo, ringBaseY } from './shellGeo.js';
 
 /** The smallest thing that looks like a loaded GLB scene: one mesh with real geometry. */
 function fakeScene() {
@@ -150,5 +150,47 @@ describe('a ring seats on the shell it actually renders', () => {
     expect(A.worldMaxZ).not.toBeCloseTo(half, 4);
     // The gap between the two is exactly how far inside the rim the ring lands today.
     expect(half - A.worldMaxZ).toBeGreaterThan(0.01);
+  });
+});
+
+/* ── A tilted shell rests ON the surface, not half inside it ─────────────────────────────────────
+ *
+ * The vertical twin of the radial seat above, and found the same way — by Sandeep looking at a
+ * render: *"it was rendering correct element only, but might be burried into cake"*. He was right.
+ *
+ * `extractGeo` seats the geometry at min Y, so an untilted shell spans Y 0..h and placing its
+ * ORIGIN on the cake top is the same as placing its BASE there. A tilt breaks that: laid face-up
+ * with -90° about X the rosette spans Y -0.45..+0.45, so half of it is below its own origin and
+ * sinks into the lid. You see the top half of each rose, which reads as splayed petals rather than
+ * a rose — and reads as the wrong element rather than a seating bug.
+ *
+ * `buildShellGeo` has published `worldBotY` for exactly this since it was written ("vertical
+ * reach … how far the shell actually reaches above/below its anchor"). Nothing used it to seat.
+ * `DecorationShells` got this fix in 47723762; the cream path never did, so the two render paths
+ * disagreed about where a tilted ring sits.
+ */
+describe('ringBaseY lifts a tilted shell clear of the surface', () => {
+  const disc = () => {
+    const s = new THREE.Group();
+    s.add(new THREE.Mesh(new THREE.BoxGeometry(1.890, 0.903, 1.901), new THREE.MeshStandardMaterial()));
+    return s;
+  };
+
+  it('an untilted shell already sits on its base — the seat is a no-op', () => {
+    const A = buildShellGeo(disc(), false, 0.35, 1, [0, 0, 0]);
+    expect(A.worldBotY).toBeCloseTo(0, 10);
+    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10);   // nothing already placed moves
+  });
+
+  it('a tilted shell reaches BELOW its origin, and the seat lifts it by exactly that', () => {
+    const A = buildShellGeo(disc(), false, 0.35, 1, [-90, 0, 0]);
+    expect(A.worldBotY).toBeLessThan(0);                       // half the disc is under the origin
+    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23 - A.worldBotY, 10);
+    expect(ringBaseY(1.23, A)).toBeGreaterThan(1.23);          // lifted, not sunk
+  });
+
+  it('survives a missing shell — the rings call it before a GLB has loaded', () => {
+    expect(ringBaseY(0.5, null)).toBe(0.5);
+    expect(ringBaseY(0.5, {})).toBe(0.5);
   });
 });

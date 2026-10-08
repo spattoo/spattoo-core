@@ -19,7 +19,7 @@ import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FR
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
-import { buildShellGeo, capShellScale, wallPerimeter, extractGeo } from './shellGeo.js';
+import { buildShellGeo, capShellScale, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
@@ -891,7 +891,7 @@ function TopPipingRingImpl({
   const positions = useMemo(() => {
     if (!A) return [];
     return ringPositions({
-      A, radius, off, baseY: topY + yOffset,
+      A, radius, off, baseY: ringBaseY(topY + yOffset, A),
       spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
   }, [A, radius, topY, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
@@ -899,7 +899,7 @@ function TopPipingRingImpl({
   // Only single mode is draggable: a ring/swag/festoon/wrap has no per-piece angle to write to.
   const dragHandler = useSinglePieceDrag({
     active: arrangement === 'single' && !wrap && !bend,
-    canMove, onMoveInstance, radius, off, baseY: topY + yOffset, shape,
+    canMove, onMoveInstance, radius, off, baseY: ringBaseY(topY + yOffset, A), shape,
   });
 
   // U-shaped (bend) elements: bend the whole strip into festoons draped from the rim edge,
@@ -1028,7 +1028,7 @@ function BottomPipingRingImpl({
   const positions = useMemo(() => {
     if (!A) return [];
     return ringPositions({
-      A, radius, off, baseY: yBase + yOffset,
+      A, radius, off, baseY: ringBaseY(yBase + yOffset, A),
       spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape,
     });
   }, [A, radius, yBase, yOffset, off, spacing, swagCount, swagDepth, swagTilt, arrangement, instances, altActive, pattern, shape]);
@@ -1043,7 +1043,7 @@ function BottomPipingRingImpl({
   // Only single mode is draggable — see the top ring.
   const dragHandler = useSinglePieceDrag({
     active: arrangement === 'single' && !wrap && !bend,
-    canMove, onMoveInstance, radius, off, baseY: yBase + yOffset, shape, wall,
+    canMove, onMoveInstance, radius, off, baseY: ringBaseY(yBase + yOffset, A), shape, wall,
   });
 
   // …and everything that ISN'T single slides up and down instead. A ring, a swag and a wrap band go

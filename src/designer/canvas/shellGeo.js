@@ -84,6 +84,28 @@ export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 
   };
 }
 
+/* Where a ring's shells actually sit, given the surface they anchor to.
+ *
+ * ⚠️ ONE DEFINITION, BECAUSE FOUR CALLERS MUST AGREE. The rim ring, the board ring and each one's
+ * single-piece DRAG all compute this anchor, and #10 law 5 requires `handleAt` and `dragTo` to be
+ * exact inverses — four inline subtractions is four chances for the grab point to drift off the
+ * cream.
+ *
+ * `extractGeo` seats a shell at min Y, so an untilted one spans Y 0..h and its origin IS its base:
+ * `worldBotY` is 0 and this returns the anchor untouched, which is what keeps every ring already on
+ * a saved cake exactly where it is. A tilt breaks the equivalence — laid face-up with -90° about X
+ * a rosette spans Y -0.45..+0.45, half of it below its own origin — and the shell sinks into the
+ * lid by that much. You then see the top half of each rose, which reads as a different element
+ * rather than as a seating bug. Sandeep, from the render: *"it was rendering correct element only,
+ * but might be burried into cake"*.
+ *
+ * `DecorationShells` got this in 47723762 (`seatMinY`); the cream path did not, so the two render
+ * paths disagreed about where a tilted ring sits.
+ */
+export function ringBaseY(anchorY, A) {
+  return anchorY - (A?.worldBotY ?? 0);
+}
+
 // Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never exceeds
 // the row's authored ceiling — `placement_config.max_depth`, defaulting to PIPING_MAX_DEPTH_FRAC —
 // as a fraction of the tier radius. The max() floor keeps a little growth headroom even when the
