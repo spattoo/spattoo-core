@@ -8249,6 +8249,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       allowed_zones: ['top_surface', 'side', 'middle_tier'],
       placement_config: { parts_deletable: false, parts: [
         { element_id: a.id, dx: -0.8, dz: 0 }, { element_id: a.id, dx: 0.8, dz: 0, mirror: true } ] } };
+    /* ⚠️ AND IT HAS TO BE IN `elementById`, or the card this hook exists to open renders NOTHING.
+       `renderPatternBody` resolves the pattern with `elementById.get(card.patternElementId)` and
+       feeds that to `placementSlots` — a synthesized row that was never fetched is simply absent,
+       so `patEl` is undefined, the slot list is empty and the card shows a hint and a Remove button
+       with no tiles at all. That is why the stacked full-width tiles went unnoticed here for so
+       long: the one harness that opens this card could not draw them. */
+    setElementById(prev => new Map(prev).set(pattern.id, pattern));
     handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
     return true;
   }
@@ -8483,7 +8490,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const pattern = { id: 'dev-test-pattern', name: 'Test Pattern (dev)', allowed_zones: ['top_surface'],
         placement_config: { parts_deletable: false, parts: [
           { element_id: id, dx: -0.8, dz: 0 }, { element_id: id, dx: 0.8, dz: 0, mirror: true } ] } };
-      handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
+      /* ⚠️ AND IT HAS TO BE IN `elementById`, or the card this hook exists to open renders NOTHING.
+       `renderPatternBody` resolves the pattern with `elementById.get(card.patternElementId)` and
+       feeds that to `placementSlots` — a synthesized row that was never fetched is simply absent,
+       so `patEl` is undefined, the slot list is empty and the card shows a hint and a Remove button
+       with no tiles at all. That is why the stacked full-width tiles went unnoticed here for so
+       long: the one harness that opens this card could not draw them. */
+    setElementById(prev => new Map(prev).set(pattern.id, pattern));
+    handleElementDrop(pattern, { zone: 'top_surface', tierIndex: design.tiers.length - 1, x: 0, z: 0 });
       return true;
     };
     // Gradient visual check (TEMP): place a GLB on the top surface and apply a multi-colour
