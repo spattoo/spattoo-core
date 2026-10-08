@@ -12,6 +12,16 @@
 // settings from admin (manage elements). add a gate to this."* A rule written down three times and
 // broken three times is a rule that needs a gate rather than another paragraph.
 //
+// ── WHAT IT CHECKS (TWO SHAPES) ─────────────────────────────────────────────────────────────────
+//
+// ⚠️ A FOURTH TIME, IN A SHAPE THE FIRST RULE COULD NOT SEE. An admin set a rosette's Default scale
+// to 0.3 with a Size range of 0.1–0.8, placed it, and got a ring at 1.0 on a dial running 0.5–2.
+// Sandeep: *"i have created a new piping element. size i configured 0.3 as default. however it does
+// not honor in core render."* The piping card wrote `<SizeDial size={size} onChange={…} />` with no
+// bounds at all, so the component's own 0.5–2 applied and the row reached nothing — and an authored
+// default BELOW 0.5 cannot even be shown on a dial that starts there. Rule 1 looks at dial ROWS and
+// is blind to a bare component, so the gate grew a second rule rather than a third paragraph.
+//
 // ── WHAT IT CHECKS ──────────────────────────────────────────────────────────────────────────────
 // A dial row entry whose key is `scale` or `hugMul` — the two fields that carry size, per #5b —
 // must take its min and max from an EXPRESSION, not from numeric literals. `scaleRangeOf` resolves
@@ -55,6 +65,35 @@ function cardAt(lines, idx) {
 
 const problems = [];
 let checked = 0;
+let dials = 0;
+
+/* Rule 2: every <SizeDial> declares its own bounds.
+   A dial with no `min` silently falls back to the component's defaults, which is the exact way a
+   row's authored range stops mattering. Scanned per TAG rather than per line, so a dial whose
+   bounds sit on its second line is not a false positive. */
+/* ⚠️ COMMENTS ARE MASKED FIRST, and the gate caught itself without it: the note explaining this
+   very rule contains the words "a bare <SizeDial>", which the scanner read as a bare SizeDial. Blank
+   the comment BODIES rather than deleting them, so every byte offset — and therefore every reported
+   line number — still points at the real file. */
+function maskComments(src) {
+  return src
+    .replace(/\/\*[\s\S]*?\*\//g, m => m.replace(/[^\n]/g, ' '))
+    .replace(/\/\/[^\n]*/g, m => ' '.repeat(m.length));
+}
+
+function sizeDialTags(rawSrc) {
+  const src = maskComments(rawSrc);
+  const out = [];
+  let at = 0;
+  for (;;) {
+    const i = src.indexOf('<SizeDial', at);
+    if (i < 0) break;
+    const end = src.indexOf('>', i);
+    out.push({ at: i, tag: src.slice(i, end < 0 ? i + 400 : end + 1) });   // masked copy
+    at = i + 9;
+  }
+  return out;
+}
 
 for (const rel of FILES) {
   const src = readFileSync(join(ROOT, rel), 'utf8');
@@ -73,10 +112,41 @@ for (const rel of FILES) {
   });
 }
 
+/* Baselined 2026-10-08. Three dials drive TIER GEOMETRY — a cavity's lip, a spiral's turns and its
+   rise — not an element's size, so no row's range applies to them and `scaleRangeOf` is not the
+   answer. They are listed rather than exempted because their silent 0.5–2 is still a question worth
+   asking: "turns" bounded between half a turn and two is unlikely to be what anyone meant. */
+const DIAL_BASELINE = new Set([
+  'src/designer/CakeDesigner.jsx:topCavity.lip',
+  'src/designer/CakeDesigner.jsx:topSpiral.turns',
+  'src/designer/CakeDesigner.jsx:topSpiral.rise',
+]);
+
+for (const rel of FILES) {
+  const src = readFileSync(join(ROOT, rel), 'utf8');
+  const lines = src.split('\n');
+  for (const { at, tag } of sizeDialTags(src)) {
+    dials++;
+    if (/\bmin=/.test(tag)) continue;
+    const line = src.slice(0, at).split('\n').length;
+    const what = (tag.match(/size=\{([^}]*)\}/) || [, '?'])[1].replace(/\s*\?\?.*$/, '').trim();
+    const key = `${rel}:${what.replace(/^tier\./, '')}`;
+    if (DIAL_BASELINE.has(key)) continue;
+    problems.push({ rel, line, key, dial: true, what });
+  }
+}
+
 if (problems.length) {
   console.error('✗ check:element-size — a size control carries its own bounds:\n');
   for (const p of problems) {
     console.error(`   • ${relative(ROOT, join(ROOT, p.rel))}:${p.line}  ${p.key}`);
+    if (p.dial) {
+      console.error(`     <SizeDial size={${p.what}}> declares no bounds, so the component's own`);
+      console.error('     0.5-2 applies and placement_config.scale {min,max,step} reaches nothing.');
+      console.error('     An authored default below 0.5 cannot even be SHOWN on such a dial.');
+      console.error('     Resolve the row with scaleRangeOf(element, …) and pass min/max/step.\n');
+      continue;
+    }
     console.error(`     '${p.field}' is bounded ${p.min}–${p.max}, written here.`);
     console.error("     placement_config.scale {min,max,step} in Manage Elements is the only");
     console.error('     statement of how big this element may be, and these two numbers ignore it.');
@@ -88,5 +158,5 @@ if (problems.length) {
   process.exit(1);
 }
 
-console.log(`✓ check:element-size — ${checked} size control(s) read their bounds from the element row `
-          + `(${BASELINE.size} baselined)`);
+console.log(`✓ check:element-size — ${checked} dial row(s) and ${dials} SizeDial(s) read their bounds `
+          + `from the element row (${BASELINE.size + DIAL_BASELINE.size} baselined)`);

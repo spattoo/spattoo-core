@@ -440,6 +440,22 @@ CAT_ELEMENTS.push({
   default_color: '#2b2b2b', sort_order: 32,
 });
 
+/* ⚠️ A PIPING ROW WHOSE DEFAULT SCALE IS NOT 1, which nothing here could express — and that is why
+ * "the size I configured does not honor in core render" could not be reproduced in the harness.
+ * `r: 0.3` with a range of 0.1–0.8 is the Rosette Sandeep authored: both numbers sit BELOW
+ * SizeDial's own 0.5 floor, so a card that does not read the row cannot even display this element's
+ * authored size, let alone start at it. Keep this row's numbers unusual for exactly that reason. */
+CAT_ELEMENTS.push({
+  id: 'e34', name: 'Rosette ring', description: 'a piping ring authored small (r 0.3, range 0.1-0.8)',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#dfeae0'), thumb_key: null,
+  allowed_zones: ['rim', 'board'],
+  allowed_actions: { color: true, delete: true, resize: true },
+  placement_config: { r: 0.3, scale: { min: 0.1, max: 0.8, step: 0.1 },
+                      rim: 'hug', board: 'hug', rim_ring: true, board_ring: true },
+  default_color: '#F5E6C8', sort_order: 34,
+});
+
 /* ⚠️ A CREAM-STROKES ROW, and without it the band was unreachable here — which is why it went so
  * long with no card at all. `procedural: 'cream_brush'` is the VALUE of `procedural` (the key into
  * PROCEDURAL_TOOLS), and the tuned numbers ride in `placement_config.cream_brush`, which is what

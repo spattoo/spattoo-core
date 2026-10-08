@@ -5274,7 +5274,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const applied   = ringPiping(tierIndex, zone);
     // Unapplied rim rings preview at the inward offset they'd nest to once added.
     const nestRO    = (isTopZone && !applied) ? nextRimRadialOffset(tierIndex) : null;
-    const p         = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1, ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
+    const p         = applied ?? { color: pipingPopupEl.default_color ?? '#f5e6c8', size: pipingScaleFor(pipingPopupEl), ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone), ...(nestRO ? { userRadialOffset: nestRO } : {}) };
     // Config-derived placement, with this ring's own board flip override applied so the preview
     // matches what is on the cake.
     const placement = pipingPlacementFromConfig(pipingPopupEl.placement_config, isTopZone);
@@ -5291,7 +5291,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     return {
       isTopZone, applied, p, placement, glbUrl,
       color:       p.color ?? '#f5e6c8',
-      size:        p.size  ?? 1,
+      size:        p.size  ?? pipingScaleFor(pipingPopupEl),
       arrangement: p.arrangement ?? pipingDefaultArrangement(pipingPopupEl.placement_config ?? {}, isTopZone),
       instances:   p.instances ?? [],
     };
@@ -5419,7 +5419,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const { glbUrl, altGlbUrl } = resolvePipingGlbs(pipingPopupEl);
     const piping = {
       id: pipingPopupEl.id, cardId: pipingPopupEl.cardId, glbUrl, name: pipingPopupEl.name,
-      color: pipingPopupEl.default_color ?? '#f5e6c8', size: 1,
+      color: pipingPopupEl.default_color ?? '#f5e6c8', size: pipingScaleFor(pipingPopupEl),
       ...pipingPlacementFromConfig(pipingPopupEl.placement_config, isTop),
     };
     // New rim layers nest concentrically inside any existing rim rings. On the board, a
@@ -7440,6 +7440,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // when unset. No element-type branch — just the config value. Tunable on the card afterwards.
   function scatterScaleFor(element) {
     return element?.placement_config?.r ?? 0.5;
+  }
+  /* The size an element STARTS at, straight off its row. INVARIANTS line 23 states the rule in four
+     words — "`placement_config.r` — default scale (never hard-coded; never force a value)" — and a
+     piping ring broke it in three places at once, each saying `size: 1`. An admin set a rosette's
+     Default scale to 0.3, placed it, and got a ring at 1.0. Sandeep: *"i have created a new piping
+     element. size i configured 0.3 as default. however it does not honor in core render."*
+
+     1 rather than scatter's 0.5 is the fallback here because that is what a ring with no authored
+     `r` has always rendered at; changing the FALLBACK would resize every existing ring on every
+     saved cake, which is a different decision from honouring a number an admin actually typed. */
+  function pipingScaleFor(element) {
+    return element?.placement_config?.r ?? 1;
   }
   /* ── "Big ones": a few larger sprinkles mixed through the small ones ──────────────────────────
    *
@@ -16641,7 +16653,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         </div>
                       </>) : (
                         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1 }}>
-                          <SizeDial size={size} onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />
+                          {/* ⚠️ THE ROW'S BOUNDS, NOT THE DIAL'S. This was a bare <SizeDial>, so it
+                              used the component's own 0.5–2 and the Size range an admin typed in
+                              Manage Elements (0.1 / 0.8 / 0.1 on the rosette) reached nothing. Worse
+                              than cosmetic: an authored default BELOW 0.5 cannot even be shown on a
+                              dial that starts there. `scaleRangeOf` is the one function that
+                              resolves a row's range against defaults — INVARIANTS #5b, "ONE size
+                              path" — and the defaults handed to it are SizeDial's own, so a row
+                              that authors nothing behaves exactly as before. */}
+                          {(() => {
+                            const sr = scaleRangeOf(pipingPopupEl, 0.5, 2, 0.05);
+                            return <SizeDial size={size} min={sr.min} max={sr.max} step={sr.step}
+                                     fmt={v => v.toFixed(2)}
+                                     onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />;
+                          })()}
                           <span style={cap}>Size</span>
                         </div>
                       )}
