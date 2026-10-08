@@ -296,3 +296,22 @@ export { installGlobalHandlers } from './telemetry/globalHandlers.js';
 export { UI_FONT, REQUIRED_FONT_FAMILIES, warnIfFontsMissing } from './shared/fonts.js';
 import { warnIfFontsMissing as _warnIfFontsMissing } from './shared/fonts.js';
 _warnIfFontsMissing();
+
+/* ── Piping ring placement, for admin's calibrator ──────────────────────────────────────────────
+ *
+ * ⚠️ EXPORTED BECAUSE THE CALIBRATOR HAD REIMPLEMENTED ALL OF IT. `PipingCalibrator.jsx` carried its
+ * own `buildShellGeo`, `buildSwagRing`, `buildFestoons`, `wallPerimeter` and `buildWrapBand` — five
+ * functions this package already owned — and the two drifted, which is exactly what CLAUDE.md warns
+ * about in its own words: "THE STUDIO IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT … or the
+ * tuned version and the rendered version drift."
+ *
+ * It drifted in a way that cost a day: the calibrator's `buildShellGeo` took no RADIUS, so it never
+ * applied `capShellScale` — the cap the cake uses to stop a shell outgrowing its tier. A rosette
+ * could therefore sit perfectly in the tool and render differently on the cake, and the tool whose
+ * only job is to produce trustworthy numbers was the one thing not showing what a customer sees.
+ * Sandeep: *"i loaded this in piping calibrator. and it landed perfectly fine."*
+ */
+export { buildShellGeo, capShellScale, wallPerimeter, extractGeo } from './designer/canvas/shellGeo.js';
+export { buildSwagRing, perimeterRing, ringPositions, perimeterSinglePos, angleAtPoint } from './designer/canvas/ringPositions.js';
+export { shellMatrix } from './designer/canvas/shellMatrix.js';
+export { buildFestoons, buildWrapBand, perimeterBreaks } from './designer/geometry/festoon.js';
