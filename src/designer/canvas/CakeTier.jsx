@@ -533,6 +533,16 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
     return positions.map(() => { const c = scene.clone(true); c.scale.setScalar(shellScale); return c; });
   }, [positions, scene, shellScale]);
   const ry = (baseRotation?.[1] ?? 0) * DEG;
+  /* ⚠️ X AND Z WERE NEVER READ, so a decoration ring could be yawed and NOT TILTED. An admin
+     authoring `top_rotation: [-15, 97, 12]` got the 97 and nothing else, and no value of X or Z
+     could lay a rosette face-up — which is what "I set it to 0,0,0 and it still renders wrong"
+     actually meant: the two numbers that would have fixed it were never applied.
+     The cream shell path has always honoured all three (`meshA = [rx, 0, rz]` beside the group
+     yaw); this path, which keeps the GLB's own materials, read one of them.
+     ⚠️ APPLIED AS AN INNER GROUP, so the yaw composition above is untouched — every decoration
+     ring already on a saved cake keeps the orientation it has. Only elements that authored a
+     non-zero X or Z move, and for those the current render is the bug. */
+  const tilt = [(baseRotation?.[0] ?? 0) * DEG, 0, (baseRotation?.[2] ?? 0) * DEG];
   // A decoration keeps its own GLB scene, so there is no CreamMesh to hang PIPING_HANDLE_DATA on —
   // tag the clone's meshes directly, so CakeCanvas' capture-phase raycast suspends orbit for these
   // too. Cleared again when the ring stops being draggable (mode change / capability untick).
@@ -550,7 +560,9 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
         position={[u.pos[0], u.pos[1] - minY * shellScale, u.pos[2]]}
         rotation={[0, (u.rotY ?? 0) + ry, 0]}
         {...(dragHandler ? { onPointerDown: dragHandler(i) } : {})}>
-        <primitive object={obj} />
+        <group rotation={tilt}>
+          <primitive object={obj} />
+        </group>
       </group>
     );
   });

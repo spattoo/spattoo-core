@@ -452,7 +452,12 @@ CAT_ELEMENTS.push({
   allowed_zones: ['rim', 'board'],
   allowed_actions: { color: true, delete: true, resize: true },
   placement_config: { r: 0.3, scale: { min: 0.1, max: 0.8, step: 0.1 },
-                      rim: 'hug', board: 'hug', rim_ring: true, board_ring: true },
+                      rim: 'hug', board: 'hug', rim_ring: true, board_ring: true,
+                      /* ⚠️ `ring_finish: 'element'` is the real Rosette's setting, and it selects a
+                         COMPLETELY DIFFERENT render path (DecorationShells, the GLB's own
+                         materials) from the cream shells every other fixture here exercises. With
+                         no fixture carrying it, that path had no harness at all. */
+                      ...(PARAMS.has('elementfinish') ? { ring_finish: 'element' } : {}) },
   default_color: '#F5E6C8', sort_order: 34,
 });
 

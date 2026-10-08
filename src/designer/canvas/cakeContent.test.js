@@ -184,3 +184,42 @@ describe('a cloud is given the cake board, not its own tier base', () => {
     expect(SOURCE).not.toMatch(/args=\{\[board\.width, 0\.1, board\.depth\]\}/);
   });
 });
+
+/* ── A decoration ring can be tilted, not only yawed ─────────────────────────────────────────────
+ *
+ * `placement_config.top_rotation` is a THREE-vector, and the element-finish ring path
+ * (`DecorationShells` — the one that keeps a GLB's own materials, selected by
+ * `ring_finish: "element"`) read only `[1]`. So an admin could yaw a rosette round its own axis and
+ * could not tilt it at all, and the two numbers that would have laid it face-up did nothing.
+ *
+ * That is what "I set top_rotation to 0,0,0 and the designer still renders it wrong" meant: zeroing
+ * the Y changed the only component that was ever applied, and the ones that mattered were never
+ * read. The cream shell path has always honoured all three.
+ *
+ * ⚠️ ASSERTED ON THE SOURCE, deliberately. A render proof needs a GLB with a visible "up", and the
+ * harness ships a bead — symmetric enough that yaw and tilt look identical on it, which is exactly
+ * how this survived. This suite already reads the source for questions of that shape.
+ */
+describe('a decoration ring honours all three rotation axes', () => {
+  // DecorationShells lives in CakeTier.jsx, not CakeCanvas.jsx — bodyOf() reads the latter.
+  const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
+  const start = TIER.indexOf('function DecorationShells(');
+  const body = TIER.slice(start, TIER.indexOf('\n}\n', start));
+
+  it('reads the X and Z components, not just Y', () => {
+    expect(body).toMatch(/baseRotation\?\.\[0\]/);
+    expect(body).toMatch(/baseRotation\?\.\[2\]/);
+  });
+
+  it('still yaws by Y', () => {
+    expect(body).toMatch(/baseRotation\?\.\[1\]/);
+  });
+
+  /* ⚠️ THE TILT MUST NOT JOIN THE YAW EXPRESSION. Applied as its own inner group, every decoration
+     ring already on a saved cake keeps the orientation it has; folded into the group rotation, the
+     composition changes and they all move. */
+  it('applies the tilt inside the yawed group, leaving existing rings put', () => {
+    expect(body).toMatch(/rotation=\{\[0, \(u\.rotY \?\? 0\) \+ ry, 0\]\}/);
+    expect(body).toMatch(/<group rotation=\{tilt\}>/);
+  });
+});
