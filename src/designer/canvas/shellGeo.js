@@ -2,6 +2,12 @@ import * as THREE from 'three';
 import { isRoundWall, perimeter, circlePerimeter } from '../geometry/surface.js';
 import { SHELL_HEIGHT_FRAC } from './pipingMetrics.js';
 
+/* ⚠️ MOVED WITH THE FUNCTION THAT NEEDS IT. `buildShellGeo` reads `DEG` to turn the authored tilt
+ * from degrees into radians; when these four functions came out of CakeTier.jsx the constant stayed
+ * behind, and the calibrator threw "DEG is not defined" the moment a GLB was loaded. A moved
+ * function takes its constants with it. */
+const DEG = Math.PI / 180;
+
 // Cream piping must hug the cake, not float off it. The shell's radial depth (how far it
 // reaches off the wall) is limited dynamically to a fraction of the tier radius — so a
 // smaller tier gets a tighter limit. Past the limit, raising the size slider no longer
