@@ -223,3 +223,32 @@ describe('a decoration ring honours all three rotation axes', () => {
     expect(body).toMatch(/<group rotation=\{tilt\}>/);
   });
 });
+
+/* ── A tilted decoration ring sits ON the surface ────────────────────────────────────────────────
+ *
+ * The seat subtracts the model's lowest point so its base rests on the cake. `minY` is measured
+ * UPRIGHT, which was correct while the only freedom was yaw — a yaw cannot change a height. The
+ * tilt added in the same session could, and the ring floated: laying a rosette face-up with -90°
+ * about X moves its lowest point from the bottom of a 1.9-tall model to the bottom of a 0.4-deep
+ * one, so subtracting the upright figure lifted it by the difference. On the real model that was
+ * (0.952 - 0.202) x shellScale of clear air, which is what Sandeep photographed.
+ */
+describe('a tilted decoration ring is seated after the tilt', () => {
+  const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
+  const start = TIER.indexOf('function DecorationShells(');
+  const body = TIER.slice(start, TIER.indexOf('\n}\n', start));
+
+  it('measures the seat from the TILTED bounds, not the authored minY', () => {
+    expect(body).toMatch(/setFromObject\(scene\)\.applyMatrix4/);
+    expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
+    // The untilted figure must not be what positions the shell any more.
+    expect(body).not.toMatch(/u\.pos\[1\] - minY \* shellScale/);
+  });
+
+  /* ⚠️ AN UNTILTED ELEMENT MUST KEEP THE MEASURED minY EXACTLY. Recomputing for everything would
+     move every decoration ring already on a saved cake by whatever the two measurements disagree
+     about — a silent change to work customers have already approved. */
+  it('short-circuits to the authored minY when there is no tilt', () => {
+    expect(body).toMatch(/if \(!scene \|\| \(!tilt\[0\] && !tilt\[2\]\)\) return minY;/);
+  });
+});
