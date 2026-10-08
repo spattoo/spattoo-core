@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
+import { BRUSH_BAND_DEFAULTS, brushBandCount } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -304,6 +305,29 @@ function pipingPlacementChanged(current, next, isTop) {
     (current.arrangement == null && (next.arrangement ?? 'ring') !== 'ring')
   );
 }
+
+/* The cream-strokes band's controls, copied from the admin studio's BAND_FIELDS — same keys, same
+   labels, same bounds. Two surfaces tuning one object must offer the same handles, or a band
+   authored in the studio cannot be described on the cake.
+
+   ⚠️ "THICKNESS", NOT "WEIGHT", and the studio records why: it is the same number — how much cream
+   the knife left — and a baker reaching for it is thinking about how thick the cream is, not how
+   loaded the knife was. The geometry keeps `weight` as its parameter name; only the label differs.
+
+   ⚠️ "LENGTH" IS `climb`, and it is coupled to Strokes: a knife pulled a short way leaves a short,
+   NARROW mark, so pulling Length down opens gaps in the band and Strokes closes them again. */
+const BRUSH_BAND_FIELDS = [
+  ['count',   'Strokes',   6,    40,   1],
+  ['overlap', 'Overlap',   0,    0.8,  0.05],
+  ['weight',  'Thickness', 0,    1,    0.02],
+  ['sweep',   'Sweep',     0,    0.3,  0.005],
+  ['climb',   'Length',    0.15, 0.9,  0.01],
+  ['bow',     'Bow',      -0.2,  0.2,  0.01],
+];
+
+/* Six, as the studio caps it. Past that the repeat stops reading as a repeat and starts reading as
+   noise, and every extra colour is another draw call round the tier. */
+const BRUSH_BAND_MAX_COLORS = 6;
 
 const TIER_LABELS = ['Bottom Tier', '2nd Tier', '3rd Tier', 'Top Tier'];
 
@@ -3213,6 +3237,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which gradient stop the colour wheel is currently editing (0-based). Only meaningful when the
   // selected element is gradient-eligible (caps.gradient) and has ≥2 stops.
   const [gradStop, setGradStop] = useState(0);
+  // Which colour of the cream-strokes band the wheel is editing. Same shape as gradStop, and
+  // clamped at read time rather than reset on change — dropping a colour must not need an effect.
+  const [bandSlot, setBandSlot] = useState(0);
   // True while the user has clicked "+" to add a stop but hasn't picked its colour yet. The new stop
   // is shown as an EMPTY placeholder chip (not a copy of the last colour) and isn't written to the
   // design until a colour is chosen — so adding a stop never silently duplicates a colour.
@@ -6576,7 +6603,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       elementId: el?.id ?? undefined,
       seed: tuned.seed ?? (1 + Math.floor(Math.random() * 9999)),
     });
-    selectExclusive({ type: 'tier', index: i });
+    /* Opens the BAND's card, not the tier's. It selected the tier because the band had no card of
+       its own — placing one then showed you the tier's controls and nothing about the thing you had
+       just put on the cake. */
+    selectExclusive({ type: 'brushBand', tierIndex: i });
   }
 
   // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
@@ -9295,6 +9325,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // isCardSelected returns `selectedEl.tool === card.tool` for a tool card, and the card body renders
   // renderDustBody() / renderPenBody() inline. Believing the old comment sends you building a
   // composer-reopening fix for a card that simply expands.
+  /* The brushstroke band — one card per tier that carries one. Foil and cream put every tier in a
+     single card with a chooser inside; a band gets one each because it is reached by CLICKING THE
+     STROKES, and a click already says which tier it meant. Persistent like those two, so it comes
+     back on reload: a band is a finish, not a sticker. */
+  design.tiers.forEach((t, i) => {
+    if (!t.brushBand) return;
+    const bEl = t.brushBand.elementId ? elementById.get(t.brushBand.elementId) : null;
+    decorationCards.unshift({
+      key: `brush-band-${i}`, type: 'brushBand', tierIndex: i,
+      name: bEl?.name ?? 'Cream strokes',
+      thumb: /\.(glb|gltf)(\?|$)/i.test(bEl?.image_url ?? '') ? (bEl?.thumbnail_url ?? null)
+                                                              : (bEl?.image_url ?? bEl?.thumbnail_url ?? null),
+    });
+  });
   if ((selectedEl?.type === 'tool' && selectedEl.tool === 'luster-dust') || design.tiers.some(t => t.dusting?.splashes?.length)) {
     decorationCards.unshift({ key: 'luster-dust', type: 'tool', tool: 'luster-dust', name: 'Luster Dust', thumb: null });
   }
@@ -9384,6 +9428,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'grass' ? true
          : card.type === 'blocks' ? true
          : card.type === 'cream' ? true
+         // A band belongs to ONE tier, so the tier is half of its identity — without this every
+         // tier's band card would tick at once on a cake wearing two.
+         : card.type === 'brushBand' ? selectedEl.tierIndex === card.tierIndex
          : card.type === 'tool' ? selectedEl.tool === card.tool
          : selectedEl?.id === card.id);
 
@@ -9597,6 +9644,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'cluster-place' ? { type: 'cluster-place', elementId: card.elementId }
       : card.type === 'foil'          ? { type: 'foil', elementId: card.elementId }
       : card.type === 'cream'         ? { type: 'cream', elementId: card.elementId }
+      : card.type === 'brushBand'     ? { type: 'brushBand', tierIndex: card.tierIndex }
       : card.type === 'cloud'         ? { type: 'cloud', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'balloon'       ? { type: 'balloon', tierIndex: card.tierIndex, id: card.id }
       : card.type === 'rainbow'       ? { type: 'rainbow', tierIndex: card.tierIndex, id: card.id }
@@ -12782,6 +12830,96 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // taper, the variation, the nestle and the bevel are what make a bunch of balls read as fondant at
   // all, and they were tuned once against the references. And no position control — clouds are
   // dragged, several to a cake.
+  /* ── The cream-strokes band: one card for the whole ring ──────────────────────────────────────
+   *
+   * The controls are the admin studio's, deliberately — Sandeep: *"refer to the admin where we did
+   * poc of this. we should have these controls including shuffle."* Same six numbers, same labels,
+   * same bounds, so a band tuned in the studio and a band tuned on the cake are the same object
+   * described the same way. `BRUSH_BAND_FIELDS` is that list, stated once.
+   *
+   * ⚠️ A COLOUR WHEEL, NOT THE STUDIO'S SWATCH GRID. The admin offers fourteen fixed colours
+   * because an admin is authoring a preset; a customer is matching a cake. Sandeep: *"one change is
+   * it should have color picker than giving some bunch of colors like in admin."* `ColorWheel` is
+   * THE colour control in this app (root CLAUDE.md rule 1) and it already carries the cake's own
+   * colours along the bottom, which is the thing a baker actually reaches for.
+   *
+   * ⚠️ DIALS, NOT SLIDERS. The studio uses range inputs; this is the customer's surface, where the
+   * request has been made four times and is written into the cloud and balloon cards already.
+   */
+  function renderBrushBandBody(card) {
+    const i = card.tierIndex;
+    const band = { ...BRUSH_BAND_DEFAULTS, ...(design.tiers[i]?.brushBand ?? {}) };
+    if (!design.tiers[i]?.brushBand) return null;
+    const set = changes => setTierBrushBand(i, changes);
+    const colors = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
+    const slot = Math.min(bandSlot, colors.length - 1);
+    const setColors = next => set({ colors: next });
+
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          The colours repeat round the cake. {brushBandCount(band)} strokes.
+        </div>
+
+        {/* The palette: tap a chip to edit it, + to add, × to drop. Same chip styles the gradient
+            editor uses — a different question (these repeat, they do not blend) but the same
+            gesture, so it should not look like a different control. */}
+        {/* marginTop clears the × badges, which `gradientStopRemove` pins ABOVE each chip — without
+            it the first row of them sits on top of the sentence above. */}
+        <div style={{ ...s.gradientStops, marginTop: 14 }}>
+          {colors.map((c, idx) => (
+            <div key={idx} style={s.gradientStopWrap}>
+              <div onClick={() => setBandSlot(idx)} title={`Colour ${idx + 1}`}
+                style={{ ...s.gradientStop, background: c,
+                         border: idx === slot ? `2.5px solid ${INK}` : '1.5px solid #999999' }} />
+              {colors.length > 1 && (
+                <button style={s.gradientStopRemove} title="Drop this colour"
+                  onClick={() => { setColors(colors.filter((_, j) => j !== idx)); setBandSlot(0); }}>×</button>
+              )}
+            </div>
+          ))}
+          {colors.length < BRUSH_BAND_MAX_COLORS && (
+            <button style={s.gradientStopAdd} title="Add a colour"
+              onClick={() => { setColors([...colors, colors[colors.length - 1]]); setBandSlot(colors.length); }}>+</button>
+          )}
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+          <ColorWheel color={colors[slot] ?? '#ffffff'}
+            onChange={c => setColors(colors.map((x, j) => (j === slot ? c : x)))}
+            cakeColors={[...new Set(collectElementColors(design))]} />
+        </div>
+
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+          {BRUSH_BAND_FIELDS.map(([key, label, min, max, step]) => (
+            <DialCell key={key} label={label}
+              value={band[key] ?? BRUSH_BAND_DEFAULTS[key] ?? 0}
+              min={min} max={max} step={step}
+              /* Strokes is a COUNT, and the readout is the SNAPPED one — a band closes on a whole
+                 number of colour repeats, so a dial reading 19 while 18 are laid would be the
+                 control lying about its own effect. The studio's note says the same. */
+              fmt={key === 'count' ? () => String(brushBandCount(band)) : (v => v.toFixed(2))}
+              onChange={v => set({ [key]: v })} />
+          ))}
+        </ScrollFadeRow>
+
+        {/* Every stroke tears at its own width and runs out at its own height; the seed is what
+            decides which. Shuffle rolls the lot — the studio's own word for it. */}
+        <button onClick={() => set({ seed: 1 + Math.floor(Math.random() * 9999) })}
+          style={{ ...s.neutralBtn, width: '100%', marginTop: 10 }}>
+          Shuffle the band
+        </button>
+
+        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+          <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
+            style={{ ...s.deleteBtn, flex: 1 }}>
+            Remove from cake
+          </button>
+        </div>
+      </>
+    );
+  }
+
   function renderCloudBody(card) {
     const cl = design.tiers[card.tierIndex]?.clouds?.find(c => c.id === card.id);
     if (!cl) return null;
@@ -14987,6 +15125,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  this, the only way in was the card, and the only way to the card was the stack: you
                  had to find the thing you were already looking at. */
               onBrushStrokeClick={(tier, id) => setPickedBrush({ tier, id })}
+              /* Clicking the strokes opens the band's own card — the half of "its card is reached
+                 from the tier" that was never built. */
+              onBrushBandClick={(tier) => selectExclusive({ type: 'brushBand', tierIndex: tier })}
               onCloudClick={(tier, id) => {
                 selectExclusive({ type: 'cloud', tierIndex: tier, id });
               }}
@@ -16139,6 +16280,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cluster' ? renderClusterBody(card)
                            : card.type === 'foil' ? renderFoilBody(card)
                            : card.type === 'cream' ? renderCreamBody()
+                           : card.type === 'brushBand' ? renderBrushBandBody(card)
                            : card.type === 'cloud' ? renderCloudBody(card)
                            : card.type === 'balloon' ? renderBalloonBody(card)
                            : card.type === 'rainbow' ? renderRainbowBody(card)

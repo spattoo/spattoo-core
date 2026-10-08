@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { pointerRay } from '../utils/raycasting.js';
+import { setCanvasCursor } from '../canvas/pointerCursor.js';
 
 // ── Drag-to-place interaction for top/side cake decorations ─────────────────────────────────────
 // The shared press/drag/tap behaviour behind AgeNumber and CreamWriting (and mirrors the sticker
@@ -16,14 +17,11 @@ export function useDragPlacement({ gl, camera, onMove, onClick, onOrbitEnable, r
   const pressedRef = useRef(false);
   const hoverRef = useRef(false);
 
-  // ⚠️ THE CURSOR IS THE ONLY RESTING AFFORDANCE A DECORATION ON THE CANVAS HAS (root CLAUDE.md
-  // rule 7, "if it does something, it must look like it does something"). A cloud, a rainbow and a
-  // balloon are meshes in a 3D scene — there is no border to press and no row to highlight, so with
-  // the arrow left unchanged the whole cake reads as scenery and nobody learns the parts are live.
-  // It belongs HERE and not on the balloon: every draggable decoration comes through this hook, so
-  // one copy gives all of them the affordance and none of them can quietly lose it. `pointer` on
-  // hover because a tap opens the card; `grabbing` while pressed because a drag moves it.
-  const setCursor = v => { const el = gl?.domElement; if (el) el.style.cursor = v; };
+  // The cursor is the only resting affordance a decoration on the canvas has — see
+  // canvas/pointerCursor.js, which states the rule once for the draggables here and for the
+  // click-only treatments that have no hook to hang it on. `pointer` on hover because a tap opens
+  // the card; `grabbing` while pressed because a drag moves it.
+  const setCursor = v => setCanvasCursor(gl, v);
 
   const onDown = e => {
     e.stopPropagation();

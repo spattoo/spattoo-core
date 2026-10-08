@@ -38,6 +38,7 @@ import {
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
          BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
@@ -2804,6 +2805,7 @@ function CakeScene({
   // component cannot pass on what it was never given — deleting these from the signature while
   // leaving them in the edit literal is what threw "onCloudClick is not defined".
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
+  onBrushBandClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3045,7 +3047,7 @@ function CakeScene({
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
-          onBalloonClick, onBalloonMove, onBrushStrokeClick,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick,
         }}
       />
       </group>
@@ -3239,13 +3241,27 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
   ));
 }
 
-function BrushBand({ band, tier, wallColour }) {
+function BrushBand({ band, tier, wallColour, onClick = null }) {
+  const { gl } = useThree();
   const parts = useMemo(() => (band ? buildBrushBand({
     R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, ...band,
   }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour]);
   if (!parts?.length) return null;
+  /* ⚠️ THE BAND TAKES THE POINTER NOW, and it used to raycast to nothing on purpose: "a treatment
+     of the whole wall like dusting or foil, not a thing placed on it, so its card is reached from
+     the tier". The second half of that was never built — there was no card anywhere — so the band
+     was the one thing on the cake a customer could place and then not edit at all. Sandeep: *"cream
+     strokes studio does not have a popup card - it should have one. and when user clicks on the
+     strokes on cake, it should have pointer to open popup."*
+     Still not DRAGGABLE: a band is the whole ring, and there is no single piece to pick up. Click
+     and hover only, which is why it borrows the cursor from pointerCursor.js rather than from
+     useDragPlacement — see the note there. */
+  const live = !!onClick;
   return parts.map(part => (
-    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow raycast={() => {}}>
+    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow
+      {...(live
+        ? { ...hoverCursorProps(gl), onClick: (e) => { e.stopPropagation(); onClick(); } }
+        : { raycast: () => {} })}>
       {/* DoubleSide because a painted layer's winding depends on which way the stroke happened to
           run — the call CreamPen already makes for cream. polygonOffset because the thinnest film
           sits almost on the wall and the depth buffer loses over a long grazing sweep. */}
@@ -3273,6 +3289,7 @@ function CakeContent({ config, scene, edit = null }) {
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit, onBrushStrokeClick,
+    onBrushBandClick,
     onCloudMove, onRainbowMove, onBalloonClick: onBalloonClickEdit, onBalloonMove,
   } = edit ?? {};
 
@@ -3459,7 +3476,8 @@ function CakeContent({ config, scene, edit = null }) {
           {/* The brushstroke band on THIS tier's wall. Not draggable and not clickable — it is a
               treatment of the whole wall like dusting or foil, not a thing placed on it, so it
               raycasts to nothing and its card is reached from the tier. */}
-          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color} />
+          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color}
+            onClick={onBrushBandClick ? () => onBrushBandClick(i) : null} />
           {/* And the hand-drawn ones. Clickable, because each has its own card. */}
           <BrushStrokes strokes={tier.brushStrokes ?? []} tier={tier} wallColour={tier.color}
             onPick={id => onBrushStrokeClick?.(i, id)} />
@@ -4275,6 +4293,7 @@ export default function CakeCanvas({
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
+  onBrushBandClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -4476,6 +4495,7 @@ export default function CakeCanvas({
             the geometry missed. */
         onBalloonClick={onBalloonClick}
         onBalloonMove={onBalloonMove}
+        onBrushBandClick={onBrushBandClick}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

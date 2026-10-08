@@ -440,6 +440,26 @@ CAT_ELEMENTS.push({
   default_color: '#2b2b2b', sort_order: 32,
 });
 
+/* ⚠️ A CREAM-STROKES ROW, and without it the band was unreachable here — which is why it went so
+ * long with no card at all. `procedural: 'cream_brush'` is the VALUE of `procedural` (the key into
+ * PROCEDURAL_TOOLS), and the tuned numbers ride in `placement_config.cream_brush`, which is what
+ * `addBrushBandFromRow` reads. Deliberately NOT the code defaults: a harness showing these proves
+ * the row is being read rather than the fallback. */
+CAT_ELEMENTS.push({
+  id: 'e33', name: 'Cream strokes', description: 'a ring of palette-knife strokes round the wall',
+  /* `et-topper`, as every other PROCEDURAL row here is — `et-cream` is the second-cream-layer type
+     and is routed to the tier panel, so a band filed under it never reached the picker. The
+     procedural KEY is what decides what gets built; the type decides where the row is shown. */
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#F6DCE2'), thumbnail_url: CAT_THUMB('#F6DCE2'), thumb_key: null,
+  allowed_zones: ['side'],
+  allowed_actions: { color: true, delete: true },
+  placement_config: { procedural: 'cream_brush',
+                      cream_brush: { colors: ['#F6DCE2', '#8EC5E8', '#F4C542'],
+                                     count: 24, overlap: 0.3, weight: 0.75, climb: 0.42, bow: -0.2 } },
+  default_color: '#F6DCE2', sort_order: 33,
+});
+
 /* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
  * made the foil tap-to-reopen bug unverifiable, found the same way.
  *
