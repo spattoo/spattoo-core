@@ -158,7 +158,7 @@ const DEFAULT_RAIL_SKIN = {
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
-import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer } from './piping/pipingLayer.js';
+import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
@@ -7440,18 +7440,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // when unset. No element-type branch — just the config value. Tunable on the card afterwards.
   function scatterScaleFor(element) {
     return element?.placement_config?.r ?? 0.5;
-  }
-  /* The size an element STARTS at, straight off its row. INVARIANTS line 23 states the rule in four
-     words — "`placement_config.r` — default scale (never hard-coded; never force a value)" — and a
-     piping ring broke it in three places at once, each saying `size: 1`. An admin set a rosette's
-     Default scale to 0.3, placed it, and got a ring at 1.0. Sandeep: *"i have created a new piping
-     element. size i configured 0.3 as default. however it does not honor in core render."*
-
-     1 rather than scatter's 0.5 is the fallback here because that is what a ring with no authored
-     `r` has always rendered at; changing the FALLBACK would resize every existing ring on every
-     saved cake, which is a different decision from honouring a number an admin actually typed. */
-  function pipingScaleFor(element) {
-    return element?.placement_config?.r ?? 1;
   }
   /* ── "Big ones": a few larger sprinkles mixed through the small ones ──────────────────────────
    *

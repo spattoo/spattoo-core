@@ -140,6 +140,21 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
 // consumer passes el.image_url), but the layer object SHAPE lives here so it's authored once.
 // `isTop` → rim (topPipings) vs board (bottomPipings). Callers may layer extras (userRadialOffset,
 // yAdjustable…) on top of the returned base.
+/* The size a ring STARTS at, off its own row. INVARIANTS line 23: "`placement_config.r` — default
+ * scale (never hard-coded; never force a value)."
+ *
+ * ⚠️ IT LIVES HERE, BESIDE THE LAYER SHAPE, because this module is where a piping layer is authored
+ * and three of the four places that seeded `size` were literal 1s elsewhere. One lookup, imported
+ * by the card, or the next seed added is a fifth copy.
+ *
+ * The fallback is 1, not 0.5: that is what a ring with no authored `r` has always rendered at, and
+ * changing it would resize every ring on every saved cake. Honouring a number an admin typed is a
+ * different decision from redefining what "unset" means.
+ */
+export function pipingScaleFor(el) {
+  return el?.placement_config?.r ?? 1;
+}
+
 export function makePipingLayer(el, { isTop, glbUrl, altGlbUrl = null, color, cardId } = {}) {
   return {
     id: el.id,
@@ -147,7 +162,10 @@ export function makePipingLayer(el, { isTop, glbUrl, altGlbUrl = null, color, ca
     glbUrl: glbUrl ?? el.image_url ?? null,
     name: el.name,
     color: color ?? el.default_color ?? '#f5e6c8',
-    size: 1,
+    // ⚠️ NOT `1`. This factory is the FOURTH place that seeded a ring's size, and it was the one
+    // left behind when the other three were fixed — found by Sandeep asking whether any code drove
+    // piping size from config at all. The answer was no: four literals and a dial with no bounds.
+    size: pipingScaleFor(el),
     ...pipingPlacementFromConfig(el.placement_config, isTop),
     ...(altGlbUrl ? { altGlbUrl } : {}),
   };

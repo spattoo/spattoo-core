@@ -45,7 +45,12 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join, relative } from 'node:path';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const FILES = ['src/designer/CakeDesigner.jsx'];
+/* ⚠️ pipingLayer.js JOINED THE LIST LATE, and the omission cost a fix. Three of the four places
+   that seeded a ring's size lived in CakeDesigner and were fixed together; the fourth was the
+   shared factory in this file, which the gate was not even reading. Found by Sandeep asking whether
+   ANY code drove piping size from config — the answer was no, and the gate could not have said so.
+   A gate that scans one file can only ever vouch for one file. */
+const FILES = ['src/designer/CakeDesigner.jsx', 'src/designer/piping/pipingLayer.js'];
 
 /* Baselined 2026-10-07. Each entry is the control's label and the card it sits in — not a line
    number, which would rot on the next edit above it. */
@@ -66,6 +71,7 @@ function cardAt(lines, idx) {
 const problems = [];
 let checked = 0;
 let dials = 0;
+let seeds = 0;
 
 /* Rule 2: every <SizeDial> declares its own bounds.
    A dial with no `min` silently falls back to the component's defaults, which is the exact way a
@@ -136,10 +142,32 @@ for (const rel of FILES) {
   }
 }
 
+/* Rule 3: a default SIZE is read off the row, never written out.
+   INVARIANTS line 23 — "`placement_config.r` — default scale (never hard-coded; never force a
+   value)". Rules 1 and 2 both look at the CONTROL; this one looks at the value the control starts
+   on, which is the half that shipped wrong four times over. A literal is the whole fault: an
+   element object is in scope at every one of these sites, so there is always something to ask. */
+for (const rel of FILES) {
+  const src = maskComments(readFileSync(join(ROOT, rel), 'utf8'));
+  src.split('\n').forEach((line, i) => {
+    const m = line.match(/(?<![A-Za-z])size:\s*(-?\d+(?:\.\d+)?)\s*[,}]/);
+    if (!m) return;
+    seeds++;
+    problems.push({ rel, line: i + 1, key: `${rel}:size`, seed: true, value: m[1] });
+  });
+}
+
 if (problems.length) {
   console.error('✗ check:element-size — a size control carries its own bounds:\n');
   for (const p of problems) {
     console.error(`   • ${relative(ROOT, join(ROOT, p.rel))}:${p.line}  ${p.key}`);
+    if (p.seed) {
+      console.error(`     a default size is written here as ${p.value}, not read from the element.`);
+      console.error('     INVARIANTS line 23: placement_config.r is the default scale — never');
+      console.error('     hard-coded, never forced. An admin types 0.3 and the cake renders 1.');
+      console.error('     Use the element: pipingScaleFor(el) / scatterScaleFor(el) / el.placement_config.r.\n');
+      continue;
+    }
     if (p.dial) {
       console.error(`     <SizeDial size={${p.what}}> declares no bounds, so the component's own`);
       console.error('     0.5-2 applies and placement_config.scale {min,max,step} reaches nothing.');
@@ -159,4 +187,5 @@ if (problems.length) {
 }
 
 console.log(`✓ check:element-size — ${checked} dial row(s) and ${dials} SizeDial(s) read their bounds `
-          + `from the element row (${BASELINE.size + DIAL_BASELINE.size} baselined)`);
+          + `from the element row, and no default size is hard-coded `
+          + `(${BASELINE.size + DIAL_BASELINE.size} baselined)`);
