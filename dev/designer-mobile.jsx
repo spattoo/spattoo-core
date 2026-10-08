@@ -448,7 +448,14 @@ CAT_ELEMENTS.push({
 CAT_ELEMENTS.push({
   id: 'e34', name: 'Rosette ring', description: 'a piping ring authored small (r 0.3, range 0.1-0.8)',
   element_type_id: 'et-piping', category_id: 'cat-1',
-  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#dfeae0'), thumb_key: null,
+  /* ⚠️ `?realglb=1` SWAPS IN AN ASYMMETRIC MODEL, and the default one is why a bug survived.
+     `sample-rosette.glb` measures 1.0 x 0.8 x 0.9 — near-spherical, a blob stand-in. A yaw and a
+     tilt look IDENTICAL on it, so a renderer that silently ignored two of three rotation axes
+     rendered the same picture either way and no harness could tell. `sample-rosette-3d.glb` is a
+     real rosette: 59k x 65k x 36k, flat as a disc, with an unmistakable face. Sandeep, on being
+     shown a render that proved nothing: *"why a bead, you can load the rosette glb itself."* */
+  image_url: PARAMS.has('realglb') ? '/sample-rosette-3d.glb' : '/sample-rosette.glb',
+  thumbnail_url: CAT_THUMB('#dfeae0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
   allowed_actions: { color: true, delete: true, resize: true },
   placement_config: { r: 0.3, scale: { min: 0.1, max: 0.8, step: 0.1 },
@@ -457,7 +464,9 @@ CAT_ELEMENTS.push({
                          COMPLETELY DIFFERENT render path (DecorationShells, the GLB's own
                          materials) from the cream shells every other fixture here exercises. With
                          no fixture carrying it, that path had no harness at all. */
-                      ...(PARAMS.has('elementfinish') ? { ring_finish: 'element' } : {}) },
+                      ...(PARAMS.has('elementfinish') ? { ring_finish: 'element' } : {}),
+                      ...(PARAMS.get('toprot')
+                            ? { top_rotation: PARAMS.get('toprot').split(',').map(Number) } : {}) },
   default_color: '#F5E6C8', sort_order: 34,
 });
 
