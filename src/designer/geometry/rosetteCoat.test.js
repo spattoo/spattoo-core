@@ -132,6 +132,58 @@ describe('rosetteSeats', () => {
     }
   });
 
+  /* ── The arithmetic that was missing ─────────────────────────────────────────────────────────
+   *
+   * Sandeep: "are we not doing it by the calculation involving height of the cake, and the height
+   * of rosette?" We were not — rows were inset by a fraction of a nominal RADIUS, so the bottom
+   * row sat at 0.55·r when a piece resting on a board needs its centre at half its own HEIGHT.
+   * It rendered as pieces hanging through the board. */
+  it('stands the bottom row ON the board, not through it', () => {
+    for (const pieceH of [0.3, 0.52, 0.9]) {
+      const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                  pieceW: 0.5, pieceH });
+      const lowest = Math.min(...side.filter(s => s.kind === 'side').map(s => s.p[1]));
+      expect(lowest - pieceH / 2).toBeCloseTo(BASE, 6);      // its underside rests exactly on the board
+    }
+  });
+
+  it('keeps the top row under the lid', () => {
+    const pieceH = 0.52;
+    const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                pieceW: 0.5, pieceH }).filter(s => s.kind === 'side');
+    expect(Math.max(...side.map(s => s.p[1])) + pieceH / 2).toBeCloseTo(BASE + H, 6);
+  });
+
+  /* ⚠️ A GLB IS SCALED ON ITS WIDEST HORIZONTAL EXTENT, so a piece wider than it is tall is
+     SHORTER than 2r — and every row count built on r is then wrong. The two axes are independent. */
+  it('counts rows from the piece height and columns from the piece width', () => {
+    const rowsFor = pieceH => new Set(
+      rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, pieceW: 0.5, pieceH })
+        .filter(s => s.kind === 'side').map(s => s.p[1].toFixed(5))).size;
+    expect(rowsFor(0.25)).toBeGreaterThan(rowsFor(0.5));
+
+    const colsFor = pieceW => rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                             pieceW, pieceH: 0.5 })
+      .filter(s => s.kind === 'side' && s.p[1].toFixed(5) === rosetteSeats({
+        tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, pieceW, pieceH: 0.5 })
+        .filter(x => x.kind === 'side')[0].p[1].toFixed(5)).length;
+    expect(colsFor(0.3)).toBeGreaterThan(colsFor(0.6));
+  });
+
+  it('a piece as tall as the wall gets exactly one row', () => {
+    const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                pieceW: 0.4, pieceH: H }).filter(s => s.kind === 'side');
+    expect(new Set(side.map(s => s.p[1].toFixed(5))).size).toBe(1);
+  });
+
+  it('falls back to the radius when no piece size is given', () => {
+    const r = 0.26;
+    const byRadius = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, rosetteRadius: r });
+    const byPiece  = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                    pieceW: r * 2, pieceH: r * 2 });
+    expect(byRadius.map(s => s.p)).toEqual(byPiece.map(s => s.p));
+  });
+
   it('honours the two coverage switches', () => {
     expect(seats({ coverTop: false, coverSide: false })).toEqual([]);
     expect(seats({ coverSide: false }).every(s => s.kind === 'top')).toBe(true);

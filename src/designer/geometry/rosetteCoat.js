@@ -122,30 +122,23 @@ export function rosetteSpiral({
 const clamp01 = v => (v < 0 ? 0 : v > 1 ? 1 : v);
 const TAU = Math.PI * 2;
 
-/* ── How far apart two rose centres sit, as a multiple of their radius ───────────────────────────
+/* ── How much of a piece its neighbour covers ────────────────────────────────────────────────────
  *
- * ⚠️ DERIVED, NOT CHOSEN, because the first version chose 1.62 and left bald patches the eye finds
- * immediately. Seats fall on a grid whose cells are `step` across in both directions (ring to ring,
- * and around a ring), so the point furthest from any centre is a cell CORNER, at `step/√2`. For no
- * cake to show, that corner has to be inside a rose:
+ * Expressed as OVERLAP rather than as a spacing multiple, because overlap is what a baker sets and
+ * because it works per axis: a piece that is wide and shallow needs tighter rows than columns, and
+ * a single spacing number cannot say that.
  *
- *     step/√2 ≤ rosetteRadius     ⇒     step ≤ √2 · rosetteRadius ≈ 1.414 r
+ * ⚠️ DERIVED, THEN CORRECTED BY LOOKING, and both halves matter. Seats fall on a grid whose cells
+ * are `step` across, so the furthest point from any centre is a cell CORNER at `step/√2`; covering
+ * it needs `step ≤ √2·r`, i.e. overlap ≥ 1 − √2/2 ≈ 0.29. The first version used 1.62·r (overlap
+ * 0.19) and the test caught it at 0.283 against a 0.26 radius. The second used 1.35·r (overlap
+ * 0.33), which PASSED the test and still showed cake in the render — the test measures distance to
+ * a SEAT, and what must be covered is the distance to a piece's visible EDGE, which is nearer
+ * because a rose's outer coil lies almost flat. 0.4 closes it.
  *
- * 1.35 keeps a few percent in hand for the rounding that makes each ring take a whole number of
- * roses, which can only ever push spacing UP. The unit test samples 400 points across the top and
- * fails if any of them is further than one radius from a seat — it caught 1.62 at 0.283 against a
- * 0.26 radius, which is a visible hole, so do not raise this without re-running it.
- *
- * ⚠️ AND 1.35 WAS STILL TOO LOOSE WHEN RENDERED, which the test could not have told us. The test
- * measures distance to a SEAT; what has to be covered is the distance to a rose's visible EDGE, and
- * those differ because the dome falls away toward the rim — the outermost coil is a single rope
- * lying almost flat, so three neighbours meeting at a point leave a small triangle you can see the
- * cake through. Visible in the first render as dark flecks between roses. 1.2 closes them, at
- * 144 → ~180 roses and 1.6M → ~2.0M vertices.
- *
- * Denser also happens to be more faithful: on the reference cake the roses overlap heavily and
- * there is no flat frosting anywhere between them. */
-const SEAT_SPACING = 1.2;
+ * Denser is also more faithful: on the reference cake the roses overlap heavily and there is no
+ * flat frosting anywhere between them. */
+export const SEAT_OVERLAP = 0.4;
 
 /**
  * Where every rose sits on a round tier, with the frame it sits in.
@@ -167,30 +160,47 @@ export function rosetteSeats({
   tierHeight = 1.45,
   baseY = 0.1,
   rosetteRadius = ROSETTE_DEFAULTS.rosetteRadius,
+  /* ⚠️ THE PIECE'S MEASURED SIZE, WHICH IS NOT DERIVABLE FROM ONE RADIUS. `pieceW` is how far it
+   * reaches ACROSS the surface, `pieceH` how far UP the wall. For the procedural rose both are a
+   * diameter and `rosetteRadius` answers for them — but a GLB is scaled on its widest horizontal
+   * extent, so a piece wider than it is tall is SHORTER than 2r and every row sum built on r is
+   * wrong. Sandeep: *"are we not doing it by the calculation involving height of the cake, and the
+   * height of rosette?"* We were not, and that is what put the bottom row through the board. */
+  pieceW = null,
+  pieceH = null,
+  overlap = SEAT_OVERLAP,
+  rimOverhang = 0.35,          // how far the outer top ring may pass the rim, as a fraction of pieceW/2
   coverTop = true,
   coverSide = true,
   jitter = ROSETTE_DEFAULTS.jitter,
   seed = 1,
 } = {}) {
   const rand = mulberry32(seed >>> 0);
-  const step = Math.max(1e-3, rosetteRadius * SEAT_SPACING);
+  const W = pieceW ?? rosetteRadius * 2;        // across the surface
+  const H = pieceH ?? rosetteRadius * 2;        // up the wall
+  const o = clamp01(overlap);
+
+  /* Centre-to-centre, per axis. Overlap is the fraction of a piece its neighbour covers, which is
+   * how a baker would describe it, and it keeps the two axes independent — a piece that is wide and
+   * shallow needs tighter ROWS and looser columns, and one number cannot say that. */
+  const stepW = Math.max(1e-3, W * (1 - o));
+  const stepH = Math.max(1e-3, H * (1 - o));
   const seats = [];
   const wobble = a => (jitter > 0 ? (rand() - 0.5) * 2 * a * jitter : 0);
 
   if (coverTop) {
     const topY = baseY + tierHeight;
-    /* The outermost ring is allowed to sit PAST the rim by most of a rose. Its shoulder then hangs
-     * over the edge, which is what closes the seam against the wall — on the reference cake there
-     * is no visible line where the top stops and the side starts. */
-    const reach = tierRadius + rosetteRadius * 0.35;
+    /* The outer ring may pass the rim so its shoulder closes the seam against the wall — on the
+     * reference cake there is no line where the top stops. Measured off the piece, not a radius. */
+    const reach = tierRadius + (W / 2) * rimOverhang;
     seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top' });
-    for (let ring = 1; ring * step <= reach; ring++) {
-      const r = ring * step;
-      const count = Math.max(1, Math.round((TAU * r) / step));
-      const phase = rand() * TAU;                     // so rings do not all start at the same spoke
+    for (let ring = 1; ring * stepW <= reach; ring++) {
+      const r = ring * stepW;
+      const count = Math.max(1, Math.round((TAU * r) / stepW));
+      const phase = rand() * TAU;
       for (let i = 0; i < count; i++) {
         const a = phase + (i / count) * TAU + wobble(0.12);
-        const rr = r + wobble(step * 0.1);
+        const rr = r + wobble(stepW * 0.1);
         seats.push({
           p: [Math.cos(a) * rr, topY, Math.sin(a) * rr],
           n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top',
@@ -200,13 +210,17 @@ export function rosetteSeats({
   }
 
   if (coverSide) {
-    /* Rows are inset half a rose from the top and bottom edges, then spaced to fit a whole number
-     * of rows — so the wall is covered edge to edge without a row hanging off the board. */
-    const lo = baseY + rosetteRadius * 0.55;
-    const hi = baseY + tierHeight - rosetteRadius * 0.3;
+    /* ⚠️ HALF THE PIECE'S OWN HEIGHT, NOT A FRACTION OF A RADIUS. A piece resting on the board has
+     * its CENTRE at half its height; anything less and it hangs through the board, which is exactly
+     * what was rendering. The top row is inset the same way so nothing overhangs the lid — the top
+     * surface closes that seam from above, with `rimOverhang`. */
+    const lo = baseY + H / 2;
+    const hi = baseY + tierHeight - H / 2;
     const span = Math.max(0, hi - lo);
-    const rows = Math.max(1, Math.round(span / (step * 0.86)) + 1);   // 0.86: rows nest, so they sit closer than columns
-    const perRow = Math.max(3, Math.round((TAU * tierRadius) / step));
+    /* Rows that FIT, from the cake's height and the piece's height. One row when the piece is as
+     * tall as the wall — which is an answer, not a degenerate case. */
+    const rows = span <= 1e-6 ? 1 : Math.max(1, Math.round(span / stepH) + 1);
+    const perRow = Math.max(3, Math.round((TAU * tierRadius) / stepW));
     for (let r = 0; r < rows; r++) {
       const y = rows === 1 ? (lo + hi) / 2 : lo + (span * r) / (rows - 1);
       const stagger = (r % 2) * (TAU / perRow) / 2;    // half a step every other row → hex packing
@@ -214,11 +228,10 @@ export function rosetteSeats({
         const a = stagger + (i / perRow) * TAU + wobble(0.1);
         const ca = Math.cos(a), sa = Math.sin(a);
         seats.push({
-          p: [ca * tierRadius, y + wobble(step * 0.08), sa * tierRadius],
+          p: [ca * tierRadius, y + wobble(stepH * 0.08), sa * tierRadius],
           n: [ca, 0, sa],
-          /* The rose's own axes on a wall: `u` runs AROUND the cake, `v` runs UP it. Taking `u`
-           * from a fixed world axis instead would twist every rose except the one facing the
-           * camera — the error is invisible on the front of the cake and gross on its flank. */
+          /* `u` runs AROUND the cake, `v` runs UP it. Taking `u` from a fixed world axis would
+           * twist every piece except the one facing the camera. */
           u: [-sa, 0, ca],
           v: [0, 1, 0],
           kind: 'side',
