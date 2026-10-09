@@ -22,6 +22,9 @@ describe('cakeShapeGroups', () => {
       shape('tall-round', 'circle'),
     ]);
     expect(groups.map(g => g.key)).toEqual(['round', 'rect']);
+    /* All five are single-tier here (the helper sets no stack), so this is also the stability
+       check: nothing moves when there is nothing to separate. Tier-count ordering has its own
+       tests below. */
     expect(groups[0].shapes.map(s => s.key)).toEqual(['round', 'two-tier', 'tall-round']);
     expect(groups[1].shapes.map(s => s.key)).toEqual(['rect', 'half-sheet']);
   });
@@ -70,15 +73,52 @@ describe('cakeShapeGroups', () => {
     expect(cakeShapeGroups(undefined)).toEqual([]);
   });
 
-  /* Order within a group is NOT invented — cake_shapes has no sort column, so catalog order is the
-     only honest answer and this pins that we did not quietly add one. */
-  it('preserves catalog order inside a group', () => {
+  /* ── Order inside a group ──────────────────────────────────────────────────────────────────
+   *
+   * Sandeep: "let the most ordered round single tier one should be the first one." A plain round
+   * single tier is the commonest cake there is, and it was landing wherever the API happened to
+   * put it. */
+  const stacked = (key, family, tiers) =>
+    ({ key, family, label: key, tiers: Array.from({ length: tiers }, () => ({})) });
+
+  it('puts the simplest cake first — a single tier leads its group', () => {
+    const groups = cakeShapeGroups([
+      stacked('four-tier', 'circle', 4),
+      stacked('two-tier', 'circle', 2),
+      shape('round', 'circle'),
+      stacked('three-tier', 'circle', 3),
+    ]);
+    expect(groups[0].shapes.map(s => s.key)).toEqual(['round', 'two-tier', 'three-tier', 'four-tier']);
+  });
+
+  /* ⚠️ An empty or absent stack is ONE tier, not zero — applyCakeShapeConfig says so, and the seed
+     round/rect carry no stack at all. Reading it as zero would sort them first on a technicality. */
+  it('treats an empty or absent stack as a single tier', () => {
+    const groups = cakeShapeGroups([
+      stacked('two-tier', 'circle', 2),
+      { key: 'no-stack', family: 'circle', label: 'no-stack' },
+      { key: 'empty-stack', family: 'circle', label: 'empty-stack', tiers: [] },
+    ]);
+    expect(groups[0].shapes.map(s => s.key)).toEqual(['no-stack', 'empty-stack', 'two-tier']);
+  });
+
+  /* The sort only ever separates DIFFERENT tier counts. Equal counts keep catalog order, because
+     cake_shapes has no sort column yet and that is an admin's judgement to make later — this must
+     not quietly invent one in the meantime. */
+  it('leaves same-height shapes in catalog order', () => {
     const groups = cakeShapeGroups([
       shape('full-sheet', 'rounded_rect'),
       shape('quarter-sheet', 'rounded_rect'),
       shape('half-sheet', 'rounded_rect'),
     ]);
     expect(groups[0].shapes.map(s => s.key)).toEqual(['full-sheet', 'quarter-sheet', 'half-sheet']);
+  });
+
+  /* Sorting must not mutate what the caller handed over — the picker reads this same list. */
+  it('does not reorder the caller\'s array', () => {
+    const input = [stacked('two-tier', 'circle', 2), shape('round', 'circle')];
+    cakeShapeGroups(input);
+    expect(input.map(s => s.key)).toEqual(['two-tier', 'round']);
   });
 
   /* The seed must group correctly with no DB at all — round and rect are what existing designs

@@ -111,11 +111,18 @@ export function cakeShapeList() {
  * exists to prevent one surface over: nothing errors, nothing logs, the tile is simply not there.
  * Any change here must keep a `families: null` entry last.
  *
- * ⚠️ ORDER WITHIN A GROUP IS STILL UNANSWERED. `cake_shapes` has no sort column, so Quarter / Half /
- * Full Sheet come back in API order and will sit in an arbitrary order inside a tidy group. Size is
- * guessable from the `tiers` stack, but "which shape do we show first" is a judgement that belongs
- * to an admin, not to a sort function — so this deliberately preserves catalog order within each
- * group rather than inventing one. The real fix is a column and a field in the studio.
+ * ⚠️ WITHIN A GROUP, THE SIMPLEST CAKE LEADS — fewest tiers first. Sandeep: *"let the most ordered
+ * round single tier one should be the first one."* That is INVARIANTS #12 (lay a surface out by how
+ * often each control is used) applied inside the group as well as across them: a plain round single
+ * tier is the most-ordered cake there is, and leaving it wherever the API happened to put it made
+ * the commonest choice a hunt. Tier count comes from the row's own `tiers` stack, so it needs no
+ * list of keys and answers for shapes nobody has authored yet.
+ *
+ * ⚠️ AND TIES KEEP CATALOG ORDER, which is the half that matters later. `cake_shapes` has no sort
+ * column, so four single-tier sheets still arrive in API order — that is a real gap and this does
+ * NOT paper over it. Sorting is STABLE and only ever separates a 1-tier from a 3-tier, so the day a
+ * column and a studio field exist, an admin's order wins inside each tier count without this having
+ * to be unpicked. "Which sheet comes first" is still their judgement, not a sort function's.
  *
  * Group ORDER is a code-level judgement because families are a code-level concept (the generators in
  * geometry/shapes.js). Round leads because a round single tier is the most-ordered cake there is,
@@ -150,6 +157,18 @@ export function cakeShapeGroups(shapes) {
   }
 
   return SHAPE_GROUPS
-    .map(g => ({ key: g.key, label: g.label, shapes: buckets.get(g.key) }))
+    .map(g => ({ key: g.key, label: g.label, shapes: byTierCount(buckets.get(g.key)) }))
     .filter(g => g.shapes.length > 0);
 }
+
+/* How many tiers a catalog entry starts a cake with. An EMPTY or absent stack is one tier, not
+ * zero: `applyCakeShapeConfig` already says so — "Empty means one tier at the designer's default,
+ * which is what every row meant before shapes could be multi-tier, so an empty stack is an answer
+ * and not a gap" — and the seed's round/rect carry no stack at all. Reading it as 0 would sort the
+ * two load-bearing seed shapes ahead of everything on a technicality rather than on merit. */
+const tierCount = s => s?.tiers?.length || 1;
+
+/* Stable: Array.prototype.sort is specified stable, so equal tier counts come back in the order
+ * they went in — which is catalog order, and is where an admin's ordering will land when it
+ * exists. */
+const byTierCount = shapes => [...shapes].sort((a, b) => tierCount(a) - tierCount(b));
