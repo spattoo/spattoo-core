@@ -102,6 +102,11 @@ export { DECOR_MATERIALS, materialSurface, materialsFor, applyDecorMaterialConfi
 // Cake shapes — the footprint catalog (seed + DB overlay) and the outline kernel every shape-dependent
 // operation derives from. The admin Cake Shape Studio authors rows against exactly these.
 export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from './designer/cakeShapes.js';
+/* Coating a whole cake in piped roses. PATHS, not meshes — the caller sweeps them with
+   buildPipingStroke and welds them with mergePenGeometries, both of which already exist and are
+   already tuned. Exported so the admin studio imports the packing rather than carrying a copy
+   of it (CLAUDE.md: "the studio imports the geometry"). */
+export { rosetteSpiral, rosetteLocalPath, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS } from './designer/geometry/rosetteCoat.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
 /* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
  * the light it receives, with a reference light MEASURED per surface. Exported so admin studios —
