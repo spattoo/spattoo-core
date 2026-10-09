@@ -106,6 +106,10 @@ export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from '
    buildPipingStroke and welds them with mergePenGeometries, both of which already exist and are
    already tuned. Exported so the admin studio imports the packing rather than carrying a copy
    of it (CLAUDE.md: "the studio imports the geometry"). */
+/* Measuring the spacing at which a given piece actually tiles without a hole. Every cheaper
+   proxy — bounding box, √2·r, a percentile of vertices — was tried and each left visible cake,
+   because a disc tiles at 0.81 of its width and a sharp star needs 0.54, and no constant is both. */
+export { silhouette, tilesWithoutGaps, maxTileStep } from './designer/geometry/tileCoverage.js';
 export { rosetteSpiral, rosetteLocalPath, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS } from './designer/geometry/rosetteCoat.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
 /* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
