@@ -228,21 +228,6 @@ export function rosetteSeats({
    * ON the edge wherever the grid stopped short, at the same arc-length spacing as everything else.
    */
   if (coverTop) {
-    const rowStep = stepW * (Math.sqrt(3) / 2);          // hex rows nest closer than columns
-    const reach = boundingRadius(shp);
-    const rows = Math.max(1, Math.ceil((2 * reach) / rowStep));
-    for (let r = 0; r <= rows; r++) {
-      const z = -reach + (2 * reach * r) / rows;
-      const cols = Math.max(1, Math.ceil((2 * reach) / stepW));
-      for (let c = 0; c <= cols; c++) {
-        const x = -reach + (2 * reach * c) / cols + (r % 2 ? stepW / 2 : 0);
-        if (!topContains(shp, x, z)) continue;
-        seats.push({
-          p: [x + wobble(stepW * 0.1), topY, z + wobble(stepW * 0.1)],
-          n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
-        });
-      }
-    }
     /* The edge. Inset by a quarter piece so each straddles the outline — the outer half is covered
        by the shoulder row, and with no shoulder `rimOverhang` lets it hang over instead. */
     const inset = hasRim ? W * 0.25 : -(W / 2) * rimOverhang;
@@ -261,6 +246,22 @@ export function rosetteSeats({
         p: [x, topY, z],
         n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
       });
+    }
+
+    const rowStep = stepW * (Math.sqrt(3) / 2);          // hex rows nest closer than columns
+    const reach = boundingRadius(shp);
+    const rows = Math.max(1, Math.ceil((2 * reach) / rowStep));
+    for (let r = 0; r <= rows; r++) {
+      const z = -reach + (2 * reach * r) / rows;
+      const cols = Math.max(1, Math.ceil((2 * reach) / stepW));
+      for (let c = 0; c <= cols; c++) {
+        const x = -reach + (2 * reach * c) / cols + (r % 2 ? stepW / 2 : 0);
+        if (!topContains(shp, x, z)) continue;
+        seats.push({
+          p: [x + wobble(stepW * 0.1), topY, z + wobble(stepW * 0.1)],
+          n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
+        });
+      }
     }
   }
 
@@ -313,7 +314,39 @@ export function rosetteSeats({
     }
   }
 
-  return seats;
+  return dedupe(seats, stepW * DUPLICATE_FRACTION);
+}
+
+/* ── Two pieces in one place ─────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE LATTICES OVERLAP WHERE THEY MEET, and on a heart that is visible as a clump of strays past
+ * the point. Measured on a heart at a 0.180 step: 38 lid seats closer than half a step to another,
+ * the nearest pair 0.013 apart — 7% of a step, so two pieces in the same spot. The lid is a grid
+ * PLUS a walk of the edge and they collide wherever a grid point lands near the boundary; the wall
+ * and the shoulder crowd where curvature is sharp and arc-length steps bunch.
+ *
+ * A legitimate neighbour is a full step away — hex rows sit at `step·√3/2` offset by half a step,
+ * which is exactly `step` apart — so anything closer than half a step is a duplicate and not a
+ * tight pack. Dropping it costs no coverage.
+ *
+ * ⚠️ FIRST KEPT WINS, which is why the edge walk is pushed BEFORE the grid. The edge seats are the
+ * ones guaranteeing the boundary is covered; a grid point near the rim is replaceable, an edge one
+ * is not. Reverse the order and the heart loses its outline instead of its strays. */
+const DUPLICATE_FRACTION = 0.5;
+
+function dedupe(seats, minDist) {
+  const keep = [];
+  const d2 = minDist * minDist;
+  for (const s of seats) {
+    let clash = false;
+    for (const k of keep) {
+      if (k.kind !== s.kind) continue;          // a lid piece and a shoulder piece SHOULD overlap
+      const dx = k.p[0] - s.p[0], dy = k.p[1] - s.p[1], dz = k.p[2] - s.p[2];
+      if (dx * dx + dy * dy + dz * dz < d2) { clash = true; break; }
+    }
+    if (!clash) keep.push(s);
+  }
+  return keep;
 }
 
 /**

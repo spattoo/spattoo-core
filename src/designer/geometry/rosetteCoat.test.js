@@ -406,6 +406,34 @@ describe('rosetteSeats', () => {
     });
   });
 
+  /* Sandeep, on strays past a heart's point: "those few extra pipings. hope those wont come in
+     core designer." They would have — the seats are the shared geometry, not the preview. */
+  it('never seats two pieces of a kind in the same place', () => {
+    const RECT = { kind: 'rect', halfW: 1.1, halfD: 0.8, cornerR: 0.14 };
+    const HEART = { outline: Array.from({ length: 72 }, (_, i) => {
+      const t = (i / 72) * Math.PI * 2;
+      const x = 16 * Math.sin(t) ** 3;
+      const z = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+      return { x: (x / 16) * 1.2, z: (z / 17) * 1.2 };
+    }) };
+    for (const [name, shape] of [['round', null], ['rect', RECT], ['heart', HEART]]) {
+      const W = 0.3, step = W * (1 - SEAT_OVERLAP);
+      const all = rosetteSeats({ shape, tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                 pieceW: W, pieceH: W });
+      for (const kind of ['top', 'side', 'rim']) {
+        const k = all.filter(s => s.kind === kind);
+        for (let i = 0; i < k.length; i++) {
+          for (let j = i + 1; j < k.length; j++) {
+            /* Half a step. A real hex neighbour is a FULL step away — rows at step·√3/2 offset by
+               half a step work out to exactly step — so anything nearer is two pieces in one
+               place, not a tight pack. On a heart it measured 0.013 against a 0.180 step. */
+            expect(dist(k[i].p, k[j].p), `${name}/${kind}`).toBeGreaterThan(step * 0.5);
+          }
+        }
+      }
+    }
+  });
+
   it('honours the two coverage switches', () => {
     expect(seats({ coverTop: false, coverSide: false })).toEqual([]);
     expect(seats({ coverSide: false }).every(s => s.kind === 'top')).toBe(true);
