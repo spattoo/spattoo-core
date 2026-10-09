@@ -178,13 +178,34 @@ describe('rosetteSeats', () => {
     }
   });
 
-  it('pulls the top and the side back to make room for it', () => {
+  /* ⚠️ THE SHOULDER OVERLAYS, IT DOES NOT DISPLACE. Making the two faces retreat to leave it a
+     strip put three surfaces against two seams, both of which had to be exact — and narrowing one
+     widens the other. Both faces now cover themselves fully and the rim is a third layer on the
+     join, which is also how it is piped. */
+  it('does not pull the top or the side back — it covers the join on top of them', () => {
     const o = { tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, pieceW: 0.5, pieceH: 0.5 };
     const withRim = rosetteSeats(o), without = rosetteSeats({ ...o, rimRow: false });
     const outer = l => Math.max(...l.filter(s => s.kind === 'top').map(s => Math.hypot(s.p[0], s.p[2])));
     const highest = l => Math.max(...l.filter(s => s.kind === 'side').map(s => s.p[1]));
-    expect(outer(withRim)).toBeLessThan(outer(without));
-    expect(highest(withRim)).toBeLessThan(highest(without));
+    /* The WALL is identical either way — the shoulder takes nothing from it. The lid differs for
+       a different reason: with no shoulder it must overhang the rim to close the seam itself, and
+       with one it stops at the edge and lets the shoulder cover past it. Neither is a retreat. */
+    expect(highest(withRim)).toBeCloseTo(highest(without), 6);
+    expect(outer(withRim)).toBeCloseTo(R, 6);
+    expect(outer(without)).toBeGreaterThan(R);
+    expect(withRim.filter(s => s.kind === 'rim').length).toBeGreaterThan(8);
+  });
+
+  it('covers the wall to the lid whether or not there is a shoulder', () => {
+    const P = 0.5;
+    for (const rimRow of [true, false]) {
+      const all = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                 pieceW: P, pieceH: P, rimRow });
+      const highest = Math.max(...all.filter(s => s.kind === 'side').map(s => s.p[1]));
+      expect(highest + P / 2).toBeCloseTo(BASE + H, 6);
+      const outer = Math.max(...all.filter(s => s.kind === 'top').map(s => Math.hypot(s.p[0], s.p[2])));
+      expect(outer).toBeGreaterThanOrEqual(R - 1e-9);        // out to the rim, at least
+    }
   });
 
   /* ⚠️ The rim loop needs BOTH faces; its two set-backs must agree with it or the top is pulled
@@ -196,11 +217,11 @@ describe('rosetteSeats', () => {
     expect(Math.max(...topOnly.map(s => Math.hypot(s.p[0], s.p[2])))).toBeGreaterThan(R * 0.85);
   });
 
-  /* ⚠️ 1.3, not 0.9 — ceiling the count means 0.9 now gets TWO overlapping rows, which is correct
-     and is the point of the ceil. The single-row case is a piece tall enough that the usable span
-     collapses entirely. */
+  /* ⚠️ As tall as the wall. Ceiling the count means anything shorter gets two overlapping rows,
+     which is correct and is the point of the ceil; and now the shoulder takes nothing off the top,
+     the usable span only collapses when the piece is the full height. */
   it('a single row rests on the board rather than floating in the middle', () => {
-    const pieceH = 1.3;
+    const pieceH = H;
     const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
                                 pieceW: 0.4, pieceH }).filter(s => s.kind === 'side');
     expect(new Set(side.map(s => s.p[1].toFixed(5))).size).toBe(1);
@@ -291,6 +312,26 @@ describe('rosetteSeats', () => {
       expect(all.filter(s => s.kind !== 'rim').every(s => s.stretch === 1)).toBe(true);
       expect(all.every(s => typeof s.stretch === 'number')).toBe(true);
     });
+  });
+
+  /* ⚠️ The same class of fault as the row rounding, in the other loop. Rings walked out in whole
+     steps and stopped at the last that fitted, so the outermost could sit a FULL step inside the
+     reach — a bare annulus, which a top-down render showed as a clean ring of cake. */
+  it('runs the top rings right out to the reach, not to the last whole step', () => {
+    for (const pieceW of [0.22, 0.31, 0.44, 0.5]) {
+      const all = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                 pieceW, pieceH: pieceW });
+      const radii = [...new Set(all.filter(s => s.kind === 'top')
+        .map(s => +Math.hypot(s.p[0], s.p[2]).toFixed(6)))].sort((a, b) => a - b);
+      const stepW = pieceW * (1 - SEAT_OVERLAP);
+      // every ring gap within the step…
+      for (let i = 1; i < radii.length; i++) {
+        expect(radii[i] - radii[i - 1]).toBeLessThanOrEqual(stepW + 1e-9);
+      }
+      // …including the last one, which is where the annulus was
+      const reach = R;   // the rim overlays now, so the lid covers itself to the edge
+      expect(Math.abs(radii[radii.length - 1] - reach)).toBeLessThan(1e-6);
+    }
   });
 
   it('honours the two coverage switches', () => {

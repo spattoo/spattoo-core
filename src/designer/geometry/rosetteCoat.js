@@ -140,11 +140,22 @@ const TAU = Math.PI * 2;
  * flat frosting anywhere between them. */
 export const SEAT_OVERLAP = 0.4;
 
-/* How much of the top and the side the rim row takes over, as a fraction of a half-piece. The rim
- * pieces lean across the corner, so they already cover a band of each face; without pulling the
- * other two back they stack on top of that band instead of continuing from it. A first pass —
- * this is a number to settle by looking, not by arithmetic. */
-const RIM_BITE = 0.7;
+/* ── The shoulder OVERLAYS the join, it does not fill a strip between two faces ──────────────────
+ *
+ * ⚠️ 0, AND THAT IS THE DESIGN RATHER THAN A TUNING. The first version had the rim row DISPLACE
+ * its neighbours: the wall stopped short, the lid stopped short, and the shoulder filled the strip
+ * between them. That makes three surfaces meeting at TWO seams, and both have to be exact — the
+ * arithmetic had them touching with 0.004·H to spare, so any shortfall in the mesh opened a line
+ * of bare cake. It did, repeatedly, and no amount of adjusting the strip's width fixed it because
+ * narrowing one seam widens the other.
+ *
+ * A baker does not do that either. The wall gets piped, the top gets piped, and the shoulder roses
+ * go ON the join afterwards. So both faces now cover themselves completely and the rim row is
+ * PURELY ADDITIVE — a third layer over the corner. There is no seam to get right, because there is
+ * no seam: cream over cream, which is what the reference photograph shows.
+ *
+ * Non-zero makes the faces retreat again and is kept only so that behaviour is reachable. */
+const RIM_BITE = 0;
 
 /* The most a shoulder piece may be stretched along the wall to close a seam. Past about half as
  * long again it stops reading as a piped rose and starts reading as a smear — and a gap that wide
@@ -213,8 +224,18 @@ export function rosetteSeats({
       ? tierRadius - (W / 2) * RIM_BITE          // the rim row takes the outermost band
       : tierRadius + (W / 2) * rimOverhang;
     seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1 });
-    for (let ring = 1; ring * stepW <= reach; ring++) {
-      const r = ring * stepW;
+    /* ⚠️ RINGS ARE DISTRIBUTED TO `reach`, NOT STEPPED UNTIL THEY PASS IT. Walking out in whole
+     * steps and stopping at the last one that fits leaves the outermost ring up to a FULL STEP
+     * short — a bare annulus between the top's last ring and the shoulder row, which is what it
+     * rendered as and what a top-down view showed as a clean pink ring. The wall never had this
+     * because its rows were already spread between two fixed ends.
+     *
+     * Ceil then divide: the count is whatever it takes for the pitch to stay within the step, and
+     * the outermost ring lands exactly on `reach`. Tighter than asked, never looser — the same
+     * rule as every other count here. */
+    const rings = Math.max(1, Math.ceil(reach / stepW));
+    for (let ring = 1; ring <= rings; ring++) {
+      const r = (reach * ring) / rings;
       const count = Math.max(1, Math.ceil((TAU * r) / stepW));
       const phase = rand() * TAU;
       for (let i = 0; i < count; i++) {
