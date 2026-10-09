@@ -60,6 +60,8 @@ describe('rosetteSeats', () => {
   const seats = (o = {}) => rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, ...o });
 
   it('covers the top out to the rim, and a little past it', () => {
+    /* No side ⇒ no rim row, so the top overhangs the rim itself. With a rim row the top stops
+       short and the rim pieces take that band — covered by its own test below. */
     const top = seats({ coverSide: false });
     const radii = top.map(s => Math.hypot(s.p[0], s.p[2]));
     expect(Math.min(...radii)).toBe(0);                       // one in the middle
@@ -141,7 +143,7 @@ describe('rosetteSeats', () => {
   it('stands the bottom row ON the board, not through it', () => {
     for (const pieceH of [0.3, 0.52, 0.9]) {
       const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
-                                  pieceW: 0.5, pieceH });
+                                  pieceW: 0.5, pieceH, rimRow: false });
       const lowest = Math.min(...side.filter(s => s.kind === 'side').map(s => s.p[1]));
       expect(lowest - pieceH / 2).toBeCloseTo(BASE, 6);      // its underside rests exactly on the board
     }
@@ -150,8 +152,56 @@ describe('rosetteSeats', () => {
   it('keeps the top row under the lid', () => {
     const pieceH = 0.52;
     const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
-                                pieceW: 0.5, pieceH }).filter(s => s.kind === 'side');
+                                pieceW: 0.5, pieceH, rimRow: false }).filter(s => s.kind === 'side');
     expect(Math.max(...side.map(s => s.p[1])) + pieceH / 2).toBeCloseTo(BASE + H, 6);
+  });
+
+  /* ── The shoulder ────────────────────────────────────────────────────────────────────────────
+   * Sandeep, with the reference photo: "rim was covered completely by cream piping." A 90° edge
+   * has nothing tangent to it, so top and side pieces both miss it however they are packed. */
+  it('puts a row across the corner, facing the bisector', () => {
+    const rim = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                               pieceW: 0.5, pieceH: 0.5 }).filter(s => s.kind === 'rim');
+    expect(rim.length).toBeGreaterThan(8);
+    const k = Math.SQRT1_2;
+    for (const s of rim) {
+      expect(Math.hypot(s.p[0], s.p[2])).toBeCloseTo(R, 6);     // on the rim circle
+      expect(s.p[1]).toBeCloseTo(BASE + H, 6);                  // at the lid's height
+      expect(s.n[1]).toBeCloseTo(k, 6);                         // 45° up…
+      expect(Math.hypot(s.n[0], s.n[2])).toBeCloseTo(k, 6);     // …and 45° out
+      expect(Math.hypot(...s.n)).toBeCloseTo(1, 6);
+      // The frame must be orthonormal or the piece shears.
+      expect(s.u[0] * s.n[0] + s.u[1] * s.n[1] + s.u[2] * s.n[2]).toBeCloseTo(0, 6);
+      expect(s.v[0] * s.n[0] + s.v[1] * s.n[1] + s.v[2] * s.n[2]).toBeCloseTo(0, 6);
+      expect(s.u[0] * s.v[0] + s.u[1] * s.v[1] + s.u[2] * s.v[2]).toBeCloseTo(0, 6);
+      expect(Math.hypot(...s.v)).toBeCloseTo(1, 6);
+    }
+  });
+
+  it('pulls the top and the side back to make room for it', () => {
+    const o = { tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, pieceW: 0.5, pieceH: 0.5 };
+    const withRim = rosetteSeats(o), without = rosetteSeats({ ...o, rimRow: false });
+    const outer = l => Math.max(...l.filter(s => s.kind === 'top').map(s => Math.hypot(s.p[0], s.p[2])));
+    const highest = l => Math.max(...l.filter(s => s.kind === 'side').map(s => s.p[1]));
+    expect(outer(withRim)).toBeLessThan(outer(without));
+    expect(highest(withRim)).toBeLessThan(highest(without));
+  });
+
+  /* ⚠️ The rim loop needs BOTH faces; its two set-backs must agree with it or the top is pulled
+     away from the rim for a row that never gets built. That was a real bug. */
+  it('does not pull a face back when no rim row will be built', () => {
+    const topOnly = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                   pieceW: 0.5, pieceH: 0.5, coverSide: false });
+    expect(topOnly.some(s => s.kind === 'rim')).toBe(false);
+    expect(Math.max(...topOnly.map(s => Math.hypot(s.p[0], s.p[2])))).toBeGreaterThan(R * 0.85);
+  });
+
+  it('a single row rests on the board rather than floating in the middle', () => {
+    const pieceH = 0.9;
+    const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                pieceW: 0.4, pieceH }).filter(s => s.kind === 'side');
+    expect(new Set(side.map(s => s.p[1].toFixed(5))).size).toBe(1);
+    expect(side[0].p[1] - pieceH / 2).toBeCloseTo(BASE, 6);
   });
 
   /* ⚠️ A GLB IS SCALED ON ITS WIDEST HORIZONTAL EXTENT, so a piece wider than it is tall is
@@ -172,7 +222,7 @@ describe('rosetteSeats', () => {
 
   it('a piece as tall as the wall gets exactly one row', () => {
     const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
-                                pieceW: 0.4, pieceH: H }).filter(s => s.kind === 'side');
+                                pieceW: 0.4, pieceH: H, rimRow: false }).filter(s => s.kind === 'side');
     expect(new Set(side.map(s => s.p[1].toFixed(5))).size).toBe(1);
   });
 

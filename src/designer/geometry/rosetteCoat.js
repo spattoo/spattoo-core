@@ -140,6 +140,12 @@ const TAU = Math.PI * 2;
  * flat frosting anywhere between them. */
 export const SEAT_OVERLAP = 0.4;
 
+/* How much of the top and the side the rim row takes over, as a fraction of a half-piece. The rim
+ * pieces lean across the corner, so they already cover a band of each face; without pulling the
+ * other two back they stack on top of that band instead of continuing from it. A first pass —
+ * this is a number to settle by looking, not by arithmetic. */
+const RIM_BITE = 0.7;
+
 /**
  * Where every rose sits on a round tier, with the frame it sits in.
  *
@@ -169,6 +175,7 @@ export function rosetteSeats({
   pieceW = null,
   pieceH = null,
   overlap = SEAT_OVERLAP,
+  rimRow = true,               // a row ACROSS the corner — see the note below
   rimOverhang = 0.35,          // how far the outer top ring may pass the rim, as a fraction of pieceW/2
   coverTop = true,
   coverSide = true,
@@ -187,12 +194,19 @@ export function rosetteSeats({
   const stepH = Math.max(1e-3, H * (1 - o));
   const seats = [];
   const wobble = a => (jitter > 0 ? (rand() - 0.5) * 2 * a * jitter : 0);
+  /* ⚠️ ONE PREDICATE FOR THE RIM, read in three places. The first version gated the top's reach
+   * and the wall's ceiling on `rimRow` while gating the LOOP on `rimRow && coverTop && coverSide`
+   * — so asking for the top alone pulled it back from the rim for a row that was never built, and
+   * left exactly the bald ring the rim row exists to prevent. */
+  const hasRim = rimRow && coverTop && coverSide;
 
   if (coverTop) {
     const topY = baseY + tierHeight;
     /* The outer ring may pass the rim so its shoulder closes the seam against the wall — on the
      * reference cake there is no line where the top stops. Measured off the piece, not a radius. */
-    const reach = tierRadius + (W / 2) * rimOverhang;
+    const reach = hasRim
+      ? tierRadius - (W / 2) * RIM_BITE          // the rim row takes the outermost band
+      : tierRadius + (W / 2) * rimOverhang;
     seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top' });
     for (let ring = 1; ring * stepW <= reach; ring++) {
       const r = ring * stepW;
@@ -215,14 +229,17 @@ export function rosetteSeats({
      * what was rendering. The top row is inset the same way so nothing overhangs the lid — the top
      * surface closes that seam from above, with `rimOverhang`. */
     const lo = baseY + H / 2;
-    const hi = baseY + tierHeight - H / 2;
+    const hi = baseY + tierHeight - H / 2 - (hasRim ? (H / 2) * RIM_BITE : 0);
     const span = Math.max(0, hi - lo);
     /* Rows that FIT, from the cake's height and the piece's height. One row when the piece is as
      * tall as the wall — which is an answer, not a degenerate case. */
     const rows = span <= 1e-6 ? 1 : Math.max(1, Math.round(span / stepH) + 1);
     const perRow = Math.max(3, Math.round((TAU * tierRadius) / stepW));
     for (let r = 0; r < rows; r++) {
-      const y = rows === 1 ? (lo + hi) / 2 : lo + (span * r) / (rows - 1);
+      /* ⚠️ ONE ROW SITS ON THE BOARD, it is not centred in the span. Centring looks reasonable in
+       * isolation and puts a gap under the bottom row, which is the one edge a viewer is level
+       * with. The top is the gap to tolerate, because the rim row closes it. */
+      const y = rows === 1 ? lo : lo + (span * r) / (rows - 1);
       const stagger = (r % 2) * (TAU / perRow) / 2;    // half a step every other row → hex packing
       for (let i = 0; i < perRow; i++) {
         const a = stagger + (i / perRow) * TAU + wobble(0.1);
@@ -237,6 +254,44 @@ export function rosetteSeats({
           kind: 'side',
         });
       }
+    }
+  }
+
+  /* ── The shoulder ────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ A 90° EDGE CANNOT BE HIDDEN BY PIECES TANGENT TO EITHER FACE. Every top seat lies flat on
+   * the lid and every side seat flat on the wall, so the corner between them is the one place
+   * nothing is tangent to — and it rendered as a bald ring with the top reading as a lid resting
+   * on the cake. Sandeep, with the reference photo: *"rim was covered completely by cream piping."*
+   *
+   * So the corner gets its own row, seated on the rim circle with a normal that BISECTS up and
+   * outward. That is not a trick to fill a gap — it is how the cake is actually piped: each rim
+   * rose has a foot on the side and a shoulder on the top, which is visible as a distinct ring in
+   * the photograph.
+   *
+   * ⚠️ BENDING THE PIECE IS THE OTHER OPTION AND IT IS THE WRONG ONE. This codebase does bend GLB
+   * meshes — `bendStripToFestoon` curves a strip into a swag — but a strip bends because it is
+   * LONG, and curving it along its length is the whole point. A rose is as wide as it is tall;
+   * bending one through 90° crumples it. Tilting is what a piping bag does anyway.
+   */
+  if (hasRim) {
+    const topY = baseY + tierHeight;
+    const count = Math.max(3, Math.round((TAU * tierRadius) / stepW));
+    const phase = rand() * TAU;
+    const k = Math.SQRT1_2;                       // cos 45° — the bisector's share of each axis
+    for (let i = 0; i < count; i++) {
+      const a = phase + (i / count) * TAU + wobble(0.1);
+      const ca = Math.cos(a), sa = Math.sin(a);
+      /* Normal bisects outward and up. `u` runs around the rim as everywhere else; `v` is the
+       * remaining axis, which leans up-and-inward — it is n × u, written out rather than computed
+       * so the sign is visible. */
+      seats.push({
+        p: [ca * tierRadius, topY, sa * tierRadius],
+        n: [ca * k, k, sa * k],
+        u: [-sa, 0, ca],
+        v: [-ca * k, k, -sa * k],
+        kind: 'rim',
+      });
     }
   }
 
