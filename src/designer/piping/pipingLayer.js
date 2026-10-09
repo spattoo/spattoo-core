@@ -49,6 +49,20 @@ export function pipingDefaultArrangement(pc, isTop) {
 
 // Map an element's placement_config to the piping fields a ring consumes. Rim (top) and board
 // (bottom) are symmetric: top_* mirrors bottom_*. Returned keys match TopPipingRing/BottomPipingRing.
+/* ── Can this element coat the whole cake? ───────────────────────────────────────────────────────
+ *
+ * Authored per element in Manage Elements. ⚠️ NOT A ZONE AND NOT AN ARRANGEMENT, for the same
+ * reason `hand_piping` is neither: the `*_arrangements_allowed` lists are per-zone, and "can you
+ * coat the board?" is not a real question — a coat is the whole cake or it is nothing.
+ *
+ * ⚠️ ABSENT MEANS NO. A coat tiles, so the piece has to interlock with its own neighbours on every
+ * side; a rosette does, a wrap band is one pre-formed ring and a drip is a procedural curtain.
+ * Most piping cannot do it, so an element nobody has calibrated for it does not get it by default.
+ * Same safe direction as every other gate in this file. */
+export function pipingCanCoat(placementConfig) {
+  return (placementConfig ?? {}).can_coat === true;
+}
+
 export function pipingPlacementFromConfig(placementConfig, isTop) {
   const pc = placementConfig ?? {};
   const arrangement = pipingDefaultArrangement(pc, isTop);
