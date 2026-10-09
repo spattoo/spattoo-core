@@ -110,6 +110,10 @@ export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from '
    proxy — bounding box, √2·r, a percentile of vertices — was tried and each left visible cake,
    because a disc tiles at 0.81 of its width and a sharp star needs 0.54, and no constant is both. */
 export { silhouette, tilesWithoutGaps, maxTileStep } from './designer/geometry/tileCoverage.js';
+/* Which colour each piece of a coat takes — a PARAMETER per seat, not a colour. What a chosen
+   colour looks like on cream is creamAlbedo's job; a second opinion here is the preview-versus-
+   render drift INVARIANTS #15 exists to prevent. */
+export { coatShade, COAT_SHADE_MODES, OMBRE_LID_SHARE } from './designer/geometry/coatShade.js';
 export { rosetteSpiral, rosetteLocalPath, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS } from './designer/geometry/rosetteCoat.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
 /* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
