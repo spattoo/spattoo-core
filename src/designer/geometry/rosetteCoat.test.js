@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { rosetteSpiral, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, SEAT_OVERLAP } from './rosetteCoat.js';
+import { topContains } from './surface.js';
 
 /* Sandeep: "cream piping is filled on entire cake. we need to achieve this."
  *
@@ -59,15 +60,14 @@ describe('rosetteSpiral', () => {
 describe('rosetteSeats', () => {
   const seats = (o = {}) => rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0, ...o });
 
-  it('covers the top out to the rim, and a little past it', () => {
-    /* No side ⇒ no rim row, so the top overhangs the rim itself. With a rim row the top stops
-       short and the rim pieces take that band — covered by its own test below. */
-    const top = seats({ coverSide: false });
+  it('covers the lid out to the edge', () => {
+    /* ⚠️ NO LONGER ASSERTS RINGS. The lid is a hex grid clipped to the outline plus a walk of the
+       edge, because concentric rings are a circle's answer and a heart has no centre to ring
+       about. What matters is reach and coverage, not the lattice that achieves it. */
+    const top = seats({ coverSide: false }).filter(s => s.kind === 'top');
     const radii = top.map(s => Math.hypot(s.p[0], s.p[2]));
-    expect(Math.min(...radii)).toBe(0);                       // one in the middle
-    expect(Math.max(...radii)).toBeGreaterThan(R * 0.85);     // and out to the edge
-    /* Overhanging the rim is deliberate — it is what closes the seam against the wall. */
-    expect(Math.max(...radii)).toBeLessThan(R + ROSETTE_DEFAULTS.rosetteRadius);
+    expect(Math.min(...radii)).toBeLessThan(ROSETTE_DEFAULTS.rosetteRadius);   // something near the middle
+    expect(Math.max(...radii)).toBeGreaterThan(R * 0.95);                      // and out to the edge
     expect(top.every(s => Math.abs(s.p[1] - (BASE + H)) < 1e-9)).toBe(true);
   });
 
@@ -314,24 +314,96 @@ describe('rosetteSeats', () => {
     });
   });
 
-  /* ⚠️ The same class of fault as the row rounding, in the other loop. Rings walked out in whole
-     steps and stopped at the last that fitted, so the outermost could sit a FULL step inside the
-     reach — a bare annulus, which a top-down render showed as a clean ring of cake. */
-  it('runs the top rings right out to the reach, not to the last whole step', () => {
-    for (const pieceW of [0.22, 0.31, 0.44, 0.5]) {
-      const all = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
-                                 pieceW, pieceH: pieceW });
-      const radii = [...new Set(all.filter(s => s.kind === 'top')
-        .map(s => +Math.hypot(s.p[0], s.p[2]).toFixed(6)))].sort((a, b) => a - b);
-      const stepW = pieceW * (1 - SEAT_OVERLAP);
-      // every ring gap within the step…
-      for (let i = 1; i < radii.length; i++) {
-        expect(radii[i] - radii[i - 1]).toBeLessThanOrEqual(stepW + 1e-9);
+  /* ⚠️ The fault this replaces: the lid's last ring could sit a full step inside the edge, a bare
+     annulus a top-down render showed as a clean pink ring. A grid clips just as raggedly, so the
+     edge is now WALKED as well — which is also what makes a heart's notch come out covered. */
+  it('walks the lid edge so the boundary is never left ragged', () => {
+    for (const pieceW of [0.22, 0.31, 0.44]) {
+      const top = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                 pieceW, pieceH: pieceW, coverSide: false })
+        .filter(s => s.kind === 'top');
+      // No point on the rim is further than half a piece from some lid seat.
+      let worst = 0;
+      for (let i = 0; i < 180; i++) {
+        const a = (i / 180) * Math.PI * 2;
+        const q = [Math.cos(a) * R, BASE + H, Math.sin(a) * R];
+        worst = Math.max(worst, Math.min(...top.map(s => dist(s.p, q))));
       }
-      // …including the last one, which is where the annulus was
-      const reach = R;   // the rim overlays now, so the lid covers itself to the edge
-      expect(Math.abs(radii[radii.length - 1] - reach)).toBeLessThan(1e-6);
+      expect(worst).toBeLessThan(pieceW / 2);
     }
+  });
+
+  /* ── Shapes that are not circles ──────────────────────────────────────────────────────────────
+   *
+   * Sandeep: "lets target heart and rectangular shapes now. ideally it this support al the shapes
+   * we have." Nothing here knows what a heart IS — `perimeter` walks any outline by arc length and
+   * `topContains` clips the lid, both of which core already had for the piping ring. */
+  describe('any footprint', () => {
+    const RECT = { kind: 'rect', halfW: 1.1, halfD: 0.8, cornerR: 0.14 };
+    /* A heart as a closed outline, the shape `outlineOf('heart')` produces — normalised to [-1,1]². */
+    const HEART = {
+      outline: Array.from({ length: 72 }, (_, i) => {
+        const t = (i / 72) * Math.PI * 2;
+        const x = 16 * Math.sin(t) ** 3;
+        const z = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
+        return { x: (x / 16) * 1.1, z: (z / 17) * 1.1 };
+      }),
+    };
+
+    for (const [name, shape] of [['rect', RECT], ['heart', HEART]]) {
+      it(`${name}: seats sit ON the wall, not on a phantom circle`, () => {
+        const side = rosetteSeats({ shape, tierHeight: H, baseY: BASE, jitter: 0,
+                                    pieceW: 0.3, pieceH: 0.3 }).filter(s => s.kind === 'side');
+        expect(side.length).toBeGreaterThan(20);
+        /* ⚠️ The failure this guards is the one `isRoundWall` was introduced for elsewhere: a
+           non-round shape falling into the circle branch and seating on a bounding radius out in
+           front of the wall. Every seat must lie on the outline itself. */
+        const radii = side.map(s => Math.hypot(s.p[0], s.p[2]));
+        expect(Math.max(...radii) - Math.min(...radii)).toBeGreaterThan(0.05);  // NOT constant ⇒ not a circle
+        for (const s of side) {
+          expect(Math.hypot(s.n[0], s.n[2])).toBeCloseTo(1, 6);   // unit outward normal
+          expect(s.n[1]).toBeCloseTo(0, 9);
+          // the frame stays orthonormal all the way round, corners and notch included
+          expect(s.u[0] * s.n[0] + s.u[2] * s.n[2]).toBeCloseTo(0, 6);
+        }
+      });
+
+      it(`${name}: the lid is covered and nothing is seated outside it`, () => {
+        const all = rosetteSeats({ shape, tierHeight: H, baseY: BASE, jitter: 0,
+                                   pieceW: 0.3, pieceH: 0.3 });
+        const top = all.filter(s => s.kind === 'top');
+        expect(top.length).toBeGreaterThan(20);
+        /* Grid seats are inside by construction; the edge walk is inset a quarter piece, so
+           nothing should sit more than that outside the outline. */
+        for (const s of top) {
+          expect(topContains(shape, s.p[0], s.p[2], 1.25)).toBe(true);
+        }
+      });
+
+      it(`${name}: gets a shoulder all the way round, facing the bisector`, () => {
+        const rim = rosetteSeats({ shape, tierHeight: H, baseY: BASE, jitter: 0,
+                                   pieceW: 0.3, pieceH: 0.3 }).filter(s => s.kind === 'rim');
+        expect(rim.length).toBeGreaterThan(10);
+        const k = Math.SQRT1_2;
+        for (const s of rim) {
+          expect(s.n[1]).toBeCloseTo(k, 6);                        // 45° up
+          expect(Math.hypot(s.n[0], s.n[2])).toBeCloseTo(k, 6);    // 45° out, along the real normal
+          expect(s.p[1]).toBeCloseTo(BASE + H, 6);
+        }
+      });
+    }
+
+    it('a rect walks its corners at the same spacing as its straights', () => {
+      const side = rosetteSeats({ shape: RECT, tierHeight: H, baseY: BASE, jitter: 0,
+                                  pieceW: 0.3, pieceH: 0.3 }).filter(s => s.kind === 'side');
+      const row = side.filter(s => Math.abs(s.p[1] - side[0].p[1]) < 1e-9);
+      const gaps = row.map((s, i) => {
+        const n = row[(i + 1) % row.length];
+        return Math.hypot(s.p[0] - n.p[0], s.p[2] - n.p[2]);
+      }).slice(0, -1);        // the wrap-around pair is not a step
+      const step = 0.3 * (1 - SEAT_OVERLAP);
+      for (const g of gaps) expect(g).toBeLessThanOrEqual(step + 1e-6);
+    });
   });
 
   it('honours the two coverage switches', () => {

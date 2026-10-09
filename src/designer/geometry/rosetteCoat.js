@@ -1,4 +1,10 @@
 import { mulberry32 } from '../utils/random.js';
+/* ⚠️ THE SHAPE IS NOT RE-DERIVED HERE. `perimeter` walks a circle, a rounded rect OR any outline
+ * (heart, oval, polygon, a number) by arc length and hands back a point and its outward normal;
+ * `topContains` answers point-in-lid for all of them. Both already exist and are already used by
+ * the piping ring, so a coat that packed its own idea of a heart would be a second answer to a
+ * question core settled. */
+import { perimeter, topContains, boundingRadius, topClamp } from './surface.js';
 
 // ── Coating a whole cake in piped rosettes ──────────────────────────────────────────────────────
 //
@@ -178,113 +184,105 @@ const STRETCH_MAX = 1.5;
  * is the one that shows cake.
  */
 export function rosetteSeats({
+  /* The tier's footprint, as `tierShape()` describes it: `{radius}`, `{kind:'rect',halfW,halfD,
+   * cornerR}` or `{outline}`. Absent falls back to a circle of `tierRadius`, so every existing
+   * caller is unmoved. */
+  shape = null,
   tierRadius = 1.2,
   tierHeight = 1.45,
   baseY = 0.1,
   rosetteRadius = ROSETTE_DEFAULTS.rosetteRadius,
-  /* ⚠️ THE PIECE'S MEASURED SIZE, WHICH IS NOT DERIVABLE FROM ONE RADIUS. `pieceW` is how far it
-   * reaches ACROSS the surface, `pieceH` how far UP the wall. For the procedural rose both are a
-   * diameter and `rosetteRadius` answers for them — but a GLB is scaled on its widest horizontal
-   * extent, so a piece wider than it is tall is SHORTER than 2r and every row sum built on r is
-   * wrong. Sandeep: *"are we not doing it by the calculation involving height of the cake, and the
-   * height of rosette?"* We were not, and that is what put the bottom row through the board. */
   pieceW = null,
   pieceH = null,
   overlap = SEAT_OVERLAP,
-  rimRow = true,               // a row ACROSS the corner — see the note below
-  rimOverhang = 0.35,          // how far the outer top ring may pass the rim, as a fraction of pieceW/2
+  rimRow = true,
+  rimOverhang = 0.35,
   coverTop = true,
   coverSide = true,
   jitter = ROSETTE_DEFAULTS.jitter,
   seed = 1,
 } = {}) {
+  const shp = shape ?? { radius: tierRadius };
+  const perim = perimeter(shp);
   const rand = mulberry32(seed >>> 0);
-  const W = pieceW ?? rosetteRadius * 2;        // across the surface
-  const H = pieceH ?? rosetteRadius * 2;        // up the wall
+  const W = pieceW ?? rosetteRadius * 2;
+  const H = pieceH ?? rosetteRadius * 2;
   const o = clamp01(overlap);
-
-  /* Centre-to-centre, per axis. Overlap is the fraction of a piece its neighbour covers, which is
-   * how a baker would describe it, and it keeps the two axes independent — a piece that is wide and
-   * shallow needs tighter ROWS and looser columns, and one number cannot say that. */
   const stepW = Math.max(1e-3, W * (1 - o));
   const stepH = Math.max(1e-3, H * (1 - o));
+  const topY = baseY + tierHeight;
   const seats = [];
   const wobble = a => (jitter > 0 ? (rand() - 0.5) * 2 * a * jitter : 0);
-  /* ⚠️ ONE PREDICATE FOR THE RIM, read in three places. The first version gated the top's reach
-   * and the wall's ceiling on `rimRow` while gating the LOOP on `rimRow && coverTop && coverSide`
-   * — so asking for the top alone pulled it back from the rim for a row that was never built, and
-   * left exactly the bald ring the rim row exists to prevent. */
   const hasRim = rimRow && coverTop && coverSide;
 
+  /* ── The lid ──────────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ A HEX GRID CLIPPED TO THE OUTLINE, NOT CONCENTRIC RINGS. Rings are a circle's answer and a
+   * heart has no centre to ring about — the notch and the point need different numbers of pieces
+   * at the same distance out. A staggered grid is the general one, and on a circle it packs at
+   * least as tightly as rings did.
+   *
+   * ⚠️ PLUS A WALK OF THE EDGE, which is the part a grid cannot do. Clipping leaves the boundary
+   * ragged: the last grid point can sit most of a step inside the outline, which on a round cake
+   * was a visible annulus and on a heart would be a bald notch. Walking the perimeter puts a piece
+   * ON the edge wherever the grid stopped short, at the same arc-length spacing as everything else.
+   */
   if (coverTop) {
-    const topY = baseY + tierHeight;
-    /* The outer ring may pass the rim so its shoulder closes the seam against the wall — on the
-     * reference cake there is no line where the top stops. Measured off the piece, not a radius. */
-    const reach = hasRim
-      ? tierRadius - (W / 2) * RIM_BITE          // the rim row takes the outermost band
-      : tierRadius + (W / 2) * rimOverhang;
-    seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1 });
-    /* ⚠️ RINGS ARE DISTRIBUTED TO `reach`, NOT STEPPED UNTIL THEY PASS IT. Walking out in whole
-     * steps and stopping at the last one that fits leaves the outermost ring up to a FULL STEP
-     * short — a bare annulus between the top's last ring and the shoulder row, which is what it
-     * rendered as and what a top-down view showed as a clean pink ring. The wall never had this
-     * because its rows were already spread between two fixed ends.
-     *
-     * Ceil then divide: the count is whatever it takes for the pitch to stay within the step, and
-     * the outermost ring lands exactly on `reach`. Tighter than asked, never looser — the same
-     * rule as every other count here. */
-    const rings = Math.max(1, Math.ceil(reach / stepW));
-    for (let ring = 1; ring <= rings; ring++) {
-      const r = (reach * ring) / rings;
-      const count = Math.max(1, Math.ceil((TAU * r) / stepW));
-      const phase = rand() * TAU;
-      for (let i = 0; i < count; i++) {
-        const a = phase + (i / count) * TAU + wobble(0.12);
-        const rr = r + wobble(stepW * 0.1);
+    const rowStep = stepW * (Math.sqrt(3) / 2);          // hex rows nest closer than columns
+    const reach = boundingRadius(shp);
+    const rows = Math.max(1, Math.ceil((2 * reach) / rowStep));
+    for (let r = 0; r <= rows; r++) {
+      const z = -reach + (2 * reach * r) / rows;
+      const cols = Math.max(1, Math.ceil((2 * reach) / stepW));
+      for (let c = 0; c <= cols; c++) {
+        const x = -reach + (2 * reach * c) / cols + (r % 2 ? stepW / 2 : 0);
+        if (!topContains(shp, x, z)) continue;
         seats.push({
-          p: [Math.cos(a) * rr, topY, Math.sin(a) * rr],
+          p: [x + wobble(stepW * 0.1), topY, z + wobble(stepW * 0.1)],
           n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
         });
       }
     }
+    /* The edge. Inset by a quarter piece so each straddles the outline — the outer half is covered
+       by the shoulder row, and with no shoulder `rimOverhang` lets it hang over instead. */
+    const inset = hasRim ? W * 0.25 : -(W / 2) * rimOverhang;
+    const count = Math.max(3, Math.ceil(perim.length / stepW));
+    for (let i = 0; i < count; i++) {
+      const q = perim.at((perim.length * i) / count);
+      let x = q.x - q.nx * inset, z = q.z - q.nz * inset;
+      /* ⚠️ CLAMPED, BECAUSE AN INWARD OFFSET OVERSHOOTS AT A CONCAVE CORNER. Stepping along the
+       * inward normal is fine on a convex edge and wrong in a heart's notch, where the two sides'
+       * normals converge and the offset crosses straight out the other side — a piece left
+       * floating in the cleft. `topClamp` snaps a stray point back onto the footprint's own
+       * silhouette, which is the same function that keeps a decoration inside a heart rather than
+       * inside some inscribed circle. Only bites where the offset actually overshot. */
+      if (inset > 0 && !topContains(shp, x, z)) ({ x, z } = topClamp(shp, x, z, 1));
+      seats.push({
+        p: [x, topY, z],
+        n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
+      });
+    }
   }
 
+  /* ── The wall ─────────────────────────────────────────────────────────────────────────────────
+   * Walked by ARC LENGTH, which is what makes a heart work: the notch and the point are travelled
+   * at the same speed as a straight run, so pieces stay evenly spaced where the curvature changes.
+   * The outward normal comes from the walk, so `u` follows the wall rather than a world axis. */
   if (coverSide) {
-    /* ⚠️ HALF THE PIECE'S OWN HEIGHT, NOT A FRACTION OF A RADIUS. A piece resting on the board has
-     * its CENTRE at half its height; anything less and it hangs through the board, which is exactly
-     * what was rendering. The top row is inset the same way so nothing overhangs the lid — the top
-     * surface closes that seam from above, with `rimOverhang`. */
     const lo = baseY + H / 2;
-    const hi = baseY + tierHeight - H / 2 - (hasRim ? (H / 2) * RIM_BITE : 0);
+    const hi = topY - H / 2;
     const span = Math.max(0, hi - lo);
-    /* Rows that FIT, from the cake's height and the piece's height. One row when the piece is as
-     * tall as the wall — which is an answer, not a degenerate case. */
-/* ⚠️ ALWAYS CEIL A COUNT, NEVER ROUND IT. A ring or a column has to take a WHOLE number of
- * pieces, and rounding picks the nearest — which half the time is the one BELOW, stretching the
- * real pitch past the spacing the coverage was calculated for. At span/step = 2.4 that is three
- * rows at 1.2 × step: twenty percent looser than the overlap that was supposed to close the gaps,
- * which rendered as bare rings of cake between every row and between the top row and the rim.
- *
- * Ceiling only ever makes the pitch TIGHTER than asked. Pieces that overlap a little more than
- * intended are invisible; a gap is not. Error in one direction is free, in the other it is the
- * whole failure mode. */
     const rows = span <= 1e-6 ? 1 : Math.max(1, Math.ceil(span / stepH) + 1);
-    const perRow = Math.max(3, Math.ceil((TAU * tierRadius) / stepW));
+    const perRow = Math.max(3, Math.ceil(perim.length / stepW));
     for (let r = 0; r < rows; r++) {
-      /* ⚠️ ONE ROW SITS ON THE BOARD, it is not centred in the span. Centring looks reasonable in
-       * isolation and puts a gap under the bottom row, which is the one edge a viewer is level
-       * with. The top is the gap to tolerate, because the rim row closes it. */
       const y = rows === 1 ? lo : lo + (span * r) / (rows - 1);
-      const stagger = (r % 2) * (TAU / perRow) / 2;    // half a step every other row → hex packing
+      const stagger = (r % 2) * (perim.length / perRow) / 2;
       for (let i = 0; i < perRow; i++) {
-        const a = stagger + (i / perRow) * TAU + wobble(0.1);
-        const ca = Math.cos(a), sa = Math.sin(a);
+        const q = perim.at((stagger + (perim.length * i) / perRow) % perim.length);
         seats.push({
-          p: [ca * tierRadius, y + wobble(stepH * 0.08), sa * tierRadius],
-          n: [ca, 0, sa],
-          /* `u` runs AROUND the cake, `v` runs UP it. Taking `u` from a fixed world axis would
-           * twist every piece except the one facing the camera. */
-          u: [-sa, 0, ca],
+          p: [q.x, y + wobble(stepH * 0.08), q.z],
+          n: [q.nx, 0, q.nz],
+          u: [-q.nz, 0, q.nx],
           v: [0, 1, 0],
           kind: 'side',
           stretch: 1,
@@ -293,73 +291,24 @@ export function rosetteSeats({
     }
   }
 
-  /* ── The shoulder ────────────────────────────────────────────────────────────────────────────
-   *
-   * ⚠️ A 90° EDGE CANNOT BE HIDDEN BY PIECES TANGENT TO EITHER FACE. Every top seat lies flat on
-   * the lid and every side seat flat on the wall, so the corner between them is the one place
-   * nothing is tangent to — and it rendered as a bald ring with the top reading as a lid resting
-   * on the cake. Sandeep, with the reference photo: *"rim was covered completely by cream piping."*
-   *
-   * So the corner gets its own row, seated on the rim circle with a normal that BISECTS up and
-   * outward. That is not a trick to fill a gap — it is how the cake is actually piped: each rim
-   * rose has a foot on the side and a shoulder on the top, which is visible as a distinct ring in
-   * the photograph.
-   *
-   * ⚠️ BENDING THE PIECE IS THE OTHER OPTION AND IT IS THE WRONG ONE. This codebase does bend GLB
-   * meshes — `bendStripToFestoon` curves a strip into a swag — but a strip bends because it is
-   * LONG, and curving it along its length is the whole point. A rose is as wide as it is tall;
-   * bending one through 90° crumples it. Tilting is what a piping bag does anyway.
-   */
+  /* ── The shoulder ─────────────────────────────────────────────────────────────────────────────
+   * Purely additive — see the note on RIM_BITE. Normal bisects the wall's outward normal and up,
+   * so each piece has a foot on the side and a shoulder on the lid, which is how it is piped.
+   * The stretch factor is 1 now that both faces cover themselves; it stays on the seat so a caller
+   * can still lengthen the shoulder for a mesh that falls short of its own extent. */
   if (hasRim) {
-    const topY = baseY + tierHeight;
-    const count = Math.max(3, Math.ceil((TAU * tierRadius) / stepW));
-    const phase = rand() * TAU;
-    const k = Math.SQRT1_2;                       // cos 45° — the bisector's share of each axis
-
-    /* ── How far the shoulder row has to be STRETCHED to meet its neighbours ──────────────────
-     *
-     * Sandeep, on a second GLB that left a band under the rim: *"can we make it something like we
-     * should bend the rim glb till it touches the below / or covers the gap?"*
-     *
-     * Stretching rather than bending, for the reason bending was rejected before: a strip bends
-     * because it is long, a compact piece just crumples. But the AMOUNT need not be a slider —
-     * both neighbours' positions are known here, so the row can size itself.
-     *
-     * A rim piece leans at 45°, so half its height reaches `k·H/2` down the wall and the same
-     * inward across the lid. The two gaps it must close:
-     *
-     *   down  — from its lower edge to the top of the highest side piece
-     *   in    — from its inner edge to the outer edge of the outermost top ring
-     *
-     * Stretch is symmetric along that axis, so one factor closes both and the WORSE gap sets it.
-     * Clamped at 1 below, because the row must never shrink and leave a gap it would otherwise
-     * have covered, and at STRETCH_MAX above, because past that a piece reads as smeared rather
-     * than piped — a gap that large is a piece-size problem, not a stretch problem.
-     *
-     * ⚠️ IT IS A FACTOR, NOT A SIZE. The caller scales the piece along its own up-the-wall axis;
-     * the other two axes must not move, or the shoulder row comes out fatter than its neighbours
-     * and the seam reappears as a ridge instead of a gap. */
-    const halfReach = (H / 2) * k || 1e-6;
-    const sideTop   = coverSide ? (baseY + tierHeight - H / 2 - (H / 2) * RIM_BITE) + H / 2 : topY;
-    const topOuter  = coverTop  ? (tierRadius - (W / 2) * RIM_BITE) + W / 2 : tierRadius;
-    const needDown  = (topY - sideTop) / halfReach;
-    const needIn    = (tierRadius - topOuter) / ((W / 2) * k || 1e-6);
-    const stretch   = Math.min(STRETCH_MAX, Math.max(1, needDown, needIn));
+    const k = Math.SQRT1_2;
+    const count = Math.max(3, Math.ceil(perim.length / stepW));
+    const phase = rand() * perim.length;
     for (let i = 0; i < count; i++) {
-      const a = phase + (i / count) * TAU + wobble(0.1);
-      const ca = Math.cos(a), sa = Math.sin(a);
-      /* Normal bisects outward and up. `u` runs around the rim as everywhere else; `v` is the
-       * remaining axis, which leans up-and-inward — it is n × u, written out rather than computed
-       * so the sign is visible. */
+      const q = perim.at((phase + (perim.length * i) / count) % perim.length);
       seats.push({
-        p: [ca * tierRadius, topY, sa * tierRadius],
-        n: [ca * k, k, sa * k],
-        u: [-sa, 0, ca],
-        v: [-ca * k, k, -sa * k],
+        p: [q.x, topY, q.z],
+        n: [q.nx * k, k, q.nz * k],
+        u: [-q.nz, 0, q.nx],
+        v: [-q.nx * k, k, -q.nz * k],
         kind: 'rim',
-        /* Along `v` only — see the note above. Every other seat carries 1 so a caller can apply
-           it unconditionally rather than branching on kind. */
-        stretch,
+        stretch: 1,
       });
     }
   }
