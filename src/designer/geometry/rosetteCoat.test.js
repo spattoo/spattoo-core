@@ -258,6 +258,41 @@ describe('rosetteSeats', () => {
     }
   });
 
+  /* Sandeep, on a GLB that left a band under the rim: "can we bend the rim glb till it touches
+     the below / or covers the gap?" Stretched rather than bent, and the amount is computed from
+     where its two neighbours actually reach rather than dialled in. */
+  describe('the shoulder stretches to meet its neighbours', () => {
+    const rimOf = o => rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                      pieceW: 0.5, pieceH: 0.5, ...o }).filter(s => s.kind === 'rim');
+
+    it('reaches at least as far as the top of the highest side piece', () => {
+      const topY = BASE + H, k = Math.SQRT1_2;
+      for (const P of [0.3, 0.5, 0.75]) {
+        const all = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                   pieceW: P, pieceH: P });
+        const sideTop = Math.max(...all.filter(s => s.kind === 'side').map(s => s.p[1])) + P / 2;
+        const rim = all.find(s => s.kind === 'rim');
+        const reach = topY - (P / 2) * k * rim.stretch;
+        expect(reach).toBeLessThanOrEqual(sideTop + 1e-9);   // overlaps, never falls short
+      }
+    });
+
+    it('never shrinks a piece, and never smears one', () => {
+      for (const P of [0.15, 0.3, 0.5, 0.9]) {
+        const st = rimOf({ pieceW: P, pieceH: P })[0].stretch;
+        expect(st).toBeGreaterThanOrEqual(1);
+        expect(st).toBeLessThanOrEqual(1.5);
+      }
+    });
+
+    it('carries 1 on every other seat, so a caller need not branch on kind', () => {
+      const all = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                 pieceW: 0.5, pieceH: 0.5 });
+      expect(all.filter(s => s.kind !== 'rim').every(s => s.stretch === 1)).toBe(true);
+      expect(all.every(s => typeof s.stretch === 'number')).toBe(true);
+    });
+  });
+
   it('honours the two coverage switches', () => {
     expect(seats({ coverTop: false, coverSide: false })).toEqual([]);
     expect(seats({ coverSide: false }).every(s => s.kind === 'top')).toBe(true);

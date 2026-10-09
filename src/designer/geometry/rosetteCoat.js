@@ -146,6 +146,11 @@ export const SEAT_OVERLAP = 0.4;
  * this is a number to settle by looking, not by arithmetic. */
 const RIM_BITE = 0.7;
 
+/* The most a shoulder piece may be stretched along the wall to close a seam. Past about half as
+ * long again it stops reading as a piped rose and starts reading as a smear — and a gap that wide
+ * is telling you the piece is too small for the cake, which is a different control. */
+const STRETCH_MAX = 1.5;
+
 /**
  * Where every rose sits on a round tier, with the frame it sits in.
  *
@@ -207,7 +212,7 @@ export function rosetteSeats({
     const reach = hasRim
       ? tierRadius - (W / 2) * RIM_BITE          // the rim row takes the outermost band
       : tierRadius + (W / 2) * rimOverhang;
-    seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top' });
+    seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1 });
     for (let ring = 1; ring * stepW <= reach; ring++) {
       const r = ring * stepW;
       const count = Math.max(1, Math.ceil((TAU * r) / stepW));
@@ -217,7 +222,7 @@ export function rosetteSeats({
         const rr = r + wobble(stepW * 0.1);
         seats.push({
           p: [Math.cos(a) * rr, topY, Math.sin(a) * rr],
-          n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top',
+          n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
         });
       }
     }
@@ -261,6 +266,7 @@ export function rosetteSeats({
           u: [-sa, 0, ca],
           v: [0, 1, 0],
           kind: 'side',
+          stretch: 1,
         });
       }
     }
@@ -288,6 +294,36 @@ export function rosetteSeats({
     const count = Math.max(3, Math.ceil((TAU * tierRadius) / stepW));
     const phase = rand() * TAU;
     const k = Math.SQRT1_2;                       // cos 45° — the bisector's share of each axis
+
+    /* ── How far the shoulder row has to be STRETCHED to meet its neighbours ──────────────────
+     *
+     * Sandeep, on a second GLB that left a band under the rim: *"can we make it something like we
+     * should bend the rim glb till it touches the below / or covers the gap?"*
+     *
+     * Stretching rather than bending, for the reason bending was rejected before: a strip bends
+     * because it is long, a compact piece just crumples. But the AMOUNT need not be a slider —
+     * both neighbours' positions are known here, so the row can size itself.
+     *
+     * A rim piece leans at 45°, so half its height reaches `k·H/2` down the wall and the same
+     * inward across the lid. The two gaps it must close:
+     *
+     *   down  — from its lower edge to the top of the highest side piece
+     *   in    — from its inner edge to the outer edge of the outermost top ring
+     *
+     * Stretch is symmetric along that axis, so one factor closes both and the WORSE gap sets it.
+     * Clamped at 1 below, because the row must never shrink and leave a gap it would otherwise
+     * have covered, and at STRETCH_MAX above, because past that a piece reads as smeared rather
+     * than piped — a gap that large is a piece-size problem, not a stretch problem.
+     *
+     * ⚠️ IT IS A FACTOR, NOT A SIZE. The caller scales the piece along its own up-the-wall axis;
+     * the other two axes must not move, or the shoulder row comes out fatter than its neighbours
+     * and the seam reappears as a ridge instead of a gap. */
+    const halfReach = (H / 2) * k || 1e-6;
+    const sideTop   = coverSide ? (baseY + tierHeight - H / 2 - (H / 2) * RIM_BITE) + H / 2 : topY;
+    const topOuter  = coverTop  ? (tierRadius - (W / 2) * RIM_BITE) + W / 2 : tierRadius;
+    const needDown  = (topY - sideTop) / halfReach;
+    const needIn    = (tierRadius - topOuter) / ((W / 2) * k || 1e-6);
+    const stretch   = Math.min(STRETCH_MAX, Math.max(1, needDown, needIn));
     for (let i = 0; i < count; i++) {
       const a = phase + (i / count) * TAU + wobble(0.1);
       const ca = Math.cos(a), sa = Math.sin(a);
@@ -300,6 +336,9 @@ export function rosetteSeats({
         u: [-sa, 0, ca],
         v: [-ca * k, k, -sa * k],
         kind: 'rim',
+        /* Along `v` only — see the note above. Every other seat carries 1 so a caller can apply
+           it unconditionally rather than branching on kind. */
+        stretch,
       });
     }
   }
