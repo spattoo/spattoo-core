@@ -190,6 +190,13 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
  * Safe on the public surface: it lights nothing (no SceneLights, no Environment), so `check:env-map`
  * has nothing to object to — unlike CakeTier.jsx, which is why `shellGeo.js` exists.
  */
+/* Which build of the designer this is — so a catalogued template can say which renderer it needs.
+ * Read `version` as "the version this code was last released AS": exact for a vendored tarball, a
+ * floor for a working tree. Whether you are running source is the CONSUMER's to know — see the note
+ * in buildId.js, and vite.config.js in admin, which derives it from the same existsSync that picks
+ * the alias. plans/renderer-version-floor.md in spattoo-docs. */
+export { BUILD } from './designer/buildId.js';
+
 export { default as StampStroke } from './designer/canvas/StampStroke.jsx';
 /* The height a ring normalises a shell to, as a fraction of the tier radius. Exported so a studio
    can size a hand-piped preview to match the rings beside it instead of picking a number: the pen

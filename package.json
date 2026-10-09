@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "version": "node scripts/stamp-build.mjs",
     "dev": "vite",
     "build": "NODE_ENV=production vite build",
     "check:paths": "node scripts/check-paths.mjs",
