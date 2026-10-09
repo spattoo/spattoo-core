@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rosetteSpiral, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS } from './rosetteCoat.js';
+import { rosetteSpiral, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, SEAT_OVERLAP } from './rosetteCoat.js';
 
 /* Sandeep: "cream piping is filled on entire cake. we need to achieve this."
  *
@@ -196,8 +196,11 @@ describe('rosetteSeats', () => {
     expect(Math.max(...topOnly.map(s => Math.hypot(s.p[0], s.p[2])))).toBeGreaterThan(R * 0.85);
   });
 
+  /* ⚠️ 1.3, not 0.9 — ceiling the count means 0.9 now gets TWO overlapping rows, which is correct
+     and is the point of the ceil. The single-row case is a piece tall enough that the usable span
+     collapses entirely. */
   it('a single row rests on the board rather than floating in the middle', () => {
-    const pieceH = 0.9;
+    const pieceH = 1.3;
     const side = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
                                 pieceW: 0.4, pieceH }).filter(s => s.kind === 'side');
     expect(new Set(side.map(s => s.p[1].toFixed(5))).size).toBe(1);
@@ -232,6 +235,27 @@ describe('rosetteSeats', () => {
     const byPiece  = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
                                     pieceW: r * 2, pieceH: r * 2 });
     expect(byRadius.map(s => s.p)).toEqual(byPiece.map(s => s.p));
+  });
+
+  /* ⚠️ THE PITCH MUST NEVER EXCEED THE SPACING THE COVERAGE WAS CALCULATED FOR. Rounding a count
+     picks the nearest whole number, which half the time stretches the pitch — and that rendered as
+     bare rings of cake between every row. Overlapping more than intended is invisible; a gap is
+     not, so the error may only ever go one way. */
+  it('never spaces rows or columns wider than asked', () => {
+    for (const [pieceW, pieceH] of [[0.5, 0.5], [0.37, 0.41], [0.22, 0.63], [0.6, 0.29]]) {
+      const all = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                 pieceW, pieceH, rimRow: false });
+      const stepW = pieceW * (1 - SEAT_OVERLAP), stepH = pieceH * (1 - SEAT_OVERLAP);
+
+      const ys = [...new Set(all.filter(s => s.kind === 'side').map(s => s.p[1]))].sort((a, b) => a - b);
+      for (let i = 1; i < ys.length; i++) {
+        expect(ys[i] - ys[i - 1]).toBeLessThanOrEqual(stepH + 1e-9);
+      }
+
+      const row = all.filter(s => s.kind === 'side' && Math.abs(s.p[1] - ys[0]) < 1e-9);
+      const chord = 2 * R * Math.sin(Math.PI / row.length);   // centre-to-centre around the wall
+      expect(chord).toBeLessThanOrEqual(stepW + 1e-9);
+    }
   });
 
   it('honours the two coverage switches', () => {

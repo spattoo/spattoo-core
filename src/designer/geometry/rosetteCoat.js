@@ -157,9 +157,9 @@ const RIM_BITE = 0.7;
  * packs as staggered rows, which is hexagonal packing once it is wrapped back up. Treating the side
  * as "a disc seen edge on" is how a wall ends up with a bald stripe down it.
  *
- * ⚠️ EVERY RING TAKES A WHOLE NUMBER OF ROSES, so the ring closes. Rounding the count is what makes
- * the spacing drift slightly from what was asked for, and that is the right way round: a ring with
- * a 0.7-rose gap in it is visible from across a room, and a 4% spacing error is not.
+ * ⚠️ EVERY RING TAKES A WHOLE NUMBER OF ROSES, so the ring closes — and the count is CEILED, never
+ * rounded. See the note on `rows`: rounding drifts the pitch either way, and the loose direction
+ * is the one that shows cake.
  */
 export function rosetteSeats({
   tierRadius = 1.2,
@@ -210,7 +210,7 @@ export function rosetteSeats({
     seats.push({ p: [0, topY, 0], n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top' });
     for (let ring = 1; ring * stepW <= reach; ring++) {
       const r = ring * stepW;
-      const count = Math.max(1, Math.round((TAU * r) / stepW));
+      const count = Math.max(1, Math.ceil((TAU * r) / stepW));
       const phase = rand() * TAU;
       for (let i = 0; i < count; i++) {
         const a = phase + (i / count) * TAU + wobble(0.12);
@@ -233,8 +233,17 @@ export function rosetteSeats({
     const span = Math.max(0, hi - lo);
     /* Rows that FIT, from the cake's height and the piece's height. One row when the piece is as
      * tall as the wall — which is an answer, not a degenerate case. */
-    const rows = span <= 1e-6 ? 1 : Math.max(1, Math.round(span / stepH) + 1);
-    const perRow = Math.max(3, Math.round((TAU * tierRadius) / stepW));
+/* ⚠️ ALWAYS CEIL A COUNT, NEVER ROUND IT. A ring or a column has to take a WHOLE number of
+ * pieces, and rounding picks the nearest — which half the time is the one BELOW, stretching the
+ * real pitch past the spacing the coverage was calculated for. At span/step = 2.4 that is three
+ * rows at 1.2 × step: twenty percent looser than the overlap that was supposed to close the gaps,
+ * which rendered as bare rings of cake between every row and between the top row and the rim.
+ *
+ * Ceiling only ever makes the pitch TIGHTER than asked. Pieces that overlap a little more than
+ * intended are invisible; a gap is not. Error in one direction is free, in the other it is the
+ * whole failure mode. */
+    const rows = span <= 1e-6 ? 1 : Math.max(1, Math.ceil(span / stepH) + 1);
+    const perRow = Math.max(3, Math.ceil((TAU * tierRadius) / stepW));
     for (let r = 0; r < rows; r++) {
       /* ⚠️ ONE ROW SITS ON THE BOARD, it is not centred in the span. Centring looks reasonable in
        * isolation and puts a gap under the bottom row, which is the one edge a viewer is level
@@ -276,7 +285,7 @@ export function rosetteSeats({
    */
   if (hasRim) {
     const topY = baseY + tierHeight;
-    const count = Math.max(3, Math.round((TAU * tierRadius) / stepW));
+    const count = Math.max(3, Math.ceil((TAU * tierRadius) / stepW));
     const phase = rand() * TAU;
     const k = Math.SQRT1_2;                       // cos 45° — the bisector's share of each axis
     for (let i = 0; i < count; i++) {
