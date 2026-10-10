@@ -849,7 +849,8 @@ function TopPipingRingImpl({
       // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
       // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
       // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
-      const off = -halfRaw + extraRadialOffset + Math.min(0, userRadialOffset);
+      const off = Math.min(-halfRaw + extraRadialOffset + userRadialOffset,
+                           -halfRaw + Math.max(0, extraRadialOffset));
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
@@ -901,8 +902,17 @@ function TopPipingRingImpl({
        `worldMaxZ` IS `half` for an untilted shell (asserted in shellGeo.test.js), so this is the
        same number everywhere it was already right. */
     const reach = A.worldMaxZ;                     // outward reach past the origin
-    // Flush by default; the author may move it either way, the customer only inward.
-    let   o     = -reach + extraRadialOffset + Math.min(0, userRadialOffset);
+    /* ⚠️ THE CEILING RISES WITH THE AUTHORED OFFSET; IT DOES NOT BAN POSITIVE USER INPUT. My first
+     * cut clamped the customer's dial to ≤ 0, which would have moved SAVED DESIGNS: when an element
+     * authors a NEGATIVE offset, `rimRadialTravel` computes a positive maximum for the dial — the
+     * ring has room to come back out to the rim — so a baker can legitimately have stored one.
+     * Discarding it would have walked their ring inward on reload.
+     *
+     * `max(0, authored)` is identical to the old `-reach` for every authored value ≤ 0, which is
+     * every one in the catalogue today, so nothing already saved moves by a hair. A positive
+     * authored offset — previously discarded in silence — now raises the ceiling it needs. */
+    let   o = Math.min(-reach + extraRadialOffset + userRadialOffset,
+                       -reach + Math.max(0, extraRadialOffset));
     // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
     if (shape?.strokeW) o = Math.max(o, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     return o;
