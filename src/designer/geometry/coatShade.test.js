@@ -127,12 +127,40 @@ describe('coatShade — balance', () => {
     expect(past(0.75)).toBeLessThan(past(0.5));
   });
 
-  it('stays in range and keeps the ends put, whatever the balance', () => {
+  it('stays in range whatever the balance', () => {
     const s = seats();
     for (const bal of [0.02, 0.2, 0.5, 0.8, 0.98]) {
       const t = coatShade(s, { baseY: BASE, tierHeight: H, balance: bal });
       expect(Math.min(...t)).toBeGreaterThanOrEqual(0);
       expect(Math.max(...t)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  /* ⚠️ THE TEST THE FIRST SHAPE WOULD HAVE FAILED, and the reason it was replaced. Sandeep, with
+   * the dial on its stop: *"range for balance need to be increased. i actually wanted second color
+   * till half of the cake."* The original remap moved the midpoint and then stretched the remainder
+   * so the run still ended exactly at the board — so the last colour only ever reached the bottom
+   * ROW, and no range on the dial could have changed that. The ramp runs out of cake instead. */
+  it('can finish early — a balance in range hands the bottom half of the wall to the last colour', () => {
+    const s = seats();
+    const solidFraction = bal => {
+      const t = coatShade(s, { baseY: BASE, tierHeight: H, balance: bal });
+      const wall = s.map((x, i) => ({ t: t[i], k: x.kind })).filter(x => x.k === 'side');
+      return wall.filter(x => x.t >= 1 - 1e-9).length / wall.length;
+    };
+    expect(solidFraction(0.5)).toBeLessThan(0.05);        // the identity: the board row, and barely that
+
+    const [lo, hi] = [0.2, 0.8];   // the Balance dial's travel, in CakeDesigner's GradientControls
+    const reaching = [];
+    for (let b = lo; b <= hi + 1e-9; b = +(b + 0.01).toFixed(2)) reaching.push([b, solidFraction(b)]);
+    const half = reaching.find(([, f]) => f >= 0.5);
+    expect(half, 'no balance the dial can reach covers half the wall').toBeTruthy();
+    expect(half[0]).toBeGreaterThanOrEqual(lo);
+    expect(half[0]).toBeLessThanOrEqual(hi);
+
+    // And it is a dial, not a switch: lower balance never gives the last colour LESS wall.
+    for (let i = 1; i < reaching.length; i++) {
+      expect(reaching[i][1]).toBeLessThanOrEqual(reaching[i - 1][1] + 1e-9);
     }
   });
 

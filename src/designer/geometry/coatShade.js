@@ -25,6 +25,7 @@ export const COAT_SHADE_MODES = Object.freeze(['single', 'ombre', 'scatter']);
  * the rim, but most of the travel happens down the wall where there is more of it to see. */
 export const OMBRE_LID_SHARE = 0.35;
 
+
 /**
  * A pattern parameter per seat, in seat order.
  *
@@ -85,14 +86,29 @@ export function coatShade(seats, {
 
   /* ⚠️ HOW MUCH CAKE EACH COLOUR TAKES IS A SEPARATE QUESTION FROM WHICH COLOURS. Sandeep: *"when
    * i apply 2 colors, there is no control to set how much area should each color should take."* A
-   * linear run hands every stop an equal band, and on a real ombré the pale top is usually a
-   * narrow crown over a deep body — which no choice of colours can express.
+   * linear run hands every stop an equal band, and on a real ombré the pale top is usually a narrow
+   * crown over a deep body — which no choice of colours can express.
    *
-   * A piecewise remap, so the palette's midpoint lands at `balance` and both halves stay linear:
-   * nothing bunches, and at 0.5 it is the identity to the last decimal. */
-  const b = Math.min(0.98, Math.max(0.02, balance));
+   * ⚠️ AND THE RUN HAS TO BE ABLE TO FINISH EARLY. Sandeep, with the dial at its floor: *"range for
+   * balance need to be increased. i actually wanted second color till half of the cake."* The first
+   * version of this moved the palette's MIDPOINT to `balance` and then stretched whatever was left
+   * so the run still ended exactly at the board. That shape can never put the last colour anywhere
+   * but on the bottom row: widening the dial would have let the midpoint climb and still never have
+   * delivered the picture he described, because the end was pinned.
+   *
+   * So the run is ONE straight ramp through `balance`, clipped at both ends — the slope is set by
+   * how close the midpoint sits to an end, and the ramp simply runs out of cake:
+   *
+   *   balance 0.50   centre of the lid ──────────── board      the identity, every colour an equal band
+   *   balance 0.25   ────── half way ▓▓▓▓▓▓▓▓▓▓▓▓▓▓            the second colour owns the bottom half
+   *   balance 0.75   ░░░░░░ half way ──────────────            the first colour owns the top half
+   *
+   * Symmetric about 0.5, monotone everywhere, and the identity at 0.5 to the last decimal — so a
+   * design saved before this existed renders exactly as it did. */
+  const b = Math.min(0.95, Math.max(0.05, balance));
+  const w = Math.min(b, 1 - b);                 // half the ramp, in run units
   const biased = b === 0.5 ? out
-    : out.map(t => (t < b ? 0.5 * (t / b) : 0.5 + 0.5 * ((t - b) / (1 - b))));
+    : out.map(t => Math.min(1, Math.max(0, 0.5 + (t - b) / (2 * w))));
 
   const banded = bands > 1
     /* Quantised to the middle of each band, so the palest and deepest bands are as wide as the

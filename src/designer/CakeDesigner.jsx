@@ -17022,6 +17022,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                    before — GradientControls shows it only on `balance != null`. This
                                    adds a control to the coat without adding one to every border. */
                                 balance={coatHere ? (coatHere.balance ?? 0.5) : undefined}
+                                /* ⚠️ AND THE RANGE STAYED AT 0.2–0.8. Sandeep read the symptom as
+                                   *"range for balance need to be increased"* — reasonable, with the
+                                   dial on its stop and the cake barely changed. It was the SHAPE: the
+                                   old remap pinned the end of the run to the board, so the second
+                                   colour could never own more than the bottom row however far the
+                                   dial travelled. With the ramp, 0.2 already paints the whole wall
+                                   and 0.35 hands it exactly half; a wider dial would only add travel
+                                   that changes nothing, which is its own kind of broken. */
                                 onBalanceChange={v => { if (coatHere) writeCoatBalance(tierIndex, v); }}
                               />
                             )}
