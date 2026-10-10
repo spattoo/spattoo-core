@@ -159,6 +159,12 @@ export function toCanvasConfig(design) {
         clouds:       t.clouds ?? [],            // fondant clouds sitting on/against THIS tier
         balloons:     t.balloons ?? [],          // fondant balloons on picks above THIS tier
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
+        /* ⚠️ A NEW TIER FIELD MUST BE LISTED HERE OR IT NEVER REACHES THE CANVAS. This projection
+           builds a FRESH object per tier from an explicit allow-list, so anything stored on a tier
+           and not named is silently dropped — which is how "Cover entire cake" came to set the
+           state, pass every gate, and render nothing at all. Not a crash, not a warning: the coat
+           simply was not in the object the renderer was handed. */
+        coat:          t.coat ?? null,        // the whole tier covered in one piped piece
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)

@@ -6,6 +6,7 @@ import { rosetteSeats } from '../geometry/rosetteCoat.js';
 import { silhouette, maxTileStep } from '../geometry/tileCoverage.js';
 import { coatShade } from '../geometry/coatShade.js';
 import { creamMaterialProps } from '../geometry/creamMaterial.js';
+import { SafeGlb } from './TextureErrorBoundary.jsx';
 
 // ── A cake covered end to end in one piped piece ────────────────────────────────────────────────
 //
@@ -142,7 +143,17 @@ function CoatSurface({ kind, part, seats, shades, palette, softness }) {
  * @param shp    the tier's footprint from `tierShape()` — circle, rect or any outline
  * @param rot    `{ top: [x,y,z]deg, side: [x,y,z]deg }` from the element's placement_config
  */
-export default function CakeCoat({ coat, shp, tierHeight, baseY, rot, softness = 0.7 }) {
+/* ⚠️ WRAPPED, LIKE EVERY OTHER GLB USER IN THIS FOLDER. `useGLTF` suspends while it fetches and
+ * throws if the file is missing or malformed — unguarded, either takes the whole canvas down with
+ * it, and the cake a customer is editing goes with it. TopPipingRing and StampStroke each carry
+ * SafeGlb for exactly this; a coat is no different, and is the more exposed case because it draws
+ * on every surface at once. */
+export default function CakeCoat(props) {
+  if (!props?.coat?.glbUrl) return null;
+  return <SafeGlb screen="CakeCoat"><CakeCoatImpl {...props} /></SafeGlb>;
+}
+
+function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7 }) {
   const { scene } = useGLTF(coat?.glbUrl || '');
   const base = useMemo(() => (scene ? extractGeo(scene) : null), [scene]);
 

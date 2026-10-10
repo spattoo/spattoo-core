@@ -45,7 +45,11 @@
 // and still missed these two, because it can only check the fields somebody remembered to put in its
 // fixture — the same remembering that fails here. So there is now a test that DERIVES what this list
 // must contain, by watching which tier keys toCanvasConfig actually reads. See designSnapshot.test.js.
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'balloons', 'topCavity', 'topSpiral', 'brushBand', 'brushStrokes'];
+/* ⚠️ A FIELD THE RENDERER READS MUST BE NAMED HERE, or the cake that comes back is not the cake
+ * that was designed. `designSnapshot.test.js` derives what the renderer reads and fails on anything
+ * this list has forgotten — it caught `coat` before the feature shipped, which would otherwise have
+ * been a template silently losing its coating on reload. One list, used in both directions. */
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'balloons', 'topCavity', 'topSpiral', 'brushBand', 'brushStrokes', 'coat'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {
