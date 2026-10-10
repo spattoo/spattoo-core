@@ -25,4 +25,4 @@
  * So read `version` as "the version this code was last released AS". For a tarball that is exact.
  * For a working tree it is a floor, and the consumer is responsible for knowing the difference.
  */
-export const BUILD = { version: '0.1.676' };
+export const BUILD = { version: '0.1.677' };
