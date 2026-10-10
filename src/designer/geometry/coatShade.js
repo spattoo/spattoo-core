@@ -45,6 +45,10 @@ export function coatShade(seats, {
   lidReach = null,          // furthest a lid seat sits from the middle; measured if not given
   lidShare = OMBRE_LID_SHARE,
   bands = 0,                // 0 = smooth. >1 quantises the ombré into that many steps
+  /* Where the palette's MIDDLE lands, as a fraction of the run from the lid's centre to the board.
+   * 0.5 gives every colour an equal share; lower puts the handover higher up the cake, so the
+   * first colour takes less and the last takes more. */
+  balance = 0.5,
   palette = 3,              // scatter: how many colours to choose between
   seed = 1,
   invert = false,           // deepest at the TOP instead of the bottom
@@ -79,12 +83,23 @@ export function coatShade(seats, {
     return share + (1 - share) * h;
   });
 
+  /* ⚠️ HOW MUCH CAKE EACH COLOUR TAKES IS A SEPARATE QUESTION FROM WHICH COLOURS. Sandeep: *"when
+   * i apply 2 colors, there is no control to set how much area should each color should take."* A
+   * linear run hands every stop an equal band, and on a real ombré the pale top is usually a
+   * narrow crown over a deep body — which no choice of colours can express.
+   *
+   * A piecewise remap, so the palette's midpoint lands at `balance` and both halves stay linear:
+   * nothing bunches, and at 0.5 it is the identity to the last decimal. */
+  const b = Math.min(0.98, Math.max(0.02, balance));
+  const biased = b === 0.5 ? out
+    : out.map(t => (t < b ? 0.5 * (t / b) : 0.5 + 0.5 * ((t - b) / (1 - b))));
+
   const banded = bands > 1
     /* Quantised to the middle of each band, so the palest and deepest bands are as wide as the
        rest — rounding to the band EDGES gives two half-width bands at the ends, which reads as a
        mistake rather than a choice. */
-    ? out.map(t => (Math.min(bands - 1, Math.floor(t * bands)) + 0.5) / bands)
-    : out;
+    ? biased.map(t => (Math.min(bands - 1, Math.floor(t * bands)) + 0.5) / bands)
+    : biased;
 
   return invert ? banded.map(t => 1 - t) : banded;
 }

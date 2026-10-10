@@ -5497,6 +5497,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * ⚠️ SCATTER IS NOT OFFERED, by request. The mode row therefore stays empty for a coat: a
    * gradient MODE ('swirl', 'alternate') is a ring's question about how colour sweeps round a
    * circle, and a coat's answer is always the same — by position over the whole surface. */
+  /* How much of the cake each colour takes — a separate question from WHICH colours, and one no
+   * palette can answer. A linear run hands every stop an equal band; a real ombré is usually a
+   * narrow pale crown over a deep body. 0.5 is an equal split. */
+  function writeCoatBalance(tierIndex, balance) {
+    const cur = design.tiers[tierIndex]?.coat;
+    if (!cur) return;
+    setTierCoat(tierIndex, { ...cur, balance });
+  }
+
   function writeCoatColors(tierIndex, colors) {
     const clean = colors.filter(Boolean);
     if (!clean.length) return;
@@ -7296,6 +7305,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (creamElement) openCreamCard(pendingCream.tierIndex, pendingCream.bandIndex);
     if (!elementTypesLoading) setPendingCream(null);
   }, [pendingCream, creamElement, elementTypesLoading]);   // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ⚠️ A COAT IS SELECTABLE, LIKE EVERY OTHER THING ON THE CAKE. Sandeep: *"there is no pointer to
+   * popup card when i click on cream rosettes after i clicked on 'cover entire cake'."* A coat
+   * replaces the cake's whole surface, so once it is on there is nothing else left to tap — and
+   * with no handler, the card that made it became unreachable and its colours uneditable.
+   *
+   * It reopens the element's own piping card, which is where the colour, the ombré stops and the
+   * balance already live. A second card for the same element would be a different product. */
+  function handleCoatSelect(tierIndex) {
+    if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
+    const coat = design.tiers[tierIndex]?.coat;
+    if (!coat) return;
+    const card = pipingCards.find(c => c.cardId === coat.cardId);
+    if (card) { focusEditor('piping'); setPipingPopupOpen(true); setExpandedPipingId(card.cardId); }
+  }
 
   function handleTopPipingSelect(tierIndex, layerId) {
     // While the pen is out the cake is a CANVAS, not a set of things to select — see
@@ -15217,6 +15241,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               selectedPiping={selectedPiping}
               highlightPipingId={elementStackOpen ? expandedPipingId : null}
               onCreamSelect={handleCreamSelect}
+              onCoatSelect={handleCoatSelect}
               onTopPipingSelect={handleTopPipingSelect}
               onBottomPipingSelect={handleBottomPipingSelect}
               pipingTarget={pipingTarget}
@@ -16987,6 +17012,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 onAddStop={() => { if (gStops.length >= PIPING_MAX_STOPS) return; const next = [...gStops, gStops[gStops.length - 1]]; if (coatHere) writeCoatColors(tierIndex, next); else writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
                                 onRemoveStop={i => { const next = gStops.filter((_, idx) => idx !== i); if (coatHere) writeCoatColors(tierIndex, next); else writePipingGradient(tierIndex, zone, next, gMode); setGradStop(0); }}
                                 onModeChange={m => { if (!coatHere) writePipingGradient(tierIndex, zone, gStops, m); }}
+                                /* ⚠️ THE DIAL THAT IS ALREADY HERE, not a second one. GradientControls
+                                   has carried `balance`/`onBalanceChange` since rings needed it, and
+                                   a coat is asking the same question — how much of the run does each
+                                   colour take. Adding a parallel slider would have been a second
+                                   control for one quantity, which is how two of them come to
+                                   disagree.
+                                   ⚠️ A RING STILL PASSES NOTHING, so its dial stays hidden exactly as
+                                   before — GradientControls shows it only on `balance != null`. This
+                                   adds a control to the coat without adding one to every border. */
+                                balance={coatHere ? (coatHere.balance ?? 0.5) : undefined}
+                                onBalanceChange={v => { if (coatHere) writeCoatBalance(tierIndex, v); }}
                               />
                             )}
                           </AnchoredPopup>

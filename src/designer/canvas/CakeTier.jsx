@@ -1652,6 +1652,7 @@ export default function CakeTier({
      nothing. ⚠️ NOT a piping LAYER: a ring belongs to the rim or the board, and a coat belongs to
      the tier, so it is its own field rather than a third entry in topPipings. */
   coat = null,
+  onCoatClick = null,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -2080,7 +2081,8 @@ export default function CakeTier({
           without this knowing what either is. */}
       {coat?.glbUrl && (
         <CakeCoat coat={coat} shp={shp} tierHeight={height} baseY={yBase}
-                  rot={coat.rot} softness={coat.softness ?? PIPING_SOFTNESS_DEFAULT} />
+                  rot={coat.rot} softness={coat.softness ?? PIPING_SOFTNESS_DEFAULT}
+                  onCoatClick={onCoatClick} />
       )}
     </group>
   );

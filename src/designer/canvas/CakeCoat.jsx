@@ -87,7 +87,7 @@ function prepare(baseGeo, rotDeg, pieceRadius) {
   };
 }
 
-function CoatSurface({ kind, part, seats, shades, palette, softness }) {
+function CoatSurface({ kind, part, seats, shades, palette, softness, onClick }) {
   /* Seat indices kept, because a shade is looked up by the seat's place in the WHOLE coat — the
      ombré is one continuous run over all three surfaces, so a per-surface index restarts it. */
   const mine = useMemo(
@@ -132,7 +132,8 @@ function CoatSurface({ kind, part, seats, shades, palette, softness }) {
   /* No castShadow: the shadow pass re-renders every instance, and self-shadowing between pieces is
      not where the look comes from — the cream material's own sheen is. */
   return (
-    <instancedMesh ref={ref} args={[part.geo, undefined, mine.length]} receiveShadow>
+    <instancedMesh ref={ref} args={[part.geo, undefined, mine.length]} receiveShadow
+                   onClick={onClick}>
       <meshPhysicalMaterial {...creamMaterialProps(softness)} />
     </instancedMesh>
   );
@@ -153,7 +154,7 @@ export default function CakeCoat(props) {
   return <SafeGlb screen="CakeCoat"><CakeCoatImpl {...props} /></SafeGlb>;
 }
 
-function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7 }) {
+function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7, onCoatClick }) {
   const { scene } = useGLTF(coat?.glbUrl || '');
   const base = useMemo(() => (scene ? extractGeo(scene) : null), [scene]);
 
@@ -186,15 +187,21 @@ function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7 }) {
     [coat?.colors]);
 
   const shades = useMemo(
-    () => coatShade(seats, { mode: palette.length > 1 ? 'ombre' : 'single', baseY, tierHeight }),
-    [seats, palette.length, baseY, tierHeight]);
+    () => coatShade(seats, { mode: palette.length > 1 ? 'ombre' : 'single', baseY, tierHeight,
+                             balance: coat?.balance ?? 0.5 }),
+    [seats, palette.length, baseY, tierHeight, coat?.balance]);
 
   if (!parts || !seats.length) return null;
   return (
     <>
       {SURFACES.map(({ kind, rot: which }) => (
         <CoatSurface key={kind} kind={kind} part={parts[which]} seats={seats}
-                     shades={shades} palette={palette} softness={softness} />
+                     shades={shades} palette={palette} softness={softness}
+                     /* ⚠️ THE COAT IS THE CAKE'S SURFACE NOW, SO IT HAS TO BE SELECTABLE. A ring
+                        carries onTopPipingClick; a coat covering every face and carrying none left
+                        a customer with no way back to the card that made it — tapping the roses
+                        did nothing. Every surface answers, because every surface is the coat. */
+                     onClick={onCoatClick} />
       ))}
     </>
   );

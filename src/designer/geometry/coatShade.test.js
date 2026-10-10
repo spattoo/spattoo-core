@@ -104,3 +104,43 @@ describe('coatShade — scatter and single', () => {
     }
   });
 });
+
+/* Sandeep: "when i apply 2 colors, there is no control to set how much area should each color
+ * should take." A linear run hands every stop an equal band; a real ombré is usually a narrow pale
+ * crown over a deep body, which no choice of COLOURS can express. */
+describe('coatShade — balance', () => {
+  const seats = () => rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                     pieceW: 0.3, pieceH: 0.3 });
+
+  it('is the identity at 0.5', () => {
+    const s = seats();
+    const a = coatShade(s, { baseY: BASE, tierHeight: H });
+    const b = coatShade(s, { baseY: BASE, tierHeight: H, balance: 0.5 });
+    a.forEach((v, i) => expect(b[i]).toBeCloseTo(v, 12));
+  });
+
+  it('moves the handover: a lower balance gives the first colour less cake', () => {
+    const s = seats();
+    const past = bal => coatShade(s, { baseY: BASE, tierHeight: H, balance: bal })
+      .filter(t => t > 0.5).length;
+    expect(past(0.25)).toBeGreaterThan(past(0.5));
+    expect(past(0.75)).toBeLessThan(past(0.5));
+  });
+
+  it('stays in range and keeps the ends put, whatever the balance', () => {
+    const s = seats();
+    for (const bal of [0.02, 0.2, 0.5, 0.8, 0.98]) {
+      const t = coatShade(s, { baseY: BASE, tierHeight: H, balance: bal });
+      expect(Math.min(...t)).toBeGreaterThanOrEqual(0);
+      expect(Math.max(...t)).toBeLessThanOrEqual(1);
+    }
+  });
+
+  it('is still monotone down the wall', () => {
+    const s = seats();
+    const t = coatShade(s, { baseY: BASE, tierHeight: H, balance: 0.3 });
+    const wall = s.map((x, i) => ({ y: x.p[1], t: t[i], k: x.kind }))
+      .filter(x => x.k === 'side').sort((a, b) => b.y - a.y);
+    for (let i = 1; i < wall.length; i++) expect(wall[i].t).toBeGreaterThanOrEqual(wall[i - 1].t - 1e-9);
+  });
+});

@@ -2775,7 +2775,7 @@ function CakeScene({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   orbitRef,
-  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   // Drag a single-mode piping piece round its ring: (tierIndex, zone, layerId, index, angle) => void.
@@ -3034,7 +3034,7 @@ function CakeScene({
         edit={{
           orbitRef, gestureOnStickerRef,
           selectedTier, onTierClick, onDeselect,
-          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, pipingToolbar,
+          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect, pipingToolbar,
           onPipingInstanceMove, onPipingLayerHeight, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
@@ -3281,7 +3281,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedTopperId = null, onTopperSelect = NOOP, onTopperMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
-    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP, onCreamSelect = NOOP,
+    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP, onCreamSelect = NOOP, onCoatSelect = NOOP,
     onPipingInstanceMove = null, onPipingLayerHeight = null, isPipingMovable = () => true,
     selectedTextId = null, onTextSelect = NOOP, onTextMove = NOOP, onTextContentChange = NOOP, textToolbar = null,
     selectedAgeId = null, onAgeSelect, onAgeMove,
@@ -3367,6 +3367,7 @@ function CakeContent({ config, scene, edit = null }) {
             foil={tier.foil ?? null}
             selected={selectedTier === i}
             coat={tier.coat ?? null}
+            onCoatClick={e => { e.stopPropagation(); onCoatSelect(i); }}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
@@ -4267,7 +4268,7 @@ export default function CakeCanvas({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   autoRotate = false,
-  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onPipingInstanceMove = null,
