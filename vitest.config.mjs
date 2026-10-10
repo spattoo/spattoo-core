@@ -15,5 +15,15 @@ export default defineConfig({
   test: {
     include: ['src/**/*.test.{js,jsx}'],
     environment: 'node',
+    /* ⚠️ 20s, NOT vitest's 5s. A handful of the geometry tests do real work — rasterising a
+       fourteen-glyph script word three times over, or checking a few hundred coat seats pairwise
+       across four footprints. They take a couple of seconds on an idle laptop and blew the 5s
+       default on a loaded one, failing three releases in a row on a DIFFERENT test each time while
+       nothing in either import graph had changed.
+
+       A gate whose verdict depends on what else the machine is doing is not a gate — it teaches
+       everyone to re-run until it passes, which is how a real failure gets re-run away too. 20s is
+       still far short of a hang, so a test that genuinely stops still fails. */
+    testTimeout: 20_000,
   },
 });
