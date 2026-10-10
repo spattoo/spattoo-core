@@ -173,14 +173,20 @@ function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7, onCoa
     /* Overlap MEASURED off the piece, not defaulted. 0.95 is a margin for the rounding that makes
        each ring take a whole number of pieces, which can only ever push spacing up. */
     const step = Math.min(parts.side.tile, parts.top.tile) * 0.95;
+    /* ⚠️ THE SCOPE GOES TO THE PACKER, not just to the render filter. `coverTop`/`coverSide` were
+       always parameters here; filtering finished seats instead meant a top-only coat was still
+       PACKED as though a wall were coming, so its lid pieces straddled the outline waiting for a
+       shoulder that never arrived. The packer's three cases are in rosetteCoat.js. */
+    const kinds = coatScope(coat?.scope).kinds;
     return rosetteSeats({
       shape: shp, tierHeight, baseY,
+      coverTop: kinds.includes('top'), coverSide: kinds.includes('side'),
       pieceW: Math.max(parts.side.fitted[0], parts.top.fitted[0]),
       pieceH: parts.side.fitted[2],
       overlap: 1 - step,
       seed: 1,
     });
-  }, [parts, shp, tierHeight, baseY]);
+  }, [parts, shp, tierHeight, baseY, coat?.scope]);
 
   const palette = useMemo(
     () => (coat?.colors?.length ? coat.colors : ['#f5e6c8']),

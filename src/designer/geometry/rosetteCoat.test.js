@@ -66,8 +66,13 @@ describe('rosetteSeats', () => {
        about. What matters is reach and coverage, not the lattice that achieves it. */
     const top = seats({ coverSide: false }).filter(s => s.kind === 'top');
     const radii = top.map(s => Math.hypot(s.p[0], s.p[2]));
+    const W = ROSETTE_DEFAULTS.rosetteRadius * 2;
     expect(Math.min(...radii)).toBeLessThan(ROSETTE_DEFAULTS.rosetteRadius);   // something near the middle
-    expect(Math.max(...radii)).toBeGreaterThan(R * 0.95);                      // and out to the edge
+    /* ⚠️ MEASURED ON THE PIECE'S EDGE, NOT ITS SEAT, and that is the whole change here. This used
+       to ask for a SEAT out past R*0.95, which a crown deliberately no longer has — Sandeep, on a
+       top-only coat: *"when only top- there should be a diff calculation."* The question was
+       always whether the cream reaches the rim, and the seat was standing in for it. */
+    expect(Math.max(...radii) + W / 2).toBeGreaterThan(R);
     expect(top.every(s => Math.abs(s.p[1] - (BASE + H)) < 1e-9)).toBe(true);
   });
 
@@ -214,7 +219,14 @@ describe('rosetteSeats', () => {
     const topOnly = rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
                                    pieceW: 0.5, pieceH: 0.5, coverSide: false });
     expect(topOnly.some(s => s.kind === 'rim')).toBe(false);
-    expect(Math.max(...topOnly.map(s => Math.hypot(s.p[0], s.p[2])))).toBeGreaterThan(R * 0.85);
+    /* ⚠️ AND IT NO LONGER HANGS OVER EITHER. A lid with a WALL under it but no shoulder still
+       overhangs on purpose, to hide the top edge — that is what `rimOverhang` was written for. A
+       lid with NOTHING under it is a different cake: the spill is naked, and it mushroomed 29% past
+       the cake until this was separated out. The cream reaches the rim and stops within a few
+       percent of it. */
+    const far = Math.max(...topOnly.map(s => Math.hypot(s.p[0], s.p[2]))) + 0.25;
+    expect(far).toBeGreaterThanOrEqual(R);
+    expect(far).toBeLessThan(R * 1.06);
   });
 
   /* ⚠️ As tall as the wall. Ceiling the count means anything shorter gets two overlapping rows,

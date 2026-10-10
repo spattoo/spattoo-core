@@ -4,7 +4,7 @@ import { mulberry32 } from '../utils/random.js';
  * `topContains` answers point-in-lid for all of them. Both already exist and are already used by
  * the piping ring, so a coat that packed its own idea of a heart would be a second answer to a
  * question core settled. */
-import { perimeter, topContains, boundingRadius, topClamp } from './surface.js';
+import { perimeter, topContains, boundingRadius, topClamp, topClampInset } from './surface.js';
 
 // ── Coating a whole cake in piped rosettes ──────────────────────────────────────────────────────
 //
@@ -199,6 +199,30 @@ const RIM_BITE = 0;
  * is telling you the piece is too small for the cake, which is a different control. */
 const STRETCH_MAX = 1.5;
 
+/* ── A crown: how far in, and how tight round the edge ───────────────────────────────────────────
+ *
+ * Half a piece would put its outer edge exactly on the rim, which is the quantity `topClampInset`'s
+ * own comment names — and it leaves a bald ring, because the lattice cannot reach the very edge
+ * from a seat that far in. Swept, as a fraction of the piece width, against how tightly the edge
+ * ring is spaced. Each cell is the worst gap at the rim and over the whole lid, as a fraction of
+ * the piece width (it must stay under 0.50, or cake shows), then how far the outermost PIECE
+ * reaches past the cake, as a percentage of the tier radius:
+ *
+ *   inset edge │ W=0.22          W=0.31          W=0.44          W=0.52
+ *   0.46  1.0  │ 0.54/0.53 XX 1% 0.54/0.52 XX 1% 0.53/0.51 XX 1% 0.53/0.52 XX 2%
+ *   0.42  1.0  │ 0.51/0.50 XX 1% 0.50/0.48 XX 2% 0.50/0.48 XX 3% 0.50/0.49 ok 3%
+ *   0.42  0.9  │ 0.49/0.47 ok 1% 0.49/0.47 ok 2% 0.48/0.48 ok 3% 0.49/0.48 ok 3%
+ *   0.38  0.9  │ 0.46/0.44 ok 2% 0.46/0.44 ok 3% 0.45/0.45 ok 4% 0.45/0.44 ok 5%
+ *
+ * 0.42 with the edge ring a tenth tighter is the first row that is gapless at every size, and it
+ * costs 1–3%. The behaviour it replaces reached 29% past the cake — a mushroom, which is what the
+ * screenshots showed. A crown CANNOT be both flush and gapless with this lattice: something has to
+ * give, and three percent of overhang is the cheaper thing to give. */
+const CROWN_INSET = 0.42;
+/* The edge ring is the ONLY thing covering the rim on a crown — no shoulder, no wall underneath —
+ * so it is packed tighter than the interior. The gap it closes is azimuthal, between neighbours. */
+const CROWN_EDGE_STEP = 0.9;
+
 /**
  * Where every rose sits on a round tier, with the frame it sits in.
  *
@@ -245,6 +269,18 @@ export function rosetteSeats({
   const seats = [];
   const wobble = a => (jitter > 0 ? (rand() - 0.5) * 2 * a * jitter : 0);
   const hasRim = rimRow && coverTop && coverSide;
+  /* ⚠️ A LID WITH NOTHING UNDER IT IS A DIFFERENT PROBLEM. Sandeep, on a top-only coat: *"when only
+   * top- there should be a diff calculation."* On a full coat the lid's pieces are MEANT to spill
+   * past the outline — the shoulder and the wall are underneath to catch them, and that overlap is
+   * what closes the seam. With the wall bare the spill is naked: the crown mushrooms out past the
+   * cake on every side and you see the flat underside of the pieces hanging in the air, which is
+   * what the two screenshots showed. A crown has to finish INSIDE the cake's own silhouette. */
+  const crown = coverTop && !coverSide;
+  const crownInset = W * CROWN_INSET;
+  const insideCrown = (x, z) => {
+    const c = topClampInset(shp, x, z, crownInset);
+    return Math.abs(c.x - x) < 1e-6 && Math.abs(c.z - z) < 1e-6;
+  };
 
   /* ── The lid ──────────────────────────────────────────────────────────────────────────────────
    *
@@ -261,8 +297,11 @@ export function rosetteSeats({
   if (coverTop) {
     /* The edge. Inset by a quarter piece so each straddles the outline — the outer half is covered
        by the shoulder row, and with no shoulder `rimOverhang` lets it hang over instead. */
-    const inset = hasRim ? W * 0.25 : -(W / 2) * rimOverhang;
-    const count = Math.max(3, Math.ceil(perim.length / stepW));
+    /* Three cases, not two. With a shoulder the piece straddles the outline and the shoulder covers
+       its outer half. With a WALL but no shoulder it hangs over on purpose, to hide the top edge —
+       that is what `rimOverhang` was written for. With neither it sits fully inside. */
+    const inset = hasRim ? W * 0.25 : (crown ? crownInset : -(W / 2) * rimOverhang);
+    const count = Math.max(3, Math.ceil(perim.length / (stepW * (crown ? CROWN_EDGE_STEP : 1))));
     for (let i = 0; i < count; i++) {
       const q = perim.at((perim.length * i) / count);
       let x = q.x - q.nx * inset, z = q.z - q.nz * inset;
@@ -272,7 +311,8 @@ export function rosetteSeats({
        * floating in the cleft. `topClamp` snaps a stray point back onto the footprint's own
        * silhouette, which is the same function that keeps a decoration inside a heart rather than
        * inside some inscribed circle. Only bites where the offset actually overshot. */
-      if (inset > 0 && !topContains(shp, x, z)) ({ x, z } = topClamp(shp, x, z, 1));
+      if (crown) ({ x, z } = topClampInset(shp, x, z, crownInset));
+      else if (inset > 0 && !topContains(shp, x, z)) ({ x, z } = topClamp(shp, x, z, 1));
       seats.push({
         p: [x, topY, z],
         n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
@@ -287,7 +327,11 @@ export function rosetteSeats({
       const cols = Math.max(1, Math.ceil((2 * reach) / stepW));
       for (let c = 0; c <= cols; c++) {
         const x = -reach + (2 * reach * c) / cols + (r % 2 ? stepW / 2 : 0);
-        if (!topContains(shp, x, z)) continue;
+        /* ⚠️ THE GRID NEEDS THE INSET TOO, not just the edge walk. `topContains` lets a seat sit
+           right on the outline, so a crown clipped only by it still bulges by half a piece all the
+           way round — which is the mushroom in the screenshot, and the edge ring alone would not
+           have fixed it. */
+        if (crown ? !insideCrown(x, z) : !topContains(shp, x, z)) continue;
         seats.push({
           p: [x + wobble(stepW * 0.1), topY, z + wobble(stepW * 0.1)],
           n: [0, 1, 0], u: [1, 0, 0], v: [0, 0, 1], kind: 'top', stretch: 1,
