@@ -5557,26 +5557,44 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const reachOut = radius * getShellExtents(cur.glbUrl, flip, cur.size ?? 1).radialOutFrac;
     const [curIn, curOut] = rimRadialBand(cur, tierIndex);
     const depth    = curOut - curIn;   // our radial width
-    // Work in outer-edge space (distance from centre). The outer edge stops at the rim or the next
-    // ring out; the inner edge (outer − depth) stops at the centre, the cylinder of the tier above,
-    // or the next ring in.
-    let outerMax = radius;            // rim edge
-    let outerMin = depth;             // inner edge ≥ cake centre (0)
+    /* Work in outer-edge space (distance from centre).
+     *
+     * ⚠️ ONE RULE BINDS: THE OUTER EDGE STAYS ON THE CAKE. Sandeep: *"user should be able to adjust
+     * it. as long as it does not go out of cake surface, thats fine. outer edge of the piping
+     * should not leave the rim."*
+     *
+     * ⚠️ THE INNER EDGE USED TO BE FLOORED AT THE CENTRE (`outerMin = depth`), AND THAT DISABLED THE
+     * DIAL OUTRIGHT on exactly the pieces a baker most wants to nudge. `depth` is the piece's full
+     * radial span, so for anything deeper than the cake's radius the floor sits ABOVE the ceiling,
+     * the range inverts, and the control greys out with no explanation. A big rosette on a small
+     * tier is precisely that case. It was also the wrong rule: a deep ring whose inner edge passes
+     * the middle is a cake with a full top, not an error.
+     *
+     * Everything that remains is a real collision, and each is clamped to the ceiling so the range
+     * can never invert again — a constraint that cannot be satisfied must not silently take the
+     * whole control away. */
+    let outerMax = radius;            // the rim — the one hard limit
+    let outerMin = 0;                 // may travel all the way in to the middle
     const upper = tierAbove(canvasConfig.tiers, tierIndex);
-    if (upper) outerMin = Math.max(outerMin, upper.radius + depth);   // inner edge ≥ upper cylinder
+    // A tier resting on this rim: stay outside its cylinder. By the OUTER edge, so a deep ring can
+    // still be moved rather than being refused a range it cannot meet.
+    if (upper) outerMin = Math.max(outerMin, Math.min(upper.radius, outerMax));
     const curCenter = (curIn + curOut) / 2;
     (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {
       if (p.layerId === cur.layerId) return;
       const [nin, nout] = rimRadialBand(p, tierIndex);
       // Classify by which side the neighbour's centre sits — robust even if the bands currently
       // overlap (so we can never push further INTO a neighbour, only separate from it).
-      if ((nin + nout) / 2 < curCenter) outerMin = Math.max(outerMin, nout + depth);  // inside  → our inner edge rests on its outer edge
-      else                              outerMax = Math.min(outerMax, nin);           // outside → our outer edge stops at its inner edge
+      if ((nin + nout) / 2 < curCenter) outerMin = Math.max(outerMin, Math.min(nout, outerMax)); // inside  → stay outside its outer edge
+      else                              outerMax = Math.max(0, Math.min(outerMax, nin));          // outside → our outer edge stops at its inner edge
     });
+    // Never invert: a floor above the ceiling is a constraint that cannot be met, and the honest
+    // answer is the ceiling itself, not a dead control.
+    outerMin = Math.min(outerMin, outerMax);
     // Back to the offset the caller speaks. outerMax is floored at outerMin so a rim with no room
     // left reports a single point rather than an inverted range.
     const toOffset = outer => outer - radius - reachOut - base;
-    return { min: toOffset(outerMin), max: toOffset(Math.max(outerMin, outerMax)) };
+    return { min: toOffset(outerMin), max: toOffset(outerMax) };
   }
 
   // Moving OUTWARD stops the instant its outer edge touches the next ring out (else the rim edge);
