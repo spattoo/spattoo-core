@@ -4413,6 +4413,12 @@ export default function CakeCanvas({
            they were handed; cream carries the band index the same way, and losing it would open the
            card on band 0 whichever band was tapped. Spread, so the guard stays a guard. */
         onCreamSelect={(...a) => { if (!pointerRef.current.dragged) onCreamSelect(...a); }}
+        /* ⚠️ AND FORWARD IT AT ALL. A prop can be accepted up here, defaulted to NOOP down
+           in CakeContent and simply never joined up in between — which is what left a coat
+           unselectable after it was already given a click handler, a tier prop and a
+           designer callback: every piece was built and this one line was the gap. Nothing
+           errors, because the NOOP is a working function. See check-forwarded-props.mjs. */
+        onCoatSelect={(...a) => { if (!pointerRef.current.dragged) onCoatSelect(...a); }}
         onTopPipingSelect={i => { if (!pointerRef.current.dragged) onTopPipingSelect(i); }}
         onBottomPipingSelect={i => { if (!pointerRef.current.dragged) onBottomPipingSelect(i); }}
         pipingTarget={pipingTarget}
