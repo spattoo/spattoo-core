@@ -6691,16 +6691,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const { glbUrl } = resolvePipingGlbs(el);
     if (!glbUrl || !(tierIndex >= 0)) return;
     const pc = el.placement_config ?? {};
-    const top  = pipingPlacementFromConfig(pc, true);
+    const top    = pipingPlacementFromConfig(pc, true);
     const bottom = pipingPlacementFromConfig(pc, false);
+
+    /* ⚠️ THE COLOUR THE BAKER ALREADY CHOSE, not the element's default. Sandeep: *"i selected
+     * piping — selected top rim — selected brown color. then clicked on 'cover entire cake'. default
+     * color it takes is white/cream. not the already existing brown."* Picking a colour and then
+     * choosing where it goes is one continuous act; starting over at the default throws away the
+     * half of it already done.
+     *
+     * A ring already carrying a GRADIENT hands its stops over whole, so a two-colour border becomes
+     * a two-colour ombré rather than collapsing to its first stop. */
+    const ring = ringPiping(tierIndex, 'rim') ?? ringPiping(tierIndex, 'board');
+    const colors = ring?.gradient?.colors?.length ? [...ring.gradient.colors]
+                 : [ring?.color ?? el.default_color ?? '#f5e6c8'];
+
+    /* ⚠️ THE RINGS GO. A coat covers every surface a ring sits on, so leaving them turns a border
+     * into debris poking through the roses — which is exactly how it rendered. Both zones and every
+     * layer on this tier, not just this card's: another element's rim border is no more visible
+     * under a coat than this one's.
+     *
+     * ⚠️ AND ONLY THE RINGS. A topper, a message or a sticker sits ON a coated cake perfectly
+     * happily — every reference rosette cake has something on top — so clearing those would be
+     * destroying work the coat does not conflict with. */
+    const tier = design.tiers[tierIndex];
+    (tier?.topPipings    ?? []).forEach(p => removePipingLayer(tierIndex, 'rim',   p.layerId));
+    (tier?.bottomPipings ?? []).forEach(p => removePipingLayer(tierIndex, 'board', p.layerId));
+
     setTierCoat(tierIndex, {
       id: el.id,
       cardId: el.cardId,
       glbUrl,
       name: el.name,
       size: COAT_PIECE_RADIUS,
-      /* One colour to begin with; the card's picker adds the second stop for an ombré. */
-      colors: [el.default_color ?? '#f5e6c8'],
+      colors,
       rot: {
         top:  top.rotation ?? null,
         side: bottom.sideRotation ?? bottom.bottomRotation ?? top.rotation ?? null,
