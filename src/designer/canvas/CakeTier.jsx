@@ -800,7 +800,12 @@ function TopPipingRingImpl({
   // The row's radial ceiling (`placement_config.max_depth`), passed through to the size cap. Null
   // keeps shellGeo's default, so a row that authors nothing renders exactly as it always has.
   maxDepth          = null,
+  /* The AUTHORED radial offset (`placement_config.top_radial_offset`), set by whoever calibrated
+     the element. May be either sign — see the seat below. */
   extraRadialOffset = 0,
+  /* The CUSTOMER's radial dial. Separate from the authored value on purpose: one is a decision
+     about how the element is meant to sit, the other is a nudge, and only the nudge needs a rail. */
+  userRadialOffset  = 0,
   yOffset           = 0,
   flipTop = false,
   finish = 'cream',
@@ -844,7 +849,7 @@ function TopPipingRingImpl({
       // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
       // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
       // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
-      const off = Math.min(-halfRaw + extraRadialOffset, -halfRaw);
+      const off = -halfRaw + extraRadialOffset + Math.min(0, userRadialOffset);
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
@@ -852,13 +857,26 @@ function TopPipingRingImpl({
         outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
       });
     }
-  }, [A, glbPath, flipTop, sizeFactor, radius, extraRadialOffset]);
+  }, [A, glbPath, flipTop, sizeFactor, radius, extraRadialOffset, userRadialOffset]);
 
   const altActive = altEnabled && arrangement !== 'single';
 
   // Rim sits ON the top surface: pull shells inward so their outer face is flush with the edge.
-  // extraRadialOffset (incl. the user's radial control) may pull the cream inward, but never push it
-  // past the edge — clamp the outer face to the rim.
+  //
+  // ⚠️ THE AUTHORED OFFSET MAY PUSH OUTWARD; THE CUSTOMER'S DIAL MAY NOT. Both used to be summed
+  // and then clamped to "outer face ≤ rim", which made a ring's radial position a CONSEQUENCE of
+  // its rotation — tilt a rosette and it walks inward, with no way to put it back. Sandeep: *"rim
+  // radial distance should not tell me how much should i rotate. i might genuinely want to rotate
+  // it only 73 degrees."* He is right: rotation and radial seat are two decisions and the renderer
+  // was deriving one from the other.
+  //
+  // So the no-overhang rule now guards the NUDGE and not the DECISION. A calibrated element may
+  // sit proud of the rim if that is what it was authored to do — real piped borders do overhang —
+  // while a customer's dial can still only inset, so nobody can push a ring off their own cake.
+  //
+  // ⚠️ A POSITIVE `top_radial_offset` WAS PREVIOUSLY DISCARDED, silently, by that same clamp. Any
+  // row carrying one meant it to push outward and never got it; honouring it is the fix, not a
+  // regression. Negative values — every one in the catalogue today — are unmoved to the decimal.
   // Hoisted out of `positions` because the DRAG needs it too: angleAtPoint has to offset the sampled
   // outline by exactly the same amount the forward pass did, or a dragged piece on a shaped tier
   // lands on the angle of a slightly different outline than the one it is drawn on.
@@ -882,12 +900,13 @@ function TopPipingRingImpl({
        *"why is it not on the rim? why inside"*.
        `worldMaxZ` IS `half` for an untilted shell (asserted in shellGeo.test.js), so this is the
        same number everywhere it was already right. */
-    const reach = A.worldMaxZ;                                   // outward reach past the origin
-    let   o     = Math.min(-reach + extraRadialOffset, -reach);  // outer face ≤ cake edge
+    const reach = A.worldMaxZ;                     // outward reach past the origin
+    // Flush by default; the author may move it either way, the customer only inward.
+    let   o     = -reach + extraRadialOffset + Math.min(0, userRadialOffset);
     // Glyph: never inset deeper than a fraction of the stroke, or the border collapses to the centreline.
     if (shape?.strokeW) o = Math.max(o, -GLYPH_PIPE_INSET_FRAC * shape.strokeW);
     return o;
-  }, [A, extraRadialOffset, shape]);
+  }, [A, extraRadialOffset, userRadialOffset, shape]);
 
   const positions = useMemo(() => {
     if (!A) return [];
@@ -1856,7 +1875,8 @@ export default function CakeTier({
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
       maxDepth={p.maxDepth ?? null}
-      extraRadialOffset={(p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0)}
+      extraRadialOffset={p.extraRadialOffset ?? 0}
+      userRadialOffset={p.userRadialOffset ?? 0}
       yOffset={(p.yOffset ?? 0) + (p.userYOffset ?? 0)}
       flipTop={p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false)}
       spacing={p.spacing ?? 1}
