@@ -584,7 +584,12 @@ describe('fit — letters that meet, instead of a bar bolted across the gap', ()
     const natural = coverage(at1(0));
     expect(coverage(at1(-0.07)) / natural).toBeGreaterThan(0.92);   // the shipped fit keeps its ink
     expect(coverage(at1(-0.20)) / natural).toBeLessThan(0.85);      // crushed: letters swallowed
-  });
+  /* ⚠️ AN EXPLICIT TIMEOUT, because this one is genuinely heavy: three fits of a fourteen-glyph
+     script word, each rasterised at 220x220 with a point-in-polygon test per part. It runs in a
+     couple of seconds on an idle machine and blew vitest's 5s default on a loaded one — failing a
+     release four times in a row while nothing in its import graph had changed. A gate whose verdict
+     depends on what else the laptop is doing is not a gate. The assertions are untouched. */
+  }, 30_000);
 
   it('changes nothing at all at fit 0', () => {
     /* The row is set glyph by glyph now rather than by generateShapes, and that had better be the
