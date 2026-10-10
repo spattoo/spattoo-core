@@ -69,6 +69,12 @@ import { perimeter, topContains, boundingRadius, topClamp } from './surface.js';
 /* How tightly consecutive coils sit. 0 = coils just touch (a visible groove between every turn,
  * which reads as rope); 0.5 = each coil covers half the one before it. Measured off nothing — this
  * is the first thing to sweep in the studio. */
+/* How big one piece is on a coated cake, as a world radius. The default tier radius is 1.2, so
+ * this is a rose a little over a fifth of the cake across — the proportion the reference photos
+ * show. A customer-facing size control can move it later; it is a constant rather than a magic
+ * number at the call site so there is one place to change. */
+export const COAT_PIECE_RADIUS = 0.26;
+
 export const ROSETTE_DEFAULTS = Object.freeze({
   rosetteRadius: 0.26,   // world units; the designer's default tier radius is 1.2
   ropeRadius:    0.055,  // half the piped rope's width

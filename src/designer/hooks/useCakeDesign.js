@@ -368,6 +368,23 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  /* ── Coating the whole tier ────────────────────────────────────────────────────────────────
+   * `{ id, cardId, glbUrl, name, size, colors, rot }` — one piped piece packed over the lid, the
+   * wall and the shoulder. Offered on an element whose placement_config.can_coat is ticked.
+   *
+   * ⚠️ ITS OWN FIELD, NOT A THIRD PIPING LAYER. A ring belongs to the rim or the board, which is
+   * why piping is stored per ZONE; a coat belongs to the tier. Filing it under topPipings would
+   * have made every zone-walking loop in the designer and the renderer ask "unless it is a coat",
+   * and a saved design would carry a ring that is not round anything.
+   *
+   * null clears it, which is what the card's toggle sends when it is switched off. */
+  function setTierCoat(index, coat) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index ? { ...t, coat: coat ?? null } : t)),
+    }));
+  }
+
   // Frosting TYPE (material) per tier — buttercream | whipped | fondant | naked. Resolved through
   // the frostings registry in CakeTier (material + edge + capabilities); the colour stays on tier.color.
   function setTierFrostingType(index, frostingType) {
@@ -1744,7 +1761,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,

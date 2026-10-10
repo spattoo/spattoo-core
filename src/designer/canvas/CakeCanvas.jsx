@@ -3366,6 +3366,7 @@ function CakeContent({ config, scene, edit = null }) {
             dusting={tier.dusting ?? null}
             foil={tier.foil ?? null}
             selected={selectedTier === i}
+            coat={tier.coat ?? null}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}

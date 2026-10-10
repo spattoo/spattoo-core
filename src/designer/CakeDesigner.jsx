@@ -185,6 +185,7 @@ import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
 import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
+import { COAT_PIECE_RADIUS } from './geometry/rosetteCoat.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
@@ -2797,7 +2798,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -5483,6 +5484,27 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Gradient on a piping ring layer — same instance-level model as stickers (config gates
   // eligibility via the piping element's allowed_actions.gradient; the stops + mode live on the
   // ring layer's `gradient`). `color` stays the solid/stop-0 fallback. ≥2 stops = a gradient.
+  /* ── The coat's colours ───────────────────────────────────────────────────────────────────────
+   *
+   * Sandeep: *"the color picker should work for double color ombré. scatter color is not needed."*
+   *
+   * ⚠️ IT REUSES THE RING'S STOPS UI RATHER THAN GROWING A SECOND ONE. GradientControls already
+   * adds, removes and selects stops on this very popup; a coat needs exactly that list and nothing
+   * else, so the popup writes here instead of to a ring's `gradient` when the tier carries a coat
+   * from this card. One stop is flat, two or more run an ombré — palest at the middle of the lid,
+   * deepening down the wall, continuous across the shoulder (`coatShade`).
+   *
+   * ⚠️ SCATTER IS NOT OFFERED, by request. The mode row therefore stays empty for a coat: a
+   * gradient MODE ('swirl', 'alternate') is a ring's question about how colour sweeps round a
+   * circle, and a coat's answer is always the same — by position over the whole surface. */
+  function writeCoatColors(tierIndex, colors) {
+    const clean = colors.filter(Boolean);
+    if (!clean.length) return;
+    const cur = design.tiers[tierIndex]?.coat;
+    if (!cur) return;
+    setTierCoat(tierIndex, { ...cur, colors: clean });
+  }
+
   function writePipingGradient(tierIndex, zone, colors, mode) {
     const clean = colors.filter(Boolean);
     updateRing(tierIndex, zone, p => clean.length >= 2
@@ -6629,6 +6651,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // in penStyle and NOTHING ever set them. This is the door, not the machinery.
   //
   // `stampRegular` is the one thing piping needs that scattering does not — see stampTransforms.
+  /* ── "Cover entire cake" ──────────────────────────────────────────────────────────────────────
+   *
+   * The same decision as the zone tiles above it — where does this piping go — with "everywhere"
+   * as one of the answers, which is why it sits on the piping card rather than being its own
+   * decoration. Sandeep: *"when this is enabled - on piping element card popup it should show an
+   * option 'cover entire cake'."*
+   *
+   * ⚠️ IT TAKES THE TIER THE CARD IS ALREADY ON, not a tier picker. A coat is the whole surface, so
+   * the only real choice on a multi-tier cake is WHICH tier — and the card already knows, because
+   * the zone tiles chose one. Asking again would be a second question with the same answer.
+   *
+   * Both authored rotations travel with it. A coat seats every piece by the surface normal, which
+   * is the PEN's frame: `top_rotation` on the lid, `side_rotation` on the wall and the shoulder.
+   * Handing it the ring figure for the wall is the bug `side_rotation` exists to prevent. */
+  function coverEntireCake(el) {
+    const { glbUrl } = resolvePipingGlbs(el);
+    if (!glbUrl) return;
+    const tierIndex = activeRing?.tierIndex ?? 0;
+    const pc = el.placement_config ?? {};
+    const top  = pipingPlacementFromConfig(pc, true);
+    const bottom = pipingPlacementFromConfig(pc, false);
+    setTierCoat(tierIndex, {
+      id: el.id,
+      cardId: el.cardId,
+      glbUrl,
+      name: el.name,
+      size: COAT_PIECE_RADIUS,
+      /* One colour to begin with; the card's picker adds the second stop for an ombré. */
+      colors: [el.default_color ?? '#f5e6c8'],
+      rot: {
+        top:  top.rotation ?? null,
+        side: bottom.sideRotation ?? bottom.bottomRotation ?? top.rotation ?? null,
+      },
+    });
+    setExpandedPipingId(null);
+  }
+
   function pipeItMyself(el) {
     const { glbUrl } = resolvePipingGlbs(el);
     if (!glbUrl) return;
@@ -16515,6 +16574,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   Absent means OFF. An element nobody has considered does not get the feature by
                   default — the alternative is offering it everywhere and finding out on a customer's
                   cake which elements it ruins. */}
+              {/* ── "Cover entire cake" ────────────────────────────────────────────────────────
+                  The zone tiles above answer "which border does this go round". This is the same
+                  question with a different answer: not a border at all, the whole surface — the way
+                  a rosette cake is piped.
+
+                  ⚠️ Gated on the element, like hand piping and for the same reason. A coat TILES,
+                  so the piece has to interlock with its own neighbours on every side: a rosette or
+                  a star does, a wrap band is one pre-formed ring and a drip is a procedural
+                  curtain. `can_coat` is ticked by whoever calibrated the element; absent means off,
+                  so nothing inherits the feature untested. */}
+              {!!pipingPopupEl.placement_config?.can_coat
+                && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
+                <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
+                  <button
+                    onClick={() => coverEntireCake(pipingPopupEl)}
+                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
+                             border: '1.5px solid #999999', background: '#fff',
+                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
+                    {/* A cake whose whole surface is pieces, not a band round one edge — it must
+                        not read as a seventh border, which is why the zone tiles' silhouette is
+                        deliberately absent and the dots cover the form instead. */}
+                    <svg width="26" height="20" viewBox="0 0 30 24" fill="none" aria-hidden focusable="false"
+                         style={{ flexShrink: 0 }}>
+                      <ellipse cx="15" cy="19.5" rx="11" ry="2.6" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.1" />
+                      {[[7, 8], [12, 6.4], [18, 6.4], [23, 8],
+                        [6.4, 12.6], [11.4, 11], [17.4, 11], [23.4, 12.6],
+                        [7.4, 16.4], [12.6, 15], [18.4, 15], [23, 16.4]].map(([cx, cy], i) => (
+                        <circle key={i} cx={cx} cy={cy} r="2.5" fill="#f3ece2" stroke="#8a8288" strokeWidth="1.1" />
+                      ))}
+                    </svg>
+                    <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>Cover entire cake</span>
+                      <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
+                        This shape packed over the top and the sides, edge to edge.
+                      </span>
+                    </span>
+                  </button>
+                </div>
+              )}
+
               {!!pipingPopupEl.placement_config?.hand_piping
                 && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
@@ -16780,7 +16880,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            side and blue the other: *"we should allow multi color drip."* Reusing the
                            stop list rather than inventing a second one is what makes the control,
                            the storage and the save path already exist. */
-                        const gradEligible = isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
+                        const gradEligible = !!coatHere || isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
                         /* ⚠️ ALTERNATING IS OFFERED ONLY WHERE THERE ARE PIECES TO ALTERNATE, and
                            the test is which RENDER PATH this layer takes, not which zone it is in.
                            Piping has exactly two zones and both are rings — Sandeep: *"this works
@@ -16792,13 +16892,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            path that can honour it, and these are the three things that bypass it. */
                         const altCapable = !isDrip && !p.wrap && !p.bend
                                         && (p.finish ?? 'cream') !== 'element';
-                        const gStops  = p.gradient?.colors?.length ? p.gradient.colors : [color];
+                        /* ⚠️ A COAT TAKES OVER THIS POPUP. When the tier carries one from this
+                           card there is no ring to colour — the stops belong to the coat, and the
+                           same GradientControls below edits them. Scatter is deliberately absent;
+                           see writeCoatColors. */
+                        const coatHere = design.tiers[tierIndex]?.coat?.cardId === card.cardId
+                          ? design.tiers[tierIndex].coat : null;
+                        const gStops  = coatHere
+                          ? (coatHere.colors?.length ? coatHere.colors : [color])
+                          : (p.gradient?.colors?.length ? p.gradient.colors : [color]);
                         const gMode   = p.gradient?.mode ?? 'swirl';
                         const gActive = Math.min(gradStop, Math.max(0, gStops.length - 1));
                         const wheelColor = gradEligible ? (gStops[gActive] ?? color) : color;
                         const onWheel = c => {
                           if (!gradEligible) { handlePipingColorChange(tierIndex, zone, c); return; }
                           const next = gStops.slice(); next[gActive] = c;
+                          if (coatHere) { writeCoatColors(tierIndex, next); return; }
                           if (next.length < 2) handlePipingColorChange(tierIndex, zone, c);
                           else writePipingGradient(tierIndex, zone, next, gMode);
                         };
@@ -16823,13 +16932,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 /* A drip has no sweep direction to choose — two ganaches meet where
                                    they meet — so the mode row is empty and GradientControls hides
                                    it on `modes.length > 1`. */
-                                label={isDrip ? 'Chocolates' : 'Gradient colors'}
-                                modes={isDrip ? [] : (altCapable ? [...GRADIENT_MODES, ALTERNATE_MODE] : GRADIENT_MODES)}
+                                label={coatHere ? 'Ombré colours' : isDrip ? 'Chocolates' : 'Gradient colors'}
+                                /* No mode for a coat: a gradient MODE is a ring's question about
+                                   how colour sweeps round a circle, and a coat's answer is always
+                                   the same — by position over the whole surface. */
+                                modes={(coatHere || isDrip) ? [] : (altCapable ? [...GRADIENT_MODES, ALTERNATE_MODE] : GRADIENT_MODES)}
                                 stops={gStops} activeStop={gActive} mode={gMode}
                                 onSelectStop={setGradStop}
-                                onAddStop={() => { if (gStops.length >= PIPING_MAX_STOPS) return; const next = [...gStops, gStops[gStops.length - 1]]; writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
-                                onRemoveStop={i => { writePipingGradient(tierIndex, zone, gStops.filter((_, idx) => idx !== i), gMode); setGradStop(0); }}
-                                onModeChange={m => writePipingGradient(tierIndex, zone, gStops, m)}
+                                onAddStop={() => { if (gStops.length >= PIPING_MAX_STOPS) return; const next = [...gStops, gStops[gStops.length - 1]]; if (coatHere) writeCoatColors(tierIndex, next); else writePipingGradient(tierIndex, zone, next, gMode); setGradStop(next.length - 1); }}
+                                onRemoveStop={i => { const next = gStops.filter((_, idx) => idx !== i); if (coatHere) writeCoatColors(tierIndex, next); else writePipingGradient(tierIndex, zone, next, gMode); setGradStop(0); }}
+                                onModeChange={m => { if (!coatHere) writePipingGradient(tierIndex, zone, gStops, m); }}
                               />
                             )}
                           </AnchoredPopup>

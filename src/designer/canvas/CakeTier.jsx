@@ -20,6 +20,7 @@ import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
 import { buildShellGeo, capShellScale, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
+import CakeCoat from './CakeCoat.jsx';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
@@ -1617,6 +1618,11 @@ export default function CakeTier({
      the pattern builder) leaves the bands inert and the tier's own onClick answering, which is what
      every caller did before this existed. */
   onCreamClick = null,
+  /* The whole tier covered in one piped piece — `{ glbUrl, colors, size, rot }` — offered on an
+     element whose placement_config.can_coat is ticked. Absent is the normal case and costs
+     nothing. ⚠️ NOT a piping LAYER: a ring belongs to the rim or the board, and a coat belongs to
+     the tier, so it is its own field rather than a third entry in topPipings. */
+  coat = null,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -2039,6 +2045,13 @@ export default function CakeTier({
       )}
       {renderTops()}
       {renderBottoms()}
+      {/* Last, so it sits over every finish — a coat replaces the cake's surface rather than
+          decorating it. It reads the tier's own footprint, so a heart or a sheet packs correctly
+          without this knowing what either is. */}
+      {coat?.glbUrl && (
+        <CakeCoat coat={coat} shp={shp} tierHeight={height} baseY={yBase}
+                  rot={coat.rot} softness={coat.softness ?? PIPING_SOFTNESS_DEFAULT} />
+      )}
     </group>
   );
 }
