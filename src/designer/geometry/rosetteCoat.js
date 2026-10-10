@@ -75,6 +75,31 @@ import { perimeter, topContains, boundingRadius, topClamp } from './surface.js';
  * number at the call site so there is one place to change. */
 export const COAT_PIECE_RADIUS = 0.26;
 
+/* ── How much of the cake a coat takes ──────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"we need to enhance the 'cover entire cake' feature. we should give an option to cover
+ * only the side. or cover only top. as well."* Three real cakes, not one with bits switched off: a
+ * rosette-walled cake with a smooth top for a message, a rosette crown over plain sides, and the
+ * whole thing.
+ *
+ * ⚠️ THE SHOULDER BELONGS TO 'all' AND ONLY 'all'. The rim row exists to hide the SEAM where the
+ * lid meets the wall — it overlays both. Cover one surface and there is no seam: on a sides-only
+ * cake a rim row would stand proud of a bare lid like a border nobody asked for, and on a top-only
+ * cake it would hang over the edge of a bare wall. The seats are still generated for every kind so
+ * that a seat's index — and therefore its place in the ombré — does not shift when the scope does.
+ */
+export const COAT_SCOPES = Object.freeze([
+  { key: 'all',  label: 'Whole cake', kinds: Object.freeze(['top', 'rim', 'side']) },
+  { key: 'side', label: 'Sides only', kinds: Object.freeze(['side']) },
+  { key: 'top',  label: 'Top only',   kinds: Object.freeze(['top']) },
+]);
+
+/** The scope record for a stored key. Unknown or missing is the whole cake — every coat saved
+ *  before scopes existed covered everything, and must keep doing so. */
+export function coatScope(key) {
+  return COAT_SCOPES.find(s => s.key === key) ?? COAT_SCOPES[0];
+}
+
 export const ROSETTE_DEFAULTS = Object.freeze({
   rosetteRadius: 0.26,   // world units; the designer's default tier radius is 1.2
   ropeRadius:    0.055,  // half the piped rope's width

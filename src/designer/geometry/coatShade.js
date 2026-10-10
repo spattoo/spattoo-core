@@ -25,6 +25,24 @@ export const COAT_SHADE_MODES = Object.freeze(['single', 'ombre', 'scatter']);
  * the rim, but most of the travel happens down the wall where there is more of it to see. */
 export const OMBRE_LID_SHARE = 0.35;
 
+/**
+ * The lid's share of the run for a given scope.
+ *
+ * ⚠️ AN OMBRÉ HAS TO SPAN WHAT IS ACTUALLY COVERED. The run is one continuous sweep from the middle
+ * of the lid to the board, and the lid takes `OMBRE_LID_SHARE` of it. Leave that alone on a
+ * sides-only coat and the wall starts a third of the way through the palette — the first colour
+ * never appears on the cake at all, and a two-colour ombré arrives looking like one slightly wrong
+ * colour. A top-only coat has the mirror problem: it would use the first third and stop.
+ *
+ * So the share is 0 when only the wall is covered and 1 when only the lid is. No new maths — the
+ * run already takes this as a parameter, and both ends of it are already tested.
+ */
+export function coatLidShare(scope) {
+  if (scope === 'side') return 0;
+  if (scope === 'top')  return 1;
+  return OMBRE_LID_SHARE;
+}
+
 
 /**
  * A pattern parameter per seat, in seat order.

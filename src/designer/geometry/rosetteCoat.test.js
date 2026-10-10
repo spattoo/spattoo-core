@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { rosetteSpiral, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, SEAT_OVERLAP } from './rosetteCoat.js';
+import { rosetteSpiral, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, SEAT_OVERLAP, COAT_SCOPES, coatScope } from './rosetteCoat.js';
 import { topContains } from './surface.js';
 
 /* Sandeep: "cream piping is filled on entire cake. we need to achieve this."
@@ -487,5 +487,39 @@ describe('rosetteCoatPaths', () => {
     const small = rosetteCoatPaths({ tierRadius: 0.6, tierHeight: 0.9, jitter: 0 });
     const big   = rosetteCoatPaths({ tierRadius: 2.4, tierHeight: 2.0, jitter: 0 });
     expect(big.paths.length).toBeGreaterThan(small.paths.length * 2);
+  });
+});
+
+/* Sandeep: "we should give an option to cover only the side. or cover only top. as well." */
+describe('coat scopes', () => {
+  it('falls back to the whole cake for anything it does not recognise', () => {
+    // ⚠️ INCLUDING undefined: every coat saved before scopes existed covered everything, and a
+    // template opened after this change must look exactly as it did when it was saved.
+    for (const k of [undefined, null, '', 'sides', 'TOP', 'whole']) {
+      expect(coatScope(k).key).toBe('all');
+    }
+    expect(coatScope('side').kinds).toEqual(['side']);
+    expect(coatScope('top').kinds).toEqual(['top']);
+  });
+
+  /* ⚠️ A SCOPE THAT NAMES A KIND NOTHING SEATS RENDERS AN EMPTY CAKE — silently, because an
+     instanced mesh with no instances is not an error. So the names are checked against the seats
+     the packer actually produces, not against a list in a second file. */
+  it('every scope names kinds the packer really seats', () => {
+    const seats = rosetteSeats({ tierRadius: 1.2, tierHeight: 1.45, baseY: 0.1,
+                                 pieceW: 0.3, pieceH: 0.3 });
+    const seated = new Set(seats.map(s => s.kind));
+    for (const sc of COAT_SCOPES) {
+      expect(sc.kinds.length).toBeGreaterThan(0);
+      for (const k of sc.kinds) expect(seated.has(k), `${sc.key} names "${k}"`).toBe(true);
+    }
+  });
+
+  /* The shoulder hides the SEAM between lid and wall. Cover one surface and there is no seam —
+     a rim row would stand proud of a bare lid, or hang over a bare wall. */
+  it('keeps the shoulder for the whole cake only', () => {
+    expect(coatScope('all').kinds).toContain('rim');
+    expect(coatScope('side').kinds).not.toContain('rim');
+    expect(coatScope('top').kinds).not.toContain('rim');
   });
 });

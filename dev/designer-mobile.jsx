@@ -460,6 +460,12 @@ CAT_ELEMENTS.push({
   allowed_actions: { color: true, delete: true, resize: true },
   placement_config: { r: 0.3, scale: { min: 0.1, max: 0.8, step: 0.1 },
                       rim: 'hug', board: 'hug', rim_ring: true, board_ring: true,
+                      /* ⚠️ NO FIXTURE CARRIED `can_coat`, so the coat — the whole rosette-cake
+                         feature, three surfaces and an ombré across them — had no harness at all
+                         and was only ever seen on Sandeep's screen. Every bug in it so far was
+                         reported rather than caught. This is the element the real one is modelled
+                         on, so it is the right one to carry the flag. */
+                      can_coat: true,
                       /* ⚠️ `ring_finish: 'element'` is the real Rosette's setting, and it selects a
                          COMPLETELY DIFFERENT render path (DecorationShells, the GLB's own
                          materials) from the cream shells every other fixture here exercises. With

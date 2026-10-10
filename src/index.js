@@ -113,13 +113,13 @@ export { silhouette, tilesWithoutGaps, maxTileStep } from './designer/geometry/t
 /* Which colour each piece of a coat takes — a PARAMETER per seat, not a colour. What a chosen
    colour looks like on cream is creamAlbedo's job; a second opinion here is the preview-versus-
    render drift INVARIANTS #15 exists to prevent. */
-export { coatShade, COAT_SHADE_MODES, OMBRE_LID_SHARE } from './designer/geometry/coatShade.js';
+export { coatShade, coatLidShare, COAT_SHADE_MODES, OMBRE_LID_SHARE } from './designer/geometry/coatShade.js';
 export { pipingCanCoat } from './designer/piping/pipingLayer.js';
 /* The coat's renderer. In core, not in the studio that prototyped it — a studio carrying its own
    copy of geometry is what CLAUDE.md names outright, and PipingCalibrator already records a day
    lost to exactly that with buildShellGeo. */
 export { default as CakeCoat } from './designer/canvas/CakeCoat.jsx';
-export { rosetteSpiral, rosetteLocalPath, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, COAT_PIECE_RADIUS } from './designer/geometry/rosetteCoat.js';
+export { rosetteSpiral, rosetteLocalPath, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, COAT_PIECE_RADIUS, COAT_SCOPES, coatScope } from './designer/geometry/rosetteCoat.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
 /* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
  * the light it receives, with a reference light MEASURED per surface. Exported so admin studios —

@@ -2,9 +2,9 @@ import { useMemo, useRef, useEffect } from 'react';
 import * as THREE from 'three';
 import { useGLTF } from '@react-three/drei';
 import { extractGeo } from './shellGeo.js';
-import { rosetteSeats } from '../geometry/rosetteCoat.js';
+import { rosetteSeats, coatScope } from '../geometry/rosetteCoat.js';
 import { silhouette, maxTileStep } from '../geometry/tileCoverage.js';
-import { coatShade } from '../geometry/coatShade.js';
+import { coatShade, coatLidShare } from '../geometry/coatShade.js';
 import { creamMaterialProps } from '../geometry/creamMaterial.js';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 
@@ -186,15 +186,23 @@ function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7, onCoa
     () => (coat?.colors?.length ? coat.colors : ['#f5e6c8']),
     [coat?.colors]);
 
+  /* ⚠️ THE RUN SPANS WHAT IS COVERED, not always lid-to-board. On a sides-only coat the wall would
+     otherwise start a third of the way through the palette and the first colour would never appear.
+     See coatLidShare. */
   const shades = useMemo(
     () => coatShade(seats, { mode: palette.length > 1 ? 'ombre' : 'single', baseY, tierHeight,
+                             lidShare: coatLidShare(coat?.scope),
                              balance: coat?.balance ?? 0.5 }),
-    [seats, palette.length, baseY, tierHeight, coat?.balance]);
+    [seats, palette.length, baseY, tierHeight, coat?.scope, coat?.balance]);
+
+  /* Which surfaces this scope draws. The SEATS are still built for every kind, so a seat's index —
+     and with it its place in the ombré — does not shift when the scope changes. */
+  const kinds = coatScope(coat?.scope).kinds;
 
   if (!parts || !seats.length) return null;
   return (
     <>
-      {SURFACES.map(({ kind, rot: which }) => (
+      {SURFACES.filter(({ kind }) => kinds.includes(kind)).map(({ kind, rot: which }) => (
         <CoatSurface key={kind} kind={kind} part={parts[which]} seats={seats}
                      shades={shades} palette={palette} softness={softness}
                      /* ⚠️ THE COAT IS THE CAKE'S SURFACE NOW, SO IT HAS TO BE SELECTABLE. A ring

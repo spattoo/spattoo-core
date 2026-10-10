@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { coatShade, COAT_SHADE_MODES, OMBRE_LID_SHARE } from './coatShade.js';
+import { coatShade, coatLidShare, COAT_SHADE_MODES, OMBRE_LID_SHARE } from './coatShade.js';
 import { rosetteSeats } from './rosetteCoat.js';
 
 /* Sandeep, with three reference cakes: "double color patterns. we should achieve this." */
@@ -170,5 +170,51 @@ describe('coatShade — balance', () => {
     const wall = s.map((x, i) => ({ y: x.p[1], t: t[i], k: x.kind }))
       .filter(x => x.k === 'side').sort((a, b) => b.y - a.y);
     for (let i = 1; i < wall.length; i++) expect(wall[i].t).toBeGreaterThanOrEqual(wall[i - 1].t - 1e-9);
+  });
+});
+
+/* Sandeep: "we should give an option to cover only the side. or cover only top. as well." */
+describe('coatShade — scope', () => {
+  const seats = () => rosetteSeats({ tierRadius: R, tierHeight: H, baseY: BASE, jitter: 0,
+                                     pieceW: 0.3, pieceH: 0.3 });
+  const span = (list, kind, opts) => {
+    const t = coatShade(list, { baseY: BASE, tierHeight: H, ...opts });
+    const mine = list.map((s, i) => t[i]).filter((_, i) => list[i].kind === kind);
+    return [Math.min(...mine), Math.max(...mine)];
+  };
+
+  it('hands the lid its usual third of the run when the whole cake is covered', () => {
+    expect(coatLidShare('all')).toBe(OMBRE_LID_SHARE);
+    expect(coatLidShare(undefined)).toBe(OMBRE_LID_SHARE);   // a coat saved before scopes existed
+    const [lo, hi] = span(seats(), 'side', { lidShare: coatLidShare('all') });
+    expect(lo).toBeGreaterThan(OMBRE_LID_SHARE - 0.01);      // the wall picks up where the lid left off
+    expect(hi).toBeLessThanOrEqual(1);
+  });
+
+  /* ⚠️ THE ONE THAT MATTERS. Leave the lid's share in place on a sides-only coat and the wall
+     starts a third of the way through the palette: the first colour never appears on the cake at
+     all, and a two-colour ombré arrives looking like one slightly wrong colour. */
+  it('gives the wall the WHOLE palette when only the sides are covered', () => {
+    expect(coatLidShare('side')).toBe(0);
+    const [lo, hi] = span(seats(), 'side', { lidShare: coatLidShare('side') });
+    expect(lo).toBeLessThan(0.2);          // the top of the wall is the first colour now
+    expect(hi).toBeGreaterThan(0.8);       // and the board is still the last
+  });
+
+  it('gives the lid the whole palette when only the top is covered', () => {
+    expect(coatLidShare('top')).toBe(1);
+    const [lo, hi] = span(seats(), 'top', { lidShare: coatLidShare('top') });
+    expect(lo).toBeLessThan(0.1);          // the middle of the lid
+    expect(hi).toBeGreaterThan(0.9);       // out at the rim
+  });
+
+  it('still takes a balance on a partial coat', () => {
+    const s = seats();
+    const solid = (sc, bal) => {
+      const t = coatShade(s, { baseY: BASE, tierHeight: H, lidShare: coatLidShare(sc), balance: bal });
+      const wall = s.map((x, i) => t[i]).filter((_, i) => s[i].kind === 'side');
+      return wall.filter(v => v >= 1 - 1e-9).length / wall.length;
+    };
+    expect(solid('side', 0.3)).toBeGreaterThan(solid('side', 0.5));
   });
 });

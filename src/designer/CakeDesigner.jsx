@@ -185,7 +185,7 @@ import { GLAZE_DEFAULTS } from './shared/glaze/glazeMaterial.js';
 import { applyTextureConfig, DEFAULT_STYLE, userStyleParams, resolveStyleParams } from './creamStyles.js';
 import { applyTextStyleConfig } from './textStyles.js';
 import { applyCakeShapeConfig, cakeShapeList } from './cakeShapes.js';
-import { COAT_PIECE_RADIUS } from './geometry/rosetteCoat.js';
+import { COAT_PIECE_RADIUS, COAT_SCOPES, coatScope } from './geometry/rosetteCoat.js';
 import ShapePicker from './controls/ShapePicker.jsx';
 import TierShapeControls, { hasShapeControls } from './controls/TierShapeControls.jsx';
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
@@ -5506,6 +5506,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setTierCoat(tierIndex, { ...cur, balance });
   }
 
+  /* ⚠️ IT HAS TO COME OFF AGAIN. There was no way to remove a coat at all while the only way on
+   * was one deliberate "Cover entire cake"; with three scopes a tap away, trying one and changing
+   * your mind is the common case, and a decoration you cannot undo is a trap. The rings a full coat
+   * cleared do NOT come back — they were removed, not hidden, and resurrecting them would be a
+   * second opinion about what the baker wants on a cake they have since kept working on. */
+  function removeCoat(tierIndex) {
+    setTierCoat(tierIndex, null);
+  }
+
   function writeCoatColors(tierIndex, colors) {
     const clean = colors.filter(Boolean);
     if (!clean.length) return;
@@ -6696,7 +6705,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * inside the card's render and does not exist out here — a ReferenceError the moment the button
    * was pressed, and one `check:bindings` cannot see because the name IS declared, just in another
    * scope. The render already knows which tier the zone tiles chose; it hands it over. */
-  function coverEntireCake(el, tierIndex) {
+  function coverEntireCake(el, tierIndex, scope = 'all') {
     const { glbUrl } = resolvePipingGlbs(el);
     if (!glbUrl || !(tierIndex >= 0)) return;
     const pc = el.placement_config ?? {};
@@ -6722,24 +6731,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      *
      * ⚠️ AND ONLY THE RINGS. A topper, a message or a sticker sits ON a coated cake perfectly
      * happily — every reference rosette cake has something on top — so clearing those would be
-     * destroying work the coat does not conflict with. */
+     * destroying work the coat does not conflict with.
+     *
+     * ⚠️ AND ONLY WHEN IT IS THE WHOLE CAKE. A partial coat is an instruction to leave the rest
+     * alone, and both of the classics say so: rosette sides under a piped top edge, and a rosette
+     * crown above a plain wall with a border on the board. Clearing there would destroy work the
+     * baker deliberately kept. The rings that poke through a FULL coat are the bug; a ring beside
+     * a partial one is a cake. */
     const tier = design.tiers[tierIndex];
-    (tier?.topPipings    ?? []).forEach(p => removePipingLayer(tierIndex, 'rim',   p.layerId));
-    (tier?.bottomPipings ?? []).forEach(p => removePipingLayer(tierIndex, 'board', p.layerId));
+    if (scope === 'all') {
+      (tier?.topPipings    ?? []).forEach(p => removePipingLayer(tierIndex, 'rim',   p.layerId));
+      (tier?.bottomPipings ?? []).forEach(p => removePipingLayer(tierIndex, 'board', p.layerId));
+    }
 
+    /* A scope CHANGE keeps the colours and the balance already chosen — it is the same coat on
+       less of the cake, not a new one. Only a first coat takes the ring's colour. */
+    const prev = design.tiers[tierIndex]?.coat;
+    const same = prev?.cardId === el.cardId ? prev : null;
     setTierCoat(tierIndex, {
+      ...(same ?? {}),
+      scope,
       id: el.id,
       cardId: el.cardId,
       glbUrl,
       name: el.name,
-      size: COAT_PIECE_RADIUS,
-      colors,
+      size: same?.size ?? COAT_PIECE_RADIUS,
+      colors: same?.colors?.length ? same.colors : colors,
       rot: {
         top:  top.rotation ?? null,
         side: bottom.sideRotation ?? bottom.bottomRotation ?? top.rotation ?? null,
       },
     });
-    setExpandedPipingId(null);
+    /* ⚠️ THE CARD STAYS OPEN NOW. It used to close on the way out, which was right when covering
+       the cake was one button and one answer — you wanted to see what you had done. With three
+       scopes it shut the chips the moment you touched one: picking "Whole cake" and then wanting
+       "Sides only" meant reopening the card, and the harness caught it on the second tap of the
+       first run. The control has to survive being used (INVARIANTS #11). */
   }
 
   function pipeItMyself(el) {
@@ -16539,6 +16566,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ?? candidates.find(c => ringPiping(c.tierIndex, c.zone))
                 ?? candidates[0]
                 ?? { tierIndex: -1, zone: null };
+              /* The coat THIS card put on THAT tier. Another element's coat is not this card's to
+                 mark, rescope or remove — the chips would otherwise light up on a card that had
+                 nothing to do with what is on the cake. */
+              const coatFromThisCard =
+                design.tiers[activeRing.tierIndex]?.coat?.cardId === pipingPopupEl.cardId
+                  ? design.tiers[activeRing.tierIndex].coat : null;
               return (<>
               {rimFull && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 9, fontSize: 9.5, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", lineHeight: 1.45 }}>
@@ -16657,12 +16690,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {!!pipingPopupEl.placement_config?.can_coat
                 && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
-                  <button
-                    onClick={() => coverEntireCake(pipingPopupEl, activeRing.tierIndex)}
-                    style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
-                             padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
-                             border: '1.5px solid #999999', background: '#fff',
-                             fontFamily: "'Quicksand',sans-serif", textAlign: 'left' }}>
+                  <div style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
+                                padding: '2px 1px 8px', textAlign: 'left' }}>
                     {/* A cake whose whole surface is pieces, not a band round one edge — it must
                         not read as a seventh border, which is why the zone tiles' silhouette is
                         deliberately absent and the dots cover the form instead. */}
@@ -16676,12 +16705,39 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       ))}
                     </svg>
                     <span style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>Cover entire cake</span>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: INK }}>Cover the cake</span>
                       <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.4 }}>
-                        This shape packed over the top and the sides, edge to edge.
+                        This shape packed edge to edge — all of it, or one surface.
                       </span>
                     </span>
-                  </button>
+                  </div>
+                  {/* ⚠️ THE CHIPS ARE THE ACTION, not a setting beside one. Sandeep: *"we should give
+                      an option to cover only the side. or cover only top. as well."* A button that
+                      covers everything plus a scope control afterwards would make "rosette sides"
+                      a two-step job with a whole-cake flash in between — and every one of these is
+                      a cake a baker means to make, not a variation on the first. One tap each, and
+                      the same row changes its mind later: INVARIANTS #11, the control beside what
+                      it changes. */}
+                  <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                    {COAT_SCOPES.map(sc => (
+                      <Chip key={sc.key} label={sc.label} isMobile={isMobile}
+                        active={coatFromThisCard?.scope
+                          ? coatScope(coatFromThisCard.scope).key === sc.key
+                          : false}
+                        onClick={() => coverEntireCake(pipingPopupEl, activeRing.tierIndex, sc.key)} />
+                    ))}
+                    {/* Only once there is one to take off — an empty "Remove" is a dead control. */}
+                    {coatFromThisCard && (
+                      <button type="button"
+                        onClick={() => removeCoat(activeRing.tierIndex)}
+                        style={{ padding: isMobile ? '12px 16px' : '8px 14px', borderRadius: 12,
+                                 border: '1.5px solid #999999', background: 'transparent',
+                                 fontFamily: "'Quicksand',sans-serif", fontSize: isMobile ? 14 : 11,
+                                 fontWeight: 700, color: '#666', cursor: 'pointer' }}>
+                        Remove
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
