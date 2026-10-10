@@ -6665,10 +6665,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * Both authored rotations travel with it. A coat seats every piece by the surface normal, which
    * is the PEN's frame: `top_rotation` on the lid, `side_rotation` on the wall and the shoulder.
    * Handing it the ring figure for the wall is the bug `side_rotation` exists to prevent. */
-  function coverEntireCake(el) {
+  /* ⚠️ THE TIER IS PASSED IN, NOT LOOKED UP. The first version read `activeRing`, which is derived
+   * inside the card's render and does not exist out here — a ReferenceError the moment the button
+   * was pressed, and one `check:bindings` cannot see because the name IS declared, just in another
+   * scope. The render already knows which tier the zone tiles chose; it hands it over. */
+  function coverEntireCake(el, tierIndex) {
     const { glbUrl } = resolvePipingGlbs(el);
-    if (!glbUrl) return;
-    const tierIndex = activeRing?.tierIndex ?? 0;
+    if (!glbUrl || !(tierIndex >= 0)) return;
     const pc = el.placement_config ?? {};
     const top  = pipingPlacementFromConfig(pc, true);
     const bottom = pipingPlacementFromConfig(pc, false);
@@ -16588,7 +16591,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 && !!resolvePipingGlbs(pipingPopupEl).glbUrl && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
                   <button
-                    onClick={() => coverEntireCake(pipingPopupEl)}
+                    onClick={() => coverEntireCake(pipingPopupEl, activeRing.tierIndex)}
                     style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 9,
                              padding: '10px 11px', borderRadius: 10, cursor: 'pointer',
                              border: '1.5px solid #999999', background: '#fff',
