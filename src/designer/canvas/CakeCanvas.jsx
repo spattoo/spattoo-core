@@ -321,12 +321,29 @@ export function configureSceneEnv(partial) { if (partial) Object.assign(SCENE_EN
 // which overexposed the cake top + camera-facing wall and washed the diffuse colour toward white
 // head-on (true colour only appeared once orbited). `shadows` enables the key's shadow (live scene
 // only). The ONE light rig — edit here, every scene follows.
-export function SceneLights({ shadows = false }) {
+/* The shipped rig, as numbers rather than as literals buried in JSX — so a calibration harness can
+ * vary them without forking the component, and so "what is the key-to-fill ratio" is answerable by
+ * reading one object instead of three attributes.
+ *
+ * ⚠️ 0.45 / 1.1 / 0.4 IS KEY-TO-FILL OF ABOUT 1.3 : 1, where daylight runs 3:1 to 5:1. That is why
+ * renders read flat and bright beside a photograph (measured: mean 193–205 against a reference's
+ * 169, at 60–87% of its contrast) and why white-on-white had nothing to separate it. It is a known
+ * open question, not an accident — every reference light in this repo was measured under exactly
+ * these numbers, so moving them invalidates all of them at once. See dev/scene-light.jsx. */
+export const SCENE_RIG = Object.freeze({ ambient: 0.45, key: 1.1, fill: 0.4 });
+
+export function SceneLights({ shadows = false,
+                              ambient = SCENE_RIG.ambient,
+                              keyLight = SCENE_RIG.key,
+                              fill = SCENE_RIG.fill }) {
+  /* ⚠️ `keyLight`, NOT `key`. React eats a prop called `key` before a component ever sees it, so the
+     obvious name would have silently used the default and a sweep would have reported that the key
+     light does nothing. */
   return (
     <>
-      <ambientLight intensity={0.45} />
-      <directionalLight position={[6, 14, 8]} intensity={1.1} castShadow={shadows} />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      <ambientLight intensity={ambient} />
+      <directionalLight position={[6, 14, 8]} intensity={keyLight} castShadow={shadows} />
+      <directionalLight position={[-4, 4, -4]} intensity={fill} />
     </>
   );
 }
@@ -3875,14 +3892,19 @@ function CakeContent({ config, scene, edit = null }) {
 // capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
 // letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
 // the studio background belong to the editor, not to the cake.
-function CakeThumbnailScene({ config, shadows = false }) {
+function CakeThumbnailScene({ config, shadows = false, lights = null }) {
   return (
     <>
       {/* ⚠️ `shadows` EXISTS SO A HARNESS CAN MATCH THE LIVE SCENE, which renders `<SceneLights
           shadows />` while this preview does not. Default stays OFF — production thumbnails and
           previews are unchanged — but a page MEASURING the cake has to render what a baker sees, and
           a cast shadow lands on the tier wall, which is exactly where colour is sampled. */}
-      <SceneLights shadows={shadows} />
+      {/* ⚠️ `lights` EXISTS FOR THE SAME REASON `shadows` DOES, just above: a harness has to render
+          the real cake under something other than the shipped rig, and the only alternative is a
+          second copy of this scene — which drifts, and whose numbers then describe a cake nobody
+          loads (dev/scene.js records that cost). Calibrating the rig means varying it and measuring,
+          so varying it has to be possible without forking it. Null = production, unchanged. */}
+      {lights ?? <SceneLights shadows={shadows} />}
       {/* Same env rule as the live scene (SceneEnv): the configured HDRI, else the neutral
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
@@ -4284,6 +4306,7 @@ export function CakePreview({
   fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = null,
   children = null,          // extra scene contents — a plain composition slot, not a debug hook
   shadows = false,          // match the LIVE scene's shadows; off by default so previews are unchanged
+  lights = null,            // override the rig — calibration harness only; null = production
 }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   // Aim at THIS cake's middle by default, the same rule the editor uses (cakeAimTarget) — a preview
@@ -4305,7 +4328,7 @@ export function CakePreview({
       >
         <CameraRig fov={fov} position={cameraPosition} />
         <Suspense fallback={null}>
-          <CakeThumbnailScene config={config} shadows={shadows} />
+          <CakeThumbnailScene config={config} shadows={shadows} lights={lights} />
         </Suspense>
         <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={aim} />
         {children}
