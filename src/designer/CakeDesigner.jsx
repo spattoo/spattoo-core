@@ -159,7 +159,7 @@ const DEFAULT_RAIL_SKIN = {
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
-import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor } from './piping/pipingLayer.js';
+import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor, occupiesRimBand } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
@@ -5378,7 +5378,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // a nominal step let the next ring overlap it). Falls back to the nominal shell width only
   // before anything has rendered. Takes the widest existing ring so the step always clears it.
   function pipingRingRadialWidth(tierIndex, size = 1) {
-    const rings = design.tiers[tierIndex]?.topPipings ?? [];
+    // Only layers that actually sit in a band on the top — a drip hangs outside the wall and
+    // reports a fallback band it does not occupy. See occupiesRimBand.
+    const rings = (design.tiers[tierIndex]?.topPipings ?? []).filter(occupiesRimBand);
     let w = 0;
     rings.forEach(p => { const [lo, hi] = rimRadialBand(p, tierIndex); if (hi - lo > w) w = hi - lo; });
     return w > 0 ? w : pipingShellHeight(tierIndex, size);
@@ -5388,7 +5390,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // radial width, so its outer edge meets their inner edge (touching, not overlapping). First
   // ring is flush with the edge (0). Always returns a value; use rimHasRoom() to gate first.
   function nextRimRadialOffset(tierIndex) {
-    const rings = design.tiers[tierIndex]?.topPipings ?? [];
+    /* ⚠️ A DRIP IS NOT SOMETHING TO NEST INSIDE OF, and counting it is what put the first ring in
+       the middle of the lid. With a drip on the cake this returned -0.25 for a ring that should
+       have been flush with the edge at 0. See occupiesRimBand. */
+    const rings = (design.tiers[tierIndex]?.topPipings ?? []).filter(occupiesRimBand);
     if (!rings.length) return 0;
     let innermost = 0;
     rings.forEach(p => { const o = p.userRadialOffset ?? 0; if (o < innermost) innermost = o; });
@@ -5398,7 +5403,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // the floor — the cake center on the top tier, or the cylinder of the tier resting on this
   // rim (so middle/bottom tiers hold fewer rings).
   function rimHasRoom(tierIndex) {
-    if (!(design.tiers[tierIndex]?.topPipings ?? []).length) return true;
+    if (!(design.tiers[tierIndex]?.topPipings ?? []).filter(occupiesRimBand).length) return true;
     const radius    = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
     const half      = pipingRingRadialWidth(tierIndex, 1) / 2;
     const innerEdge = (radius - half + nextRimRadialOffset(tierIndex)) - half;
@@ -5602,6 +5607,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const curCenter = (curIn + curOut) / 2;
     (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {
       if (p.layerId === cur.layerId) return;
+      // A drip is not a neighbour on the top — it would otherwise squeeze this dial's range with a
+      // band it does not occupy, the same phantom that broke nesting. See occupiesRimBand.
+      if (!occupiesRimBand(p)) return;
       const [nin, nout] = rimRadialBand(p, tierIndex);
       // Classify by which side the neighbour's centre sits — robust even if the bands currently
       // overlap (so we can never push further INTO a neighbour, only separate from it).

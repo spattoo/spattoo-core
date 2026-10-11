@@ -194,6 +194,30 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
  * changing it would resize every ring on every saved cake. Honouring a number an admin typed is a
  * different decision from redefining what "unset" means.
  */
+/* ── Does this rim layer occupy a radial band on the top surface? ────────────────────────────────
+ *
+ * Rim layers NEST: a new ring steps inward by the measured width of what is already there, so its
+ * outer edge meets their inner edge. That rule needs to know which layers are actually IN the way,
+ * and a chocolate drip is not — it is a curtain hanging down the OUTSIDE of the wall from the rim
+ * edge. It sits in no band on the top at all.
+ *
+ * ⚠️ AND IT REPORTED A PHANTOM ONE, WHICH IS THE BUG THIS EXISTS FOR. A drip is procedural and
+ * carries no `glbUrl`, so `getShellExtents(null, …)` misses the measured map and returns its
+ * fallback — `radialInFrac: -SHELL_HEIGHT_FRAC` — i.e. a band about `radius × 0.7` wide that
+ * nothing ever occupied. On a 0.35 tier that is 0.245, so the FIRST real ring added to a cake with
+ * a drip was pushed inward by 0.25 and landed in the middle of the lid with icing showing between
+ * it and the edge. Sandeep, with a screenshot of each: *"rim option is not making the cream ring to
+ * the rim edge. its adding somewhere in the middle."*
+ *
+ * The dial already knew: `!isDrip && !p.wrap` is what decides whether a Radial control is shown at
+ * all. This is that same fact, asked by the nesting maths instead of by the layout.
+ *
+ * ⚠️ WRAP IS DELIBERATELY NOT EXCLUDED HERE. A wrap band hugs the WALL at the rim edge, so whether
+ * a new ring should nest inside it is a real question and not one this change measured. Left as it
+ * was; only the drip — which was measured, and which reports a band it does not have — is removed.
+ */
+export const occupiesRimBand = (p) => !!p && !p.drip;
+
 export function pipingScaleFor(el) {
   return el?.placement_config?.r ?? 1;
 }
