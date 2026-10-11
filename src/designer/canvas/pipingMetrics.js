@@ -194,8 +194,13 @@ export function resolveTopPipingBands({ topPipings = [], topY, radius }) {
     bands.push({
       innerR: Math.max(0, Math.min(a, b)),
       outerR: Math.max(a, b),
-      // ringBaseY seats the shell at `anchorY - worldBotY`, so its top lands this far above.
-      surfaceY: anchorY + radius * ((ext.topFrac ?? 0) - (ext.botFrac ?? 0)),
+      /* ⚠️ `topFrac` IS ALREADY MEASURED FROM THE ANCHOR — do not add `botFrac` back. The first cut
+         wrote `topFrac - botFrac`, reasoning from `ringBaseY` (which seats the shell at
+         `anchorY - worldBotY`) and so counting the shell's below-anchor reach twice. `botFrac` is
+         negative for any shell that dips below its anchor, so the surface came out a whole shell
+         depth too high and the sprinkles hovered in clear air above the cream. `bandForLayer` three
+         functions up has always had this right: `hiY: anchorY + ext.topFrac * radius`. */
+      surfaceY: anchorY + radius * (ext.topFrac ?? 0),
     });
   }
   return bands;

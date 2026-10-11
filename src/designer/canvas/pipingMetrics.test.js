@@ -103,6 +103,19 @@ describe('resolveTopPipingBands / topSurfaceYAt — what a sprinkle lands on', (
     expect(b.surfaceY).toBeCloseTo(topY + 0.35 * 0.4, 6);  // and stands 0.4 radii proud
   });
 
+  /* ⚠️ THE CASE THAT SHIPPED WRONG, AND WHY THE FIRST TESTS MISSED IT: every one of them set
+     `botFrac: 0`, so a surface computed as `topFrac - botFrac` was indistinguishable from
+     `topFrac`. A real shell dips BELOW its anchor — botFrac is negative — and subtracting it
+     counted that depth twice, putting the surface a whole shell above the cream. Sandeep, with a
+     picture of gold beads hanging in clear air: *"sprinkles are floating"*.
+     topFrac/botFrac are both measured FROM THE ANCHOR; the top is simply anchor + topFrac. */
+  it('measures the top from the anchor, and does not add the below-anchor reach back', () => {
+    setShellExtents('dips.glb', false, 1, { topFrac: 0.3, botFrac: -0.5, radialOutFrac: 0, radialInFrac: -0.5 });
+    const [b] = resolveTopPipingBands({ topPipings: [ring('dips.glb')], topY, radius });
+    expect(b.surfaceY).toBeCloseTo(topY + 0.35 * 0.3, 6);          // anchor + topFrac…
+    expect(b.surfaceY).not.toBeCloseTo(topY + 0.35 * 0.8, 6);      // …never + |botFrac| as well
+  });
+
   it('lifts a sprinkle inside the ring and leaves one in the middle alone', () => {
     setShellExtents('rose.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.6 });
     const bands = resolveTopPipingBands({ topPipings: [ring('rose.glb')], topY, radius });
