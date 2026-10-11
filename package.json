@@ -1,6 +1,6 @@
 {
   "name": "@spattoo/designer",
-  "version": "0.1.659",
+  "version": "0.1.689",
   "private": true,
   "type": "module",
   "main": "./dist/spattoo-designer.umd.cjs",
@@ -17,6 +17,7 @@
   ],
   "scripts": {
     "prepare": "git config core.hooksPath .githooks 2>/dev/null || true",
+    "version": "node scripts/stamp-build.mjs",
     "dev": "vite",
     "build": "NODE_ENV=production vite build",
     "check:paths": "node scripts/check-paths.mjs",
@@ -30,17 +31,22 @@
     "check:occasions": "node scripts/docs-check.mjs check-occasions",
     "check:dup": "jscpd src/designer src/orders src/customers src/dashboard src/admin src/billing src/shared src/storefront src/auth src/legal src/telemetry src/chefsdesk src/notifications",
     "test": "vitest run",
-    "verify": "npm run check:bindings && npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:hooks && npm run check:movable && npm run check:narrow && npm run check:takeover && npm run check:procedural-studios && npm run check:harness-scene && npm run check:env-map && npm run check:one-chevron && npm run check:one-preview && npm run check:tokens && npm run check:priced-copy && npm run check:occasions && npm run check:dup && npm run build && npm test",
+    "verify": "npm run check:bindings && npm run check:paths && npm run check:fonts && npm run check:cors && npm run check:hooks && npm run check:movable && npm run check:element-size && npm run check:element-delete && npm run check:placement-slots && npm run check:narrow && npm run check:takeover && npm run check:procedural-studios && npm run check:harness-scene && npm run check:env-map && npm run check:one-chevron && npm run check:one-preview && npm run check:tokens && npm run check:priced-copy && npm run check:occasions && npm run check:preview-rows && npm run check:forwarded-props && npm run check:dup && npm run build && npm test",
     "pack:vendor": "node scripts/pack-vendor.mjs",
     "release": "node scripts/release.mjs",
     "check:bindings": "node scripts/check-bindings.mjs",
     "check:movable": "node scripts/check-movable.mjs",
+    "check:element-size": "node scripts/check-element-size.mjs",
+    "check:element-delete": "node scripts/check-element-delete.mjs",
+    "check:placement-slots": "node scripts/check-placement-slots.mjs",
+    "check:preview-rows": "node scripts/check-preview-rows.mjs",
     "check:harness-scene": "node scripts/check-harness-scene.mjs",
     "check:env-map": "node scripts/check-env-map.mjs",
     "check:one-chevron": "node scripts/check-one-chevron.mjs",
     "check:one-preview": "node scripts/check-one-preview.mjs",
     "check:priced-copy": "node scripts/check-priced-copy.mjs",
-    "check:tokens": "node scripts/check-tokens.mjs"
+    "check:tokens": "node scripts/check-tokens.mjs",
+    "check:forwarded-props": "node scripts/check-forwarded-props.mjs"
   },
   "peerDependencies": {
     "@react-three/drei": ">=9",

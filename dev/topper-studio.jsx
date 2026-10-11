@@ -1,5 +1,13 @@
 import { createRoot } from 'react-dom/client';
 import { useState } from 'react';
+/* ⚠️ THE ASSETS BASE, because the composer lights a cake scene INSIDE itself. This file mounts no
+ * <SceneEnv /> of its own — TopperComposer does — so `check:harness-scene` never asked for this and
+ * the page quietly ran under drei's indoor `apartment` fallback instead of the self-hosted outdoor
+ * map the product uses. Measured 2026-10-11 while chasing "the colour differs between the studio and
+ * the cake": the same #D94F6E read #c75870 here and #c56f5a on dev/topper-on-cake.html, a 23-point
+ * hue swing that was the HARNESS, not the studio. A page whose numbers describe a scene no customer
+ * loads is worse than no page. */
+import './scene.js';
 import TopperComposer from '../src/designer/topper/TopperComposer.jsx';
 
 /* The card topper studio on its own, so its FOOTER can be looked at.

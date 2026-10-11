@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { CakePreview } from '../canvas/CakeCanvas.jsx';
 import { starterDesign } from '../hooks/useCakeDesign.js';
-import { tierGeometry } from '../cakeShapes.js';
+import { tierGeometry, cakeShapeGroups } from '../cakeShapes.js';
 import { isGlyphFamily, glyphTierDims, GLYPH_FAMILIES } from '../geometry/glyphShape.js';
 import GlyphInput, { GLYPH_INPUT_PROPS } from './GlyphInput.jsx';
 import { Panel } from '../../shared/Panel.jsx';
-import { INK } from '../../shared/tokens.js';
+import { INK, INK_MUTED } from '../../shared/tokens.js';
 
 // Prompt copy per glyph family — the only per-family wording the picker carries.
 const GLYPH_COPY = {
@@ -109,6 +109,11 @@ export default function ShapePicker({ shapes, onPick, onClose }) {
   const pick = s => { const f = glyphFamilyOf(s); if (f) { setText(''); setGlyphFam(f); setGlyphShape(s); } else onPick(s.key); };
   const create = () => onPick(glyphShape.key, { shapeConfig: { [GLYPH_FAMILIES[glyphFam].textKey]: text } });
   const copy = glyphFam ? GLYPH_COPY[glyphFam] : null;
+  /* Bucketed by footprint, so every round cake sits together and every rectangular one
+     does. Derived from each shape's own `family` rather than a list of keys, so a shape
+     authored in the Cake Shape Studio lands in the right group with no code change — and
+     an unrecognised family lands in "More shapes" rather than vanishing. */
+  const groups = cakeShapeGroups(shapes);
 
   return (
     <Panel
@@ -129,12 +134,21 @@ export default function ShapePicker({ shapes, onPick, onClose }) {
           </div>
         </div>
       ) : (
-        <div style={styles.grid}>
-          {shapes.map(s => (
-            <button key={s.key} style={styles.card} onClick={() => pick(s)}>
-              <div style={styles.art}><ShapeTile shape={s} /></div>
-              <div style={styles.name}>{s.label}</div>
-            </button>
+        <div style={styles.groups}>
+          {groups.map(g => (
+            <section key={g.key}>
+              {/* A single group gets no heading: one label over the whole grid names nothing the
+                  reader could not already see, and costs a row of height on a phone. */}
+              {groups.length > 1 && <div style={styles.groupName}>{g.label}</div>}
+              <div style={styles.grid}>
+                {g.shapes.map(s => (
+                  <button key={s.key} style={styles.card} onClick={() => pick(s)}>
+                    <div style={styles.art}><ShapeTile shape={s} /></div>
+                    <div style={styles.name}>{s.label}</div>
+                  </button>
+                ))}
+              </div>
+            </section>
           ))}
         </div>
       )}
@@ -143,6 +157,11 @@ export default function ShapePicker({ shapes, onPick, onClose }) {
 }
 
 const styles = {
+  groups: { display: 'flex', flexDirection: 'column', gap: 20 },
+  /* Quiet: it separates, it does not compete with the twelve cakes underneath it. Same
+     small-caps treatment the rest of the designer uses for a section label. */
+  groupName: { fontSize: 10.5, fontWeight: 800, letterSpacing: '0.09em', textTransform: 'uppercase',
+               color: INK_MUTED, marginBottom: 9 },
   grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 14 },
   card:  { display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: 10, border: '1.5px solid #e2e0e6', borderRadius: 12, background: '#faf9fb', cursor: 'pointer', fontFamily: 'inherit' },
   art:   { display: 'flex', alignItems: 'center', justifyContent: 'center', width: 96, height: 96 },

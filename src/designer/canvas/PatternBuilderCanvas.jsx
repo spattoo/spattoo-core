@@ -1,7 +1,7 @@
 import { useMemo, useState, useEffect, useRef } from 'react';
 import { Canvas, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
-import { SafeEnvironment } from './TextureErrorBoundary.jsx';
+import { SafeEnvironment } from './safeEnvironment.jsx';
 import { envProps } from './envMap.js';
 import { DESIGNER_GROUND } from '../constants.js';
 import * as THREE from 'three';

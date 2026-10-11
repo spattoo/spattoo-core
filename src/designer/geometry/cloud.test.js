@@ -417,3 +417,44 @@ movableContract('cloud', {
     expect(vertical ? back.v : back.u).toBeCloseTo(target, 6);
   },
 });
+
+describe('a cloud on the board stands on the BOARD, not on its tier', () => {
+  /* Sandeep: "when pluffy cloud is chooses 'on the board', it stays on the middle." A cloud lives in
+     `tier.clouds[]`, and the caller used to pass one height for two questions — the foot of this
+     tier's wall AND the cake's board. On the bottom tier those are the same number, which is why it
+     looked right everywhere it was ever checked. */
+  const UPPER = { radius: 1.0, topY: 2.1, baseY: 1.3, boardY: 0.1 };
+
+  it('ignores the tier it belongs to and uses the board', () => {
+    expect(cloudBaseY('board', UPPER)).toBe(0.1);
+  });
+
+  it('still stands a wall cloud on its own tier, not on the board', () => {
+    expect(cloudBaseY('side', UPPER)).toBe(1.3);
+  });
+
+  it('still reads a top cloud off its tier lid', () => {
+    expect(cloudBaseY('top', UPPER)).toBe(2.1);
+  });
+
+  // The bottom tier is where the two heights coincide — the case that always worked must not move.
+  it('is unchanged on the bottom tier, where base and board are one height', () => {
+    const BOTTOM = { radius: 1.2, topY: 1.3, baseY: 0.1, boardY: 0.1 };
+    expect(cloudBaseY('board', BOTTOM)).toBe(0.1);
+    expect(cloudBaseY('side', BOTTOM)).toBe(0.1);
+  });
+
+  // Back-compat: a caller that still passes only the old pair gets exactly what it used to.
+  it('falls back to boardY when no baseY is given', () => {
+    expect(cloudBaseY('side', { topY: 2.1, boardY: 1.3 })).toBe(1.3);
+    expect(cloudBaseY('board', { topY: 2.1, boardY: 1.3 })).toBe(1.3);
+  });
+
+  it('rises a wall cloud up ITS OWN wall, not up the whole cake', () => {
+    // rise 1 on the upper tier must reach that tier's lid (2.1), not overshoot from the board.
+    const top = cloudPlacement({ surface: 'side', rise: 1, variant: 'flat' }, UPPER);
+    const foot = cloudPlacement({ surface: 'side', rise: 0, variant: 'flat' }, UPPER);
+    const climb = top.lobes[0].position.y - foot.lobes[0].position.y;
+    expect(climb).toBeCloseTo(UPPER.topY - UPPER.baseY, 6);   // 0.8, the tier's own height
+  });
+});

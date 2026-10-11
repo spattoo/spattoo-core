@@ -157,7 +157,14 @@ export function toCanvasConfig(design) {
         // this config, not the design.
         rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
         clouds:       t.clouds ?? [],            // fondant clouds sitting on/against THIS tier
+        balloons:     t.balloons ?? [],          // fondant balloons on picks above THIS tier
         foil:         t.foil ?? null,           // gold-leaf flakes + finish (per-tier wall treatment)
+        /* ⚠️ A NEW TIER FIELD MUST BE LISTED HERE OR IT NEVER REACHES THE CANVAS. This projection
+           builds a FRESH object per tier from an explicit allow-list, so anything stored on a tier
+           and not named is silently dropped — which is how "Cover entire cake" came to set the
+           state, pass every gate, and render nothing at all. Not a crash, not a warning: the coat
+           simply was not in the object the renderer was handed. */
+        coat:          t.coat ?? null,        // the whole tier covered in one piped piece
         topPipings:    t.topPipings ?? (t.topPiping ? [t.topPiping] : []),
         bottomPipings: t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []),
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
@@ -225,8 +232,12 @@ const DEFAULT_WRITING = {
   /* The material this message is made of. 'cream' is the default and the ONLY value every existing
      saved design has, so an absent key must keep meaning cream — a message that silently became
      acrylic on load would rewrite cakes people had already ordered. */
-  style: 'cream',            // 'cream' | 'acrylic'
+  style: 'cream',            // 'cream' | 'acrylic' | 'fondant'  (see WRITING_LOOKS in CakeDesigner)
   acrylicFinish: 'gold',     // acrylic only: a key into TOPPER_FINISHES, not a colour
+  /* Fondant only, and only on the TOP, where both readings are things bakers make: 'hug' lies on the
+     icing, 'stand' goes up on prongs. Absent means hug. Acrylic has no equivalent — a perspex sheet
+     lying flat on a cake top is not a product — so this is not a shared pose field. */
+  topPose: 'hug',
   text: '', font: 'ems_allure', color: '#ffffff',
   thickness: 0.03, fit: WRITING_FIT.cream, softness: 0.7,
   curve: 0, lineSpacing: 1.4,
@@ -360,6 +371,23 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, color } : t),
+    }));
+  }
+
+  /* ── Coating the whole tier ────────────────────────────────────────────────────────────────
+   * `{ id, cardId, glbUrl, name, size, colors, rot }` — one piped piece packed over the lid, the
+   * wall and the shoulder. Offered on an element whose placement_config.can_coat is ticked.
+   *
+   * ⚠️ ITS OWN FIELD, NOT A THIRD PIPING LAYER. A ring belongs to the rim or the board, which is
+   * why piping is stored per ZONE; a coat belongs to the tier. Filing it under topPipings would
+   * have made every zone-walking loop in the designer and the renderer ask "unless it is a coat",
+   * and a saved design would carry a ring that is not round anything.
+   *
+   * null clears it, which is what the card's toggle sends when it is switched off. */
+  function setTierCoat(index, coat) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index ? { ...t, coat: coat ?? null } : t)),
     }));
   }
 
@@ -714,6 +742,21 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) =>
         i === index ? { ...t, clouds: typeof changes === 'function' ? changes(t.clouds ?? []) : changes } : t),
+    }));
+  }
+
+  // ── Fondant balloons ────────────────────────────────────────────────────────
+  // Same shape as the clouds above, and for the same reason: a LIST, on the TIER. Every balloon
+  // measurement is a ratio of the tier it belongs to, and several go up at once — the reference is
+  // three of them at different heights, which is the normal case rather than the exception.
+  //
+  // Their own field rather than a slot on the cloud: a balloon stands OFF the cake on a pick while
+  // a cloud lies against it, so they share no position, no surface and no freedoms.
+  function updateTierBalloons(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) =>
+        i === index ? { ...t, balloons: typeof changes === 'function' ? changes(t.balloons ?? []) : changes } : t),
     }));
   }
 
@@ -1724,13 +1767,14 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierRainbows, updateTierRainbows, updateTierClouds,
+    updateTierBalloons,
     setNameBlocks, updateNameBlocks,
     addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil,
     addTier, removeTier,

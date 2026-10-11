@@ -2,6 +2,8 @@ import { useRef, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildRay } from '../utils/raycasting.js';
+// The board's top — one definition, in constants.js.
+import { BOARD_TOP_Y as BOARD_Y } from '../constants.js';
 
 // ── Particle-finish placement handles (luster dust + gold leaf) ───────────────────────────────
 // In a finish's edit mode each placed point (a dust splash / a leaf flake) shows a draggable dot ON the
@@ -24,7 +26,6 @@ const TAU = Math.PI * 2;
 // The board is not a tier, but the drag loop is keyed on a tier index. A sentinel keeps that loop
 // unchanged and can never collide with a real index.
 export const BOARD_TIER = -1;
-const BOARD_Y = 0.1;   // the board's top — the tier stack starts here (see CakeScene)
 
 export default function FinishHandles({
   tierData = [], getPoints, selected = null, onMove, onSelect,

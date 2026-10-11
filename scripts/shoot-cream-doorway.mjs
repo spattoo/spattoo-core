@@ -39,17 +39,29 @@ async function openDesigner(shape) {
   return page;
 }
 
-/* The tier panel is a TABLIST and only the active section is mounted on a phone — it opens on
-   Colour, so the Frosting tab has to be chosen before anything in it can be asserted or seen. */
+/* Reach the Frosting section, on whichever layout is up.
+ *
+ * ⚠️ THE TAB IS STILL A TAB; ITS LABEL GREW A VALUE. On a phone the panel is a tablist and only the
+ * active section is mounted, so Frosting has to be chosen before anything in it exists. This matched
+ * `textContent.trim() === 'Frosting'` — and a tab now reads `FrostingButtercream`, label plus its
+ * current setting, so the match silently failed, the click never happened, and five assertions about
+ * a feature that works came back FAIL. Worse than no script, because the next person reads a broken
+ * feature. Found 2026-10-06 while checking an unrelated change and confirmed stale by running it
+ * against an unmodified file: identical failures.
+ *
+ * ⚠️ AND MY FIRST REPAIR WAS WRONG IN THE OTHER DIRECTION — I read the desktop card, concluded the
+ * tablist was gone and deleted the click. It is gone on DESKTOP only, where the same panel renders
+ * every section in one scrolling card. Both layouts are real; this handles both rather than picking
+ * the one that happened to be open. */
 async function openFrosting(page) {
-  const clicked = await page.evaluate(() => {
-    const tab = [...document.querySelectorAll('[role="tab"]')].find(t => t.textContent.trim() === 'Frosting');
-    if (!tab) return false;
-    tab.click();
-    return true;
+  return page.evaluate(() => {
+    const tab = [...document.querySelectorAll('[role="tab"]')]
+      .find(t => t.textContent.trim().startsWith('Frosting'));
+    if (tab) { tab.click(); return true; }
+    // Desktop: no tabs, every section is mounted — confirm the heading is there.
+    return [...document.querySelectorAll('label, div, span')]
+      .some(e => e.children.length === 0 && e.textContent.trim().toUpperCase() === 'FROSTING');
   });
-  await page.waitForTimeout(800);
-  return clicked;
 }
 
 /* Open tier 0's panel through the harness's own hook rather than hunting for the cake in 3D.
@@ -65,7 +77,12 @@ async function selectTier(page) {
   return okSel;
 }
 
-const rowSel = 'button.spattoo-navrow';
+/* ⚠️ NOT `button.spattoo-navrow` ANY MORE, AND THAT WAS A DELIBERATE CHANGE. Sandeep: "'cream layer'
+   option looks like a note. not like an actionable thing." NavRow is a settings-list row — white on a
+   white sheet — so the row became the card's own `neutralBtn`. The class went with it and this
+   selector matched nothing, which reads exactly like a missing feature. Matched by what it SAYS
+   instead: the label is the thing the baker is looking for, and it survives a restyle. */
+const rowSel = 'button:has-text("Cream layer")';
 
 /* ── 1 — round tier ────────────────────────────────────────────────────────────────────────── */
 console.log('\ndesigner ?shape=round — the row is there, under Style');
@@ -74,7 +91,8 @@ let roundPage;
   const page = await openDesigner('round');
   roundPage = page;
   ok(await selectTier(page), 'tier 0 selected (harness hook)');
-  ok(await openFrosting(page), 'the Frosting tab exists and is open');
+  ok(await openFrosting(page), 'the Frosting section is reachable and open');
+  await page.waitForTimeout(800);
 
   const row = await page.$(rowSel);
   ok(!!row, 'a NavRow is rendered in the tier panel');
@@ -83,9 +101,15 @@ let roundPage;
 
   /* ⚠️ ORDER MATTERS, not just presence. The whole point is that it sits with the cream decisions,
      so assert it is BELOW the Style controls rather than floating anywhere in the panel. */
+  /* ⚠️ FIND BOTH BY WHAT THEY SAY. This read `button.spattoo-navrow` (gone — see `rowSel`) and a
+     `<label>` reading STYLE (the heading is not a label element here). Two stale selectors, and
+     because a missing node returns null the pair failed as "not on screen together" — which reads as
+     a layout regression rather than a selector that no longer matches anything. */
   const order = await page.evaluate(() => {
-    const row = document.querySelector('button.spattoo-navrow');
-    const styleLabel = [...document.querySelectorAll('label')].find(l => l.textContent.trim().toUpperCase() === 'STYLE');
+    const row = [...document.querySelectorAll('button')]
+      .find(e => e.textContent.trim().startsWith('Cream layer'));
+    const styleLabel = [...document.querySelectorAll('label, div, span')]
+      .find(e => e.children.length === 0 && e.textContent.trim().toUpperCase() === 'STYLE');
     if (!row || !styleLabel) return null;
     return { rowTop: Math.round(row.getBoundingClientRect().top), styleTop: Math.round(styleLabel.getBoundingClientRect().top) };
   });
@@ -100,7 +124,8 @@ console.log('\ndesigner ?shape=rect — the row is absent');
 {
   const page = await openDesigner('rect');
   ok(await selectTier(page), 'tier 0 selected (harness hook)');
-  ok(await openFrosting(page), 'the Frosting tab is open (so absence means absence, not a hidden tab)');
+  ok(await openFrosting(page), 'the Frosting section is open (so absence means absence)');
+  await page.waitForTimeout(800);
   const text = await page.evaluate(() => document.body.innerText);
   ok(!(await page.$(rowSel)), 'no NavRow on a square tier');
   ok(!/Cream layer/i.test(text), 'and no "Cream layer" text anywhere in the panel');
@@ -128,6 +153,7 @@ console.log('\npressing the row — seeds once, then only reopens');
   await page.waitForTimeout(900);
   ok(reselected, 'back on the tier panel');
   await openFrosting(page);
+  await page.waitForTimeout(800);
   const rowAgain = await page.$(rowSel);
   ok(!!rowAgain, 'the row is still there with a band on the tier');
   const badge = rowAgain ? (await rowAgain.innerText()).replace(/\s+/g, ' ').trim() : '';

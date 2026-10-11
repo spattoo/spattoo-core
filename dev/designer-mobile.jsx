@@ -323,7 +323,11 @@ CAT_ELEMENTS.push({
      is a mask IMAGE url. The THUMBNAIL is the picture; image_url is the geometry. */
   image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
-  allowed_actions: { color: true, delete: true, resize: true },
+  /* ⚠️ `gradient: true`, because the real row has it and this one did not — so the whole
+     multi-colour editor (stops, Swirl/Vertical/Linear, and now Alternating) was unreachable in the
+     harness, and `gradEligible` quietly rendered the popup without it. A fixture that disagrees
+     with the DB row proves the wrong thing: the controls looked absent rather than broken. */
+  allowed_actions: { color: true, delete: true, resize: true, gradient: true },
   /* ⚠️ `hand_piping` IS WHAT PUTS THIS PIECE IN THE CREAM PATTERN STUDIO, and no fixture carried
      it before — so the studio's thumbnail grid could only ever render its empty state here, and
      the one thing worth looking at was unreachable. Ticked on THIS row because it is the only
@@ -385,6 +389,111 @@ CAT_ELEMENTS.push({
   allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
   placement_config: { procedural: 'rainbow' },
   default_color: '#f5a3b8', sort_order: 25,
+});
+
+/* ⚠️ A BALLOON ROW, for the same reason as the cloud and rainbow rows above: a procedural element
+ * that cannot be reached here hides every bug in it. Three were hidden exactly that way — the drag
+ * resolving against the wrong plane, a missing edit card, and no delete — and all three were found
+ * by Sandeep on a real cake rather than here, which is the harness's job and not his.
+ *
+ * `allowed_actions` carries what the real row carries (migration 127): colour and duplicate ON,
+ * which is what makes this row able to show whether the card honours them. */
+CAT_ELEMENTS.push({
+  /* ⚠️ `e31`, and `e26` is TAKEN — "Heart on a pick" already has it. A duplicate id in a fixture
+   * does not throw; it shadows, and the shadowed row is the one you are not looking at.
+   * `cat-party` because that is where migration 127 puts this element. A fixture filed under a
+   * category the real row is not in proves the wrong thing about where a customer finds it. */
+  id: 'e31', name: 'Balloon', description: 'a fondant balloon on a pick',
+  element_type_id: 'et-topper', category_id: 'cat-party',
+  image_url: CAT_THUMB('#f3b9bd'), thumbnail_url: CAT_THUMB('#f3b9bd'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  /* ⚠️ `tilt` OMITTED, because migration 127 omits it — and omitted means ALLOWED (the sticker
+     convention is `allowed_actions.tilt !== false`). The fixture said `tilt: false` while the real
+     row said nothing, so the harness and the cake disagreed about the one capability this card was
+     about to grow a control for. */
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: { procedural: 'balloon', scale: { min: 0.6, max: 1.8, step: 0.05 } },
+  default_color: '#F4EFE6', sort_order: 31,
+});
+
+/* ⚠️ A COMPOSED ELEMENT (two pieces placed as one), which nothing here could express — and the gap
+ * is exactly why the middle tier went missing from the composed card unnoticed. `__placeTestPattern`
+ * exists, but it builds a THROWAWAY pattern object that never enters `elementById`, so the card's
+ * `elementById.get(card.patternElementId)` comes back undefined and the placement tiles render as
+ * nothing at all. The harness could therefore only ever show that card with no tiles, which looks
+ * the same whether the tiles are missing, wrong, or right.
+ *
+ * A real catalogue row is what the card actually reads: any element whose `placement_config.parts`
+ * is a non-empty array places through `placePattern`. Two mirrored copies of the heart GLB, the
+ * shape unicorn eyes are. `allowed_zones` carries all three the real row carries, because a fixture
+ * narrower than the row cannot reach the row's bug. */
+CAT_ELEMENTS.push({
+  id: 'e32', name: 'Eyes (pair)', description: 'a composed element — two mirrored pieces',
+  element_type_id: 'et-topper', category_id: 'cat-party',
+  image_url: CAT_THUMB('#2b2b2b'), thumbnail_url: CAT_THUMB('#2b2b2b'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true },
+  placement_config: { parts_deletable: false, scale: { min: 0.5, max: 2, step: 0.05 },
+                      top_surface: 'stand', side: 'hug',
+                      parts: [{ element_id: 'e26', dx: -0.8, dz: 0 },
+                              { element_id: 'e26', dx: 0.8, dz: 0, mirror: true }] },
+  default_color: '#2b2b2b', sort_order: 32,
+});
+
+/* ⚠️ A PIPING ROW WHOSE DEFAULT SCALE IS NOT 1, which nothing here could express — and that is why
+ * "the size I configured does not honor in core render" could not be reproduced in the harness.
+ * `r: 0.3` with a range of 0.1–0.8 is the Rosette Sandeep authored: both numbers sit BELOW
+ * SizeDial's own 0.5 floor, so a card that does not read the row cannot even display this element's
+ * authored size, let alone start at it. Keep this row's numbers unusual for exactly that reason. */
+CAT_ELEMENTS.push({
+  id: 'e34', name: 'Rosette ring', description: 'a piping ring authored small (r 0.3, range 0.1-0.8)',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  /* ⚠️ `?realglb=1` SWAPS IN AN ASYMMETRIC MODEL, and the default one is why a bug survived.
+     `sample-rosette.glb` measures 1.0 x 0.8 x 0.9 — near-spherical, a blob stand-in. A yaw and a
+     tilt look IDENTICAL on it, so a renderer that silently ignored two of three rotation axes
+     rendered the same picture either way and no harness could tell. `sample-rosette-3d.glb` is a
+     real rosette: 59k x 65k x 36k, flat as a disc, with an unmistakable face. Sandeep, on being
+     shown a render that proved nothing: *"why a bead, you can load the rosette glb itself."* */
+  image_url: PARAMS.has('realglb') ? '/sample-rosette-3d.glb' : '/sample-rosette.glb',
+  thumbnail_url: CAT_THUMB('#dfeae0'), thumb_key: null,
+  allowed_zones: ['rim', 'board'],
+  allowed_actions: { color: true, delete: true, resize: true },
+  placement_config: { r: 0.3, scale: { min: 0.1, max: 0.8, step: 0.1 },
+                      rim: 'hug', board: 'hug', rim_ring: true, board_ring: true,
+                      /* ⚠️ NO FIXTURE CARRIED `can_coat`, so the coat — the whole rosette-cake
+                         feature, three surfaces and an ombré across them — had no harness at all
+                         and was only ever seen on Sandeep's screen. Every bug in it so far was
+                         reported rather than caught. This is the element the real one is modelled
+                         on, so it is the right one to carry the flag. */
+                      can_coat: true,
+                      /* ⚠️ `ring_finish: 'element'` is the real Rosette's setting, and it selects a
+                         COMPLETELY DIFFERENT render path (DecorationShells, the GLB's own
+                         materials) from the cream shells every other fixture here exercises. With
+                         no fixture carrying it, that path had no harness at all. */
+                      ...(PARAMS.has('elementfinish') ? { ring_finish: 'element' } : {}),
+                      ...(PARAMS.get('toprot')
+                            ? { top_rotation: PARAMS.get('toprot').split(',').map(Number) } : {}) },
+  default_color: '#F5E6C8', sort_order: 34,
+});
+
+/* ⚠️ A CREAM-STROKES ROW, and without it the band was unreachable here — which is why it went so
+ * long with no card at all. `procedural: 'cream_brush'` is the VALUE of `procedural` (the key into
+ * PROCEDURAL_TOOLS), and the tuned numbers ride in `placement_config.cream_brush`, which is what
+ * `addBrushBandFromRow` reads. Deliberately NOT the code defaults: a harness showing these proves
+ * the row is being read rather than the fallback. */
+CAT_ELEMENTS.push({
+  id: 'e33', name: 'Cream strokes', description: 'a ring of palette-knife strokes round the wall',
+  /* `et-topper`, as every other PROCEDURAL row here is — `et-cream` is the second-cream-layer type
+     and is routed to the tier panel, so a band filed under it never reached the picker. The
+     procedural KEY is what decides what gets built; the type decides where the row is shown. */
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#F6DCE2'), thumbnail_url: CAT_THUMB('#F6DCE2'), thumb_key: null,
+  allowed_zones: ['side'],
+  allowed_actions: { color: true, delete: true },
+  placement_config: { procedural: 'cream_brush',
+                      cream_brush: { colors: ['#F6DCE2', '#8EC5E8', '#F4C542'],
+                                     count: 24, overlap: 0.3, weight: 0.75, climb: 0.42, bow: -0.2 } },
+  default_color: '#F6DCE2', sort_order: 33,
 });
 
 /* ⚠️ A LUSTER DUST ROW, and the harness could not reach dust at all without it — the same gap that
@@ -719,7 +828,11 @@ const STUBS = {
    *
    * allowed_zones includes `board`; allowed_actions has resize TRUE and tilt FALSE. The panel showed
    * the opposite of both. Only a placed element can settle why. */
-  fetchElementTypes:   async () => (PARAMS.has('cream') ? [{
+  fetchElementTypes:   async () => (PARAMS.has('writing') ? [{
+    id: 'et-writing', slug: 'writing', name: 'Texts', sort_order: 0,
+    placement_rules: { zones: ['top', 'side', 'board'], per_tier: false, max_per_zone: 4, top_tier_only: false, requires_frosting: false },
+    default_allowed_actions: { move: true, color: true, style: true, delete: true, resize: true, duplicate: false },
+  }] : PARAMS.has('cream') ? [{
     id: 'et-cream', slug: 'cream_layer', name: 'Cream layer', sort_order: 0,
     placement_rules: { zones: ['side'], per_tier: true, max_per_zone: 4, top_tier_only: false, requires_frosting: true },
     default_allowed_actions: { move: false, color: true, style: false, delete: true, resize: false, duplicate: false },
@@ -728,10 +841,14 @@ const STUBS = {
     placement_rules: { zones: ['top_surface'], per_tier: false, max_per_zone: 1, top_tier_only: true, requires_frosting: false },
     default_allowed_actions: { move: true, color: true, style: false, delete: true, resize: true, fontSize: false, duplicate: false },
   }] : []),
-  fetchElementCategories: async () => (PARAMS.has('cream')
+  fetchElementCategories: async () => (PARAMS.has('writing')
+    ? [{ id: 'cat-messages', name: 'Messages', slug: 'messages', sort_order: 0, element_type_id: 'et-writing' }]
+    : PARAMS.has('cream')
     ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
     : (PARAMS.has('football') || PARAMS.has('catalog'))
-    ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' }] : []),
+    ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' },
+       // The balloon's real home (migration 127), so the harness reaches it the way a customer does.
+       { id: 'cat-party', name: 'Party & shapes', slug: 'party-shapes', sort_order: 1, element_type_id: 'et-topper' }] : []),
   /* ⚠️ `?cream=1` — THE CREAM LAYER ELEMENT, because an empty catalogue hides a feature rather than
    * breaking it, and that is the worse failure. The tier panel's "Cream layer" row is guarded on
    * `creamElement` (found by scanning loaded elements for `placement_config.second_cream`), so with
@@ -744,7 +861,21 @@ const STUBS = {
    * lives only in the dev database (no migration or API source defines it). `addCreamToTier` seeds
    * `lift`/`noise`/`height`/`fill_side` and the card reads `height_range`; anything absent falls back
    * to SECOND_CREAM_DEFAULTS, which is the point of seeding only what the admin authored. */
-  fetchElements:       async () => (PARAMS.has('cream') ? [{
+  /* ⚠️ `?writing=1` — THE TEXTS CARD, which nothing here could open. It is a catalogue element
+     (`placement_config.procedural === 'writing'`), so with `fetchElements` returning [] the whole
+     card — the Look toggle, the fonts, the finishes, CAPITAL LETTERS — was unreachable in the one
+     harness that mounts the real designer. `dev/acrylic-text.jsx` mounts the RENDERER, which is a
+     different half: it cannot show a control that is missing from the card. Both halves matter, and
+     the capital-letters bug lived in the seam between them. */
+  fetchElements:       async () => (PARAMS.has('writing') ? [{
+    id: 'writing-el-1', name: 'Texts',
+    image_url: null, thumbnail_url: null, thumb_key: null,
+    element_type_id: 'et-writing', category_id: 'cat-messages',
+    allowed_zones: ['top', 'side', 'board'],
+    allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false },
+    placement_config: { procedural: 'writing', scale: { min: 0.2, max: 1, step: 0.05 } },
+    default_color: '#ffffff', sort_order: 0,
+  }] : PARAMS.has('cream') ? [{
     id: 'cream-el-1', name: 'Cream layer',
     image_url: null, thumbnail_url: null, thumb_key: null,
     element_type_id: 'et-cream', category_id: 'cat-finishes',
@@ -767,7 +898,25 @@ const STUBS = {
                         top_surface: 'stand', single_per_slot: true },
     default_color: '#F0DEB8', sort_order: 0,
   }] : []),
-  fetchTemplates:      async () => ([]),
+  /* ⚠️ AN EMPTY LIST MADE THE CATALOGUE FLYOUT UNOPENABLE TO LOOK AT. It returned `[]`, so the one
+     surface this harness is for — the real designer's chrome — had a Templates panel with nothing
+     in it, and the hover preview behind it could not be reached at all. Found while fixing that
+     preview's caption, which had survived two rounds of "don't show the name" precisely because
+     nothing could render it here. Real `captureThumbnailBlob` output, shared with dev/facets.jsx.
+     ⚠️ TWO ARE CALLED "Football" ON PURPOSE — that duplication is the whole argument for dropping
+     the name, so a fixture where every name is distinct would hide what the surface has to prove. */
+  fetchTemplates:      async () => ([
+    { id: 'tpl1', name: 'Vintage cake', tier_count: 1, source: 'mine',
+      thumbnail_url: '/thumbs/cake1.webp' },
+    { id: 'tpl2', name: 'Football',     tier_count: 2, source: 'mine',
+      thumbnail_url: '/thumbs/cake2.webp' },
+    { id: 'tpl3', name: 'Football',     tier_count: 1, source: 'global', offering: 'premium',
+      thumbnail_url: '/thumbs/cake3.webp' },
+    { id: 'tpl4', name: 'Butterfly',    tier_count: 3, source: 'global',
+      thumbnail_url: '/thumbs/cake4.webp' },
+    { id: 'tpl5', name: 'Unicorn',      tier_count: 1, source: 'global',
+      thumbnail_url: '/thumbs/cake5.webp' },
+  ]),
   fetchCakeShapes:     async () => ([]),
   fetchMaterials:      async () => ([]),
   fetchTextures:       async () => ([]),
@@ -894,15 +1043,80 @@ const reloadDesign = PARAMS.has('reload')
  * colour wheel's dodge, the collapse handle) could not be looked at. A writing is the cheapest thing
  * that populates it: no element row, no asset, no catalogue.
  */
+/* ── A sticker already ON the wall, so its CARD can be opened ────────────────────────────────────
+ *
+ * `?sidesticker=1`. The decoration card's controls are computed from the instance's `zone`, and a
+ * side sticker was unreachable here: placing one means opening Decorations, loading a catalogue and
+ * aiming at a spinning 3D wall. So the one card a customer edits a decoration from could not be
+ * looked at, which is how a control nobody wanted ("Depth", a hand-nudge from before the seat was
+ * measured) sat on it unnoticed. Seeded in the design instead, the way a reloaded order arrives.
+ *
+ * ⚠️ `imageUrl` IS A PICTURE, NOT A GLB — the reported case is "image sticker elements", and the two
+ * take different branches in the renderer (`isGlb`). A .glb here would prove the wrong one. */
+const sideStickerDesign = PARAMS.has('sidesticker') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: [{
+    id: 'sk1', elementId: 'img-el-1', name: 'Butterfly',
+    /* `?sidesticker=top` puts the same picture on the TOP, because Spin and Depth shared one
+       companion slot beside Size — so removing Depth has to be checked against Spin still filling
+       it, not only against Depth being gone. */
+    imageUrl: '/thumbs/cake1.webp',
+    zone: PARAMS.get('sidesticker') === 'top' ? 'top_surface' : 'side', tierIndex: 0,
+    theta: 0, y: 0.7, x: 0, z: 0, size: 1, radialOffset: 0, rotation: 0,
+    allowedActions: { move: true, color: false, delete: true, resize: true, duplicate: true },
+  }],
+} : null;
+
+/* ── A TWO-TIER cake with a rainbow already on it ────────────────────────────────────────────────
+ *
+ * `?rainbow2=1`. A rainbow is a TIER's — which tier is decided when it is placed — and the bug
+ * reported here was that nothing could change it: "for a 2 tier cake, i cant place the rainbow on
+ * the below tier sidewise." Reaching that state by hand means a catalogue, the Decorations drawer
+ * and a tap on a 3D wall; seeded in the design it is one URL, and the second tier is the whole point
+ * (on a one-tier cake the tier picker correctly hides itself and proves nothing). */
+const rainbow2Design = PARAMS.has('rainbow2') ? {
+  tiers: [
+    { color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' },
+    { color: '#FFFFFF', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
+      rainbows: [{ id: 'rb1', surface: 'side', footLeft: 'board', footRight: 'board',
+                   spring: 0.18, theta: -0.09, proud: 0.02, scale: 0.75, flatten: 0,
+                   bands: 6, innerRadius: 0.30, thickness: 0.12,
+                   colors: ['#E8A0B0', '#F2C79A', '#F5E6A3', '#A8D5A2', '#9EC5E8', '#C3AEE0'] }] },
+  ],
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
     id: 'w1', style: 'acrylic', text: 'Happy Birthday', font: 'parisienne',
-    surface: 'side', sideY: 1.0, fit: 0.9, acrylicFinish: 'gold', color: '#ffffff',
+    /* ⚠️ `?stack=top` PUTS THE MESSAGE ON THE TOP, which is the case the thumbnail angle exists for:
+       "sometimes cake's interesting decorations are on the top (hugging) or a message written on the
+       top. that needs to be highlighted. not from the front which capturrs size." A side message is
+       visible from the shipped front angle, so a run using one cannot tell a fixed camera from a
+       working one. */
+    surface: PARAMS.get('stack') === 'top' ? 'top' : 'side',
+    sideY: 1.0, fit: 0.9, acrylicFinish: 'gold', color: '#ffffff',
   }],
 } : null;
 
 const STRIPE_KEY = PARAMS.get('stripes');
+/* ── A 2-tier cake whose BOTTOM tier is striped, with FEWER stripes than colours ─────────────────
+ *
+ * `?stripes2=1`. The reported bug needed all three: two tiers (so the striped one is not the only
+ * one), the stripes on the BOTTOM (so a tier-index mix-up would show), and — the actual cause — a
+ * `count` BELOW the palette length, which is what `expandPalette` truncates. With count ≥ colours
+ * every swatch renders and the picker looks perfectly fine. */
+const stripes2Design = PARAMS.has('stripes2') ? {
+  tiers: [
+    { color: '#F1EEDC', radius: 1.4, height: 1.45, shape: 'round',
+      frostingType: 'buttercream', frostingStyle: 'smooth',
+      stripes: { palette: ['#F5E6A3', '#F2B48A', '#E8A0B0', '#7FD4C1', '#C0392B'],
+                 count: 3, softness: 1, wobble: 0.15 } },
+    { color: '#F3E3E8', radius: 1.0, height: 1.2, shape: 'round',
+      frostingType: 'buttercream', frostingStyle: 'smooth' },
+  ],
+} : null;
+
 const stripedDesign = STRIPE_KEY ? {
   tiers: [{
     color: '#F1EEDC', radius: 1.2, height: 1.45, shape: 'round',
@@ -932,10 +1146,21 @@ const styledDesign = STYLE_KEY ? {
        note span has no overflow guard. Hardcoded to buttercream, this harness could only ever show
        the shortest-but-one value, so the one case that can actually spill was untestable. */
     frostingType: PARAMS.get('frosting') || 'buttercream', frostingStyle: STYLE_KEY,
+    /* ⚠️ `?creamband=1` — A BAND ALREADY ON THE CAKE, WITH THE CATALOGUE NEVER FETCHED. That is the
+       state a template restores to, and it is the one the band-click fix is about: `creamElement` is
+       found by scanning LOADED elements, and a saved design draws its bands without loading any. A
+       run that seeds the band through the tier card first has already fetched the catalogue, so it
+       cannot reach the reported case at all — it would pass while a baker's first tap did nothing.
+       The shape mirrors what `addCreamToTier` writes; anything absent falls back to
+       SECOND_CREAM_DEFAULTS, exactly as a real saved band does. */
+    ...(PARAMS.has('creamband') ? {
+      creamLayers: [{ layerId: 'cl-1', color: '#D98BA6', fillSide: 'below',
+                      height: 0.5, lift: 0.04, noise: 0.05, seed: 7, order: 0 }],
+    } : null),
   }],
 } : null;
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

@@ -73,3 +73,113 @@ describe('arrangements offered', () => {
     expect(pipingAllowedArrangements(BOTH, true).length).toBe(1);
   });
 });
+
+/* ── The two branches answer the SAME QUESTIONS ──────────────────────────────────────────────────
+ *
+ * `pipingPlacementFromConfig` is one function with two returns — rim and board — each reading its
+ * own `top_*` / `bottom_*` keys. Twenty-odd fields, written out twice, and nothing checked that the
+ * two lists matched.
+ *
+ * ⚠️ THEY DID NOT. The board branch returned everything except `finish`, so `bottom_ring_finish`
+ * was resolved and then thrown away: a rosette authored `ring_finish: "element"` kept its GLB's own
+ * materials on the rim and fell back to the recoloured cream path on the board. One element, one
+ * hex, two colours on the same cake, and no error anywhere. `...drip` was missing too.
+ *
+ * Comparing KEY SETS rather than values is the point. The values legitimately differ per zone —
+ * that is what the zones are for — but a field present on one side and absent on the other is
+ * always a bug, and it is the only shape this fault can take.
+ */
+describe('rim and board return the same fields', () => {
+  const FULL = {
+    top_ring_finish: 'element', bottom_ring_finish: 'element',
+    top_rotation: [1, 2, 3], bottom_rotation: [4, 5, 6],
+    top_flip: false, bottom_flip: true,
+    top_radial_offset: -0.06, bottom_radial_offset: 0.2,
+    top_y_offset: -0.02, bottom_y_offset: 0.09,
+    top_spacing: 1, bottom_spacing: 1,
+    top_arrangement: 'ring', bottom_arrangement: 'ring',
+  };
+
+  /* ⚠️ FOUR FIELDS ARE DELIBERATELY NAMED PER ZONE, and they are listed rather than the comparison
+     being loosened. The renderer reads `flipTop`/`rotation` on a rim and `flipBottom`/
+     `bottomRotation` on a board, and piping-borders.md already records the hazard that creates:
+     "reading `.rotation` off the bottom gives undefined, which a `??` fallback then quietly
+     replaces with the rim figure". Naming them keeps the test able to catch a FORGOTTEN field —
+     which is the fault that actually happened — while permitting the split that is on purpose. */
+  /* ⚠️ `sideRotation` IS A FIFTH, AND IT IS BOTTOM-ONLY RATHER THAN RENAMED. The four above are the
+     same concept under two names; this one has no rim counterpart at all, because there is no wall
+     above the rim for a pen to draw on. It is listed here — not excluded by loosening the filter —
+     for the reason this block already gives: the test must stay able to catch a field someone
+     FORGOT, and every exception that is spelled out keeps that power while an exception that is
+     inferred throws it away. */
+  const PER_ZONE_NAMES = ['flipTop', 'flipBottom', 'rotation', 'bottomRotation', 'sideRotation'];
+
+  /* ⚠️ A DRIP IS A RIM FEATURE. The board states `drip: false` and carries no drip SETTINGS,
+     because it has none to carry — so its sub-fields are a real asymmetry rather than an omission.
+     `drip` itself is compared: both zones must say whether they have one, and the board's silence
+     on that was part of the bug this suite exists for. */
+  const isDripSetting = k => k.startsWith('drip') && k !== 'drip';
+
+  it('neither branch carries a field the other lacks', () => {
+    const keys = isTop => Object.keys(pipingPlacementFromConfig(FULL, isTop))
+      .filter(k => !PER_ZONE_NAMES.includes(k) && !isDripSetting(k)).sort();
+    const rim = keys(true), board = keys(false);
+    const onlyRim = rim.filter(k => !board.includes(k));
+    const onlyBoard = board.filter(k => !rim.includes(k));
+    expect({ onlyRim, onlyBoard }).toEqual({ onlyRim: [], onlyBoard: [] });
+  });
+
+  it('both zones DO state a flip and a rotation, under their own names', () => {
+    const rim = pipingPlacementFromConfig(FULL, true);
+    const board = pipingPlacementFromConfig(FULL, false);
+    expect(rim.flipTop).toBe(false);
+    expect(board.flipBottom).toBe(true);
+    expect(rim.rotation).toEqual([1, 2, 3]);
+    expect(board.bottomRotation).toEqual([4, 5, 6]);
+  });
+
+  /* ⚠️ THE ONE THAT ACTUALLY BIT. Named separately so a failure says what broke rather than
+     printing a key diff somebody has to interpret. */
+  it('the board honours bottom_ring_finish', () => {
+    expect(pipingPlacementFromConfig(FULL, false).finish).toBe('element');
+    expect(pipingPlacementFromConfig(FULL, true).finish).toBe('element');
+  });
+
+  it('falls back to cream on both zones when nothing is authored', () => {
+    expect(pipingPlacementFromConfig({}, false).finish).toBe('cream');
+    expect(pipingPlacementFromConfig({}, true).finish).toBe('cream');
+  });
+
+  it('a shared ring_finish reaches both zones', () => {
+    const pc = { ring_finish: 'element' };
+    expect(pipingPlacementFromConfig(pc, true).finish).toBe('element');
+    expect(pipingPlacementFromConfig(pc, false).finish).toBe('element');
+  });
+});
+
+/* ── The wall gets its own attitude ──────────────────────────────────────────────────────────────
+ *
+ * A piping RING has two zones, rim and board, and a side border is a board ring lifted up the wall
+ * — both face outward off the wall, so one rotation serves both honestly. The PEN is a third case:
+ * on a wall it aligns the piece's up-axis to the surface normal, a different frame from the ring's.
+ * `stampRotationSide` read the BOARD's figure, so a rosette authored [0,0,0] for its board border
+ * came out back-on when hand-piped. Sandeep: *"it should be 90 degrees different from board"*.
+ */
+describe('side_rotation', () => {
+  it('is published for the bottom surface', () => {
+    const p = pipingPlacementFromConfig({ side_rotation: [90, 0, 0], bottom_rotation: [0, 0, 0] }, false);
+    expect(p.sideRotation).toEqual([90, 0, 0]);
+    expect(p.bottomRotation).toEqual([0, 0, 0]);   // the board is untouched by it
+  });
+
+  it('is absent when not authored, so the read site can fall back to the board', () => {
+    const p = pipingPlacementFromConfig({ bottom_rotation: [-89, -174, -180] }, false);
+    expect(p.sideRotation).toBeNull();
+    expect(p.bottomRotation).toEqual([-89, -174, -180]);
+  });
+
+  it('is a BOTTOM-surface key — the rim branch does not carry it', () => {
+    const p = pipingPlacementFromConfig({ side_rotation: [90, 0, 0] }, true);
+    expect(p.sideRotation).toBeUndefined();
+  });
+});

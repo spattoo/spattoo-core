@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -327,6 +327,52 @@ describe('clampSizeValue — a handle drag can never reach a size the dial refus
   it('never returns a float-noise value like 1.0500000000000003', () => {
     const v = clampSizeValue(1.0499999, range);
     expect(Number.isInteger(v * 10000)).toBe(true);
+  });
+});
+
+describe('hitVolume — what you can grab is what you can SEE, from every angle (#10 law 4)', () => {
+  const S = 0.28;
+  // The real strawberry that reported this, measured off its GLB: 1.745 × 1.998 × 1.503, normalised
+  // by StickerModel so the longest axis is STICKER_SIZE. Deep, and so grabbable from any side.
+  const strawberry = { w: 0.2445, h: 0.28, d: 0.2106, cy: 0, cz: 0 };
+  // The spiral candle from the same cake: 0.147 × 2.000 × 0.088. As a plane it is a 7%-of-height
+  // ribbon with no grabbable angle at all; as a box it is a thin rod you can still hit from anywhere.
+  const candle = { w: 0.0206, h: 0.28, d: 0.0123, cy: 0, cz: 0 };
+
+  it('gives a measured 3D model a BOX of its own bounds, not a plane', () => {
+    const v = hitVolume({ box: strawberry, width: S, height: S, centerY: 0 });
+    expect(v.kind).toBe('box');
+    expect(v).toMatchObject({ width: 0.2445, height: 0.28, depth: 0.2106 });
+  });
+
+  it('gives the needle-thin candle a box too — a plane leaves it ungrabbable from the side', () => {
+    expect(hitVolume({ box: candle, width: S, height: S }).kind).toBe('box');
+  });
+
+  it('centres the box on the model\'s own measured centre, so bend/proud seat come for free', () => {
+    const proud = { w: 0.2, h: 0.2, d: 0.1, cy: 0.03, cz: 0.05 };
+    expect(hitVolume({ box: proud, width: S, height: S }).position).toEqual([0, 0.03, 0.05]);
+  });
+
+  it('keeps the PLANE for flat artwork — a 2D decal has no depth to wrap', () => {
+    const v = hitVolume({ box: null, width: S, height: S, centerY: -0.02 });
+    expect(v.kind).toBe('plane');
+    expect(v).toMatchObject({ width: S, height: S, depth: 0 });
+    expect(v.position[1]).toBe(-0.02);
+    expect(v.position[2]).toBeGreaterThan(0);   // sits clear of the artwork (z-fight guard)
+  });
+
+  it('keeps the plane for a model too thin to have measured depth', () => {
+    expect(hitVolume({ box: { w: 0.2, h: 0.2, d: 0 }, width: S, height: S }).kind).toBe('plane');
+    expect(hitVolume({ box: { w: 0.2, h: 0.2, d: HIT_SOLID_MIN_DEPTH }, width: S, height: S }).kind).toBe('plane');
+  });
+
+  /* ⚠️ THE CUE AND THE TARGET SWITCH ON ONE NUMBER. SelectionBox draws a 3D box past
+     HIT_SOLID_MIN_DEPTH and a flat rect below it; if these ever diverge the border promises an edge
+     the pointer cannot reach, which is the exact failure this whole change exists to remove. */
+  it('switches to a box at the same depth SelectionBox switches its cue', () => {
+    const justOver = HIT_SOLID_MIN_DEPTH * 1.0001;
+    expect(hitVolume({ box: { w: 0.2, h: 0.2, d: justOver }, width: S, height: S }).kind).toBe('box');
   });
 });
 

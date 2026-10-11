@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildCreamWriting } from '../geometry/creamText.js';
-import { writingPlaceAt, writingSurface } from '../geometry/surface.js';
+import { writingPlaceAt, writingSurface, writingText } from '../geometry/surface.js';
 import { planeHit, cylinderHit } from '../utils/raycasting.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { creamMaterialProps, goldMaterialProps, silverMaterialProps, metallicCreamProps, GOLD_FINISH_COLOR, SILVER_FINISH_COLOR, PIPING_SOFTNESS_DEFAULT } from './CakeTier.jsx';
@@ -32,7 +32,7 @@ export default function CreamWriting({
 
   const geo = useMemo(() => {
     if (!writing?.text?.trim()) return null;
-    const text = writing.uppercase ? writing.text.toUpperCase() : writing.text;
+    const text = writingText(writing);   // shared with AcrylicWriting — see the note on writingText
     return buildCreamWriting({
       text, font: writing.font, thickness, maxW, maxH,
       lineGap: writing.lineSpacing ?? 1.4, letterSpacing: writing.letterSpacing ?? 0,

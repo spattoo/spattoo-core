@@ -33,14 +33,24 @@ describe('the tile', () => {
     expect(out).not.toContain('>Cake 1<');
   });
 
-  /* ⚠️ THE SQUARE RULE. `height="180"` is a presentational hint that BEATS `aspect-ratio` unless an
-     author height is set, which measured 171x180 on a tile that was square in the stylesheet. Both
-     the attribute (reserves the box, no reflow as the grid fills) and the style must be present. */
-  it('keeps height:auto beside the 180 attribute, or tiles are not square', () => {
+  /* ⚠️ THE TILE IS 3:2 BECAUSE A STORED THUMBNAIL IS. This asserted a SQUARE, on the strength of a
+     comment claiming the stored blobs were square — they are not. `captureThumbnailBlob` crops to
+     the cake's alpha bounds and grows the rect to `THUMB_ASPECT` (3/2), measured at 1.50 across six
+     rendered cakes and 551x367 on a real blob, so a square box spent a third of every tile on empty
+     bands. Reported as "there is so much dead space on the desptop catalogue view as well".
+
+     ⚠️ THE ATTRIBUTE AND THE STYLE BOTH MATTER, and that half of the old note was right. `height`
+     is a presentational hint that BEATS `aspect-ratio` unless an author height is set, so
+     `height:auto` has to stay; and the attribute pair is what reserves the box before the picture
+     arrives, so leaving it at 180x180 would reserve a third more height than the tile ends up with
+     and every lazy row would jump as it loaded. */
+  it('is 3:2 in both the attribute and the style, with height:auto so the style wins', () => {
     const out = html({ templates: [T(1)] });
-    expect(out).toContain('height="180"');
+    expect(out).toContain('height="120"');
+    expect(out).toContain('width="180"');
     expect(out).toContain('height:auto');
-    expect(out).toContain('aspect-ratio:1 / 1');
+    expect(out).toContain('aspect-ratio:3 / 2');
+    expect(out).not.toContain('aspect-ratio:1 / 1');
   });
 
   it('reserves the tile with lazy loading, so off-screen pictures are never fetched', () => {
@@ -52,7 +62,7 @@ describe('the tile', () => {
   it('falls back to a neutral placeholder when there is no thumbnail', () => {
     const out = html({ templates: [{ id: 'x', name: 'No picture' }] });
     expect(out).not.toContain('<img');
-    expect(out).toContain('aspect-ratio:1 / 1');   // the placeholder keeps the grid square
+    expect(out).toContain('aspect-ratio:3 / 2');   // the placeholder holds the same box as a picture
   });
 
   it('reads either thumbnail field, because the list route and the full row differ', () => {

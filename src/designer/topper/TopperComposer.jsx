@@ -936,7 +936,20 @@ export default function TopperComposer({
   useEffect(() => {
     if (!openFrom) return;
     const p = openFrom.payload ?? {};
-    setObjects(Array.isArray(p.objects) ? p.objects : []);
+    const loaded = Array.isArray(p.objects) ? p.objects : [];
+    setObjects(loaded);
+    /* ⚠️ SELECTED ON ARRIVAL, BECAUSE NOTHING ELSE SAYS THE PIECE CAN BE TOUCHED. `add()` has always
+     * selected what it just made; this path — a preset, a kept decoration, a template coming back
+     * through `editWith` — set the objects and left the canvas with no selection at all. So the
+     * studio opened on a finished-looking "10" with an empty properties panel beside it, and the
+     * only way to discover it was editable was to guess that it was and click it. Sandeep: *"by
+     * default this 10 number is loading. however there is no easy way to edit it."*
+     *
+     * Selecting EVERY loaded piece rather than the first: on a one-piece preset (which is most of
+     * them) that is the piece, and `selectedId` resolves, so the properties panel opens with it.
+     * On a two-word topper it still answers the question the border is there to answer — these are
+     * things you can take hold of — where picking one of them would be arbitrary. */
+    setSelectedIds(loaded.map(o => o.id).filter(id => id != null));
     setName(openFrom.name ?? '');
     setStick(p.stick?.on ? { on: true, bury: p.stick.bury ?? 0.5 } : { on: false, bury: 0.5 });
     nextId.current = (p.objects ?? []).reduce((m, o) => Math.max(m, o.id ?? 0), 0) + 1;

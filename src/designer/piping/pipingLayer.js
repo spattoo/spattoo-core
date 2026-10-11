@@ -49,6 +49,20 @@ export function pipingDefaultArrangement(pc, isTop) {
 
 // Map an element's placement_config to the piping fields a ring consumes. Rim (top) and board
 // (bottom) are symmetric: top_* mirrors bottom_*. Returned keys match TopPipingRing/BottomPipingRing.
+/* ── Can this element coat the whole cake? ───────────────────────────────────────────────────────
+ *
+ * Authored per element in Manage Elements. ⚠️ NOT A ZONE AND NOT AN ARRANGEMENT, for the same
+ * reason `hand_piping` is neither: the `*_arrangements_allowed` lists are per-zone, and "can you
+ * coat the board?" is not a real question — a coat is the whole cake or it is nothing.
+ *
+ * ⚠️ ABSENT MEANS NO. A coat tiles, so the piece has to interlock with its own neighbours on every
+ * side; a rosette does, a wrap band is one pre-formed ring and a drip is a procedural curtain.
+ * Most piping cannot do it, so an element nobody has calibrated for it does not get it by default.
+ * Same safe direction as every other gate in this file. */
+export function pipingCanCoat(placementConfig) {
+  return (placementConfig ?? {}).can_coat === true;
+}
+
 export function pipingPlacementFromConfig(placementConfig, isTop) {
   const pc = placementConfig ?? {};
   const arrangement = pipingDefaultArrangement(pc, isTop);
@@ -101,6 +115,9 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
     return {
       flipTop:           pc.top_flip          ?? false,
       rotation:          pc.top_rotation       ?? null,
+      // The radial ceiling this element authorised. Shared by both zones: it describes the MESH's
+      // room to grow, not a per-surface placement, so there is no top_/bottom_ pair.
+      maxDepth:          pc.max_depth          ?? null,
       extraRadialOffset: pc.top_radial_offset  ?? null,
       yOffset:           pc.top_y_offset        ?? null,
       spacing:           pc.top_spacing         ?? null,
@@ -120,6 +137,20 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
   return {
     flipBottom:        pc.bottom_flip          ?? true,
     bottomRotation:    pc.bottom_rotation      ?? null,
+    /* ⚠️ THE WALL IS NOT THE BOARD, AND IT WAS BORROWING THE BOARD'S ATTITUDE. A piping RING has
+       only two zones (rim, board) and a side border is a board ring lifted up the wall — both face
+       outward off the wall, so one rotation legitimately serves both. The PEN is a third case: on a
+       wall it aligns the piece's up-axis to the SURFACE NORMAL, so "up" points out of the cake,
+       which is a different frame from the ring's "upright in world, yawed outward". The same
+       numbers mean different things in the two, and `stampRotationSide` was reading the board's.
+       Rose Swirl's [-89,-174,-180] happens to satisfy both; a rosette authored [0,0,0] for the
+       board renders back-on when hand-piped. Sandeep: *"if i want to hand pipe on side, its not
+       same as board. it should be 90 degrees different from board."*
+       Absent falls back to the board figure, so every element authored before this renders exactly
+       as it did — the fallback lives at the read site, which is the only place that knows the pen
+       is asking. */
+    sideRotation:      pc.side_rotation        ?? null,
+    maxDepth:          pc.max_depth            ?? null,   // see the rim branch
     extraRadialOffset: pc.bottom_radial_offset ?? null,
     yOffset:           pc.bottom_y_offset      ?? null,
     spacing:           pc.bottom_spacing       ?? null,
@@ -128,9 +159,21 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
     swagDepth:         pc.bottom_swag_depth    ?? null,
     swagTilt:          pc.bottom_swag_tilt     ?? null,
     arrangement,
+    /* ⚠️ `finish` WAS MISSING HERE, and the board quietly ignored `bottom_ring_finish` for its whole
+       life. The rim branch returned it; this one returned everything else. So a rosette authored
+       `ring_finish: "element"` on both zones kept its GLB's own materials on the RIM and fell back
+       to the cream path on the BOARD — where the shells are recoloured to `default_color`. Same
+       element, same hex, two colours on one cake. Sandeep: *"why was the color also different for
+       top?"* — the rim was the one behaving; the board was dropping its config.
+       ⚠️ `...drip` too. A drip is rim-only (`const drip` above resolves to `{ drip: false }` here),
+       but the spread was omitted, so a board layer carried `drip: undefined` rather than a stated
+       false. Falsy either way, which is exactly why it went unnoticed — and why the test below
+       compares the two branches' KEY SETS rather than their behaviour. */
+    finish,
     ...alt,
     ...bend,
     ...wrap,
+    ...drip,
     ...seed,
   };
 }
@@ -140,6 +183,21 @@ export function pipingPlacementFromConfig(placementConfig, isTop) {
 // consumer passes el.image_url), but the layer object SHAPE lives here so it's authored once.
 // `isTop` → rim (topPipings) vs board (bottomPipings). Callers may layer extras (userRadialOffset,
 // yAdjustable…) on top of the returned base.
+/* The size a ring STARTS at, off its own row. INVARIANTS line 23: "`placement_config.r` — default
+ * scale (never hard-coded; never force a value)."
+ *
+ * ⚠️ IT LIVES HERE, BESIDE THE LAYER SHAPE, because this module is where a piping layer is authored
+ * and three of the four places that seeded `size` were literal 1s elsewhere. One lookup, imported
+ * by the card, or the next seed added is a fifth copy.
+ *
+ * The fallback is 1, not 0.5: that is what a ring with no authored `r` has always rendered at, and
+ * changing it would resize every ring on every saved cake. Honouring a number an admin typed is a
+ * different decision from redefining what "unset" means.
+ */
+export function pipingScaleFor(el) {
+  return el?.placement_config?.r ?? 1;
+}
+
 export function makePipingLayer(el, { isTop, glbUrl, altGlbUrl = null, color, cardId } = {}) {
   return {
     id: el.id,
@@ -147,7 +205,10 @@ export function makePipingLayer(el, { isTop, glbUrl, altGlbUrl = null, color, ca
     glbUrl: glbUrl ?? el.image_url ?? null,
     name: el.name,
     color: color ?? el.default_color ?? '#f5e6c8',
-    size: 1,
+    // ⚠️ NOT `1`. This factory is the FOURTH place that seeded a ring's size, and it was the one
+    // left behind when the other three were fixed — found by Sandeep asking whether any code drove
+    // piping size from config at all. The answer was no: four literals and a dial with no bounds.
+    size: pipingScaleFor(el),
     ...pipingPlacementFromConfig(el.placement_config, isTop),
     ...(altGlbUrl ? { altGlbUrl } : {}),
   };

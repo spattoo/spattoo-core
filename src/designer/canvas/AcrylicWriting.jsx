@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
-import { writingPlaceAt, writingSurface } from '../geometry/surface.js';
+import { writingPlaceAt, writingSurface, writingText } from '../geometry/surface.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
 import { acrylicCfg, acrylicFitAspect } from '../geometry/acrylicConfig.js';
 import AcrylicWord from './AcrylicWord.jsx';
@@ -60,7 +60,14 @@ export default function AcrylicWriting({
    * Legs and the base bar follow `standing` below, so this also removes them.
    *
    * Declared ABOVE the drag hook because the clamp needs it — see `reach`. */
-  const pose = surface === 'side' ? 'flat' : surface === 'board' ? 'lay' : 'stand';
+  /* ⚠️ AND ON THE TOP, FONDANT GETS A SAY. Acrylic has none — a perspex sheet lying flat on a cake
+   * top is not a thing anybody makes — but fondant letters are laid on the icing at least as often
+   * as they are stood up, so the message carries `topPose` and 'hug' resolves to the SAME `lay` the
+   * board already uses. Sandeep: "on top, fondant letters can hug or stand." Nothing new in the
+   * builder: `lay` is lying face-up on a horizontal surface, which is exactly what hugging the top
+   * is, and routing it anywhere else would have been a fourth pose for a pose we already have. */
+  const topPose = writing?.style === 'fondant' && writing?.topPose !== 'stand' ? 'lay' : 'stand';
+  const pose = surface === 'side' ? 'flat' : surface === 'board' ? 'lay' : topPose;
   const standing = pose === 'stand';
 
   const { grabProps } = useDragPlacement({
@@ -126,12 +133,19 @@ export default function AcrylicWriting({
    * because the render before it had returned early and run one hook fewer. That is what
    * `check:hooks` exists for, and running a different gate instead of that one is how it shipped. */
   const cfg = useMemo(() => ({
-    ...acrylicCfg(writing, { standing }),
+    /* The MEDIUM decides what the word is assembled with — see `CUT_ASSEMBLY`. Fondant is cut letter
+       by letter, so it gets no bridge stems, no baseline bar and no prongs. */
+    ...acrylicCfg(writing, { standing, medium: writing.style === 'fondant' ? 'fondant' : 'acrylic' }),
     fitAspect: acrylicFitAspect(writing, maxW, mmPerUnit),
   }), [
     writing.font, writing.tracking, writing.stroke, writing.weight, writing.lineGap,
     writing.maxLines, writing.bridge, writing.sheet, writing.bar, writing.barRatio,
     writing.legs, writing.legLen, writing.bury, writing.minDetail,
+    /* ⚠️ `style` IS A DEPENDENCY NOW, and leaving it out is the quiet half of this bug: the cfg
+       decides the bar, the bridge and the legs off the medium, so switching Look on a message that
+       is already on screen would keep the acrylic assembly until something else happened to
+       invalidate the memo. */
+    writing.style,
     standing, maxW, mmPerUnit,
   ]);
 
@@ -144,8 +158,13 @@ export default function AcrylicWriting({
   // cannot be sized from the span. `grabH` until the first build lands.
   const standH = Math.max(rise ?? 0, grabH);
 
+  /* ⚠️ `writingText`, NOT `writing.text` — CAPITAL LETTERS is applied by the RENDERER (the textarea
+     only shows it as CSS), and this one used to skip it, so the toggle worked on piped cream and did
+     nothing on acrylic. A JS comment, not `{/* … *\/}`: this body is a parenthesised expression, not
+     JSX children, and a JSX comment here stops the file parsing. */
   const word = (
-    <AcrylicWord font={font} text={writing.text} cfg={cfg} finish={finish}
+    <AcrylicWord font={font} text={writingText(writing)} cfg={cfg} finish={finish}
+                 medium={writing.style === 'fondant' ? 'fondant' : 'acrylic'} color={writing.color}
                  pose={pose} span={maxW} mount={{}} onRise={setRise} />
   );
 

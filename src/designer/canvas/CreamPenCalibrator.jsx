@@ -1,6 +1,6 @@
 import { Suspense, useMemo, useRef, useEffect } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { SafeEnvironment } from './TextureErrorBoundary.jsx';
+import { SafeEnvironment } from './safeEnvironment.jsx';
 import { envProps } from './envMap.js';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';

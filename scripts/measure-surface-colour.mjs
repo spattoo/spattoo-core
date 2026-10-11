@@ -20,6 +20,9 @@ const SURFACES = {
   grass:  { on: 'grass=1',  key: 'grasscolor' },
   cloud:  { on: 'cloud=1',  key: 'cloudcolor' },
   rainbow:{ on: 'rainbow=1', key: 'rainbowcolor' },
+  /* A balloon floats ABOVE the lid on a pick — a different amount of light from a cloud lying on
+     the cake, which is why it cannot borrow the cloud's number. */
+  balloon:{ on: 'balloon=1', key: 'ballooncolor' },
   drip:   { on: 'drip=1',   key: 'dripcolor' },
   /* The SAME drip through the multi-chocolate path — tint white, vertex colours carrying the answer.
      Both stops are the asked colour, so the split cannot muddy the reading and the only difference

@@ -19,21 +19,23 @@ const week = q.get('week') || 'busy';
 
 const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
 
-// A flat square so a tile has something to draw. Not a cake, and deliberately not pretending to be
-// one — this harness is about the SHELF's structure, and a real thumbnail would make the screenshot
-// about the cakes instead.
-const tile = (hue) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
-  `<svg xmlns="http://www.w3.org/2000/svg" width="80" height="80">
-     <rect width="80" height="80" fill="hsl(${hue} 42% 82%)"/>
-     <circle cx="40" cy="46" r="22" fill="hsl(${hue} 38% 68%)"/>
-   </svg>`);
+/* ⚠️ REAL THUMBNAILS NOW, AND THE NOTE THEY REPLACE WAS RIGHT UNTIL THE QUESTION CHANGED. It read:
+   "A flat square so a tile has something to draw. Not a cake, and deliberately not pretending to be
+   one — this harness is about the SHELF's structure, and a real thumbnail would make the screenshot
+   about the cakes instead." Fair for the Recent section. Useless for the tile itself: a flat 80x80
+   square fills any box it is given, so the shelf looked identical whether the tile was 1:1 or 3:2
+   — and the grid spent a long time drawing a SQUARE box around a 3:2 blob, losing a third of every
+   tile to empty bands. Reported as "there is so much dead space on the desptop catalogue view".
+   A fixture that cannot show the fault cannot show the fix. These are real `captureThumbnailBlob`
+   output (551x367 WebP), shared with dev/facets.jsx and dev/designer-mobile.jsx. */
+const tile = (i) => `/thumbs/cake${(Math.abs(i) % 5) + 1}.webp`;
 
 const NAMES = ['Football', 'Rainbow', 'Unicorn', 'Dino', 'Love', 'Football', 'Jungle', 'Barbie',
                'Car', 'Princess', 'Football', 'Space', 'Mermaid', 'Safari'];
 
 function shelf() {
   const old = NAMES.map((name, i) => ({
-    id: `old-${i}`, name, thumbnail_url: tile(i * 27), tier_count: 1 + (i % 3),
+    id: `old-${i}`, name, thumbnail_url: tile(i), tier_count: 1 + (i % 3),
     source: i % 4 === 0 ? 'mine' : 'spattoo', type: 'basic', offered: false,
     tag_slugs: [], search_slugs: [], attrs: null, created_at: ago(40 + i),
   }));
@@ -41,7 +43,7 @@ function shelf() {
   if (week === 'undated') return old.map(t => ({ ...t, created_at: undefined }));
   const n = week === 'flood' ? 15 : 4;
   const fresh = Array.from({ length: n }, (_, i) => ({
-    id: `new-${i}`, name: `Just saved ${i + 1}`, thumbnail_url: tile(140 + i * 13),
+    id: `new-${i}`, name: `Just saved ${i + 1}`, thumbnail_url: tile(i + 2),
     tier_count: 2, source: 'mine', type: 'basic', offered: false,
     tag_slugs: [], search_slugs: [], attrs: null, created_at: ago(i * 1.3),
   }));

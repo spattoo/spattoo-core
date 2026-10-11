@@ -12,7 +12,8 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // the rendered text changes.
 import textFont from './fonts/NotoSans-Regular.woff?inline';
 import CakeTier from './CakeTier';
-import { SafeGlb, SafeEnvironment } from './TextureErrorBoundary.jsx';
+import { SafeGlb } from './TextureErrorBoundary.jsx';
+import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
 import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
@@ -35,9 +36,10 @@ import {
   DESIGNER_GROUND,
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
-  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON } from '../constants.js';
+  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
          BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
@@ -46,7 +48,9 @@ import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
   from '../geometry/rainbow.js';
 import FondantCloud from './FondantCloud.jsx';
+import FondantBalloon from './FondantBalloon.jsx';
 import { cloudHandleAt, cloudDragTo, cloudPlacement } from '../geometry/cloud.js';
+import { balloonDragTo, balloonPlacement, BALLOON_PLACEMENT_DEFAULTS } from '../geometry/balloon.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import NameBlocks from './NameBlocks.jsx';
 import { corsUrl } from '../utils/assetUrl.js';
@@ -57,7 +61,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -1842,6 +1846,35 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
 }
 
 
+/* The ONE invisible mesh that receives a placed decoration's pointer events — the side wall and the
+ * top surface both mount this rather than each spelling out a plane.
+ *
+ * The SHAPE is decided by `hitVolume` (placement.js), which carries the reasoning: a measured model
+ * with real depth gets a BOX of its own bounds so it can be grabbed from every camera angle (#10 law
+ * 4), flat artwork keeps the plane. Both draggables already measured that box for the selection cue
+ * and then threw it away here, which is the whole bug.
+ *
+ * ⚠️ `side` GOES ON THE MATERIAL. It sat on `<planeGeometry>` at both sites — a dead prop, since
+ * `side` belongs to THREE.Material — so the plane has always been FrontSide and silently stopped
+ * answering once the cake turned past it, which is exactly what the comment there said it prevented.
+ * A box needs no such flag: it presents a face to the camera from wherever you look at it.
+ *
+ * ⚠️ KEEP `isStickerHitPlane`. Orbit-blocking reads it off the raycast (see the hover handler that
+ * re-enables OrbitControls), and ResizeHandles relies on it being a real, raycastable mesh. */
+function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown, onClick }) {
+  return (
+    <mesh userData={{ isStickerHitPlane: true }} position={volume.position}
+      onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}
+      onPointerDown={onPointerDown} onClick={onClick}>
+      {volume.kind === 'box'
+        ? <boxGeometry args={[volume.width, volume.height, volume.depth]} />
+        : <planeGeometry args={[volume.width, volume.height]} />}
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+
 // `canMove` defaults TRUE. Every decoration on every cake moves today, so a capability that arrived
 // defaulting to false would freeze the lot — and the caller derives it from the ELEMENT, never from
 // the sticker's own allowedActions, which carries a stale `move: false` on everything placed before
@@ -1998,9 +2031,8 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           {toolbar}
         </Html>
       )}
-      <mesh
-        userData={{ isStickerHitPlane: true }}
-        position={[0, hitBox.centerY, 0.001]}
+      <StickerHitMesh
+        volume={hitVolume({ box: glbFoot ? vext?.box : null, width: hitBox.width, height: hitBox.height, centerY: hitBox.centerY })}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
@@ -2077,13 +2109,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           canvas.addEventListener('pointerup', onUp);
         }}
         onClick={e => e.stopPropagation()}
-      >
-        <planeGeometry args={[hitBox.width, hitBox.height]}
-          // DoubleSide: a plane is not hit from behind, so without it this stops being a
-          // drag target the moment the cake is turned past it.
-          side={THREE.DoubleSide} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+      />
       </group>
     </group>
   );
@@ -2214,16 +2240,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           {toolbar}
         </Html>
       )}
-      <mesh userData={{ isStickerHitPlane: true }} position={[0, hitBox.centerY, 0.001]}
+      <StickerHitMesh
+        volume={hitVolume({ box: glbFoot ? artBox : null, width: hitBox.width, height: hitBox.height, centerY: hitBox.centerY })}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
-        onPointerDown={e_onDown} onClick={e => e.stopPropagation()}>
-        <planeGeometry args={[hitBox.width, hitBox.height]}
-          // DoubleSide: a plane is not hit from behind, so without it this stops being a
-          // drag target the moment the cake is turned past it.
-          side={THREE.DoubleSide} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+        onPointerDown={e_onDown} onClick={e => e.stopPropagation()} />
     </>
   );
 
@@ -2587,6 +2608,35 @@ function CameraCapture({ cameraRef }) {
   return null;
 }
 
+/* ── Where the baker is standing, in the thumbnail's own terms ───────────────────────────────────
+ *
+ * Reports the LIVE camera as {az, el} degrees so the Save as Template panel can open on the view the
+ * cake is already being looked at. Sandeep's second option was "the current view is captured" — this
+ * is the useful half of it without the studio's floor and backdrop ending up in the picture.
+ *
+ * ⚠️ A REF, WRITTEN ON A FRAME, NOT STATE. The camera moves continuously while somebody orbits; the
+ * only moment anybody reads this is when the panel opens, so re-rendering the designer on every
+ * frame to carry a number nothing is displaying would be the whole cost and none of the benefit.
+ *
+ * ⚠️ RELATIVE TO THE ORBIT TARGET, not to the origin. The camera aims at the cake's middle, which
+ * sits above the board — measuring the elevation from (0,0,0) would report a flatter angle than the
+ * one on screen, and the thumbnail would open a few degrees below where the baker left it. */
+function CameraAngleReport({ angleRef, orbitRef }) {
+  useFrame(({ camera }) => {
+    if (!angleRef) return;
+    const t = orbitRef?.current?.target;
+    const dx = camera.position.x - (t?.x ?? 0);
+    const dy = camera.position.y - (t?.y ?? 0);
+    const dz = camera.position.z - (t?.z ?? 0);
+    const len = Math.hypot(dx, dy, dz) || 1;
+    angleRef.current = {
+      az: (Math.atan2(dx, dz) * 180) / Math.PI,
+      el: (Math.asin(dy / len) * 180) / Math.PI,
+    };
+  });
+  return null;
+}
+
 function CameraPositionSync({ position }) {
   const { camera } = useThree();
   useEffect(() => {
@@ -2742,7 +2792,7 @@ function CakeScene({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   orbitRef,
-  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles,
   pipingToolbar,
   // Drag a single-mode piping piece round its ring: (tierIndex, zone, layerId, index, angle) => void.
@@ -2772,7 +2822,8 @@ function CakeScene({
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
   // component cannot pass on what it was never given — deleting these from the signature while
   // leaving them in the edit literal is what threw "onCloudClick is not defined".
-  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
+  onBrushBandClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -3000,7 +3051,7 @@ function CakeScene({
         edit={{
           orbitRef, gestureOnStickerRef,
           selectedTier, onTierClick, onDeselect,
-          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, pipingToolbar,
+          selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect, pipingToolbar,
           onPipingInstanceMove, onPipingLayerHeight, isPipingMovable,
           selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
           selectedAgeId, onAgeSelect, onAgeMove,
@@ -3013,7 +3064,8 @@ function CakeScene({
           // In `edit`, not a prop of CakeContent. The tier loop that draws the box lives in the
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
-          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
+          selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick,
         }}
       />
       </group>
@@ -3207,13 +3259,27 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
   ));
 }
 
-function BrushBand({ band, tier, wallColour }) {
+function BrushBand({ band, tier, wallColour, onClick = null }) {
+  const { gl } = useThree();
   const parts = useMemo(() => (band ? buildBrushBand({
     R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, ...band,
   }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour]);
   if (!parts?.length) return null;
+  /* ⚠️ THE BAND TAKES THE POINTER NOW, and it used to raycast to nothing on purpose: "a treatment
+     of the whole wall like dusting or foil, not a thing placed on it, so its card is reached from
+     the tier". The second half of that was never built — there was no card anywhere — so the band
+     was the one thing on the cake a customer could place and then not edit at all. Sandeep: *"cream
+     strokes studio does not have a popup card - it should have one. and when user clicks on the
+     strokes on cake, it should have pointer to open popup."*
+     Still not DRAGGABLE: a band is the whole ring, and there is no single piece to pick up. Click
+     and hover only, which is why it borrows the cursor from pointerCursor.js rather than from
+     useDragPlacement — see the note there. */
+  const live = !!onClick;
   return parts.map(part => (
-    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow raycast={() => {}}>
+    <mesh key={part.color} geometry={part.geometry} castShadow receiveShadow
+      {...(live
+        ? { ...hoverCursorProps(gl), onClick: (e) => { e.stopPropagation(); onClick(); } }
+        : { raycast: () => {} })}>
       {/* DoubleSide because a painted layer's winding depends on which way the stroke happened to
           run — the call CreamPen already makes for cream. polygonOffset because the thinnest film
           sits almost on the wall and the depth buffer loses over a long grazing sweep. */}
@@ -3232,7 +3298,7 @@ function CakeContent({ config, scene, edit = null }) {
     selectedTopperId = null, onTopperSelect = NOOP, onTopperMove = null,
     selectedTier = null, onTierClick = NOOP, onDeselect = NOOP,
     selectedPiping = null, highlightPipingId = null, pipingToolbar = null,
-    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP,
+    onTopPipingSelect = NOOP, onBottomPipingSelect = NOOP, onCreamSelect = NOOP, onCoatSelect = NOOP,
     onPipingInstanceMove = null, onPipingLayerHeight = null, isPipingMovable = () => true,
     selectedTextId = null, onTextSelect = NOOP, onTextMove = NOOP, onTextContentChange = NOOP, textToolbar = null,
     selectedAgeId = null, onAgeSelect, onAgeMove,
@@ -3241,7 +3307,8 @@ function CakeContent({ config, scene, edit = null }) {
     onWritingClick, onWritingMove, selectedWritingId = null,
     penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit, onBrushStrokeClick,
-    onCloudMove, onRainbowMove,
+    onBrushBandClick,
+    onCloudMove, onRainbowMove, onBalloonClick: onBalloonClickEdit, onBalloonMove,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -3266,13 +3333,13 @@ function CakeContent({ config, scene, edit = null }) {
           board-level finish (a ring of grass, letter blocks at the foot, writing on the board) is
           placed against, so drawing it anywhere else left those standing on nothing. */}
       {board && (board.kind === 'rect' ? (
-        <RoundedBox position={[0, 0.05, 0]} args={[board.width, 0.1, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
+        <RoundedBox position={[0, BOARD_TOP_Y / 2, 0]} args={[board.width, BOARD_TOP_Y, board.depth]} radius={0.06} smoothness={4} castShadow receiveShadow
           onClick={onBoardClick}>
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </RoundedBox>
       ) : (
         <mesh position={[0, 0.05, 0]} castShadow receiveShadow onClick={onBoardClick}>
-          <cylinderGeometry args={[board.radius, board.radius, 0.1, 64]} />
+          <cylinderGeometry args={[board.radius, board.radius, BOARD_TOP_Y, 64]} />
           <meshStandardMaterial color="#d4af37" roughness={0.15} metalness={0.75} />
         </mesh>
       ))}
@@ -3316,6 +3383,8 @@ function CakeContent({ config, scene, edit = null }) {
             dusting={tier.dusting ?? null}
             foil={tier.foil ?? null}
             selected={selectedTier === i}
+            coat={tier.coat ?? null}
+            onCoatClick={e => { e.stopPropagation(); onCoatSelect(i); }}
             topPipings={tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : [])}
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
@@ -3326,6 +3395,9 @@ function CakeContent({ config, scene, edit = null }) {
             onPipingInstanceMove={onPipingInstanceMove
               ? (zone, layerId, index, angle, wallY) => onPipingInstanceMove(i, zone, layerId, index, angle, wallY)
               : null}
+            /* A click on a raised cream band opens the cream card on THIS tier, at the band that was
+               tapped — the same shape as the rim ring's handler above it. */
+            onCreamClick={(e, bandIndex) => { e.stopPropagation(); onCreamSelect(i, bandIndex); }}
             onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
             onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTierClick(i); }}
@@ -3424,7 +3496,8 @@ function CakeContent({ config, scene, edit = null }) {
           {/* The brushstroke band on THIS tier's wall. Not draggable and not clickable — it is a
               treatment of the whole wall like dusting or foil, not a thing placed on it, so it
               raycasts to nothing and its card is reached from the tier. */}
-          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color} />
+          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color}
+            onClick={onBrushBandClick ? () => onBrushBandClick(i) : null} />
           {/* And the hand-drawn ones. Clickable, because each has its own card. */}
           <BrushStrokes strokes={tier.brushStrokes ?? []} tier={tier} wallColour={tier.color}
             onPick={id => onBrushStrokeClick?.(i, id)} />
@@ -3456,7 +3529,7 @@ function CakeContent({ config, scene, edit = null }) {
                     tier.height > 0 ? (hit.y - tier.baseY) / tier.height : 0);
                 }
                 const onTop = (cl.surface ?? 'top') === 'top';
-                const planeY = onTop ? tier.baseY + tier.height : (board ? 0.1 : tier.baseY);
+                const planeY = onTop ? tier.baseY + tier.height : (board ? BOARD_TOP_Y : tier.baseY);
                 const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
                 if (!hit) return null;
                 const against = onTop ? (tier.radius || 1) : (board?.radius ?? tier.radius ?? 1);
@@ -3465,7 +3538,8 @@ function CakeContent({ config, scene, edit = null }) {
                 return cloudDragTo(cl, { radius: tier.radius, handleRadius: against }, u, v);
               }}>
               {selectedGenerated?.kind === 'cloud' && selectedGenerated.id === cl.id && (() => {
-                const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY });
+                const pl = cloudPlacement(cl, { radius: tier.radius, topY: tier.baseY + tier.height,
+                                               baseY: tier.baseY, boardY: board ? BOARD_TOP_Y : tier.baseY });
                 const pts = pl.lobes.flatMap(l => [
                   { x: l.position.x - l.r, y: l.position.y - l.r, z: l.position.z - l.r },
                   { x: l.position.x + l.r, y: l.position.y + l.r, z: l.position.z + l.r },
@@ -3480,6 +3554,51 @@ function CakeContent({ config, scene, edit = null }) {
               <FondantCloud
                 key={cl.id}
                 params={cl}
+                /* `baseY` is the foot of THIS tier's wall; `boardY` is the cake's board. The two are
+                   the same height on the bottom tier and differ on every tier above it — see
+                   cloudBaseY. Passing one for both put a second-tier board cloud on the join. */
+                cake={{ radius: tier.radius, topY: tier.baseY + tier.height,
+                        baseY: tier.baseY, boardY: board ? BOARD_TOP_Y : tier.baseY }}
+              />
+            </DraggableGenerated>
+          ))}
+          {/* Fondant balloons belonging to THIS tier — on picks, standing OFF the lid rather than
+              lying against it, which is why their only freedoms are round and out. The height they
+              float at is the pick's, authored on the element row; nothing here invents a stick. */}
+          {(tier.balloons ?? []).map(ba => (
+            <DraggableGenerated
+              key={`ba-hit-${ba.id}`}
+              onClick={() => onBalloonClickEdit?.(i, ba.id)}
+              onOrbitEnable={orbitEnableFor(`__balloon__${ba.id}`)}
+              onMove={patch => onBalloonMove?.(i, ba.id, patch)}
+              /* ⚠️ RESOLVED AT THE BALLOON'S OWN HEIGHT, NOT AT THE LID — and resolving at the lid is
+                 why it could not be moved at all. A balloon floats a stick's length ABOVE the
+                 surface it stands on, so a ray through the thing you are grabbing crosses the lid
+                 plane well behind it. `hypot` then exceeded the radius, `standoff` clamped to 1,
+                 and the balloon pinned itself to the rim and stayed there however far the pointer
+                 travelled. It read as "it will not move".
+
+                 This is INVARIANTS #10 law 4 — what you can grab is what you can see — and note
+                 that the movable contract CANNOT catch it: law 5 asks handleAt and dragTo to invert
+                 each other, and they do. The fault is in the plane the canvas picks, which is
+                 neither of them. A cloud never showed it because a cloud sits ON the surface it
+                 resolves against; this is the first decoration that does not. */
+              resolve={ray => {
+                const planeY = tier.baseY + tier.height
+                  + (ba.float ?? BALLOON_PLACEMENT_DEFAULTS.float ?? 0.75) * (tier.radius || 1);
+                const hit = planeHit(ray, new THREE.Plane(new THREE.Vector3(0, 1, 0), -planeY));
+                if (!hit) return null;
+                const against = tier.radius || 1;
+                const u = Math.atan2(hit.x, hit.z) / (Math.PI * 2);
+                const v = Math.min(1, Math.hypot(hit.x, hit.z) / against);
+                return balloonDragTo(ba, { radius: tier.radius }, u, v);
+              }}>
+              {/* The selection cue rides INSIDE FondantBalloon, so it inherits the lean rather
+                  than being rebuilt out here from the placement — see the note there. */}
+              <FondantBalloon
+                key={ba.id}
+                params={ba}
+                selected={selectedGenerated?.kind === 'balloon' && selectedGenerated.id === ba.id}
                 cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
               />
             </DraggableGenerated>
@@ -3505,7 +3624,12 @@ function CakeContent({ config, scene, edit = null }) {
         /* ⚠️ Dispatched on the message's own `style` KEY, never on its surface or its font. Cream and
            acrylic are the same message in two materials — same text, same placement, same drag — so
            switching Look keeps what was typed and where it was put. */
-        const Renderer = w.style === 'acrylic' ? AcrylicWriting : CreamWriting;
+        /* ⚠️ EVERY CUT LOOK GOES TO THE CUT RENDERER. Acrylic and fondant are one word cut from one
+           sheet in two materials (see AcrylicWord's `medium`); only piped cream is laid by a nozzle
+           and wants its own builder. A `=== 'acrylic'` test here would have sent fondant quietly to
+           CreamWriting, which would have rendered it — as piped icing, convincingly, in the wrong
+           material. */
+        const Renderer = w.style === 'acrylic' || w.style === 'fondant' ? AcrylicWriting : CreamWriting;
         return (
         <Renderer
           key={w.id}
@@ -3518,7 +3642,7 @@ function CakeContent({ config, scene, edit = null }) {
           shp={tierShape(topTier)}
           tiers={tierData}
           boardRadius={board.radius}
-          boardY={0.1}
+          boardY={BOARD_TOP_Y}
           boardShp={board}
           onClick={() => onWritingClick?.(w.id)}
           onMove={moves => onWritingMove?.(w.id, moves)}
@@ -3550,7 +3674,7 @@ function CakeContent({ config, scene, edit = null }) {
         onPickStroke={onPickStroke}
         penStyle={penStyle}
         tierData={tierData}
-        board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: 0.1 } : undefined}
+        board={board ? { shape: board.kind, radius: board.radius, width: board.width, depth: board.depth, y: BOARD_TOP_Y } : undefined}
         onAddStroke={onAddStroke}
       />
 
@@ -3983,7 +4107,7 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
   return null;
 }
 
-function FitCakeCamera({ groupRef, renderNowRef }) {
+function FitCakeCamera({ groupRef, renderNowRef, viewDir = null }) {
   const { camera, gl, scene } = useThree();
   const fit = () => {
     const g = groupRef.current;
@@ -3995,12 +4119,21 @@ function FitCakeCamera({ groupRef, renderNowRef }) {
     const R = _fitSphere.radius || 3;
     const halfFov = (CAMERA_FOV / 2) * Math.PI / 180;
     const dist = (R / Math.sin(halfFov)) * 1.08;   // 1.08 = small breathing margin
-    _fitDir.set(0, CAMERA_POSITION[1] - 2, CAMERA_POSITION[2]).normalize();
+    /* ⚠️ THE DISTANCE IS FITTED, THE DIRECTION IS CHOSEN — which is why letting a baker pick an angle
+       is this one line and not a new camera. Whatever way it looks from, the fit above still frames
+       the whole cake off its bounding sphere. `THUMB_VIEWS.front` is the vector this used to hold
+       literally, so an un-chosen thumbnail is framed exactly as it was. */
+    if (viewDir) _fitDir.set(viewDir[0], viewDir[1], viewDir[2]).normalize();
+    else _fitDir.set(0, CAMERA_POSITION[1] - 2, CAMERA_POSITION[2]).normalize();
     camera.position.copy(c).addScaledVector(_fitDir, dist);
     camera.lookAt(c);
     camera.updateProjectionMatrix();
   };
   useFrame(fit);
+
+  /* Re-fit the moment the direction changes rather than waiting for the next animation frame: the
+     popup's preview must move under the baker's finger, and this canvas renders on demand. */
+  useEffect(() => { fit(); }, [viewDir?.[0], viewDir?.[1], viewDir?.[2]]);   // eslint-disable-line react-hooks/exhaustive-deps
 
   // Draw a frame ON DEMAND, so a capture photographs the cake as it is NOW.
   //
@@ -4027,18 +4160,50 @@ function FitCakeCamera({ groupRef, renderNowRef }) {
 // `renderNowRef` is handed back to the caller, who calls it immediately before capturing. Optional:
 // a host that never captures (or captures while visibly on screen) can leave it out and nothing
 // changes. See FitCakeCamera for why a capture cannot simply trust that a frame exists.
-export function CakeThumbnailCanvas({ config, containerRef, renderNowRef }) {
+/* ⚠️ `visible` BRINGS THIS CANVAS ON SCREEN; IT DOES NOT MAKE A SECOND ONE. The Save as Template
+ * panel shows the baker what will be saved, and the only honest way to do that is to show THE
+ * CANVAS THAT IS SAVED — a second preview beside it is a third camera for one cake and drifts
+ * (INVARIANTS #2, #15). So this stays one component with one mount: parked off-screen while nobody
+ * is looking, and moved into the panel, larger, when somebody is.
+ *
+ * ⚠️ THE VISIBLE BOX IS THE CAPTURE FRAME, AND I FIRST WROTE THE OPPOSITE HERE. R3F sizes the
+ * drawing buffer from the element, so showing this at 428×285 makes the captured frame 428×285 —
+ * not the off-screen 400×400. Measured, after claiming otherwise in this very comment: 409×279.
+ *
+ * That turns out to be the better frame rather than a regression, and it settles a question worth
+ * recording. A thumbnail is stored as `contentCrop` grown to 3:2, and the worry about a TOP view was
+ * that a cake seen from above is a disc — square bounds, which a 3:2 box then letterboxes at the
+ * sides (exactly the dead space the storefront gallery was just fixed for). In a square 400×400
+ * frame there is little room to grow the crop sideways; in a 3:2 one there is. Measured on the real
+ * canvas, every preset lands at 1.50: Front bounds 159×125 → crop 216×144, Tilted 153×150 → 253×168,
+ * Top 149×149 → 250×167. The square silhouette was real; the letterboxing was not.
+ *
+ * ⚠️ `dpr` IS PINNED SO THE STORED PICTURE IS NOT A PROPERTY OF THE BAKER'S MONITOR. Left to the
+ * device, the same cake saved on a retina laptop and a cheap monitor stores thumbnails at double and
+ * single resolution — already true of the off-screen path, and not worth carrying forward into the
+ * one a baker now aims deliberately. */
+export function CakeThumbnailCanvas({ config, containerRef, renderNowRef, viewDir = null,
+                                      visible = false, size = 400 }) {
   const groupRef = useRef();
+  /* ⚠️ 3:2, NOT A HEIGHT I PICKED. A stored thumbnail is the content crop grown to `THUMB_ASPECT`
+     (3/2) and the gallery draws it in a 3:2 box, so a preview at any other shape frames more than it
+     keeps — it was 1.68 at first, which is a preview quietly promising width it does not store.
+     `size` is the cap for a short window rather than the shape. */
+  const box = visible
+    ? { position: 'relative', width: '100%', aspectRatio: '3 / 2', maxHeight: size,
+        borderRadius: 12, overflow: 'hidden' }
+    : { position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 };
   return (
-    <div ref={containerRef} style={{ position: 'absolute', left: -9999, top: -9999, width: 400, height: 400 }}>
+    <div ref={containerRef} style={box}>
       <Canvas
         gl={{ preserveDrawingBuffer: true, alpha: true }}
         onCreated={({ gl }) => { gl.localClippingEnabled = true; }}
         camera={{ position: CAMERA_POSITION, fov: CAMERA_FOV }}
-        style={{ width: 400, height: 400 }}
+        dpr={visible ? 2 : undefined}
+        style={visible ? { width: '100%', height: '100%' } : { width: 400, height: 400 }}
       >
         <group ref={groupRef}><CakeThumbnailScene config={config} /></group>
-        <FitCakeCamera groupRef={groupRef} renderNowRef={renderNowRef} />
+        <FitCakeCamera groupRef={groupRef} renderNowRef={renderNowRef} viewDir={viewDir} />
       </Canvas>
     </div>
   );
@@ -4110,6 +4275,9 @@ export function CakePreview({
 }
 
 export default function CakeCanvas({
+  /* Filled every frame with the LIVE view as {az, el} degrees, so the Save as Template panel can
+     open on the angle the cake is already being looked at. Optional — previews pass nothing. */
+  cameraAngleRef = null,
   config, selectedTier, onTierClick, onDeselect,
   selectedTextId, onTextSelect, onTextMove, onTextContentChange, textToolbar,
   selectedAgeId, onAgeSelect, onAgeMove,
@@ -4117,7 +4285,7 @@ export default function CakeCanvas({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   autoRotate = false,
-  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect,
+  selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
   onPipingInstanceMove = null,
@@ -4144,7 +4312,8 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
-  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBrushStrokeClick,
+  onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
+  onBrushBandClick,
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
@@ -4239,6 +4408,7 @@ export default function CakeCanvas({
       }}
     >
       <CameraCapture cameraRef={cameraRef} />
+      <CameraAngleReport angleRef={cameraAngleRef} orbitRef={orbitRef} />
       <CameraProbe orbitRef={orbitRef} />
       <CameraPositionSync position={cameraPosition} />
       <CameraSnapper snapCameraRef={snapCameraRef} turnCameraRef={turnCameraRef} orbitRef={orbitRef} />
@@ -4256,6 +4426,16 @@ export default function CakeCanvas({
         onDeselect={()  => { if (!pointerRef.current.dragged) onDeselect(); }}
         selectedPiping={selectedPiping}
         highlightPipingId={highlightPipingId}
+        /* ⚠️ FORWARD EVERY ARG. The two piping guards beside this one take `i` and drop the layerId
+           they were handed; cream carries the band index the same way, and losing it would open the
+           card on band 0 whichever band was tapped. Spread, so the guard stays a guard. */
+        onCreamSelect={(...a) => { if (!pointerRef.current.dragged) onCreamSelect(...a); }}
+        /* ⚠️ AND FORWARD IT AT ALL. A prop can be accepted up here, defaulted to NOOP down
+           in CakeContent and simply never joined up in between — which is what left a coat
+           unselectable after it was already given a click handler, a tier prop and a
+           designer callback: every piece was built and this one line was the gap. Nothing
+           errors, because the NOOP is a working function. See check-forwarded-props.mjs. */
+        onCoatSelect={(...a) => { if (!pointerRef.current.dragged) onCoatSelect(...a); }}
         onTopPipingSelect={i => { if (!pointerRef.current.dragged) onTopPipingSelect(i); }}
         onBottomPipingSelect={i => { if (!pointerRef.current.dragged) onBottomPipingSelect(i); }}
         pipingTarget={pipingTarget}
@@ -4331,6 +4511,17 @@ export default function CakeCanvas({
         onRainbowClick={onRainbowClick}
         onCloudMove={onCloudMove}
         onRainbowMove={onRainbowMove}
+        /* ⚠️ DECLARING A PROP IS NOT THREADING IT. CakePreview took onBalloonClick and
+            onBalloonMove, CakeScene took them and put them in its `edit` literal, and CakeContent
+            read them off `edit` — every end of the chain was right and the middle link was never
+            written, so both arrived `undefined`. Clicking the balloon raycast cleanly to its grab
+            mesh and called nothing; dragging it resolved a correct patch and handed it nowhere.
+            Nothing threw, nothing logged, and the drag fix committed in f6afdbdc was real but
+            unreachable. When a handler "does nothing", probe whether it is DEFINED before assuming
+            the geometry missed. */
+        onBalloonClick={onBalloonClick}
+        onBalloonMove={onBalloonMove}
+        onBrushBandClick={onBrushBandClick}
         blocksMode={blocksMode}
         blocksSelected={blocksSelected}
         onBlockMove={onBlockMove}

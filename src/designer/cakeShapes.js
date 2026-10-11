@@ -91,3 +91,84 @@ export function cakeShapeDef(key) {
 export function cakeShapeList() {
   return Object.entries(CAKE_SHAPES).map(([key, def]) => ({ key, ...def }));
 }
+
+/* ── Grouping the catalog by footprint ───────────────────────────────────────
+ *
+ * "Catalog order" above is the SEED's two keys followed by DB rows in whatever order the API
+ * returned them — which is the order an admin happened to create them in, and reads as random by the
+ * time there are twelve. Sandeep: *"it would be nice if all round are at one place and all
+ * rectangular are at one place. i think we already have root shape."*
+ *
+ * The root shape is `family`, and it was already here — every entry carries one, derived from its
+ * first tier by applyCakeShapeConfig. So this groups by what a shape REPORTS ABOUT ITSELF and never
+ * by a list of keys: a hardcoded `['round','tall-round','2-tier']` would be type-driven, and it
+ * would go wrong the first time somebody authors a shape in the Cake Shape Studio — which is the one
+ * thing that studio exists to make possible without a release.
+ *
+ * ⚠️ THE LAST GROUP IS A CATCH-ALL, NOT A FILTER, and that is the load-bearing part. If this table
+ * does not know a family, that shape lands in "More shapes" — it never disappears. A picker that
+ * silently drops a row an admin authored and published is the same failure check:placement-slots
+ * exists to prevent one surface over: nothing errors, nothing logs, the tile is simply not there.
+ * Any change here must keep a `families: null` entry last.
+ *
+ * ⚠️ WITHIN A GROUP, THE SIMPLEST CAKE LEADS — fewest tiers first. Sandeep: *"let the most ordered
+ * round single tier one should be the first one."* That is INVARIANTS #12 (lay a surface out by how
+ * often each control is used) applied inside the group as well as across them: a plain round single
+ * tier is the most-ordered cake there is, and leaving it wherever the API happened to put it made
+ * the commonest choice a hunt. Tier count comes from the row's own `tiers` stack, so it needs no
+ * list of keys and answers for shapes nobody has authored yet.
+ *
+ * ⚠️ AND TIES KEEP CATALOG ORDER, which is the half that matters later. `cake_shapes` has no sort
+ * column, so four single-tier sheets still arrive in API order — that is a real gap and this does
+ * NOT paper over it. Sorting is STABLE and only ever separates a 1-tier from a 3-tier, so the day a
+ * column and a studio field exist, an admin's order wins inside each tier count without this having
+ * to be unpicked. "Which sheet comes first" is still their judgement, not a sort function's.
+ *
+ * Group ORDER is a code-level judgement because families are a code-level concept (the generators in
+ * geometry/shapes.js). Round leads because a round single tier is the most-ordered cake there is,
+ * which is INVARIANTS #12 — lay a surface out by how often each control is used — and here it
+ * happens to agree with grouping, so there is no tension to resolve. */
+export const SHAPE_GROUPS = Object.freeze([
+  { key: 'round',  label: 'Round',             families: ['circle'] },
+  { key: 'rect',   label: 'Rectangle',         families: ['rounded_rect'] },
+  { key: 'shaped', label: 'Shaped',            families: ['heart', 'butterfly', 'polygon', 'oval'] },
+  { key: 'glyph',  label: 'Letters & numbers', families: ['letter', 'number'] },
+  { key: 'more',   label: 'More shapes',       families: null },   // ⚠️ catch-all — must stay last
+]);
+
+/**
+ * The picker's shapes, bucketed by footprint.
+ *
+ * @param   {Array} shapes  what the caller is offering — cakeShapeList(), or a filtered subset. Passed
+ *                          in rather than read from the module for the reason ShapePicker already
+ *                          states: the caller owns the one list the grid and the tier's Shape row
+ *                          both read.
+ * @returns {Array} `[{ key, label, shapes }]` in SHAPE_GROUPS order, empty groups dropped. Every
+ *                  input shape appears in exactly one group.
+ */
+export function cakeShapeGroups(shapes) {
+  const buckets = new Map(SHAPE_GROUPS.map(g => [g.key, []]));
+  const catchAll = SHAPE_GROUPS.find(g => g.families == null)?.key ?? SHAPE_GROUPS.at(-1).key;
+
+  for (const s of shapes || []) {
+    const fam = s?.family;
+    const group = SHAPE_GROUPS.find(g => g.families?.includes(fam));
+    buckets.get(group ? group.key : catchAll).push(s);
+  }
+
+  return SHAPE_GROUPS
+    .map(g => ({ key: g.key, label: g.label, shapes: byTierCount(buckets.get(g.key)) }))
+    .filter(g => g.shapes.length > 0);
+}
+
+/* How many tiers a catalog entry starts a cake with. An EMPTY or absent stack is one tier, not
+ * zero: `applyCakeShapeConfig` already says so — "Empty means one tier at the designer's default,
+ * which is what every row meant before shapes could be multi-tier, so an empty stack is an answer
+ * and not a gap" — and the seed's round/rect carry no stack at all. Reading it as 0 would sort the
+ * two load-bearing seed shapes ahead of everything on a technicality rather than on merit. */
+const tierCount = s => s?.tiers?.length || 1;
+
+/* Stable: Array.prototype.sort is specified stable, so equal tier counts come back in the order
+ * they went in — which is catalog order, and is where an admin's ordering will land when it
+ * exists. */
+const byTierCount = shapes => [...shapes].sort((a, b) => tierCount(a) - tierCount(b));

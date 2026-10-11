@@ -102,6 +102,24 @@ export { DECOR_MATERIALS, materialSurface, materialsFor, applyDecorMaterialConfi
 // Cake shapes — the footprint catalog (seed + DB overlay) and the outline kernel every shape-dependent
 // operation derives from. The admin Cake Shape Studio authors rows against exactly these.
 export { CAKE_SHAPES, applyCakeShapeConfig, cakeShapeDef, cakeShapeList } from './designer/cakeShapes.js';
+/* Coating a whole cake in piped roses. PATHS, not meshes — the caller sweeps them with
+   buildPipingStroke and welds them with mergePenGeometries, both of which already exist and are
+   already tuned. Exported so the admin studio imports the packing rather than carrying a copy
+   of it (CLAUDE.md: "the studio imports the geometry"). */
+/* Measuring the spacing at which a given piece actually tiles without a hole. Every cheaper
+   proxy — bounding box, √2·r, a percentile of vertices — was tried and each left visible cake,
+   because a disc tiles at 0.81 of its width and a sharp star needs 0.54, and no constant is both. */
+export { silhouette, tilesWithoutGaps, maxTileStep } from './designer/geometry/tileCoverage.js';
+/* Which colour each piece of a coat takes — a PARAMETER per seat, not a colour. What a chosen
+   colour looks like on cream is creamAlbedo's job; a second opinion here is the preview-versus-
+   render drift INVARIANTS #15 exists to prevent. */
+export { coatShade, coatLidShare, COAT_SHADE_MODES, OMBRE_LID_SHARE } from './designer/geometry/coatShade.js';
+export { pipingCanCoat } from './designer/piping/pipingLayer.js';
+/* The coat's renderer. In core, not in the studio that prototyped it — a studio carrying its own
+   copy of geometry is what CLAUDE.md names outright, and PipingCalibrator already records a day
+   lost to exactly that with buildShellGeo. */
+export { default as CakeCoat } from './designer/canvas/CakeCoat.jsx';
+export { rosetteSpiral, rosetteLocalPath, rosetteSeats, rosetteCoatPaths, ROSETTE_DEFAULTS, COAT_PIECE_RADIUS, COAT_SCOPES, coatScope } from './designer/geometry/rosetteCoat.js';
 export { OUTLINE_FAMILIES, outlineOf, scaledOutline } from './designer/geometry/shapes.js';
 /* The colour model (INVARIANTS #16): every surface rendering a CHOSEN colour divides its albedo by
  * the light it receives, with a reference light MEASURED per surface. Exported so admin studios —
@@ -163,6 +181,8 @@ export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad,
          brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
          buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS,
          BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
+export { balloonProfile, buildBalloon, BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAULTS, BALLOON_SIZE_RANGE,
+         balloonPlacement, balloonHandleAt, balloonDragTo } from './designer/geometry/balloon.js';
 export { waferPanel, buildWaferSkirt, WAFER_DEFAULTS } from './designer/geometry/waferPaper.js';
 export { WAFER_PAPER_MATERIAL, waferFibreTexture } from './designer/geometry/waferPaperMaterial.js';
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripColorAt, paintDripColors, buildDripFlood, DRIP_SPLIT_DEFAULTS } from './designer/geometry/chocolateDrip.js';
@@ -170,6 +190,46 @@ export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripC
 // tuft across thousands of seats, so the admin studio tunes the tuft and previews the field.
 export { buildGrassTuft, grassSeats, grassTriangleCount, GRASS_DEFAULTS } from './designer/geometry/grass.js';
 export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
+
+/* ── The pen's own stamp renderer, so a studio can calibrate the WALL ─────────────────────────────
+ *
+ * ⚠️ EXPORTED SO THE CALIBRATOR DOES NOT GROW A THIRD STAMP RENDERER. `side_rotation` is the wall's
+ * attitude for a hand-piped piece, and it cannot be tuned against a ring preview: a ring keeps the
+ * piece upright in world space and yaws it outward, while the pen aligns its up-axis to the surface
+ * normal. Calibrating one against the other is how `stampRotationSide` came to be reading the
+ * board's figure in the first place.
+ *
+ * This component already IS the answer — it prepares the GLB exactly as a ring does (`extractGeo`,
+ * which bakes the +90° X turn), measures footprint/height/bbox the same way, and hands the lot to
+ * `stampTransforms`. Its own header records what happened the last time a second preparation
+ * existed: "a hand-piped shell started a quarter turn out from a ringed one, and every attempt to
+ * fix the orientation by adjusting the ROTATION was correcting the wrong side of the difference."
+ *
+ * Safe on the public surface: it lights nothing (no SceneLights, no Environment), so `check:env-map`
+ * has nothing to object to — unlike CakeTier.jsx, which is why `shellGeo.js` exists.
+ */
+/* Which build of the designer this is — so a catalogued template can say which renderer it needs.
+ * Read `version` as "the version this code was last released AS": exact for a vendored tarball, a
+ * floor for a working tree. Whether you are running source is the CONSUMER's to know — see the note
+ * in buildId.js, and vite.config.js in admin, which derives it from the same existsSync that picks
+ * the alias. plans/renderer-version-floor.md in spattoo-docs. */
+export { BUILD } from './designer/buildId.js';
+
+export { default as StampStroke } from './designer/canvas/StampStroke.jsx';
+/* The height a ring normalises a shell to, as a fraction of the tier radius. Exported so a studio
+   can size a hand-piped preview to match the rings beside it instead of picking a number: the pen
+   sizes a `regular` stamp by HEIGHT (`target = 2 x thickness`), so `thickness = radius x
+   SHELL_HEIGHT_FRAC / 2` puts a stamp and a ring shell at the same scale. INVARIANTS #8 — a studio
+   must not hardcode a world dimension it can derive. */
+export { SHELL_HEIGHT_FRAC } from './designer/canvas/pipingMetrics.js';
+/* ⚠️ `stampTransforms` IS DELIBERATELY NOT EXPORTED BESIDE IT. Exporting it was speculative — the
+   calibrator needs the COMPONENT, not the maths — and doing so immediately failed admin's
+   `check:no-geometry-copy`, which found an older copy of the name in FreehandPenStudio.jsx:
+   `stampTransforms(points, size, spacing, footprint, seed)` against core's `(stroke, metrics)`,
+   with its own `surfaceNormalAt` and no rotation, lean or post-rotation seat. That copy predates
+   this and is a real finding, but reconciling two different signatures is its own change with its
+   own risk, and shipping an export nobody needs in order to force it is the wrong order. Export it
+   when something here actually needs it, and port the studio in the same change. */
 // The shipping light rig. Exported so an admin studio tunes a look under the SAME lights the designer
 // renders it under — a colour picked beneath a brighter key is simply the wrong colour, and the
 // designer's own rig carries a note about exactly that overexposure washing the cake top toward white.
@@ -294,3 +354,22 @@ export { installGlobalHandlers } from './telemetry/globalHandlers.js';
 export { UI_FONT, REQUIRED_FONT_FAMILIES, warnIfFontsMissing } from './shared/fonts.js';
 import { warnIfFontsMissing as _warnIfFontsMissing } from './shared/fonts.js';
 _warnIfFontsMissing();
+
+/* ── Piping ring placement, for admin's calibrator ──────────────────────────────────────────────
+ *
+ * ⚠️ EXPORTED BECAUSE THE CALIBRATOR HAD REIMPLEMENTED ALL OF IT. `PipingCalibrator.jsx` carried its
+ * own `buildShellGeo`, `buildSwagRing`, `buildFestoons`, `wallPerimeter` and `buildWrapBand` — five
+ * functions this package already owned — and the two drifted, which is exactly what CLAUDE.md warns
+ * about in its own words: "THE STUDIO IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT … or the
+ * tuned version and the rendered version drift."
+ *
+ * It drifted in a way that cost a day: the calibrator's `buildShellGeo` took no RADIUS, so it never
+ * applied `capShellScale` — the cap the cake uses to stop a shell outgrowing its tier. A rosette
+ * could therefore sit perfectly in the tool and render differently on the cake, and the tool whose
+ * only job is to produce trustworthy numbers was the one thing not showing what a customer sees.
+ * Sandeep: *"i loaded this in piping calibrator. and it landed perfectly fine."*
+ */
+export { buildShellGeo, capShellScale, wallPerimeter, extractGeo } from './designer/canvas/shellGeo.js';
+export { buildSwagRing, perimeterRing, ringPositions, perimeterSinglePos, angleAtPoint } from './designer/canvas/ringPositions.js';
+export { shellMatrix } from './designer/canvas/shellMatrix.js';
+export { buildFestoons, buildWrapBand, perimeterBreaks } from './designer/geometry/festoon.js';

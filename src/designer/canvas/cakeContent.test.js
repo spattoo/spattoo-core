@@ -146,3 +146,109 @@ describe('the edit bag agrees at both ends', () => {
       .toEqual([]);
   });
 });
+
+/* ── The board is the cake's, not the tier's ─────────────────────────────────────────────────────
+ *
+ * A cloud lives in `tier.clouds[]` and is handed its tier's numbers. `boardY` used to be passed as
+ * `tier.baseY` — which IS the board for tier 0, and is the lid of the tier below for every tier
+ * above it. So a second-tier cloud sent to "On the board" was laid on the join between the tiers.
+ * Sandeep: "when pluffy cloud is chooses 'on the board', it stays on the middle."
+ *
+ * ⚠️ A GEOMETRY UNIT TEST CANNOT SEE THIS. `cloudBaseY('board', …)` returned `boardY` then and
+ * returns it now — it was right all along, given the right number. The fault was entirely in what
+ * the caller handed it, and the caller is JSX. So it is asserted here, where this suite already
+ * reads the source for exactly that kind of question.
+ */
+describe('a cloud is given the cake board, not its own tier base', () => {
+  // The JSX that renders the clouds belonging to one tier.
+  const cloudBlock = (() => {
+    const start = SOURCE.indexOf('(tier.clouds ?? []).map(');
+    expect(start, 'the per-tier cloud block should exist in CakeCanvas.jsx').toBeGreaterThan(-1);
+    return SOURCE.slice(start, SOURCE.indexOf('(tier.balloons ?? []).map(', start));
+  })();
+
+  it('passes the board constant, never the tier base, as boardY', () => {
+    expect(cloudBlock).toMatch(/boardY:\s*board \? BOARD_TOP_Y : tier\.baseY/);
+    // The old spelling. A tier's base is only the board on the bottom tier.
+    expect(cloudBlock).not.toMatch(/boardY:\s*tier\.baseY\s*[,}]/);
+  });
+
+  it('still passes the tier base separately, as the foot of that tier wall', () => {
+    // Without this a wall cloud on an upper tier would stand on the board and rise the whole cake.
+    expect(cloudBlock).toMatch(/baseY:\s*tier\.baseY/);
+  });
+
+  it('names the board height rather than repeating 0.1', () => {
+    expect(SOURCE).toMatch(/BOARD_TOP_Y/);
+    // The board mesh's own thickness defines that height; it must not be written out again.
+    expect(SOURCE).not.toMatch(/args=\{\[board\.width, 0\.1, board\.depth\]\}/);
+  });
+});
+
+/* ── A decoration ring can be tilted, not only yawed ─────────────────────────────────────────────
+ *
+ * `placement_config.top_rotation` is a THREE-vector, and the element-finish ring path
+ * (`DecorationShells` — the one that keeps a GLB's own materials, selected by
+ * `ring_finish: "element"`) read only `[1]`. So an admin could yaw a rosette round its own axis and
+ * could not tilt it at all, and the two numbers that would have laid it face-up did nothing.
+ *
+ * That is what "I set top_rotation to 0,0,0 and the designer still renders it wrong" meant: zeroing
+ * the Y changed the only component that was ever applied, and the ones that mattered were never
+ * read. The cream shell path has always honoured all three.
+ *
+ * ⚠️ ASSERTED ON THE SOURCE, deliberately. A render proof needs a GLB with a visible "up", and the
+ * harness ships a bead — symmetric enough that yaw and tilt look identical on it, which is exactly
+ * how this survived. This suite already reads the source for questions of that shape.
+ */
+describe('a decoration ring honours all three rotation axes', () => {
+  // DecorationShells lives in CakeTier.jsx, not CakeCanvas.jsx — bodyOf() reads the latter.
+  const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
+  const start = TIER.indexOf('function DecorationShells(');
+  const body = TIER.slice(start, TIER.indexOf('\n}\n', start));
+
+  it('reads the X and Z components, not just Y', () => {
+    expect(body).toMatch(/baseRotation\?\.\[0\]/);
+    expect(body).toMatch(/baseRotation\?\.\[2\]/);
+  });
+
+  it('still yaws by Y', () => {
+    expect(body).toMatch(/baseRotation\?\.\[1\]/);
+  });
+
+  /* ⚠️ THE TILT MUST NOT JOIN THE YAW EXPRESSION. Applied as its own inner group, every decoration
+     ring already on a saved cake keeps the orientation it has; folded into the group rotation, the
+     composition changes and they all move. */
+  it('applies the tilt inside the yawed group, leaving existing rings put', () => {
+    expect(body).toMatch(/rotation=\{\[0, \(u\.rotY \?\? 0\) \+ ry, 0\]\}/);
+    expect(body).toMatch(/<group rotation=\{tilt\}>/);
+  });
+});
+
+/* ── A tilted decoration ring sits ON the surface ────────────────────────────────────────────────
+ *
+ * The seat subtracts the model's lowest point so its base rests on the cake. `minY` is measured
+ * UPRIGHT, which was correct while the only freedom was yaw — a yaw cannot change a height. The
+ * tilt added in the same session could, and the ring floated: laying a rosette face-up with -90°
+ * about X moves its lowest point from the bottom of a 1.9-tall model to the bottom of a 0.4-deep
+ * one, so subtracting the upright figure lifted it by the difference. On the real model that was
+ * (0.952 - 0.202) x shellScale of clear air, which is what Sandeep photographed.
+ */
+describe('a tilted decoration ring is seated after the tilt', () => {
+  const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
+  const start = TIER.indexOf('function DecorationShells(');
+  const body = TIER.slice(start, TIER.indexOf('\n}\n', start));
+
+  it('measures the seat from the TILTED bounds, not the authored minY', () => {
+    expect(body).toMatch(/setFromObject\(scene\)\.applyMatrix4/);
+    expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
+    // The untilted figure must not be what positions the shell any more.
+    expect(body).not.toMatch(/u\.pos\[1\] - minY \* shellScale/);
+  });
+
+  /* ⚠️ AN UNTILTED ELEMENT MUST KEEP THE MEASURED minY EXACTLY. Recomputing for everything would
+     move every decoration ring already on a saved cake by whatever the two measurements disagree
+     about — a silent change to work customers have already approved. */
+  it('short-circuits to the authored minY when there is no tilt', () => {
+    expect(body).toMatch(/if \(!scene \|\| \(!tilt\[0\] && !tilt\[2\]\)\) return minY;/);
+  });
+});

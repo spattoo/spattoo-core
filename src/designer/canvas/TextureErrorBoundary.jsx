@@ -33,21 +33,8 @@ export function SafeGlb({ screen = 'CakeCanvas', children }) {
   );
 }
 
-// drei's <Environment preset> fetches an HDRI from a public CDN (pmndrs drei-assets
-// on GitHub raw), which is flaky / rate-limited and 503s. A failed env map must
-// NEVER crash the scene — wrap it so a load failure degrades to the scene's default
-// lighting instead of white-screening the designer. Same props as <Environment>.
-export function SafeEnvironment(props) {
-  // ErrorBoundary OUTSIDE the Suspense: <Environment> suspends while loading the
-  // HDR, and on a load REJECTION React unwinds to the Suspense and the error
-  // propagates to the boundary ABOVE it — so the boundary must sit outside to
-  // catch it (and the Suspense lets call sites without their own boundary, like
-  // the off-screen thumbnail canvas, load it safely).
-  return (
-    <TextureErrorBoundary screen="Environment">
-      <Suspense fallback={null}>
-        <Environment {...props} />
-      </Suspense>
-    </TextureErrorBoundary>
-  );
-}
+/* ⚠️ `SafeEnvironment` MOVED TO safeEnvironment.jsx, and deliberately is not re-exported here.
+   `check:env-map` treats a file that MENTIONS the name as one that lights a scene — a proxy for
+   "mounts a scene" — so a convenience re-export would put the name straight back and re-flag every
+   module that only wants `SafeGlb`. That is what kept `StampStroke` off the public surface: it
+   mounts no scene, but it needs a GLB boundary, and the boundary lived next to the environment. */

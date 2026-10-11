@@ -1,5 +1,14 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import PhotoDoor from './PhotoDoor.jsx';
+/* ⚠️ THE DESIGNER'S OWN SEARCH, not a `name.includes(q)` of this gallery's own. That helper already
+   knows what searching a cake catalogue means and every bit of it was reported by a baker: age
+   phrases are pulled out and RANGE-tested (`4 years` must not match a 12-year template through its
+   "1"), filler words are dropped so "cake for 4 years girl" returns something, every word has to
+   match some field rather than one field matching the whole query, and `search_slugs` carries what
+   is ON the cake — Sandeep's own gap: "if a cake has ranbow in it, and the template is named 'kids
+   birthday cake', when user searches the template with rainbow, it does not show up." A second
+   implementation here would have had to re-learn all of that from the same reports. */
+import { matchesTemplateSearch } from '../../designer/templateFilter.js';
 
 // ── The design facet ────────────────────────────────────────────────────────────────────────────
 // Three doors onto the same field. The customer picks the one they recognise themselves in, and
@@ -125,12 +134,23 @@ export default function DesignFacet({ draft, patch, close, api, bakerName, slug,
 }
 
 // ── The gallery ─────────────────────────────────────────────────────────────────────────────────
-// Thumbnails and names, nothing else. The full design snapshot is not fetched here and the public
+// Thumbnails, nothing else — not even a name. Sandeep, settling this for the designer's catalogue
+// first: "we can actually skip showing the name. its difficult to name a lot of templates. thumbnail
+// speaks. just the way canva app does." The storefront showed the same label failing the same way —
+// three cards in one screenshot read Football — so it was width spent on a word that distinguished
+// nothing. The name is still in the DOM as the picture's `alt`; see the card.
+// The full design snapshot is not fetched here and the public
 // route does not serve it: it is what a browsing customer least needs and a competitor most wants.
 // Whoever actually starts from one asks for it by id.
 
+/* How many cakes before a search box earns its row. Two columns, so this is about two screens on a
+   phone — below it the grid IS the index and a box is clutter; above it a customer is scrolling
+   through pictures with no words on them, which is what was reported. */
+const SEARCH_FROM = 8;
+
 function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selectedId }) {
   const [state, setState] = useState({ loading: true, templates: [], error: null });
+  const [query, setQuery] = useState('');
   /* The photograph being looked at, large. Null is the grid. Local rather than lifted because
      nothing outside this door needs to know a customer is squinting at a picture. */
   const [photo, setPhoto] = useState(null);
@@ -142,6 +162,13 @@ function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selected
       .catch(e => alive && setState({ loading: false, templates: [], error: e.message }));
     return () => { alive = false; };
   }, [api]);
+
+  /* ⚠️ ABOVE THE EARLY RETURNS — `state.loading` bails out three lines down and a hook cannot sit
+     under one (check:hooks). */
+  const shown = useMemo(
+    () => (query.trim() ? state.templates.filter(t => matchesTemplateSearch(t, query)) : state.templates),
+    [state.templates, query],
+  );
 
   if (state.loading) return <div style={s.note}>Fetching cakes…</div>;
 
@@ -215,8 +242,41 @@ function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selected
         <span style={s.galleryHint}>Cakes {bakerName} can make</span>
       </div>
 
+      {/* ── Search ───────────────────────────────────────────────────────────────────────────────
+          ⚠️ IT SEARCHES WHAT THE CARDS NO LONGER SAY, and that is the point rather than an
+          awkwardness. The gallery dropped its captions on 2026-10-06 — "its difficult to name a lot
+          of templates. thumbnail speaks" — so a customer cannot read a name anywhere here. The name
+          is still in the DOM as the picture's `alt` and still searchable, which is exactly how the
+          designer's own catalogue has worked since it dropped captions first.
+
+          ⚠️ ONLY ONCE THE SHELF OUTGROWS A SCREEN. A box over four cakes is a control that costs a
+          row of a phone to answer a question nobody has — and the gallery is two columns, so about
+          eight cakes is where scrolling starts. Below that the pictures ARE the index. Above it,
+          hunting through 33 thumbnails with no words on them is the complaint this answers.
+
+          ⚠️ AND IT STAYS ON SCREEN ONCE IT HAS APPEARED, even when a query narrows the list to two —
+          keyed on the fetched catalogue, never on `shown`. Keyed on the filtered list it would
+          vanish under the customer mid-type, taking their query with it. */}
+      {state.templates.length > SEARCH_FROM && (
+        <input
+          type="search"
+          value={query}
+          onChange={e => setQuery(e.target.value)}
+          placeholder={`Search ${bakerName}'s cakes…`}
+          aria-label="Search cakes"
+          style={s.search}
+        />
+      )}
+
+      {!shown.length && (
+        <div style={s.note}>
+          <div>Nothing matching “{query.trim()}”.</div>
+          <button type="button" style={s.back} onClick={() => setQuery('')}>Clear the search</button>
+        </div>
+      )}
+
       <div style={s.grid}>
-        {state.templates.map(t => {
+        {shown.map(t => {
           const isPhoto = t.type === 'photo';
           return (
             /* ⚠️ A PHOTO OPENS, A DESIGN PICKS, and the two must not be one gesture. Picking a
@@ -228,14 +288,22 @@ function TemplateGallery({ api, bakerName, onBack, onPick, onPickPhoto, selected
                     style={{ ...s.card, ...(t.id === selectedId ? s.cardOn : null) }}
                     aria-pressed={t.id === selectedId}>
               <div style={s.thumbWrap}>
+                {/* ⚠️ THE NAME IS THE `alt`, AND THAT IS THE WHOLE REASON THIS IS NOT `alt=""`.
+                    With the caption gone the picture is all the card has, so an empty alt would
+                    leave this button with no accessible name at all — a screen reader would read a
+                    grid of "button, button, button". Not drawn, still said. */}
                 {t.thumbnail_url
-                  ? <img src={t.thumbnail_url} alt="" loading="lazy" style={s.thumb} />
+                  ? <img src={t.thumbnail_url} alt={t.name} loading="lazy" style={s.thumb} />
                   : <div style={s.noThumb} aria-hidden="true">🎂</div>}
                 {/* Legible BEFORE the tap (rule 7): these two tiles do different things. */}
                 {isPhoto && <span style={s.photoTag}>Photo</span>}
+                {/* ⚠️ ON the picture now, not under it — the row it used to sit in is gone, and a
+                    lone "2 tiers" hanging below some cards and not others was a ragged edge for one
+                    word. Top left, mirroring `TemplateGrid`'s badge so the same fact sits in the
+                    same corner on both sides of the app (INVARIANTS #14). A photo's `tier_count` is
+                    null on purpose, so these two chips can never collide. */}
+                {t.tier_count > 1 && <span style={s.tierTag}>{t.tier_count} tiers</span>}
               </div>
-              <span style={s.cardName}>{t.name}</span>
-              {t.tier_count > 1 && <span style={s.cardMeta}>{t.tier_count} tiers</span>}
             </button>
           );
         })}
@@ -258,11 +326,44 @@ const s = {
   back: { border: 'none', background: 'none', font: 'inherit', fontSize: 12.5, fontWeight: 700,
           color: '#7A6C60', cursor: 'pointer', padding: 0, alignSelf: 'flex-start' },
 
-  grid: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(118px, 1fr))', gap: 12 },
-  card: { display: 'flex', flexDirection: 'column', gap: 5, padding: 8, cursor: 'pointer',
+  /* ⚠️ TWO ON A PHONE, ALWAYS — never three, and never one. A bare `minmax(Npx, 1fr)` cannot say
+     that: the column count falls out of N against a width this component does not know, so every N
+     is wrong on some phone. Measured in the harness, grid width is the viewport less 76: a 320px
+     phone gives 244 and a 430px phone 420. At `minmax(132px, …)` the big phone fits THREE columns —
+     which is what shipped, and what "hardly able to see the complete cake" was looking at — while at
+     `minmax(170px, …)` the small phone collapses to ONE.
+     `min(170px, (100% - gap) / 2)` caps the track's minimum at half the row, so two columns always
+     fit however narrow it gets, and the 170 only starts to bind once there is room for a third —
+     i.e. on a tablet or a desktop, where a third column is wanted. One expression, no breakpoint,
+     and no number that has to be re-guessed per device. */
+  /* The storefront's own palette, not the app's chrome — same reasoning as every other control on
+     this sheet (see the note in TemplateGrid about why these two galleries stay apart). */
+  search: {
+    width: '100%', boxSizing: 'border-box', padding: '9px 12px', marginBottom: 2,
+    fontSize: 13.5, fontWeight: 600, fontFamily: 'inherit', color: '#2A241F',
+    border: '1.5px solid #E7DFD5', borderRadius: 10, outline: 'none', background: '#fff',
+  },
+  grid: { display: 'grid', gap: 10,
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(170px, (100% - 10px) / 2), 1fr))' },
+  /* ⚠️ THE PICTURE IS THE WHOLE CARD. No caption row, so no padding to inset it and no gap to hold
+     one — that is ~16px of width and a whole text row handed back to the cake. `overflow: hidden`
+     is what makes the border radius clip the image now that it reaches the edge. */
+  card: { display: 'flex', flexDirection: 'column', padding: 0, cursor: 'pointer', overflow: 'hidden',
           borderRadius: 12, border: '1.5px solid #EDE5DB', background: '#fff', font: 'inherit' },
   cardOn: { borderColor: '#2C4433', boxShadow: '0 0 0 2px rgba(44,68,51,0.12)' },
-  thumbWrap: { position: 'relative', aspectRatio: '1 / 1', borderRadius: 9, background: '#FAF6F0',
+  /* ⚠️ 3:2 BECAUSE THAT IS WHAT A STORED THUMBNAIL ACTUALLY IS, and this box was square. The capture
+     does not store the frame it rendered — `captureThumbnailBlob` crops to the cake's alpha bounds
+     and grows the rect to `THUMB_ASPECT`, which is 3/2. Measured by running the real `contentBounds`
+     + `contentCrop` over six rendered cakes, including a tall one: every single crop came out at
+     1.50. A 3:2 picture drawn `contain` in a 1:1 box fits by width and leaves a THIRD of the height
+     empty, as equal bands above and below — exactly the dead space reported from the live
+     storefront. Matching the box to the picture removes all of it, with nothing cropped and no
+     thumbnail re-captured.
+     ⚠️ `TemplateGrid` carries the opposite claim — "the stored thumbnails ARE square: the capture
+     canvas is a fixed 400x400". The canvas is; the stored crop of it is not, and that grid is
+     letterboxing the same third. Corrected there in the comment, not in the layout, because it is
+     the designer's catalogue and nobody asked for it to move. */
+  thumbWrap: { position: 'relative', aspectRatio: '3 / 2', background: '#FAF6F0',
                overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' },
   photoTag: { position: 'absolute', right: 4, bottom: 4, fontSize: 9, fontWeight: 800,
               letterSpacing: 0.3, color: '#fff', background: 'rgba(42,36,31,0.72)',
@@ -278,8 +379,9 @@ const s = {
               fontWeight: 800, cursor: 'pointer' },
   thumb:   { width: '100%', height: '100%', objectFit: 'contain' },
   noThumb: { fontSize: 26, opacity: 0.35 },
-  cardName: { fontSize: 12, fontWeight: 700, color: '#2A241F', lineHeight: 1.3, textAlign: 'center' },
-  cardMeta: { fontSize: 10.5, fontWeight: 600, color: '#A2968A', textAlign: 'center' },
+  tierTag: { position: 'absolute', left: 4, top: 4, fontSize: 9, fontWeight: 800, letterSpacing: 0.3,
+             color: '#5A4C40', background: 'rgba(255,255,255,0.92)', border: '1px solid #E7DFD5',
+             borderRadius: 5, padding: '2px 5px', pointerEvents: 'none' },
 
   note: { display: 'flex', flexDirection: 'column', gap: 8, fontSize: 13, fontWeight: 600,
           color: '#7A6C60' },

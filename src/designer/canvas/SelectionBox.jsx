@@ -1,6 +1,7 @@
 import { useMemo, useEffect } from 'react';
 import * as THREE from 'three';
 import { SELECTION_COLOR } from '../constants.js';
+import { HIT_SOLID_MIN_DEPTH } from '../placement.js';
 
 // The ONE selection cue for a placed element: a rectangle tracing the element's HIT PLANE.
 //
@@ -36,7 +37,7 @@ const LIFT = 0.006;   // local units clear of the element's front-most point (z-
 
 export default function SelectionBox({ width, height, centerY = 0, z = 0, depth = 0, centerZ = null }) {
   const geometry = useMemo(
-    () => new THREE.EdgesGeometry(depth > 1e-4
+    () => new THREE.EdgesGeometry(depth > HIT_SOLID_MIN_DEPTH
       ? new THREE.BoxGeometry(width, height, depth)
       : new THREE.PlaneGeometry(width, height)),
     [width, height, depth],
@@ -44,7 +45,7 @@ export default function SelectionBox({ width, height, centerY = 0, z = 0, depth 
   useEffect(() => () => geometry.dispose(), [geometry]);
 
   // 3D box: centre on the model's depth midpoint. Flat rect: sit LIFT proud of the front (z-fight guard).
-  const posZ = depth > 1e-4 ? (centerZ ?? z) : z + LIFT;
+  const posZ = depth > HIT_SOLID_MIN_DEPTH ? (centerZ ?? z) : z + LIFT;
   return (
     <lineSegments position={[0, centerY, posZ]} geometry={geometry} renderOrder={1}>
       <lineBasicMaterial color={SELECTION_COLOR} toneMapped={false} depthWrite={false} />

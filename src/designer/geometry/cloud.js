@@ -246,8 +246,18 @@ export function cloudOutline(params = {}, cake = {}, { cells = 110 } = {}) {
  * 'board' and 'side' both rest on the board — a flat cloud pressed on the wall still stands on
  * something, it does not hover at an arbitrary height up the tier.
  */
-export function cloudBaseY(surface, { topY = 0, boardY = 0 } = {}) {
-  return surface === 'top' ? topY : boardY;
+/* ⚠️ `boardY` AND `baseY` ARE DIFFERENT HEIGHTS, and they were one. The caller passes a TIER's
+ * numbers, and a tier's base is the board only when the tier is the bottom one — above that it is
+ * the lid of the tier below. A cloud on the wall rightly stands on its own tier's base; a cloud on
+ * "the board" means THE BOARD, the thing the whole cake stands on. One field answering both
+ * questions is why a second-tier cloud sent to the board landed on the join between the tiers.
+ *
+ * `baseY` falls back to `boardY`, so every caller that passes only the old pair keeps the behaviour
+ * it had — which on a bottom tier was already right, those two heights being the same there. */
+export function cloudBaseY(surface, { topY = 0, boardY = 0, baseY = null } = {}) {
+  if (surface === 'top') return topY;
+  if (surface === 'board') return boardY;
+  return baseY ?? boardY;          // 'side' — the foot of THIS tier's wall
 }
 
 /**
@@ -268,7 +278,8 @@ export function cloudPlacement(params = {}, cake = {}) {
   /* The wall is the one surface with somewhere to go UP. `cloudBaseY` answers where the surface is;
      `rise` is how far up it from there, as a fraction of the wall's own height — which is the gap
      between the two heights the caller already passes. */
-  const wallH = Math.max(0, (cake.topY ?? 0) - (cake.boardY ?? 0));
+  // The wall's own height: its lid minus its foot, which is this tier's base and not the board.
+  const wallH = Math.max(0, (cake.topY ?? 0) - (cake.baseY ?? cake.boardY ?? 0));
   const baseY = cloudBaseY(p.surface, cake) + (onWall ? clamp01(p.rise ?? 0) * wallH : 0);
   const onTop = p.surface === 'top';
   const flat = p.variant === 'flat';

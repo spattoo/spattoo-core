@@ -58,6 +58,8 @@ const ROLLOFF = Number(params.get('ro') ?? 0);
 // ?env= scales this material's share of the environment map. A dielectric still reflects ~4% of the
 // sky ADDITIVELY however matte it is, which is the one thing an albedo divisor cannot touch.
 const ENV = params.get('env') === null ? 1 : Number(params.get('env'));
+const ORTHO = params.get('ortho') === '1';
+const ZOOM = Number(params.get('zoom') ?? 190);
 /* ?tm= names the tone mapping. ACES compresses and DESATURATES the top of the range — the exact
  * signature of a saturated colour arriving milky — and it is the one term neither the environment
  * sweep nor any albedo divisor could reach. */
@@ -81,7 +83,12 @@ function Card() {
 }
 
 createRoot(document.getElementById('root')).render(
-  <Canvas shadows camera={{ position: [0, 0, 3.4], fov: 38 }}
+  <Canvas shadows
+    /* ?ortho=1 — the TOPPER STUDIO's own camera (orthographic, zoom 190, dead on), so the rig can
+       render the identical card under the studio's projection and the cake's and be diffed. The two
+       disagreed on a real topper and nothing else about the scenes differs. */
+    {...(ORTHO ? { orthographic: true, camera: { position: [0, 0, 6], zoom: ZOOM } }
+               : { camera: { position: [0, 0, 3.4], fov: 38 } })}
     gl={{ preserveDrawingBuffer: true }} style={{ height: '100%' }}
     onCreated={({ gl }) => { if (TONE !== undefined) gl.toneMapping = TONE; }}>
     <SceneLights shadows />

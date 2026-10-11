@@ -94,6 +94,12 @@ export const NOMINAL_MM_PER_UNIT = (8 * 25.4) / 2.4;   // ≈ 84.7
  */
 export const WRITING_FIT = Object.freeze({ cream: 0.8, acrylic: 0.4 });
 
+/* The colour a fondant message starts at — plain white paste, before any gel is kneaded through it,
+ * which is what a baker reaches for and the one shade that reads as fondant rather than as a choice
+ * somebody already made for them. A seed, not a rule: it is the ColorWheel's starting position and
+ * the renderer's fallback, so the two cannot disagree about an untouched message. */
+export const FONDANT_WRITING_COLOR = '#F4EFE6';
+
 // The starting size for a message of this material — the cream one for a message that does not say,
 // because an absent `style` has always meant cream (see DEFAULT_WRITING).
 export const writingFit = (style) => WRITING_FIT[style] ?? WRITING_FIT.cream;
@@ -174,6 +180,45 @@ export const CAMERA_POSITION        = [0, 4.85, 6.95];
 export const CAMERA_POSITION_MOBILE = [0, 5.36, 7.91];
 export const CAMERA_FOV             = 42;
 
+/* ── Which way the thumbnail camera looks ────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE THUMBNAIL IS NOT A PICTURE OF THE STUDIO. It is drawn on its own off-screen canvas with no
+ * floor and no backdrop, and framed by `FitCakeCamera`, which fits the DISTANCE to the cake's
+ * bounding sphere every frame. Only the DIRECTION was fixed — one hardcoded vector, dead front and
+ * low — so every template in the catalogue was photographed from the same place.
+ *
+ * Sandeep: "some times cake's interesting decorations are on the top (hugging) or a message written
+ * on the top. that needs to be highlighted. not from the front which capturrs size. some cakes need
+ * to be covered both top and side, so a slightly tilted angle works here."
+ *
+ * ⚠️ `front` IS EXACTLY WHAT SHIPPED — az 0°, el 22.3° is the old `(0, CAMERA_POSITION[1] - 2,
+ * CAMERA_POSITION[2])` normalised, so a template saved without touching the control is framed
+ * byte-identically to one saved last week. A new default would have re-shot the whole catalogue the
+ * next time anybody re-saved.
+ *
+ * ⚠️ AND `top` IS NOT 90°. Straight down, a round cake is a disc: the side it was decorated on is
+ * gone, and the silhouette goes square, which the 3:2 thumbnail crop then letterboxes. 72° keeps a
+ * sliver of wall under the top — enough to read as a cake rather than a circle — which is also what
+ * makes the crop behave. Measured, not guessed: see the table in the Save as Template panel's note. */
+export const THUMB_VIEWS = {
+  front:    { label: 'Front',        az: 0,  el: 22.3 },
+  tilt:     { label: 'Tilted',       az: 22, el: 45   },
+  top:      { label: 'Top',          az: 0,  el: 72   },
+};
+export const THUMB_VIEW_DEFAULT = { az: 0, el: 22.3 };
+/* Elevation is clamped rather than wrapped: past vertical the cake turns upside down, and below the
+   board you photograph its underside. Azimuth is free — a cake goes all the way round. */
+export const THUMB_EL_MIN = -5;
+export const THUMB_EL_MAX = 85;
+/* {az, el} in DEGREES → a unit direction FROM the cake TOWARD the camera. Degrees because they are
+   stored on a template and read by a person; the renderer is the only thing that wants radians. */
+export const thumbViewDir = (view) => {
+  const az = ((view?.az ?? THUMB_VIEW_DEFAULT.az) * Math.PI) / 180;
+  const el = ((view?.el ?? THUMB_VIEW_DEFAULT.el) * Math.PI) / 180;
+  const c = Math.cos(el);
+  return [Math.sin(az) * c, Math.sin(el), Math.cos(az) * c];
+};
+
 // ── Top cap ───────────────────────────────────────────────────────────────────
 // CakeTier renders a thin cap disc (height 0.02) on top of each tier so the
 // top face has a slightly smoother sheen. Balls placed on the top surface must
@@ -202,6 +247,16 @@ export const FLAT_STICKER_Y_OFFSET  = 0.025;  // lift above cake top surface —
 // — but referencing them by name means a slug rename never needs a code change.
 
 // Cake surfaces an element can be placed on.
+/* The top face of the cake board, in world units — where the tier stack starts.
+ *
+ * ⚠️ FOUR COPIES OF THIS NUMBER EXISTED. `BOARD_TOP_Y` in CakeDesigner, `BOARD_Y` in FinishHandles,
+ * and two bare `0.1`s in CakeCanvas (one of them the board mesh's own thickness, which is what
+ * DEFINES it: a 0.1-tall slab centred at 0.05 tops out exactly here). They agreed, which is the
+ * only reason nothing had broken — but a cloud asking "where is the board" had no one place to ask,
+ * and ended up asking its own tier instead. One name, imported.
+ */
+export const BOARD_TOP_Y = 0.1;
+
 export const ZONES = Object.freeze({
   TOP_SURFACE: 'top_surface',
   SIDE:        'side',
