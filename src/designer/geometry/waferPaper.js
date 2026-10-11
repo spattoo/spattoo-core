@@ -305,7 +305,7 @@ export function waferPanel({
   sway = WAFER_DEFAULTS.sway, sways = WAFER_DEFAULTS.sways, phase = 0,
   meander = WAFER_DEFAULTS.meander, meanders = WAFER_DEFAULTS.meanders,
   skew = WAFER_DEFAULTS.skew, meanderPhase = 0, creaseOffset = 0,
-  curl = WAFER_DEFAULTS.curl, splay = WAFER_DEFAULTS.splay,
+  curl = WAFER_DEFAULTS.curl, splay = WAFER_DEFAULTS.splay, fin = false,
   hem = WAFER_DEFAULTS.hem, notch = WAFER_DEFAULTS.notch,
   segH = WAFER_DEFAULTS.segH, rng = Math.random,
 } = {}) {
@@ -358,9 +358,13 @@ export function waferPanel({
   let base = 0;
 
   // Where a crease sits across the panel, and how far it stands off the wall at height vv.
+  /* A fin is ONE strip of paper: it has one length, varied between strips, not across itself.
+     `hemProfile` by u01 is right lying flat (a torn edge running sideways) and wrong stood on edge,
+     where that axis is the radius — it cuts each strip on a slope and the skirt hangs short. */
+  const finDrop = fin ? hemProfile(hem, rng(), notch, rng()) : 1;
   const creaseAt = (j, vv) => {
     const u01 = j / folds;
-    const drop = hemProfile(hem, u01, notch, tear[j]);
+    const drop = fin ? finDrop : hemProfile(hem, u01, notch, tear[j]);
     const vvj  = vv * drop;
     const w    = width * (1 - taper * vvj);
     const u    = (u01 - 0.5) * w;
@@ -402,6 +406,18 @@ export function waferPanel({
      * Clamping at 0 is not a cheat, it is what the paper does. A pleated sheet pressed onto a wall
      * rests its VALLEYS against it and stands its ridges off; the valley cannot continue inward,
      * there is cake there. The flat spots the clamp creates are the contact patches. */
+    /* ⚠️ A FIN IS NOT THE FLAT PANEL TURNED SIDEWAYS. Two things break when it is:
+         1. `u = (u01 - 0.5) * w` CENTRES the strip on the wall, so half of every fin is inside the
+            cake. A strip is stuck ON — it starts at the surface and reaches out.
+         2. `fold` zig-zags across the WIDTH. Lying flat that is pleats running down the wall,
+            correct. Stood on edge the width is the RADIUS, so it corrugates the fin front-to-back
+            and every strip renders as a stiff comb tooth. A ribbon waves along its LENGTH, most at
+            the free edge where nothing holds it. */
+    if (fin) {
+      const t    = u01;                                   // 0 at the wall, 1 at the free edge
+      const wave = ripple * w * t * Math.sin(phase + vvj * ripples * Math.PI * 2);
+      return { x: t * w + snake, y: -height * vvj, z: wave + bow * t + drift, u01 };
+    }
     const z = bow + fold + splay * height * vvj * vvj;
     return { x: u + drift + snake, y: -height * vvj, z: Math.max(0, z), u01 };
   };
@@ -531,7 +547,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       phase: o.nest * (s / gap) * o.ripples * Math.PI * 2 * (1 - 1 / Math.max(1, o.width))
            + (1 - o.nest) * rnd() * Math.PI * 2,
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
-      hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd,
+      hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
     });
     bakeWaferAO(panel, o.ao);
 
@@ -540,7 +556,18 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
        angle round a circle, which is the move that makes a sheet cake work (festoon.js's lesson:
        on a rect wall the normal is constant along a face and turns only at the corners). */
     const m = new THREE.Matrix4();
-    const yaw = Math.atan2(at.nx, at.nz);
+    /* ⚠️ `fin` IS WHICH WAY THE SHEET FACES, and it is wallpaper versus wafer paper. Flat puts the
+       panel's FACE on the wall and the sheet lies on the cake. A real skirt is strips stood on
+       EDGE: *"wafer paper strips are perpendicularly added to the cake surface."* `finAngle` is how
+       far they are turned — a full 90 leaves no tangential width to cover the wall, and the
+       reference's strips overlap like scales, so they are turned most of the way, not all. */
+    /* ⚠️ MINUS, NOT PLUS, AND A RENDER CANNOT TELL YOU WHICH. `makeRotationY(t)` sends local +X to
+       (cos t, −sin t); at `yaw` that is the tangential direction, which is what lying flat wants.
+       Turning by +90° sends it to −(outward) — so every strip grew INWARD through the middle of
+       the cake, and what showed outside was only its wave. On screen that reads as "too sparse",
+       which is what I spent two renders chasing. The test that measures the minimum radius of the
+       built skirt found it in one: 0.011 against a tier radius of 1. */
+    const yaw = Math.atan2(at.nx, at.nz) - (o.fin ? (o.finAngle ?? 90) * Math.PI / 180 : 0);
     m.makeRotationY(yaw);
     // Lean the panel out from the wall, about its own pinned top edge.
     m.multiply(new THREE.Matrix4().makeRotationX(-vary(o.lean, 1)));

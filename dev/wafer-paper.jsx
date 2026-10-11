@@ -76,6 +76,7 @@ function Skirt({ shape, p }) {
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
     curl: p.curl, splay: p.splay, lean: p.lean,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
+    ao: p.ao, fin: p.fin, finAngle: p.finAngle,
     /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
        silently takes WAFER_DEFAULTS and two different ?ao= values render identically — which they
        did, and the measurement said so before the eye could. */
@@ -118,6 +119,7 @@ function fromUrl() {
   const out = {};
   for (const [k, v] of q) {
     if (k === 'hem' || k === 'colour' || k === 'bg' || k === 'cake') { out[k] = v; continue; }
+    if (k === 'fin') { out.fin = v === '1' || v === 'true'; continue; }
     const n = Number(v);
     if (Number.isFinite(n)) out[k] = n;
   }

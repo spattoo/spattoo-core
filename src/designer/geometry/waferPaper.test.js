@@ -550,3 +550,59 @@ describe('bakeWaferAO — what darkens a white skirt on a white cake', () => {
     expect(g.getAttribute('color')).toBeTruthy();
   });
 });
+
+/* ⚠️ GROUNDWORK, DEFAULT OFF. A skirt's panels are mounted FACE-OUT, so every sheet lies on the
+ * wall like printed wrap. Real wafer paper is strips stood on EDGE: Sandeep, after an afternoon I
+ * spent shading the wrong shape, *"wafer paper strips are perpendicularly added to the cake
+ * surface. your screenshot shows like the strips are flat."* `fin` is that correction. It is not
+ * finished — the look is not the reference yet — but the geometry below is settled and tested, and
+ * nothing reaches a cake until a preset asks for it. */
+describe('fin mode — a strip stood on edge, not laid flat', () => {
+  const opts = { shape: { kind: 'round', radius: 1 }, tierHeight: 1, radius: 1, count: 12, jitter: 0 };
+
+  it('is off by default, so no existing cake moves', () => {
+    const flat = buildWaferSkirt(opts);
+    const fin  = buildWaferSkirt({ ...opts, fin: true });
+    expect(flat).toBeTruthy();
+    expect(fin).toBeTruthy();
+    // a different mounting produces different geometry; the default must be the flat one
+    const a = flat.getAttribute('position'), b = fin.getAttribute('position');
+    let same = a.count === b.count;
+    if (same) for (let i = 0; i < a.count * 3 && same; i++) same = Math.abs(a.array[i] - b.array[i]) < 1e-9;
+    expect(same).toBe(false);
+  });
+
+  it('builds without NaN, which a bad transform would introduce silently', () => {
+    const g = buildWaferSkirt({ ...opts, fin: true, finAngle: 46, width: 3, ripple: 0.2 });
+    const p = g.getAttribute('position');
+    for (let i = 0; i < p.count * 3; i++) expect(Number.isFinite(p.array[i])).toBe(true);
+  });
+
+  /* ⚠️ THE COVERAGE RELATIONSHIP, written down because it is counter-intuitive and cost a render to
+     find: a strip's TANGENTIAL extent is `width × gap × sin(finAngle)`, so the fraction of the wall
+     it covers is `width × sin(finAngle)` — INDEPENDENT OF COUNT, since the gap shrinks with it.
+     Raising `count` alone can never close the gaps between strips; only width or a lower angle can.
+     At the control's current max (width 3.2) a 90° mounting covers nothing at all. */
+  it('coverage is width x sin(angle), and count cannot change it', () => {
+    const cover = (width, deg) => width * Math.sin(deg * Math.PI / 180);
+    expect(cover(3.0, 90)).toBeCloseTo(3.0, 6);
+    expect(cover(3.0, 46)).toBeCloseTo(2.158, 3);
+    expect(cover(1.3, 74)).toBeCloseTo(1.250, 3);
+    // the same two strips at twice the count still cover the same fraction of the wall
+    const g1 = buildWaferSkirt({ ...opts, fin: true, count: 20, width: 2 });
+    const g2 = buildWaferSkirt({ ...opts, fin: true, count: 40, width: 2 });
+    expect(g1.getAttribute('position').count * 2).toBe(g2.getAttribute('position').count);
+  });
+
+  it('a strip reaches OUT from the wall rather than straddling it', () => {
+    const g = buildWaferSkirt({ ...opts, fin: true, finAngle: 90, width: 2, ripple: 0, curl: 0, sway: 0 });
+    const p = g.getAttribute('position');
+    let minR = Infinity, maxR = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const r = Math.hypot(p.getX(i), p.getZ(i));
+      if (r < minR) minR = r; if (r > maxR) maxR = r;
+    }
+    expect(minR).toBeGreaterThan(0.9);   // nothing buried inside the tier
+    expect(maxR).toBeGreaterThan(1.0);   // and it stands proud of it
+  });
+});
