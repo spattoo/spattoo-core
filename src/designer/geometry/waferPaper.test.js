@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waferPanel, buildWaferSkirt, WAFER_PRESETS, waferPresetFor } from './waferPaper.js';
+import { waferPanel, buildWaferSkirt, WAFER_PRESETS, waferPresetFor, bakeWaferAO } from './waferPaper.js';
 
 const bbox = (g) => {
   const p = g.getAttribute('position');
@@ -490,5 +490,63 @@ describe('waferPresetFor — the skirt arrives in something you can see', () => 
     const a = waferPresetFor('#ffffff');
     a.colour = '#123456';
     expect(WAFER_PRESETS['Pink, notched hem'].colour).toBe('#f2766d');
+  });
+});
+
+/* ⚠️ THE SCENE IS A NEAR-UNIFORM DOME, so a white skirt in front of a white wall carries almost no
+ * shading of its own. Measured against a reference photograph of a real wafer cake: the render's
+ * p5–p95 luminance range over the wall was 10.8 where the photograph is 80.1. Making the sheets four
+ * times denser moved it to 12.1 — *"still cant see anything. total white."* It was never geometry.
+ * `bakeCreaseAO` (creamWall.js) is this repo's existing answer to the same problem on the piped
+ * wall; this is that answer for the skirt. */
+describe('bakeWaferAO — what darkens a white skirt on a white cake', () => {
+  const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, rng: () => 0.5 });
+
+  it('paints a colour attribute the material can read', () => {
+    const g = bakeWaferAO(panel(), 0.73);
+    const col = g.getAttribute('color');
+    expect(col).toBeTruthy();
+    expect(col.count).toBe(g.getAttribute('position').count);
+    expect(col.itemSize).toBe(3);
+  });
+
+  /* The ramp is on the panel's LOCAL z — 0 at the wall, positive outward — so it behaves the same on
+     a round tier and a sheet one without knowing which it is on. */
+  it('darkens what is tucked toward the wall and leaves the outer crest alone', () => {
+    const g = bakeWaferAO(panel(), 0.73);
+    const pos = g.getAttribute('position'), col = g.getAttribute('color');
+    let maxZ = 0;
+    for (let i = 0; i < pos.count; i++) maxZ = Math.max(maxZ, pos.getZ(i));
+    let crest = -1, deep = 2;
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i), c = col.getX(i);
+      if (z > maxZ * 0.98) crest = Math.max(crest, c);
+      if (z < maxZ * 0.02) deep = Math.min(deep, c);
+    }
+    expect(crest).toBeGreaterThan(0.95);   // open to the sky
+    expect(deep).toBeLessThan(0.45);       // in the gap
+  });
+
+  it('is grey — occlusion darkens, it does not tint', () => {
+    const g = bakeWaferAO(panel(), 0.73);
+    const col = g.getAttribute('color');
+    for (let i = 0; i < col.count; i += 37) {
+      expect(col.getY(i)).toBeCloseTo(col.getX(i), 6);
+      expect(col.getZ(i)).toBeCloseTo(col.getX(i), 6);
+    }
+  });
+
+  it('never goes below black, however hard it is pushed', () => {
+    const col = bakeWaferAO(panel(), 4).getAttribute('color');
+    for (let i = 0; i < col.count; i++) expect(col.getX(i)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('is a no-op at zero, so the old flat look is still reachable', () => {
+    expect(bakeWaferAO(panel(), 0).getAttribute('color')).toBeUndefined();
+  });
+
+  it('a built skirt carries it, or the material has nothing to read', () => {
+    const g = buildWaferSkirt({ shape: { kind: 'round', radius: 1 }, tierHeight: 1, radius: 1, count: 6 });
+    expect(g.getAttribute('color')).toBeTruthy();
   });
 });

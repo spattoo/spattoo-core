@@ -54,6 +54,11 @@ export default function CakeWafer({ wafer, shp, tierHeight, baseY, radius, onCli
           The numbers live in WAFER_PAPER_MATERIAL so the studio and the cake agree. */}
       <meshPhysicalMaterial
         color={p.colour ?? '#fbf7f2'}
+        /* ⚠️ The baked gap occlusion (bakeWaferAO) rides on the geometry's colour attribute. Without
+           this flag it is carried all the way to the GPU and ignored, and a white skirt on a white
+           cake renders as one flat field — measured at a seventh of a reference photograph's tonal
+           range before this. */
+        vertexColors
         side={THREE.DoubleSide}
         roughness={p.roughness ?? WAFER_PAPER_MATERIAL.roughness}
         transmission={p.transmission ?? WAFER_PAPER_MATERIAL.transmission}

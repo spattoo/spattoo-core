@@ -41,6 +41,21 @@ import { mergePenGeometries } from './creamPen.js';
  */
 
 export const WAFER_DEFAULTS = {
+  /* How hard the gaps between sheets are darkened. The scene is a near-uniform dome, so without
+     this a white skirt on a white cake renders as one flat field — see bakeWaferAO.
+     ⚠️ CALIBRATED AGAINST THE REFERENCE PHOTOGRAPH, not chosen. Mean luminance / p5–p95 range over
+     the wafer wall, measured the same way on each:
+         photograph   207.1 / 80.1
+         ao 0        233.6 / 12.1     flat, and the reported fault
+         ao 0.55     218.3 / 36.0
+         ao 0.73     208.0 / 59.6     <- mean lands on the photograph
+         ao 1.00     178.2 / 148.6    too dark AND too contrasty; gaps at 85 against the photo's 154
+     0.73 is where the mean matches. The range is still 74% of the photograph's, and the missing
+     quarter is NOT occlusion — it is the bright specular line along each sheet's edge, which a
+     near-overhead key cannot put there. That is a lighting question, logged rather than guessed at.
+     Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
+  ao: 0.73,
+
   /* How many panels go round. Not a spacing, because the spacing that reads right depends on the
      perimeter and a baker thinks in "how many pieces", not in millimetres of gap. */
   /* ⚠️ SWEPT, NOT GUESSED. The first numbers (56 panels, width 1.3, splay 0.26) rendered a hula
@@ -417,6 +432,44 @@ export function waferPanel({
  * Returns one merged geometry in CAKE space, with y = 0 at the tier's top edge, so the caller
  * positions it by the rim rather than by the floor.
  */
+/* ── What darkens a white skirt on a white cake ──────────────────────────────────────────────────
+ *
+ * ⚠️ THE SCENE'S LIGHT IS VERY NEARLY A UNIFORM DOME, so geometry alone carries almost no shading
+ * and a white sheet in front of a white wall renders as one flat field. MEASURED, not guessed:
+ * against a reference photograph of a real wafer skirt the rendered wall had a p5–p95 luminance
+ * range of 10.8 where the photograph has 80.1 — a seventh of the tonal range, and the reason for
+ * *"i can hardly see the wafer paper. totally white"* and then, after the sheets were made four
+ * times denser, *"still cant see anything. total white."* Density moved it to 12.1. It was never
+ * the geometry.
+ *
+ * ⚠️ AND THIS REPO ALREADY KNEW. `bakeCreaseAO` (creamWall.js) exists for exactly this: the piped
+ * wall is a row of ropes that read as flat pickets until occlusion was baked into vertex colours
+ * and calibrated against a photograph. A wafer skirt is the same problem — a crowd of thin sheets
+ * whose gaps the sky cannot reach — and it shipped without the same answer.
+ *
+ * The ramp is on the panel's LOCAL z, which `waferPanel` builds as 0 at the wall and positive
+ * outward, so it works the same on a round tier and a sheet one without knowing which it is on. The
+ * `acos` shape is borrowed from bakeCreaseAO rather than a linear fade: occlusion falls off fast as
+ * a surface turns toward the sky and then flattens, which is what makes a crease read as a crease
+ * instead of a gradient.
+ */
+export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao) {
+  const pos = geo?.getAttribute?.('position');
+  if (!pos || !(ao > 0)) return geo;
+  let maxZ = 0;
+  for (let i = 0; i < pos.count; i++) { const z = pos.getZ(i); if (z > maxZ) maxZ = z; }
+  const span = Math.max(1e-6, maxZ);
+  const col = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    const u = Math.min(1, Math.max(0, pos.getZ(i) / span));   // 1 at the outer crest, 0 at the wall
+    const phi = Math.acos(2 * u - 1) / Math.PI;               // 0 on a crest, 1 deep in a gap
+    const shade = Math.max(0, 1 - ao * phi);
+    col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = shade;
+  }
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  return geo;
+}
+
 export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } = {}) {
   const o = { ...WAFER_DEFAULTS, ...opts };
   const perim = perimeter(shape ?? { kind: 'round', radius });
@@ -452,6 +505,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
      * along the bottom and a flat line at the top — the photograph's silhouette inverted. So the
      * jitter goes on the rise, and each panel's drop is derived from it: top moves, hem does not. */
     const rise = vary(tierHeight * o.rise, 1);
+    /* Occlusion baked per PANEL, in its own frame, before it is turned onto the wall. */
     const panel = waferPanel({
       width: vary(w, 0.35), height: h + rise, taper: o.taper,
       ripple: vary(o.ripple, 0.5), ripples: vary(o.ripples, 0.35),
@@ -471,6 +525,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd,
     });
+    bakeWaferAO(panel, o.ao);
 
     /* Stand it on the wall. The panel's +Z must become the perimeter's OUTWARD normal, so the
        rotation is the angle of that normal — taken from the normal itself rather than from the

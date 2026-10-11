@@ -76,6 +76,10 @@ function Skirt({ shape, p }) {
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
     curl: p.curl, splay: p.splay, lean: p.lean,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
+    /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
+       silently takes WAFER_DEFAULTS and two different ?ao= values render identically — which they
+       did, and the measurement said so before the eye could. */
+    ao: p.ao,
     shingle: p.shingle, nest: p.nest,
     meander: p.meander, meanders: p.meanders, skew: p.skew, meanderLaps: p.meanderLaps,
   }), [shape, p]);
@@ -91,10 +95,10 @@ function Skirt({ shape, p }) {
           `alpha` is kept as a SEPARATE mode so the two can be compared rather than argued about. */}
       {p.alpha ? (
         <meshStandardMaterial color={p.colour} side={THREE.DoubleSide} roughness={p.roughness}
-          transparent opacity={p.opacity} />
+          vertexColors transparent opacity={p.opacity} />
       ) : (
         <meshPhysicalMaterial
-          color={p.colour} side={THREE.DoubleSide}
+          color={p.colour} side={THREE.DoubleSide} vertexColors
           roughness={p.roughness} transmission={p.transmission}
           thickness={p.thickness} ior={WAFER_PAPER_MATERIAL.ior}
           sheen={p.sheen} sheenRoughness={WAFER_PAPER_MATERIAL.sheenRoughness}
