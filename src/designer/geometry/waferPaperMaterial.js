@@ -27,11 +27,30 @@ import * as THREE from 'three';
  */
 
 export const WAFER_PAPER_MATERIAL = {
-  transmission: 0.82,   // how much light comes THROUGH. Paper is not glass, but it is not card.
+  /* ⚠️ 0.35 IS THE VALUE THE LOOK WAS ACTUALLY DEVELOPED AT, and 0.82 was never seen by anyone.
+     The harness hard-coded 0.35 in its own state for the whole time this look was being judged;
+     this constant said 0.82 and reached only the cake, where the skirt was too washed out to read
+     either way. Measured on a pink tier with the bake working, as band chroma / p5–p95 contrast:
+     0.82 → 19 / 95.3, 0.30 → 11 / 86.3, 0.00 → 10 / 80.3. Transmission is what carries the TIER's
+     colour into white paper, so it is the knob that sits between Sandeep's two complaints — *"it
+     does not look like white"* and *"i can hardly see the paper."* At 0.35 the paper is as white as
+     its own colour (chroma 9) and keeps most of the contrast; at 0 it stops reading as paper at
+     all and becomes painted card. */
+  transmission: 0.35,   // how much light comes THROUGH. Paper is not glass, but it is not card.
   roughness:    0.92,   // with transmission high, this is what scatters it into a glow
   thickness:    0.10,   // the volume light travels through — bigger = more diffusion, not thicker paper
   ior:          1.33,
-  sheen:        0.9,    // the fibre lobe
+  /* ⚠️ 0.3, AND 0.9 WAS NEVER ACTUALLY JUDGED ANYWHERE. It was set while the cake had no
+     `sheenColor` (so three.js's black made the lobe inert), the harness left it undefined (so
+     three.js's 0 made it inert there too), and the only surface that drew it — the admin studio —
+     was ignoring the baked gap occlusion, so there was no shading for it to wash out. The moment
+     all three mounted the same material, the cost showed: on white paper over a white tier, p5–p95
+     contrast against the in-frame reference ran 0.9 → 32%, 0.6 → 42%, 0.3 → 56%, 0 → 79%.
+     Sandeep: *"total white and i can hardly see the paper."* A third of the lobe keeps paper from
+     reading as plastic and gives the occlusion something to work with.
+     Re-derive with scripts/calibrate-wafer-ao.mjs; the last hand-calibration went stale unnoticed
+     because it was only ever written into a comment. */
+  sheen:        0.3,    // the fibre lobe
   sheenRoughness: 0.95,
   /* ⚠️ WITHOUT THIS THE SHEEN ABOVE DOES NOTHING, and for a while it did nothing on the cake while
      working in both tuners. three.js defaults `sheenColor` to BLACK, so a material that sets

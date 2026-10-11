@@ -56,13 +56,24 @@ export const WAFER_DEFAULTS = {
          ao 0.86                 90.4   87%
          ao 1.00                150.6  146%
 
-     0.86 is the closest on CONTRAST, which is the exposure-independent measure and the one that
-     decides whether a white skirt reads against a white wall.
+     ⚠️ ALL OF THE ABOVE IS SUPERSEDED, AND IT WENT STALE WITHOUT ANYONE NOTICING — which is the
+     part worth keeping. That sweep ran in the harness, and the harness's material said
+     `transmission: 0.35` and left sheen, thickness, grain and specular undefined, so three.js's
+     own defaults applied. `ao: 0.86` was therefore fitted against a material no cake has ever had.
+     Re-derived with scripts/calibrate-wafer-ao.mjs once all three surfaces mounted ONE material,
+     white paper on a white tier, as a percentage of the in-frame reference's p5–p95:
+
+         ao 0.00    7%        ao 0.86   56%
+         ao 0.45    8%        ao 1.20   97%   <- here
+         ao 0.60   15%        ao 1.60  111%
+
+     (at sheen 0.3; at the old sheen 0.9 nothing in the range reached even 60%, which is how the
+     sheen turned out to be the bigger lever — see WAFER_PAPER_MATERIAL.sheen.)
      ⚠️ The render is still brighter overall (mean 193 against 169) and that gap is NOT occlusion —
      it is the bright specular line along each sheet's edge in the photograph, which a near-overhead
      key light cannot put there. A lighting question, written down rather than guessed at.
      Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
-  ao: 0.86,
+  ao: 1.2,
 
   /* ⚠️ AND THE SAME RAMP ON A FIN IS SCORCH. Everything above was measured with the sheets lying
      FLAT, where the occluder is a neighbour overlapping you by two whole widths. Stood on edge the

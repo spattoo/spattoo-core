@@ -35,6 +35,11 @@ const RUNS = [
   { name: 'white tier',       q: { cake: WHITE } },
   { name: 'white tier, no tr', q: { cake: WHITE, transmission: 0 } },
   { name: 'half transmission', q: { cake: PINK, transmission: 0.3 } },
+  /* ⚠️ WHITE PAPER ON A WHITE TIER is the hard case and the studio's default, and it is where the
+     missing `vertexColors` showed: with the bake ignored there is nothing but the scene's own
+     near-uniform dome, so the skirt is one flat field. `ao: 0` reproduces exactly that. */
+  { name: 'white on white',   q: { cake: WHITE } },
+  { name: '… bake ignored',   q: { cake: WHITE, ao: 0 } },
 ];
 
 const chroma = (c) => Math.max(...c) - Math.min(...c);
@@ -64,12 +69,16 @@ const band = () => page.evaluate(() => {
     for (let x = 0; x < w; x++) all.push(px(x, y));
   const avg = (rows) => [0, 1, 2].map(i => rows.reduce((s, p) => s + p[i], 0) / rows.length);
   const sorted = [...all].sort((p, q) => (p[0] + p[1] + p[2]) - (q[0] + q[1] + q[2]));
-  return { mean: avg(all), lit: avg(sorted.slice(Math.floor(all.length * 0.9))) };
+  /* p5–p95 luminance: how much tonal range the skirt has, which is what decides whether white
+     paper is legible against a white wall. The reference photograph measures 103.3. */
+  const tone = sorted.map(c => (c[0] + c[1] + c[2]) / 3);
+  const range = tone[Math.floor(tone.length * 0.95)] - tone[Math.floor(tone.length * 0.05)];
+  return { mean: avg(all), lit: avg(sorted.slice(Math.floor(all.length * 0.9))), range };
 });
 
 console.log(`\npaper is told to be ${PAPER} — chroma ${chroma([251, 247, 242])}`);
-console.log('\n                      band mean          lit 10%');
-console.log('-'.repeat(64));
+console.log('\n                      band mean          lit 10%        p5–p95');
+console.log('-'.repeat(74));
 for (const r of RUNS) {
   /* ⚠️ THE SKIRT THE SCREENSHOT SHOWS, read off `__design()` — a flat 34-sheet "White, waved",
      not the on-edge preset. The first run of this script swept the on-edge numbers against a
@@ -84,9 +93,13 @@ for (const r of RUNS) {
      it is a different picture of the same geometry — every reflective reading would be wrong. */
   await page.waitForTimeout(5500);
   const m = await band();
-  if (!m) { console.log(`${r.name.padEnd(20)} (no cake found)`); continue; }
+  /* ⚠️ "INVISIBLE" IS A RESULT, NOT AN ERROR. The probe finds the cake by contrast against the
+     backdrop, so a white skirt on a white tier with no baked shading is genuinely not there to
+     find — which is exactly the complaint being measured. */
+  if (!m) { console.log(`${r.name.padEnd(20)} ── indistinguishable from the backdrop ──`); continue; }
   console.log(`${r.name.padEnd(20)} ${fmt(m.mean)} c${String(Math.round(chroma(m.mean))).padStart(3)}`
-            + `   ${fmt(m.lit)} c${String(Math.round(chroma(m.lit))).padStart(3)}`);
+            + `   ${fmt(m.lit)} c${String(Math.round(chroma(m.lit))).padStart(3)}`
+            + `   ${m.range.toFixed(1).padStart(6)}`);
 }
 await b.close();
 console.log(`

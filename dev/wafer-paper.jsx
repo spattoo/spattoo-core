@@ -18,7 +18,8 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import { buildWaferSkirt, WAFER_DEFAULTS } from '../src/designer/geometry/waferPaper.js';
-import { WAFER_PAPER_MATERIAL, waferFibreTexture } from '../src/designer/geometry/waferPaperMaterial.js';
+import { WAFER_PAPER_MATERIAL } from '../src/designer/geometry/waferPaperMaterial.js';
+import WaferPaperMaterial from '../src/designer/canvas/WaferPaperMaterial.jsx';
 
 /* ── Does it read as wafer paper? Open /wafer-paper.html ─────────────────────────────────────────
  *
@@ -68,8 +69,6 @@ const REFS = {
 };
 
 function Skirt({ shape, p }) {
-  // One texture for the whole skirt, rebuilt only when the grain strength changes.
-  const fibre = useMemo(() => waferFibreTexture({ strength: p.fibre }), [p.fibre]);
   const geom = useMemo(() => buildWaferSkirt({
     shape, tierHeight: TIER.height, radius: TIER.radius,
     count: p.count, width: p.width, height: p.height, rise: p.rise, taper: p.taper,
@@ -95,17 +94,15 @@ function Skirt({ shape, p }) {
           had two overlapping panels the same flat pink instead of getting denser where they cross.
           `alpha` is kept as a SEPARATE mode so the two can be compared rather than argued about. */}
       {p.alpha ? (
+        /* ⚠️ A DIAGNOSTIC, NOT THE MATERIAL. `transparent` + `opacity` puts the mesh on the
+           alpha-blended path and throws the transmission away — two overlapping panels come out
+           the same flat colour instead of getting denser where they cross. Kept as its own mode so
+           the two can be compared rather than argued about, and deliberately NOT the shared
+           component: `?alpha=1` is how you see what transmission is worth. */
         <meshStandardMaterial color={p.colour} side={THREE.DoubleSide} roughness={p.roughness}
-          vertexColors transparent opacity={p.opacity} />
+          vertexColors={!!geom.attributes.color} transparent opacity={p.opacity} />
       ) : (
-        <meshPhysicalMaterial
-          color={p.colour} side={THREE.DoubleSide} vertexColors
-          roughness={p.roughness} transmission={p.transmission}
-          thickness={p.thickness} ior={WAFER_PAPER_MATERIAL.ior}
-          sheen={p.sheen} sheenRoughness={WAFER_PAPER_MATERIAL.sheenRoughness}
-          sheenColor={WAFER_PAPER_MATERIAL.sheenColor} specularIntensity={p.specular}
-          roughnessMap={p.fibre > 0 ? fibre : null}
-          metalness={WAFER_PAPER_MATERIAL.metalness} />
+        <WaferPaperMaterial p={p} geometry={geom} />
       )}
     </mesh>
   );
@@ -131,7 +128,14 @@ export default function Harness() {
   const [shapeKey, setShapeKey] = useState('round');
   const [p, setP] = useState(() => {
     const base = PRESETS[new URLSearchParams(location.search).get('preset') || 'white waves'];
-    return { ...WAFER_DEFAULTS, ...base, seed: 7, roughness: 0.92, transmission: 0.35,
+    /* ⚠️ THE MATERIAL IS SPREAD IN, NOT RETYPED. This line used to say `roughness: 0.92,
+       transmission: 0.35` — a third copy of the material, and the transmission was less than half
+       what the cake uses (0.82). Everything it did not name (sheen, thickness, specular, grain)
+       reached the material as `undefined` and silently took three.js's own defaults, so the
+       harness ran with NO sheen and NO grain while both other surfaces had them.
+       ⚠️ THE `ao` CALIBRATION WAS DONE IN HERE AT transmission 0.35, against a material the cake
+       never had. The contrast numbers in WAFER_DEFAULTS are worth re-reading, not trusting. */
+    return { ...WAFER_DEFAULTS, ...WAFER_PAPER_MATERIAL, ...base, seed: 7,
              physical: true, ...fromUrl() };
   });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));

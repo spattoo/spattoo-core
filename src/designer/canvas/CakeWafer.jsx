@@ -1,7 +1,6 @@
 import { useMemo, useEffect } from 'react';
-import * as THREE from 'three';
 import { buildWaferSkirt, WAFER_DEFAULTS } from '../geometry/waferPaper.js';
-import { WAFER_PAPER_MATERIAL, waferFibreTexture } from '../geometry/waferPaperMaterial.js';
+import WaferPaperMaterial from './WaferPaperMaterial.jsx';
 
 // ── Wafer paper round a tier ────────────────────────────────────────────────────────────────────
 //
@@ -26,54 +25,15 @@ export default function CakeWafer({ wafer, shp, tierHeight, baseY, radius, onCli
     () => (wafer ? buildWaferSkirt({ shape: shp, tierHeight, radius, ...p }) : null),
     [wafer, shp, tierHeight, radius, p]);
 
-  /* Generated, not shipped: it is noise, and a procedural one scales to any panel without a UV
-     budget. Regenerated only when the grain strength changes. */
-  const fibre = useMemo(
-    () => (typeof document === 'undefined' ? null
-      : waferFibreTexture({ strength: p.fibre ?? WAFER_PAPER_MATERIAL.fibre })),
-    [p.fibre]);
-
-  /* A generated texture is not garbage-collected with the material — every change of grain would
-     leak one otherwise, and this is a control a baker drags. */
-  useEffect(() => () => fibre?.dispose?.(), [fibre]);
   useEffect(() => () => geom?.dispose?.(), [geom]);
 
   if (!geom) return null;
   return (
     <mesh geometry={geom} position={[0, baseY + tierHeight, 0]} castShadow receiveShadow
           onClick={onClick ?? undefined}>
-      {/* ⚠️ DoubleSide: a sheet of paper has no back. Single-sided, every panel on the far side of
-          the cake vanishes the moment it turns — and that is half of them at any angle.
-
-          ⚠️ AND NO `transparent` / `opacity` WHILE TRANSMISSION IS ON. Setting that pair puts the
-          mesh on the alpha-blended path, so every pixel becomes a flat lerp toward what is behind
-          it and the transmission is thrown away: two overlapping panels come out the same flat
-          colour instead of getting denser where they cross, which is the single most paper-like
-          thing about the references.
-
-          The numbers live in WAFER_PAPER_MATERIAL so the studio and the cake agree. */}
-      <meshPhysicalMaterial
-        color={p.colour ?? '#fbf7f2'}
-        /* ⚠️ The baked gap occlusion (bakeWaferAO) rides on the geometry's colour attribute. Without
-           this flag it is carried all the way to the GPU and ignored, and a white skirt on a white
-           cake renders as one flat field — measured at a seventh of a reference photograph's tonal
-           range before this.
-           ⚠️ AND ONLY WHEN THERE IS ONE. `bakeWaferAO` writes no attribute at `ao: 0`, and a
-           material with `vertexColors` and no colour attribute reads undefined data: the skirt
-           renders very nearly BLACK. Measured at ao 0: band mean [19,17,16]. */
-        vertexColors={!!geom.attributes.color}
-        side={THREE.DoubleSide}
-        roughness={p.roughness ?? WAFER_PAPER_MATERIAL.roughness}
-        transmission={p.transmission ?? WAFER_PAPER_MATERIAL.transmission}
-        thickness={p.thickness ?? WAFER_PAPER_MATERIAL.thickness}
-        ior={WAFER_PAPER_MATERIAL.ior}
-        sheen={p.sheen ?? WAFER_PAPER_MATERIAL.sheen}
-        sheenRoughness={WAFER_PAPER_MATERIAL.sheenRoughness}
-        sheenColor={WAFER_PAPER_MATERIAL.sheenColor}
-        metalness={WAFER_PAPER_MATERIAL.metalness}
-        specularIntensity={p.specular ?? WAFER_PAPER_MATERIAL.specular}
-        roughnessMap={(p.fibre ?? WAFER_PAPER_MATERIAL.fibre) > 0 ? fibre : null}
-      />
+      {/* ⚠️ THE material, mounted — never a hand-written copy of it. Two copies of this element
+          drifted in opposite directions before it existed; the whole story is in the component. */}
+      <WaferPaperMaterial p={p} geometry={geom} />
     </mesh>
   );
 }
