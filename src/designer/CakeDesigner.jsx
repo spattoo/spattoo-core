@@ -57,6 +57,7 @@ import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } fro
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
+import { STICK_LENGTH_RANGE } from './geometry/topperPiece.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
 import CreamPatternStudio from './pattern/CreamPatternStudio.jsx';
@@ -12361,7 +12362,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           />
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
             {t.payload?.stick?.on
-              ? 'It stands on its stick. How deep that goes was set in the studio.'
+              ? 'It stands on its stick. Height sets how long the stick is; how deep it goes was set in the studio.'
               : 'Standing pushes its bottom edge into the icing. Add a stick in the studio to raise it.'}
           </div>
         </div>
@@ -12374,6 +12375,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               fmt: v => `${Math.round(v * 100)}%`, set: v => updateTopper(t.id, { scale: v }) },
             { k: 'Turn', dial: 'offset', v: t.yaw ?? 0,   min: -Math.PI, max: Math.PI, step: 0.05,
               fmt: v => `${Math.round(v * 180 / Math.PI)}°`, set: v => updateTopper(t.id, { yaw: v }) },
+            /* ⚠️ ONLY WITH A STICK, because without one it measures nothing — the card's bottom edge
+               goes straight into the icing and there is no stem to lengthen. Same rule, and the same
+               word, as the balloon card's "Height": a pick's length IS how high the piece stands, so
+               one number says it and a second could only disagree with the first.
+               Bounds come from STICK_LENGTH_RANGE, which is what topperStick clamps to — a dial that
+               offered more than the geometry honours is a control that lies at its own ends.
+               The patch rebuilds `payload` rather than mutating it: Toppers' build memo keys on
+               `t.payload` BY REFERENCE, so an in-place edit would change the number and redraw
+               nothing. */
+            ...(t.payload?.stick?.on ? [{
+              k: 'Height', dial: 'size',
+              v: t.payload.stick.lengthScale ?? STICK_LENGTH_RANGE.default,
+              min: STICK_LENGTH_RANGE.min, max: STICK_LENGTH_RANGE.max, step: STICK_LENGTH_RANGE.step,
+              fmt: v => `${Math.round(v * 100)}%`,
+              set: v => updateTopper(t.id, {
+                payload: { ...t.payload, stick: { ...t.payload.stick, lengthScale: v } },
+              }),
+            }] : []),
           ].map(d => (
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
               fmt={d.fmt} onChange={d.set} dial={d.dial} />

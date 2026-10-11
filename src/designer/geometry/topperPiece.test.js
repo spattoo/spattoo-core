@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperContours, topperSheets, topperBox, topperStick, stickStock } from './topperPiece.js';
+import { topperContours, topperSheets, topperBox, topperStick, stickStock, STICK_LENGTH_RANGE } from './topperPiece.js';
 import { TOPPER_FINISHES, finishesOf } from './topperFinishes.js';
 import { acrylicFinishes } from './acrylicConfig.js';
 
@@ -353,6 +353,39 @@ describe('topperStick', () => {
     expect(topperStick(box, { on: true, bury: 5 }).bury).toBe(1);
     expect(topperStick(box, { on: true, bury: -3 }).bury).toBe(0);
     expect(topperStick(box, { on: true, bury: undefined }).bury).toBe(0.5);
+  });
+
+  /* ⚠️ THE LENGTH IS THE HEIGHT THE PIECE STANDS AT, and until the card grew a Height dial nothing
+   * ever wrote it: `lengthScale` was honoured here and authored nowhere, so every card on a stick
+   * stood at exactly one height. Sandeep: *"when i add stick to the card, i should be able to
+   * increase the length, when loaded on cake."* */
+  it('stretches and shortens with lengthScale, about its natural length', () => {
+    const natural = topperStick(box, { on: true }).len;
+    expect(topperStick(box, { on: true, lengthScale: 1 }).len).toBeCloseTo(natural, 6);
+    expect(topperStick(box, { on: true, lengthScale: 2 }).len).toBeCloseTo(natural * 2, 6);
+    expect(topperStick(box, { on: true, lengthScale: 0.5 }).len).toBeCloseTo(natural * 0.5, 6);
+  });
+
+  /* ⚠️ THE DIAL READS ITS BOUNDS FROM HERE. A control offering a range the geometry then clamps
+     away is a control that lies at its own ends — the same fault as a size slider capped somewhere
+     else (INVARIANTS #5b). These two must stay the one pair of numbers. */
+  it('clamps to STICK_LENGTH_RANGE, which is what the card\'s dial offers', () => {
+    const natural = topperStick(box, { on: true }).len;
+    expect(topperStick(box, { on: true, lengthScale: 999 }).len)
+      .toBeCloseTo(natural * STICK_LENGTH_RANGE.max, 6);
+    expect(topperStick(box, { on: true, lengthScale: 0 }).len)
+      .toBeCloseTo(natural * STICK_LENGTH_RANGE.min, 6);
+    expect(topperStick(box, { on: true, lengthScale: 'tall' }).len)
+      .toBeCloseTo(natural * STICK_LENGTH_RANGE.default, 6);
+  });
+
+  /* A longer stick must lower the end that goes INTO the cake, not grow upward through the card —
+     `bottomY` is the placement origin (see Toppers), so getting this backwards would sink the piece. */
+  it('a longer stick reaches further DOWN, leaving the tuck alone', () => {
+    const a = topperStick(box, { on: true, lengthScale: 1 });
+    const b = topperStick(box, { on: true, lengthScale: 3 });
+    expect(b.bottomY).toBeLessThan(a.bottomY);
+    expect(b.topY).toBeCloseTo(a.topY, 6);
   });
 
   it('scales with the card, so a resized topper keeps its proportions', () => {

@@ -166,9 +166,19 @@ const STICK_TUCK  = 0.55;   // how far it runs UP behind the card, likewise
 const clampScale = (v, lo, hi, fallback) =>
   (typeof v === 'number' && Number.isFinite(v) ? Math.max(lo, Math.min(hi, v)) : fallback);
 
+/* How far the stick may be stretched or shortened, as a multiple of its natural length.
+ *
+ * ⚠️ EXPORTED SO THE DIAL AND THE GEOMETRY CANNOT DISAGREE. `topperStick` has always clamped to
+ * this, but nothing authored it: the stick length was a field the renderer honoured and no screen
+ * ever wrote, so a card on a stick stood at exactly one height. A control that offered a range this
+ * function then silently refused would be the same bug as a size slider capped somewhere else
+ * (INVARIANTS #5b: ONE size path), so the card reads its bounds from here. */
+export const STICK_LENGTH_RANGE = Object.freeze({ min: 0.25, max: 6, step: 0.05, default: 1 });
+
 export function topperStick(box, stick) {
   if (!stick?.on || !box || !(box.h > 0)) return null;
-  const lengthScale = clampScale(stick.lengthScale, 0.25, 6, 1);
+  const lengthScale = clampScale(stick.lengthScale,
+    STICK_LENGTH_RANGE.min, STICK_LENGTH_RANGE.max, STICK_LENGTH_RANGE.default);
   const radiusScale = clampScale(stick.radiusScale, 0.25, 6, 1);
   const len = box.h * STICK_BELOW * lengthScale;
   const tuck = box.h * STICK_TUCK;
