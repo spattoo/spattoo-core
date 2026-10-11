@@ -75,13 +75,56 @@ export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 
   // its anchor. This is what makes "top edge touches the rim" exact for tilted shells.
   const m = rotM.clone().multiply(new THREE.Matrix4().makeScale(sc, sc, sc));
   const wbox = geo.boundingBox.clone().applyMatrix4(m);
+  const radialProfile = shellRadialProfile(geo, m, wbox);
   // worldTopY/BotY → vertical reach; worldMaxZ/MinZ → radial reach (local z = the radial axis
   // the renderer places along), both AFTER the tilt, so the editor's clamps match the pixels.
   return {
     geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x,
     worldTopY: wbox.max.y, worldBotY: wbox.min.y,
     worldMaxZ: wbox.max.z, worldMinZ: wbox.min.z,
+    radialProfile,
   };
+}
+
+/* How tall the shell is ACROSS its radial band — PROFILE_SAMPLES heights, inner edge to outer.
+ *
+ * ⚠️ A RING IS A DOME, NOT A SHELF, AND TREATING IT AS ONE PUT SPRINKLES IN A CIRCLE. Anything
+ * resting on a rim ring needs to know the height at ITS radius, not the ring's maximum. Measured on
+ * the catalogue Rosette after its authored -85° tilt: the crest sits at 100% in the middle of the
+ * band and falls to 42% at the inner edge and 33% at the outer. A single height for the whole
+ * annulus therefore floats by up to 0.374 — two thirds of the shell's own height — and scattered
+ * pieces only touch along one radius. Sandeep, looking at exactly that: *"why the sprinkles forming
+ * a circle on the cream layer. it should be random."*
+ *
+ * ⚠️ MEASURED HERE, where the tilt and the scale are already resolved. `m` is the same matrix
+ * worldTopY/worldMaxZ come from, so the profile cannot describe a differently-posed shell than the
+ * extents beside it — which is the class of bug that produced the two wrong cuts before this one.
+ *
+ * MAX per slice, not mean: something resting on cream sits on the highest cream under it.
+ */
+const PROFILE_SAMPLES = 16;
+
+export function shellRadialProfile(geo, m, wbox) {
+  const pos = geo.attributes?.position;
+  const span = wbox.max.z - wbox.min.z;
+  if (!pos || !(span > 1e-9)) return null;
+  const out = new Float32Array(PROFILE_SAMPLES).fill(-Infinity);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(m);
+    let k = Math.floor(((v.z - wbox.min.z) / span) * PROFILE_SAMPLES);
+    if (k < 0) k = 0; else if (k >= PROFILE_SAMPLES) k = PROFILE_SAMPLES - 1;
+    if (v.y > out[k]) out[k] = v.y;
+  }
+  /* An empty slice — a shell with a gap across its depth — takes its neighbour rather than
+     -Infinity, so an interpolation across it can never return a hole. */
+  for (let k = 0; k < PROFILE_SAMPLES; k++) {
+    if (out[k] !== -Infinity) continue;
+    let a = k - 1; while (a >= 0 && out[a] === -Infinity) a--;
+    let b = k + 1; while (b < PROFILE_SAMPLES && out[b] === -Infinity) b++;
+    out[k] = a >= 0 ? out[a] : (b < PROFILE_SAMPLES ? out[b] : wbox.max.y);
+  }
+  return out;
 }
 
 /* Where a ring's shells actually sit, given the surface they anchor to.

@@ -194,6 +194,10 @@ export function resolveTopPipingBands({ topPipings = [], topY, radius }) {
     bands.push({
       innerR: Math.max(0, Math.min(a, b)),
       outerR: Math.max(a, b),
+      /* Height across the band, inner → outer, in world units. Absent for a shell that has not
+         rendered yet; `topSurfaceYAt` then falls back to the crest, which is the old behaviour. */
+      profile: ext.radialProfile ? ext.radialProfile.map(f => anchorY + radius * f) : null,
+      flipped: a > b,   // the fracs can run outward→inward; the profile is always inner→outer in z
       /* ⚠️ `topFrac` IS ALREADY MEASURED FROM THE ANCHOR — do not add `botFrac` back. The first cut
          wrote `topFrac - botFrac`, reasoning from `ringBaseY` (which seats the shell at
          `anchorY - worldBotY`) and so counting the shell's below-anchor reach twice. `botFrac` is
@@ -208,12 +212,36 @@ export function resolveTopPipingBands({ topPipings = [], topY, radius }) {
 
 /* The height something resting on the lid should sit at, `r` from the tier centre.
  *
- * ⚠️ `max`, NOT "the last one wins". Rim rings nest, so two can overlap at a radius where one is
- * taller — and a sprinkle has to rest on whatever is highest, not on whichever happened to be
- * resolved last. Returns `topY` untouched when nothing is underneath, which is every cake that has
- * no rim ring and therefore every design saved before this existed. */
+ * ⚠️ IT READS THE PROFILE, NOT THE CREST. A rim ring is a dome across its band — measured on the
+ * catalogue Rosette, 100% in the middle falling to 42% and 33% at the edges — so a single height
+ * floats everything except a thin circle at the crest radius. That is precisely what shipped and
+ * what came back as *"why the sprinkles forming a circle on the cream layer. it should be random."*
+ *
+ * Linear between samples: the profile is 16 buckets of the real geometry, and a sprinkle is small
+ * compared with one bucket, so interpolating is as true as the sampling and far cheaper than
+ * carrying the mesh here.
+ *
+ * ⚠️ `max`, NOT "the last one wins". Rim rings nest, so two can cover the same radius and a piece
+ * rests on whichever is highest. Returns `topY` untouched when nothing is underneath — every cake
+ * with no rim ring, and so every design saved before this existed.
+ */
 export function topSurfaceYAt(bands, r, topY) {
   let y = topY;
-  for (const b of bands) if (r >= b.innerR && r <= b.outerR && b.surfaceY > y) y = b.surfaceY;
+  for (const b of bands) {
+    if (r < b.innerR || r > b.outerR) continue;
+    let h;
+    if (b.profile && b.profile.length) {
+      const span = b.outerR - b.innerR;
+      let t = span > 1e-9 ? (r - b.innerR) / span : 0;
+      if (b.flipped) t = 1 - t;
+      const x = t * (b.profile.length - 1);
+      const i = Math.min(b.profile.length - 1, Math.max(0, Math.floor(x)));
+      const j = Math.min(b.profile.length - 1, i + 1);
+      h = b.profile[i] + (b.profile[j] - b.profile[i]) * (x - i);
+    } else {
+      h = b.surfaceY;
+    }
+    if (h > y) y = h;
+  }
   return y;
 }

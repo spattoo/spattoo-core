@@ -133,6 +133,47 @@ describe('resolveTopPipingBands / topSurfaceYAt — what a sprinkle lands on', (
     expect(topSurfaceYAt(bands, 0.3, topY)).toBeCloseTo(topY + 0.35 * 0.5, 6);
   });
 
+  /* ⚠️ THE DOME. A rim ring is not a shelf: measured on the catalogue Rosette after its authored
+     -85° tilt, the crest sits at 100% in the middle of the band and falls to 42% / 33% at the
+     edges. Seating everything at the crest floats all but a thin circle at the crest radius, which
+     is what shipped: *"why the sprinkles forming a circle on the cream layer."* */
+  it('follows the band profile instead of seating everything at the crest', () => {
+    // inner 0.1, crest 0.5, outer 0.2 — fracs of radius, the shape the renderer publishes
+    setShellExtents('dome.glb', false, 1, {
+      topFrac: 0.5, botFrac: 0, radialOutFrac: 0, radialInFrac: -1,
+      radialProfile: [0.1, 0.3, 0.5, 0.35, 0.2],
+    });
+    const bands = resolveTopPipingBands({ topPipings: [ring('dome.glb')], topY, radius });
+    const at = (r) => topSurfaceYAt(bands, r, topY);
+    const innerR = bands[0].innerR, outerR = bands[0].outerR;
+    expect(at(innerR)).toBeCloseTo(topY + radius * 0.1, 5);                 // low at the inner edge
+    expect(at((innerR + outerR) / 2)).toBeCloseTo(topY + radius * 0.5, 5);  // crest in the middle
+    expect(at(outerR)).toBeCloseTo(topY + radius * 0.2, 5);                 // low again at the outer
+    // and every sample in between lands under the crest — nothing hovers
+    for (let t = 0; t <= 1.0001; t += 0.1) {
+      const h = at(innerR + t * (outerR - innerR));
+      expect(h).toBeLessThanOrEqual(topY + radius * 0.5 + 1e-6);
+      expect(h).toBeGreaterThanOrEqual(topY + radius * 0.1 - 1e-6);
+    }
+  });
+
+  it('interpolates between samples rather than stepping', () => {
+    setShellExtents('ramp.glb', false, 1, {
+      topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -1,
+      radialProfile: [0, 0.4],
+    });
+    const bands = resolveTopPipingBands({ topPipings: [ring('ramp.glb')], topY, radius });
+    const { innerR, outerR } = bands[0];
+    expect(topSurfaceYAt(bands, innerR + 0.5 * (outerR - innerR), topY))
+      .toBeCloseTo(topY + radius * 0.2, 5);
+  });
+
+  it('falls back to the crest when a shell has not published a profile yet', () => {
+    setShellExtents('nope.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.5 });
+    const bands = resolveTopPipingBands({ topPipings: [ring('nope.glb')], topY, radius });
+    expect(topSurfaceYAt(bands, bands[0].innerR + 0.01, topY)).toBeCloseTo(topY + radius * 0.4, 5);
+  });
+
   /* ⚠️ THE THREE SKIPS, each the difference between a sprinkle on icing and one in mid-air. */
   it('ignores a drip: procedural, no glbUrl, and it hangs outside the wall', () => {
     expect(resolveTopPipingBands({ topPipings: [{ drip: true, glbUrl: null }], topY, radius })).toHaveLength(0);

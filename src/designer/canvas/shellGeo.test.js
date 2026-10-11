@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildShellGeo, capShellScale, extractGeo, ringBaseY } from './shellGeo.js';
+import { buildShellGeo, capShellScale, extractGeo, ringBaseY, shellRadialProfile } from './shellGeo.js';
 
 /** The smallest thing that looks like a loaded GLB scene: one mesh with real geometry. */
 function fakeScene() {
@@ -192,5 +192,78 @@ describe('ringBaseY lifts a tilted shell clear of the surface', () => {
   it('survives a missing shell — the rings call it before a GLB has loaded', () => {
     expect(ringBaseY(0.5, null)).toBe(0.5);
     expect(ringBaseY(0.5, {})).toBe(0.5);
+  });
+});
+
+/* ⚠️ A RING IS A DOME ACROSS ITS BAND, AND PRETENDING OTHERWISE PUT SPRINKLES IN A CIRCLE.
+ * Measured on the catalogue Rosette after its authored -85° tilt: the crest is 100% in the middle
+ * of the radial band and falls to 42% at the inner edge and 33% at the outer — a flat plane at the
+ * crest floats by 0.374, two thirds of the shell's own height, so anything resting on it touches
+ * only along one radius. Sandeep: *"why the sprinkles forming a circle on the cream layer. it
+ * should be random."* */
+describe('shellRadialProfile — the height ACROSS a shell, inner edge to outer', () => {
+  // A ridge running along X: tallest at z = 0, falling to nothing at z = ±1.
+  function ridge() {
+    const pts = [];
+    for (let i = 0; i <= 40; i++) {
+      const z = -1 + (i / 40) * 2;
+      const y = 1 - Math.abs(z);
+      pts.push(-0.5, y, z, 0, y, z, 0.5, y, z);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    g.computeBoundingBox();
+    return g;
+  }
+
+  const identity = new THREE.Matrix4();
+
+  it('reports the crest in the middle and the fall-off at both edges', () => {
+    const g = ridge();
+    const prof = shellRadialProfile(g, identity, g.boundingBox);
+    expect(prof).toBeTruthy();
+    const mid = prof[Math.floor(prof.length / 2)];
+    expect(mid).toBeCloseTo(1, 1);                 // crest
+    expect(prof[0]).toBeLessThan(0.2);             // inner edge, near nothing
+    expect(prof[prof.length - 1]).toBeLessThan(0.2);
+    expect(Math.max(...prof)).toBeCloseTo(1, 1);
+  });
+
+  /* MAX per slice, not mean: something resting on cream sits on the HIGHEST cream under it. */
+  it('takes the tallest point in each slice', () => {
+    const g = new THREE.BufferGeometry();
+    // two points in the same z slice at different heights
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      0, 0.2, -1, 0, 0.9, -1, 0, 0.1, 1,
+    ]), 3));
+    g.computeBoundingBox();
+    const prof = shellRadialProfile(g, identity, g.boundingBox);
+    expect(prof[0]).toBeCloseTo(0.9, 6);
+  });
+
+  /* ⚠️ MEASURED THROUGH THE SAME MATRIX the extents beside it use, or the profile would describe a
+     differently-posed shell — the class of fault that produced two wrong cuts before this. */
+  it('is measured through the transform, so a tilt moves it', () => {
+    const g = ridge();
+    const m = new THREE.Matrix4().makeScale(1, 2, 1);
+    const box = g.boundingBox.clone().applyMatrix4(m);
+    const prof = shellRadialProfile(g, m, box);
+    expect(Math.max(...prof)).toBeCloseTo(2, 1);
+  });
+
+  it('is null for geometry with no depth to profile', () => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    g.computeBoundingBox();
+    expect(shellRadialProfile(g, identity, g.boundingBox)).toBeNull();
+  });
+
+  it('buildShellGeo carries one, so the renderer can publish it', () => {
+    const g = ridge();
+    const scene = new THREE.Scene();
+    scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial()));
+    const A = buildShellGeo(scene, false, 0.35, 1, [0, 0, 0], null);
+    expect(A.radialProfile).toBeTruthy();
+    expect(A.radialProfile.length).toBeGreaterThan(1);
   });
 });

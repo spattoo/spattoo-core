@@ -857,6 +857,9 @@ function TopPipingRingImpl({
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
         outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
+        // Height across the band, inner edge → outer, as fractions of the radius. What rests on a
+        // rim ring needs the height at ITS radius; the crest alone makes a dome read as a shelf.
+        radialProfile: A.radialProfile && Array.from(A.radialProfile, y => y / radius),
       });
     }
   }, [A, glbPath, flipTop, sizeFactor, radius, extraRadialOffset, userRadialOffset]);
@@ -1034,6 +1037,9 @@ function BottomPipingRingImpl({
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
         outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
+        // Height across the band, inner edge → outer, as fractions of the radius. What rests on a
+        // rim ring needs the height at ITS radius; the crest alone makes a dome read as a shelf.
+        radialProfile: A.radialProfile && Array.from(A.radialProfile, y => y / radius),
       });
     }
   }, [A, glbPath, flipBottom, sizeFactor, radius, extraRadialOffset]);
