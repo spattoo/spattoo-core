@@ -57,8 +57,11 @@ export default function CakeWafer({ wafer, shp, tierHeight, baseY, radius, onCli
         /* ⚠️ The baked gap occlusion (bakeWaferAO) rides on the geometry's colour attribute. Without
            this flag it is carried all the way to the GPU and ignored, and a white skirt on a white
            cake renders as one flat field — measured at a seventh of a reference photograph's tonal
-           range before this. */
-        vertexColors
+           range before this.
+           ⚠️ AND ONLY WHEN THERE IS ONE. `bakeWaferAO` writes no attribute at `ao: 0`, and a
+           material with `vertexColors` and no colour attribute reads undefined data: the skirt
+           renders very nearly BLACK. Measured at ao 0: band mean [19,17,16]. */
+        vertexColors={!!geom.attributes.color}
         side={THREE.DoubleSide}
         roughness={p.roughness ?? WAFER_PAPER_MATERIAL.roughness}
         transmission={p.transmission ?? WAFER_PAPER_MATERIAL.transmission}
@@ -66,8 +69,10 @@ export default function CakeWafer({ wafer, shp, tierHeight, baseY, radius, onCli
         ior={WAFER_PAPER_MATERIAL.ior}
         sheen={p.sheen ?? WAFER_PAPER_MATERIAL.sheen}
         sheenRoughness={WAFER_PAPER_MATERIAL.sheenRoughness}
+        sheenColor={WAFER_PAPER_MATERIAL.sheenColor}
+        metalness={WAFER_PAPER_MATERIAL.metalness}
         specularIntensity={p.specular ?? WAFER_PAPER_MATERIAL.specular}
-        roughnessMap={fibre}
+        roughnessMap={(p.fibre ?? WAFER_PAPER_MATERIAL.fibre) > 0 ? fibre : null}
       />
     </mesh>
   );

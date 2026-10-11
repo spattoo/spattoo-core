@@ -33,6 +33,17 @@ export const WAFER_PAPER_MATERIAL = {
   ior:          1.33,
   sheen:        0.9,    // the fibre lobe
   sheenRoughness: 0.95,
+  /* ⚠️ WITHOUT THIS THE SHEEN ABOVE DOES NOTHING, and for a while it did nothing on the cake while
+     working in both tuners. three.js defaults `sheenColor` to BLACK, so a material that sets
+     `sheen` and omits the colour has a lobe that contributes no light at all. The studio and the
+     harness each typed `sheenColor="#ffffff"` into their own JSX; `CakeWafer` did not, so the
+     broad white highlight that makes paper read as PAPER was a studio-only effect. Sandeep, on a
+     cake render whose shape he had just accepted: *"it does not look like white."* A material fact
+     belongs to the material, not to three copies of a JSX attribute (INVARIANTS #15). */
+  sheenColor:   '#ffffff',
+  /* Stated rather than left to the default for the same reason: a sheet of starch is not metal,
+     and the two tuners both said so out loud while the cake relied on three.js agreeing. */
+  metalness:    0,
   specular:     0.18,   // down, because a tight highlight is what reads as plastic
   fibre:        0.55,   // how strongly the grain shows
 };
