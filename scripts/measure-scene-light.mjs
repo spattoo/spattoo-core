@@ -66,13 +66,19 @@ async function read(subject, amb, key, fill, env) {
     if (!vals.length) return null;
     const mean = vals.reduce((s, v) => s + v, 0) / vals.length;
     const sd = Math.sqrt(vals.reduce((s, v) => s + (v - mean) ** 2, 0) / vals.length);
-    return { mean, sd, p5: vals[(0.05 * vals.length) | 0], p95: vals[(0.95 * vals.length) | 0], n: vals.length };
+    /* ⚠️ CONTRAST IS NOT WETNESS, and reading one for the other reverses the answer. A glaze looks
+       wet because a SMALL, VERY BRIGHT highlight sits over a DARKER body — so the number is the gap
+       between the specular peak and the median, not the spread of the whole cake. Measured on the
+       glaze, global contrast RISES as the environment falls (137 → 174), which would read as "the
+       glaze got better" when what is being asked is whether its shine survived. */
+    const pick = (q) => vals[Math.min(vals.length - 1, (q * vals.length) | 0)];
+    return { mean, sd, p5: pick(0.05), p95: pick(0.95), p50: pick(0.5), p99: pick(0.99), n: vals.length };
   });
 }
 
 console.log(`${TM ? `tone ${TM}\n` : ''}`);
-console.log('env    rig (amb,key,fill)   key:fill   subject   mean     sd    p5-p95');
-console.log('-'.repeat(76));
+console.log('env    rig (amb,key,fill)   key:fill   subject   mean     sd    p5-p95    p50    p99   shine');
+console.log('-'.repeat(98));
 for (const env of ENVS) {
 for (const rig of RIGS) {
   const [amb, key, fill] = rig.split(',').map(Number);
@@ -80,7 +86,7 @@ for (const rig of RIGS) {
   for (const subject of SUBJECTS) {
     const r = await read(subject, amb, key, fill, env);
     if (!r) { console.log(`${String(env).padEnd(6)} ${rig.padEnd(20)} ${ratio.padStart(8)}   ${subject.padEnd(8)} no cake pixels`); continue; }
-    console.log(`${String(env).padEnd(6)} ${rig.padEnd(20)} ${ratio.padStart(8)}   ${subject.padEnd(8)} ${r.mean.toFixed(1).padStart(6)} ${r.sd.toFixed(1).padStart(6)} ${(r.p95 - r.p5).toFixed(1).padStart(9)}`);
+    console.log(`${String(env).padEnd(6)} ${rig.padEnd(20)} ${ratio.padStart(8)}   ${subject.padEnd(8)} ${r.mean.toFixed(1).padStart(6)} ${r.sd.toFixed(1).padStart(6)} ${(r.p95 - r.p5).toFixed(1).padStart(9)} ${r.p50.toFixed(1).padStart(6)} ${r.p99.toFixed(1).padStart(6)} ${(r.p99 - r.p50).toFixed(1).padStart(7)}`);
   }
 }
 }

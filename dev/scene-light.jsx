@@ -1,5 +1,5 @@
 import { createRoot } from 'react-dom/client';
-import { CakePreview, SceneBackground, SceneLights, configureSceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
+import { CakePreview, SceneLights, configureSceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
 import { DESIGNER_GROUND } from '../src/designer/constants.js';
 import './scene.js';                       // the self-hosted HDRI, not drei's indoor fallback
 
@@ -65,9 +65,17 @@ const tier = (over = {}) => ({
   topPipings: [], bottomPipings: [], creamLayers: [], ...over,
 });
 
+/* ⚠️ THE GLOSSY SUBJECTS ARE THE POINT OF THE SECOND PASS. `SCENE_ENV.intensity` is 1.25
+   deliberately — "brighter than three's default 1.0 so glossy finishes read wet" — so lowering it
+   for contrast on matte surfaces spends something here. A glaze is the clearest case: low roughness,
+   full clearcoat, and its look IS the room reflected in it.
+   Metallic CARD toppers are deliberately absent: `CardStock` lights them from `cardEnvMap`, its own
+   purpose-built environment, not the scene's — so the scene's intensity cannot reach them and
+   measuring one would report a false "no cost". */
 const DESIGNS = {
   white:  { tiers: [tier({ color: '#FFFFFF' })] },
   colour: { tiers: [tier({ color: '#D94F6E' })] },
+  glaze:  { tiers: [tier({ color: '#4A2C1B', frostingType: 'glaze' })] },
   full:   { tiers: [tier({
     color: '#F6F2E9',
     wafer: { count: 85, width: 2.4, height: 1.18, rise: 0.16, taper: 0, ripple: 0.12, ripples: 1.3,
@@ -98,11 +106,15 @@ function App() {
         </div>
       </div>
       <div style={{ flex: 1, position: 'relative', background: DESIGNER_GROUND }}>
-        {/* ⚠️ INSIDE the Canvas, via CakePreview's children slot — SceneBackground calls an R3F hook
-            and throws "Hooks can only be used within the Canvas component" anywhere else. */}
-        <CakePreview design={design} shadows autoRotate={!q.has('still')} lights={<Rig />}>
-          <SceneBackground colour={DESIGNER_GROUND} />
-        </CakePreview>
+        {/* ⚠️ NO SceneBackground, AND THAT IS THE MEASUREMENT RATHER THAN THE LOOK. Painting the
+            backdrop inside the Canvas makes every pixel opaque, so the alpha mask the script uses to
+            find the cake stops finding anything and reports the BACKDROP's statistics instead — p50
+            and p99 came back as 226.3 for every subject at every setting, which is the ground colour
+            and not a cake at all. The readings before that mask broke were cake-versus-backdrop
+            contrast, not the cake's own. CakePreview's Canvas is alpha:true and
+            CakeThumbnailScene draws no floor, so with nothing behind it the cake arrives cut out.
+            The div behind keeps the colour for the eye; the pixels stay honest. */}
+        <CakePreview design={design} shadows autoRotate={!q.has('still')} lights={<Rig />} />
       </div>
     </div>
   );
