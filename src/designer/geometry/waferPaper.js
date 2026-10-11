@@ -43,18 +43,26 @@ import { mergePenGeometries } from './creamPen.js';
 export const WAFER_DEFAULTS = {
   /* How hard the gaps between sheets are darkened. The scene is a near-uniform dome, so without
      this a white skirt on a white cake renders as one flat field — see bakeWaferAO.
-     ⚠️ CALIBRATED AGAINST THE REFERENCE PHOTOGRAPH, not chosen. Mean luminance / p5–p95 range over
-     the wafer wall, measured the same way on each:
-         photograph   207.1 / 80.1
-         ao 0        233.6 / 12.1     flat, and the reported fault
-         ao 0.55     218.3 / 36.0
-         ao 0.73     208.0 / 59.6     <- mean lands on the photograph
-         ao 1.00     178.2 / 148.6    too dark AND too contrasty; gaps at 85 against the photo's 154
-     0.73 is where the mean matches. The range is still 74% of the photograph's, and the missing
-     quarter is NOT occlusion — it is the bright specular line along each sheet's edge, which a
-     near-overhead key cannot put there. That is a lighting question, logged rather than guessed at.
+     ⚠️ CALIBRATED AGAINST THE REFERENCE PHOTOGRAPH SITTING IN THE SAME SCREENSHOT, which is not a
+     detail. The first calibration measured the render against a photograph in a separate file and
+     matched its MEAN — but a photograph's mean is its exposure, which is arbitrary, and the two
+     files were exposed differently. Sandeep: *"both reference and your work are on the same
+     screenshot. why dont you compare."* Right: the harness draws its reference beside the render,
+     so one capture, one compression, one display. Measured that way, p5–p95 luminance:
+
+         reference (in frame)   103.3
+         ao 0.55                 36.4   35%
+         ao 0.73                 60.2   58%   <- what matching the other photo's mean produced
+         ao 0.86                 90.4   87%
+         ao 1.00                150.6  146%
+
+     0.86 is the closest on CONTRAST, which is the exposure-independent measure and the one that
+     decides whether a white skirt reads against a white wall.
+     ⚠️ The render is still brighter overall (mean 193 against 169) and that gap is NOT occlusion —
+     it is the bright specular line along each sheet's edge in the photograph, which a near-overhead
+     key light cannot put there. A lighting question, written down rather than guessed at.
      Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
-  ao: 0.73,
+  ao: 0.86,
 
   /* How many panels go round. Not a spacing, because the spacing that reads right depends on the
      perimeter and a baker thinks in "how many pieces", not in millimetres of gap. */
