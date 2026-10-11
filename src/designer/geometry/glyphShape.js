@@ -12,7 +12,12 @@
 // ONLY in their charset, max length, per-count size defaults and label — see GLYPH_FAMILIES below.
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
-import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
+/* ⚠️ `with { type: 'json' }` SO THIS LAYER CAN BE MEASURED FROM A PLAIN NODE SCRIPT. Node 24 refuses
+   a JSON import without the attribute, and this one line sits in the chain every geometry module
+   reaches through `surface.js` — so `node scripts/measure-*.mjs` could not import ANY of them, and
+   two measuring scripts had to be written as vitest files or have their inputs inlined instead.
+   Vite 6 and vitest both honour the attribute, so nothing about the bundle changes. */
+import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json' with { type: 'json' };
 
 const FONT = new FontLoader().parse(helvetikerBold);
 const cache = new Map();
