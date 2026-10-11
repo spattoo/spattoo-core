@@ -477,16 +477,24 @@ export function waferPanel({
  * a surface turns toward the sky and then flattens, which is what makes a crease read as a crease
  * instead of a gradient.
  */
-export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao) {
+export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false) {
   const pos = geo?.getAttribute?.('position');
   if (!pos || !(ao > 0)) return geo;
-  let maxZ = 0;
-  for (let i = 0; i < pos.count; i++) { const z = pos.getZ(i); if (z > maxZ) maxZ = z; }
-  const span = Math.max(1e-6, maxZ);
+  /* ⚠️ WHICH AXIS IS "AWAY FROM THE WALL" DEPENDS ON HOW THE SHEET IS MOUNTED, and getting it wrong
+     does not look like bad occlusion — it looks like scorching. Lying flat the depth is local Z, so
+     the ramp darkens what is tucked toward the wall. Stood on edge local Z is the WAVE axis and
+     local X is the radius, so the same ramp paints a gradient ACROSS each strip's face, light on
+     one side of every wave and dark on the other. Sandeep: *"the shadows are so bad that it looks
+     like burnt paper."* Right — and it is the fourth thing in this file whose meaning turns with
+     the panel, after the fold, the hem and the mounting sign. */
+  const axis = fin ? 'getX' : 'getZ';
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < pos.count; i++) { const v = pos[axis](i); if (v < lo) lo = v; if (v > hi) hi = v; }
+  const span = Math.max(1e-6, hi - lo);
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
-    const u = Math.min(1, Math.max(0, pos.getZ(i) / span));   // 1 at the outer crest, 0 at the wall
-    const phi = Math.acos(2 * u - 1) / Math.PI;               // 0 on a crest, 1 deep in a gap
+    const u = Math.min(1, Math.max(0, (pos[axis](i) - lo) / span));   // 1 at the free edge, 0 at the wall
+    const phi = Math.acos(2 * u - 1) / Math.PI;                       // 0 in the open, 1 deep in a gap
     const shade = Math.max(0, 1 - ao * phi);
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = shade;
   }
@@ -549,7 +557,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
     });
-    bakeWaferAO(panel, o.ao);
+    bakeWaferAO(panel, o.ao, !!o.fin);
 
     /* Stand it on the wall. The panel's +Z must become the perimeter's OUTWARD normal, so the
        rotation is the angle of that normal — taken from the normal itself rather than from the

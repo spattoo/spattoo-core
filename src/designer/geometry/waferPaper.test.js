@@ -606,3 +606,35 @@ describe('fin mode — a strip stood on edge, not laid flat', () => {
     expect(maxR).toBeGreaterThan(1.0);   // and it stands proud of it
   });
 });
+
+/* ⚠️ THE AO AXIS TURNS WITH THE PANEL, and getting it wrong does not read as bad occlusion — it
+ * reads as scorching. Lying flat, "away from the wall" is local Z. Stood on edge, local Z is the
+ * WAVE axis and local X is the radius, so the flat ramp paints a gradient ACROSS each strip's face:
+ * *"the shadows are so bad that it looks like burnt paper."* */
+describe('bakeWaferAO follows the mounting', () => {
+  const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, rng: () => 0.5, fin: true });
+
+  it('a fin darkens by RADIUS (local x), not by its wave', () => {
+    const g = bakeWaferAO(panel(), 0.6, true);
+    const pos = g.getAttribute('position'), col = g.getAttribute('color');
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i); if (x < lo) lo = x; if (x > hi) hi = x; }
+    let atWall = 2, atFree = -1;
+    for (let i = 0; i < pos.count; i++) {
+      const t = (pos.getX(i) - lo) / (hi - lo), c = col.getX(i);
+      if (t < 0.02) atWall = Math.min(atWall, c);
+      if (t > 0.98) atFree = Math.max(atFree, c);
+    }
+    expect(atFree).toBeGreaterThan(0.95);   // the open edge is lit
+    expect(atWall).toBeLessThan(0.6);       // the root is in the gap
+  });
+
+  /* The two modes must disagree, or the axis is not being honoured at all. */
+  it('flat and fin shade the same geometry differently', () => {
+    const a = bakeWaferAO(panel(), 0.6, false).getAttribute('color');
+    const b = bakeWaferAO(panel(), 0.6, true).getAttribute('color');
+    let same = true;
+    for (let i = 0; i < a.count && same; i++) same = Math.abs(a.getX(i) - b.getX(i)) < 1e-9;
+    expect(same).toBe(false);
+  });
+});
