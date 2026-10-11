@@ -150,6 +150,49 @@ export const WAFER_PRESETS = Object.freeze({
     hem: 'straight', notch: 0.10, colour: '#ffffff' },
 });
 
+/* Which preset a skirt should ARRIVE in, given the cake it is going onto.
+ *
+ * ⚠️ THE DEFAULT WAS WHITE WHATEVER THE CAKE WAS, AND ON A WHITE CAKE THAT IS A CONTROL THAT LOOKS
+ * BROKEN. The chip applied "White, waved" (#fbf7f2) unconditionally, so turning wafer paper on over
+ * white buttercream produced #fbf7f2 sheets against a #ffffff wall — geometrically all there,
+ * visually nothing. Sandeep: *"i can hardly see the wafer paper. totally white and hard to
+ * differentiate."* A thing that does something has to look like it did something (CLAUDE.md rule 7).
+ *
+ * ⚠️ IT STILL PREFERS WHITE, and only steps aside when white cannot be seen. White is the right
+ * default for a wafer skirt — most reference cakes are exactly that — so this is not "pick a colour
+ * for the baker", it is "do not open on an invisible one". A coloured cake keeps the white preset
+ * untouched; only a near-white one gets the contrasting preset instead.
+ *
+ * ⚠️ AND IT CHOOSES A WHOLE PRESET, not a colour of its own invention. The four presets are what the
+ * chips below offer, so whatever arrives is one the baker can see selected and step away from in one
+ * tap. A computed in-between colour would show no chip as active and could not be returned to.
+ */
+const relLum = (hex) => {
+  const h = String(hex ?? '').replace('#', '');
+  if (h.length !== 6) return 1;
+  const c = [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16) / 255)
+    .map(v => (v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+  return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2];
+};
+
+/* Below this the sheets and the wall are the same tone to the eye. 0.12 of relative luminance is
+   roughly where a soft-lit edge stops carrying an outline on its own — the four presets sit at
+   0.25 (coral) and 0.94–1.00 (the whites), so nothing lands ambiguously near it. */
+const WAFER_MIN_CONTRAST = 0.12;
+
+export function waferPresetFor(tierColour, preferred = 'White, waved') {
+  const entries = Object.entries(WAFER_PRESETS);
+  const base = WAFER_PRESETS[preferred] ?? entries[0][1];
+  const wall = relLum(tierColour);
+  if (Math.abs(relLum(base.colour) - wall) >= WAFER_MIN_CONTRAST) return { ...base };
+  let best = base, bestGap = -1;
+  for (const [, preset] of entries) {
+    const gap = Math.abs(relLum(preset.colour) - wall);
+    if (gap > bestGap) { bestGap = gap; best = preset; }
+  }
+  return { ...best };
+}
+
 /* The customer-facing controls, in the two groups the technique actually has: what the SHEETS are,
  * and how each one is PLEATED. Schema-driven, so `StyleControls` renders them with no per-knob code
  * — the same component the frosting styles already use on this card.

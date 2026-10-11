@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waferPanel, buildWaferSkirt } from './waferPaper.js';
+import { waferPanel, buildWaferSkirt, WAFER_PRESETS, waferPresetFor } from './waferPaper.js';
 
 const bbox = (g) => {
   const p = g.getAttribute('position');
@@ -452,5 +452,43 @@ describe('the paper can be cut to a shape', () => {
     const r = dropsAcross('round', 0), p = dropsAcross('petal', 0);
     const sum = (a) => a.reduce((s, v) => s + v, 0);
     expect(sum(p)).toBeGreaterThan(sum(r));
+  });
+});
+
+/* ⚠️ A SKIRT THAT ARRIVES INVISIBLE IS A CONTROL THAT LOOKS BROKEN. The chip applied
+ * "White, waved" (#fbf7f2) whatever the cake was, so turning wafer paper on over white buttercream
+ * gave off-white sheets against a white wall — all the geometry, none of it legible. Sandeep:
+ * *"i can hardly see the wafer paper. totally white and hard to differentiate."* */
+describe('waferPresetFor — the skirt arrives in something you can see', () => {
+  it('keeps the white preset on a coloured cake — white IS the right default', () => {
+    expect(waferPresetFor('#f2a0c0').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#4a2c1b').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#6CB7CE').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+  });
+
+  it('steps aside on a white cake, where white cannot be seen', () => {
+    const picked = waferPresetFor('#ffffff');
+    expect(picked.colour).not.toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(picked.colour).toBe(WAFER_PRESETS['Pink, notched hem'].colour);
+  });
+
+  it('and on an off-white one, which is what buttercream actually is', () => {
+    expect(waferPresetFor('#fbf7f2').colour).toBe(WAFER_PRESETS['Pink, notched hem'].colour);
+    expect(waferPresetFor('#F6F2E9').colour).toBe(WAFER_PRESETS['Pink, notched hem'].colour);
+  });
+
+  /* ⚠️ A WHOLE PRESET, never a colour of its own invention: whatever arrives has to be one of the
+     chips below, or none of them shows as active and the baker cannot step back to it in one tap. */
+  it('always returns one of the offered presets', () => {
+    const offered = Object.values(WAFER_PRESETS).map(p => p.colour);
+    for (const cake of ['#ffffff', '#000000', '#f2766d', '#c0d8ff', undefined, null, 'nonsense']) {
+      expect(offered).toContain(waferPresetFor(cake).colour);
+    }
+  });
+
+  it('is a copy, so editing one skirt cannot edit the preset table', () => {
+    const a = waferPresetFor('#ffffff');
+    a.colour = '#123456';
+    expect(WAFER_PRESETS['Pink, notched hem'].colour).toBe('#f2766d');
   });
 });

@@ -205,7 +205,7 @@ import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
 import { ControlCell } from './shared/ControlCell.jsx';   // the captioned cell a control row is built from
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
-import { WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS } from './geometry/waferPaper.js';
+import { WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS, waferPresetFor } from './geometry/waferPaper.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
 import OrderModal from '../orders/OrderModal';
@@ -16152,8 +16152,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                     <Chip label="Wafer paper" isMobile={isMobile}
                           active={!!tier?.wafer}
+                          /* Arrives in a preset that can be SEEN on this cake: white unless the
+                             tier is white too, in which case the one that contrasts. See
+                             waferPresetFor — it prefers white and only steps aside. */
                           onClick={() => setTierWafer(selectedEl.index,
-                            tier?.wafer ? null : { ...WAFER_PRESETS['White, waved'] })} />
+                            tier?.wafer ? null : waferPresetFor(tier?.color))} />
                   </div>
                   {tier?.wafer && (() => {
                     const w = { ...WAFER_DEFAULTS, ...tier.wafer };
