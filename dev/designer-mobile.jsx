@@ -348,7 +348,14 @@ CAT_ELEMENTS.push({
 CAT_ELEMENTS.push({
   id: 'e15', name: 'Faux ball', description: 'a metallic ball you can scatter into a cluster',
   element_type_id: 'et-topper', category_id: 'cat-1',
-  image_url: CAT_THUMB('#c9a227'), thumbnail_url: CAT_THUMB('#c9a227'), thumb_key: null,
+  /* ⚠️ A GLB, NOT A THUMB, and the SVG that was here made this row untestable. A faux ball is a
+     SPHERE — the real row's image_url is a ball model — and with a flat SVG data URI the harness
+     rendered a billboarded plane the size of a thumbnail, which at the cluster's seats came out
+     invisible: nine stickers in `__getStickers()` and nothing on the cake. A click test written on
+     that fixture reports "the ball is not clickable" about a ball that was never drawn, which is
+     exactly what it did report. `sample-rosette.glb` measures 1.0 x 0.8 x 0.9 — near-spherical,
+     already in dev/, and its blobbiness is the point here rather than a limitation. */
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#c9a227'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, duplicate: true },
   placement_config: { cluster: true, r: 0.5, scale: { max: 3, min: 0.3, step: 0.05 },
