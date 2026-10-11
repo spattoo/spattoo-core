@@ -65,7 +65,13 @@ const measure = (sel, inset) => page.evaluate(([s, ins]) => {
   for (let i = 0; i < d.length; i += 4) tone.push((d[i] + d[i + 1] + d[i + 2]) / 3);
   tone.sort((a, c) => a - c);
   const at = (q) => tone[Math.floor(tone.length * q)];
-  return { range: at(0.95) - at(0.05), mean: tone.reduce((a, c) => a + c, 0) / tone.length };
+  /* ⚠️ THE WHOLE DISTRIBUTION, NOT JUST ITS WIDTH. Matching p5–p95 alone is how a render ends up
+     matching the reference's RANGE by pushing its dark end into the floor, while the reference got
+     the same range by pushing its BRIGHT end up — a specular line along each sheet's edge. Same
+     number, opposite picture: Sandeep, on a render that scored 87%, *"shadows are so dark. wafer
+     looks like a paper with smoke."* So p5 and p95 are reported separately and p50 with them. */
+  return { range: at(0.95) - at(0.05), p5: at(0.05), p50: at(0.50), p95: at(0.95),
+           mean: tone.reduce((a, c) => a + c, 0) / tone.length };
 }, [sel, inset]);
 
 await page.goto(`${B}?preset=white%20waves&cake=${encodeURIComponent(CAKE)}${EXTRA}`,
@@ -76,10 +82,11 @@ await page.waitForTimeout(5500);
 const ref = await measure('img[alt]', 0.20);
 if (!ref) { console.error('No reference image in the harness panel — nothing to calibrate against.'); process.exit(1); }
 
-console.log(`\nreference photograph, in frame:  p5–p95 ${ref.range.toFixed(1)}   mean ${ref.mean.toFixed(1)}`);
+console.log(`\nreference photograph, in frame:  p5 ${ref.p5.toFixed(0)}  p50 ${ref.p50.toFixed(0)}  p95 ${ref.p95.toFixed(0)}`
+          + `   (range ${ref.range.toFixed(1)}, mean ${ref.mean.toFixed(1)})`);
 console.log(`paper #fbf7f2 on a ${CAKE} tier${EXTRA ? `, held at ${process.env.EXTRA}` : ''}\n`);
-console.log(`${KNOB.padStart(6)}     p5–p95    of reference     mean`);
-console.log('-'.repeat(48));
+console.log(`${KNOB.padStart(6)}      p5     p50     p95    range   of ref`);
+console.log('-'.repeat(56));
 let best = null;
 for (const ao of AOS) {
   await page.goto(`${B}?preset=white%20waves&cake=${encodeURIComponent(CAKE)}&${KNOB}=${ao}${EXTRA}`,
@@ -88,7 +95,8 @@ for (const ao of AOS) {
   const m = await measure('canvas', 0.22);
   const pct = (m.range / ref.range) * 100;
   if (!best || Math.abs(pct - 100) < Math.abs(best.pct - 100)) best = { ao, pct };
-  console.log(`${ao.toFixed(2).padStart(6)}   ${m.range.toFixed(1).padStart(7)}   ${pct.toFixed(0).padStart(10)}%   ${m.mean.toFixed(1).padStart(7)}`);
+  console.log(`${ao.toFixed(2).padStart(6)}  ${m.p5.toFixed(0).padStart(6)}  ${m.p50.toFixed(0).padStart(6)}`
+            + `  ${m.p95.toFixed(0).padStart(6)}  ${m.range.toFixed(1).padStart(7)}  ${pct.toFixed(0).padStart(5)}%`);
 }
 await b.close();
 console.log(`\nclosest on contrast: ${KNOB} ${best.ao} (${best.pct.toFixed(0)}% of the reference)\n`);

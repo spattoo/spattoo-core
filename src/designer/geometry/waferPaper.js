@@ -64,16 +64,34 @@ export const WAFER_DEFAULTS = {
      white paper on a white tier, as a percentage of the in-frame reference's p5–p95:
 
          ao 0.00    7%        ao 0.86   56%
-         ao 0.45    8%        ao 1.20   97%   <- here
+         ao 0.45    8%        ao 1.20   97%
          ao 0.60   15%        ao 1.60  111%
 
      (at sheen 0.3; at the old sheen 0.9 nothing in the range reached even 60%, which is how the
      sheen turned out to be the bigger lever — see WAFER_PAPER_MATERIAL.sheen.)
+
+     ⚠️ AND MATCHING THAT RANGE WAS STILL THE WRONG TARGET, which is the lesson worth more than the
+     number. `ao: 1.2` scored 97% of the reference's p5–p95 and looked like this: *"shadows are so
+     dark. wafer looks like a paper with smoke."* A range can be matched from either end. The
+     reference reaches its width by having a BRIGHT edge along every sheet; the old ramp reached
+     the same width by dragging the midtone down, because it shaded the whole DEPTH of a sheet
+     rather than its root. Comparing percentiles instead of the range says it in one line:
+
+                      p5    p50    p95
+         reference    72    161    218
+         ao 1.2      105    185    232      ← midtone dragged down: the smoke
+         ao 2.0, aoFocus 3
+                      81    211    232      ← gaps as dark as the reference, faces still paper
+
+     So the dark end is matched and the faces are left alone. See `aoFocus` and bakeWaferAO.
      ⚠️ The render is still brighter overall (mean 193 against 169) and that gap is NOT occlusion —
      it is the bright specular line along each sheet's edge in the photograph, which a near-overhead
      key light cannot put there. A lighting question, written down rather than guessed at.
      Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
-  ao: 1.2,
+  ao: 2.0,
+  /* How tightly the gap shading is held to the root — see bakeWaferAO. 1 is the old ramp across
+     the whole sheet, which reads as soot; higher keeps the faces clean. */
+  aoFocus: 3,
 
   /* ⚠️ AND THE SAME RAMP ON A FIN IS SCORCH. Everything above was measured with the sheets lying
      FLAT, where the occluder is a neighbour overlapping you by two whole widths. Stood on edge the
@@ -530,7 +548,8 @@ export function waferPanel({
  * a surface turns toward the sky and then flattens, which is what makes a crease read as a crease
  * instead of a gradient.
  */
-export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false) {
+export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false,
+                            aoFocus = WAFER_DEFAULTS.aoFocus) {
   const pos = geo?.getAttribute?.('position');
   if (!pos || !(ao > 0)) return geo;
   /* ⚠️ WHICH AXIS IS "AWAY FROM THE WALL" DEPENDS ON HOW THE SHEET IS MOUNTED, and getting it wrong
@@ -540,6 +559,17 @@ export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false) {
      one side of every wave and dark on the other. Sandeep: *"the shadows are so bad that it looks
      like burnt paper."* Right — and it is the fourth thing in this file whose meaning turns with
      the panel, after the fold, the hem and the mounting sign. */
+  /* ⚠️ HOW FAST THE GAP OPENS, and it is the difference between occlusion and soot. The ramp was
+     `acos(2u-1)/π`, a smooth S across the WHOLE depth: at the middle of a sheet it returns 0.5, so
+     with the shading strong enough to read, the middle of every face was darkened to 40% and the
+     skirt came out streaked with grey. Sandeep: *"shadows are so dark. wafer looks like a paper
+     with smoke."* ⚠️ It survived turning the shadow map off, which is how it was pinned on the bake
+     rather than on shadow acne.
+     A real gap is not like that. Light reaches most of a sheet and falls away only near the ROOT,
+     where its neighbours close in — so the falloff is a power, and the exponent says how tightly
+     the dark is held there. At 3: free edge 0, middle 0.125, root 1. The faces stay paper and the
+     contrast comes from the gaps, which is where the reference's contrast comes from too. */
+  const focus = Math.max(1, aoFocus);
   const axis = fin ? 'getX' : 'getZ';
   let lo = Infinity, hi = -Infinity;
   for (let i = 0; i < pos.count; i++) { const v = pos[axis](i); if (v < lo) lo = v; if (v > hi) hi = v; }
@@ -547,7 +577,7 @@ export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false) {
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
     const u = Math.min(1, Math.max(0, (pos[axis](i) - lo) / span));   // 1 at the free edge, 0 at the wall
-    const phi = Math.acos(2 * u - 1) / Math.PI;                       // 0 in the open, 1 deep in a gap
+    const phi = Math.pow(1 - u, focus);                               // 0 in the open, 1 deep in a gap
     const shade = Math.max(0, 1 - ao * phi);
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = shade;
   }
@@ -614,7 +644,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
     });
-    bakeWaferAO(panel, o.ao, !!o.fin);
+    bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus);
 
     /* Stand it on the wall. The panel's +Z must become the perimeter's OUTWARD normal, so the
        rotation is the angle of that normal — taken from the normal itself rather than from the

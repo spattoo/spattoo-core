@@ -75,7 +75,7 @@ function Skirt({ shape, p }) {
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
     curl: p.curl, splay: p.splay, lean: p.lean,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
-    ao: p.ao, fin: p.fin, finAngle: p.finAngle,
+    ao: p.ao, aoFocus: p.aoFocus, fin: p.fin, finAngle: p.finAngle,
     /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
        silently takes WAFER_DEFAULTS and two different ?ao= values render identically — which they
        did, and the measurement said so before the eye could. */
@@ -218,7 +218,11 @@ export default function Harness() {
               the sheets, and that is most of what separates one panel from the next on a white cake.
               The harness ran without it while the admin studio had it, so the two were not the same
               scene and I was judging from the wrong one. */}
-          <SceneLights shadows />
+          {/* ⚠️ `?shadows=0` IS A DIAGNOSTIC, not a setting. A pleated sheet is thin and drawn
+              DoubleSide, which is the shape a shadow map is worst at: the same surface both casts
+              and receives, so bias errors land as grey smears ON the paper rather than as shadow
+              between the sheets. Turning the map off is how you tell a smear from an occlusion. */}
+          <SceneLights shadows={p.shadows !== 0} />
           <SceneEnv />
 
           {shapeKey === 'round' ? (
