@@ -123,6 +123,71 @@ export const WAFER_DEFAULTS = {
   segH:   14,
 };
 
+/* ── The four looks, and the controls that reach them ────────────────────────────────────────────
+ *
+ * ⚠️ IN CORE, NOT IN THE STUDIO, because they are now offered in two places. These started as
+ * `PRESETS` inside WaferPaperStudio — four claims about four reference cakes, each saying how many
+ * sheets, how deeply pleated, how far the hem swings. The moment a baker can choose wafer paper on
+ * the tier card, a copy in admin is a second answer to "what does Pink, notched hem mean", and the
+ * studio's whole point is that what you tune is what the cake gets (root CLAUDE.md rule 1,
+ * INVARIANTS #15). The studio imports these.
+ *
+ * ⚠️ AND THE RANGES TOO. A slider's ends are a claim about what the look can stand — `ripples` past
+ * 12 stops reading as folds and `width` under 0.6 opens daylight between the sheets. Two copies of
+ * that claim drift, and the one that drifts is whichever screen is edited second. */
+export const WAFER_PRESETS = Object.freeze({
+  'Pink, notched hem': { count: 30, width: 2.0, height: 0.80, rise: 0.22, taper: 0.02, ripple: 0.16,
+    ripples: 2.4, sway: 0.05, curl: 0.12, splay: 0.06, lean: 0.03, jitter: 0.30,
+    hem: 'notch', notch: 0.18, colour: '#f2766d' },
+  'White, waved':      { count: 34, width: 2.3, height: 0.95, rise: 0.04, taper: 0.18, ripple: 0.30,
+    ripples: 6.0, sway: 0.10, curl: 0.22, splay: 0.08, lean: 0.05, jitter: 0.45,
+    hem: 'straight', notch: 0.10, colour: '#fbf7f2' },
+  'White, rippled':    { count: 44, width: 2.0, height: 0.92, rise: 0.02, taper: 0.22, ripple: 0.26,
+    ripples: 8.0, sway: 0.12, curl: 0.18, splay: 0.08, lean: 0.03, jitter: 0.50,
+    hem: 'torn', notch: 0.12, colour: '#fdfbf7' },
+  'White, broad':      { count: 20, width: 2.4, height: 0.98, rise: 0.06, taper: 0.06, ripple: 0.24,
+    ripples: 3.0, sway: 0.06, curl: 0.30, splay: 0.06, lean: 0.02, jitter: 0.35,
+    hem: 'straight', notch: 0.10, colour: '#ffffff' },
+});
+
+/* The customer-facing controls, in the two groups the technique actually has: what the SHEETS are,
+ * and how each one is PLEATED. Schema-driven, so `StyleControls` renders them with no per-knob code
+ * — the same component the frosting styles already use on this card.
+ *
+ * ⚠️ THE MATERIAL IS NOT HERE ON PURPOSE. Translucency, diffusion, roughness, sheen and grain are
+ * what wafer paper IS, not a choice about this cake — they live in `WAFER_PAPER_MATERIAL` and a
+ * baker who turns transmission down has not designed anything, they have made it stop being paper.
+ * Same reasoning as the brushstroke band's own split, and the studio keeps those sliders because
+ * deciding those numbers is what a studio is for. */
+export const WAFER_CONTROLS = Object.freeze({
+  sheets: Object.freeze([
+    { key: 'count',  label: 'Panels',         min: 8,    max: 90,  step: 1 },
+    { key: 'width',  label: 'Width',          min: 0.6,  max: 3.2, step: 0.05 },
+    { key: 'height', label: 'Height',         min: 0.3,  max: 1.3, step: 0.02 },
+    { key: 'rise',   label: 'Rise above rim', min: -0.1, max: 0.4, step: 0.01 },
+    { key: 'taper',  label: 'Taper',          min: 0,    max: 0.7, step: 0.02 },
+  ]),
+  pleat: Object.freeze([
+    { key: 'ripple',  label: 'Fold depth',   min: 0,    max: 0.8,  step: 0.02 },
+    { key: 'ripples', label: 'Folds across', min: 0.5,  max: 12,   step: 0.1 },
+    { key: 'curl',    label: 'Curl',         min: 0,    max: 1,    step: 0.02 },
+    { key: 'sway',    label: 'Drift',        min: 0,    max: 0.5,  step: 0.02 },
+    { key: 'splay',   label: 'Hem swing',    min: 0,    max: 0.5,  step: 0.02 },
+    { key: 'lean',    label: 'Lean',         min: -0.2, max: 0.35, step: 0.01 },
+    { key: 'jitter',  label: 'Variation',    min: 0,    max: 1,    step: 0.02 },
+  ]),
+});
+
+/* The cut, named for what a baker does rather than for the code's branch. Four of these trim a
+ * strip and two change its SHAPE — see hemProfile, which is the one place that decides. */
+export const WAFER_HEMS = Object.freeze([
+  { key: 'straight', label: 'Straight' },
+  { key: 'notch',    label: 'Zigzag' },
+  { key: 'torn',     label: 'Torn' },
+  { key: 'round',    label: 'Rounded' },
+  { key: 'petal',    label: 'Petal' },
+]);
+
 /* ── The CUT: what shape the strip was cut into ──────────────────────────────────────────────────
  *
  * Returns, for a point across the width, what fraction of the full drop that part of the panel

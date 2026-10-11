@@ -21,6 +21,7 @@ import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnSha
 import { useStrokeMesh } from './strokeMesh.js';
 import { buildShellGeo, capShellScale, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
 import CakeCoat from './CakeCoat.jsx';
+import CakeWafer from './CakeWafer.jsx';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
@@ -1653,6 +1654,7 @@ export default function CakeTier({
      the tier, so it is its own field rather than a third entry in topPipings. */
   coat = null,
   onCoatClick = null,
+  wafer = null,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -2079,6 +2081,12 @@ export default function CakeTier({
       {/* Last, so it sits over every finish — a coat replaces the cake's surface rather than
           decorating it. It reads the tier's own footprint, so a heart or a sheet packs correctly
           without this knowing what either is. */}
+      {/* ⚠️ AFTER the finishes and BEFORE the coat. Wafer paper stands OFF the wall — the gap, and
+          the light coming through it, is the whole look — so it goes over whatever the wall is
+          wearing. A coat replaces the surface entirely, so it stays last. */}
+      {wafer && (
+        <CakeWafer wafer={wafer} shp={shp} tierHeight={height} baseY={yBase} radius={radius} />
+      )}
       {coat?.glbUrl && (
         <CakeCoat coat={coat} shp={shp} tierHeight={height} baseY={yBase}
                   rot={coat.rot} softness={coat.softness ?? PIPING_SOFTNESS_DEFAULT}

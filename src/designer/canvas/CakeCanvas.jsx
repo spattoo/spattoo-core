@@ -3389,6 +3389,7 @@ function CakeContent({ config, scene, edit = null }) {
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
             topCavity={tier.topCavity ?? null} topSpiral={tier.topSpiral ?? null}
+            wafer={tier.wafer ?? null}
             highlightPipingId={highlightPipingId}
             pipingMovable={isPipingMovable}
             onPipingLayerHeight={onPipingLayerHeight ? (layerId, wallY) => onPipingLayerHeight(i, layerId, wallY) : null}

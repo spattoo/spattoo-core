@@ -170,6 +170,7 @@ export function toCanvasConfig(design) {
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
         topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
         topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
+        wafer:         t.wafer ?? null,      // a skirt of pleated wafer-paper sheets round the wall
         brushBand:     t.brushBand ?? null,   // a ring of palette-knife brushstrokes round this tier's wall
         brushStrokes:  t.brushStrokes ?? [],  // and the ones drawn by hand, each its own piece
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
@@ -462,6 +463,24 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, topSpiral: changes === null ? undefined : { ...(t.topSpiral ?? {}), ...changes } }
+        : t),
+    }));
+  }
+
+  /* ── Wafer paper ──────────────────────────────────────────────────────────────────────────────
+   *
+   * A skirt of cut, pleated sheets stood round the wall. Same shape as `setTierSpiral` above: ONE
+   * object on the tier, merged with what is already there, and `null` to take it off.
+   *
+   * ⚠️ A TIER TREATMENT, NOT A LIST OF PLACED PIECES. Every panel in the skirt is derived from the
+   * same handful of numbers — the count, the pleat, the seed — so storing thirty panels would be
+   * storing the output instead of the design, and a template could then no longer re-cut them for a
+   * different tier size. Exactly the argument the brushstroke band below makes for itself. */
+  function setTierWafer(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, wafer: changes === null ? undefined : { ...(t.wafer ?? {}), ...changes } }
         : t),
     }));
   }
@@ -1767,7 +1786,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,

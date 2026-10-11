@@ -205,6 +205,7 @@ import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
 import { ControlCell } from './shared/ControlCell.jsx';   // the captioned cell a control row is built from
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
+import { WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS } from './geometry/waferPaper.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
 import OrderModal from '../orders/OrderModal';
@@ -2799,7 +2800,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -16114,6 +16115,102 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </span>
                     </button>
                   )}
+                  {/* ── Wafer paper: a skirt of cut, pleated sheets round the wall ───────────
+                    *
+                    * Sandeep: *"integrate the wafer paper studio into core designer. add another
+                    * option in the tier edit popup card. this is where user can select the wafer
+                    * paper. should be able to choose the adjustments as in admin."*
+                    *
+                    * ⚠️ IN FROSTING, BESIDE Cream layer, AND FOR THE SAME REASON. It is a TIER
+                    * TREATMENT — one choice about how this tier's wall is dressed — not a
+                    * decoration you place and move. Everything in the decorations drawer has a
+                    * position; this has a perimeter.
+                    *
+                    * ⚠️ AND NOT A STYLE CHIP. `frostingStyle` is ONE string per tier and those four
+                    * chips are mutually exclusive ways the CREAM is worked. Wafer paper is paper,
+                    * stood OFF the wall, and it composes with every one of them — a ribbed wall
+                    * behind a wafer skirt is a cake somebody makes. A fifth chip would delete that
+                    * combination, which is exactly the argument the Cream layer row above makes.
+                    *
+                    * ⚠️ INLINE, AND IT WAS A PANEL FIRST. Eleven sliders and five cuts looked like
+                    * a job for `Panel` — until the harness screenshot showed what that means on a
+                    * phone: a full-height sheet with the cake behind a blur, every slider live and
+                    * nothing to watch. That is INVARIANTS #11 in one picture, and the measurement
+                    * agreed — wall texture went DOWN when the skirt went on, because the probe was
+                    * reading the backdrop. The tier sheet already solves this: it sits at the
+                    * bottom and leaves the cake above it. So this is the Scraped edge idiom from
+                    * two blocks up — a chip turns it on, its controls unfold underneath, and the
+                    * tab scrolls. Long only once you have asked for it. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <Chip label="Wafer paper" isMobile={isMobile}
+                          active={!!tier?.wafer}
+                          onClick={() => setTierWafer(selectedEl.index,
+                            tier?.wafer ? null : { ...WAFER_PRESETS['White, waved'] })} />
+                  </div>
+                  {tier?.wafer && (() => {
+                    const w = { ...WAFER_DEFAULTS, ...tier.wafer };
+                    const set = (k, v) => setTierWafer(selectedEl.index, { [k]: v });
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.45 }}>
+                          Thin sheets cut into strips, pleated by hand and pressed on along the top
+                          edge, so the hem hangs free.
+                        </div>
+
+                        {/* ⚠️ THE LOOKS COME FIRST BECAUSE THEY ARE THE ANSWER FOR MOST PEOPLE. Each
+                            is a claim about one reference cake — how many sheets, how deeply
+                            pleated, how far the hem swings — so they are the fastest route to
+                            something that works. Nobody arrives wanting "Folds across 6.0".
+                            A tap applies the whole look INCLUDING its colour: the four are coral or
+                            white-on-white, and half-applying one gives a cake no reference shows. */}
+                        <ScrollFadeRow style={{ gap: 7, marginTop: 2 }}>
+                          {Object.entries(WAFER_PRESETS).map(([name, preset]) => (
+                            <Chip key={name} label={name} isMobile={isMobile}
+                                  active={Object.entries(preset).every(([k, v]) => w[k] === v)}
+                                  onClick={() => setTierWafer(selectedEl.index, preset)} />
+                          ))}
+                        </ScrollFadeRow>
+
+                        {/* ColorWheel, like every other colour a customer picks (CLAUDE.md rule 1).
+                            Never a row of hand-rolled swatches, never a native input. */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 2px' }}>
+                          <ColorWheel color={w.colour ?? '#fbf7f2'} onChange={c => set('colour', c)} />
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.6 }}>
+                            Paper colour
+                          </span>
+                        </div>
+
+                        <div style={s.waferHead}>The sheets</div>
+                        <StyleControls params={WAFER_CONTROLS.sheets} values={w} onChange={set} />
+                        <div style={s.waferHead}>The pleat</div>
+                        <StyleControls params={WAFER_CONTROLS.pleat} values={w} onChange={set} />
+
+                        {/* ⚠️ THE CUT IS NOT A SLIDER. Four of these trim a strip and two make the
+                            piece a different SHAPE — a half-disc and a leaf — so there is no order
+                            to slide along and nothing in between two of them. */}
+                        <div style={s.waferHead}>The cut</div>
+                        <ScrollFadeRow style={{ gap: 7, marginBottom: 10 }}>
+                          {WAFER_HEMS.map(h => (
+                            <Chip key={h.key} label={h.label} isMobile={isMobile}
+                                  active={(w.hem ?? WAFER_DEFAULTS.hem) === h.key}
+                                  onClick={() => set('hem', h.key)} />
+                          ))}
+                        </ScrollFadeRow>
+                        <StyleControls values={w} onChange={set}
+                          params={[{ key: 'notch', label: 'Cut depth', min: 0, max: 0.4, step: 0.01 }]} />
+
+                        {/* One Shuffle per feature, each storing its own seed: a design that cannot
+                            reproduce the skirt a baker chose has not saved their work. Same rule as
+                            the scraped edge and the spiral above. */}
+                        <span style={s.topEdgePair}>
+                          <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                            onClick={() => set('seed', 1 + Math.floor(Math.random() * 9999))}>&#8635;</button>
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
+
                   </div>
 
                 </>
@@ -19033,6 +19130,10 @@ const s = {
      the line below the dial it names, immediately under a DIFFERENT dial. A label naming the wrong
      control is worse than no label, and INVARIANTS #11 is about exactly this pairing. */
   topEdgePair: { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' },
+  /* The wafer panel's group headings — the same small caps the tier card uses for TOP EDGE, so a
+     baker crossing from one to the other is reading the same typography. */
+  waferHead: { fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+               textTransform: 'uppercase', margin: '4px 0 8px' },
   tbSizeLabel: {
     fontSize:13, fontWeight:700, color:'#222', minWidth:26, textAlign:'center',
   },
