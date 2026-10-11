@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waferPanel, buildWaferSkirt, WAFER_PRESETS, waferPresetFor, bakeWaferAO } from './waferPaper.js';
+import { waferPanel, buildWaferSkirt, WAFER_PRESETS, WAFER_DEFAULTS, waferPresetFor, bakeWaferAO } from './waferPaper.js';
 
 const bbox = (g) => {
   const p = g.getAttribute('position');
@@ -636,5 +636,42 @@ describe('bakeWaferAO follows the mounting', () => {
     let same = true;
     for (let i = 0; i < a.count && same; i++) same = Math.abs(a.getX(i) - b.getX(i)) < 1e-9;
     expect(same).toBe(false);
+  });
+});
+
+/* ⚠️ THE SHADING FOLLOWS THE MOUNTING, and getting this wrong is what "burnt paper" was. 0.86 was
+ * calibrated against the reference photograph with every sheet lying FLAT, where a neighbour
+ * overlaps you by two whole widths. A fin's occluder is the thin gap at its root, so the same ramp
+ * darkens paper that nothing is shading. Not a per-look number, which is why it is NOT in the
+ * presets — and an explicit value still has to win, or no sweep can ever measure it. */
+describe('ao is a property of how the paper is stuck on', () => {
+  const build = (opts) => buildWaferSkirt({
+    shape: { kind: 'round', radius: 1 }, tierHeight: 1, radius: 1,
+    count: 12, width: 1.4, jitter: 0, seed: 3, ...opts,
+  });
+  // The darkest vertex colour the bake produced: a deeper ramp reaches a darker floor.
+  const floor = (geo) => {
+    const c = geo.attributes.color;
+    let min = 1;
+    for (let i = 0; i < c.count; i++) min = Math.min(min, c.getX(i));
+    return min;
+  };
+
+  it('a fin is shaded less than a flat sheet, with nothing said either way', () => {
+    expect(floor(build({ fin: true }))).toBeGreaterThan(floor(build({ fin: false })));
+  });
+
+  it('an explicit ao wins over the mounting default', () => {
+    expect(floor(build({ fin: true, ao: WAFER_DEFAULTS.ao })))
+      .toBeCloseTo(floor(build({ fin: false, ao: WAFER_DEFAULTS.ao })), 5);
+  });
+
+  /* At 0 the bake does not write a colour attribute at all, which is the real "off": a mesh with
+     no vertex colours is lit by the scene alone. Asserting the attribute's ABSENCE rather than a
+     floor of 1, because an all-white attribute would also pass that and would still cost memory on
+     every panel of every skirt. */
+  it('ao: 0 writes no vertex colours at all, on either mounting', () => {
+    expect(build({ fin: true,  ao: 0 }).attributes.color).toBeUndefined();
+    expect(build({ fin: false, ao: 0 }).attributes.color).toBeUndefined();
   });
 });

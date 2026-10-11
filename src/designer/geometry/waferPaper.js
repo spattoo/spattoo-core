@@ -64,6 +64,15 @@ export const WAFER_DEFAULTS = {
      Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
   ao: 0.86,
 
+  /* ⚠️ AND THE SAME RAMP ON A FIN IS SCORCH. Everything above was measured with the sheets lying
+     FLAT, where the occluder is a neighbour overlapping you by two whole widths. Stood on edge the
+     occluder is the thin gap at the strip's root — far less of the sky is hidden — so 0.86 darkens
+     paper that nothing is shading. Sandeep, on the flat ramp applied to fins: *"the shadows are so
+     bad that it looks like burnt paper."* So this is per MOUNTING, which is why it is not in the
+     presets: a look is how the paper is cut and pleated, not how deep its own shadow is. An
+     explicit `ao` still wins over both. */
+  finAo: 0.45,
+
   /* How many panels go round. Not a spacing, because the spacing that reads right depends on the
      perimeter and a baker thinks in "how many pieces", not in millimetres of gap. */
   /* ⚠️ SWEPT, NOT GUESSED. The first numbers (56 panels, width 1.3, splay 0.26) rendered a hula
@@ -141,6 +150,14 @@ export const WAFER_DEFAULTS = {
   hem:    'straight',  // 'straight' | 'notch' | 'torn' | 'round' | 'petal' — see hemProfile
   notch:  0.10,   // × panel height, the depth of the zigzag when hem === 'notch'
   seed:   7,
+  /* ── WHICH WAY THE SHEET FACES ────────────────────────────────────────────────────────────────
+   * `fin` is wallpaper versus wafer paper, and it is the difference between a render Sandeep
+   * rejected four times and one he recognised. Flat lays each sheet ON the wall, so it reads as a
+   * pattern printed on the cake; `fin` stands it on EDGE, which is how the paper is actually stuck
+   * on: *"wafer paper strips are perpendicularly added to the cake surface."*
+   * `finAngle` is how far it is turned from flat — 90° is square to the wall, less is raked. */
+  fin:      false,
+  finAngle: 90,
   /* Rows down the panel. There is no column count any more: the creases ARE the columns, so
      `ripples` decides the across-width density and `segH` only has to resolve the drop. */
   segH:   14,
@@ -161,16 +178,30 @@ export const WAFER_DEFAULTS = {
 export const WAFER_PRESETS = Object.freeze({
   'Pink, notched hem': { count: 30, width: 2.0, height: 0.80, rise: 0.22, taper: 0.02, ripple: 0.16,
     ripples: 2.4, sway: 0.05, curl: 0.12, splay: 0.06, lean: 0.03, jitter: 0.30,
-    hem: 'notch', notch: 0.18, colour: '#f2766d' },
+    hem: 'notch', notch: 0.18, colour: '#f2766d', fin: false },
   'White, waved':      { count: 34, width: 2.3, height: 0.95, rise: 0.04, taper: 0.18, ripple: 0.30,
     ripples: 6.0, sway: 0.10, curl: 0.22, splay: 0.08, lean: 0.05, jitter: 0.45,
-    hem: 'straight', notch: 0.10, colour: '#fbf7f2' },
+    hem: 'straight', notch: 0.10, colour: '#fbf7f2', fin: false },
   'White, rippled':    { count: 44, width: 2.0, height: 0.92, rise: 0.02, taper: 0.22, ripple: 0.26,
     ripples: 8.0, sway: 0.12, curl: 0.18, splay: 0.08, lean: 0.03, jitter: 0.50,
-    hem: 'torn', notch: 0.12, colour: '#fdfbf7' },
+    hem: 'torn', notch: 0.12, colour: '#fdfbf7', fin: false },
+  /* ⚠️ THE ONLY PRESET MEASURED RATHER THAN EYED, and the only one that stands the sheets on edge.
+   * Every number here came out of slicing Sandeep's 3D conversion of the reference cake, not out of
+   * looking at a render: median radius 0.70 and a 0.13 ripple over a wall at 0.59, repeating about
+   * 110 times — see scripts/measure-wafer-shape.mjs, and `PRESET=` there measures these very values
+   * rather than a triple typed into the script.
+   *
+   * ⚠️ EVERY PRESET NAMES ITS MOUNTING, including the four that are flat. `setTierWafer` MERGES, so
+   * a preset that leaves `fin` unsaid inherits whatever the last one set — tap this, then tap
+   * "White, waved", and you get a look tuned for flat sheets rendered standing on edge. The tier
+   * card's own comment already warns that half-applying a preset gives a cake no reference shows.
+   * Shading is NOT here: it belongs to the mounting (see `finAo`). */
+  'White, on edge':    { count: 110, width: 3.9, height: 1.18, rise: 0.16, taper: 0.18, ripple: 0.30,
+    ripples: 6.0, sway: 0.10, curl: 0.22, splay: 0.08, lean: 0.05, jitter: 0.45,
+    hem: 'straight', notch: 0.10, colour: '#fbf7f2', fin: true, finAngle: 90 },
   'White, broad':      { count: 20, width: 2.4, height: 0.98, rise: 0.06, taper: 0.06, ripple: 0.24,
     ripples: 3.0, sway: 0.06, curl: 0.30, splay: 0.06, lean: 0.02, jitter: 0.35,
-    hem: 'straight', notch: 0.10, colour: '#ffffff' },
+    hem: 'straight', notch: 0.10, colour: '#ffffff', fin: false },
 });
 
 /* Which preset a skirt should ARRIVE in, given the cake it is going onto.
@@ -227,8 +258,14 @@ export function waferPresetFor(tierColour, preferred = 'White, waved') {
  * deciding those numbers is what a studio is for. */
 export const WAFER_CONTROLS = Object.freeze({
   sheets: Object.freeze([
-    { key: 'count',  label: 'Panels',         min: 8,    max: 90,  step: 1 },
-    { key: 'width',  label: 'Width',          min: 0.6,  max: 3.2, step: 0.05 },
+    /* ⚠️ 120 AND 4.2 ARE MEASURED ENDS, not room to spare. They were 90 and 3.2, chosen by eye
+       while every sheet still lay flat. Slicing Sandeep's 3D scan of the reference cake says it is
+       about 110 strips reaching 0.13 off a wall at 0.59 — so the look he kept asking for sat
+       OUTSIDE the sliders, and no amount of tuning inside them could arrive at it. A standing fin
+       is also thin edge-on, so it needs a width a flat panel never would: width is the strip's
+       RADIUS once it is on edge, not its share of the perimeter. See scripts/measure-wafer-shape.mjs. */
+    { key: 'count',  label: 'Panels',         min: 8,    max: 120, step: 1 },
+    { key: 'width',  label: 'Width',          min: 0.6,  max: 4.2, step: 0.05 },
     { key: 'height', label: 'Height',         min: 0.3,  max: 1.3, step: 0.02 },
     { key: 'rise',   label: 'Rise above rim', min: -0.1, max: 0.4, step: 0.01 },
     { key: 'taper',  label: 'Taper',          min: 0,    max: 0.7, step: 0.02 },
@@ -241,6 +278,11 @@ export const WAFER_CONTROLS = Object.freeze({
     { key: 'splay',   label: 'Hem swing',    min: 0,    max: 0.5,  step: 0.02 },
     { key: 'lean',    label: 'Lean',         min: -0.2, max: 0.35, step: 0.01 },
     { key: 'jitter',  label: 'Variation',    min: 0,    max: 1,    step: 0.02 },
+  ]),
+  /* Its own group because it is not a property of the sheet or of the pleat — it is how the sheet
+     is STUCK ON, and it only means anything while `fin` is on. */
+  mount: Object.freeze([
+    { key: 'finAngle', label: 'Edge angle', min: 30, max: 90, step: 2 },
   ]),
 });
 
@@ -504,6 +546,10 @@ export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false) {
 
 export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } = {}) {
   const o = { ...WAFER_DEFAULTS, ...opts };
+  /* ⚠️ `ao` FOLLOWS THE MOUNTING UNLESS THE CALLER SAYS OTHERWISE — see `finAo`. It has to read
+     `opts`, not `o`: after the merge above every key is present, so there is no longer any way to
+     tell "the caller chose 0.86" from "the caller said nothing". */
+  if (opts.ao == null) o.ao = o.fin ? o.finAo : WAFER_DEFAULTS.ao;
   const perim = perimeter(shape ?? { kind: 'round', radius });
   if (!perim?.length) return null;
 

@@ -22,13 +22,26 @@
  *   COUNT=110 WIDTH=3.9 ANGLE=90 node scripts/measure-wafer-shape.mjs
  */
 import * as THREE from 'three';
-import { buildWaferSkirt } from '../src/designer/geometry/waferPaper.js';
+import { buildWaferSkirt, WAFER_DEFAULTS, WAFER_PRESETS } from '../src/designer/geometry/waferPaper.js';
 
 const RADIUS = Number(process.env.RADIUS ?? 0.59);     // the WALL, not the strip tips
 const HEIGHT = Number(process.env.HEIGHT ?? 1.0);
 const TARGET = { medR: 0.70, ripple: 0.13, peaks: 110 };
 
-const sets = process.env.COUNT
+/* ⚠️ MEASURE WHAT SHIPS, not a triple typed into this file. The base below was written while
+   hunting for the shape and its pleat is much shallower than any preset's — so a (count, width,
+   angle) that scores well here can still ship as something else. `PRESET=` runs the actual preset a
+   baker gets, defaults and all:
+     PRESET='White, on edge' node scripts/measure-wafer-shape.mjs */
+const named = process.env.PRESET;
+if (named && !WAFER_PRESETS[named]) {
+  console.error(`No preset named ${JSON.stringify(named)}. Have: ${Object.keys(WAFER_PRESETS).join(', ')}`);
+  process.exit(1);
+}
+
+const sets = named
+  ? [{ ...WAFER_DEFAULTS, ...WAFER_PRESETS[named], label: named }]
+  : process.env.COUNT
   ? [{ count: +process.env.COUNT, width: +(process.env.WIDTH ?? 3.9), finAngle: +(process.env.ANGLE ?? 90) }]
   : [
       { count: 85,  width: 2.4, finAngle: 62 },   // where tuning by eye had got to
@@ -76,11 +89,12 @@ for (const p of sets) {
     sway: 0.02, curl: 0.06, splay: 0.03, lean: 0, jitter: 0.4, hem: 'straight', notch: 0.1,
     ...p,
   });
+  const name = p.label ? `  (${p.label})` : '';
   const r = geo && profile(geo, 0.40);
   if (!r) { console.log(`${String(p.count).padStart(5)}  ${String(p.width).padStart(5)}  ${String(p.finAngle).padStart(5)} |  (no geometry)`); continue; }
   const dR = Math.abs(r.med - TARGET.medR), dRip = Math.abs(r.ripple - TARGET.ripple);
   const verdict = dR < 0.03 && dRip < 0.04 && Math.abs(r.peaks - TARGET.peaks) < 30 ? 'close' : '';
-  console.log(`${String(p.count).padStart(5)}  ${String(p.width).padStart(5)}  ${String(p.finAngle).padStart(5)} |  ${r.med.toFixed(3).padStart(7)}  ${r.ripple.toFixed(3).padStart(7)}  ${String(r.peaks).padStart(5)} | ${verdict}`);
+  console.log(`${String(p.count).padStart(5)}  ${String(p.width).padStart(5)}  ${String(p.finAngle).padStart(5)} |  ${r.med.toFixed(3).padStart(7)}  ${r.ripple.toFixed(3).padStart(7)}  ${String(r.peaks).padStart(5)} | ${verdict}${name}`);
 }
 console.log(`
 ⚠️ PEAKS IS THE WEAK COLUMN, and it is the metric rather than the geometry. At 90° a fin has no

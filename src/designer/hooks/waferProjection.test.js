@@ -30,7 +30,7 @@ describe('a wafer skirt reaches the canvas and the save file', () => {
  * card and WaferPaperStudio. A preset that falls outside its own slider is a look a baker can be
  * handed and then cannot get back to once they touch anything. */
 describe('the presets fit the controls that edit them', () => {
-  const all = [...WAFER_CONTROLS.sheets, ...WAFER_CONTROLS.pleat];
+  const all = [...WAFER_CONTROLS.sheets, ...WAFER_CONTROLS.pleat, ...WAFER_CONTROLS.mount];
 
   it('every control names a real wafer parameter', () => {
     for (const c of all) expect(WAFER_DEFAULTS, c.key).toHaveProperty(c.key);
@@ -43,6 +43,18 @@ describe('the presets fit the controls that edit them', () => {
         expect(preset[c.key], `${name} / ${c.label}`).toBeGreaterThanOrEqual(c.min);
         expect(preset[c.key], `${name} / ${c.label}`).toBeLessThanOrEqual(c.max);
       }
+    }
+  });
+
+  /* ⚠️ `setTierWafer` MERGES onto whatever the tier already has, so a key a preset leaves unsaid is
+   * INHERITED from the preset tapped before it. `fin` is the one that matters: it decides whether a
+   * sheet lies on the wall or stands on edge, and a look tuned flat rendered standing is a cake no
+   * reference shows. The tier card's chip also marks itself active by comparing every key it names,
+   * so a preset that omits `fin` cannot even tell whether it is the one currently applied. */
+  it('every preset says which way its sheets face', () => {
+    for (const [name, preset] of Object.entries(WAFER_PRESETS)) {
+      expect(preset, name).toHaveProperty('fin');
+      expect(typeof preset.fin, name).toBe('boolean');
     }
   });
 

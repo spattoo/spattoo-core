@@ -16191,6 +16191,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           </span>
                         </div>
 
+                        {/* ⚠️ MOUNTING FIRST, because it changes what the sliders below it MEAN.
+                            Flat lays each sheet on the wall, so Width is its share of the
+                            perimeter; stood on edge the same number is how far the strip reaches
+                            OUT. Sandeep, four renders into the flat version: *"wafer paper strips
+                            are perpendicularly added to the cake surface. your screenshot shows
+                            like the strips are flat."* A preset sets it, and this is how a baker
+                            leaves the preset — presets are a starting point, never a lock. */}
+                        <div style={s.waferHead}>How it is stuck on</div>
+                        <ScrollFadeRow style={{ gap: 7, marginBottom: 10 }}>
+                          {[['Flat on the wall', false], ['Stood on edge', true]].map(([label, on]) => (
+                            <Chip key={label} label={label} isMobile={isMobile}
+                                  active={!!(w.fin ?? WAFER_DEFAULTS.fin) === on}
+                                  onClick={() => set('fin', on)} />
+                          ))}
+                        </ScrollFadeRow>
+                        {(w.fin ?? WAFER_DEFAULTS.fin) && (
+                          <StyleControls params={WAFER_CONTROLS.mount} values={w} onChange={set} />
+                        )}
+
                         <div style={s.waferHead}>The sheets</div>
                         <StyleControls params={WAFER_CONTROLS.sheets} values={w} onChange={set} />
                         <div style={s.waferHead}>The pleat</div>
