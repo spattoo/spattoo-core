@@ -77,36 +77,62 @@ for (const [name, viewport] of [['phone', { width: 390, height: 844 }],
     ok(await page.evaluate(() => !window.__getSelectedEl?.()), 'and nothing is selected after Done');
   }
 
-  /* ⚠️ THE OUTERMOST BALL, PROJECTED. Its seat is in the design, so the camera matrix turns it into
-     a screen point — no colour search, no scenery. The outermost one is the point: it hangs past
-     the lid's footprint, which is the ball a baker reaches for and the one most likely to miss. */
-  const target = await page.evaluate(() => {
-    const st = window.__getStickers().filter(s => s.clusterId);
-    if (!st.length) return null;
-    const far = st.reduce((a, s) => (Math.hypot(s.x, s.z) > Math.hypot(a.x, a.z) ? s : a), st[0]);
+  /* ⚠️ FIND THE BALL BY RECOLOURING IT, and the two cheaper ideas that both pointed at scenery.
+   *
+   *   · hunt for GOLD — the board is gold and is 99% of the gold on screen, so a median pixel (and
+   *     a 2nd-percentile one) lands on the drum. Clicking the drum selects nothing, which looks
+   *     exactly like an unclickable ball. That "bug" was confirmed twice before a marker painted on
+   *     the click point showed it sitting on the cake's shadow.
+   *   · diff the frame after recolouring one ball — a faux ball is METALLIC, so repainting it
+   *     repaints its reflection across the whole wall, and that region dwarfs the ball. The
+   *     centroid landed on the wall and the click selected the tier.
+   *
+   * What works is keying on the NEW COLOUR itself: flip one ball to magenta and the only magenta
+   * pixels on screen are that ball. Then put its colour back and click the centroid. */
+  const grab = () => page.evaluate(() => {
     const cv = document.querySelector('canvas');
-    const pt = window.__projectPoint?.(far);
-    if (!pt) return { needsHook: true, id: far.id };
-    const r = cv.getBoundingClientRect();
-    return { x: r.left + pt.x * r.width, y: r.top + pt.y * r.height, id: far.id };
+    const t = document.createElement('canvas'); t.width = cv.width; t.height = cv.height;
+    t.getContext('2d').drawImage(cv, 0, 0);
+    return { w: cv.width, h: cv.height, d: [...t.getContext('2d').getImageData(0, 0, cv.width, cv.height).data] };
   });
+  /* The OUTERMOST ball — furthest past the lid's footprint. On Sandeep's cake the clump drapes over
+     the top-left edge, so that is the ball a baker reaches for and the one most likely to miss. */
+  const victim = await page.evaluate(() => {
+    const st = window.__getStickers();
+    const far = st.reduce((a, s) => (Math.hypot(s.x, s.z) > Math.hypot(a.x, a.z) ? s : a), st[0]);
+    return { id: far.id, color: far.color ?? null };
+  });
+  await page.evaluate(id => window.__updateSticker(id, { color: '#ff00ff' }), victim.id);
+  await page.waitForTimeout(1200);
+  const lit = await grab();
+  await page.evaluate(([id, c]) => window.__updateSticker(id, { color: c }), [victim.id, victim.color]);
+  await page.waitForTimeout(1200);
 
-  if (target?.needsHook) {
-    /* No projection hook: fall back to the DESIGN-side check, which still answers the question the
-       report asks — does tapping a ball reopen its card. It goes through the same
-       handleStickerSelect the canvas calls. */
-    await page.evaluate(id => window.__tapSticker?.(id), target.id);
-  } else if (target) {
-    await page.mouse.click(target.x, target.y);
+  let sx = 0, sy = 0, n = 0;
+  for (let i = 0; i < lit.d.length; i += 4) {
+    const [R, G, B] = [lit.d[i], lit.d[i + 1], lit.d[i + 2]];
+    if (R > 120 && B > 120 && G < Math.min(R, B) - 50) {
+      sx += (i >> 2) % lit.w; sy += Math.floor((i >> 2) / lit.w); n++;
+    }
   }
-  await page.waitForTimeout(1500);
+  ok(n > 50, `the ball can be found on screen (${n} px)`);
+  if (n > 50) {
+    const r = await page.evaluate(() => { const b = document.querySelector('canvas').getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; });
+    await page.mouse.click(r.l + (sx / n / lit.w) * r.w, r.t + (sy / n / lit.h) * r.h);
+    await page.waitForTimeout(1500);
+  }
 
   const sel = await page.evaluate(() => window.__getSelectedEl?.() ?? null);
-  ok(sel?.type === 'cluster', `tapping the outermost ball reopens its cluster (${sel?.type ?? 'nothing'})`);
+  ok(sel?.type === 'cluster', `CLICKING the outermost ball reopens its cluster (${sel?.type ?? 'nothing'})`);
   const txt = await page.evaluate(() => document.body.innerText);
   ok(/Cluster/i.test(txt) && /Faux ball/i.test(txt), 'and the card is on screen with its controls');
   await page.screenshot({ path: `${OUT}/cluster-card-${name}.png` });
 
+  /* ⚠️ AND IT RUNS BEFORE THE NEW-CAKE STEP, not after. Starting a new cake re-mounts enough of
+   * the designer that the next `page.evaluate` landed mid-navigation and threw "Execution context
+   * was destroyed" — on desktop only, which is how a teardown ordering bug reads as a browser
+   * flake. The loose-ball case needs a cake with decorations on it; the new-cake case ends with an
+   * empty one. Asking them in that order means neither has to clean up after the other. */
   /* ── A new cake starts empty ───────────────────────────────────────────────────────────────── */
   await btn('^Done$');
   await page.waitForTimeout(900);
@@ -128,6 +154,58 @@ for (const [name, viewport] of [['phone', { width: 390, height: 844 }],
   const left = await page.evaluate(() => (window.__getStickers?.() ?? []).length);
   ok(left === 0, `a new cake starts empty (${left} decorations left over)`);
   await page.screenshot({ path: `${OUT}/cluster-after-new-${name}.png` });
+
+  /* ── The same ball placed several times, NOT clustered ────────────────────────────────────────
+   * Sandeep: *"drag the same faux ball to multiple places. and then try to click on one of them.
+   * do you see the popup card?"* Several instances of one element is its own path —
+   * `isMultiSlotEl` can route a tap to a shared element card instead of the instance — so it is
+   * asked separately from the clump. */
+  /* ⚠️ ON THE EMPTY CAKE THE STEP ABOVE JUST MADE, and it has to settle first. Run before the
+     reset it counted the 27 cluster balls still on the cake; run immediately after it, the next
+     evaluate landed mid-remount and threw "Execution context was destroyed" on desktop only —
+     which reads as a browser flake and is really a teardown ordering bug. */
+  await page.waitForTimeout(2500);
+  await page.evaluate(() => window.__loadElements?.());
+  await page.waitForTimeout(1500);
+  for (const k of [0, 1, 2, 3]) {
+    await page.evaluate(() => window.__placeElementById?.('e15'));
+    await page.waitForTimeout(1300);
+    await page.evaluate((i) => {
+      const r = window.__design().tiers[0].radius ?? 1.2;
+      const fresh = window.__getStickers().filter(s => !s.__spread);
+      const s = fresh[fresh.length - 1];
+      window.__updateSticker(s.id, { x: Math.cos(i * 1.4) * r * 0.55, z: Math.sin(i * 1.4) * r * 0.55, __spread: true });
+    }, k);
+    await page.waitForTimeout(700);
+  }
+  await btn('^Done$');
+  await page.waitForTimeout(1000);
+  const loose = await page.evaluate(() => window.__getStickers?.() ?? []);
+  ok(loose.length === 4 && !loose.some(s => s.clusterId), `four separate balls on the cake (${loose.length})`);
+
+  const v2 = await page.evaluate(() => { const s = window.__getStickers()[1]; return { id: s.id, color: s.color ?? null }; });
+  await page.evaluate(id => window.__updateSticker(id, { color: '#ff00ff' }), v2.id);
+  await page.waitForTimeout(1200);
+  const lit2 = await grab();
+  await page.evaluate(([id, c]) => window.__updateSticker(id, { color: c }), [v2.id, v2.color]);
+  await page.waitForTimeout(1200);
+  let ax = 0, ay = 0, m = 0;
+  for (let i = 0; i < lit2.d.length; i += 4) {
+    const [R, G, B] = [lit2.d[i], lit2.d[i + 1], lit2.d[i + 2]];
+    if (R > 120 && B > 120 && G < Math.min(R, B) - 50) { ax += (i >> 2) % lit2.w; ay += Math.floor((i >> 2) / lit2.w); m++; }
+  }
+  ok(m > 50, `one of the four can be found on screen (${m} px)`);
+  if (m > 50) {
+    const r2 = await page.evaluate(() => { const b = document.querySelector('canvas').getBoundingClientRect(); return { l: b.left, t: b.top, w: b.width, h: b.height }; });
+    await page.mouse.click(r2.l + (ax / m / lit2.w) * r2.w, r2.t + (ay / m / lit2.h) * r2.h);
+    await page.waitForTimeout(1500);
+  }
+  const sel2 = await page.evaluate(() => window.__getSelectedEl?.() ?? null);
+  ok(sel2?.type === 'sticker' && sel2.id === v2.id,
+     `clicking one of several loose balls opens ITS card (${sel2?.type ?? 'nothing'})`);
+  ok(/Create cluster/i.test(await page.evaluate(() => document.body.innerText)), 'and the card carries its controls');
+  await page.screenshot({ path: `${OUT}/loose-balls-${name}.png` });
+
   await page.close();
 }
 
