@@ -67,7 +67,7 @@ import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { makeRefCountedCache } from '../shared/refCountedCache.js';
 import { seatHalfDepth } from '../geometry/seating.js';
-import { resolveSidePipingBands, sidePipingClearance } from './pipingMetrics.js';
+import { resolveSidePipingBands, sidePipingClearance, resolveTopPipingBands, topSurfaceYAt } from './pipingMetrics.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -390,6 +390,29 @@ function tierReliefSampler(tier) {
   const dripS = dripReliefSamplerOf(tier);
   if (wallS && dripS) return (theta, v) => Math.max(wallS(theta, v), dripS(theta, v));
   return dripS ?? wallS;
+}
+
+/* The LID's piping annuli for this tier — what a sprinkle lands on when it falls where a rim ring is.
+ *
+ * ⚠️ BUILT ONCE PER TIER, NOT ONCE PER SPRINKLE. A scattered element is many instances of the same
+ * thing (a hundred is ordinary), and every one of them asks this identical question. Keyed on the
+ * tier object, which `tierData` rebuilds each render, so the cache dedupes within a render and
+ * never holds a stale cake.
+ */
+const EMPTY_TOP_BANDS = Object.freeze([]);
+const _topBandsByTier = new WeakMap();
+function tierTopBands(tier) {
+  if (!tier) return [];
+  let bands = _topBandsByTier.get(tier);
+  if (!bands) {
+    bands = resolveTopPipingBands({
+      topPipings: tier.topPipings ?? [],
+      topY: tier.baseY + tier.height,
+      radius: tier.radius,
+    });
+    _topBandsByTier.set(tier, bands);
+  }
+  return bands;
 }
 
 // REST an element on the displaced wall: return the HIGHEST relief under the patch the element covers
@@ -2119,7 +2142,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
  * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
  * grab, so the clamp pushes it back out. See boardRingClamp. */
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2194,7 +2217,21 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     ? wireFor(artBox, sticker.wire, null, { axis: isVerge ? 'lip' : 'down' })
     : null;
   const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
-  const py = topY + (sticker.yOffset ?? 0) + lift + (
+  /* ⚠️ A SCATTERED PIECE RESTS ON WHAT IS THERE, NOT ON THE LID. Where a rim ring covers the top,
+     the surface at that radius IS the ring, and sprinkles belong on it — Sandeep, with a cake whose
+     roses had swallowed them: *"whatever is the top surface that should be used."* The side has
+     always done this (sidePipingClearance keeps a sprinkle on the chocolate drip); this is the same
+     rule for the other face.
+     ⚠️ SCATTER ONLY, DELIBERATELY. Every other top decoration is placed by hand at a point the
+     baker chose, and lifting those would move pieces on designs already saved — a topper that
+     happens to overlap the rim band would jump on top of the roses. A sprinkle is thrown, not
+     placed, so it is the one that should follow the surface.
+     ⚠️ AND THE DRAG PLANE STAYS ON THE LID. `plane` is what a pointer drag solves against, in x/z;
+     moving it with the piping would make the grab jump as a sprinkle crossed the ring's inner edge. */
+  const seatY = sticker.scatter
+    ? topSurfaceYAt(topBands, Math.hypot(sticker.x ?? 0, sticker.z ?? 0), topY)
+    : topY;
+  const py = seatY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
@@ -3804,6 +3841,8 @@ function CakeContent({ config, scene, edit = null }) {
             key={sticker.id}
             sticker={sticker}
             topY={topY}
+            /* A board decoration stands on the drum, which no rim ring reaches. */
+            topBands={isBoard ? EMPTY_TOP_BANDS : tierTopBands(tier)}
             topRadius={isBoard ? (board?.radius ?? tier.radius) : tier.radius}
             shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
             // The cake's own footprint is what a board decoration must not stand in.

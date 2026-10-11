@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   setShellExtents, setFestoonExtents, setWrapExtents,
   resolveSidePipingBands, sidePipingClearance, festoonSig,
+  resolveTopPipingBands, topSurfaceYAt,
 } from './pipingMetrics.js';
 
 // A proud side decoration must re-seat onto the OUTER face of any cream band it overlaps, so it
@@ -83,5 +84,61 @@ describe('resolveSidePipingBands — absolute bands from published extents', () 
       topPipings: [{ glbUrl, size: 1 }], bottomPipings: [], topY: 3, yBase: 0, height: 2, radius: 1.5,
     });
     expect(bands).toHaveLength(0);
+  });
+});
+
+/* A rim ring also covers part of the LID, and a sprinkle thrown where it sits has to land ON it.
+ * Reported against a rosette rim: the sprinkles rendered at the lid height, so they were under the
+ * roses — visible only in the bare middle. The same picture shows them sitting correctly on the
+ * chocolate drip, because the SIDE has had this since resolveSidePipingBands. */
+describe('resolveTopPipingBands / topSurfaceYAt — what a sprinkle lands on', () => {
+  const topY = 1.0, radius = 0.35;
+  const ring = (glbUrl, over = {}) => ({ glbUrl, size: 1, ...over });
+
+  it('a rim ring is an annulus at the rim, raised by its own height', () => {
+    setShellExtents('rose.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.6 });
+    const [b] = resolveTopPipingBands({ topPipings: [ring('rose.glb')], topY, radius });
+    expect(b.outerR).toBeCloseTo(0.35, 6);                 // outer edge on the rim
+    expect(b.innerR).toBeCloseTo(0.35 - 0.35 * 0.6, 6);    // reaches 0.6 radii inward
+    expect(b.surfaceY).toBeCloseTo(topY + 0.35 * 0.4, 6);  // and stands 0.4 radii proud
+  });
+
+  it('lifts a sprinkle inside the ring and leaves one in the middle alone', () => {
+    setShellExtents('rose.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.6 });
+    const bands = resolveTopPipingBands({ topPipings: [ring('rose.glb')], topY, radius });
+    expect(topSurfaceYAt(bands, 0.30, topY)).toBeCloseTo(topY + 0.14, 6);  // under the roses
+    expect(topSurfaceYAt(bands, 0.05, topY)).toBe(topY);                   // bare lid, untouched
+    expect(topSurfaceYAt([], 0.30, topY)).toBe(topY);                      // no rings at all
+  });
+
+  /* ⚠️ Rim rings NEST, so two can cover the same radius. A sprinkle rests on whatever is highest —
+     "the last one resolved" would drop it inside the taller ring. */
+  it('rests on the TALLEST ring where two overlap', () => {
+    setShellExtents('short.glb', false, 1, { topFrac: 0.2, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.9 });
+    setShellExtents('tall.glb',  false, 1, { topFrac: 0.5, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.9 });
+    const bands = resolveTopPipingBands({ topPipings: [ring('tall.glb'), ring('short.glb')], topY, radius });
+    expect(topSurfaceYAt(bands, 0.3, topY)).toBeCloseTo(topY + 0.35 * 0.5, 6);
+  });
+
+  /* ⚠️ THE THREE SKIPS, each the difference between a sprinkle on icing and one in mid-air. */
+  it('ignores a drip: procedural, no glbUrl, and it hangs outside the wall', () => {
+    expect(resolveTopPipingBands({ topPipings: [{ drip: true, glbUrl: null }], topY, radius })).toHaveLength(0);
+  });
+
+  it('ignores a wrap band: it is re-routed onto the wall, not the lid', () => {
+    setShellExtents('band.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.2 });
+    expect(resolveTopPipingBands({ topPipings: [ring('band.glb', { wrap: true })], topY, radius })).toHaveLength(0);
+  });
+
+  it('ignores a SINGLE-arrangement layer: a few shells at authored angles are not an annulus', () => {
+    setShellExtents('one.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.3 });
+    const single = ring('one.glb', { instances: [{ id: 1, angle: 0 }] });
+    expect(resolveTopPipingBands({ topPipings: [single], topY, radius })).toHaveLength(0);
+  });
+
+  it('follows the ring inward when it is nudged off the rim', () => {
+    setShellExtents('rose.glb', false, 1, { topFrac: 0.4, botFrac: 0, radialOutFrac: 0, radialInFrac: -0.4 });
+    const [b] = resolveTopPipingBands({ topPipings: [ring('rose.glb', { userRadialOffset: -0.1 })], topY, radius });
+    expect(b.outerR).toBeCloseTo(0.25, 6);
   });
 });

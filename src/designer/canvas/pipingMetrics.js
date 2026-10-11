@@ -148,3 +148,67 @@ export function sidePipingClearance({ bands = [], yBottom, yTop }) {
   }
   return out;
 }
+
+/* ── What a rim ring does to the LID, not to the wall ────────────────────────────────────────────
+ *
+ * The bands above answer "how far does this layer stick OUT", which is what a side decoration needs
+ * in order not to bury itself in a drip. A rim ring also does something to the TOP: it occupies an
+ * annulus of the lid and raises the surface there by its own height.
+ *
+ * ⚠️ SPRINKLES WERE THE REPORT, AND THEY SCATTERED AT THE LID NO MATTER WHAT WAS ON IT. Sandeep:
+ * *"when sprinkles are used, they always spread on cake only. if the cake has some cream piping,
+ * that area has piping, it should add on the piping. so whatever is the top surface that should be
+ * used."* On a cake with a rosette rim the sprinkles landed UNDER the roses — visible only in the
+ * bare middle, with a few caught against the roses' lower edge. The side already behaved: the same
+ * picture shows them sitting correctly on the chocolate drip, through `resolveSidePipingBands`.
+ * This is that mechanism for the other surface.
+ *
+ * A band is an annulus `[innerR, outerR]` measured from the tier centre, carrying the Y its top
+ * face sits at. Geometry comes from the same measured extents the renderer publishes, and the
+ * radial maths is `rimRadialBand`'s (CakeDesigner), so the lift and the nesting dial agree about
+ * where a ring is.
+ *
+ * ⚠️ THREE LAYERS ARE SKIPPED, EACH FOR A REASON THAT IS NOT TIDINESS:
+ *   · no `glbUrl` — a chocolate drip is procedural and hangs OUTSIDE the wall. It occupies no part
+ *     of the lid, which is the same fact `occupiesRimBand` encodes for nesting.
+ *   · `wrap` — a wrap band is re-routed onto the WALL. Nothing rests on it from above.
+ *   · `instances` — a SINGLE-arrangement layer is a few discrete shells at authored angles, not a
+ *     ring. An annulus would lift a sprinkle sitting at that radius three-quarters of the way round
+ *     the cake, where there is nothing under it. Under-applying leaves a sprinkle on the icing;
+ *     over-applying leaves it floating in mid-air, and only one of those is recoverable by eye.
+ */
+export function resolveTopPipingBands({ topPipings = [], topY, radius }) {
+  const bands = [];
+  for (const p of topPipings) {
+    if (!p?.glbUrl || p.wrap || p.instances?.length) continue;
+    const size = p.size ?? 1;
+    const flip = p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false);
+    const ext = getShellExtents(p.glbUrl, flip, size);
+    const anchorY = topY + (p.yOffset ?? 0) + (p.userYOffset ?? 0);
+    /* The renderer's own clamp, so the band sits where the ring is drawn: a positive AUTHORED
+       offset raises the ceiling, a user nudge may not push the ring off the rim. Mirrors CakeTier. */
+    const E = Math.min((p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0),
+                       Math.max(0, p.extraRadialOffset ?? 0));
+    const a = radius + E + radius * (ext.radialInFrac ?? 0);
+    const b = radius + E + radius * (ext.radialOutFrac ?? 0);
+    bands.push({
+      innerR: Math.max(0, Math.min(a, b)),
+      outerR: Math.max(a, b),
+      // ringBaseY seats the shell at `anchorY - worldBotY`, so its top lands this far above.
+      surfaceY: anchorY + radius * ((ext.topFrac ?? 0) - (ext.botFrac ?? 0)),
+    });
+  }
+  return bands;
+}
+
+/* The height something resting on the lid should sit at, `r` from the tier centre.
+ *
+ * ⚠️ `max`, NOT "the last one wins". Rim rings nest, so two can overlap at a radius where one is
+ * taller — and a sprinkle has to rest on whatever is highest, not on whichever happened to be
+ * resolved last. Returns `topY` untouched when nothing is underneath, which is every cake that has
+ * no rim ring and therefore every design saved before this existed. */
+export function topSurfaceYAt(bands, r, topY) {
+  let y = topY;
+  for (const b of bands) if (r >= b.innerR && r <= b.outerR && b.surfaceY > y) y = b.surfaceY;
+  return y;
+}
