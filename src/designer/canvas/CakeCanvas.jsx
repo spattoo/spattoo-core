@@ -61,7 +61,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -1846,6 +1846,35 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
 }
 
 
+/* The ONE invisible mesh that receives a placed decoration's pointer events — the side wall and the
+ * top surface both mount this rather than each spelling out a plane.
+ *
+ * The SHAPE is decided by `hitVolume` (placement.js), which carries the reasoning: a measured model
+ * with real depth gets a BOX of its own bounds so it can be grabbed from every camera angle (#10 law
+ * 4), flat artwork keeps the plane. Both draggables already measured that box for the selection cue
+ * and then threw it away here, which is the whole bug.
+ *
+ * ⚠️ `side` GOES ON THE MATERIAL. It sat on `<planeGeometry>` at both sites — a dead prop, since
+ * `side` belongs to THREE.Material — so the plane has always been FrontSide and silently stopped
+ * answering once the cake turned past it, which is exactly what the comment there said it prevented.
+ * A box needs no such flag: it presents a face to the camera from wherever you look at it.
+ *
+ * ⚠️ KEEP `isStickerHitPlane`. Orbit-blocking reads it off the raycast (see the hover handler that
+ * re-enables OrbitControls), and ResizeHandles relies on it being a real, raycastable mesh. */
+function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown, onClick }) {
+  return (
+    <mesh userData={{ isStickerHitPlane: true }} position={volume.position}
+      onPointerEnter={onPointerEnter} onPointerLeave={onPointerLeave}
+      onPointerDown={onPointerDown} onClick={onClick}>
+      {volume.kind === 'box'
+        ? <boxGeometry args={[volume.width, volume.height, volume.depth]} />
+        : <planeGeometry args={[volume.width, volume.height]} />}
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
+
 // `canMove` defaults TRUE. Every decoration on every cake moves today, so a capability that arrived
 // defaulting to false would freeze the lot — and the caller derives it from the ELEMENT, never from
 // the sticker's own allowedActions, which carries a stale `move: false` on everything placed before
@@ -2002,9 +2031,8 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           {toolbar}
         </Html>
       )}
-      <mesh
-        userData={{ isStickerHitPlane: true }}
-        position={[0, hitBox.centerY, 0.001]}
+      <StickerHitMesh
+        volume={hitVolume({ box: glbFoot ? vext?.box : null, width: hitBox.width, height: hitBox.height, centerY: hitBox.centerY })}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
@@ -2081,13 +2109,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           canvas.addEventListener('pointerup', onUp);
         }}
         onClick={e => e.stopPropagation()}
-      >
-        <planeGeometry args={[hitBox.width, hitBox.height]}
-          // DoubleSide: a plane is not hit from behind, so without it this stops being a
-          // drag target the moment the cake is turned past it.
-          side={THREE.DoubleSide} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+      />
       </group>
     </group>
   );
@@ -2218,16 +2240,11 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
           {toolbar}
         </Html>
       )}
-      <mesh userData={{ isStickerHitPlane: true }} position={[0, hitBox.centerY, 0.001]}
+      <StickerHitMesh
+        volume={hitVolume({ box: glbFoot ? artBox : null, width: hitBox.width, height: hitBox.height, centerY: hitBox.centerY })}
         onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
-        onPointerDown={e_onDown} onClick={e => e.stopPropagation()}>
-        <planeGeometry args={[hitBox.width, hitBox.height]}
-          // DoubleSide: a plane is not hit from behind, so without it this stops being a
-          // drag target the moment the cake is turned past it.
-          side={THREE.DoubleSide} />
-        <meshBasicMaterial transparent opacity={0} depthWrite={false} />
-      </mesh>
+        onPointerDown={e_onDown} onClick={e => e.stopPropagation()} />
     </>
   );
 

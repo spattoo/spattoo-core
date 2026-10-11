@@ -277,6 +277,49 @@ export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKE
   return { width: hw * 2, height: top - bottom, centerY: (top + bottom) / 2 };
 }
 
+// A measured model is "deep" — and so gets a solid hit volume and a 3D cue — past this. Exported
+// because SelectionBox switches on the SAME number: the cue must trace what you can actually grab,
+// and two copies of the threshold is how the border comes to promise an edge that is not there.
+export const HIT_SOLID_MIN_DEPTH = 1e-4;
+
+// Where the hit plane sits in front of flat artwork (local units, z-fight guard).
+const HIT_PLANE_Z = 0.001;
+
+/* ── The region that actually receives a decoration's pointer events ─────────────────────────────
+ *
+ * ⚠️ A FLAT PLANE CAN ONLY BE GRABBED HEAD-ON, AND THAT IS #10 LAW 4 — what you can grab is what you
+ * can see, FROM EVERY ANGLE. A GLB's own meshes have `raycast` disabled, so the hit mesh is the only
+ * thing a click can land on, and a GLB is deliberately NOT billboarded (it keeps its world facing,
+ * so a swarm doesn't all swivel to watch the camera). Drawn as a plane it therefore faces the
+ * element's own +Z no matter where the camera goes: turn the cake toward the element's side and the
+ * target narrows to a sliver, then to nothing. Sandeep, with a screenshot of each: *"when the cake
+ * is facing front - i can select. when cake is moved towards side like this - it does not get
+ * selected"*. A 0.147-wide spiral candle (against 2.000 tall) has no grabbable angle at all.
+ *
+ * ⚠️ AND `DoubleSide` WAS NEVER THE ANSWER, NOR EVEN IN EFFECT. It was set on `<planeGeometry>`,
+ * where it is a dead prop — `side` belongs to the MATERIAL — so the hit plane has always been
+ * FrontSide and the back half of every orbit was dead too. Fixing the prop widens the arc; it does
+ * nothing for edge-on, because an edge-on plane has no area to hit from either side.
+ *
+ * So a model with real measured depth gets a BOX of its own bounds. Those are the bounds
+ * `SelectionBox` already draws the 3D cue from, which is what makes the cue honest again: the
+ * border traces the thing you can grab, from every angle, rather than a plane that slides off it.
+ *
+ * A flat decal — 2D art, or a GLB too thin to have measured depth — keeps the plane, so nothing
+ * that works today moves. `box` is the RENDERED model's Box3 (StickerModel), already carrying bend,
+ * tilt and proud seat. No element type/slug/zone reaches this (INVARIANTS #1/#2/#6).
+ */
+export function hitVolume({ box = null, width, height, centerY = 0, z = HIT_PLANE_Z } = {}) {
+  if (box && box.d > HIT_SOLID_MIN_DEPTH) {
+    return {
+      kind: 'box',
+      width: box.w, height: box.h, depth: box.d,
+      position: [0, box.cy ?? 0, box.cz ?? 0],
+    };
+  }
+  return { kind: 'plane', width, height, depth: 0, position: [0, centerY, z] };
+}
+
 // ── The ONE answer to "how big is this sticker, and how big may it get?" ──────
 // Every size control — the SizeDial in the edit popup AND the corner resize handles on the canvas —
 // reads its field, value and bounds from here, so a drag and a dial can never disagree (INVARIANTS
