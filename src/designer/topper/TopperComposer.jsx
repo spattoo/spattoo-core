@@ -950,6 +950,21 @@ export default function TopperComposer({
      * On a two-word topper it still answers the question the border is there to answer — these are
      * things you can take hold of — where picking one of them would be arbitrary. */
     setSelectedIds(loaded.map(o => o.id).filter(id => id != null));
+    /* ⚠️ SELECTED IS NOT EDITABLE, AND SELECTED WAS ALL THE LAST CUT GAVE. The border and the
+     * properties panel arrived, and the number still could not be changed without discovering that
+     * a DOUBLE-CLICK does it — a thing the panel says in small grey text and nobody reads. Sandeep,
+     * looking at a correctly selected "10": *"user would not really know if he needs to double
+     * click or something else to change it."*
+     *
+     * So the word opens in its editor, which is what `add()` has always done for a new one: the
+     * input autofocuses and `onFocus` selects its contents, so the first keystroke replaces the
+     * number. Changing what it says is the thing a baker opened a loaded topper to do.
+     *
+     * ⚠️ ONLY WHEN THERE IS EXACTLY ONE WORD. On a two-word topper ("You"/"Me") any choice of which
+     * to open is arbitrary, and opening the wrong one puts a caret where the baker was not looking.
+     * Those keep the selection alone — the border still says the pieces can be taken hold of. */
+    const texts = loaded.filter(o => o?.kind === 'text' && o.id != null);
+    setEditing(texts.length === 1 ? texts[0].id : null);
     setName(openFrom.name ?? '');
     setStick(p.stick?.on ? { on: true, bury: p.stick.bury ?? 0.5 } : { on: false, bury: 0.5 });
     nextId.current = (p.objects ?? []).reduce((m, o) => Math.max(m, o.id ?? 0), 0) + 1;
