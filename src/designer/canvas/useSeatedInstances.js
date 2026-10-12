@@ -1,6 +1,7 @@
 import { useRef, useMemo, useLayoutEffect } from 'react';
 import * as THREE from 'three';
 import { grassSeats } from '../geometry/grass.js';
+import { mulberry32 } from '../utils/random.js';
 
 /* ── Seating an instanced field on a surface ─────────────────────────────────────────────────────
  *
@@ -25,7 +26,8 @@ export function layAxis(out, into = new THREE.Vector3()) {
   return into.set(Math.cos(out), 0, -Math.sin(out));
 }
 
-export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = null, geo = null } = {}) {
+export function useSeatedInstances(seats, topY,
+                                   { lay = 0, layVary = 0, laySeed = 7, geo = null } = {}) {
   const ref = useRef(null);
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -33,6 +35,13 @@ export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = n
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), tip = new THREE.Quaternion();
     const up = new THREE.Vector3(0, 1, 0), axis = new THREE.Vector3();
     const pos = new THREE.Vector3(), scl = new THREE.Vector3();
+    /* ⚠️ THE GENERATOR IS BUILT HERE, INSIDE THE EFFECT, NOT HANDED IN. A PRNG is a STREAM: every
+       draw advances it. Passing one in — even a stable, memoised, correctly seeded one — means the
+       second run of this effect continues where the first stopped and seats every piece at a
+       different angle. The board ring shook on every frame for exactly that: *"boarder ring is
+       continuously shaking."* Re-seeding here makes a re-run produce identical matrices, which is
+       the property the whole feature already claims ("must look random and be STABLE"). */
+    const rand = mulberry32((laySeed + 991) >>> 0);
     seats.forEach((s, i) => {
       q.setFromAxisAngle(up, s.yaw);
       /* ⚠️ `lay` IS FOR A SURFACE YOU CANNOT PUSH A STEM INTO. A cake board is hard — card or
@@ -47,7 +56,7 @@ export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = n
          every seat has whether or not `grassSeats` bothered to compute it for an overhang. */
       if (lay > 0) {
         const out = s.out ?? Math.atan2(s.x, s.z);
-        const amount = lay * (1 - layVary * (rand ? rand() : 0));
+        const amount = lay * (1 - layVary * rand());
         layAxis(out, axis);
         tip.setFromAxisAngle(axis, amount);
         q.premultiply(tip);
@@ -71,7 +80,7 @@ export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = n
        moved: *"when i increase the branches… rim bunch disappears when the value reaches 4."* The
        seats had not changed, so the effect did not re-run. `GrassPatch` carried the same latent
        fault and is fixed by the same line. */
-  }, [seats, topY, lay, layVary, rand, geo]);
+  }, [seats, topY, lay, layVary, laySeed, geo]);
   return ref;
 }
 

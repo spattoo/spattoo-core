@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import './scene.js';
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
@@ -92,6 +92,11 @@ function Harness() {
   const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
   const L = LAYOUTS[layout];
+  /* ⚠️ A FRESH OBJECT LITERAL IS A NEW DEPENDENCY EVERY RENDER. `hole` feeds the seat memo, so
+     writing `hole={{ shape: … }}` inline rebuilt every seat on every frame — which is half of why
+     the board ring shook. The other half was the PRNG stream; both had to go. */
+  const shape = SHAPES[shapeKey];
+  const holeForBoard = useMemo(() => ({ shape, scale: 1.0 }), [shape]);
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
@@ -185,7 +190,7 @@ function Harness() {
                   shape={c.on === 'board' ? BOARD[shapeKey] : SHAPES[shapeKey]}
                   topY={c.on === 'board' ? TIER.baseY + 0.005 : TOP_Y}
                   /* On the board the cake itself is the hole — nothing may stand inside it. */
-                  hole={c.on === 'board' ? { shape: SHAPES[shapeKey], scale: 1.0 } : null}
+                  hole={c.on === 'board' ? holeForBoard : null}
                   patchRadius={c.on === 'board' ? BOARD[shapeKey].radius : undefined}
                   {...p} {...c} seed={p.seed + i * 13}
                   onStats={(st) => setStats(o => ({ ...o, [i]: { ...st, on: c.on ?? 'top' } }))} />

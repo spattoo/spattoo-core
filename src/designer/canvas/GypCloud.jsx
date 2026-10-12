@@ -1,7 +1,6 @@
 import { useMemo, useLayoutEffect } from 'react';
 import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../geometry/gypsophila.js';
 import { grassSeats } from '../geometry/grass.js';
-import { mulberry32 } from '../utils/random.js';
 import { useSeatedInstances, useSurfaceSeats, instancedTriangleCount } from './useSeatedInstances.js';
 
 // ── A cloud of gypsophila on a surface ──────────────────────────────────────────────────────────
@@ -50,11 +49,8 @@ export default function GypCloud({
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
-  /* A seeded roll for the lay-down variation, so a board ring is not a row of identical angles and
-     does not re-roll on every render. */
-  const layRand = useMemo(() => mulberry32((seed + 991) >>> 0), [seed]);
   const ref = useSeatedInstances(seats, topY,
-    { lay: (lay * Math.PI) / 180, layVary, rand: lay > 0 ? layRand : null, geo });
+    { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo });
 
   useLayoutEffect(() => {
     const { per, total } = instancedTriangleCount(geo, seats.length);
