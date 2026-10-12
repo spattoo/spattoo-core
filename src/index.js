@@ -185,7 +185,7 @@ export { balloonProfile, buildBalloon, BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAU
          balloonPlacement, balloonHandleAt, balloonDragTo } from './designer/geometry/balloon.js';
 export { default as WaferPaperMaterial } from './designer/canvas/WaferPaperMaterial.jsx';
 export { default as GypCloud } from './designer/canvas/GypCloud.jsx';
-export { buildGypSprig, gypTriangleCount, GYP_DEFAULTS } from './designer/geometry/gypsophila.js';
+export { buildGypSprig, gypTriangleCount, GYP_DEFAULTS, GYP_COLOURS } from './designer/geometry/gypsophila.js';
 export { waferPanel, buildWaferSkirt, WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS } from './designer/geometry/waferPaper.js';
 export { WAFER_PAPER_MATERIAL, waferFibreTexture } from './designer/geometry/waferPaperMaterial.js';
 export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripColorAt, paintDripColors, buildDripFlood, DRIP_SPLIT_DEFAULTS } from './designer/geometry/chocolateDrip.js';

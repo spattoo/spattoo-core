@@ -1,5 +1,5 @@
 import { useMemo, useLayoutEffect } from 'react';
-import { buildGypSprig, GYP_DEFAULTS } from '../geometry/gypsophila.js';
+import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../geometry/gypsophila.js';
 import { grassSeats } from '../geometry/grass.js';
 import { useSeatedInstances, useSurfaceSeats, instancedTriangleCount } from './useSeatedInstances.js';
 
@@ -18,7 +18,8 @@ import { useSeatedInstances, useSurfaceSeats, instancedTriangleCount } from './u
 
 export default function GypCloud({
   shape, topY,
-  color = '#fdfdfb',
+  stem = GYP_COLOURS.stem,
+  bloom = GYP_COLOURS.bloom,
   height = GYP_DEFAULTS.height,
   levels = GYP_DEFAULTS.levels,
   forks = GYP_DEFAULTS.forks,
@@ -36,8 +37,9 @@ export default function GypCloud({
 }) {
   const geo = useMemo(
     () => buildGypSprig({ height, levels, forks, spread, shrink, droop, thickness,
-                          florets, floretSize, floretVary, seed }),
-    [height, levels, forks, spread, shrink, droop, thickness, florets, floretSize, floretVary, seed],
+                          florets, floretSize, floretVary, seed, stem, bloom }),
+    [height, levels, forks, spread, shrink, droop, thickness, florets, floretSize, floretVary,
+     seed, stem, bloom],
   );
 
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius });
@@ -61,7 +63,14 @@ export default function GypCloud({
           plainly, and `SURFACE=… node scripts/measure-surface-colour.mjs` is where the real figures
           come from once the shape is settled. Inventing three numbers that look calibrated would be
           worse than having none. */}
-      <meshStandardMaterial color={color} roughness={0.78} metalness={0} />
+      {/* ⚠️ `vertexColors` WITH A WHITE BASE. The stem/bloom split rides the geometry's colour
+          attribute, so one draw call paints both; a white `color` leaves those values untouched
+          (anything else multiplies them and the green goes muddy). The attribute always exists —
+          `buildGypSprig` writes it unconditionally — but the flag still reads it off the geometry
+          rather than assuming, because a material with `vertexColors` and no attribute renders
+          very nearly black. */}
+      <meshStandardMaterial vertexColors={!!geo.attributes.color} color="#ffffff"
+                            roughness={0.78} metalness={0} />
     </instancedMesh>
   );
 }

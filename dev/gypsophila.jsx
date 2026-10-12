@@ -5,7 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import GypCloud from '../src/designer/canvas/GypCloud.jsx';
-import { buildGypSprig, GYP_DEFAULTS } from '../src/designer/geometry/gypsophila.js';
+import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../src/designer/geometry/gypsophila.js';
 
 /* ── Does one sprig read as gypsophila? Open /gypsophila.html ────────────────────────────────────
  *
@@ -34,22 +34,42 @@ const SHAPES = {
   round: { kind: 'round', radius: TIER.radius },
   sheet: { kind: 'rect', halfW: 1.6, halfD: 1.15, cornerR: 0.2 },
 };
+/* The board is its own outline, wider than the cake. A ring on it is bounded OUTSIDE by the board
+   and INSIDE by the cake — two different shapes, which is exactly what `hole` is for and what
+   `bandInner` cannot express (it hollows out the same outline it fills). */
+const BOARD = { round: { kind: 'round', radius: TIER.radius * 1.34 },
+                sheet: { kind: 'rect', halfW: 2.15, halfD: 1.55, cornerR: 0.25 } };
 
 /* The arrangements the references actually show, as seat options rather than as four code paths. */
+/* ⚠️ A LAYOUT IS A LIST OF CLOUDS, not one. The reference cake wears TWO rings — one hugging the
+   top edge and one on the board round the base — and they are different seat problems: the top one
+   is a band in the tier's own outline, the board one is bounded outside by the board and inside by
+   the cake. Modelling a layout as one cloud would have forced a second component to say that. */
 const LAYOUTS = {
   'one sprig':      { solo: true },
-  'a few, close':   { spacing: 0.34, jitter: 0.8 },
-  'ring the rim':   { spacing: 0.12, jitter: 0.7, bandInner: 0.82, overhang: 0.6 },
-  'cover the top':  { spacing: 0.16, jitter: 0.75 },
-  'two clumps':     { spacing: 0.10, jitter: 0.8, patches: [{ u: 0.12, v: 0.55, r: 0.45 },
-                                                            { u: 0.62, v: 0.5, r: 0.38 }] },
+  'a few, close':   { clouds: [{ spacing: 0.34, jitter: 0.8 }] },
+  /* ⚠️ A RING USES SHORTER, DROOPIER SPRIGS THAN A STANDALONE ONE, and that belongs to the
+     arrangement rather than to the sprig. At the sprig's own default the first stem is long and
+     bare before it forks, so a packed ring read as a fence of green sticks with blooms on top —
+     the reference is the other way round: a band of bloom with green showing through it. Cut
+     short and laid over, the same sprig reads as the reference does. */
+  'ring the rim':   { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
+                                 height: 0.20, droop: 0.6 }] },
+  'rim + board':    { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
+                                 height: 0.20, droop: 0.6 },
+                               { on: 'board', spacing: 0.085, jitter: 0.7,
+                                 height: 0.19, droop: 0.5 }] },
+  'cover the top':  { clouds: [{ spacing: 0.16, jitter: 0.75 }] },
+  'two clumps':     { clouds: [{ spacing: 0.10, jitter: 0.8,
+                                 patches: [{ u: 0.12, v: 0.55, r: 0.45 },
+                                           { u: 0.62, v: 0.5, r: 0.38 }] }] },
 };
 
 function Solo({ p }) {
   const geo = buildGypSprig(p);
   return (
     <mesh geometry={geo} position={[0, 0, 0]} castShadow receiveShadow scale={3.2}>
-      <meshStandardMaterial color={p.colour} roughness={0.78} metalness={0} />
+      <meshStandardMaterial vertexColors color="#ffffff" roughness={0.78} metalness={0} />
     </mesh>
   );
 }
@@ -58,7 +78,7 @@ function Harness() {
   const [layout, setLayout] = useState('one sprig');
   const [shapeKey, setShapeKey] = useState('round');
   const [stats, setStats] = useState(null);
-  const [p, setP] = useState({ ...GYP_DEFAULTS, colour: '#fdfdfb' });
+  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
   const L = LAYOUTS[layout];
 
@@ -134,14 +154,29 @@ function Harness() {
 
           {L.solo ? <Solo p={p} /> : (
             <>
+              {/* The board, so a ring round the base has something to stand on. */}
+              <mesh position={[0, TIER.baseY - 0.03, 0]} receiveShadow>
+                {shapeKey === 'round'
+                  ? <cylinderGeometry args={[BOARD.round.radius, BOARD.round.radius, 0.06, 72]} />
+                  : <boxGeometry args={[BOARD.sheet.halfW * 2, 0.06, BOARD.sheet.halfD * 2]} />}
+                <meshStandardMaterial color="#efe3e8" roughness={0.85} />
+              </mesh>
               <mesh position={[0, TIER.baseY + TIER.height / 2, 0]} castShadow receiveShadow>
                 {shapeKey === 'round'
                   ? <cylinderGeometry args={[TIER.radius, TIER.radius, TIER.height, 72]} />
                   : <boxGeometry args={[SHAPES.sheet.halfW * 2, TIER.height, SHAPES.sheet.halfD * 2]} />}
                 <meshStandardMaterial color="#f6efe4" roughness={0.9} />
               </mesh>
-              <GypCloud shape={SHAPES[shapeKey]} topY={TOP_Y} color={p.colour}
-                {...p} {...L} onStats={setStats} />
+              {L.clouds.map((c, i) => (
+                <GypCloud key={i}
+                  shape={c.on === 'board' ? BOARD[shapeKey] : SHAPES[shapeKey]}
+                  topY={c.on === 'board' ? TIER.baseY + 0.005 : TOP_Y}
+                  /* On the board the cake itself is the hole — nothing may stand inside it. */
+                  hole={c.on === 'board' ? { shape: SHAPES[shapeKey], scale: 1.0 } : null}
+                  patchRadius={c.on === 'board' ? BOARD[shapeKey].radius : undefined}
+                  {...p} {...c} seed={p.seed + i * 13}
+                  onStats={i === 0 ? setStats : undefined} />
+              ))}
             </>
           )}
 

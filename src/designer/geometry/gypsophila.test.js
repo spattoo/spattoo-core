@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGypSprig, gypTriangleCount, GYP_DEFAULTS } from './gypsophila.js';
+import { buildGypSprig, gypTriangleCount, GYP_DEFAULTS, GYP_COLOURS } from './gypsophila.js';
 
 const verts = (g) => {
   const p = g.getAttribute('position'), out = [];
@@ -81,6 +81,41 @@ describe('buildGypSprig — one sprig, seated at the origin', () => {
      ships on a phone. Grass's tuft is ~120 triangles; this carries blooms as well. */
   it('stays cheap enough to instance in the hundreds', () => {
     expect(buildGypSprig().index.count / 3).toBeLessThan(1600);
+  });
+
+  /* ⚠️ THE GREEN STEMS ARE NOT DECORATION. Every reference shows fine green stems carrying white
+     blooms, and the contrast between them is most of what makes the cloud legible — rendered
+     all-white it has nothing to separate it from a white cake under a bright key, which is the
+     complaint that has followed every white decoration here. Two colours in ONE buffer, so the
+     field is still a single draw call. */
+  it('paints stems and blooms differently, in one buffer', () => {
+    const g = buildGypSprig();
+    const c = g.getAttribute('color');
+    expect(c, 'no colour attribute at all').toBeTruthy();
+    expect(c.count).toBe(g.getAttribute('position').count);
+    const seen = new Set();
+    for (let i = 0; i < c.count; i++) {
+      seen.add(`${c.getX(i).toFixed(3)},${c.getY(i).toFixed(3)},${c.getZ(i).toFixed(3)}`);
+    }
+    expect(seen.size, 'stems and blooms should be two colours').toBe(2);
+  });
+
+  it('takes the colours it is given', () => {
+    const g = buildGypSprig({ stem: '#ff0000', bloom: '#0000ff' });
+    const c = g.getAttribute('color');
+    let red = 0, blue = 0;
+    for (let i = 0; i < c.count; i++) {
+      if (c.getX(i) > 0.9 && c.getZ(i) < 0.1) red++;
+      if (c.getZ(i) > 0.9 && c.getX(i) < 0.1) blue++;
+    }
+    expect(red).toBeGreaterThan(0);
+    expect(blue).toBeGreaterThan(0);
+    expect(red + blue).toBe(c.count);
+  });
+
+  it('the stem colour is its own export, so two surfaces cannot disagree about it', () => {
+    expect(GYP_COLOURS.stem).toMatch(/^#[0-9a-f]{6}$/i);
+    expect(GYP_COLOURS.bloom).toMatch(/^#[0-9a-f]{6}$/i);
   });
 
   it('every default is a number the builder actually reads', () => {

@@ -66,10 +66,13 @@ export function pushStrand(pos, nor, idx, {
 /* The last four lines of every builder in this folder: hand the arrays to a BufferGeometry, index
    it and compute the bounds. Shared because `check:dup` counted it as a clone the moment a second
    builder existed — which is the gate catching a copy before it was committed rather than after. */
-export function finishGeometry(pos, nor, idx) {
+export function finishGeometry(pos, nor, idx, col = null) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   g.setAttribute('normal',   new THREE.Float32BufferAttribute(nor, 3));
+  /* ⚠️ ONLY WHEN THERE IS ONE. A material with `vertexColors` and no colour attribute reads
+     undefined data and renders very nearly black — the wafer skirt shipped that way for a day. */
+  if (col?.length) g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
   g.setIndex(idx.list);
   g.computeBoundingSphere();
   return g;

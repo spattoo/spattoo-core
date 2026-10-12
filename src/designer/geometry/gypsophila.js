@@ -58,6 +58,18 @@ export const GYP_DEFAULTS = Object.freeze({
   seed:       7,
 });
 
+/* ⚠️ THE STEMS ARE GREEN, AND THAT IS NOT DECORATION — it is most of what makes a sprig legible.
+ * Every reference photograph shows fine green stems carrying white blooms, and the contrast between
+ * them is what gives the cloud its structure. Rendered all-white the mass has nothing to separate
+ * it from a white cake under a bright key, which is the same complaint that has followed the wafer
+ * skirt all week: *"we have the same white color over exposure issue."* Two colours in one buffer
+ * means a vertex attribute rather than two materials — one draw call still, for hundreds of sprigs.
+ */
+export const GYP_COLOURS = Object.freeze({
+  stem:  '#8aa06a',   // a soft olive; gypsophila stems are grey-green, never a leaf green
+  bloom: '#fdfdfb',
+});
+
 /* ⚠️ `mulberry32` IS THE ONE COPY (utils/random.js), and grass had a local look-alike that this
    file then copied a third time. Verified identical for seeds 1, 7, 42 and 99999 over 500 draws
    before both were switched, so no procedural output moved. A sprig must look random and be
@@ -103,9 +115,15 @@ function pushBloom(pos, nor, idx, centre, r, rand) {
 
 /* ONE sprig, seated at the origin and growing up +Y. Instance this; do not call it per seat. */
 export function buildGypSprig(opts = {}) {
-  const o = { ...GYP_DEFAULTS, ...opts };
+  const o = { ...GYP_DEFAULTS, ...GYP_COLOURS, ...opts };
   const rand = mulberry32(o.seed ?? 1);
-  const pos = [], nor = [], idx = { list: [], baseIndex: 0 };
+  const pos = [], nor = [], idx = { list: [], baseIndex: 0 }, col = [];
+  const stem = new THREE.Color(o.stem), bloom = new THREE.Color(o.bloom);
+  /* Paint everything pushed since the last call. The builders push vertices and the colour follows
+     them, so neither has to know how many the other made. */
+  const paint = (from, c) => {
+    for (let i = from; i < idx.baseIndex; i++) col.push(c.r, c.g, c.b);
+  };
   const levels = Math.max(1, Math.round(o.levels));
 
   /* Grown depth-first from the cut end. Each call draws its own stem and then either forks or
@@ -122,7 +140,9 @@ export function buildGypSprig(opts = {}) {
     const az = Math.atan2(dir.z, dir.x) + (rand() - 0.5) * 1.4;
     const bend = new THREE.Vector3(Math.cos(az) * lean, -Math.abs(dir.y) * lean * 0.8, Math.sin(az) * lean);
 
+    const before = idx.baseIndex;
     const end = pushStrand(pos, nor, idx, { origin, dir, bend, len, r0, r1 });
+    paint(before, stem);
 
     /* ⚠️ BLOOMS RIDE THE LAST TWO LEVELS, NOT JUST THE TIPS. Flowering only at the ends gave a bare
        twig with a pom-pom on each arm — which is a dandelion clock, not gypsophila. A real stem
@@ -134,7 +154,9 @@ export function buildGypSprig(opts = {}) {
         const d = o.floretSize * 2.2 * Math.cbrt(rand());
         const c = end.tip.clone().add(new THREE.Vector3(
           Math.sin(b) * Math.cos(a) * d, Math.cos(b) * d, Math.sin(b) * Math.sin(a) * d));
+        const b0 = idx.baseIndex;
         pushBloom(pos, nor, idx, c, o.floretSize * (1 - o.floretVary * rand()), rand);
+        paint(b0, bloom);
       }
     }
 
@@ -169,7 +191,7 @@ export function buildGypSprig(opts = {}) {
   grow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0),
        o.height / chain, o.thickness, 1);
 
-  return finishGeometry(pos, nor, idx);
+  return finishGeometry(pos, nor, idx, col);
 }
 
 /* What a field costs, so a density control can be bounded by a number rather than by a guess. The
