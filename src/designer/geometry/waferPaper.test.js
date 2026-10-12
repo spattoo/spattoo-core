@@ -537,6 +537,28 @@ describe('bakeWaferAO — what darkens a white skirt on a white cake', () => {
      black at any exposure. The ramp was `Math.max(0, 1 - ao*phi)`, which with any strength above 1
      clipped the root vertices to PURE BLACK; Sandeep saw it at the rim, where you look straight
      down the gap: *"black think is still there."* No strength may reach zero. */
+  /* ⚠️ A GAP IS OPEN AT THE TOP. Depth from the wall is only half of what decides whether light
+     reaches a point; the other half is whether the sky can see it, and the bake had no idea how
+     high a vertex was. So the crown — the one place a real skirt is BRIGHTEST, because the key
+     light falls straight into the open channel — came out as a ring of dark slots. Sandeep:
+     *"that black part is still there… thats not how it looks when you really add a wafer paper."* */
+  it('leaves the open top of a gap alone, however deep it is', () => {
+    const g = bakeWaferAO(panel(), 10);
+    const pos = g.getAttribute('position'), col = g.getAttribute('color');
+    let yTop = -Infinity, yBot = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y;
+    }
+    let crown = 2, deep = 2;
+    for (let i = 0; i < pos.count; i++) {
+      const d = (yTop - pos.getY(i)) / (yTop - yBot);
+      if (d < 0.01) crown = Math.min(crown, col.getX(i));   // at the rim, whatever its depth
+      if (d > 0.90) deep = Math.min(deep, col.getX(i));     // near the hem, roofed over
+    }
+    expect(crown).toBeGreaterThan(0.95);   // open to the sky
+    expect(deep).toBeLessThan(0.5);        // and the shading still happens lower down
+  });
+
   it('never reaches black, however hard the gaps are shaded', () => {
     for (const ao of [1, 4, 10, 40]) {
       const col = bakeWaferAO(panel(), ao).getAttribute('color');

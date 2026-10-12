@@ -108,6 +108,9 @@ export const WAFER_DEFAULTS = {
      is the bounce between two sheets a millimetre apart, and without it `ao` over 1 clips to pure
      black. See bakeWaferAO. */
   aoFloor: 0.12,
+  /* How far down the drop the gaps count as roofed over, as a fraction. Above this the channel
+     between two sheets is open to the sky and takes no shading at all — see bakeWaferAO. */
+  aoOpenTop: 0.40,
 
   /* ⚠️ AND THE SAME RAMP ON A FIN IS SCORCH. Everything above was measured with the sheets lying
      FLAT, where the occluder is a neighbour overlapping you by two whole widths. Stood on edge the
@@ -566,7 +569,8 @@ export function waferPanel({
  */
 export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false,
                             aoFocus = WAFER_DEFAULTS.aoFocus,
-                            aoFloor = WAFER_DEFAULTS.aoFloor) {
+                            aoFloor = WAFER_DEFAULTS.aoFloor,
+                            aoOpenTop = WAFER_DEFAULTS.aoOpenTop) {
   const pos = geo?.getAttribute?.('position');
   if (!pos || !(ao > 0)) return geo;
   /* ⚠️ WHICH AXIS IS "AWAY FROM THE WALL" DEPENDS ON HOW THE SHEET IS MOUNTED, and getting it wrong
@@ -591,10 +595,29 @@ export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false,
   let lo = Infinity, hi = -Infinity;
   for (let i = 0; i < pos.count; i++) { const v = pos[axis](i); if (v < lo) lo = v; if (v > hi) hi = v; }
   const span = Math.max(1e-6, hi - lo);
+  /* ⚠️ A GAP IS OPEN AT THE TOP, and the bake had no idea how high a vertex was. Depth from the
+     wall is only half of what decides whether light reaches a point: the other half is whether the
+     sky can see it. The top of the channel between two sheets is wide open — the key light is near
+     overhead and falls straight in — while the same channel a few centimetres down is roofed by
+     the sheets on either side. Shading by depth ALONE darkens both equally, so the crown came out
+     as a ring of near-black notches exactly where a real skirt is at its brightest, which is why
+     it reads as wrong rather than merely dark. Sandeep: *"that black part is still there… thats
+     not how it looks when you really add a wafer paper."*
+     ⚠️ And it is the fifth quantity in this file that was written for one pose and breaks in
+     another, after the fold, the hem, the mounting sign and the AO axis — this one simply left a
+     whole dimension out. */
+  let yTop = -Infinity, yBot = Infinity;
+  for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+  const drop = Math.max(1e-6, yTop - yBot);
+  const lip = Math.max(1e-6, aoOpenTop);
+
   const col = new Float32Array(pos.count * 3);
   for (let i = 0; i < pos.count; i++) {
     const u = Math.min(1, Math.max(0, (pos[axis](i) - lo) / span));   // 1 at the free edge, 0 at the wall
-    const phi = Math.pow(1 - u, focus);                               // 0 in the open, 1 deep in a gap
+    /* How far below the open top this vertex sits, as a fraction of the drop: 0 at the rim, 1 once
+       it is `aoOpenTop` of the way down and properly roofed over. */
+    const roofed = Math.min(1, ((yTop - pos.getY(i)) / drop) / lip);
+    const phi = Math.pow(1 - u, focus) * roofed;                      // 0 in the open, 1 deep in a gap
     /* ⚠️ IT DECAYS TOWARD A FLOOR; IT DOES NOT RUN INTO ONE. Two separate mistakes were here.
        First the line was `Math.max(0, 1 - ao*phi)`: with `ao` above 1 that goes negative at the
        root and clips to PURE BLACK, which is not what a crease in white paper looks like at any
@@ -673,7 +696,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
     });
-    bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus, o.aoFloor);
+    bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus, o.aoFloor, o.aoOpenTop);
 
     /* Stand it on the wall. The panel's +Z must become the perimeter's OUTWARD normal, so the
        rotation is the angle of that normal — taken from the normal itself rather than from the

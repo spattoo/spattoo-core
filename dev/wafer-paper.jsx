@@ -75,7 +75,7 @@ function Skirt({ shape, p }) {
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
     curl: p.curl, splay: p.splay, lean: p.lean,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
-    ao: p.ao, aoFocus: p.aoFocus, aoFloor: p.aoFloor, fin: p.fin, finAngle: p.finAngle,
+    ao: p.ao, aoFocus: p.aoFocus, aoFloor: p.aoFloor, aoOpenTop: p.aoOpenTop, fin: p.fin, finAngle: p.finAngle,
     /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
        silently takes WAFER_DEFAULTS and two different ?ao= values render identically — which they
        did, and the measurement said so before the eye could. */
