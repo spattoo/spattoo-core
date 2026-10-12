@@ -73,7 +73,7 @@ function Skirt({ shape, p }) {
     shape, tierHeight: TIER.height, radius: TIER.radius,
     count: p.count, width: p.width, height: p.height, rise: p.rise, taper: p.taper,
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
-    curl: p.curl, splay: p.splay, lean: p.lean,
+    curl: p.curl, splay: p.splay, lean: p.lean, glue: p.glue,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
     ao: p.ao, aoFocus: p.aoFocus, aoFloor: p.aoFloor, aoOpenTop: p.aoOpenTop, fin: p.fin, finAngle: p.finAngle,
     /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
@@ -214,7 +214,8 @@ export default function Harness() {
             measurement taken from the default angle said it never went below 56. A probe that
             cannot reach the complaint reports a misleading clean. */}
         <Canvas shadows fov={40}
-          camera={{ position: p.cam === 'high' ? [0, 4.4, 3.2] : [0, 2.2, 5.0], fov: 40 }}
+          camera={{ position: p.cam === 'top' ? [0, 6.2, 1.4]
+                             : p.cam === 'high' ? [0, 4.4, 3.2] : [0, 2.2, 5.0], fov: 40 }}
           gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
           <color attach="background" args={[p.bg || '#efe7e2']} />
           {/* THE shared rig — see dev/grass.jsx and INVARIANTS #17. A harness lit differently from

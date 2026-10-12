@@ -652,6 +652,42 @@ describe('fin mode — a strip stood on edge, not laid flat', () => {
  * reads as scorching. Lying flat, "away from the wall" is local Z. Stood on edge, local Z is the
  * WAVE axis and local X is the radius, so the flat ramp paints a gradient ACROSS each strip's face:
  * *"the shadows are so bad that it looks like burnt paper."* */
+/* ⚠️ GLUED MEANS TOUCHING, and it only shows from directly above. The transform pins a panel's top
+ * EDGE to the wall, but the sheet itself left it there: at the glue line the pleat was already 35%
+ * open and `bow` stood the side edges off as well. Looking straight down you saw board between the
+ * cake and its own skirt — Sandeep: *"there is a gap between cake and wafer papers. they look
+ * separate."* From the side the sheet in front hides it, which is why it survived every render
+ * taken at eye level. */
+describe('the sheet is stuck ON the cake, not hovering beside it', () => {
+  const panelAt = (glue) => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, curl: 0.3,
+                                         splay: 0.1, rng: () => 0.5, glue });
+  // +Z is outward from the wall, so z IS the standoff.
+  const standoff = (g, a, b) => {
+    const p = g.getAttribute('position');
+    let yTop = -Infinity, yBot = Infinity;
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+    let n = 0, sum = 0;
+    for (let i = 0; i < p.count; i++) {
+      const d = (yTop - p.getY(i)) / (yTop - yBot);
+      if (d >= a && d < b) { sum += p.getZ(i); n++; }
+    }
+    return n ? sum / n : NaN;
+  };
+
+  it('touches the wall along the glue line', () => {
+    expect(standoff(panelAt(0.10), 0, 0.02)).toBeLessThan(0.01);
+  });
+
+  it('and still opens into a pleat below it', () => {
+    const g = panelAt(0.10);
+    expect(standoff(g, 0.3, 0.5)).toBeGreaterThan(standoff(g, 0, 0.02) + 0.05);
+  });
+
+  it('glue 0 is the old behaviour — the pleat opens at the glue line', () => {
+    expect(standoff(panelAt(0), 0, 0.02)).toBeGreaterThan(standoff(panelAt(0.10), 0, 0.02));
+  });
+});
+
 describe('bakeWaferAO follows the mounting', () => {
   const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, rng: () => 0.5, fin: true });
 

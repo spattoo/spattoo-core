@@ -197,6 +197,10 @@ export const WAFER_DEFAULTS = {
   jitter: 0.35,   // 0 … 1, how much the panels differ from one another
   hem:    'straight',  // 'straight' | 'notch' | 'torn' | 'round' | 'petal' — see hemProfile
   notch:  0.10,   // × panel height, the depth of the zigzag when hem === 'notch'
+  /* How much of the drop, from the glue line down, the sheet is pressed flat against the wall.
+     Not decoration: without it the pleat opens AT the line where the paper is stuck on, and from
+     directly above you can see between the cake and its own skirt. See creaseAt. */
+  glue:   0.10,
   seed:   7,
   /* ── WHICH WAY THE SHEET FACES ────────────────────────────────────────────────────────────────
    * `fin` is wallpaper versus wafer paper, and it is the difference between a render Sandeep
@@ -390,7 +394,7 @@ function hemProfile(kind, u01, notch, rnd) {
  * the only part of a real panel whose position is known.
  */
 export function waferPanel({
-  width = 1, height = 1, taper = WAFER_DEFAULTS.taper,
+  width = 1, height = 1, taper = WAFER_DEFAULTS.taper, glue = WAFER_DEFAULTS.glue,
   ripple = WAFER_DEFAULTS.ripple, ripples = WAFER_DEFAULTS.ripples,
   sway = WAFER_DEFAULTS.sway, sways = WAFER_DEFAULTS.sways, phase = 0,
   meander = WAFER_DEFAULTS.meander, meanders = WAFER_DEFAULTS.meanders,
@@ -508,7 +512,18 @@ export function waferPanel({
       const wave = ripple * w * t * Math.sin(phase + vvj * ripples * Math.PI * 2);
       return { x: t * w + snake, y: -height * vvj, z: wave + bow * t + drift, u01 };
     }
-    const z = bow + fold + splay * height * vvj * vvj;
+    /* ⚠️ GLUED MEANS TOUCHING. The top edge is pinned to the wall by the transform, but the SHEET
+       was not: at vvj 0 the pleat is already `open` (0.35 of its depth) and `bow` stands the two
+       side edges off as well, so the paper left the cake at the very line where it is stuck on.
+       Looking down you saw board between the two — Sandeep: *"there is a gap between cake and
+       wafer papers. they look separate."* It shows from above and almost nowhere else, because
+       from the side the sheet in front hides it.
+       The comment on `open` above already said the pleat is "pinched where it is glued"; it just
+       never was — 0.35 is not pinched. Rather than special-case the pleat, everything that stands
+       the sheet off the wall is scaled to nothing over the first `glue` of the drop. That is one
+       rule instead of three, and it is what a thumb does to a strip of wafer paper. */
+    const stick = glue > 0 ? Math.min(1, vvj / glue) : 1;
+    const z = (bow + fold + splay * height * vvj * vvj) * (stick * stick * (3 - 2 * stick));
     return { x: u + drift + snake, y: -height * vvj, z: Math.max(0, z), u01 };
   };
 
@@ -695,6 +710,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
            + (1 - o.nest) * rnd() * Math.PI * 2,
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
+      glue: o.glue,
     });
     bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus, o.aoFloor, o.aoOpenTop);
 
