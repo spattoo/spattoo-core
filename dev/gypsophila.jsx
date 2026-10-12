@@ -97,7 +97,8 @@ function Harness() {
      half the truth about what it costs — and when the rim ring vanished it still read 561 sprigs,
      which is exactly the kind of number that sends you looking in the wrong place. */
   const [stats, setStats] = useState({});
-  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18, rimIn: 0.14, rimOut: 0.10, shadeVary: 0.35 });
+  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18, rimIn: 0.14,
+                              rimOut: 0.10, shadeVary: 0.35, spacingScale: 1 });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
   const L = LAYOUTS[layout];
   /* ⚠️ A FRESH OBJECT LITERAL IS A NEW DEPENDENCY EVERY RENDER. `hole` feeds the seat memo, so
@@ -150,7 +151,8 @@ function Harness() {
 
         <H>The blooms</H>
         <Sl label="Per tip"      v={p.florets} min={1} max={10} step={1} on={set('florets')} int />
-        <Sl label="Bloom size"   v={p.floretSize} min={0.004} max={0.03} step={0.0005} on={set('floretSize')} />
+        <Sl label="Bloom size"   v={p.floretSize} min={0.004} max={0.04} step={0.001} on={set('floretSize')}
+            hint="Measured off the reference: a floret is about 1.45% of the cake's WIDTH." />
         <Sl label="Size variety" v={p.floretVary} min={0} max={0.9} step={0.02} on={set('floretVary')}
             hint="Buds and open flowers sit together. At 0 it is a cluster of identical beads." />
         <Sl label="Depth"        v={p.ao} min={0} max={1.4} step={0.05} on={set('ao')}
@@ -162,8 +164,13 @@ function Harness() {
         <Sl label="Seed"         v={p.seed} min={1} max={40} step={1} on={set('seed')} int />
 
         <H>Arrangement</H>
-        <Sl label="Spacing" v={p.spacing ?? 0.13} min={0.05} max={0.5} step={0.01}
-            on={set('spacing')} hint="Only applies when it is not a single sprig." />
+        {/* ⚠️ A MULTIPLIER, NOT A VALUE. Each arrangement sets its own spacing — a rim band is
+            packed where a scatter is not — and `{...p} {...c}` lets the preset win, so a plain
+            Spacing slider was DEAD on every ring. Scaling the preset keeps both: the presets stay
+            meaningful and the control still does something wherever you are. */}
+        <Sl label="Spacing ×" v={p.spacingScale} min={0.5} max={2.5} step={0.05}
+            on={set('spacingScale')}
+            hint="Scales whatever the arrangement asks for. Above 1 opens it up and lets the green show." />
         <Sl label="Rim: out past the edge" v={p.rimOut} min={0} max={0.4} step={0.01} on={set('rimOut')}
             hint="How far the top ring reaches PAST the rim, × the tier." />
         <Sl label="Rim: in from the edge" v={p.rimIn} min={0.03} max={0.6} step={0.01} on={set('rimIn')}
@@ -225,7 +232,9 @@ function Harness() {
                   hole={c.on === 'foot' ? holeForFoot : null}
                   patchRadius={c.on === 'foot' ? footBand.radius
                              : c.on === 'rim' ? rim.shape.radius : undefined}
-                  {...p} {...c} seed={p.seed + i * 13}
+                  {...p} {...c}
+                  spacing={(c.spacing ?? p.spacing ?? 0.13) * (p.spacingScale ?? 1)}
+                  seed={p.seed + i * 13}
                   onStats={(st) => setStats(o => ({ ...o, [i]: { ...st, on: c.on ?? 'top' } }))} />
               ))}
             </>

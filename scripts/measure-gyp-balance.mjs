@@ -15,15 +15,23 @@
  */
 import { chromium } from 'playwright';
 
+/* ⚠️ 5% IS A CEILING, NOT A TARGET, and finding out why was worth more than hitting it. The green
+   in the reference photographs is mostly FOLIAGE: its green runs measure a median 1.93% of the
+   cake's width, which is the same scale as a floret (1.45%) and nothing like a hairline. Our sprig
+   has no leaves — only bare stems, which the blooms largely hide — so no stem thickness reaches 5%
+   without turning a stem into something it is not. Swept to 0.007 it reached 0.3%.
+   Read this as "do not exceed the reference", and if the green matters, the honest fix is leaves. */
 const TARGET = 5.0;                       // % stem, measured off the reference cake, both rings
 const KNOB = process.env.KNOB ?? 'thickness';
 const DEFAULTS = {
   thickness:  '0.001,0.0015,0.002,0.003',
   floretSize: '0.006,0.009,0.012,0.016',
   florets:    '5,7,9,10',
+  spacing:    '1,1.4,1.9,2.4',
 };
 const VALUES = (process.env.VALUES ?? DEFAULTS[KNOB] ?? '').split(',').map(Number);
-const LABEL = { thickness: 'Stem', floretSize: 'Bloom size', florets: 'Per tip' }[KNOB] ?? KNOB;
+const LABEL = { thickness: 'Stem', floretSize: 'Bloom size', florets: 'Per tip',
+                spacing: 'Spacing ×', shadeVary: 'Crowd depth', ao: 'Depth' }[KNOB] ?? KNOB;
 
 const b = await chromium.launch();
 const page = await b.newPage({ viewport: { width: 1200, height: 820 }, deviceScaleFactor: 1 });

@@ -44,16 +44,26 @@ export const GYP_DEFAULTS = Object.freeze({
   /* How much a branch bows over along its length. The bloom clusters are heavy for a stem that
      thin, so the tips always fall away from the axis. */
   droop:      0.35,
-  /* ⚠️ A STEM IS A HAIR NEXT TO ITS OWN FLOWERS. Real gypsophila runs about 0.8mm of stem against
-     a 15mm cluster — roughly twenty to one — and anything fatter reads as wire holding beads. */
-  thickness:  0.0022,  // stem radius at the cut end
+  /* ⚠️ A STEM IS A HAIR NEXT TO ITS OWN FLOWERS — about one to twenty, and anything fatter reads
+     as wire holding beads. It tracks `floretSize`: when the blooms were measured up to the
+     reference's scale the clusters grew with them, so the stem follows rather than staying where
+     it was. */
+  thickness:  0.0034,  // stem radius at the cut end
   /* Blooms per tip. A gypsophila tip is not one flower, it is a tight corymb of them. */
   florets:    9,
-  /* ⚠️ A RADIUS, AND IT IS TINY — this was 0.016 first, which is a bloom 11% as wide as the whole
-     sprig. On a real stem a floret is two or three millimetres against sixty, so about 3%. At the
-     wrong size they rendered as a handful of flat white diamonds on a bare twig; the airiness of
-     gypsophila is MANY small dots, never a few big ones. */
-  floretSize: 0.009,
+  /* ⚠️ A RADIUS, AND IT IS MEASURED OFF THE REFERENCE RATHER THAN REASONED ABOUT — twice now in
+     opposite directions, which is why the measurement is written down.
+     It started at 0.016, a bloom 11% as wide as the whole sprig, and rendered as a handful of flat
+     white diamonds on a bare twig. Reasoning from botany (a floret is 2–3mm against a 60mm stem)
+     took it to 0.009 — and that was too small, because the botany is about a sprig in a vase and
+     what matters here is the bloom against the CAKE. Measured on Sandeep's reference by the length
+     of bright runs across the flower band, a floret is **1.45% of the cake's width** (p75 ≈ 3%).
+     Ours at 0.009 measured 0.60%, which agrees exactly with the arithmetic — diameter 0.018 on a
+     3.0-wide cake — so the measure is sound and the size was simply wrong.
+     0.021 puts the median at 1.4%. ⚠️ The run measure SATURATES above that: once blooms overlap,
+     the band becomes one run longer than a third of the frame and gets discarded, which drags the
+     median back down. Trust it while the blooms are separate and trust the arithmetic after. */
+  floretSize: 0.021,
   /* How much the blooms differ in size within a cluster: buds and open flowers sit together, and a
      cluster of identical balls is the other classic way this reads as plastic. */
   floretVary: 0.55,
@@ -244,8 +254,17 @@ export function buildGypSprig(opts = {}) {
      lies about its own units is the thing INVARIANTS #8 is about. The reach is still a little under
      `height` because droop trades length for lean, and that is the honest part of it. */
   const chain = (1 - Math.pow(o.shrink, levels)) / (1 - o.shrink || 1);
+  /* ⚠️ THE BLOOMS COUNT TOWARD THE REACH, because the control says "cut end to the furthest bloom"
+     and a cluster stands proud of the stem that carries it. While the florets were tiny this was
+     within the tolerance and nobody noticed; measuring them up to the reference's scale pushed the
+     sprig past its own setting and the test caught it. The allowance is the cluster's own radius —
+     blooms scatter within `floretSize * 2.2` of the tip, but that scatter is in every direction —
+     only the outermost bloom's own radius actually extends the envelope, and droop has already
+     taken its share of the reach. Subtracting the whole cluster undershot the setting by 20%. */
+  const bloomReach = o.floretSize * 1.4;
+  const stemLen = Math.max(o.height * 0.25, o.height - bloomReach) / chain;
   grow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0),
-       o.height / chain, o.thickness, 1);
+       stemLen, o.thickness, 1);
 
   shadeBlooms(col, blooms, o);
   return finishGeometry(pos, nor, idx, col);
