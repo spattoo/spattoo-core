@@ -73,9 +73,12 @@ ok(st.focused, 'focused');
 ok(st.selected, 'and selected');
 await page.screenshot({ path: `${OUT}/topper-open-kept.png` });
 
-console.log('\ndoor 3 — a catalogue row carrying a preset payload');
-/* ⚠️ THE DOOR A BAKER ACTUALLY USES: Decorations → tap the Card topper studio row. `e8` carries a
-   `card_topper` payload whose objects have no ids, verbatim from topperPresets' `number`. */
+console.log('\ndoor 3 — a catalogue row');
+/* ⚠️ THE ROW OPENS EMPTY NOW, BY REQUEST. Sandeep: *"do not default it to '10' with offset. empty
+   canvas… let the user pull from preset."* The studio arriving with a finished-looking "10" on it
+   is the state three rounds of fixes went into making editable, and on the deployed app it still
+   arrived merely selected. An empty canvas cannot be in that state at all, and the preset rail —
+   proven at every window size and through a real mouse click — lands a look IN its editor. */
 await page.goto(`${B.replace('topper-studio.html', 'designer-mobile.html')}?catalog=1`,
   { waitUntil: 'domcontentloaded' });
 await page.waitForTimeout(5000);
@@ -86,9 +89,31 @@ await page.waitForTimeout(1500);
 ok(await page.evaluate(() => window.__tapElementById?.('e8') ?? false), 'the Card topper studio row opens it');
 await page.waitForTimeout(3500);
 st = await state();
-ok(st.editing === 1, `a row's preset opens in its editor (${st.editing})`);
-ok(st.focused && st.value === '10', `focused, holding the number (${st.value})`);
-ok(st.selected, 'and selected, so the first keystroke replaces it');
+ok(st.editing === 0, `and the canvas is EMPTY — nothing to misread as finished (${st.editing} editors)`);
+ok(await page.evaluate(() => /Pick a preset/i.test(document.body.innerText)),
+   'with the prompt saying what to do next');
+
+/* And from there the preset rail still lands a look ready to type — the path this leans on. */
+/* ⚠️ SCOPED TO THE MODAL. In the standalone studio the sixth textless button is the "10"; inside
+   the designer the page also carries the nav's icon buttons, so an index taken over the whole
+   document lands on the sidebar. The modal is found by its own title. */
+ok(await page.evaluate(() => {
+  const title = [...document.querySelectorAll('*')]
+    .find(x => x.children.length === 0 && x.textContent.trim() === 'Card topper studio');
+  let modal = title?.parentElement;
+  while (modal && modal.querySelectorAll('button').length < 10) modal = modal.parentElement;
+  if (!modal) return false;
+  const blank = [...modal.querySelectorAll('button')].filter(b => !b.textContent.trim())
+    .sort((a, c) => a.getBoundingClientRect().top - c.getBoundingClientRect().top);
+  const tile = blank.find(b => { const r = b.getBoundingClientRect(); return r.width > 30 && r.width < 70 && r.height > 30; });
+  const tiles = blank.filter(b => { const r = b.getBoundingClientRect(); return r.width > 30 && r.width < 70 && r.height > 30; });
+  if (tiles.length < 6) return false;
+  tiles[5].click(); return true;
+}), 'the "10" tile is one tap away');
+await page.waitForTimeout(1800);
+st = await state();
+ok(st.editing === 1 && st.focused && st.selected,
+   `and it lands in its editor, selected (${st.value})`);
 await page.screenshot({ path: `${OUT}/topper-open-row.png` });
 
 console.log(fails.length ? `\n✗ ${fails.length} failed` : '\n✓ all good');

@@ -7084,11 +7084,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        that placed itself would make the words on it the ONE thing about the cake nobody could
        change, and the words are the whole point of a name topper. It arrives as a starting point
        that can be left. */
-    card_topper: opensStudio((el) => {
-      // Arriving from a catalogue row, so nothing here is a kept piece — clear the shelf door.
+    card_topper: opensStudio(() => {
+      /* ⚠️ THE CANVAS OPENS EMPTY, AND THE ROW'S OWN PAYLOAD IS DELIBERATELY NOT READ.
+       *
+       * Sandeep: *"do not default it to '10' with offset. empty canvas. if selecting from presets
+       * is selecting '10', lets keep the empty canvas and let the user pull from preset."*
+       *
+       * The row used to seed the canvas from `placement_config.card_topper`, so the studio opened
+       * with a finished-looking "10" already on it. That is a worse starting point than it sounds:
+       * the words are the whole point of a name topper, and a baker who wants "7" has to work out
+       * that the thing in front of them is editable at all. Three rounds of fixes went into opening
+       * it in its editor — a loaded word now does, through every door the harness can reach — and
+       * on the deployed app it still arrives merely selected, which I could not reproduce or
+       * explain even after reading the shipped bundle.
+       *
+       * So the answer is to stop putting a baker in that state. An empty canvas says "pick one",
+       * the preset rail says which ones, and tapping one of them lands it IN its editor with the
+       * text selected — which is the path that has been proven at every size and through a real
+       * mouse click. One tap more, and no screen that looks finished but is not.
+       *
+       * ⚠️ THE ROW'S PAYLOAD IS NOW DEAD CONFIG, and should be cleared in Manage Elements rather
+       * than left to look meaningful. It is not read here, and a value nothing reads is the thing
+       * that makes the next person distrust every other field on the row. */
       setOpenTopper(null);
-      const made = el?.placement_config?.card_topper;
-      setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
+      setPendingTopper(null);
       setTopperStudio(true);
     }),
     /* ⚠️ A PATTERN IS MADE BEFORE IT IS PLACED, which is what makes this a studio rather than a
