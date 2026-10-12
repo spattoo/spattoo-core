@@ -15,7 +15,17 @@ import { grassSeats } from '../geometry/grass.js';
  * Mid-surface a tip would lift one side of a clump off the cake and bury the other; at the edge
  * there is nothing underneath to bury into, which is what makes a drape possible at all.
  */
-export function useSeatedInstances(seats, topY) {
+/* ⚠️ THE AXIS THAT TIPS A PIECE AWAY FROM THE CAKE, exported so it can be tested rather than
+ * trusted. Rotating about (cos out, 0, −sin out) carries +Y toward the OUTWARD bearing `out`; the
+ * axis is horizontal and perpendicular to it, so the piece falls away from the cake rather than
+ * along it. Get the sign wrong and everything leans INWARD through the cake — which is exactly the
+ * bug the wafer skirt's `fin` mounting shipped with, found by a test and not by looking at renders.
+ */
+export function layAxis(out, into = new THREE.Vector3()) {
+  return into.set(Math.cos(out), 0, -Math.sin(out));
+}
+
+export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = null } = {}) {
   const ref = useRef(null);
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -25,8 +35,24 @@ export function useSeatedInstances(seats, topY) {
     const pos = new THREE.Vector3(), scl = new THREE.Vector3();
     seats.forEach((s, i) => {
       q.setFromAxisAngle(up, s.yaw);
-      if (s.lean) {
-        axis.set(Math.cos(s.out), 0, -Math.sin(s.out));
+      /* ⚠️ `lay` IS FOR A SURFACE YOU CANNOT PUSH A STEM INTO. A cake board is hard — card or
+         acrylic — so a ring round the base is not planted in it, it is LAID on it: stems tucked in
+         sideways at the join, resting against the cake's wall, blooms fanning outward. Seated
+         upright instead, a board ring reads as a hedge round a building. Sandeep: *"on the board,
+         it looks more like a tree plantation… board is a hard material thing and you cannot insert
+         into it."*
+         Same tipping maths as the rim lean, taken all the way over: rotating about
+         (cos out, 0, −sin out) carries +Y toward the OUTWARD direction, so the sprig falls away
+         from the cake rather than along it. `out` is the seat's own bearing from the centre, which
+         every seat has whether or not `grassSeats` bothered to compute it for an overhang. */
+      if (lay > 0) {
+        const out = s.out ?? Math.atan2(s.x, s.z);
+        const amount = lay * (1 - layVary * (rand ? rand() : 0));
+        layAxis(out, axis);
+        tip.setFromAxisAngle(axis, amount);
+        q.premultiply(tip);
+      } else if (s.lean) {
+        layAxis(s.out, axis);
         tip.setFromAxisAngle(axis, s.lean);
         q.premultiply(tip);
       }
@@ -36,7 +62,7 @@ export function useSeatedInstances(seats, topY) {
     });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [seats, topY]);
+  }, [seats, topY, lay, layVary, rand]);
   return ref;
 }
 

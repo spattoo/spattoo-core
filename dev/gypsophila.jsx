@@ -53,12 +53,20 @@ const LAYOUTS = {
      bare before it forks, so a packed ring read as a fence of green sticks with blooms on top —
      the reference is the other way round: a band of bloom with green showing through it. Cut
      short and laid over, the same sprig reads as the reference does. */
+  /* ⚠️ THE TOP RING LIES OVER TOO, just less far. Its stems ARE pushed into buttercream, so it is
+     not the board's problem — but seated bolt upright the band showed a palisade of green stems
+     round the inside of the rim, which is the same "tree plantation" read. In the reference the
+     sprigs are laid toward the edge and the band is bloom, not stem. 45° keeps them planted and
+     tips them over. */
   'ring the rim':   { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
-                                 height: 0.20, droop: 0.6 }] },
+                                 height: 0.20, droop: 0.6, lay: 45 }] },
   'rim + board':    { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
-                                 height: 0.20, droop: 0.6 },
-                               { on: 'board', spacing: 0.085, jitter: 0.7,
-                                 height: 0.19, droop: 0.5 }] },
+                                 height: 0.20, droop: 0.6, lay: 45 },
+                               /* Laid down, not planted: the board is card. 78° leaves the sprigs
+                                  tilted just off the board so they rest against the cake's side
+                                  rather than lying dead flat on it. */
+                               { on: 'board', spacing: 0.075, jitter: 0.7,
+                                 height: 0.22, droop: 0.3, lay: 78 }] },
   'cover the top':  { clouds: [{ spacing: 0.16, jitter: 0.75 }] },
   'two clumps':     { clouds: [{ spacing: 0.10, jitter: 0.8,
                                  patches: [{ u: 0.12, v: 0.55, r: 0.45 },

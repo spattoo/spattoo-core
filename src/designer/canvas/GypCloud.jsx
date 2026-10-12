@@ -1,6 +1,7 @@
 import { useMemo, useLayoutEffect } from 'react';
 import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../geometry/gypsophila.js';
 import { grassSeats } from '../geometry/grass.js';
+import { mulberry32 } from '../utils/random.js';
 import { useSeatedInstances, useSurfaceSeats, instancedTriangleCount } from './useSeatedInstances.js';
 
 // ── A cloud of gypsophila on a surface ──────────────────────────────────────────────────────────
@@ -33,6 +34,10 @@ export default function GypCloud({
   spacing = 0.13, jitter = 0.7,
   bandInner = null, hole = null, inset = 0.98, overhang = 0, patches = null, patchRadius = null,
   seed = GYP_DEFAULTS.seed,
+  /* Degrees the sprig is tipped over from upright. 0 stands it up (a top surface, where the stem
+     really is pushed into buttercream); 90 lays it flat (a board, which is card and cannot be
+     pushed into at all). See useSeatedInstances. */
+  lay = 0, layVary = 0.35,
   onStats,
 }) {
   const geo = useMemo(
@@ -45,7 +50,11 @@ export default function GypCloud({
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
-  const ref = useSeatedInstances(seats, topY);
+  /* A seeded roll for the lay-down variation, so a board ring is not a row of identical angles and
+     does not re-roll on every render. */
+  const layRand = useMemo(() => mulberry32((seed + 991) >>> 0), [seed]);
+  const ref = useSeatedInstances(seats, topY,
+    { lay: (lay * Math.PI) / 180, layVary, rand: lay > 0 ? layRand : null });
 
   useLayoutEffect(() => {
     const { per, total } = instancedTriangleCount(geo, seats.length);
