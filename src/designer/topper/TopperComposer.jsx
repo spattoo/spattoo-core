@@ -556,7 +556,8 @@ const inputStyle = {
   border: '1.5px solid #E2E8E3', fontFamily: 'inherit', fontSize: 13.5,
 };
 
-function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embedded = false }) {
+function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embedded = false,
+                      editing = false }) {
   const [wheel, setWheel] = useState(null);
   const set = (patch) => onChange(obj.id, patch);
 
@@ -575,9 +576,16 @@ function Properties({ obj, onChange, onDelete, grouped = false, onUngroup, embed
               watching the middle — and two controls for one value, either of which might be the one
               you reach for. The words are edited on the object; this panel is for everything that is
               not the words. */}
-          <p style={{ margin: '-4px 0 12px', fontSize: 11, color: '#8A9A8E', lineHeight: 1.4 }}>
-            Double-click the text to edit it.
-          </p>
+          {/* ⚠️ ONLY WHILE IT IS NOT ALREADY OPEN. A loaded word now arrives IN its editor with the
+              caret in it, and telling somebody to double-click a thing they are already typing into
+              is the kind of stale instruction that makes a screen feel broken. It still earns its
+              place for the other cases — a second word, a piece clicked after the caret has been
+              dismissed — which is exactly when nothing else says the words can be changed. */}
+          {!editing && (
+            <p style={{ margin: '-4px 0 12px', fontSize: 11, color: '#8A9A8E', lineHeight: 1.4 }}>
+              Double-click the text to edit it.
+            </p>
+          )}
           {/* ⚠️ NO FACE ROW HERE. It is in the toolbar, where it can be chosen BEFORE writing rather
               than only after selecting something — and one control for one value. */}
         </>
@@ -891,6 +899,30 @@ export default function TopperComposer({
   const selectedId = selectedIds.length === 1 ? selectedIds[0] : null;
   const dragFrom = useRef(null);
   const [editingId, setEditing] = useState(null);
+
+  /* ── What a freshly-loaded set of pieces arrives IN ──────────────────────────────────────────
+   *
+   * One answer, whichever door the pieces came through: a preset on an element row, a kept
+   * decoration, a template returning through `editWith`, or the preset list inside the studio.
+   * Sandeep, on the loaded "10": *"user does not know how to edit"* — and the fix only reached one
+   * of those doors, so the other kept producing the state the fix existed to remove.
+   *
+   * SELECTED, because nothing else says the piece can be touched: the border and the properties
+   * panel are the only things that answer "is this mine to change?". Every loaded piece rather than
+   * the first — on a one-piece preset that IS the piece, and on a two-word topper picking one of
+   * them would be arbitrary.
+   *
+   * AND EDITING, when there is exactly one word, because changing what it says is what a baker
+   * opened a loaded topper to do. The input autofocuses and selects its contents, so the first
+   * keystroke replaces the number — the same thing `add()` has always done for a new word.
+   *
+   * ⚠️ ONLY WHEN THERE IS EXACTLY ONE. On a two-word topper ("You"/"Me") any choice is arbitrary,
+   * and opening the wrong one puts a caret where the baker was not looking. */
+  const applyArrival = useCallback((loaded) => {
+    setSelectedIds(loaded.map(o => o.id).filter(id => id != null));
+    const texts = loaded.filter(o => o?.kind === 'text' && o.id != null);
+    setEditing(texts.length === 1 ? texts[0].id : null);
+  }, []);
   /* ⚠️ FLAT IS THE WORKING VIEW; 3D IS A LOOK, and they are two different jobs. Composing needs a
    * surface that does not move: an orbit-able perspective camera means one stray drag skews the grid,
    * turns the selection box into a parallelogram and makes "is this centred" unanswerable. It also
@@ -949,7 +981,7 @@ export default function TopperComposer({
      * them) that is the piece, and `selectedId` resolves, so the properties panel opens with it.
      * On a two-word topper it still answers the question the border is there to answer — these are
      * things you can take hold of — where picking one of them would be arbitrary. */
-    setSelectedIds(loaded.map(o => o.id).filter(id => id != null));
+    applyArrival(loaded);
     /* ⚠️ SELECTED IS NOT EDITABLE, AND SELECTED WAS ALL THE LAST CUT GAVE. The border and the
      * properties panel arrived, and the number still could not be changed without discovering that
      * a DOUBLE-CLICK does it — a thing the panel says in small grey text and nobody reads. Sandeep,
@@ -963,8 +995,6 @@ export default function TopperComposer({
      * ⚠️ ONLY WHEN THERE IS EXACTLY ONE WORD. On a two-word topper ("You"/"Me") any choice of which
      * to open is arbitrary, and opening the wrong one puts a caret where the baker was not looking.
      * Those keep the selection alone — the border still says the pieces can be taken hold of. */
-    const texts = loaded.filter(o => o?.kind === 'text' && o.id != null);
-    setEditing(texts.length === 1 ? texts[0].id : null);
     setName(openFrom.name ?? '');
     setStick(p.stick?.on ? { on: true, bury: p.stick.bury ?? 0.5 } : { on: false, bury: 0.5 });
     nextId.current = (p.objects ?? []).reduce((m, o) => Math.max(m, o.id ?? 0), 0) + 1;
@@ -1051,8 +1081,12 @@ export default function TopperComposer({
   const usePreset = (pre) => {
     const seeded = pre.objects.map(o => ({ ...o, id: nextId.current++ }));
     setObjects(seeded);
-    setSelectedIds([]);
-    setEditing(null);
+    /* ⚠️ THE SAME ARRIVAL AS A PRESET THAT CAME WITH THE STUDIO. This used to clear the selection
+       and the editor — so tapping "10" in the preset list put a finished-looking number on the
+       canvas with an empty properties panel beside it and no caret, which is the state the
+       openFrom path was fixed out of. Two doors into the same room, and only one of them had been
+       mended. */
+    applyArrival(seeded);
   };
 
   const addShape = (family) => add({
@@ -1280,7 +1314,8 @@ export default function TopperComposer({
             </div>
           ) : selected ? (
             <Properties obj={selected} onChange={update} onDelete={remove}
-              grouped={!!selected.groupId} onUngroup={ungroupSelected} embedded />
+              grouped={!!selected.groupId} onUngroup={ungroupSelected} embedded
+              editing={selected.id === editingId} />
           ) : null}
 
           {/* ⚠️ THE STICK IS THE WHOLE TOPPER'S, so it is not in a selected piece's properties — it
