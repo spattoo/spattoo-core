@@ -37,6 +37,12 @@ export default function GypCloud({
      really is pushed into buttercream); 90 lays it flat (a board, which is card and cannot be
      pushed into at all). See useSeatedInstances. */
   lay = 0, layVary = 0.35,
+  /* ⚠️ HOW DEEP THE CUT END GOES IN, in cake units. A stem is PUSHED INTO buttercream — you do not
+     stand it on the surface — so the bare lower part of it is simply not visible on a real cake.
+     Seated at the surface, the whole bare length showed and the bunch looked balanced on top of a
+     wire: *"such thin stems cant hold the bunch… against physics… lets insert them bit low."*
+     Burying is not a cheat for that, it is what the baker's hand does. */
+  bury = 0,
   onStats,
 }) {
   const geo = useMemo(
@@ -49,8 +55,9 @@ export default function GypCloud({
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
-  const ref = useSeatedInstances(seats, topY,
+  const ref = useSeatedInstances(seats, topY - bury,
     { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo });
+  /* Everything below the surface is hidden by the cake itself, so this costs nothing to draw. */
 
   useLayoutEffect(() => {
     const { per, total } = instancedTriangleCount(geo, seats.length);

@@ -59,14 +59,16 @@ const LAYOUTS = {
      sprigs are laid toward the edge and the band is bloom, not stem. 45° keeps them planted and
      tips them over. */
   'ring the rim':   { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
-                                 height: 0.20, droop: 0.6, lay: 45 }] },
+                                 height: 0.20, droop: 0.6, lay: 45, bury: 0.06 }] },
   'rim + board':    { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
-                                 height: 0.20, droop: 0.6, lay: 45 },
+                                 height: 0.20, droop: 0.6, lay: 45, bury: 0.06 },
                                /* Laid down, not planted: the board is card. 78° leaves the sprigs
                                   tilted just off the board so they rest against the cake's side
                                   rather than lying dead flat on it. */
+                               /* Laid flat, the cut ends tuck UNDER the cake's own skirt rather
+                                  than into the board, so a small bury hides them the same way. */
                                { on: 'board', spacing: 0.075, jitter: 0.7,
-                                 height: 0.22, droop: 0.3, lay: 78 }] },
+                                 height: 0.22, droop: 0.3, lay: 78, bury: 0.02 }] },
   'cover the top':  { clouds: [{ spacing: 0.16, jitter: 0.75 }] },
   'two clumps':     { clouds: [{ spacing: 0.10, jitter: 0.8,
                                  patches: [{ u: 0.12, v: 0.55, r: 0.45 },
@@ -131,11 +133,12 @@ function Harness() {
         <Sl label="Shrink"       v={p.shrink} min={0.4} max={0.85} step={0.01} on={set('shrink')}
             hint="Each level as a fraction of its parent. Low is a stick with specks on it." />
         <Sl label="Droop"        v={p.droop} min={0} max={0.9} step={0.02} on={set('droop')} />
-        <Sl label="Stem"         v={p.thickness} min={0.001} max={0.012} step={0.0005} on={set('thickness')} />
+        <Sl label="Stem"         v={p.thickness} min={0.0008} max={0.008} step={0.0002} on={set('thickness')}
+            hint="A hair next to its own flowers — about 1:20 on a real sprig." />
 
         <H>The blooms</H>
         <Sl label="Per tip"      v={p.florets} min={1} max={10} step={1} on={set('florets')} int />
-        <Sl label="Bloom size"   v={p.floretSize} min={0.004} max={0.04} step={0.001} on={set('floretSize')} />
+        <Sl label="Bloom size"   v={p.floretSize} min={0.004} max={0.03} step={0.0005} on={set('floretSize')} />
         <Sl label="Size variety" v={p.floretVary} min={0} max={0.9} step={0.02} on={set('floretVary')}
             hint="Buds and open flowers sit together. At 0 it is a cluster of identical beads." />
         <Sl label="Seed"         v={p.seed} min={1} max={40} step={1} on={set('seed')} int />

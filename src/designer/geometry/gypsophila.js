@@ -44,14 +44,16 @@ export const GYP_DEFAULTS = Object.freeze({
   /* How much a branch bows over along its length. The bloom clusters are heavy for a stem that
      thin, so the tips always fall away from the axis. */
   droop:      0.35,
-  thickness:  0.0030,  // stem radius at the cut end
+  /* ⚠️ A STEM IS A HAIR NEXT TO ITS OWN FLOWERS. Real gypsophila runs about 0.8mm of stem against
+     a 15mm cluster — roughly twenty to one — and anything fatter reads as wire holding beads. */
+  thickness:  0.0022,  // stem radius at the cut end
   /* Blooms per tip. A gypsophila tip is not one flower, it is a tight corymb of them. */
-  florets:    7,
+  florets:    9,
   /* ⚠️ A RADIUS, AND IT IS TINY — this was 0.016 first, which is a bloom 11% as wide as the whole
      sprig. On a real stem a floret is two or three millimetres against sixty, so about 3%. At the
      wrong size they rendered as a handful of flat white diamonds on a bare twig; the airiness of
      gypsophila is MANY small dots, never a few big ones. */
-  floretSize: 0.006,
+  floretSize: 0.009,
   /* How much the blooms differ in size within a cluster: buds and open flowers sit together, and a
      cluster of identical balls is the other classic way this reads as plastic. */
   floretVary: 0.55,
