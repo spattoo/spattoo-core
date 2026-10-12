@@ -394,7 +394,7 @@ function hemProfile(kind, u01, notch, rnd) {
  * the only part of a real panel whose position is known.
  */
 export function waferPanel({
-  width = 1, height = 1, taper = WAFER_DEFAULTS.taper, glue = WAFER_DEFAULTS.glue,
+  width = 1, height = 1, taper = WAFER_DEFAULTS.taper, glue = WAFER_DEFAULTS.glue, riseFrac = 0,
   ripple = WAFER_DEFAULTS.ripple, ripples = WAFER_DEFAULTS.ripples,
   sway = WAFER_DEFAULTS.sway, sways = WAFER_DEFAULTS.sways, phase = 0,
   meander = WAFER_DEFAULTS.meander, meanders = WAFER_DEFAULTS.meanders,
@@ -522,7 +522,17 @@ export function waferPanel({
        never was — 0.35 is not pinched. Rather than special-case the pleat, everything that stands
        the sheet off the wall is scaled to nothing over the first `glue` of the drop. That is one
        rule instead of three, and it is what a thumb does to a strip of wafer paper. */
-    const stick = glue > 0 ? Math.min(1, vvj / glue) : 1;
+    /* ⚠️ THE GLUE LINE IS THE RIM, NOT THE TOP OF THE PANEL, and measuring it from the top is the
+       same mistake in a new place. A panel starts `riseFrac` of its own drop ABOVE the rim, and
+       that part is stuck to nothing — there is no cake behind it. Pressing it flat put a
+       zero-width vertical sliver at exactly the tier's radius, which from directly above hides
+       under the cake's own top edge: the skirt then reads as a ring the cake is sitting IN rather
+       than paper stuck ON it. Sandeep, after the first glue fix: *"there is still some gap from
+       the top view."*
+       So the pinch is a V about the rim — nothing at the rim, free above it and free below it.
+       Above, the paper stands proud and splays over the edge, which is what makes it read as
+       attached from above; below, it opens into the pleat as before. */
+    const stick = glue > 0 ? Math.min(1, Math.abs(vvj - riseFrac) / glue) : 1;
     const z = (bow + fold + splay * height * vvj * vvj) * (stick * stick * (3 - 2 * stick));
     return { x: u + drift + snake, y: -height * vvj, z: Math.max(0, z), u01 };
   };
@@ -711,6 +721,8 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
       glue: o.glue,
+      /* Where the rim falls within this panel's own drop — the panel starts above it by `rise`. */
+      riseFrac: (h + rise) > 0 ? rise / (h + rise) : 0,
     });
     bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus, o.aoFloor, o.aoOpenTop);
 

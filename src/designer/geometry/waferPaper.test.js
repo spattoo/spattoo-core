@@ -683,6 +683,31 @@ describe('the sheet is stuck ON the cake, not hovering beside it', () => {
     expect(standoff(g, 0.3, 0.5)).toBeGreaterThan(standoff(g, 0, 0.02) + 0.05);
   });
 
+  /* ⚠️ THE GLUE LINE IS THE RIM, NOT THE TOP OF THE PANEL. A panel starts `riseFrac` of its drop
+     ABOVE the rim, and that part is stuck to nothing — there is no cake behind it. Pressing it
+     flat (which measuring the pinch from the panel's top does) leaves a zero-width vertical sliver
+     at exactly the tier's radius, and from directly above that hides under the cake's own top
+     edge: the skirt then reads as a ring the cake is sitting IN. Sandeep, after the first glue
+     fix: *"there is still some gap from the top view."* So the pinch is a V about the rim. */
+  it('splays over the rim instead of hiding under the cake edge', () => {
+    const g = waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, curl: 0.3,
+                           rng: () => 0.5, glue: 0.10, riseFrac: 0.2 });
+    const p = g.getAttribute('position');
+    // Panel-local y: 0 at the top, -height at the hem, so the rim sits at -riseFrac × height.
+    let yTop = -Infinity, yBot = Infinity;
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+    const rimY = yTop - 0.2 * (yTop - yBot);
+    const reach = (lo, hi) => {
+      let n = 0, sum = 0;
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i);
+        if (y > lo && y <= hi) { sum += p.getZ(i); n++; }
+      }
+      return n ? sum / n : NaN;
+    };
+    expect(reach(rimY + 1e-6, yTop)).toBeGreaterThan(reach(rimY - 0.02, rimY + 0.02));
+  });
+
   it('glue 0 is the old behaviour — the pleat opens at the glue line', () => {
     expect(standoff(panelAt(0), 0, 0.02)).toBeGreaterThan(standoff(panelAt(0.10), 0, 0.02));
   });
