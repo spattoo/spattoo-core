@@ -44,7 +44,7 @@ export default function GrassPatch({
 
   /* The seating loop moved to useSeatedInstances.js when gypsophila needed the identical thing —
      including the rim tipping, whose axis is the part worth not retyping. */
-  const ref = useSeatedInstances(seats, topY);
+  const ref = useSeatedInstances(seats, topY, { geo });
 
   // ── The cost, counted from the geometry rather than guessed ───────────────────────────────────
   // `tris` is what the studio's cost panel warns on, and it was never reported at all — the panel

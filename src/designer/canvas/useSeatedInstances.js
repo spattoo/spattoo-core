@@ -25,7 +25,7 @@ export function layAxis(out, into = new THREE.Vector3()) {
   return into.set(Math.cos(out), 0, -Math.sin(out));
 }
 
-export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = null } = {}) {
+export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = null, geo = null } = {}) {
   const ref = useRef(null);
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -62,7 +62,16 @@ export function useSeatedInstances(seats, topY, { lay = 0, layVary = 0, rand = n
     });
     mesh.instanceMatrix.needsUpdate = true;
     mesh.computeBoundingSphere();
-  }, [seats, topY, lay, layVary, rand]);
+    /* ⚠️ `geo` IS A DEPENDENCY EVEN THOUGH IT IS NEVER READ HERE, and leaving it out is a bug you
+       cannot see coming. R3F treats `args` on a primitive as construction arguments: change the
+       geometry and it does not swap it in, it REBUILDS the InstancedMesh. The new mesh arrives with
+       an untouched instanceMatrix, so unless this effect runs again every instance sits at the
+       identity — all of them stacked at the origin, inside the cake, invisible.
+       It showed as a decoration vanishing when a slider that has nothing to do with placement
+       moved: *"when i increase the branches… rim bunch disappears when the value reaches 4."* The
+       seats had not changed, so the effect did not re-run. `GrassPatch` carried the same latent
+       fault and is fixed by the same line. */
+  }, [seats, topY, lay, layVary, rand, geo]);
   return ref;
 }
 

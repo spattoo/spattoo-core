@@ -85,7 +85,10 @@ function Solo({ p }) {
 function Harness() {
   const [layout, setLayout] = useState('one sprig');
   const [shapeKey, setShapeKey] = useState('round');
-  const [stats, setStats] = useState(null);
+  /* ⚠️ ONE ROW PER CLOUD. The panel reported cloud 0 only, so a layout with two rings told you
+     half the truth about what it costs — and when the rim ring vanished it still read 561 sprigs,
+     which is exactly the kind of number that sends you looking in the wrong place. */
+  const [stats, setStats] = useState({});
   const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
   const L = LAYOUTS[layout];
@@ -141,9 +144,11 @@ function Harness() {
           {L.solo
             ? <>One sprig, <b>{(buildGypSprig(p).index?.count ?? 0) / 3}</b> triangles.<br />
                 Shown at 3.2× so the forking is visible.</>
-            : stats
-              ? <>{stats.sprigs} sprigs · {stats.perSprig} tris each<br />
-                  <b>{stats.tris.toLocaleString()}</b> triangles if merged — one draw call as it stands.</>
+            : Object.keys(stats).length
+              ? Object.entries(stats).map(([i, st]) => (
+                  <div key={i}>{st.on}: {st.sprigs} sprigs · {st.perSprig} tris each ·{' '}
+                    <b>{st.tris.toLocaleString()}</b> merged</div>
+                ))
               : '…'}
         </div>
       </div>
@@ -183,7 +188,7 @@ function Harness() {
                   hole={c.on === 'board' ? { shape: SHAPES[shapeKey], scale: 1.0 } : null}
                   patchRadius={c.on === 'board' ? BOARD[shapeKey].radius : undefined}
                   {...p} {...c} seed={p.seed + i * 13}
-                  onStats={i === 0 ? setStats : undefined} />
+                  onStats={(st) => setStats(o => ({ ...o, [i]: { ...st, on: c.on ?? 'top' } }))} />
               ))}
             </>
           )}

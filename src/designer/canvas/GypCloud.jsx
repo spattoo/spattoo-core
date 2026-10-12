@@ -54,7 +54,7 @@ export default function GypCloud({
      does not re-roll on every render. */
   const layRand = useMemo(() => mulberry32((seed + 991) >>> 0), [seed]);
   const ref = useSeatedInstances(seats, topY,
-    { lay: (lay * Math.PI) / 180, layVary, rand: lay > 0 ? layRand : null });
+    { lay: (lay * Math.PI) / 180, layVary, rand: lay > 0 ? layRand : null, geo });
 
   useLayoutEffect(() => {
     const { per, total } = instancedTriangleCount(geo, seats.length);
