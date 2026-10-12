@@ -88,10 +88,22 @@ export const WAFER_DEFAULTS = {
      it is the bright specular line along each sheet's edge in the photograph, which a near-overhead
      key light cannot put there. A lighting question, written down rather than guessed at.
      Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
-  ao: 2.0,
+  ao: 4.0,
   /* How tightly the gap shading is held to the root — see bakeWaferAO. 1 is the old ramp across
-     the whole sheet, which reads as soot; higher keeps the faces clean. */
-  aoFocus: 3,
+     the whole sheet, which reads as soot; higher keeps the faces clean.
+     ⚠️ 10 BECAUSE THE CURVE SATURATES THERE, not because it looked nicest. Rendered on a pink
+     tier and measured over the skirt (p5 / p50, where p5 is how dark the deepest crevices get and
+     p50 is whether the FACES stayed paper):
+
+         no bake at all        225 / 231     "total white and i can hardly see the paper"
+         focus 3,  ao 2.0      127 / 206     "that smoke kind of look"
+         focus 6,  ao 3.0      162 / 217
+         focus 10, ao 4.0      174 / 220  <- here
+         focus 16, ao 6.0      176 / 221     indistinguishable from focus 10
+
+     Past 10 the numbers stop moving: the dark is already a line in the crease rather than a wash
+     over the face, and more exponent has nothing left to tighten. */
+  aoFocus: 10,
 
   /* ⚠️ AND THE SAME RAMP ON A FIN IS SCORCH. Everything above was measured with the sheets lying
      FLAT, where the occluder is a neighbour overlapping you by two whole widths. Stood on edge the
