@@ -5,6 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import GypCloud from '../src/designer/canvas/GypCloud.jsx';
+import { outwardBand } from '../src/designer/canvas/useSeatedInstances.js';
 import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../src/designer/geometry/gypsophila.js';
 
 /* ── Does one sprig read as gypsophila? Open /gypsophila.html ────────────────────────────────────
@@ -65,10 +66,15 @@ const LAYOUTS = {
                                /* Laid down, not planted: the board is card. 78° leaves the sprigs
                                   tilted just off the board so they rest against the cake's side
                                   rather than lying dead flat on it. */
-                               /* Laid flat, the cut ends tuck UNDER the cake's own skirt rather
-                                  than into the board, so a small bury hides them the same way. */
-                               { on: 'board', spacing: 0.075, jitter: 0.7,
-                                 height: 0.22, droop: 0.3, lay: 78, bury: 0.02 }] },
+                               /* The foot of the cake, not the board: a narrow band grown outward
+                                  from the tier's own outline, stems tucked into the join.
+                                  ⚠️ NO `bury` HERE. Burying moves a seat DOWN, which is right for a
+                                  stem pushed into buttercream and wrong at the foot — 0.02 put the
+                                  whole ring inside the board slab, where it rendered perfectly and
+                                  was never seen. Laid flat against the join, the cut ends are
+                                  already hidden by the blooms in front of them. */
+                               { on: 'foot', spacing: 0.075, jitter: 0.7,
+                                 height: 0.22, droop: 0.3, lay: 78 }] },
   'cover the top':  { clouds: [{ spacing: 0.16, jitter: 0.75 }] },
   'two clumps':     { clouds: [{ spacing: 0.10, jitter: 0.8,
                                  patches: [{ u: 0.12, v: 0.55, r: 0.45 },
@@ -91,14 +97,17 @@ function Harness() {
      half the truth about what it costs — and when the rim ring vanished it still read 561 sprigs,
      which is exactly the kind of number that sends you looking in the wrong place. */
   const [stats, setStats] = useState({});
-  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS });
+  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18 });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
   const L = LAYOUTS[layout];
   /* ⚠️ A FRESH OBJECT LITERAL IS A NEW DEPENDENCY EVERY RENDER. `hole` feeds the seat memo, so
      writing `hole={{ shape: … }}` inline rebuilt every seat on every frame — which is half of why
      the board ring shook. The other half was the PRNG stream; both had to go. */
   const shape = SHAPES[shapeKey];
-  const holeForBoard = useMemo(() => ({ shape, scale: 1.0 }), [shape]);
+  const holeForFoot = useMemo(() => ({ shape, scale: 1.0 }), [shape]);
+  /* How far the base ring reaches out from the cake, as a fraction of the tier. Memoised because a
+     fresh shape object every render rebuilds every seat (see the comment on `hole`). */
+  const footBand = useMemo(() => outwardBand(shape, p.ringWidth ?? 0.18), [shape, p.ringWidth]);
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
@@ -146,6 +155,8 @@ function Harness() {
         <H>Arrangement</H>
         <Sl label="Spacing" v={p.spacing ?? 0.13} min={0.05} max={0.5} step={0.01}
             on={set('spacing')} hint="Only applies when it is not a single sprig." />
+        <Sl label="Ring width" v={p.ringWidth} min={0.04} max={0.5} step={0.01} on={set('ringWidth')}
+            hint="How far the base ring reaches out from the cake's foot, × the tier. It is a ring on the cake, not a field on the board." />
 
         <div style={{ marginTop: 14, padding: 10, background: '#fff', borderRadius: 8, fontSize: 11,
                       color: '#555', border: '1px solid #eee', lineHeight: 1.6 }}>
@@ -188,13 +199,17 @@ function Harness() {
                   : <boxGeometry args={[SHAPES.sheet.halfW * 2, TIER.height, SHAPES.sheet.halfD * 2]} />}
                 <meshStandardMaterial color="#f6efe4" roughness={0.9} />
               </mesh>
+              {/* ⚠️ `foot` IS A BAND ON THE CAKE'S OWN OUTLINE, grown outward — not the board's.
+                  Seating against the board filled everything between the two and read as flowers
+                  standing IN the board. The cake is the hole, so the band is the annulus between
+                  the cake and `ringWidth` past it, and it sits at the join rather than on the
+                  board. */}
               {L.clouds.map((c, i) => (
                 <GypCloud key={i}
-                  shape={c.on === 'board' ? BOARD[shapeKey] : SHAPES[shapeKey]}
-                  topY={c.on === 'board' ? TIER.baseY + 0.005 : TOP_Y}
-                  /* On the board the cake itself is the hole — nothing may stand inside it. */
-                  hole={c.on === 'board' ? holeForBoard : null}
-                  patchRadius={c.on === 'board' ? BOARD[shapeKey].radius : undefined}
+                  shape={c.on === 'foot' ? footBand : SHAPES[shapeKey]}
+                  topY={c.on === 'foot' ? TIER.baseY + 0.005 : TOP_Y}
+                  hole={c.on === 'foot' ? holeForFoot : null}
+                  patchRadius={c.on === 'foot' ? footBand.radius : undefined}
                   {...p} {...c} seed={p.seed + i * 13}
                   onStats={(st) => setStats(o => ({ ...o, [i]: { ...st, on: c.on ?? 'top' } }))} />
               ))}

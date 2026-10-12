@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { layAxis, instancedTriangleCount } from './useSeatedInstances.js';
+import { layAxis, instancedTriangleCount, outwardBand } from './useSeatedInstances.js';
 
 /* ⚠️ THIS IS THE SIGN THE WAFER SKIRT GOT WRONG, and it cost a day. `fin` mounting sent every strip
  * INWARD through the cake instead of outward, which a render could not show (the strips were simply
@@ -55,5 +55,43 @@ describe('instancedTriangleCount — what a MERGED field would cost', () => {
 
   it('survives a geometry that is not there yet', () => {
     expect(instancedTriangleCount(null, 5).total).toBe(0);
+  });
+});
+
+/* ⚠️ A RING AT THE FOOT IS THE CAKE'S OWN OUTLINE, GROWN. Seated against the BOARD's outline the
+ * band fills everything between the two — it floods the board and reads as flowers standing in
+ * card: *"we dont need to flood the board entirely… it should actually be the ring on the botton
+ * rim of the cake. like i already said, you cant insert them on board."* */
+describe('outwardBand — a ring hugging the foot of the cake', () => {
+  it('grows a round tier by the width asked for', () => {
+    expect(outwardBand({ kind: 'round', radius: 1.5 }, 0.2).radius).toBeCloseTo(1.8, 6);
+    expect(outwardBand({ kind: 'round', radius: 1.5 }, 0).radius).toBeCloseTo(1.5, 6);
+  });
+
+  /* The band is the tier's SHAPE, not a circle round it, or a sheet cake would get a round ring
+     with the corners left bare — the same reason grassSeats clips with the outline's own test. */
+  it('keeps a sheet tier rectangular, corners and all', () => {
+    const b = outwardBand({ kind: 'rect', halfW: 1.6, halfD: 1.15, cornerR: 0.2 }, 0.25);
+    expect(b.kind).toBe('rect');
+    expect(b.halfW).toBeCloseTo(2.0, 6);
+    expect(b.halfD).toBeCloseTo(1.4375, 6);
+    expect(b.cornerR).toBeCloseTo(0.25, 6);
+  });
+
+  it('scales an outline shape rather than inventing a radius for it', () => {
+    const b = outwardBand({ kind: 'outline', outline: [[0, 0]], scale: 1 }, 0.5);
+    expect(b.scale).toBeCloseTo(1.5, 6);
+    expect(b.outline).toBeTruthy();
+  });
+
+  it('never shrinks, whatever it is given', () => {
+    expect(outwardBand({ kind: 'round', radius: 2 }, -3).radius).toBeCloseTo(2, 6);
+  });
+
+  it('leaves the original alone — a seat memo depends on identity', () => {
+    const src = { kind: 'round', radius: 1.5 };
+    const out = outwardBand(src, 0.2);
+    expect(src.radius).toBe(1.5);
+    expect(out).not.toBe(src);
   });
 });

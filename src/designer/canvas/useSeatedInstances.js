@@ -120,3 +120,29 @@ export function useSurfaceSeats({
                         bandInner, hole, overhang, patches: world });
   }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius]);
 }
+
+/* ── A ring hugging the foot of the cake ─────────────────────────────────────────────────────────
+ *
+ * Grown OUTWARD from the tier's own outline by `width` (a fraction of it), so the band is the shape
+ * of the cake rather than a circle, and a sheet or a heart gets a ring that follows its corners.
+ * Paired with `hole: { shape: <the tier>, scale: 1 }` it is an annulus exactly `width` wide.
+ *
+ * ⚠️ IT IS A RING ON THE CAKE'S BOTTOM RIM, NOT A FIELD ON THE BOARD. Seating against the board's
+ * own outline fills everything between the cake and the board's edge, which both floods it and says
+ * the flowers are standing in the board: *"we dont need to flood the board entirely… it should
+ * actually be the ring on the botton rim of the cake. like i already said, you cant insert them on
+ * board."* A real base ring is tucked into the JOIN — stems into the cake's foot, blooms resting
+ * out over the board — so the band is measured from the cake outward and its width is a control.
+ *
+ * ⚠️ `bandInner` CANNOT SAY THIS. It hollows out the same outline it fills, so it can only make a
+ * ring INSIDE a shape; this one lives outside it.
+ */
+export function outwardBand(shape, width = 0.18) {
+  const k = 1 + Math.max(0, width);
+  if (shape.kind === 'rect') {
+    return { ...shape, halfW: shape.halfW * k, halfD: shape.halfD * k,
+             cornerR: (shape.cornerR ?? 0) * k };
+  }
+  if (shape.outline) return { ...shape, scale: (shape.scale ?? 1) * k };
+  return { ...shape, radius: (shape.radius ?? 1) * k };
+}
