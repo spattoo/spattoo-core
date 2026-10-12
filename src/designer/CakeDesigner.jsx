@@ -12419,20 +12419,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
-                        textTransform: 'uppercase', marginBottom: 6 }}>
-            How it sits
-          </div>
-          <Segmented
-            label="How the topper sits"
-            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
-            value={t.mode ?? 'stand'}
-            onChange={mode => updateTopper(t.id, { mode })}
-            tone={primaryColor}
-          />
+          {/* ⚠️ NO CHOICE WHILE IT IS ON A STICK, and the chip is ABSENT rather than disabled.
+              Sandeep: *"'lying flat' should not be possible when on stick."* A stick is a thing you
+              push into the cake so the card stands above it; laid down, the stick sticks out
+              sideways with nothing holding either of them up — which is what the render showed. The
+              hint underneath already said "It stands on its stick" while the chip beside it said
+              Lying flat: two statements about one cake, disagreeing.
+
+              Absent, not greyed, for the reason the Spiral chip on the tier card states: this is a
+              line of chips a baker scans, and a permanently dead one in it is a worse answer than
+              one fewer. The heading goes with it — a section title over nothing is furniture.
+
+              ⚠️ AND THE RENDERER REFUSES IT TOO (`topperMode`). Hiding the chip alone would leave a
+              cake already SAVED lying flat on a stick stuck in that state, with the only control
+              that could change it now gone. */}
+          {!t.payload?.stick?.on && (<>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              How it sits
+            </div>
+            <Segmented
+              label="How the topper sits"
+              items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+              value={t.mode ?? 'stand'}
+              onChange={mode => updateTopper(t.id, { mode })}
+              tone={primaryColor}
+            />
+          </>)}
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
             {t.payload?.stick?.on
-              ? 'It stands on its stick. Height sets how long the stick is; how deep it goes was set in the studio.'
+              ? 'It stands on its stick. Height sets how long the stick is; how deep it goes was set in the studio. Take the stick off in the studio to lay it flat.'
               : 'Standing pushes its bottom edge into the icing. Add a stick in the studio to raise it.'}
           </div>
         </div>
