@@ -2787,27 +2787,46 @@ function FrontMarker({ frontZ }) {
 // all the way around as the cake turns. The angle convention matches the band geometry
 // (a = atan2(z, x)), so the painted edge lands exactly where the pointer is. Orbit-rotate
 // is suspended over it (CakeScene's capture-phase handler) while auto-rotate keeps spinning.
-function CreamPaintTarget({ tier, onPaint }) {
+/* ── One invisible cylinder, two gestures ────────────────────────────────────────────────────────
+ *
+ * The wall, as something you can drag ALONG: a mesh the size of the tier that catches the pointer,
+ * holds it through a drag, and says where on the cake the hand is.
+ *
+ * ⚠️ IT REPORTS THE POINT AS WELL AS THE ANGLE, which is why this is one component and not two.
+ * The cream scrape wants "how far round, how far up" — it is painting a 1-D edge. A brushstroke
+ * wants the 3-D POINT, because `brushGestureFromDrag` works out the stroke's lean and sweep from
+ * where the hand started and where it got to. A second copy of this for the second gesture would be
+ * two pointer-capture implementations, two window-pointerup guards and two sets of the bug where a
+ * release off the mesh leaves the cake stuck in a drag.
+ *
+ * ⚠️ THE WINDOW pointerup IS NOT BELT AND BRACES. A release can land off the mesh — the cake
+ * auto-rotates under the hand, or the pointer leaves the canvas — and without it the drag never
+ * ends and the next click continues the old one.
+ */
+function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   const { camera, gl } = useThree();
   const pressed = useRef(false);
   const last = useRef({ x: 0, y: 0 });
   const R = tier.radius + 0.04;   // hit just outside the proud band
 
-  const sample = (clientX, clientY) => {
+  const sample = (clientX, clientY, fn) => {
     const p = cylinderHitPoint(buildRay(clientX, clientY, gl.domElement, camera), R);
-    if (!p) return;
+    if (!p || !fn) return;
     let a = Math.atan2(p.z, p.x); if (a < 0) a += Math.PI * 2;
     const frac = Math.max(0, Math.min(1, (p.y - tier.baseY) / tier.height));
-    onPaint(a / (Math.PI * 2), frac);
+    /* ⚠️ AN OBJECT, NOT AN ARRAY. `wallCoordsOf` reads point.x / .y / .z, so a [x, y, z] gives it
+       three undefineds, every coordinate falls back to 0, and `brushGestureFromDrag` sees a drag
+       that travelled nowhere — it returns null for a tap, so the whole gesture silently did
+       nothing. Nothing threw; the cake simply never took a stroke. */
+    fn({ point: { x: p.x, y: p.y, z: p.z }, theta01: a / (Math.PI * 2), frac });
   };
 
-  useFrame(() => { if (pressed.current) sample(last.current.x, last.current.y); });
-  // Window pointerup guarantees release even if the up lands off the mesh (capture/auto-rotate).
+  useFrame(() => { if (pressed.current) sample(last.current.x, last.current.y, onDrag); });
   useEffect(() => {
-    const onUp = () => { pressed.current = false; };
-    window.addEventListener('pointerup', onUp);
-    return () => window.removeEventListener('pointerup', onUp);
-  }, []);
+    const end = () => { if (pressed.current) { pressed.current = false; onUp?.(); } };
+    window.addEventListener('pointerup', end);
+    return () => window.removeEventListener('pointerup', end);
+  }, [onUp]);
 
   return (
     <mesh position={[0, tier.baseY + tier.height / 2, 0]} userData={{ isCreamPaint: true }}
@@ -2815,10 +2834,13 @@ function CreamPaintTarget({ tier, onPaint }) {
         e.stopPropagation();
         pressed.current = true; last.current = { x: e.clientX, y: e.clientY };
         try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-        sample(e.clientX, e.clientY);
+        sample(e.clientX, e.clientY, onDown ?? onDrag);
       }}
-      onPointerMove={e => { if (pressed.current) { last.current = { x: e.clientX, y: e.clientY }; sample(e.clientX, e.clientY); } }}
-      onPointerUp={e => { pressed.current = false; try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {} }}>
+      onPointerMove={e => { if (pressed.current) { last.current = { x: e.clientX, y: e.clientY }; sample(e.clientX, e.clientY, onDrag); } }}
+      onPointerUp={e => {
+        pressed.current = false; onUp?.();
+        try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
+      }}>
       <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
     </mesh>
@@ -2881,6 +2903,9 @@ function CakeScene({
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
+  /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
+     surface you drag ALONG, and each drag lays one stroke that follows the hand. */
+  brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
   tierDataRef,
 }) {
   // Only what the EDITING surface itself draws (handles, catchers) is read here — everything that is
@@ -3125,10 +3150,19 @@ function CakeScene({
       </group>
       <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight} />
 
+      {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
+          wants the angle. One component answers both — see WallDragTarget. */}
+      {brushDraw && tierData[brushDraw.tierIndex] && (
+        <WallDragTarget
+          tier={tierData[brushDraw.tierIndex]}
+          onDown={({ point }) => onBrushDrawStart?.(brushDraw.tierIndex, point)}
+          onDrag={({ point }) => onBrushDrawTo?.(brushDraw.tierIndex, point)}
+          onUp={() => onBrushDrawEnd?.(brushDraw.tierIndex)} />
+      )}
       {creamPaint && tierData[creamPaint.tierIndex] && (
-        <CreamPaintTarget
+        <WallDragTarget
           tier={tierData[creamPaint.tierIndex]}
-          onPaint={(theta01, frac) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
+          onDrag={({ theta01, frac }) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
         />
       )}
 
@@ -4380,6 +4414,9 @@ export default function CakeCanvas({
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
+  /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
+     surface you drag ALONG, and each drag lays one stroke that follows the hand. */
+  brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -4564,6 +4601,10 @@ export default function CakeCanvas({
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
+        brushDraw={brushDraw}
+        onBrushDrawStart={onBrushDrawStart}
+        onBrushDrawTo={onBrushDrawTo}
+        onBrushDrawEnd={onBrushDrawEnd}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
@@ -4604,7 +4645,7 @@ export default function CakeCanvas({
         ref={orbitRef}
         enableZoom={false}
         enablePan={false}
-        autoRotate={autoRotate && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
+        autoRotate={autoRotate && brushDraw == null && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
         autoRotateSpeed={0.8}
         maxPolarAngle={Math.PI / 2.05}
         // NO `target` prop, deliberately. FitCakeToView owns both the aim and the distance now, and

@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
-import { BRUSH_BAND_DEFAULTS, brushBandCount } from './geometry/brushStrokeOnCake.js';
+import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
+         brushGestureFromDrag } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -2800,7 +2801,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -2849,6 +2850,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [creamSel, setCreamSel] = useState(0);
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
+  /* ── Drawing cream strokes by hand ──────────────────────────────────────────────────────────
+   *
+   * Sandeep: *"in the cream stroke studio, we did not integrate the hand stroke feature. we did
+   * this piece already in admin. user should be able to do the strokes by himself. vertical or
+   * horizontal."*
+   *
+   * ⚠️ VERTICAL OR HORIZONTAL IS NOT A SETTING, IT IS THE DRAG. `brushGestureFromDrag` reads the
+   * lean and the sweep out of where the hand started and where it got to, so a drag straight down
+   * lays an upright stroke and a drag across lays one that sweeps round the wall. A pair of
+   * direction buttons would be a second way of saying the same thing, and the hand is the better
+   * one — it is also what the admin studio does, and this imports the same function rather than
+   * re-deciding what a hand means.
+   *
+   * ⚠️ A REF FOR THE DRAG IN PROGRESS, not state: it is read inside a pointer-move captured when
+   * the drag began, and a re-render would hand that closure a stale value. Same reason the
+   * studio's own `draw` is one. */
+  const [brushDraw, setBrushDraw] = useState(null);     // { tierIndex } | null
+  const brushDrawing = useRef(null);                    // { tierIndex, from, id } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
   /* ⚠️ THE STACK'S OWN HEIGHT, NOT mobilePanelHeight. That one is shared by the Templates and
    * Decorations flyouts (two call sites, one handlePanelDrag), so reusing it would mean dragging a
@@ -2856,6 +2875,48 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [stackDragH, setStackDragH] = useState(null);
   const handleCreamPaint = (tierIndex, layerId, theta01, frac) =>
     updateCreamLayer(tierIndex, layerId, l => ({ ...l, edge: paintProfile(l.edge, theta01, frac) }));
+
+  /* ⚠️ THE STROKE IS NOT CREATED ON PRESS, it is created on the first MOVE that has travelled far
+   * enough. Created on press, every tap on the cake would leave cream behind — and a tap is how a
+   * baker deselects, so the wall would fill with strokes nobody asked for. `brushGestureFromDrag`
+   * returns null until the hand has actually gone somewhere, which is the same "measure what was
+   * TRAVELLED" rule the pen's closed gesture needs. */
+  function handleBrushDrawStart(tierIndex, point) {
+    brushDrawing.current = { tierIndex, from: point, id: null };
+  }
+
+  function handleBrushDrawTo(tierIndex, point) {
+    const d = brushDrawing.current;
+    if (!d || d.tierIndex !== tierIndex) return;
+    const t = design.tiers[tierIndex];
+    if (!t) return;
+    const g = brushGestureFromDrag(d.from, point,
+      { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height });
+    if (!g) return;                                     // still a tap
+    if (d.id === null) {
+      const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+      d.id = id;
+      /* ⚠️ A DRAWN STROKE INHERITS WHAT IS IN FRONT OF YOU. The card's palette is what the baker
+         just chose, so it is what the hand is about to lay down; building from defaults would
+         silently throw that away — the studio has the same note, from the same report. The last
+         stroke's settings first, then the band's first colour. */
+      const prev = (t.brushStrokes ?? []).at(-1);
+      const band = { ...BRUSH_BAND_DEFAULTS, ...(t.brushBand ?? {}) };
+      updateTierBrushStrokes(tierIndex, list => [...list, {
+        id,
+        surface: 'side',
+        color:  prev?.color  ?? band.colors?.[0] ?? '#F6DCE2',
+        width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
+        weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
+        seed:   1 + Math.floor(Math.random() * 9999),
+        ...g,
+      }]);
+    } else {
+      updateBrushStroke(tierIndex, d.id, g);
+    }
+  }
+
+  function handleBrushDrawEnd() { brushDrawing.current = null; }
   // A new flick lands on the front of the wall (default camera view); the customer then aims it.
   const addDustToTier = (tierIndex) => {
     const count = design.tiers[tierIndex]?.dusting?.splashes?.length ?? 0;
@@ -13100,9 +13161,59 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Shuffle the band
         </button>
 
+        {/* ── Draw your own ───────────────────────────────────────────────────────────────────
+          *
+          * Sandeep: *"in the cream stroke studio, we did not integrate the hand stroke feature. we
+          * did this piece already in admin. user should be able to do the strokes by himself.
+          * vertical or horizontal."*
+          *
+          * ⚠️ BESIDE THE BAND, NOT INSTEAD OF IT. The admin studio offers these as two MODES
+          * because a studio is deciding which look to author. On a cake they compose: a baker lays
+          * a band round the bottom and then adds three taller strokes by hand, which is what every
+          * reference photograph of this technique shows. A mode switch would have made that cake
+          * unreachable.
+          *
+          * ⚠️ AND NO VERTICAL/HORIZONTAL BUTTONS. The drag IS the direction —
+          * `brushGestureFromDrag` reads the lean and the sweep out of where the hand started and
+          * where it got to. Two buttons would be a second, worse way to say the same thing.
+          *
+          * ⚠️ THE BUTTON IS A TOGGLE AND SAYS WHICH STATE IT IS IN, because while drawing is on the
+          * cake stops orbiting and starts taking strokes — a mode a baker cannot see they are in is
+          * the one they get stuck in. */}
+        <button
+          onClick={() => setBrushDraw(brushDraw?.tierIndex === i ? null : { tierIndex: i })}
+          style={{ ...s.neutralBtn, width: '100%', marginTop: 8,
+                   ...(brushDraw?.tierIndex === i
+                     ? { background: INK, color: '#fff', border: `1.5px solid ${INK}` } : null) }}>
+          {brushDraw?.tierIndex === i ? 'Done drawing' : 'Draw your own'}
+        </button>
+        {brushDraw?.tierIndex === i && (
+          <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.45, marginTop: 6 }}>
+            Drag down the side of the cake for an upright stroke, or across it for one that sweeps
+            round. Each drag lays one stroke.
+            {(design.tiers[i]?.brushStrokes?.length ?? 0) > 0
+              && ` ${design.tiers[i].brushStrokes.length} drawn.`}
+          </div>
+        )}
+        {(design.tiers[i]?.brushStrokes?.length ?? 0) > 0 && (
+          <button onClick={() => updateTierBrushStrokes(i, () => [])}
+            style={{ ...s.neutralBtn, width: '100%', marginTop: 6 }}>
+            Clear the ones I drew
+          </button>
+        )}
+
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
-            style={{ ...s.deleteBtn, flex: 1 }}>
+          {/* ⚠️ THE HAND-DRAWN ONES GO TOO, and that is not tidiness. This card only exists while
+              the tier has a BAND — `renderBrushBandBody` returns null without one — so removing the
+              band takes away the only door to the strokes drawn beside it. Leaving them would be
+              cream on the cake that cannot be selected, recoloured or deleted by any route. The
+              button above clears them on their own for anyone who wants to keep the band. */}
+          <button onClick={() => {
+            setTierBrushBand(i, null);
+            updateTierBrushStrokes(i, () => []);
+            setBrushDraw(null);
+            clearAllSelections();
+          }} style={{ ...s.deleteBtn, flex: 1 }}>
             Remove from cake
           </button>
         </div>
@@ -15290,6 +15401,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
+              brushDraw={brushDraw}
+              onBrushDrawStart={handleBrushDrawStart}
+              onBrushDrawTo={handleBrushDrawTo}
+              onBrushDrawEnd={handleBrushDrawEnd}
               selectedTier={selectedTier}
               onTierClick={handleTierClick}
               onDeselect={handleDeselect}
