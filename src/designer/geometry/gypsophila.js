@@ -44,13 +44,18 @@ export const GYP_DEFAULTS = Object.freeze({
   /* How much a branch bows over along its length. The bloom clusters are heavy for a stem that
      thin, so the tips always fall away from the axis. */
   droop:      0.35,
-  /* ⚠️ A STEM IS A HAIR NEXT TO ITS OWN FLOWERS — about one to twenty, and anything fatter reads
-     as wire holding beads. It tracks `floretSize`: when the blooms were measured up to the
-     reference's scale the clusters grew with them, so the stem follows rather than staying where
-     it was. */
-  thickness:  0.0034,  // stem radius at the cut end
+  /* ⚠️ MEASURED, NOT RATIOED. The botanical one-to-twenty got the floret size wrong once already —
+     it describes a sprig in a vase, and what matters here is the thing against a CAKE. This is the
+     thickness at which the green reads at 0.9% of the ring, which is the level that was approved;
+     it works out nearer one to ten, and it does not look like wire because the blooms it carries
+     are big enough to justify it. */
+  thickness:  0.0050,  // stem radius at the cut end
   /* Blooms per tip. A gypsophila tip is not one flower, it is a tight corymb of them. */
-  florets:    9,
+  /* ⚠️ FEWER, BECAUSE THEY ARE BIGGER. Nine of them at the new size packed each tip into a solid
+     ball that buried every twig, and the whole ring went pure white — Sandeep: *"it only looks
+     white now. no green at all. which is wrong. previous one was good actually. we just needed to
+     increase the size of the flower."* Right: the size was the ask, the burial was my doing. */
+  florets:    3,
   /* ⚠️ A RADIUS, AND IT IS MEASURED OFF THE REFERENCE RATHER THAN REASONED ABOUT — twice now in
      opposite directions, which is why the measurement is written down.
      It started at 0.016, a bloom 11% as wide as the whole sprig, and rendered as a handful of flat
@@ -60,10 +65,16 @@ export const GYP_DEFAULTS = Object.freeze({
      of bright runs across the flower band, a floret is **1.45% of the cake's width** (p75 ≈ 3%).
      Ours at 0.009 measured 0.60%, which agrees exactly with the arithmetic — diameter 0.018 on a
      3.0-wide cake — so the measure is sound and the size was simply wrong.
-     0.021 puts the median at 1.4%. ⚠️ The run measure SATURATES above that: once blooms overlap,
-     the band becomes one run longer than a third of the frame and gets discarded, which drags the
-     median back down. Trust it while the blooms are separate and trust the arithmetic after. */
-  floretSize: 0.021,
+     ⚠️ AND 1.45% WAS THE CLUSTER, NOT THE BLOOM. A bright run crosses a tightly-packed cluster
+     without meeting a dark gap, so what the reference measurement caught was the whole corymb.
+     Scaling an individual floret to it made each tip a solid ball that buried every twig and the
+     ring went pure white. 0.016 with three per tip is where the blooms are visibly bigger AND the
+     green survives — the balance measure puts it at 0.9% stem, which is the level that was
+     approved before any of this.
+     ⚠️ The run measure also SATURATES: once blooms overlap, the band becomes one run longer than a
+     third of the frame and gets discarded, dragging the median down. Trust it while the blooms are
+     separate and trust the arithmetic after. */
+  floretSize: 0.016,
   /* How much the blooms differ in size within a cluster: buds and open flowers sit together, and a
      cluster of identical balls is the other classic way this reads as plastic. */
   floretVary: 0.55,

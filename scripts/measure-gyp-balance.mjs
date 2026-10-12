@@ -33,6 +33,12 @@ const VALUES = (process.env.VALUES ?? DEFAULTS[KNOB] ?? '').split(',').map(Numbe
 const LABEL = { thickness: 'Stem', floretSize: 'Bloom size', florets: 'Per tip',
                 spacing: 'Spacing ×', shadeVary: 'Crowd depth', ao: 'Depth' }[KNOB] ?? KNOB;
 
+/* Hold other sliders somewhere while sweeping one: HOLD='Bloom size=0.014,Per tip=5'. Two knobs
+   that fight each other cannot be settled one at a time — bigger blooms bury the twigs unless there
+   are fewer of them, and a single-knob sweep just reports the burial. */
+const HOLD = (process.env.HOLD ?? '').split(',').filter(Boolean)
+  .map(s => { const [k, v] = s.split('='); return [k.trim(), Number(v)]; });
+
 const b = await chromium.launch();
 const page = await b.newPage({ viewport: { width: 1200, height: 820 }, deviceScaleFactor: 1 });
 await page.goto('http://localhost:5190/gypsophila.html', { waitUntil: 'domcontentloaded' });
@@ -82,6 +88,11 @@ const balance = () => page.evaluate(() => {
   return { stem, bloom, pct: stem + bloom ? (stem / (stem + bloom)) * 100 : 0 };
 });
 
+for (const [k, v] of HOLD) {
+  const got = await setSlider(k, v);
+  console.log(`  holding ${k} at ${got ?? '(no such slider)'}`);
+}
+await page.waitForTimeout(1500);
 console.log(`\nreference cake: ${TARGET}% stem (top ring 5.0, board ring 4.6)\n`);
 console.log(`${LABEL.padStart(11)}    stem px   bloom px   stem share   vs reference`);
 console.log('-'.repeat(62));
