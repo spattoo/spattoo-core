@@ -44,6 +44,30 @@ export const creamAlbedo = (color) =>
    prevent. */
 export const CREAM_SPECULAR = 0.3;
 
+/* ── A SPREAD stroke is wetter than a PIPED one ──────────────────────────────────────────────────
+ *
+ * Sandeep, on the cream-stroke band: *"cream strokes look so dull, so matte, not like a cream. can
+ * we improve it?"*
+ *
+ * ⚠️ AND THE ANSWER IS THE SOFTNESS KNOB, NOT A SECOND MATERIAL. Everything made of buttercream
+ * asks this one function (INVARIANTS #15), so "strokes get their own roughness" would be exactly
+ * the drift it exists to prevent. What is true is that a brushstroke is a DIFFERENT STATE of the
+ * same cream: it was spread with a knife seconds ago and still holds the knife's wet sheen, where a
+ * piped rope has sat and crusted. `softness` is already the wet…matte axis; strokes simply sit at
+ * the wet end of it, which is a claim about the cream and not about the renderer.
+ *
+ * Chosen by looking, on the real harness under the real rig, at 0.7 / 0.35 / 0.1 — plus the two
+ * ends as controls (a near-mirror and chalk), because a sweep with no extremes cannot tell a knob
+ * that is working from one that is not. At 0.7 the ridges carry no highlight at all; at 0.1 they
+ * catch light along their length and the colour gains depth, which is what reads as buttercream.
+ *
+ * ⚠️ SPECULAR IS DELIBERATELY NOT TOUCHED. It is the bigger lever — the near-mirror control is the
+ * most cream-like frame of the set — and it is pinned at CREAM_SPECULAR for a reported artefact
+ * (the white halo round a ramped edge, three rounds of *"not fixed yet"*). It is also shared by
+ * every piped rope on every cake. Raising it is a separate change with its own measurement, and
+ * guessing at it here would undo somebody's fix by accident. */
+export const BRUSH_CREAM_SOFTNESS = 0.1;
+
 export function creamMaterialProps(softness, color) {
   const s = Math.min(1, Math.max(0, softness ?? PIPING_SOFTNESS_DEFAULT));
   const albedo = creamAlbedo(color);

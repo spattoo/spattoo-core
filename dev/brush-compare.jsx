@@ -12,7 +12,7 @@ import { SceneLights, SceneEnv } from '../src/designer/canvas/CakeCanvas.jsx';
    written to end and whose cost it already lists. Side-effect import; see that file. */
 import './scene.js';
 
-import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
+import { creamMaterialProps, BRUSH_CREAM_SOFTNESS } from '../src/designer/geometry/creamMaterial.js';
 import { buildBrushStrokeOnWall, BRUSH_ON_CAKE_DEFAULTS as D } from '../src/designer/geometry/brushStrokeOnCake.js';
 import { brushStroke } from '../src/designer/geometry/brushStroke.js';
 import { buildPanelsGeometry } from '../src/designer/geometry/garnishPanel.js';
@@ -99,7 +99,9 @@ function CreamStroke() {
   return (
     <mesh geometry={geo} castShadow receiveShadow>
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, CREAM)} />
+        polygonOffsetUnits={-1} {/* The softness a brushstroke actually ships at — a page that asks "can a customer tell
+            these apart" has to show the cream the cake shows. */}
+        {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, CREAM)} />
     </mesh>
   );
 }

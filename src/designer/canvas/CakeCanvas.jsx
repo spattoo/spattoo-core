@@ -43,7 +43,7 @@ import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
          BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
-import { creamMaterialProps } from '../geometry/creamMaterial.js';
+import { creamMaterialProps, BRUSH_CREAM_SOFTNESS } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
   from '../geometry/rainbow.js';
@@ -3307,7 +3307,7 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
     <mesh key={st.id} geometry={geo} castShadow receiveShadow
       onClick={e => { e.stopPropagation(); onPick?.(st.id); }}>
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, st.color ?? '#F6DCE2')}
+        polygonOffsetUnits={-1} {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, st.color ?? '#F6DCE2')}
         color="#ffffff" vertexColors />
     </mesh>
   ));
@@ -3338,7 +3338,7 @@ function BrushBand({ band, tier, wallColour, onClick = null }) {
           run — the call CreamPen already makes for cream. polygonOffset because the thinnest film
           sits almost on the wall and the depth buffer loses over a long grazing sweep. */}
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors />
+        polygonOffsetUnits={-1} {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, part.color)} color="#ffffff" vertexColors />
     </mesh>
   ));
 }
