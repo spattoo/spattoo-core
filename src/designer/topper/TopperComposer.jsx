@@ -918,9 +918,24 @@ export default function TopperComposer({
    *
    * ⚠️ ONLY WHEN THERE IS EXACTLY ONE. On a two-word topper ("You"/"Me") any choice is arbitrary,
    * and opening the wrong one puts a caret where the baker was not looking. */
-  const applyArrival = useCallback((loaded) => {
-    setSelectedIds(loaded.map(o => o.id).filter(id => id != null));
-    const texts = loaded.filter(o => o?.kind === 'text' && o.id != null);
+  const applyArrival = useCallback((raw) => {
+    /* ⚠️ IDS ARE MINTED HERE, BECAUSE A PRESET ARRIVES WITHOUT THEM. `topperPresets.js` says so at
+     * its top — *"NO `id`s HERE. Ids are minted by the studio as the objects land, so picking the
+     * same preset twice cannot produce two objects that share an id"* — and `usePreset` had always
+     * done that minting on its own door. The OTHER door did not, so a row whose payload was
+     * authored that way opened a studio with the "10" drawn and UNTOUCHABLE: React renders by index
+     * happily, every `o.id` was undefined so `selectedIds` came out empty, the properties panel
+     * never appeared, and nothing was editable. Sandeep, twice: *"card topper is still not showing
+     * the '10' editable."* Both times I had checked a payload that already carried ids — a kept
+     * decoration and a template both do, which is exactly why the fixture agreed with me.
+     *
+     * The minter is kept AHEAD of whatever ids did arrive, so a kept piece carrying id 7 cannot
+     * collide with the next thing added. */
+    const loaded = (raw ?? []).map(o => (o?.id == null ? { ...o, id: nextId.current++ } : o));
+    nextId.current = loaded.reduce((m, o) => Math.max(m, o.id ?? 0), nextId.current - 1) + 1;
+    setObjects(loaded);
+    setSelectedIds(loaded.map(o => o.id));
+    const texts = loaded.filter(o => o?.kind === 'text');
     setEditing(texts.length === 1 ? texts[0].id : null);
   }, []);
   /* ⚠️ FLAT IS THE WORKING VIEW; 3D IS A LOOK, and they are two different jobs. Composing needs a
@@ -969,7 +984,6 @@ export default function TopperComposer({
     if (!openFrom) return;
     const p = openFrom.payload ?? {};
     const loaded = Array.isArray(p.objects) ? p.objects : [];
-    setObjects(loaded);
     /* ⚠️ SELECTED ON ARRIVAL, BECAUSE NOTHING ELSE SAYS THE PIECE CAN BE TOUCHED. `add()` has always
      * selected what it just made; this path — a preset, a kept decoration, a template coming back
      * through `editWith` — set the objects and left the canvas with no selection at all. So the
@@ -997,7 +1011,6 @@ export default function TopperComposer({
      * Those keep the selection alone — the border still says the pieces can be taken hold of. */
     setName(openFrom.name ?? '');
     setStick(p.stick?.on ? { on: true, bury: p.stick.bury ?? 0.5 } : { on: false, bury: 0.5 });
-    nextId.current = (p.objects ?? []).reduce((m, o) => Math.max(m, o.id ?? 0), 0) + 1;
   }, [openFrom]);
   const nextId = useRef(1);
 
@@ -1079,14 +1092,12 @@ export default function TopperComposer({
      produce two objects sharing an id, and selecting either would move both. Cloned per object too,
      so editing what was just dropped cannot reach back into the frozen preset list. */
   const usePreset = (pre) => {
-    const seeded = pre.objects.map(o => ({ ...o, id: nextId.current++ }));
-    setObjects(seeded);
     /* ⚠️ THE SAME ARRIVAL AS A PRESET THAT CAME WITH THE STUDIO. This used to clear the selection
        and the editor — so tapping "10" in the preset list put a finished-looking number on the
        canvas with an empty properties panel beside it and no caret, which is the state the
        openFrom path was fixed out of. Two doors into the same room, and only one of them had been
        mended. */
-    applyArrival(seeded);
+    applyArrival(pre.objects);
   };
 
   const addShape = (family) => add({

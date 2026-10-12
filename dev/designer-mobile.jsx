@@ -579,7 +579,17 @@ CAT_ELEMENTS.push({
   image_url: CAT_THUMB('#f0d9dd'), thumbnail_url: CAT_THUMB('#f0d9dd'), thumb_key: null,
   allowed_zones: ['top_surface'],
   allowed_actions: { move: true, delete: true, resize: true },
-  placement_config: { procedural: 'card_topper' },
+  /* ⚠️ WITH A PRESET PAYLOAD, LIKE THE REAL ROW. This carried only `procedural: 'card_topper'`,
+     so the harness opened an EMPTY studio — which is a different screen from the one a baker sees
+     when they tap "10" in Decorations, and the only one any check here could reach. The objects
+     carry NO ids on purpose: `topperPresets.js` mints them as they land ("picking the same preset
+     twice cannot produce two objects that share an id"), so a payload authored that way is the
+     shape that actually arrives. Verbatim from the `number` preset. */
+  placement_config: { procedural: 'card_topper',
+                      card_topper: { objects: [
+                        { kind: 'text', text: '10', face: '__block', size: 1.50, x: 0, y: 0,
+                          colour: '#FFFFFF', offset: 0.10, offsetColour: '#E4572E' },
+                      ] } },
   default_color: '#D94F6E', sort_order: 9,
 });
 

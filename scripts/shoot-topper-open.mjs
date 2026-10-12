@@ -4,7 +4,7 @@
  *   entire 10 number and the offset and selected together. and user does not know how to edit.
  *   instead it should open in a state where is shows 10 is editable."
  *
- * ⚠️ THERE ARE TWO DOORS INTO THE SAME ROOM AND ONLY ONE HAD BEEN MENDED. Pieces arrive either WITH
+ * ⚠️ THERE ARE THREE DOORS INTO THE SAME ROOM AND THIS HAS BEEN WRONG AT TWO OF THEM. Pieces arrive either WITH
  * the studio (a preset on an element row, a kept decoration, a template coming back through
  * `editWith`) or from the PRESET LIST inside it. The first was fixed; the second still cleared the
  * selection and the editor, so tapping "10" put a finished-looking number on the canvas with an
@@ -72,6 +72,24 @@ ok(st.editing === 1, `a kept topper also opens in its editor (${st.editing})`);
 ok(st.focused, 'focused');
 ok(st.selected, 'and selected');
 await page.screenshot({ path: `${OUT}/topper-open-kept.png` });
+
+console.log('\ndoor 3 — a catalogue row carrying a preset payload');
+/* ⚠️ THE DOOR A BAKER ACTUALLY USES: Decorations → tap the Card topper studio row. `e8` carries a
+   `card_topper` payload whose objects have no ids, verbatim from topperPresets' `number`. */
+await page.goto(`${B.replace('topper-studio.html', 'designer-mobile.html')}?catalog=1`,
+  { waitUntil: 'domcontentloaded' });
+await page.waitForTimeout(5000);
+await page.evaluate(() => [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Skip')?.click());
+await page.waitForTimeout(600);
+await page.evaluate(() => window.__loadElements?.());
+await page.waitForTimeout(1500);
+ok(await page.evaluate(() => window.__tapElementById?.('e8') ?? false), 'the Card topper studio row opens it');
+await page.waitForTimeout(3500);
+st = await state();
+ok(st.editing === 1, `a row's preset opens in its editor (${st.editing})`);
+ok(st.focused && st.value === '10', `focused, holding the number (${st.value})`);
+ok(st.selected, 'and selected, so the first keystroke replaces it');
+await page.screenshot({ path: `${OUT}/topper-open-row.png` });
 
 console.log(fails.length ? `\n✗ ${fails.length} failed` : '\n✓ all good');
 await browser.close();
