@@ -88,25 +88,44 @@ describe('buildGypSprig — one sprig, seated at the origin', () => {
      all-white it has nothing to separate it from a white cake under a bright key, which is the
      complaint that has followed every white decoration here. Two colours in ONE buffer, so the
      field is still a single draw call. */
+  /* ⚠️ THE BLOOMS CARRY A SHADE NOW, so this no longer counts two colours — it used to, and that
+     assertion would have failed the occlusion bake for doing its job. What has to stay true is that
+     stems are one flat colour (they are not shaded; a stem is a hair and shading it reads as dirt)
+     and that blooms span a RANGE, because a flat range is the white-out this feature keeps hitting. */
   it('paints stems and blooms differently, in one buffer', () => {
     const g = buildGypSprig();
     const c = g.getAttribute('color');
     expect(c, 'no colour attribute at all').toBeTruthy();
     expect(c.count).toBe(g.getAttribute('position').count);
-    const seen = new Set();
+    const stems = new Set(), blooms = new Set();
     for (let i = 0; i < c.count; i++) {
-      seen.add(`${c.getX(i).toFixed(3)},${c.getY(i).toFixed(3)},${c.getZ(i).toFixed(3)}`);
+      const r = c.getX(i), gg = c.getY(i), b = c.getZ(i);
+      const key = `${r.toFixed(3)},${gg.toFixed(3)},${b.toFixed(3)}`;
+      (gg > r ? stems : blooms).add(key);          // the stem colour is the only green-led one
     }
-    expect(seen.size, 'stems and blooms should be two colours').toBe(2);
+    expect(stems.size, 'the stem colour is one flat value').toBe(1);
+    expect(blooms.size, 'blooms should span a range of shades').toBeGreaterThan(3);
   });
 
+  it('leaves the blooms alone when the depth is off', () => {
+    const c = buildGypSprig({ ao: 0 }).getAttribute('color');
+    const blooms = new Set();
+    for (let i = 0; i < c.count; i++) {
+      if (c.getY(i) > c.getX(i)) continue;
+      blooms.add(`${c.getX(i).toFixed(3)},${c.getZ(i).toFixed(3)}`);
+    }
+    expect(blooms.size).toBe(1);
+  });
+
+  /* Checked by HUE rather than by exact value: the occlusion bake scales a bloom's colour, so a
+     bloom asked for pure blue arrives as some darker blue. What must hold is that nothing swaps. */
   it('takes the colours it is given', () => {
-    const g = buildGypSprig({ stem: '#ff0000', bloom: '#0000ff' });
-    const c = g.getAttribute('color');
+    const c = buildGypSprig({ stem: '#ff0000', bloom: '#0000ff' }).getAttribute('color');
     let red = 0, blue = 0;
     for (let i = 0; i < c.count; i++) {
-      if (c.getX(i) > 0.9 && c.getZ(i) < 0.1) red++;
-      if (c.getZ(i) > 0.9 && c.getX(i) < 0.1) blue++;
+      const r = c.getX(i), b = c.getZ(i);
+      if (r > 0.01 && b < 1e-6) red++;
+      else if (b > 0.01 && r < 1e-6) blue++;
     }
     expect(red).toBeGreaterThan(0);
     expect(blue).toBeGreaterThan(0);

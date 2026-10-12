@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { layAxis, instancedTriangleCount, outwardBand } from './useSeatedInstances.js';
+import { layAxis, instancedTriangleCount, outwardBand, rimBand } from './useSeatedInstances.js';
 
 /* ⚠️ THIS IS THE SIGN THE WAFER SKIRT GOT WRONG, and it cost a day. `fin` mounting sent every strip
  * INWARD through the cake instead of outward, which a render could not show (the strips were simply
@@ -93,5 +93,44 @@ describe('outwardBand — a ring hugging the foot of the cake', () => {
     const out = outwardBand(src, 0.2);
     expect(src.radius).toBe(1.5);
     expect(out).not.toBe(src);
+  });
+});
+
+/* ⚠️ A RIM BAND HAS TWO EDGES AND BOTH ARE CHOICES — how far in from the rim the flowers start and
+ * how far past it they reach. `overhang` is not that control: it caps at 9% of the outline and also
+ * drives the rim lean, so turning it up to reach further tips the pieces over too. Sandeep: *"on
+ * the rim also, how much to come out of the rim should be a controlling field."* */
+describe('rimBand — a band straddling the top edge', () => {
+  const tier = { kind: 'round', radius: 1.5 };
+  /* Where the band's inner edge actually lands, in tier units: `bandInner` scales the shape being
+     FILLED, and that shape is already grown outward. */
+  const innerEdge = (b) => (b.shape.radius * b.bandInner) / tier.radius;
+
+  it('reaches out by exactly what it is asked for', () => {
+    expect(rimBand(tier, { out: 0.2 }).shape.radius / tier.radius).toBeCloseTo(1.2, 6);
+    expect(rimBand(tier, { out: 0 }).shape.radius / tier.radius).toBeCloseTo(1.0, 6);
+  });
+
+  /* ⚠️ THE DIVISION IS THE POINT. Written as a plain `1 - inn`, the band would narrow as the reach
+     grew — turn "out" up and the inner edge would walk outward with it, which is one slider moving
+     two edges. */
+  it('starts where it is asked to, whatever the reach', () => {
+    for (const out of [0, 0.1, 0.3]) {
+      expect(innerEdge(rimBand(tier, { inn: 0.14, out })), `out ${out}`).toBeCloseTo(0.86, 6);
+    }
+  });
+
+  it('the two edges are independent', () => {
+    const a = rimBand(tier, { inn: 0.1, out: 0.1 });
+    const b = rimBand(tier, { inn: 0.4, out: 0.1 });
+    expect(a.shape.radius).toBeCloseTo(b.shape.radius, 6);
+    expect(innerEdge(a)).toBeGreaterThan(innerEdge(b));
+  });
+
+  it('refuses to turn itself inside out', () => {
+    const b = rimBand(tier, { inn: 5, out: -2 });
+    expect(b.bandInner).toBeGreaterThan(0);
+    expect(b.bandInner).toBeLessThanOrEqual(1);
+    expect(b.shape.radius).toBeCloseTo(tier.radius, 6);
   });
 });

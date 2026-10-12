@@ -5,7 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import GypCloud from '../src/designer/canvas/GypCloud.jsx';
-import { outwardBand } from '../src/designer/canvas/useSeatedInstances.js';
+import { outwardBand, rimBand } from '../src/designer/canvas/useSeatedInstances.js';
 import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../src/designer/geometry/gypsophila.js';
 
 /* ── Does one sprig read as gypsophila? Open /gypsophila.html ────────────────────────────────────
@@ -59,9 +59,9 @@ const LAYOUTS = {
      round the inside of the rim, which is the same "tree plantation" read. In the reference the
      sprigs are laid toward the edge and the band is bloom, not stem. 45° keeps them planted and
      tips them over. */
-  'ring the rim':   { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
+  'ring the rim':   { clouds: [{ on: 'rim', spacing: 0.075, jitter: 0.65, overhang: 0.8,
                                  height: 0.20, droop: 0.6, lay: 45, bury: 0.06 }] },
-  'rim + board':    { clouds: [{ spacing: 0.075, jitter: 0.65, bandInner: 0.86, overhang: 0.8,
+  'rim + board':    { clouds: [{ on: 'rim', spacing: 0.075, jitter: 0.65, overhang: 0.8,
                                  height: 0.20, droop: 0.6, lay: 45, bury: 0.06 },
                                /* Laid down, not planted: the board is card. 78° leaves the sprigs
                                   tilted just off the board so they rest against the cake's side
@@ -97,7 +97,7 @@ function Harness() {
      half the truth about what it costs — and when the rim ring vanished it still read 561 sprigs,
      which is exactly the kind of number that sends you looking in the wrong place. */
   const [stats, setStats] = useState({});
-  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18 });
+  const [p, setP] = useState({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18, rimIn: 0.14, rimOut: 0.10, shadeVary: 0.35 });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
   const L = LAYOUTS[layout];
   /* ⚠️ A FRESH OBJECT LITERAL IS A NEW DEPENDENCY EVERY RENDER. `hole` feeds the seat memo, so
@@ -108,6 +108,9 @@ function Harness() {
   /* How far the base ring reaches out from the cake, as a fraction of the tier. Memoised because a
      fresh shape object every render rebuilds every seat (see the comment on `hole`). */
   const footBand = useMemo(() => outwardBand(shape, p.ringWidth ?? 0.18), [shape, p.ringWidth]);
+  /* The rim band has two edges and both are controls: how far in it starts, how far out it reaches. */
+  const rim = useMemo(() => rimBand(shape, { inn: p.rimIn, out: p.rimOut }),
+                      [shape, p.rimIn, p.rimOut]);
 
   return (
     <div style={{ display: 'flex', height: '100vh' }}>
@@ -150,12 +153,22 @@ function Harness() {
         <Sl label="Bloom size"   v={p.floretSize} min={0.004} max={0.03} step={0.0005} on={set('floretSize')} />
         <Sl label="Size variety" v={p.floretVary} min={0} max={0.9} step={0.02} on={set('floretVary')}
             hint="Buds and open flowers sit together. At 0 it is a cluster of identical beads." />
+        <Sl label="Depth"        v={p.ao} min={0} max={1.4} step={0.05} on={set('ao')}
+            hint="How much a bloom buried in the cloud is darkened. At 0 a white cloud on a white cake is one flat field." />
+        <Sl label="Depth floor"  v={p.aoFloor} min={0.2} max={0.9} step={0.02} on={set('aoFloor')}
+            hint="The darkest a bloom may go. White petals in shadow are grey, never black." />
+        <Sl label="Crowd depth"  v={p.shadeVary} min={0} max={0.6} step={0.02} on={set('shadeVary')}
+            hint="How much sprigs differ in brightness. A crowd has some lit and some in the shade of the rest — at 0 a packed ring is one flat white mass." />
         <Sl label="Seed"         v={p.seed} min={1} max={40} step={1} on={set('seed')} int />
 
         <H>Arrangement</H>
         <Sl label="Spacing" v={p.spacing ?? 0.13} min={0.05} max={0.5} step={0.01}
             on={set('spacing')} hint="Only applies when it is not a single sprig." />
-        <Sl label="Ring width" v={p.ringWidth} min={0.04} max={0.5} step={0.01} on={set('ringWidth')}
+        <Sl label="Rim: out past the edge" v={p.rimOut} min={0} max={0.4} step={0.01} on={set('rimOut')}
+            hint="How far the top ring reaches PAST the rim, × the tier." />
+        <Sl label="Rim: in from the edge" v={p.rimIn} min={0.03} max={0.6} step={0.01} on={set('rimIn')}
+            hint="How far in from the rim it starts. The two together are the band's width." />
+        <Sl label="Foot ring width" v={p.ringWidth} min={0.04} max={0.5} step={0.01} on={set('ringWidth')}
             hint="How far the base ring reaches out from the cake's foot, × the tier. It is a ring on the cake, not a field on the board." />
 
         <div style={{ marginTop: 14, padding: 10, background: '#fff', borderRadius: 8, fontSize: 11,
@@ -206,10 +219,12 @@ function Harness() {
                   board. */}
               {L.clouds.map((c, i) => (
                 <GypCloud key={i}
-                  shape={c.on === 'foot' ? footBand : SHAPES[shapeKey]}
+                  shape={c.on === 'foot' ? footBand : c.on === 'rim' ? rim.shape : SHAPES[shapeKey]}
+                  bandInner={c.on === 'rim' ? rim.bandInner : undefined}
                   topY={c.on === 'foot' ? TIER.baseY + 0.005 : TOP_Y}
                   hole={c.on === 'foot' ? holeForFoot : null}
-                  patchRadius={c.on === 'foot' ? footBand.radius : undefined}
+                  patchRadius={c.on === 'foot' ? footBand.radius
+                             : c.on === 'rim' ? rim.shape.radius : undefined}
                   {...p} {...c} seed={p.seed + i * 13}
                   onStats={(st) => setStats(o => ({ ...o, [i]: { ...st, on: c.on ?? 'top' } }))} />
               ))}

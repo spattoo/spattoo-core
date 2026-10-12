@@ -58,6 +58,19 @@ export const GYP_DEFAULTS = Object.freeze({
      cluster of identical balls is the other classic way this reads as plastic. */
   floretVary: 0.55,
   seed:       7,
+  /* ⚠️ HOW HARD A BLOOM DEEP IN THE CLOUD IS DARKENED, and this is the same fault the wafer skirt
+     took a week to settle. The scene is a near-uniform dome, so a mass of white blooms against a
+     white cake carries almost no shading of its own and renders as one flat field — Sandeep has
+     now reported it on every white decoration in the app, this one included: *"the white color
+     over exposed issue. we have fixed it for wafer paper studio."*
+     The fix is the wafer's, and it transfers exactly: a bloom buried among its neighbours sees
+     less sky than one on the outside, so occlusion is baked per bloom as a vertex colour. One
+     draw call still — the colour attribute is already there carrying the stem/bloom split.
+     ⚠️ It decays toward a FLOOR and never reaches it. The wafer shipped `Math.max(0, …)` for a day
+     and painted its deepest creases pure black, which is not what white petals do at any exposure
+     because light bounces in from the ones around them. */
+  ao:         0.55,
+  aoFloor:    0.45,
 });
 
 /* ⚠️ THE STEMS ARE GREEN, AND THAT IS NOT DECORATION — it is most of what makes a sprig legible.
@@ -115,12 +128,52 @@ function pushBloom(pos, nor, idx, centre, r, rand) {
   idx.baseIndex += OCTA_DIR.length;
 }
 
+/* ── How buried is each bloom? ───────────────────────────────────────────────────────────────────
+ *
+ * Counted, not guessed: how many other blooms sit within a couple of bloom-widths. One out on the
+ * edge of the cloud has few neighbours and keeps its colour; one in the middle of a cluster is
+ * surrounded and loses light. That ordering is the whole effect — it is what turns a flat white
+ * mass into something with depth, and it is exactly what `bakeWaferAO` does for the gaps between
+ * sheets.
+ *
+ * ⚠️ IT DECAYS TOWARD A FLOOR AND NEVER REACHES IT. White petals a millimetre apart are grey in
+ * shadow, never black, because light bounces in from the ones around them. The wafer skirt shipped
+ * a hard clamp at zero for a day and painted its creases black.
+ */
+function shadeBlooms(col, blooms, o) {
+  if (!(o.ao > 0) || blooms.length < 2) return;
+  /* ⚠️ THREE ATTEMPTS, AND THE FIRST TWO MEASURED THE WRONG CLOUD. Counting a bloom's neighbours
+     buries every one of them equally, because a cluster is a dozen packed into a ball. Widening the
+     reach and normalising does not help: once it spans the sprig, every bloom sees every other.
+     Depth from the sprig's own centre varies, but it concentrates the darkening in a tiny core —
+     half the blooms came out above 0.93 and the render did not move at all.
+     ⚠️ ALL THREE SHADE THE WRONG THING. A sprig is airy; it barely occludes ITSELF. The white-out
+     happens in a packed RING, where what buries a bloom is the hundred sprigs around it — and an
+     instanced mesh cannot know about its neighbours. What a single sprig CAN know is height, and
+     in a crowd that is the same quantity: the top of the cloud sees sky, the bottom is roofed by
+     everything standing around it. Exactly the wafer skirt's `aoOpenTop`, from the other side. */
+  let lo = Infinity, hi = -Infinity;
+  for (const b of blooms) { if (b.c.y < lo) lo = b.c.y; if (b.c.y > hi) hi = b.c.y; }
+  const drop = Math.max(1e-6, hi - lo);
+  blooms.forEach((b) => {
+    const buried = 1 - (b.c.y - lo) / drop;          // 0 at the crown, 1 at the lowest bloom
+    const shade = o.aoFloor + (1 - o.aoFloor) * Math.exp(-o.ao * buried * 3);
+    for (let i = b.from; i < b.to; i++) {
+      col[i * 3] *= shade; col[i * 3 + 1] *= shade; col[i * 3 + 2] *= shade;
+    }
+  });
+}
+
 /* ONE sprig, seated at the origin and growing up +Y. Instance this; do not call it per seat. */
 export function buildGypSprig(opts = {}) {
   const o = { ...GYP_DEFAULTS, ...GYP_COLOURS, ...opts };
   const rand = mulberry32(o.seed ?? 1);
   const pos = [], nor = [], idx = { list: [], baseIndex: 0 }, col = [];
   const stem = new THREE.Color(o.stem), bloom = new THREE.Color(o.bloom);
+  /* Bloom centres are collected as they are made, then shaded in one pass at the end — a bloom's
+     occlusion depends on how many OTHER blooms are around it, which is not known while it is being
+     placed. */
+  const blooms = [];
   /* Paint everything pushed since the last call. The builders push vertices and the colour follows
      them, so neither has to know how many the other made. */
   const paint = (from, c) => {
@@ -159,6 +212,7 @@ export function buildGypSprig(opts = {}) {
         const b0 = idx.baseIndex;
         pushBloom(pos, nor, idx, c, o.floretSize * (1 - o.floretVary * rand()), rand);
         paint(b0, bloom);
+        blooms.push({ from: b0, to: idx.baseIndex, c: c.clone() });
       }
     }
 
@@ -193,6 +247,7 @@ export function buildGypSprig(opts = {}) {
   grow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0),
        o.height / chain, o.thickness, 1);
 
+  shadeBlooms(col, blooms, o);
   return finishGeometry(pos, nor, idx, col);
 }
 

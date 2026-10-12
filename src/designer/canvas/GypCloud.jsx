@@ -30,6 +30,10 @@ export default function GypCloud({
   florets = GYP_DEFAULTS.florets,
   floretSize = GYP_DEFAULTS.floretSize,
   floretVary = GYP_DEFAULTS.floretVary,
+  ao = GYP_DEFAULTS.ao, aoFloor = GYP_DEFAULTS.aoFloor,
+  /* How much sprigs differ from one another in brightness. See useSeatedInstances — it is the only
+     thing that gives a packed field depth, because every instance shares one geometry. */
+  shadeVary = 0.35,
   spacing = 0.13, jitter = 0.7,
   bandInner = null, hole = null, inset = 0.98, overhang = 0, patches = null, patchRadius = null,
   seed = GYP_DEFAULTS.seed,
@@ -47,16 +51,16 @@ export default function GypCloud({
 }) {
   const geo = useMemo(
     () => buildGypSprig({ height, levels, forks, spread, shrink, droop, thickness,
-                          florets, floretSize, floretVary, seed, stem, bloom }),
+                          florets, floretSize, floretVary, seed, stem, bloom, ao, aoFloor }),
     [height, levels, forks, spread, shrink, droop, thickness, florets, floretSize, floretVary,
-     seed, stem, bloom],
+     seed, stem, bloom, ao, aoFloor],
   );
 
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
   const ref = useSeatedInstances(seats, topY - bury,
-    { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo });
+    { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo, shadeVary });
   /* Everything below the surface is hidden by the cake itself, so this costs nothing to draw. */
 
   useLayoutEffect(() => {

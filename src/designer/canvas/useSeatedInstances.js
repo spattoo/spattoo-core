@@ -27,7 +27,8 @@ export function layAxis(out, into = new THREE.Vector3()) {
 }
 
 export function useSeatedInstances(seats, topY,
-                                   { lay = 0, layVary = 0, laySeed = 7, geo = null } = {}) {
+                                   { lay = 0, layVary = 0, laySeed = 7, geo = null,
+                                     shadeVary = 0 } = {}) {
   const ref = useRef(null);
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -42,6 +43,17 @@ export function useSeatedInstances(seats, topY,
        continuously shaking."* Re-seeding here makes a re-run produce identical matrices, which is
        the property the whole feature already claims ("must look random and be STABLE"). */
     const rand = mulberry32((laySeed + 991) >>> 0);
+    /* ⚠️ A CROWD IS NOT ONE BRIGHTNESS, and this is the only lever an InstancedMesh has on the
+       flatness of a packed field. Every instance shares one geometry, so per-vertex shading can
+       only paint the same gradient on all of them — measured, baking depth INSIDE a sprig moved
+       the ring's median from 233 to 225 and its tonal range not at all. That is uniform dimming,
+       which is the wafer skirt's "smoke" in another costume.
+       What buries a bloom in a ring is the hundred sprigs around it, and no instance can know
+       about its neighbours. But a real crowd has some pieces catching the light and some in the
+       shade of the rest, so giving each INSTANCE its own brightness is what the eye reads as depth.
+       `setColorAt` multiplies alongside the vertex colours, so the stem/bloom split survives. */
+    const shaded = shadeVary > 0 && typeof mesh.setColorAt === 'function';
+    const c = shaded ? new THREE.Color() : null;
     seats.forEach((s, i) => {
       q.setFromAxisAngle(up, s.yaw);
       /* ⚠️ `lay` IS FOR A SURFACE YOU CANNOT PUSH A STEM INTO. A cake board is hard — card or
@@ -68,8 +80,13 @@ export function useSeatedInstances(seats, topY,
       pos.set(s.x, topY, s.z);
       scl.setScalar(s.scale);
       mesh.setMatrixAt(i, m.compose(pos, q, scl));
+      if (shaded) {
+        const k = 1 - shadeVary * rand();
+        mesh.setColorAt(i, c.setRGB(k, k, k));
+      }
     });
     mesh.instanceMatrix.needsUpdate = true;
+    if (shaded && mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
     mesh.computeBoundingSphere();
     /* ⚠️ `geo` IS A DEPENDENCY EVEN THOUGH IT IS NEVER READ HERE, and leaving it out is a bug you
        cannot see coming. R3F treats `args` on a primitive as construction arguments: change the
@@ -80,7 +97,7 @@ export function useSeatedInstances(seats, topY,
        moved: *"when i increase the branches… rim bunch disappears when the value reaches 4."* The
        seats had not changed, so the effect did not re-run. `GrassPatch` carried the same latent
        fault and is fixed by the same line. */
-  }, [seats, topY, lay, layVary, laySeed, geo]);
+  }, [seats, topY, lay, layVary, laySeed, geo, shadeVary]);
   return ref;
 }
 
@@ -145,4 +162,29 @@ export function outwardBand(shape, width = 0.18) {
   }
   if (shape.outline) return { ...shape, scale: (shape.scale ?? 1) * k };
   return { ...shape, radius: (shape.radius ?? 1) * k };
+}
+
+/* ── A band straddling the rim ───────────────────────────────────────────────────────────────────
+ *
+ * A ring on the top edge has TWO edges of its own, and both are choices a baker makes: how far in
+ * from the rim the flowers start, and how far past it they reach. Returns the pair `grassSeats`
+ * needs — a shape grown outward by `out`, and the `bandInner` that hollows it back to `1 - inn`.
+ *
+ * ⚠️ `overhang` IS NOT THIS CONTROL, which is why it is not the one exposed. It caps at 9% of the
+ * outline (OVERHANG_REACH) and it also drives the rim lean, so turning it up to reach further also
+ * tips the pieces over — two effects on one slider, and neither of them in tier units. Sandeep:
+ * *"on the rim also, how much to come out of the rim should be a controlling field."* A field, so
+ * it says one thing.
+ *
+ * Both are fractions of the tier, the same units the foot ring's width is in, so "0.1 out" means
+ * the same distance in both places.
+ */
+export function rimBand(shape, { inn = 0.14, out = 0.1 } = {}) {
+  const o = Math.max(0, out), i = Math.max(0, Math.min(0.95, inn));
+  return {
+    shape: outwardBand(shape, o),
+    /* `bandInner` is a scale of the shape being FILLED, and that shape is already grown — so the
+       inner edge has to be divided back out or the band narrows as the reach grows. */
+    bandInner: (1 - i) / (1 + o),
+  };
 }
