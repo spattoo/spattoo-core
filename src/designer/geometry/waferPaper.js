@@ -88,7 +88,7 @@ export const WAFER_DEFAULTS = {
      it is the bright specular line along each sheet's edge in the photograph, which a near-overhead
      key light cannot put there. A lighting question, written down rather than guessed at.
      Not a per-cake choice: it is what paper in a crowd DOES, like the material. */
-  ao: 4.0,
+  ao: 10.0,
   /* How tightly the gap shading is held to the root — see bakeWaferAO. 1 is the old ramp across
      the whole sheet, which reads as soot; higher keeps the faces clean.
      ⚠️ 10 BECAUSE THE CURVE SATURATES THERE, not because it looked nicest. Rendered on a pink
@@ -104,6 +104,10 @@ export const WAFER_DEFAULTS = {
      Past 10 the numbers stop moving: the dark is already a line in the crease rather than a wash
      over the face, and more exponent has nothing left to tighten. */
   aoFocus: 10,
+  /* The darkest a crease may go, as a fraction of the paper's own colour. Not a taste setting: it
+     is the bounce between two sheets a millimetre apart, and without it `ao` over 1 clips to pure
+     black. See bakeWaferAO. */
+  aoFloor: 0.12,
 
   /* ⚠️ AND THE SAME RAMP ON A FIN IS SCORCH. Everything above was measured with the sheets lying
      FLAT, where the occluder is a neighbour overlapping you by two whole widths. Stood on edge the
@@ -561,7 +565,8 @@ export function waferPanel({
  * instead of a gradient.
  */
 export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false,
-                            aoFocus = WAFER_DEFAULTS.aoFocus) {
+                            aoFocus = WAFER_DEFAULTS.aoFocus,
+                            aoFloor = WAFER_DEFAULTS.aoFloor) {
   const pos = geo?.getAttribute?.('position');
   if (!pos || !(ao > 0)) return geo;
   /* ⚠️ WHICH AXIS IS "AWAY FROM THE WALL" DEPENDS ON HOW THE SHEET IS MOUNTED, and getting it wrong
@@ -590,7 +595,19 @@ export function bakeWaferAO(geo, ao = WAFER_DEFAULTS.ao, fin = false,
   for (let i = 0; i < pos.count; i++) {
     const u = Math.min(1, Math.max(0, (pos[axis](i) - lo) / span));   // 1 at the free edge, 0 at the wall
     const phi = Math.pow(1 - u, focus);                               // 0 in the open, 1 deep in a gap
-    const shade = Math.max(0, 1 - ao * phi);
+    /* ⚠️ IT DECAYS TOWARD A FLOOR; IT DOES NOT RUN INTO ONE. Two separate mistakes were here.
+       First the line was `Math.max(0, 1 - ao*phi)`: with `ao` above 1 that goes negative at the
+       root and clips to PURE BLACK, which is not what a crease in white paper looks like at any
+       exposure — light bounces into it from the sheets on either side. Sandeep, once the focus was
+       tight enough to see it: *"black think is still there."* It shows worst at the rim, where you
+       meet that band head-on instead of at a glance.
+       ⚠️ Then `Math.max(aoFloor, …)` fixed the black and broke the paper: a linear ramp against a
+       floor means every vertex past the crossing sits at EXACTLY the floor, so at ao 4 / focus 10
+       the inner 17% of every panel became one flat grey — measured, contrast fell from 74% of the
+       reference to 24%, back inside the "i can hardly see the paper" range it came from.
+       An exponential has neither problem: it is steepest where the gap closes, never reaches the
+       floor, and never passes it. */
+    const shade = aoFloor + (1 - aoFloor) * Math.exp(-ao * phi);
     col[i * 3] = col[i * 3 + 1] = col[i * 3 + 2] = shade;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -656,7 +673,7 @@ export function buildWaferSkirt({ shape, tierHeight = 1, radius = 1, ...opts } =
       curl: vary(o.curl, 0.5), splay: vary(o.splay, 0.5),
       hem: o.hem, notch: o.notch, segW: o.segW, segH: o.segH, rng: rnd, fin: !!o.fin,
     });
-    bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus);
+    bakeWaferAO(panel, o.ao, !!o.fin, o.aoFocus, o.aoFloor);
 
     /* Stand it on the wall. The panel's +Z must become the perimeter's OUTWARD normal, so the
        rotation is the angle of that normal — taken from the normal itself rather than from the

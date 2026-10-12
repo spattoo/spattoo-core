@@ -512,8 +512,13 @@ describe('bakeWaferAO — what darkens a white skirt on a white cake', () => {
 
   /* The ramp is on the panel's LOCAL z — 0 at the wall, positive outward — so it behaves the same on
      a round tier and a sheet one without knowing which it is on. */
+  /* ⚠️ THE STRENGTH IS A DECAY RATE, NOT A SLOPE. These used to pass 0.73 and 0.6, which were
+     readable numbers while the shade was `1 - ao*phi`. It is `floor + (1-floor)*exp(-ao*phi)` now,
+     so the same figures barely darken anything and the assertions failed on the MAGNITUDE while
+     the thing they exist to check — which axis the ramp follows — was still correct. Updated
+     rather than loosened: the crest must still be open and the root must still be in shadow. */
   it('darkens what is tucked toward the wall and leaves the outer crest alone', () => {
-    const g = bakeWaferAO(panel(), 0.73);
+    const g = bakeWaferAO(panel(), 3);
     const pos = g.getAttribute('position'), col = g.getAttribute('color');
     let maxZ = 0;
     for (let i = 0; i < pos.count; i++) maxZ = Math.max(maxZ, pos.getZ(i));
@@ -525,6 +530,20 @@ describe('bakeWaferAO — what darkens a white skirt on a white cake', () => {
     }
     expect(crest).toBeGreaterThan(0.95);   // open to the sky
     expect(deep).toBeLessThan(0.45);       // in the gap
+  });
+
+  /* ⚠️ OCCLUSION ATTENUATES LIGHT; IT NEVER EXTINGUISHES IT. A crease between two sheets of white
+     paper a millimetre apart is grey, because light bounces into it from both sides — it is not
+     black at any exposure. The ramp was `Math.max(0, 1 - ao*phi)`, which with any strength above 1
+     clipped the root vertices to PURE BLACK; Sandeep saw it at the rim, where you look straight
+     down the gap: *"black think is still there."* No strength may reach zero. */
+  it('never reaches black, however hard the gaps are shaded', () => {
+    for (const ao of [1, 4, 10, 40]) {
+      const col = bakeWaferAO(panel(), ao).getAttribute('color');
+      let min = 1;
+      for (let i = 0; i < col.count; i++) min = Math.min(min, col.getX(i));
+      expect(min, `ao ${ao}`).toBeGreaterThan(0.1);
+    }
   });
 
   it('is grey — occlusion darkens, it does not tint', () => {
@@ -615,7 +634,7 @@ describe('bakeWaferAO follows the mounting', () => {
   const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, rng: () => 0.5, fin: true });
 
   it('a fin darkens by RADIUS (local x), not by its wave', () => {
-    const g = bakeWaferAO(panel(), 0.6, true);
+    const g = bakeWaferAO(panel(), 3, true);
     const pos = g.getAttribute('position'), col = g.getAttribute('color');
     let lo = Infinity, hi = -Infinity;
     for (let i = 0; i < pos.count; i++) { const x = pos.getX(i); if (x < lo) lo = x; if (x > hi) hi = x; }
@@ -631,8 +650,8 @@ describe('bakeWaferAO follows the mounting', () => {
 
   /* The two modes must disagree, or the axis is not being honoured at all. */
   it('flat and fin shade the same geometry differently', () => {
-    const a = bakeWaferAO(panel(), 0.6, false).getAttribute('color');
-    const b = bakeWaferAO(panel(), 0.6, true).getAttribute('color');
+    const a = bakeWaferAO(panel(), 3, false).getAttribute('color');
+    const b = bakeWaferAO(panel(), 3, true).getAttribute('color');
     let same = true;
     for (let i = 0; i < a.count && same; i++) same = Math.abs(a.getX(i) - b.getX(i)) < 1e-9;
     expect(same).toBe(false);

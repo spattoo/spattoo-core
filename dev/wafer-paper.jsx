@@ -75,7 +75,7 @@ function Skirt({ shape, p }) {
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
     curl: p.curl, splay: p.splay, lean: p.lean,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
-    ao: p.ao, aoFocus: p.aoFocus, fin: p.fin, finAngle: p.finAngle,
+    ao: p.ao, aoFocus: p.aoFocus, aoFloor: p.aoFloor, fin: p.fin, finAngle: p.finAngle,
     /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
        silently takes WAFER_DEFAULTS and two different ?ao= values render identically — which they
        did, and the measurement said so before the eye could. */
@@ -115,7 +115,7 @@ function fromUrl() {
   const q = new URLSearchParams(location.search);
   const out = {};
   for (const [k, v] of q) {
-    if (k === 'hem' || k === 'colour' || k === 'bg' || k === 'cake') { out[k] = v; continue; }
+    if (k === 'hem' || k === 'colour' || k === 'bg' || k === 'cake' || k === 'cam') { out[k] = v; continue; }
     if (k === 'fin') { out.fin = v === '1' || v === 'true'; continue; }
     const n = Number(v);
     if (Number.isFinite(n)) out[k] = n;
@@ -208,7 +208,13 @@ export default function Harness() {
       </div>
 
       <div style={{ flex: 1, position: 'relative', background: p.bg || '#efe7e2' }}>
-        <Canvas shadows camera={{ position: [0, 2.2, 5.0], fov: 40 }}
+        {/* ⚠️ `?cam=high` LOOKS INTO THE RIM, and that view is not a nicety. The default camera is
+            roughly eye level with the wall, where the crown gap is seen at a glance; from above you
+            meet it head-on, and that is where Sandeep saw the shading clip to black while every
+            measurement taken from the default angle said it never went below 56. A probe that
+            cannot reach the complaint reports a misleading clean. */}
+        <Canvas shadows fov={40}
+          camera={{ position: p.cam === 'high' ? [0, 4.4, 3.2] : [0, 2.2, 5.0], fov: 40 }}
           gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
           <color attach="background" args={[p.bg || '#efe7e2']} />
           {/* THE shared rig — see dev/grass.jsx and INVARIANTS #17. A harness lit differently from
