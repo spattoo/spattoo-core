@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { topContains } from './surface.js';
+import { pushStrand, STRAND_SIDES, STRAND_SEGS , finishGeometry } from './strand.js';
+import { mulberry32 } from '../utils/random.js';
 
 // ── Piped grass ───────────────────────────────────────────────────────────────
 // The Wilton 233 look: a flat nozzle face pierced with ~15 small holes, so one squeeze puts down a
@@ -33,61 +35,17 @@ export const GRASS_DEFAULTS = Object.freeze({
   jitter:     0.55,   // how far a tuft may wander off its grid seat (fraction of spacing)
 });
 
-// Deterministic PRNG. Grass must look random and be STABLE: an unseeded Math.random would re-roll
-// every blade on each re-render, so the patch would shimmer whenever an unrelated slider moved.
-function rng(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s = (s + 0x6D2B79F5) >>> 0;
-    let t = Math.imul(s ^ (s >>> 15), 1 | s);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
+// Deterministic PRNG — `mulberry32` from utils/random.js, which calls itself "the ONE copy" and was.
+// This file carried a local look-alike until gypsophila copied it and made three; verified identical
+// for seeds 1, 7, 42 and 99999 over 500 draws before switching, so no blade moved.
+// Grass must look random and be STABLE: unseeded, every blade would re-roll on each render and the
+// patch would shimmer whenever an unrelated slider moved.
+const rng = mulberry32;
 
-// One blade: a tapered 3-sided prism bowed along its length. Three sides because a blade is seen
-// end-on from every angle a cake is viewed at and nobody counts them — it is a quarter of the cost
-// of a round tube and reads identically once shaded.
-const SIDES = 3;
-const SEGS  = 3;
-
-function pushBlade(pos, nor, idx, { origin, dir, bend, len, r0 }) {
-  const base = idx.baseIndex;
-  const up   = dir.clone().normalize();
-  // A frame around the blade's axis. Any perpendicular will do; pick the one that does not collapse
-  // when the blade happens to point straight up.
-  const ref  = Math.abs(up.y) > 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
-  const u    = new THREE.Vector3().crossVectors(up, ref).normalize();
-  const v    = new THREE.Vector3().crossVectors(up, u).normalize();
-
-  for (let s = 0; s <= SEGS; s++) {
-    const t = s / SEGS;
-    // Taper to a POINT, not a stump — a blade of grass ends in a tip, and a flat top end is the
-    // single thing that makes piped grass read as a bundle of wires instead.
-    const r = r0 * (1 - t) ** 0.8;
-    // Bow: the blade leans further from its axis the higher up it goes, quadratically, so the base
-    // stays planted and the tip is what droops.
-    const centre = origin.clone()
-      .addScaledVector(up, len * t)
-      .addScaledVector(bend, len * t * t);
-    for (let k = 0; k < SIDES; k++) {
-      const a = (k / SIDES) * Math.PI * 2;
-      const nx = u.clone().multiplyScalar(Math.cos(a)).addScaledVector(v, Math.sin(a));
-      pos.push(centre.x + nx.x * r, centre.y + nx.y * r, centre.z + nx.z * r);
-      nor.push(nx.x, nx.y, nx.z);
-    }
-  }
-  for (let s = 0; s < SEGS; s++) {
-    for (let k = 0; k < SIDES; k++) {
-      const a = base + s * SIDES + k;
-      const b = base + s * SIDES + ((k + 1) % SIDES);
-      const c = a + SIDES, d = b + SIDES;
-      idx.list.push(a, c, b, b, c, d);
-    }
-  }
-  idx.baseIndex += (SEGS + 1) * SIDES;
-}
-
+/* One blade: a tapered 3-sided prism bowed along its length, ending in a POINT. The solid itself
+   lives in strand.js now — a gypsophila twig is the same shape, and copying it would have been the
+   textbook version of the rule about building something good twice. Behaviour is unchanged: the
+   defaults there are this file's old constants. */
 // ONE tuft, seated at the origin and growing up +Y. Instance this; do not call it per seat.
 export function buildGrassTuft(opts = {}) {
   const o = { ...GRASS_DEFAULTS, ...opts };
@@ -116,15 +74,10 @@ export function buildGrassTuft(opts = {}) {
     const bend = new THREE.Vector3(Math.cos(az) * lean, -dir.y * sagFrac, Math.sin(az) * lean);
 
     const len = o.height * (1 - o.lengthVary * rand());
-    pushBlade(pos, nor, idx, { origin, dir, bend, len, r0: o.thickness });
+    pushStrand(pos, nor, idx, { origin, dir, bend, len, r0: o.thickness });
   }
 
-  const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
-  g.setAttribute('normal',   new THREE.Float32BufferAttribute(nor, 3));
-  g.setIndex(idx.list);
-  g.computeBoundingSphere();
-  return g;
+  return finishGeometry(pos, nor, idx);
 }
 
 // Where the tufts sit on a surface. A jittered grid clipped by the shape's own containment test, so
@@ -254,5 +207,5 @@ export function nextPatchSpot(existing = [], { v = 0.62, r = 0.35 } = {}) {
 
 // Triangles a patch will cost, so a density control can be honest about it before it is dragged.
 export function grassTriangleCount(seatCount, strands = GRASS_DEFAULTS.strands) {
-  return seatCount * strands * SIDES * SEGS * 2;
+  return seatCount * strands * STRAND_SIDES * STRAND_SEGS * 2;
 }
