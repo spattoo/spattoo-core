@@ -85,9 +85,27 @@ if (across) {
   ok(Math.abs(across.sweep) > 0.04, `and it SWEEPS round the wall (sweep ${across.sweep?.toFixed(3)})`);
   ok(Math.abs(across.climb) < Math.abs(down?.climb ?? 1), `travelling less up it than the first (climb ${across.climb?.toFixed(3)})`);
 }
-/* A drawn stroke takes the colour in front of the baker, not a default — the studio has the same
-   note, from the same report ("its not keeping the same thickness, its resetting"). */
+/* ⚠️ THE SELECTED CHIP, NOT THE LAST STROKE'S COLOUR. Sandeep: *"when i selected blue, strokes
+   coming in blue only."* Drawing used to copy the previous stroke, so the first took the palette's
+   FIRST colour and every one after it copied that — picking blue changed nothing. */
 ok(list.every(st => st.color), `each stroke carries a colour (${list.map(st => st.color).join(', ')})`);
+const palette = await page.evaluate(() => window.__design().tiers[0].brushBand.colors);
+ok(list.every(st => st.color === palette[0]), `drawn in the selected chip, which is the first (${palette[0]})`);
+
+console.log('\nselecting another colour and drawing again');
+/* ⚠️ THE CHIPS ARE `<div onClick>` WITH A TITLE, not buttons — they are among the 24 the root
+   CLAUDE.md counts. Hunting for "a small textless button" found the × badge that DROPS a colour
+   instead, which is a destructive click dressed as a selection. Their title is the contract. */
+ok(await page.evaluate(() => {
+  const chip = document.querySelector('[title="Colour 2"]');
+  if (!chip) return false; chip.click(); return true;
+}), 'the second palette chip can be selected');
+await page.waitForTimeout(900);
+await drag(0.53, 0.52, 0.53, 0.68);
+const after = await strokes();
+ok(after.length === 3, `a third stroke is laid (${after.length})`);
+ok(after[2]?.color === palette[1],
+   `and it takes the NEWLY selected colour (${after[2]?.color} vs ${palette[1]})`);
 await page.screenshot({ path: `${OUT}/brush-draw.png` });
 
 console.log('\nclearing');

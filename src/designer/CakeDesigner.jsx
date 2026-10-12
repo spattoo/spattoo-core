@@ -2896,16 +2896,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (d.id === null) {
       const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
       d.id = id;
-      /* ⚠️ A DRAWN STROKE INHERITS WHAT IS IN FRONT OF YOU. The card's palette is what the baker
-         just chose, so it is what the hand is about to lay down; building from defaults would
-         silently throw that away — the studio has the same note, from the same report. The last
-         stroke's settings first, then the band's first colour. */
+      /* ⚠️ THE CHIP THE BAKER HAS SELECTED, NOT THE LAST STROKE'S COLOUR. This took the previous
+         stroke's settings first, which meant the first drawn stroke took the palette's FIRST colour
+         and every one after it copied that — so picking blue in the card and drawing produced
+         another pink stroke, and there was no way to draw in blue at all. Sandeep: *"when i
+         selected blue, strokes coming in blue only."* The selected chip is what the baker is
+         looking at, and `bandSlot` is which one that is — the same value the wheel below the
+         palette edits, so the colour under your finger IS the colour that lands.
+         Thickness and width still come from the last stroke: those are not shown as a selection,
+         and resetting them each time is the "its not keeping the same thickness, its resetting"
+         complaint the studio already has written up. */
       const prev = (t.brushStrokes ?? []).at(-1);
       const band = { ...BRUSH_BAND_DEFAULTS, ...(t.brushBand ?? {}) };
+      const palette = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
       updateTierBrushStrokes(tierIndex, list => [...list, {
         id,
         surface: 'side',
-        color:  prev?.color  ?? band.colors?.[0] ?? '#F6DCE2',
+        color:  palette[Math.min(bandSlot, palette.length - 1)] ?? prev?.color ?? '#F6DCE2',
         width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
         weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
         seed:   1 + Math.floor(Math.random() * 9999),
@@ -13206,7 +13213,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {brushDraw?.tierIndex === i && (
           <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.45, marginTop: 6 }}>
             Drag down the side of the cake for an upright stroke, or across it for one that sweeps
-            round. Each drag lays one stroke.
+            round. Each drag lays one stroke in the colour selected above — tap a stroke to change
+            its colour, thickness, width or pattern.
             {(design.tiers[i]?.brushStrokes?.length ?? 0) > 0
               && ` ${design.tiers[i].brushStrokes.length} drawn.`}
           </div>
@@ -15697,6 +15705,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <DialCell label="Thickness" value={pickedBrushStroke.weight ?? 0.18}
               min={0} max={1} step={0.02} fmt={v => v.toFixed(2)}
               onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { weight: v })} />
+            {/* ⚠️ WIDTH IS NOT THICKNESS, and a baker drawing by hand needs both. Thickness is how
+                much cream the knife left — how proud the stroke stands off the wall. Width is how
+                broad the knife was. The band sets one width for all thirty of its strokes because
+                they are one gesture repeated; a stroke somebody DREW is its own gesture, and a wide
+                sweep beside a narrow one is most of what makes a hand-painted wall read as
+                hand-painted. */}
+            <DialCell label="Width" value={pickedBrushStroke.width ?? BRUSH_ON_CAKE_DEFAULTS.width}
+              min={0.08} max={0.9} step={0.02} fmt={v => v.toFixed(2)}
+              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v })} />
+          </div>
+          {/* ⚠️ THE PATTERN IS A SEED, NOT A DIAL. Sandeep asked for *"color and thickness, pattern
+              at stroke level"*. A stroke's pattern is where it tore, where the knife ran dry and
+              how its striations fell — `brushStriation` and `brushLoad` derive all of it from one
+              seed. Nobody wants seed 7 over seed 8; they want to see another one, which is why this
+              is the same Shuffle the band and the scraped edge already offer rather than a number.
+              Stored, or it is a preview toy: a design that cannot reproduce the stroke a baker
+              chose has not saved their work. */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+            <button type="button" style={{ ...s.neutralBtn, width: '100%', padding: '7px 0', fontSize: 11 }}
+              onClick={() => updateBrushStroke(pickedBrush.tier, pickedBrush.id,
+                { seed: 1 + Math.floor(Math.random() * 9999) })}>
+              &#8635; Another pattern
+            </button>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
             <button onClick={() => { if (pickedBrushBefore) updateBrushStroke(pickedBrush.tier, pickedBrush.id, pickedBrushBefore); }}
