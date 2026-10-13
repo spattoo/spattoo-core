@@ -1505,7 +1505,7 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
     W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
-    tipHalf: RAIL.tipHalf, gripHalf: RAIL.gripHalf, gripY: RAIL.gripY, neckHalf: RAIL.neckHalf,
+    noseHalf: RAIL.noseHalf, gripHalf: RAIL.gripHalf, gripY: RAIL.gripY, neckHalf: RAIL.neckHalf,
   });
   /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
      resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,

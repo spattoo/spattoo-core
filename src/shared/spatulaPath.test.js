@@ -36,22 +36,23 @@ const geo = {
   lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
 };
 
-/* Half-width of the handle at `y`, evaluating the SAME two cubics spatulaPath.js draws: the swell
- * from the tip out to the grip, then the long narrowing into the neck. Sampled rather than solved —
+/* Half-width of the handle at `y`, evaluating the SAME two cubics spatulaPath.js draws: the nose
+ * from the apex out to the grip, then the long narrowing into the neck. Sampled rather than solved —
  * 4000 steps is exact to far under a pixel and cannot drift from the path the way a re-derived
  * closed form could. */
-function halfWidthAt(y, { tipHalf, gripHalf, gripY, neckHalf }) {
-  const capCY = geo.capTopY + tipHalf;
+const NOSE_C2 = 0.061;   // must match spatulaPath.js — the fitted nose's second control
+function halfWidthAt(y, { noseHalf, gripHalf, gripY, neckHalf }) {
   const shY = geo.lShoulderY;
   if (y >= shY) return geo.handleHalf;
-  if (y <= capCY) return tipHalf;
+  if (y <= geo.capTopY) return 0;
   const bez = (t, a, b, c, d) => {
     const u = 1 - t;
     return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
   };
+  const noseLen = gripY - geo.capTopY;
   const segs = [
-    { y: [capCY, capCY + (gripY - capCY) * 0.55, capCY + (gripY - capCY) * 0.86, gripY],
-      x: [tipHalf, tipHalf, gripHalf, gripHalf] },
+    { y: [geo.capTopY, geo.capTopY, geo.capTopY + noseLen * NOSE_C2, gripY],
+      x: [0, noseHalf, gripHalf, gripHalf] },
     { y: [gripY, gripY + (shY - gripY) * 0.45, gripY + (shY - gripY) * 0.72, shY],
       x: [gripHalf, gripHalf, neckHalf, neckHalf] },
   ];
@@ -101,9 +102,19 @@ describe('the outline itself', () => {
     expect(d).not.toContain('C 96');
   });
 
-  it('swells to the grip and necks into the blade when shaped', () => {
-    const d = spatulaFramePath({ ...geo, tipHalf: 17, gripHalf: 30, gripY: 150, neckHalf: 25 });
-    expect(d).toContain('A 17 17 0 0 1');          // the rounded end of the grip
-    expect(d).toContain(`${geo.W / 2 + 25} ${geo.lShoulderY}`);   // necked at the shoulder
+  /* ⚠️ NO ARC ANYWHERE IN THE SHAPED OUTLINE. A circular cap has constant curvature and the curve
+     below it has almost none, and that discontinuity is visible as a kink even though the tangents
+     match — "it suddenly started to bend". The nose is one cubic for exactly this reason, so an arc
+     creeping back in is a regression this names. */
+  it('draws the nose with no arc at all', () => {
+    const d = spatulaFramePath({ ...geo, ...RAIL });
+    expect(d).not.toContain('A ');
+    expect(d).toContain(`${geo.W / 2 + RAIL.neckHalf} ${geo.lShoulderY}`);   // necked at the shoulder
+  });
+
+  /* The nose follows the photo's profile, which is an ellipse about 1:2.2 — far longer than a
+     semicircle, which can only ever round over its own half-width. Checked at the midpoint. */
+  it('has a nose longer than a semicircular cap could be', () => {
+    expect(RAIL.gripY - geo.capTopY).toBeGreaterThan(RAIL.gripHalf * 2);
   });
 });

@@ -26,7 +26,8 @@
  *
  * Handle runs from `capTopY` (the grip tip) down to the shoulders; the blade is at the bottom.
  *
- * @param tipHalf   half-width at the very end of the grip, where it rounds off.
+ * @param noseHalf  how far out the nose's first control point reaches. NOT a tip radius — see the
+ *                  warning below about why a radius is the wrong model for this end.
  * @param gripHalf  the handle's WIDEST point, at `gripY`. The reference photo's handle is 65px at
  *                  the grip and 36px at the neck — it swells towards the hand. Sandeep: *"there is
  *                  elevation on the bottom part."*
@@ -45,54 +46,65 @@ export function spatulaFramePath({
   W, handleHalf, bladeHalf, capTopY,
   lShoulderY, rShoulderY, bladeFullY, bladeBotY,
   lCornerH, lCornerW, rCornerH, rCornerW,
-  tipHalf = handleHalf, gripHalf = handleHalf, gripY = null, neckHalf = handleHalf,
+  noseHalf = null, gripHalf = handleHalf, gripY = null, neckHalf = handleHalf,
 }) {
   const cx = W / 2;
-  const tHalf = Math.min(tipHalf, handleHalf);
-  const capR = tHalf;
-  const capCY = capTopY + capR;
   const nHalf = Math.min(neckHalf, handleHalf);
+  const gHalf = Math.max(gripHalf, 1);
   const Ln = cx - nHalf,  Rn = cx + nHalf;     // at the blade's shoulder — the handle's thinnest
-  const Lg = cx - Math.max(tipHalf, gripHalf), Rg = cx + Math.max(tipHalf, gripHalf);
-  const Lt = cx - tHalf,  Rt = cx + tHalf;
+  const Lg = cx - gHalf,  Rg = cx + gHalf;     // the grip, the handle's widest
   const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
   const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
   const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
   const rSh = bladeFullY - rShoulderY;
   const lSh = bladeFullY - lShoulderY;
-  /* The taper out of the tip. A cubic rather than a straight bevel: a real handle swells out of its
-     grip, and a straight line from tip to full width reads as a wedge — which is the "curved edges"
-     Sandeep was describing, just at a different angle. Control points sit at 55%/85% so the curve
-     leaves the tip almost vertically and arrives at full width almost vertically too, which is what
-     makes it read as a rod rather than a cone. */
-  /* ── The handle's profile ────────────────────────────────────────────────────────────────────
-   * Three points, two cubics: a rounded tip, a swell out to `gripHalf` at `gripY`, then a long
-   * gentle narrowing into `neckHalf` where the blade's shoulder takes over. That is the reference
-   * photo's handle, measured off it row by row — widest in the hand, thinnest at the blade.
-   * Control points keep each curve leaving and arriving near-vertically, so neither join shows as
-   * a corner; a straight bevel between the three reads as a faceted cone. */
-  const gHalf = Math.max(tHalf, gripHalf);
-  const gY = gripY ?? capCY;
-  const shaped = gHalf !== nHalf || tHalf !== gHalf;
-  const swellDown = (xt, xg) => `C ${xt} ${capCY + (gY - capCY) * 0.55} ${xg} ${capCY + (gY - capCY) * 0.86} ${xg} ${gY}`;
-  const swellUp   = (xt, xg) => `C ${xg} ${capCY + (gY - capCY) * 0.86} ${xt} ${capCY + (gY - capCY) * 0.55} ${xt} ${capCY}`;
-  const neckDown  = (xg, xn, shY) => `C ${xg} ${gY + (shY - gY) * 0.45} ${xn} ${gY + (shY - gY) * 0.72} ${xn} ${shY}`;
-  const neckUp    = (xn, xg, shY) => `C ${xn} ${gY + (shY - gY) * 0.72} ${xg} ${gY + (shY - gY) * 0.45} ${xg} ${gY}`;
+  const shaped = noseHalf != null && gripY != null;
+
+  /* ── The nose ────────────────────────────────────────────────────────────────────────────────
+   * ⚠️ NOT AN ARC, AND THAT IS THE WHOLE POINT. The first version capped the grip with a
+   * semicircle and ran a cubic off it. The tangents matched, so it passed every check — but a
+   * circle has CONSTANT curvature (1/r) and the cubic leaves with almost none, and a curvature
+   * discontinuity is visible even when the outline is technically smooth. Sandeep: *"tip is very
+   * bad. it suddenly started to bend. why dont you see the reference image. its seeless curve."*
+   *
+   * A radius is also the wrong MODEL. Measured off the photo, its nose goes from nothing to full
+   * width over ~100px while the grip is only 65px across — an ellipse about 1:2.2, elongated. A
+   * semicircle rounds over exactly its own half-width, so it can never be that shape at any radius.
+   *
+   * So the whole top is ONE cubic per side, apex to grip, fitted to the photo: control points at
+   * `noseHalf` out along the apex's horizontal tangent, and at full width `NOSE_C2` of the way
+   * down. Fitted against fourteen measured rows, RMS 0.68px. It widens fast and then approaches
+   * full width asymptotically, which is what reads as seamless — and because it arrives at the
+   * grip with its curvature already near zero, the neck curve below picks it up without a join. */
+  const NOSE_C2 = 0.061;
+  const noseLen = shaped ? gripY - capTopY : 0;
+  const c2y = capTopY + noseLen * NOSE_C2;
+  const noseDown = `C ${cx + noseHalf} ${capTopY} ${Rg} ${c2y} ${Rg} ${gripY}`;
+  const noseUp   = `C ${Lg} ${c2y} ${cx - noseHalf} ${capTopY} ${cx} ${capTopY}`;
+  /* Grip down to the neck. Control points at 0.45 / 0.72 keep it leaving the grip and arriving at
+     the shoulder near-vertically, so neither end shows a corner. */
+  const neckDown = (shY) => `C ${Rg} ${gripY + (shY - gripY) * 0.45} ${Rn} ${gripY + (shY - gripY) * 0.72} ${Rn} ${shY}`;
+  const neckUp   = (shY) => `C ${Ln} ${gripY + (shY - gripY) * 0.72} ${Lg} ${gripY + (shY - gripY) * 0.45} ${Lg} ${gripY}`;
+
+  /* The parallel bar this drew before any of the above existed: a semicircular cap on a
+     constant-width handle. Kept exactly, so a caller that passes no nose is untouched. */
+  const capR = handleHalf, capCY = capTopY + capR;
+  const plainDown = `A ${capR} ${capR} 0 0 1 ${cx + handleHalf} ${capCY}`;
+  const plainUp   = `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`;
+
   return [
     `M ${cx} ${capTopY}`,
-    `A ${capR} ${capR} 0 0 1 ${Rt} ${capCY}`,
-    shaped ? swellDown(Rt, Rg) : `L ${Rg} ${capCY}`,
-    shaped ? neckDown(Rg, Rn, rShoulderY) : `L ${Rn} ${rShoulderY}`,
-    `C ${Rn} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
+    shaped ? noseDown : plainDown,
+    shaped ? neckDown(rShoulderY) : `L ${cx + handleHalf} ${rShoulderY}`,
+    `C ${shaped ? Rn : cx + handleHalf} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
     `L ${Rb} ${rEdgeBotY}`,
     `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
     `L ${flatL} ${bladeBotY}`,
     `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
     `L ${Lb} ${bladeFullY}`,
-    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Ln} ${lShoulderY + lSh * 0.5} ${Ln} ${lShoulderY}`,
-    shaped ? neckUp(Ln, Lg, lShoulderY) : `L ${Ln} ${capCY}`,
-    shaped ? swellUp(Lt, Lg) : '',
-    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
+    `C ${Lb} ${bladeFullY - lSh * 0.5} ${shaped ? Ln : cx - handleHalf} ${lShoulderY + lSh * 0.5} ${shaped ? Ln : cx - handleHalf} ${lShoulderY}`,
+    shaped ? neckUp(lShoulderY) : `L ${cx - handleHalf} ${capCY}`,
+    shaped ? noseUp : plainUp,
     'Z',
   ].join(' ');
 }

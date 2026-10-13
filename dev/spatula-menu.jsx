@@ -104,7 +104,7 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
    * has to be at least as wide as the label: "Decorations" needs 27.4 half-width at y=157 and
    * "Customers" 24.1 at y=478. That is why the neck cannot reach the photo's 26%-of-blade.
    * `src/shared/spatulaPath.test.js` holds every number and fails if a change breaks one. */
-  const [tipHalf,   setTipHalf]   = useState(RAIL.tipHalf);
+  const [noseHalf,  setNoseHalf]  = useState(RAIL.noseHalf);
   const [gripHalf,  setGripHalf]  = useState(RAIL.gripHalf);
   const [gripY,     setGripY]     = useState(RAIL.gripY);
   const [neckHalf,  setNeckHalf]  = useState(RAIL.neckHalf);
@@ -118,7 +118,7 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
     bladeFullY: 757,                     // full blade width reached here
     bladeBotY,
     lCornerH, lCornerW, rCornerH, rCornerW,
-    tipHalf, gripHalf, gripY, neckHalf,
+    noseHalf, gripHalf, gripY, neckHalf,
   };
   const cx = W / 2;
   const holeY = geo.capTopY + geo.handleHalf + 24; // hang hole, just below the cap
@@ -237,7 +237,7 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
       {/* ── Tweak panel ── */}
       <div style={s.panel}>
         <div style={s.panelTitle}>Blade</div>
-        <Slider label="Tip half-width"  value={tipHalf}  set={setTipHalf}  min={8}  max={30} />
+        <Slider label="Nose reach"      value={noseHalf} set={setNoseHalf} min={1}  max={24} />
         <Slider label="Grip half-width" value={gripHalf} set={setGripHalf} min={16} max={34} />
         <Slider label="Grip sits at Y"  value={gripY}    set={setGripY}    min={40} max={300} />
         <Slider label="Neck half-width" value={neckHalf} set={setNeckHalf} min={12} max={30} />

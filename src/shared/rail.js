@@ -32,9 +32,11 @@ export const RAIL = {
      the shape and `spatulaPath.test.js` for the label widths that cap the swell. Here rather than
      in the component because a test reading a literal out of a 20k-line file proves nothing about
      what renders. */
-  tipHalf:    15,   // the rounded end of the grip
+  noseHalf:    5,   // the nose's control reach — fitted to the photo, NOT a tip radius
   gripHalf:   30,   // widest point of the handle — in the hand, as the reference photo is
-  gripY:     120,   // where that widest point sits
+  gripY:     100,   // where the nose finishes blending into the grip — scaled off the photo by
+                    // HANDLE WIDTH, not rail height; 123 (scaled by height) measured 1.5-2px narrow
+                    // at every row of the nose, which is the elongated look that reads as pointed
   neckHalf:   24,   // thinnest, where the handle meets the blade
 };
 
