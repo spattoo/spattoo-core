@@ -6804,7 +6804,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * seeded noise; a design that re-rolled would come back a different cake every time it was opened,
    * which is the rule brushGesture already states for a single stroke. */
   function addBrushBandFromRow(el) {
-    const i = rainbowTierIndex();
+    /* ⚠️ THE TOP-MOST TIER WITHOUT ONE, NOT "THE TOP TIER". A band is stored per tier and the cake
+     * already shows one CARD per tier that carries one — the model has always allowed a band on
+     * every tier. What there was no door to was putting a second one on: this landed on
+     * `rainbowTierIndex()` unconditionally, so tapping the row again silently OVERWROTE the band
+     * already on the top tier. Sandeep: *"right now i want to add strokes to both the tiers and i
+     * am not able to do."*
+     *
+     * ⚠️ AND WHEN EVERY TIER HAS ONE IT OVERWRITES NOTHING. Re-tapping then opens the top band's
+     * card instead — a tap that destroys a tuned band is a worse answer than a tap that shows you
+     * the band you already have. */
+    const bare = design.tiers.map((t, k) => (t.brushBand ? -1 : k)).filter(k => k >= 0);
+    if (!bare.length) { selectExclusive({ type: 'brushBand', tierIndex: rainbowTierIndex() }); return; }
+    const i = bare[bare.length - 1];
     const tuned = el?.placement_config?.cream_brush ?? {};
     setTierBrushBand(i, {
       ...tuned,
@@ -6831,6 +6843,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        its own — placing one then showed you the tier's controls and nothing about the thing you had
        just put on the cake. */
     selectExclusive({ type: 'brushBand', tierIndex: i });
+  }
+
+  /* ── The same band, on another tier ────────────────────────────────────────────────────────────
+   * The card's answer to the same gap, and the better one: tapping the catalogue row again gives a
+   * FRESH band, while this carries the colours, height and stroke count already tuned — which is
+   * what a baker means by wanting strokes on both tiers.
+   *
+   * ⚠️ SAME WORD, SAME PLACE, SAME RULE AS GYPSOPHILA'S (INVARIANTS #14): the target is the next
+   * BARE tier, and the button is absent rather than inert when there is none. A baker meets one
+   * idea of "put this on another tier too" in this tool, not two that behave differently.
+   *
+   * ⚠️ A FRESH SEED, THOUGH. A band is thirty strokes of seeded noise, so copying the seed puts the
+   * strokes at the same angles on both tiers — on a stack that reads as a printed repeat rather
+   * than as a second pass of the same knife. The STYLE is duplicated; the hand is not.
+   *
+   * ⚠️ AND NOT THE HAND-DRAWN ONES. `brushStrokes` is a separate field holding strokes drawn at
+   * particular places on THAT tier's wall; copying them to a tier of a different radius would put
+   * cream where nobody painted it. */
+  function brushDupTier(from) {
+    const bare = design.tiers.map((t, k) => (t.brushBand ? -1 : k)).filter(k => k >= 0);
+    return bare.filter(k => k < from).pop() ?? bare[0] ?? null;
+  }
+
+  function duplicateBrushBand(from) {
+    const band = design.tiers[from]?.brushBand;
+    const to = brushDupTier(from);
+    if (!band || to == null) return;
+    setTierBrushBand(to, { ...band, seed: 1 + Math.floor(Math.random() * 9999) });
+    selectExclusive({ type: 'brushBand', tierIndex: to });
   }
 
   // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
@@ -8658,6 +8699,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * answers for everything else, and a card highlighting the right number proves only that a
      * button took a click. */
     window.__design = () => design;
+    /* ⚠️ WHAT IS SELECTED, and which tier's band a card belongs to. A band is reached by CLICKING
+       THE STROKES on a 3D wall, which a script cannot aim, and two bands on two tiers look
+       identical from the DOM — the strip is covered by whichever card is open, so counting names on
+       screen reports one cake-wearing-two as one. These answer from the design instead. */
+    window.__selectedEl = () => selectedEl;
+    window.__selectBrushBand = (tierIndex) => { selectExclusive({ type: 'brushBand', tierIndex }); return true; };
     /* ⚠️ WRITES THE GYPSOPHILA ON THE TIER THAT HAS IT, so a sweep can vary one number at a time
        and photograph the result. `size` and `lay` are the two that decide whether a wall posy reads
        as flowers or as sprinkles, and neither can be driven from the card at the range a sweep
@@ -13442,7 +13489,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </>
           )}
         </div>
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+        {brushDupTier(i) != null && (
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginTop: 10 }}>
+            Duplicate puts the same strokes on tier {brushDupTier(i) + 1}.
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {brushDupTier(i) != null && (
+            <button onClick={() => duplicateBrushBand(i)}
+              style={{ ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11 }}>
+              Duplicate
+            </button>
+          )}
           {/* ⚠️ THE HAND-DRAWN ONES GO TOO, and that is not tidiness. This card only exists while
               the tier has a BAND — `renderBrushBandBody` returns null without one — so removing the
               band takes away the only door to the strokes drawn beside it. Leaving them would be
@@ -13453,7 +13511,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             updateTierBrushStrokes(i, () => []);
             setBrushDraw(null);
             clearAllSelections();
-          }} style={{ ...s.deleteBtn, flex: 1 }}>
+          }} style={{ ...s.deleteBtn, flex: '1 1 100%' }}>
             Remove from cake
           </button>
         </div>
