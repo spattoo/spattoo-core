@@ -158,6 +158,37 @@ const after = await page2.evaluate(() => window.__design?.().tiers?.map(t => !!t
 ok(JSON.stringify(after) === '[false,true]', `the copy comes back off (${JSON.stringify(after)})`);
 await page2.screenshot({ path: `${process.env.HOME}/Downloads/gyp-duplicate-card.png` });
 
+/* ── On the side, with something already on the wall ───────────────────────────────────────────
+ * ⚠️ `?sidesticker` SEEDS A DECORATION ON THE WALL, which is the state the clearance rule is about
+ * and the one that cannot be reached by script: it needs a catalogue, the Decorations drawer and a
+ * tap on a 3D wall. The maths is proved in geometry/wallSeats.test.js; what this proves is that the
+ * placement reaches the cake and that the occupant is found at all — `surfaceOccupants` returns
+ * NOTHING against a wall (it filters on x/z, which a side sticker does not use for its place), and
+ * that silence reads exactly like "the cake is empty". */
+console.log('\non the side, past a decoration already on the wall');
+const page3 = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+page3.on('pageerror', e => { console.error('  PAGE ERROR:', e.message); fails.push(e.message); });
+await page3.goto('http://localhost:5190/designer-mobile.html?catalog=1&sidesticker=1', { waitUntil: 'domcontentloaded' });
+await page3.waitForTimeout(6000);
+await page3.evaluate(() => [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Skip')?.click());
+await page3.waitForTimeout(3000);
+await page3.evaluate(async () => { await window.__loadElements?.(); });
+await page3.waitForTimeout(2500);
+const onWall = await page3.evaluate(() => (window.__getStickers?.() ?? []).filter(x => x.zone === 'side'));
+ok(onWall.length === 1, `something is on the wall already (${onWall.length})`);
+await page3.evaluate(() => window.__tapElementById?.('e-gyp'));
+await page3.waitForTimeout(3000);
+const click3 = (t) => page3.evaluate((x) => { const n=[...document.querySelectorAll('button')].find(y=>y.textContent.trim()===x||y.textContent.trim().startsWith(x)); if(!n) return false; n.click(); return true; }, t);
+ok(await click3('On the side'), 'the card offers "On the side"');
+await page3.waitForTimeout(3000);
+const side = await page3.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp);
+ok(side?.where === 'side', `it stores where=side (${side?.where})`);
+ok(side?.lay === 90, `the sprigs lie against the wall (lay=${side?.lay})`);
+ok((side?.sideLo ?? 0) < (side?.sideHi ?? 0), `the band has a bottom and a top (${side?.sideLo}–${side?.sideHi})`);
+const t3 = await page3.evaluate(() => document.body.innerText);
+ok(/Band bottom/.test(t3) && /Band top/.test(t3), 'the card offers both band edges');
+await page3.screenshot({ path: `${process.env.HOME}/Downloads/gyp-on-side.png` });
+
 await b.close();
 console.log(fails.length ? `\n✗ ${fails.length} failed` : '\n✓ all good');
 process.exitCode = fails.length ? 1 : 0;

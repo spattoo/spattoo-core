@@ -1,6 +1,7 @@
 import { useRef, useMemo, useLayoutEffect } from 'react';
 import * as THREE from 'three';
 import { grassSeats } from '../geometry/grass.js';
+import { wallSeats } from '../geometry/wallSeats.js';
 import { mulberry32 } from '../utils/random.js';
 
 /* ── Seating an instanced field on a surface ─────────────────────────────────────────────────────
@@ -77,7 +78,11 @@ export function useSeatedInstances(seats, topY,
         tip.setFromAxisAngle(axis, s.lean);
         q.premultiply(tip);
       }
-      pos.set(s.x, topY, s.z);
+      /* ⚠️ A SEAT MAY SAY HOW HIGH IT SITS. Every seat on a flat surface shares one height, which
+         is why this was a constant; a seat on a WALL differs in height as well as in where it is
+         round the cake, and `wallSeats` returns that as `dy` above the tier's base. The flat path
+         sets no `dy` and lands exactly where it did. */
+      pos.set(s.x, topY + (s.dy ?? 0), s.z);
       scl.setScalar(s.scale);
       mesh.setMatrixAt(i, m.compose(pos, q, scl));
       if (shaded) {
@@ -130,8 +135,18 @@ export function useSurfaceSeats({
   shape, spacing, jitter, inset = 0.98, seed = 7,
   bandInner = null, hole = null, overhang = 0, patches = null, patchRadius = null,
   collars = null, avoid = null,
+  /* ⚠️ `{ height, lo, hi, from, to, bury }` SEATS THE FIELD ON THE TIER'S WALL INSTEAD. It is a
+     branch inside this hook rather than a hook of its own because a component cannot choose which
+     hooks to call — and because this hook's whole job is already the question "where do the pieces
+     go", which a wall is one more answer to. `wallSeats` does its own clearing, in three
+     dimensions: on a wall every seat in a vertical column shares one (x, z), so the flat filter
+     below would take a stripe out of the band for every rose on the side. */
+  wall = null,
 }) {
   return useMemo(() => {
+    if (wall) {
+      return wallSeats(shape, { spacing, jitter, seed: seed + 1, avoid, ...wall });
+    }
     const R = patchRadius ?? shape.radius ?? 1;
     const toWorld = (p, fallbackR) => ({
       x: p.v * R * Math.sin(p.u * Math.PI * 2),
@@ -157,7 +172,7 @@ export function useSurfaceSeats({
       ? withoutCollarCentres(cleared, avoid.map(o => ({ x: o.x, z: o.z, inner: o.r * AVOID_MARGIN })))
       : cleared;
   }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius,
-      collars, avoid]);
+      collars, avoid, wall]);
 }
 
 /* ── A ring of pieces around something already on the cake ───────────────────────────────────────

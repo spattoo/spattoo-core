@@ -13965,7 +13965,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ marginTop: 8 }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
                         textTransform: 'uppercase', marginBottom: 6 }}>Where</div>
-          <div style={{ display: 'flex', gap: 6 }}>
+          {/* ⚠️ THE ROW WRAPS NOW THERE ARE FOUR. Three pills fill a 390px card exactly; a fourth
+              in the same rigid row squeezed every label to two lines. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {pill('On the rim', !!g && where === 'rim',
               () => setTierGyp(i, { ...(g ?? design.boardGyp ?? {}), ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
                                     where: 'rim', spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
@@ -13989,6 +13991,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                     where: 'free', spacing: 0.07, jitter: 0.8, lay: 20, bury: 0.08,
                                     height: 0.26, droop: 0.4,
                                     patches: g?.patches?.length ? g.patches : [newGypPatch()] }))}
+            {/* ⚠️ ON THE WALL — stems pushed in sideways, blooms fanning out, which is what `lay: 90`
+                means: tipped all the way over onto the wall's own outward normal. Burying is INWARD
+                here rather than downward, so a bare stem is inside the cake exactly as it is on a
+                real one. And it is the placement that answers the rest of requirement 4: a band
+                round the side arranges BETWEEN whatever is already on the wall and never grows
+                through it (`wallOccupants` + a three-dimensional clearance — on a wall a flat test
+                would take a stripe out of the band from the board to the rim for every rose). */}
+            {pill('On the side', !!g && where === 'side',
+              () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
+                                    where: 'side', spacing: 0.075, jitter: 0.7, lay: 90, layVary: 0.3,
+                                    height: 0.20, droop: 0.5, bury: 0.04,
+                                    sideLo: 0.18, sideHi: 0.68, patches: null }))}
             {pill('On the board', !!bg,
               () => (bg ? setBoardGyp(null)
                         : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18,
@@ -14025,6 +14039,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               fmt={v => v.toFixed(2)} onChange={v => updateGyp(i, { rimOut: v })} />
             <DialCell label="In from the edge" value={g.rimIn ?? 0.14} min={0.03} max={0.6} step={0.01}
               fmt={v => v.toFixed(2)} onChange={v => updateGyp(i, { rimIn: v })} />
+          </ScrollFadeRow>
+        )}
+
+        {/* ⚠️ FRACTIONS OF THE TIER, SHOWN AS A PERCENTAGE OF ITS HEIGHT. Never world units: the
+            same band must mean the same thing about a short tier and a tall one (INVARIANTS #8),
+            and "40%" is a sentence a baker can read off a cake while "0.58" is not. The two edges
+            are the two things a hand actually chooses about a band on a wall. */}
+        {g && where === 'side' && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Band bottom" value={g.sideLo ?? 0.18} min={0} max={0.9} step={0.02}
+              fmt={v => `${Math.round(v * 100)}%`}
+              onChange={v => updateGyp(i, { sideLo: Math.min(v, (g.sideHi ?? 0.68) - 0.02) })} />
+            <DialCell label="Band top" value={g.sideHi ?? 0.68} min={0.1} max={1} step={0.02}
+              fmt={v => `${Math.round(v * 100)}%`}
+              onChange={v => updateGyp(i, { sideHi: Math.max(v, (g.sideLo ?? 0.18) + 0.02) })} />
           </ScrollFadeRow>
         )}
 

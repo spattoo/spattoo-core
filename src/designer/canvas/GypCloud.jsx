@@ -37,6 +37,12 @@ export default function GypCloud({
   shadeVary = 0.35,
   spacing = 0.13, jitter = 0.7,
   bandInner = null, hole = null, inset = 0.98, overhang = 0, patches = null, patchRadius = null,
+  /* ⚠️ `{ height, lo, hi, from, to, bury }` SEATS IT ON THE TIER'S WALL instead of a flat surface,
+     and then `topY` is the tier's BASE rather than its top — each seat carries its own height above
+     it. A wall is where a real florist puts the other half of the baby's breath, and it is the one
+     surface `grassSeats` cannot describe: its seats differ in height, and a piece points out of the
+     wall rather than up out of the cake. See geometry/wallSeats.js. */
+  wall = null,
   /* [{ u, v, r, inner }] — a ring of sprigs around something already placed, like a rose. `r` is
      how far the halo reaches, `inner` the footprint it must keep clear. See useSurfaceSeats. */
   collars = null,
@@ -66,10 +72,13 @@ export default function GypCloud({
   );
 
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang,
-                                  patches, patchRadius, collars, avoid });
+                                  patches, patchRadius, collars, avoid, wall });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
-  const ref = useSeatedInstances(seats, topY - bury,
+  /* On a wall, burying is INWARD and `wallSeats` has already done it, by moving each seat along the
+     wall's own normal. Subtracting it from `topY` as well would sink the whole band toward the
+     board — the same gesture pointed at the wrong surface. */
+  const ref = useSeatedInstances(seats, topY - (wall ? 0 : bury),
     { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo, shadeVary });
   /* Everything below the surface is hidden by the cake itself, so this costs nothing to draw. */
 

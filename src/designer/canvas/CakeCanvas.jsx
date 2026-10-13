@@ -40,6 +40,7 @@ import {
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
+import { wallOccupants } from '../geometry/wallSeats.js';
 import { outwardBand, rimBand } from './useSeatedInstances.js';
 import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
@@ -3579,6 +3580,40 @@ function CakeContent({ config, scene, edit = null }) {
               and it is not per-element"). */}
           {tier.gyp && (() => {
             const shp = tierShape(tier);
+            /* ── On the WALL ──────────────────────────────────────────────────────────────────
+             * The other half of what a florist does with baby's breath, and the one surface
+             * `grassSeats` cannot describe: its seats differ in HEIGHT as well as in where they
+             * are round the cake, and a sprig points out of the wall rather than up out of the
+             * cake. `wallSeats` walks `perimeter(shape)` — the same interface piping and writing
+             * use, so a sheet, a heart and a letter get a band that follows their own outline.
+             *
+             * ⚠️ `wallOccupants`, NOT `surfaceOccupants`. A side decoration is not stored in
+             * (x, z) at all — a round wall keeps `theta`, a faceted one keeps `u`, and both keep a
+             * world `y` — so the flat version filters on `x != null` and returns NOTHING against a
+             * wall. That reads exactly like "the cake is empty", and the filler would have grown
+             * straight through every rose on the side: the half of Sandeep's requirement 4 that
+             * needed real work. *"if there are flowers on the side, and user opts to draw and draws
+             * in between flowers, it should be arranged between flowers, not penetrate."*
+             *
+             * ⚠️ `topY` IS THE TIER'S BASE HERE, not its top: each seat carries its own height
+             * above it. */
+            if (tier.gyp.where === 'side') {
+              return (
+                <GypCloud
+                  {...tier.gyp}
+                  shape={shp}
+                  topY={tier.baseY}
+                  wall={{ height: tier.height,
+                          lo: tier.gyp.sideLo ?? 0.18, hi: tier.gyp.sideHi ?? 0.68,
+                          from: tier.gyp.sideFrom ?? null, to: tier.gyp.sideTo ?? null,
+                          bury: tier.gyp.bury ?? 0.04 }}
+                  avoid={wallOccupants(stickers, {
+                    tierIndex: i, shape: shp, baseY: tier.baseY,
+                    radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                  })}
+                />
+              );
+            }
             const band = tier.gyp.where === 'rim'
               ? rimBand(shp, { inn: tier.gyp.rimIn ?? 0.14, out: tier.gyp.rimOut ?? 0.10 })
               : null;
