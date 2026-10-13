@@ -45,6 +45,9 @@ function maxDepthFrac(placementConfig) {
 // Bake a shell geometry from a GLB scene: optional flip (180° X + re-anchor to the base)
 // and normalise size to ~24% of the tier radius. Returns the geometry plus the scale and
 // bounding extents the ring uses for radius/spacing. Shared by version A and the alternate.
+/* ⚠️ `tiltDeg` IS DELIBERATELY NOT READ ANY MORE — SEE THE SEAT NOTE BELOW. The parameter stays so
+   every caller keeps compiling, and so the next person to reach for it finds the reason here rather
+   than re-deriving it. */
 export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 0], placementConfig = null) {
   const result = extractGeo(scene);
   if (!result) return null;
@@ -65,9 +68,32 @@ export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 
      1.901 radially rather than its 0.903 standing depth, so a cap fed the upright figure permits
      an overhang of more than twice what it is there to allow. Rotating the box costs one matrix
      and is exact; for an untilted shell it IS `bbSize.z`, so no existing row moves. */
-  const rotM = new THREE.Matrix4()
-    .makeRotationFromEuler(new THREE.Euler(tiltDeg[0] * DEG, 0, tiltDeg[2] * DEG));
-  const rbox = geo.boundingBox.clone().applyMatrix4(rotM);
+  /* ── The seat is measured UPRIGHT, and that is a compatibility rule, not an approximation ──────
+   *
+   * ⚠️ MEASURING THE TILTED BOX IS CORRECT IN ISOLATION AND WRONG FOR THIS PRODUCT. On 2026-10-08
+   * the seat moved from "the shell's origin sits on the rim" to "its post-tilt lowest point sits on
+   * the rim" (`fa243aed`), and the radial seat moved from the upright half-depth to the tilted reach
+   * (`2c773cbf`). Each fixed a real report. Together they moved EVERY row that authors a rotation:
+   * measured on the catalogue's Classic Shell Border at `top_rotation: [-68, -1, 175]`, the ring
+   * rose 0.285 (19.6% of the tier radius) and was pulled 21% further inward. Untilted rows did not
+   * move at all, which is why it read as "some elements broke".
+   *
+   * ⚠️ AND THE CALIBRATOR NEVER MOVED WITH IT. `PipingCalibrator.jsx` calls this function with FOUR
+   * arguments — no tilt — while rendering the shell tilted, so admin kept seating uprightly. Every
+   * row in the catalogue was authored against that. Sandeep: *"the calibrated values not working. a
+   * set of values that are looking good on calibrator are not landing the same way on designer"* —
+   * and, on the earlier board report, *"when i calibrated it in piping calibrator in admin, it
+   * looked fine with the radial distance -0.11."* It did.
+   *
+   * So the seat is upright on BOTH surfaces. A rotation changes how a piece FACES, never where its
+   * ring sits — which is also what an admin dragging a rotation slider expects to see. An element
+   * that needs lifting or insetting says so with `top_y_offset` / `top_radial_offset`, which is the
+   * per-row control that already exists and is the right tool for one element. A global seating rule
+   * is not: it silently re-places every cake already saved.
+   *
+   * Identity, not the authored rotation, so this is exactly what the calibrator computes. */
+  const rotM = new THREE.Matrix4();
+  const rbox = geo.boundingBox.clone();
   const sc   = capShellScale(sc1, sizeFactor, rbox.max.z - rbox.min.z, radius, placementConfig);
   // True rendered vertical reach: transform the shell's bounding box by the same scale and
   // tilt (meshRot X/Z — the renderer's yaw about Y and swag don't change Y extent) the Shell

@@ -548,21 +548,16 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
      non-zero X or Z move, and for those the current render is the bug. */
   const tilt = [(baseRotation?.[0] ?? 0) * DEG, 0, (baseRotation?.[2] ?? 0) * DEG];
 
-  /* ⚠️ THE SEAT IS MEASURED AFTER THE TILT, or a tilted ring FLOATS. `minY` is the model's lowest
-     point measured upright, and the base is seated by subtracting it — correct while the only
-     freedom was yaw, which cannot change a height. A tilt can: lay a rosette face-up with -90° about
-     X and its lowest point moves from the bottom of a 1.9-tall model to the bottom of a 0.4-deep
-     one, so subtracting the upright figure lifts it by the difference. Measured on the real model:
-     (0.952 - 0.202) x shellScale of clear air between the rosettes and the rim.
-     The cream shell path already solved this — `buildShellGeo` applies the same tilt to the bounding
-     box to get `worldTopY`/`worldBotY`, "what makes 'top edge touches the rim' exact for tilted
-     shells". This is that, for the path that keeps the GLB's own materials.
-     Untilted elements keep the measured `minY` exactly, so nothing already on a cake moves. */
-  const seatMinY = useMemo(() => {
-    if (!scene || (!tilt[0] && !tilt[2])) return minY;
-    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(tilt[0], 0, tilt[2], 'XYZ'));
-    return new THREE.Box3().setFromObject(scene).applyMatrix4(m).min.y;
-  }, [scene, minY, tilt[0], tilt[2]]);
+  /* ⚠️ THE SEAT IS MEASURED UPRIGHT, THE SAME AS THE CREAM PATH AND THE CALIBRATOR.
+     This used to re-measure the bounding box AFTER the authored tilt, so a tilted ring was lifted
+     by its post-tilt reach. That is correct in isolation and wrong for this product: admin's
+     `PipingCalibrator.jsx` seats uprightly (it calls `buildShellGeo` with no tilt while rendering
+     the shell tilted), every row in the catalogue was authored against that, and the two surfaces
+     stopped agreeing. Sandeep: *"a set of values that are looking good on calibrator are not landing
+     the same way on designer."* `shellGeo.js` carries the full note; this path must not disagree
+     with it, which is the fault the tilt-aware version was itself introduced to fix — in the other
+     direction. An element that needs lifting uses `top_y_offset`. */
+  const seatMinY = minY;
   // A decoration keeps its own GLB scene, so there is no CreamMesh to hang PIPING_HANDLE_DATA on —
   // tag the clone's meshes directly, so CakeCanvas' capture-phase raycast suspends orbit for these
   // too. Cleared again when the ring stops being draggable (mode change / capability untick).

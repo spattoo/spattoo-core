@@ -30,12 +30,22 @@ describe('shell geometry survives leaving the renderer', () => {
     expect(Number.isFinite(out.worldTopY)).toBe(true);
   });
 
-  it('applies the authored TILT, which is the line that needed DEG', () => {
+  /* ⚠️ THE SEAT IGNORES THE TILT ON PURPOSE, AND THIS TEST IS THE CONTRACT WITH ADMIN.
+     `PipingCalibrator.jsx` calls buildShellGeo with FOUR arguments — no tilt — while rendering the
+     shell tilted. Every row in the catalogue was authored against that. When this function started
+     measuring the tilted box (2026-10-08), the designer began seating those rows somewhere admin
+     could not reproduce: Sandeep, *"a set of values that are looking good on calibrator are not
+     landing the same way on designer"*. A rotation changes how a piece FACES, never where its ring
+     sits. If this ever fails, the two surfaces have drifted again. */
+  it('seats a shell the same however it is rotated — admin measures it upright', () => {
     const flat = buildShellGeo(fakeScene(), false, 1.2, 1, [0, 0, 0]);
-    const tilted = buildShellGeo(fakeScene(), false, 1.2, 1, [40, 0, 0]);
-    // A tilted shell reaches differently in Z than an upright one; if DEG were missing this throws,
-    // and if the tilt were ignored these would be equal.
-    expect(tilted.worldMaxZ).not.toBeCloseTo(flat.worldMaxZ, 6);
+    for (const tilt of [[40, 0, 0], [-90, 0, 0], [-68, -1, 175], [0, 0, 175]]) {
+      const t = buildShellGeo(fakeScene(), false, 1.2, 1, tilt);
+      expect(t.worldMaxZ).toBeCloseTo(flat.worldMaxZ, 10);
+      expect(t.worldMinZ).toBeCloseTo(flat.worldMinZ, 10);
+      expect(t.worldBotY).toBeCloseTo(flat.worldBotY, 10);
+      expect(t.shellScale).toBeCloseTo(flat.shellScale, 10);
+    }
   });
 
   it('caps the scale against the tier radius — the cap admin had lost', () => {
@@ -111,13 +121,14 @@ describe('an authored size range is live end to end', () => {
     expect(capShellScale(sc1, 5, depth, r, null)).toBeCloseTo(before, 10);
   });
 
-  it('the cap measures the TILTED depth — third site of the untilted-measurement bug', () => {
+  /* The cap measures the UPRIGHT depth, for the same compatibility reason as the seat: a size that
+     looked right in the calibrator must render at that size on the cake, and the calibrator has
+     never fed the cap a tilted box. */
+  it('the cap measures the upright depth, as the calibrator does', () => {
     const r = 0.35;
-    // Laid face-up, the disc reaches its full 1.901 radially, not its 0.903 standing depth. A cap
-    // fed the upright figure permits a shell that overhangs by more than twice what it allows.
     const upright = buildShellGeo(rosetteScene(), false, r, 5, [0, 0, 0]);
     const laidFlat = buildShellGeo(rosetteScene(), false, r, 5, [-90, 0, 0]);
-    expect(laidFlat.shellScale).toBeLessThan(upright.shellScale);
+    expect(laidFlat.shellScale).toBeCloseTo(upright.shellScale, 10);
   });
 });
 
@@ -144,12 +155,15 @@ describe('a ring seats on the shell it actually renders', () => {
     expect(A.worldMaxZ).toBeCloseTo((A.worldMaxZ - A.worldMinZ) / 2, 10);
   });
 
-  it('tilted, it is NOT — which is why -half seats the ring too far in', () => {
+  /* ⚠️ AND IT STAYS HALF THE DEPTH WHEN TILTED, which is what keeps a rotated row where its author
+     put it. Measuring the tilted reach pulled the catalogue's rotated rings inward — on the Classic
+     Shell Border at [-68, -1, 175], by 21% of the tier radius. An element that wants to sit further
+     in says so with `top_radial_offset`. */
+  it('tilted, it is STILL half the depth — a rotation is not a radial decision', () => {
+    const flat = buildShellGeo(disc(), false, 0.35, 1, [0, 0, 0]);
     const A = buildShellGeo(disc(), false, 0.35, 1, [-90, 0, 0]);
-    const half = (A.worldMaxZ - A.worldMinZ) / 2;
-    expect(A.worldMaxZ).not.toBeCloseTo(half, 4);
-    // The gap between the two is exactly how far inside the rim the ring lands today.
-    expect(half - A.worldMaxZ).toBeGreaterThan(0.01);
+    expect(A.worldMaxZ).toBeCloseTo((A.worldMaxZ - A.worldMinZ) / 2, 10);
+    expect(A.worldMaxZ).toBeCloseTo(flat.worldMaxZ, 10);
   });
 });
 
@@ -182,11 +196,15 @@ describe('ringBaseY lifts a tilted shell clear of the surface', () => {
     expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10);   // nothing already placed moves
   });
 
-  it('a tilted shell reaches BELOW its origin, and the seat lifts it by exactly that', () => {
+  /* ⚠️ A TILTED SHELL IS SEATED THE SAME AS AN UPRIGHT ONE — its origin on the surface. Lifting it
+     by the tilted box's reach raised every rotated row in the catalogue off the cake (the Classic
+     Shell Border rose 19.6% of the tier radius) and admin could not reproduce it. An element that
+     genuinely needs lifting says so with `top_y_offset`, which is per-row and does not move anyone
+     else's cake. */
+  it('a tilted shell seats exactly where an upright one does', () => {
     const A = buildShellGeo(disc(), false, 0.35, 1, [-90, 0, 0]);
-    expect(A.worldBotY).toBeLessThan(0);                       // half the disc is under the origin
-    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23 - A.worldBotY, 10);
-    expect(ringBaseY(1.23, A)).toBeGreaterThan(1.23);          // lifted, not sunk
+    expect(A.worldBotY).toBeCloseTo(0, 10);
+    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10);
   });
 
   it('survives a missing shell — the rings call it before a GLB has loaded', () => {
