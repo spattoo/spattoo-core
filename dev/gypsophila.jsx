@@ -46,6 +46,17 @@ const ROSES = [
   { u: 0.74, v: 0.66, size: 0.22, halo: 0.44 },
 ];
 
+/* ── A posy: roses bunched, not spaced ───────────────────────────────────────────────────────────
+ * The arrangement every reference actually shows — several roses crowded together with the filler
+ * woven THROUGH them, not a ring round each. Sizes vary because a bunch of identical blooms reads
+ * as a pattern, and they are close enough that their collars overlap and merge, which is what makes
+ * one arrangement out of six flowers. */
+const POSY = [
+  { u: 0.00, v: 0.26, size: 0.30 }, { u: 0.16, v: 0.52, size: 0.23 },
+  { u: 0.34, v: 0.28, size: 0.27 }, { u: 0.51, v: 0.55, size: 0.21 },
+  { u: 0.68, v: 0.30, size: 0.26 }, { u: 0.85, v: 0.50, size: 0.22 },
+];
+
 const BOARD = { round: { kind: 'round', radius: TIER.radius * 1.34 },
                 sheet: { kind: 'rect', halfW: 2.15, halfD: 1.55, cornerR: 0.25 } };
 
@@ -90,6 +101,20 @@ const LAYOUTS = {
   /* ⚠️ A COLLAR IS A PATCH WITH A BITE OUT OF IT. Every florist-style reference puts gypsophila
      AROUND the roses — hugging each one and radiating outward, so the rose reads as placed rather
      than stuck on. A plain patch would grow flowers through the rose. */
+  /* ⚠️ THE FILLER STANDS UP IN A POSY. Laid over (`lay` 45–78) is right for a band hugging an edge,
+     where the sprigs rest on something; in a bunch they are pushed in BETWEEN the roses and hold
+     each other up, and some reach above the blooms — which is most of what makes a crowd of flowers
+     read as arranged rather than as a ring with roses dropped on it. */
+  /* ⚠️ AND IT IS BURIED DEEP AND CUT LONG. A posy's filler is pushed down BETWEEN the roses, so
+     what shows is the bloom mass at their shoulder height and none of the stem — seated shallow it
+     stood as a palisade of green sticks under the bunch, which is the "tree plantation" read all
+     over again. Long enough to reach past the blooms it sits among, buried far enough that its
+     stems never appear. */
+  'rose posy':      { roses: POSY,
+                      clouds: [{ spacing: 0.05, jitter: 0.9, lay: 14, layVary: 0.8,
+                                 height: 0.46, droop: 0.4, bury: 0.20,
+                                 collars: POSY.map(r => ({ ...r, r: r.size * 2.3,
+                                                           inner: r.size * 0.82 })) }] },
   'around roses':   { roses: ROSES,
                       clouds: [{ spacing: 0.055, jitter: 0.85, lay: 55, height: 0.19, droop: 0.5,
                                  collars: ROSES.map(r => ({ ...r, r: r.halo, inner: r.size * 0.92 })) }] },
