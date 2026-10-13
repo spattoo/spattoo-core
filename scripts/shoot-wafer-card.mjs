@@ -105,7 +105,12 @@ await page.waitForTimeout(2500);
 await page.screenshot({ path: `${OUT}/wafer-card-panel.png` });
 
 const text = await page.evaluate(() => document.body.innerText);
-ok(/Pink, notched hem/.test(text), 'and unfolds the looks from core');
+/* ⚠️ THIS USED TO LOOK FOR "Pink, notched hem" as proof the looks came from core, and that preset is
+   now withheld from customers — so the check went red on a card that is working correctly. The
+   claim it was making is better made by the names that ARE offered: all three, in core's order, is
+   something only `waferPresetsOffered()` produces. */
+ok(/White, waved/.test(text) && /White, rippled/.test(text) && /White, on edge/.test(text),
+   'and unfolds the looks from core');
 
 /* ⚠️ THE CAKE MUST STILL BE VISIBLE WHILE THESE SLIDERS ARE LIVE (INVARIANTS #11). This was a
    `Panel` first: on a phone that is a full-height sheet with the cake behind a blur, eleven live
@@ -120,6 +125,16 @@ const canvasSeen = await page.evaluate(() => {
 ok(canvasSeen > 180, `the cake is still on screen beside the controls (${Math.round(canvasSeen)}px)`);
 
 console.log('\napplying a look');
+/* ⚠️ TWO PRESETS ARE WITHHELD FROM A CUSTOMER, and the card is where that has to be true — the
+   admin studio still lists all five, because that is the screen that would fix them. */
+{
+  const chips = await page.evaluate(() =>
+    [...document.querySelectorAll('button')].map(n => n.textContent.trim()));
+  ok(!chips.includes('Pink, notched hem'), 'the card does not offer "Pink, notched hem"');
+  ok(!chips.includes('White, broad'), 'the card does not offer "White, broad"');
+  ok(chips.includes('White, waved') && chips.includes('White, rippled'),
+     'and still offers the two that were kept');
+}
 ok(await click('White, rippled'), 'tapped "White, rippled"');
 await page.waitForTimeout(2500);
 const stored = await page.evaluate(() => window.__design?.().tiers?.[0]?.wafer ?? null);

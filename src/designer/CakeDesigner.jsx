@@ -208,7 +208,7 @@ import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
 import { ControlCell } from './shared/ControlCell.jsx';   // the captioned cell a control row is built from
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
-import { WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS, waferPresetFor } from './geometry/waferPaper.js';
+import { WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS, waferPresetFor, waferPresetsOffered } from './geometry/waferPaper.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
 import OrderModal from '../orders/OrderModal';
@@ -17001,7 +17001,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             A tap applies the whole look INCLUDING its colour: the four are coral or
                             white-on-white, and half-applying one gives a cake no reference shows. */}
                         <ScrollFadeRow style={{ gap: 7, marginTop: 2 }}>
-                          {Object.entries(WAFER_PRESETS).map(([name, preset]) => (
+                          {/* ⚠️ `waferPresetsOffered()`, NOT THE WHOLE TABLE. Two of the five are
+                              hidden from a customer while they are not good enough — see
+                              WAFER_HIDDEN, which carries what is wrong with each. They are still in
+                              the table and still in the admin studio, because that is the screen
+                              that would fix them; this is the screen that sells them. */}
+                          {waferPresetsOffered().map(([name, preset]) => (
                             <Chip key={name} label={name} isMobile={isMobile}
                                   active={Object.entries(preset).every(([k, v]) => w[k] === v)}
                                   onClick={() => setTierWafer(selectedEl.index, preset)} />

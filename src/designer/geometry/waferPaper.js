@@ -234,7 +234,15 @@ export const WAFER_PRESETS = Object.freeze({
   'White, waved':      { count: 34, width: 2.3, height: 0.95, rise: 0.04, taper: 0.18, ripple: 0.30,
     ripples: 6.0, sway: 0.10, curl: 0.22, splay: 0.08, lean: 0.05, jitter: 0.45,
     hem: 'straight', notch: 0.10, colour: '#fbf7f2', fin: false },
-  'White, rippled':    { count: 44, width: 2.0, height: 0.92, rise: 0.02, taper: 0.22, ripple: 0.26,
+  /* ⚠️ `height: 1.00` — IT HAS TO REACH THE BOARD, and at 0.92 it did not. Reported straight off a
+   * render: *"'white rippled' also does not look good. it does not go till the height of the
+   * cake."* The hem is LEVEL (see the loop below: jitter goes on the rise, so the tops are ragged
+   * and the bottoms line up), so nothing varies the reach — `height` alone decides it, and 0.92
+   * left 8% of the wall bare all the way round. The same loop's own note says what the look is:
+   * "the sheets are long enough to reach the board and they REST on it."
+   * Its neighbours still differ on purpose — "White, waved" sits at 0.95 because Sandeep judged it
+   * good as it is, and a preset he has approved is not re-tuned on the way past. */
+  'White, rippled':    { count: 44, width: 2.0, height: 1.00, rise: 0.02, taper: 0.22, ripple: 0.26,
     ripples: 8.0, sway: 0.12, curl: 0.18, splay: 0.08, lean: 0.03, jitter: 0.50,
     hem: 'torn', notch: 0.12, colour: '#fdfbf7', fin: false },
   /* ⚠️ THE ONLY PRESET MEASURED RATHER THAN EYED, and the only one that stands the sheets on edge.
@@ -255,6 +263,32 @@ export const WAFER_PRESETS = Object.freeze({
     ripples: 3.0, sway: 0.06, curl: 0.30, splay: 0.06, lean: 0.02, jitter: 0.35,
     hem: 'straight', notch: 0.10, colour: '#ffffff', fin: false },
 });
+
+/* ── The ones a customer is not offered yet ──────────────────────────────────────────────────────
+ *
+ * ⚠️ HIDDEN, NOT DELETED, AND THAT IS THE WHOLE POINT OF THE SET. Sandeep: *"'pink notched hem' is
+ * looking worse. pls remove it… hide 'white broad', its not looking good either… we need to enable
+ * them some time in future."* The numbers are a record of four reference cakes and throwing them
+ * away would mean measuring them again; what is wrong is that they are OFFERED, not that they
+ * exist.
+ *
+ * ⚠️ AND THEY STAY IN THE STUDIO. Admin is where a look gets fixed, so hiding them from the tuner
+ * as well would hide them from the only screen that could bring them back — the set is read by the
+ * baker's tier card alone. `WaferPaperStudio` goes on listing all five.
+ *
+ * What is wrong with each, so whoever picks this up is not starting from nothing:
+ *   · Pink, notched hem — `height: 0.80` leaves a fifth of the wall bare under the hem, so it reads
+ *     as a band stuck round the top rather than a skirt. Its own notch is fine.
+ *   · White, broad — 20 panels at `width: 2.4` and `curl: 0.30` give sheets wide enough to show
+ *     daylight between them, and the curl turns the gaps into flapping corners.
+ */
+export const WAFER_HIDDEN = Object.freeze(new Set(['Pink, notched hem', 'White, broad']));
+
+/* The presets a baker may choose from — the table above minus the set. One function, so the card
+   and anything else that offers them cannot disagree about which five are four. */
+export function waferPresetsOffered() {
+  return Object.entries(WAFER_PRESETS).filter(([name]) => !WAFER_HIDDEN.has(name));
+}
 
 /* Which preset a skirt should ARRIVE in, given the cake it is going onto.
  *
