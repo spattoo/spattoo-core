@@ -157,6 +157,8 @@ function Solo({ p }) {
   );
 }
 
+const CAM = new URLSearchParams(location.search).get('cam') || 'side';
+
 function Harness() {
   const [layout, setLayout] = useState('one sprig');
   const [shapeKey, setShapeKey] = useState('round');
@@ -264,8 +266,14 @@ function Harness() {
             tier left the camera where the sprig had been, two units from a cake that starts three
             units away, and the canvas rendered an empty frame. Remounting is the honest fix in a
             harness; a product screen would move the camera instead. */}
-        <Canvas key={L.solo ? 'solo' : 'tier'} shadows
-          camera={{ position: L.solo ? [0, 0.9, 2.2] : [0, 2.2, 5.0], fov: 40 }}
+        {/* ⚠️ `?cam=top` LOOKS STRAIGHT DOWN, and that view is not a nicety — an arrangement is
+            judged from above as much as from the side, and the two faults this feature has had
+            (a ring flooding the board, filler running through a rose) were both invisible at eye
+            level. Keyed with the view, because R3F reads `camera` once, at mount. */}
+        <Canvas key={`${L.solo ? 'solo' : 'tier'}:${CAM}`} shadows
+          camera={{ position: L.solo ? [0, 0.9, 2.2]
+                            : CAM === 'top' ? [0, 6.0, 0.9]
+                            : CAM === 'high' ? [0, 3.6, 3.0] : [0, 2.2, 5.0], fov: 40 }}
           gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
           <color attach="background" args={['#efe7e2']} />
           <SceneLights shadows />
