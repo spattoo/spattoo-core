@@ -20,6 +20,7 @@ import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
 import { buildShellGeo, capShellScale, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
+import { seatHalfDepth } from '../geometry/seating.js';
 import CakeCoat from './CakeCoat.jsx';
 import CakeWafer from './CakeWafer.jsx';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
@@ -845,7 +846,7 @@ function TopPipingRingImpl({
          pixels are not. This read the UNTILTED `bbDepth` while the seat below had already moved to
          the tilted reach — one component disagreeing with itself, which is how the radial clamp
          came to be measured against a box the renderer no longer draws. */
-      const halfRaw = A.worldMaxZ;   // the render's positioning reach (see `off`, below)
+      const halfRaw = seatHalfDepth(A.bbDepth * A.shellScale);   // the positioning figure (see `off`)
       // `outerFrac` = how far the shell's OUTER face stands proud of the wall (radius fraction),
       // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
       // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
@@ -905,7 +906,26 @@ function TopPipingRingImpl({
        *"why is it not on the rim? why inside"*.
        `worldMaxZ` IS `half` for an untilted shell (asserted in shellGeo.test.js), so this is the
        same number everywhere it was already right. */
-    const reach = A.worldMaxZ;                     // outward reach past the origin
+    /* ⚠️ THE UPRIGHT HALF-DEPTH, BECAUSE THAT IS WHAT THE ROW WAS CALIBRATED AGAINST.
+       `PipingCalibrator.jsx` seats on `(A.bbDepth / 2) * A.shellScale` while rendering the shell
+       tilted, so every authored `*_radial_offset` in the catalogue is relative to this figure.
+
+       ⚠️ IT MOVED TWICE IN ONE DAY AND NOBODY SAW IT, because an untilted shell is unaffected.
+       Measured on Classic Shell Border (`top_rotation [-68, -1, 175]`, r 2.2), ring width over
+       cake width: before `2c773cbf` 0.997 — flush with the rim; `2c773cbf` (half the TILTED depth)
+       0.904; `dedfee88` (`worldMaxZ`, the reach past the ORIGIN) 0.772 — a ring sitting in the
+       middle of the lid. A rotation makes a shell asymmetric about its own origin, so its outward
+       reach is nothing like half its box, and seating on it walks the ring inward by the
+       difference. Sandeep: *"why is this piping floating?"* — it was never floating, it was inset,
+       seen past the rim. Present in production too (0.1.689), which is why bisecting dev against
+       prod found nothing: both sides of that window already had it.
+
+       ⚠️ `worldMaxZ`/`worldMinZ` ARE STILL RIGHT FOR THE CLAMPS — the editor's radial limits and
+       the nesting maths need the reach the pixels actually have, which is `dedfee88`'s point and it
+       stands. What they are not is where the ring SITS. Two questions, two numbers. The VERTICAL
+       seat stays tilted (`ringBaseY`/`worldBotY`, `fa243aed`): a shell rotated past upright hangs
+       below its own origin, and seating that on the rim buries it in the wall. */
+    const reach = seatHalfDepth(A.bbDepth * A.shellScale);
     /* ⚠️ THE CEILING RISES WITH THE AUTHORED OFFSET; IT DOES NOT BAN POSITIVE USER INPUT. My first
      * cut clamped the customer's dial to ≤ 0, which would have moved SAVED DESIGNS: when an element
      * authors a NEGATIVE offset, `rimRadialTravel` computes a positive maximum for the dial — the
@@ -1053,9 +1073,9 @@ function BottomPipingRingImpl({
   // Hoisted for the drag — see the matching note on the top ring.
   const off = useMemo(() => {
     if (!A) return 0;
-    // The piece's own INWARD reach — the mirror of the rim seat above, and identical to half the
-    // depth whenever the shell is symmetric about its origin. Puts the inner face on the wall.
-    const reach = -A.worldMinZ;
+    // The upright half-depth — the mirror of the rim seat above and for the same reason (see the
+    // note there). Puts the inner face on the wall, where the calibrator puts it.
+    const reach = seatHalfDepth(A.bbDepth * A.shellScale);
     let   o     = reach + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
     if (shape?.strokeW) o = Math.min(o, GLYPH_PIPE_INSET_FRAC * shape.strokeW);

@@ -233,6 +233,48 @@ describe('a decoration ring honours all three rotation axes', () => {
  * one, so subtracting the upright figure lifted it by the difference. On the real model that was
  * (0.952 - 0.202) x shellScale of clear air, which is what Sandeep photographed.
  */
+/* ── A ring SITS on the upright half-depth, whatever its rotation ────────────────────────────────
+ *
+ * ⚠️ THIS MOVED TWICE IN ONE DAY AND NO TEST NOTICED, because an untilted shell is unaffected by
+ * either change. Measured on Classic Shell Border (`top_rotation [-68, -1, 175]`, r 2.2), ring
+ * width over cake width:
+ *
+ *     before `2c773cbf`                               0.997   flush with the rim
+ *     `2c773cbf`  half the TILTED depth               0.904
+ *     `dedfee88`  `worldMaxZ`, the reach past the
+ *                 shell's own ORIGIN                  0.772   a ring in the middle of the lid
+ *
+ * A rotation makes a shell asymmetric about its own origin, so its outward reach is nothing like
+ * half its box. Sandeep: *"why is this piping floating?"* — it was inset, not floating, seen past
+ * the rim. Production had it too, so bisecting dev against prod found nothing.
+ *
+ * The figure must be the UPRIGHT half-depth because that is what `PipingCalibrator.jsx` seats on
+ * (`(A.bbDepth / 2) * A.shellScale`) while rendering the shell tilted — so every authored
+ * `*_radial_offset` in the catalogue is relative to it.
+ */
+describe('a ring is seated radially on the upright half-depth', () => {
+  const T = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
+
+  it('both rings seat on seatHalfDepth(bbDepth x shellScale)', () => {
+    expect((T.match(/const reach = seatHalfDepth\(A\.bbDepth \* A\.shellScale\);/g) ?? []).length).toBe(2);
+  });
+
+  /* ⚠️ NOT `worldMaxZ` / `worldMinZ`. Those stay right for the editor's radial CLAMPS and the
+     nesting maths — the reach the pixels actually have — but they are not where a ring sits. */
+  it('does not position a ring on its reach past the origin', () => {
+    expect(T).not.toMatch(/const reach = A\.worldMaxZ/);
+    expect(T).not.toMatch(/const reach = -A\.worldMinZ/);
+    expect(T).not.toMatch(/const halfRaw = A\.worldMaxZ/);
+  });
+
+  /* The VERTICAL seat is a different question and stays tilted: a shell rotated past upright hangs
+     below its own origin, and seating that on the rim buries it in the wall (`fa243aed`). */
+  it('still seats vertically on the tilted reach', () => {
+    expect(T).toMatch(/ringBaseY\(topY \+ yOffset, A\)/);
+    expect(T).toMatch(/ringBaseY\(yBase \+ yOffset, A\)/);
+  });
+});
+
 describe('a tilted decoration ring is seated after the tilt', () => {
   const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
   const start = TIER.indexOf('function DecorationShells(');
