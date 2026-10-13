@@ -13918,14 +13918,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   const newGypPatch = (existing = [], v = 0.55) => nextPatchSpot(existing, { v, r: GYP_PATCH_R });
 
+  /* ⚠️ A WALL CLUMP'S `v` IS HEIGHT UP THE TIER, a top clump's is distance out from the middle —
+     same field, two surfaces, and `nextPatchSpot` only knows about the second. So the wall picks
+     its own row to land on: 0.42 is where a posy usually sits, and the spot search still keeps a
+     new one clear of the ones already there. */
+  const GYP_WALL_V = 0.42;
+
   function addGypPatch() {
     const t = gypTier;
     if (!design.tiers[t]?.gyp) return;
+    const onWall = design.tiers[t].gyp.where === 'side';
     // From the LIVE list inside the updater, not from `design` as this component last rendered it —
     // two quick presses otherwise read the same list and the second clump lands on the first.
     updateGyp(t, cur => {
       const list = cur.patches ?? [];
-      return { patches: [...list, newGypPatch(list)] };
+      return { patches: [...list, newGypPatch(list, onWall ? GYP_WALL_V : 0.55)] };
     });
     setGypSelected({ tier: t, idx: (design.tiers[t].gyp.patches?.length ?? 0) });
   }
@@ -14000,9 +14007,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 would take a stripe out of the band from the board to the rim for every rose). */}
             {pill('On the side', !!g && where === 'side',
               () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
-                                    where: 'side', spacing: 0.075, jitter: 0.7, lay: 90, layVary: 0.3,
+                                    where: 'side', spacing: 0.05, jitter: 0.7, lay: 90, layVary: 0.3,
                                     height: 0.20, droop: 0.5, bury: 0.04,
-                                    sideLo: 0.18, sideHi: 0.68, patches: null }))}
+                                    sideLo: 0.18, sideHi: 0.68,
+                                    /* ⚠️ ONE CLUMP, NOT A BAND ROUND THE CAKE. Sandeep: *"flowers
+                                       on side is mostly hand drawn. usually people wont cover the
+                                       entire side with these flowers. on sides, its usually along
+                                       with other flowers."* A full sash was the first version and
+                                       it is the wrong default — this is a thing a baker places
+                                       beside the roses, two or three of, not a stripe. `v: 0.42`
+                                       sits it below the middle, where a wall posy usually goes. */
+                                    patches: g?.where === 'side' && g?.patches?.length
+                                      ? g.patches : [{ u: 0, v: 0.42, r: 0.3 }] }))}
             {pill('On the board', !!bg,
               () => (bg ? setBoardGyp(null)
                         : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18,
@@ -14046,7 +14062,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             same band must mean the same thing about a short tier and a tall one (INVARIANTS #8),
             and "40%" is a sentence a baker can read off a cake while "0.58" is not. The two edges
             are the two things a hand actually chooses about a band on a wall. */}
-        {g && where === 'side' && (
+        {/* ⚠️ ONLY WHEN EVERY CLUMP HAS BEEN TAKEN OFF. With clumps placed these two do nothing —
+            a clump carries its own height — and a control that is visible but inert is the thing
+            rule 7 is about. Take them all off and the side becomes a sash the whole way round,
+            which a few cakes do wear, and then the band's edges are what there is to set. */}
+        {g && where === 'side' && !g.patches?.length && (
           <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             <DialCell label="Band bottom" value={g.sideLo ?? 0.18} min={0} max={0.9} step={0.02}
               fmt={v => `${Math.round(v * 100)}%`}
@@ -14069,13 +14089,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             "tap the cell to select it" — one idea of "a clump" in this tool, not two (INVARIANTS
             #14). Each one is also dragged on the cake itself by the white dot; the dot is only
             there while this card is open, so a finished arrangement is not covered in handles. */}
-        {g && where === 'free' && (
+        {g && (where === 'free' || where === 'side') && (
           <div style={{ marginTop: 10 }}>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
                           textTransform: 'uppercase', marginBottom: 6 }}>Clumps</div>
             <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginBottom: 6 }}>
-              Drag the white dot on the cake to move one. It fills the gaps between whatever is
-              already standing there and never grows through it.
+              Drag the white dot on the cake {where === 'side' ? 'wall' : ''} to move one. It fills
+              the gaps between whatever is already standing there and never grows through it.
             </div>
             {clumpCells(g.patches ?? [], i,
               (k, v) => setGypPatchSize(i, k, v),

@@ -3261,7 +3261,13 @@ function CakeScene({
           treatment that dresses a surface" for exactly that reason. Only a clump is a thing you
           can pick up, so `getPoints` returns null unless there are clumps. */}
       {(gypMode || tierData.some(t => t.gyp?.patches?.length)) && <FinishHandles tierData={tierData}
-        getPoints={t => (t.gyp?.patches?.length ? t.gyp.patches.map(p => ({ ...p, surface: 'top_surface' })) : null)}
+        /* ⚠️ THE SURFACE COMES FROM THE PLACEMENT. A clump on the top is dragged against the lid,
+           one on the side against the wall — `FinishHandles` reads both, and `surface` is what
+           picks the catcher AND where the dot is drawn. Hardcoding 'top_surface' here would float
+           every side clump's handle above the cake, a long way from the flowers it holds. */
+        getPoints={t => (t.gyp?.patches?.length
+          ? t.gyp.patches.map(p => ({ ...p, surface: t.gyp.where === 'side' ? 'side' : 'top_surface' }))
+          : null)}
         board={board} boardPoints={null}
         selected={gypMode ? gypSelected : null} onMove={onGypMove} onSelect={onGypSelect}
         catchers={gypMode}
@@ -3604,6 +3610,11 @@ function CakeContent({ config, scene, edit = null }) {
                   shape={shp}
                   topY={tier.baseY}
                   wall={{ height: tier.height,
+                          /* ⚠️ CLUMPS ARE THE NORMAL CASE HERE, not a band. *"flowers on side is
+                             mostly hand drawn. usually people wont cover the entire side with these
+                             flowers. on sides, its usually along with other flowers."* The band is
+                             what is left when every clump is taken off. */
+                          patches: tier.gyp.patches ?? null,
                           lo: tier.gyp.sideLo ?? 0.18, hi: tier.gyp.sideHi ?? 0.68,
                           from: tier.gyp.sideFrom ?? null, to: tier.gyp.sideTo ?? null,
                           bury: tier.gyp.bury ?? 0.04 }}

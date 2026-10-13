@@ -37,9 +37,14 @@ const AVOID_MARGIN = 1.15;
  * shape    the tier's outline descriptor (`tierShape(tier)`)
  * height   the tier's height in world units — the band is a fraction of it
  * lo, hi   the band, as fractions of the tier height from its base
- * from, to the arc it covers, as fractions of the perimeter. Equal (or both null) = all the way
- *          round. `to < from` wraps past the back of the cake, which is what a baker drawing
- *          across the front means.
+ * patches  `[{ u, v, r }]` — clumps PLACED on the wall, and the normal case. `u` is the fraction
+ *          round the perimeter, `v` the fraction up the tier, `r` a radius in world units measured
+ *          in the UNROLLED wall, so a clump is round on the cake rather than an ellipse. Sandeep:
+ *          *"flowers on side is mostly hand drawn. usually people wont cover the entire side with
+ *          these flowers. on sides, its usually along with other flowers."* With none given the
+ *          band below fills the whole way round, which is the sash a few cakes do wear.
+ * from, to the arc the band covers, as fractions of the perimeter. Equal (or both null) = all the
+ *          way round. `to < from` wraps past the back of the cake.
  * bury     how far the cut end is pushed INTO the wall, in world units. On a top surface burying is
  *          downward; on a wall it is inward along the normal, which is the same gesture — a hand
  *          pushing a stem into buttercream — expressed in the surface's own direction.
@@ -52,41 +57,78 @@ const AVOID_MARGIN = 1.15;
 export function wallSeats(shape, {
   spacing = 0.07, jitter = 0.7, seed = 7,
   height = 1.45, lo = 0.18, hi = 0.68,
-  from = null, to = null,
+  from = null, to = null, patches = null,
   bury = 0, avoid = null,
 } = {}) {
   if (!shape || height <= 0 || spacing <= 0) return [];
   const per = perimeter(shape);
   const len = per.length;
   if (!(len > 0)) return [];
+  const round = isRoundWall(shape);
 
-  const loY = Math.min(lo, hi) * height;
-  const hiY = Math.max(lo, hi) * height;
+  /* ⚠️ CLUMPS GET THE WHOLE WALL TO SIT ON. The band's two edges are the band's own control; a
+     clump carries its own height in `v`, so clipping it to the band as well would move a clump the
+     baker had already placed the moment either edge was touched. */
+  const loY = patches?.length ? 0 : Math.min(lo, hi) * height;
+  const hiY = patches?.length ? height : Math.max(lo, hi) * height;
   /* A band of zero height is still one row of flowers, not none: a baker who drags both edges
      together has asked for a line round the cake, which is a real thing to ask for. */
   const tall = Math.max(hiY - loY, spacing);
 
   /* The arc, in arc-length. Both null is the whole way round; `to` behind `from` wraps past the
      back, so `at()` is always given a wrapped distance below rather than a negative one. */
+  /* ⚠️ `u` HERE IS THE APP'S `u`, NOT `circlePerimeter`'s ARC LENGTH, and the two disagree by a
+     quarter turn on a round cake. `FinishHandles` places a side handle at
+     (R·sin(u·2π), …, R·cos(u·2π)) — u measured from the cake's FRONT — and so does every side
+     sticker, which stores `theta` the same way. `circlePerimeter.at(s)` instead starts at +X
+     (x = r·cos(s/r)). On a rounded rectangle there is no disagreement: it starts at front-centre
+     and `rectSidePlacement` already reads `u · length`.
+     Left unconverted, a clump's drag handle sits a quarter turn away from its own flowers — the
+     handle would be on the front of the cake and the flowers on its right. So the walk is done in
+     u and converted once, here. */
+  const sOf = round
+    ? (u) => (((0.25 - u) % 1) + 1) % 1 * len
+    : (u) => (((u % 1) + 1) % 1) * len;
+
   const whole = from == null || to == null || from === to;
-  const sFrom = whole ? 0 : from * len;
-  const span  = whole ? len : (((to - from) % 1) + 1) % 1 * len || len;
+  const uFrom = whole ? 0 : from;
+  const uSpan = whole ? 1 : ((((to - from) % 1) + 1) % 1) || 1;
+  const span  = uSpan * len;
 
   const cols = Math.max(1, Math.round(span / spacing));
   const rows = Math.max(1, Math.round(tall / spacing));
-  const dCol = span / cols, dRow = tall / rows;
+  const dRow = tall / rows;
 
   /* ⚠️ SEEDED HERE AND NOWHERE ELSE. A PRNG is a stream, so a generator handed in from outside
      continues where the last run stopped and re-seats every piece on every re-run — the fault that
      made the board ring shake on every frame. */
   const rand = mulberry32((seed + 7919) >>> 0);
 
+  /* ⚠️ A CLUMP IS A DISC IN THE UNROLLED WALL, which is what makes it round on the cake. Measured
+     in (arc-length, height) — both world units — a single radius means the same distance along the
+     cake as up it. Testing in (u, v) instead would stretch every clump into an ellipse whose shape
+     changed with the tier's size, so "radius 0.3" would mean something different on every cake. */
+  const discs = (patches ?? []).map(q => ({
+    u: (((q.u ?? 0) % 1) + 1) % 1,
+    y: (q.v ?? 0.5) * height,
+    r: q.r ?? 0.3,
+  }));
+  const inAClump = (u, y) => discs.some((d) => {
+    /* Round the seam: a clump at u=0.98 must still catch a seat at u=0.01. */
+    let du = Math.abs(u - d.u);
+    if (du > 0.5) du = 1 - du;
+    const ds = du * len, dy = y - d.y;
+    return ds * ds + dy * dy < d.r * d.r;
+  });
+
   const seats = [];
   for (let c = 0; c < cols; c++) {
     for (let r = 0; r < rows; r++) {
-      const s = sFrom + (c + 0.5 + jitter * (rand() - 0.5)) * dCol;
+      const u = uFrom + (c + 0.5 + jitter * (rand() - 0.5)) * (uSpan / cols);
       const y = Math.min(hiY, Math.max(loY, loY + (r + 0.5 + jitter * (rand() - 0.5)) * dRow));
-      const p = per.at(((s % len) + len) % len);
+      const uw = (((u % 1) + 1) % 1);
+      if (discs.length && !inAClump(uw, y)) continue;
+      const p = per.at(sOf(uw));
       seats.push({
         // Pushed INWARD by `bury`: the bare lower stem is inside the cake, as it is on a real one.
         x: p.x - p.nx * bury,

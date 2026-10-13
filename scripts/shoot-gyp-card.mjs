@@ -185,8 +185,24 @@ const side = await page3.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?
 ok(side?.where === 'side', `it stores where=side (${side?.where})`);
 ok(side?.lay === 90, `the sprigs lie against the wall (lay=${side?.lay})`);
 ok((side?.sideLo ?? 0) < (side?.sideHi ?? 0), `the band has a bottom and a top (${side?.sideLo}–${side?.sideHi})`);
+/* ⚠️ ONE CLUMP, NOT A SASH ROUND THE CAKE. *"flowers on side is mostly hand drawn. usually people
+   wont cover the entire side with these flowers. on sides, its usually along with other flowers."*
+   A full band was the first version and it is the wrong default. */
+ok(side?.patches?.length === 1, `it starts as one clump on the wall (${side?.patches?.length})`);
 const t3 = await page3.evaluate(() => document.body.innerText);
-ok(/Band bottom/.test(t3) && /Band top/.test(t3), 'the card offers both band edges');
+ok(/CLUMPS/i.test(t3), 'the card offers the clump row on the side');
+ok(!/Band bottom/.test(t3), 'and hides the band edges, which a placed clump ignores');
+ok(await click3('+ Add clump'), 'a second wall clump can be added');
+await page3.waitForTimeout(2000);
+const sideP = await page3.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.patches ?? []);
+ok(sideP.length === 2, `a second clump arrives (${sideP.length})`);
+ok(sideP.every(q => q.v > 0.1 && q.v < 0.9), `both sit on the wall, not at its edges (${sideP.map(q => q.v).join(', ')})`);
+/* ⚠️ THE HANDLE AND THE FLOWERS MUST AGREE. `u` is measured from the cake's FRONT here and from +X
+   in `circlePerimeter` — a quarter turn apart on a round cake, which reads as "dragging that clump
+   does nothing". Pinned by a unit test too; this one proves the dots exist on the wall at all. */
+const wallHandles = await page3.evaluate(() => window.__gypTapTargets?.() ?? null);
+ok(Array.isArray(wallHandles) && wallHandles.length === 2,
+   `both clumps carry a drag handle (${wallHandles?.length})`);
 await page3.screenshot({ path: `${process.env.HOME}/Downloads/gyp-on-side.png` });
 
 await b.close();

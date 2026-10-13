@@ -76,6 +76,92 @@ describe('wallSeats', () => {
   });
 });
 
+/* ⚠️ THE NORMAL CASE ON A WALL, and the band is the exception. *"flowers on side is mostly hand
+   drawn. usually people wont cover the entire side with these flowers. on sides, its usually along
+   with other flowers."* */
+/* ⚠️ `u` IS THE APP'S `u`, measured from the cake's FRONT: x = R·sin(u·2π), z = R·cos(u·2π), which
+   is how `FinishHandles` places a side handle and how every side sticker stores its `theta`.
+   `circlePerimeter.at(s)` starts at +X instead, a quarter turn away — so `wallSeats` converts, and
+   these tests assert the app's convention. Getting it the other way round puts a clump's drag
+   handle on the front of the cake and its flowers on the right, which looks exactly like the filter
+   not working at all. */
+describe('wallSeats clumps', () => {
+  it('seats only inside the clumps it was given', () => {
+    const per = 2 * Math.PI * 1.2;
+    const seats = wallSeats(ROUND, { height: 1.45, spacing: 0.04,
+                                     patches: [{ u: 0.25, v: 0.5, r: 0.3 }] });
+    expect(seats.length).toBeGreaterThan(0);
+    for (const s of seats) {
+      // u = 0.25 is a quarter way round from the seam; measure in the unrolled wall.
+      let ds = Math.abs(((Math.atan2(s.x, s.z) * 1.2) % per + per) % per - 0.25 * per);
+      if (ds > per / 2) ds = per - ds;
+      expect(Math.hypot(ds, s.dy - 0.5 * 1.45)).toBeLessThan(0.3);
+    }
+  });
+
+  it('puts far fewer flowers on the cake than a band does', () => {
+    const band = wallSeats(ROUND, { height: 1.45, spacing: 0.06 });
+    const clump = wallSeats(ROUND, { height: 1.45, spacing: 0.06,
+                                     patches: [{ u: 0.5, v: 0.5, r: 0.3 }] });
+    expect(clump.length).toBeLessThan(band.length / 4);
+    expect(clump.length).toBeGreaterThan(0);
+  });
+
+  it('is ROUND on the cake, not an ellipse', () => {
+    const seats = wallSeats(ROUND, { height: 1.45, spacing: 0.03,
+                                     patches: [{ u: 0, v: 0.5, r: 0.35 }] });
+    const across = Math.max(...seats.map(s => Math.abs(Math.atan2(s.x, s.z) * 1.2)));
+    const up = Math.max(...seats.map(s => Math.abs(s.dy - 0.5 * 1.45)));
+    // Both reach about the same distance — a clump measured in (u, v) would not.
+    expect(Math.abs(across - up)).toBeLessThan(0.1);
+  });
+
+  /* A clump at u=0.98 must still catch a seat at u=0.01 — the seam is not a wall. */
+  it('wraps across the seam', () => {
+    const seats = wallSeats(ROUND, { height: 1.45, spacing: 0.03,
+                                     patches: [{ u: 0, v: 0.5, r: 0.3 }] });
+    expect(seats.some(s => Math.atan2(s.x, s.z) > 0)).toBe(true);
+    expect(seats.some(s => Math.atan2(s.x, s.z) < 0)).toBe(true);
+  });
+
+  /* ⚠️ A CLUMP CARRIES ITS OWN HEIGHT, so touching the band's edges must not move one a baker has
+     already placed. The band's slice applies only when there are no clumps. */
+  it('ignores the band when clumps are placed', () => {
+    const low = wallSeats(ROUND, { height: 1.45, spacing: 0.04, lo: 0, hi: 0.2,
+                                   patches: [{ u: 0, v: 0.8, r: 0.25 }] });
+    expect(low.length).toBeGreaterThan(0);
+    for (const s of low) expect(s.dy).toBeGreaterThan(0.2 * 1.45);
+  });
+
+  /* ⚠️ THE TEST THAT PINS THE TWO CONVENTIONS TOGETHER. `FinishHandles` draws a side handle at
+     (R·sin(u·2π), cy + v·h, R·cos(u·2π)). If `wallSeats` ever reads `u` differently, the dot a
+     baker grabs and the flowers it is supposed to be holding drift apart — silently, and by a
+     quarter turn on a round cake, which reads as "dragging does nothing to that clump". */
+  it('seats the flowers where FinishHandles draws the handle', () => {
+    for (const u of [0, 0.125, 0.4, 0.75]) {
+      const seats = wallSeats(ROUND, { height: 1.45, spacing: 0.03,
+                                       patches: [{ u, v: 0.5, r: 0.3 }] });
+      expect(seats.length).toBeGreaterThan(0);
+      const hx = 1.2 * Math.sin(u * Math.PI * 2);
+      const hz = 1.2 * Math.cos(u * Math.PI * 2);
+      const hy = 0.5 * 1.45;
+      for (const s of seats) {
+        expect(Math.hypot(s.x - hx, s.z - hz, s.dy - hy)).toBeLessThan(0.32);
+      }
+    }
+  });
+
+  it('still clears what is already on the wall', () => {
+    const bare = wallSeats(ROUND, { height: 1.45, spacing: 0.03, seed: 4,
+                                    patches: [{ u: 0, v: 0.5, r: 0.35 }] });
+    const past = wallSeats(ROUND, { height: 1.45, spacing: 0.03, seed: 4,
+                                    patches: [{ u: 0, v: 0.5, r: 0.35 }],
+                                    avoid: [{ x: 0, z: 1.2, dy: 0.5 * 1.45, r: 0.15 }] });
+    expect(past.length).toBeLessThan(bare.length);
+    expect(past.length).toBeGreaterThan(0);
+  });
+});
+
 describe('withoutWallOccupants', () => {
   /* ⚠️ THE TEST THAT IS THE WHOLE REASON THIS FILE EXISTS. A flat (x, z) clearance would take out
      every seat in the column above and below a rose, because on a wall they all share one (x, z) —
