@@ -291,7 +291,10 @@ const design = {
            const t = (i / 39) * Math.PI * 1.4 + 0.3;
            return [Math.cos(t) * 1.45, 1.16, Math.sin(t) * 1.45];
          }),
-         nozzle: 'round', thickness: 0.09, softness: 0.7, medium: 'cream',
+         /* Softness takes `?soft=` like the cream band does, so the wet…matte knob can be swept on a
+            CURVED surface. The band cannot answer it: one normal, one shading, so every gloss knob
+            measures as dead on it (0.1→1.0 moved its highlight spread 56→47). A rope has curvature. */
+         nozzle: 'round', thickness: 0.09, softness: Number(_q.get('soft') ?? 0.7), medium: 'cream',
          color: _q.get('ropecolor') || '#F6DCE2' }]
     : [],
   /* ⚠️ `?blocks=1` / `?grass=1` PUT THE REMAINING UNCORRECTED SURFACES ON THE REAL CAKE, so each can

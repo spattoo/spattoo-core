@@ -147,11 +147,24 @@ if (r.all && r.side && r.top) {
 }
 
 /* And it comes off again — the reason Remove exists at all. */
-await page.evaluate(() => {
-  [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Remove')?.click();
-});
+/* ⚠️ "Remove from cake", AT THE END OF THE CARD. Sandeep: *"it should be the last one in any
+   element card popup."* The coat used to carry its own "Remove" up among the scope chips, where it
+   read as a fourth way to cover the cake; the card's own one now takes the coat off too. */
+/* ⚠️ A REAL MOUSE CLICK, because that button fires on onPointerDown — a JS .click() dispatches a
+   click event only, so the handler never runs and the run reports "Remove does not work" about a
+   button that does. */
+{
+  const r = await page.evaluate(() => {
+    const n = [...document.querySelectorAll('button')].find(x => /Remove from cake/i.test(x.textContent));
+    if (!n) return null;
+    const b = n.getBoundingClientRect();
+    return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  });
+  ok(!!r, 'the card ends with "Remove from cake"');
+  if (r) await page.mouse.click(r.x, r.y);
+}
 await page.waitForTimeout(2000);
-ok(await page.evaluate(() => !window.__design?.().tiers?.[0]?.coat), 'Remove takes the coat off again');
+ok(await page.evaluate(() => !window.__design?.().tiers?.[0]?.coat), '"Remove from cake" takes the coat off');
 await page.screenshot({ path: `${OUT}/coat-scope-removed.png` });
 
 console.log(fails.length ? `\n✗ ${fails.length} failed` : '\n✓ all good');
