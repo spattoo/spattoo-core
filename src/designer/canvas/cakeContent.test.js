@@ -233,25 +233,22 @@ describe('a decoration ring honours all three rotation axes', () => {
  * one, so subtracting the upright figure lifted it by the difference. On the real model that was
  * (0.952 - 0.202) x shellScale of clear air, which is what Sandeep photographed.
  */
-describe('a decoration ring is seated upright, whatever its tilt', () => {
+describe('a tilted decoration ring is seated after the tilt', () => {
   const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
   const start = TIER.indexOf('function DecorationShells(');
   const body = TIER.slice(start, TIER.indexOf('\n}\n', start));
 
-  /* ⚠️ THE SEAT MUST NOT READ THE TILT, and this is a contract with ADMIN rather than a geometry
-     preference. `PipingCalibrator.jsx` seats uprightly — it calls `buildShellGeo` with no tilt
-     while rendering the shell tilted — and every row in the catalogue was authored against that.
-     When this path re-measured the bounding box after the rotation, a rotated row sat somewhere
-     admin could not reproduce: Sandeep, *"a set of values that are looking good on calibrator are
-     not landing the same way on designer."* The cream path carries the full reasoning in
-     `shellGeo.js`; the two render paths must not disagree about where a ring sits. */
-  it('does not re-measure the bounds after the authored rotation', () => {
-    expect(body).not.toMatch(/setFromObject\(scene\)\.applyMatrix4/);
-    expect(body).toMatch(/const seatMinY = minY;/);
+  it('measures the seat from the TILTED bounds, not the authored minY', () => {
+    expect(body).toMatch(/setFromObject\(scene\)\.applyMatrix4/);
+    expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
+    // The untilted figure must not be what positions the shell any more.
+    expect(body).not.toMatch(/u\.pos\[1\] - minY \* shellScale/);
   });
 
-  /* The shell is still POSITIONED by the seat, so a future change cannot quietly drop the term. */
-  it('still seats the shell on that figure', () => {
-    expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
+  /* ⚠️ AN UNTILTED ELEMENT MUST KEEP THE MEASURED minY EXACTLY. Recomputing for everything would
+     move every decoration ring already on a saved cake by whatever the two measurements disagree
+     about — a silent change to work customers have already approved. */
+  it('short-circuits to the authored minY when there is no tilt', () => {
+    expect(body).toMatch(/if \(!scene \|\| \(!tilt\[0\] && !tilt\[2\]\)\) return minY;/);
   });
 });
