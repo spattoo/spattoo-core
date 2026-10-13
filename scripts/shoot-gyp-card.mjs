@@ -67,11 +67,97 @@ ok(!!(await page.evaluate(() => window.__design?.().boardGyp)), 'the board carri
 await click('On the rim'); await page.waitForTimeout(2500);
 await page.screenshot({ path: `${process.env.HOME}/Downloads/gyp-designer.png` });
 
+console.log('\nthe clumps "I\'ll arrange" puts down');
+/* ⚠️ THE PILL MUST SEED ONE CLUMP, NOT FLOOD THE TOP. "I'll arrange" shipped first as whole-top
+   coverage, which is "I'll cover it" — the opposite of what the pill says. */
+ok(await click("I'll arrange"), "tapped \"I'll arrange\" again");
+await page.waitForTimeout(2000);
+const p1 = await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.patches ?? null);
+ok(p1?.length === 1, `it starts as one clump (${p1 ? p1.length : 'none'})`);
+ok(await click('+ Add clump'), 'the card offers "+ Add clump"');
+await page.waitForTimeout(1500);
+const p2 = await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.patches ?? []);
+ok(p2.length === 2, `a second clump arrives (${p2.length})`);
+/* ⚠️ AND IT LANDS SOMEWHERE ELSE. The grass version put every clump at the same (u, v), so the
+   second sat inside the first and "+ Add clump" looked broken — the list grew, the cake did not. */
+ok(p2.length === 2 && Math.abs((p2[0].u ?? 0) - (p2[1].u ?? 0)) > 0.05,
+   'the second one lands clear of the first');
+/* The drag dots: a clump is a thing you pick up, a band is not. */
+const handles = await page.evaluate(() => window.__gypTapTargets?.() ?? null);
+ok(handles !== null, `the canvas exposes the clump handles (${handles})`);
+await page.screenshot({ path: `${process.env.HOME}/Downloads/gyp-clumps.png` });
+
+console.log('\nback to the rim drops the clumps');
+/* ⚠️ `grassSeats` READS `patches` WHATEVER ELSE IT WAS GIVEN, so a leftover clump would seat a
+   second cloud in the middle of the ring and the rim pill would look broken. */
+ok(await click('On the rim'), 'tapped "On the rim"');
+await page.waitForTimeout(1500);
+ok(!(await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.patches?.length)),
+   'the band carries no clumps');
+
+console.log('\nundo');
+/* ⚠️ LIT ONLY WHEN IT CAN DO SOMETHING — read off the rendered attribute, not off the value I
+   expect, because that is how the piped card's version was found broken: the button kept whatever
+   it was painted with. */
+const undoDisabled = () => page.evaluate(() => {
+  const n = [...document.querySelectorAll('button')].find(x => /Undo/.test(x.textContent));
+  return n ? n.disabled : null;
+});
+const beforeBloom = await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.bloom);
+await page.evaluate(() => window.__design && 0);
+ok(typeof beforeBloom === 'string', `the cloud has a bloom colour (${beforeBloom})`);
+/* Shuffle is the one control that changes the design in a single tap with no picker to drive. */
+ok(await page.evaluate(() => { const n=[...document.querySelectorAll('button')].find(x=>x.title==='Another hand\'s pass'); if(!n) return false; n.click(); return true; }),
+   'the card offers Shuffle');
+await page.waitForTimeout(1200);
+ok(await undoDisabled() === false, 'Undo lights up once something has changed');
+ok(await click('\u21B6 Undo') || await click('Undo'), 'tapped Undo');
+await page.waitForTimeout(1500);
+const back = await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp);
+ok(back?.where === 'rim' && !back?.patches?.length,
+   'it puts the cloud back the way the card found it');
+
 console.log('\ntaking it off');
 ok(await click('Remove from cake'), 'the card offers "Remove from cake"');
 await page.waitForTimeout(2000);
 ok(await page.evaluate(() => !window.__design().tiers.slice(-1)[0].gyp && !window.__design().boardGyp),
    'both placements come off together');
+/* ── Duplicate, which needs somewhere to duplicate TO ──────────────────────────────────────────
+ * ⚠️ A SECOND TIER, AND `?rainbow2` IS THE FIXTURE THAT HAS ONE. The designer has no "add tier"
+ * button — a cake's tier count comes from the order — so a one-tier page cannot reach this control
+ * at all, which is also the reason the button is absent there rather than present and inert.
+ * Reusing an existing two-tier fixture rather than adding a third: a harness fixture that disagrees
+ * with the app proves the wrong thing. */
+console.log('\nduplicate, on a two-tier cake');
+const page2 = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+page2.on('pageerror', e => { console.error('  PAGE ERROR:', e.message); fails.push(e.message); });
+await page2.goto('http://localhost:5190/designer-mobile.html?catalog=1&rainbow2=1', { waitUntil: 'domcontentloaded' });
+await page2.waitForTimeout(6000);
+await page2.evaluate(() => [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Skip')?.click());
+await page2.waitForTimeout(3000);
+await page2.evaluate(async () => { await window.__loadElements?.(); });
+await page2.waitForTimeout(2500);
+ok(await page2.evaluate(() => window.__design?.().tiers?.length) === 2, 'the cake has two tiers');
+await page2.evaluate(() => window.__tapElementById?.('e-gyp'));
+await page2.waitForTimeout(3000);
+const click2 = (t) => page2.evaluate((x) => { const n=[...document.querySelectorAll('button')].find(y=>y.textContent.trim()===x||y.textContent.trim().startsWith(x)); if(!n) return false; n.click(); return true; }, t);
+ok(await page2.evaluate(() => !!window.__design?.().tiers?.[1]?.gyp), 'it lands on the top tier');
+ok(await click2('Duplicate'), 'the card offers Duplicate');
+await page2.waitForTimeout(2000);
+const both = await page2.evaluate(() => window.__design?.().tiers?.map(t => !!t.gyp));
+ok(JSON.stringify(both) === '[true,true]', `both tiers carry one (${JSON.stringify(both)})`);
+/* The tier row is what makes the copy reachable — without it the card edits one cloud and the
+   other is stranded. */
+const t2 = await page2.evaluate(() => document.body.innerText);
+ok(/\bTIER\b|\bTier\b/.test(t2), 'a Tier row appears once there are two');
+/* ⚠️ AND UNDO MUST TAKE THE COPY BACK OFF. The snapshot is of every surface for this reason: an
+   Undo that cannot reach the tier Duplicate wrote to is an Undo that lies about what it undoes. */
+ok(await click2('\u21B6 Undo') || await click2('Undo'), 'tapped Undo');
+await page2.waitForTimeout(1500);
+const after = await page2.evaluate(() => window.__design?.().tiers?.map(t => !!t.gyp));
+ok(JSON.stringify(after) === '[false,true]', `the copy comes back off (${JSON.stringify(after)})`);
+await page2.screenshot({ path: `${process.env.HOME}/Downloads/gyp-duplicate-card.png` });
+
 await b.close();
 console.log(fails.length ? `\n✗ ${fails.length} failed` : '\n✓ all good');
 process.exitCode = fails.length ? 1 : 0;

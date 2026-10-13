@@ -188,6 +188,13 @@ function boardRingInset(board, cakeShape, ringWidth = 1) {
 // at the surface sits INSIDE it — still clickable (the grass mesh has no pointer handlers, so the
 // ray passes straight through to the grab sphere) but invisible, with nothing to aim at. That reads
 // as "the clump will not move", which is exactly how it was reported.
+// The same question for gypsophila, and only the tier tops ask it — a rim or board ring carries no
+// handle at all, so there is nothing to float over those.
+function gypHandleLift(tierData) {
+  return 0.06 + Math.max(0,
+    ...tierData.map(t => (t.gyp?.patches?.length ? (t.gyp.height ?? 0) : 0)));
+}
+
 function grassHandleLift(tierData, boardGrass) {
   const heights = [
     ...tierData.map(t => (t.grass?.patches?.length ? (t.grass.height ?? 0) : 0)),
@@ -2900,6 +2907,7 @@ function CakeScene({
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -2955,7 +2963,8 @@ function CakeScene({
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
       // Dragging a finish handle (luster-dust splash / gold-leaf flake) must not rotate the cake.
       const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle
-        || h.object.userData.isGrassHandle || h.object.userData.isBlockHandle);
+        || h.object.userData.isGrassHandle || h.object.userData.isBlockHandle
+        || h.object.userData.isGypHandle);
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
@@ -2979,7 +2988,8 @@ function CakeScene({
       const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle
         || h.object.userData.isDustTap || h.object.userData.isDustHandle
         || h.object.userData.isGrassTap || h.object.userData.isGrassHandle
-        || h.object.userData.isBlockTap || h.object.userData.isBlockHandle);
+        || h.object.userData.isBlockTap || h.object.userData.isBlockHandle
+        || h.object.userData.isGypTap || h.object.userData.isGypHandle);
       // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
       gestureOnStickerRef.current = overSticker || overGrip || overFinish;
@@ -3045,11 +3055,14 @@ function CakeScene({
     window.__grassCatcherCount = catcherCount('Grass');
     window.__blockTapTargets = tapTargets('Block');
     window.__blockCatcherCount = catcherCount('Block');
+    window.__gypTapTargets = tapTargets('Gyp');
+    window.__gypCatcherCount = catcherCount('Gyp');
     return () => {
       delete window.__foilTapTargets; delete window.__foilCatcherCount;
       delete window.__dustTapTargets; delete window.__dustCatcherCount;
       delete window.__grassTapTargets; delete window.__grassCatcherCount;
       delete window.__blockTapTargets; delete window.__blockCatcherCount;
+      delete window.__gypTapTargets; delete window.__gypCatcherCount;
     };
   }, [gl, camera, scene]);
 
@@ -3229,6 +3242,35 @@ function CakeScene({
         // White and near-black: both read against green. The usual selColor is a dark GREEN,
         // which would be the one colour invisible against the thing it marks.
         color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker={grassMode} />}
+
+      {/* ── Gypsophila clumps ──────────────────────────────────────────────────────────────────
+          The grass block above, with one word changed, and that is the point: a clump of baby's
+          breath is a placed mark on a surface moved by its handle, which is what dust, foil, grass
+          and letter blocks all are. Writing a fifth way to drag something would be a fifth thing
+          to get wrong (root CLAUDE.md rule 1).
+
+          ⚠️ ALL THREE PARTS, in the shape the foil bug taught: catchers only while the card is
+          open (they wrap the whole cake and would swallow taps meant for what is underneath), the
+          handle flag swapped to `isGypTap` once the card is shut so orbit ignores a sphere that
+          cannot drag anything, and both flags listed in gesture ownership above or the leaked r3f
+          click selects the tier out from under the selection the tap just made.
+
+          ⚠️ THE BAND PLACEMENTS GET NO HANDLES. A rim ring and a board ring have no position of
+          their own — they are the tier's outline, and `check:movable` records gypsophila as "a
+          treatment that dresses a surface" for exactly that reason. Only a clump is a thing you
+          can pick up, so `getPoints` returns null unless there are clumps. */}
+      {(gypMode || tierData.some(t => t.gyp?.patches?.length)) && <FinishHandles tierData={tierData}
+        getPoints={t => (t.gyp?.patches?.length ? t.gyp.patches.map(p => ({ ...p, surface: 'top_surface' })) : null)}
+        board={board} boardPoints={null}
+        selected={gypMode ? gypSelected : null} onMove={onGypMove} onSelect={onGypSelect}
+        catchers={gypMode}
+        catcherFlag="isGypCatcher" handleFlag={gypMode ? 'isGypHandle' : 'isGypTap'}
+        // Clear of the tallest cloud on the cake, so a marker is never buried inside the clump it
+        // marks — the same reason grass computes its lift from its own height.
+        lift={gypHandleLift(tierData)}
+        // White blooms, so the usual white dot would vanish into them: near-black is the one that
+        // reads against a cloud of baby's breath, with white for the unselected rest.
+        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker={gypMode} />}
 
       {/* Mounted whenever the cake carries dust, for the same reason foil is below — after Done a
           placed dusting had no hit target at all, so tapping a flick did nothing. Same three parts:
@@ -4461,6 +4503,7 @@ export default function CakeCanvas({
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
@@ -4659,6 +4702,10 @@ export default function CakeCanvas({
         onBrushDrawStart={onBrushDrawStart}
         onBrushDrawTo={onBrushDrawTo}
         onBrushDrawEnd={onBrushDrawEnd}
+        gypMode={gypMode}
+        gypSelected={gypSelected}
+        onGypMove={onGypMove}
+        onGypSelect={onGypSelect}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}

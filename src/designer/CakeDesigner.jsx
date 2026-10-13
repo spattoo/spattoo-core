@@ -3908,6 +3908,32 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const pieceChanged = !!pickedStroke && !!pickedBefore
     && ['color', 'thickness', 'point', 'points'].some(
       k => JSON.stringify(pickedStroke[k]) !== JSON.stringify(pickedBefore[k]));
+
+  /* ── The gypsophila, as it was when its card was opened ───────────────────────────────────────
+   * The piped piece's pattern above, verbatim and for its reasons: ONE level of Undo, keyed on the
+   * SELECTION and not on the design. Re-snapshotting whenever the design changes would capture each
+   * edit as it happened, and Undo would restore the state it had a moment ago — which is to say,
+   * do nothing. `design` is read here and deliberately NOT depended on.
+   *
+   * ⚠️ STATE, NOT A REF. Render reads it to light the button, and a ref set inside an effect mutates
+   * after the paint and schedules nothing — the bug that shipped on the piped version first.
+   *
+   * ⚠️ IT SNAPSHOTS EVERY SURFACE, not just the one the card is pointed at. Duplicate puts a cloud
+   * on a tier the card was not editing a moment ago, and an Undo that cannot take that back is an
+   * Undo that lies about what it undoes. */
+  const [gypBefore, setGypBefore] = useState(null);
+  /* Which tier's cloud the card is editing. Null means "whichever is top-most" — the common case,
+     because until Duplicate is pressed there is only one. */
+  const [gypPick, setGypPick] = useState(null);
+  /* Which of the two colours the one wheel is pointed at. Two wheels open at once is most of a
+     phone; bloom is the one a baker reaches for, so it is the one that opens. */
+  const [gypInk, setGypInk] = useState('bloom');
+  const gypOpen = selectedEl?.type === 'gyp';
+  useEffect(() => {
+    if (!gypOpen) { setGypBefore(null); return; }
+    setGypBefore({ tiers: design.tiers.map(t => t.gyp ?? null), board: design.boardGyp ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gypOpen]);
   /* ⚠️ THE LAST PIECE PLACED, so switching to Edit pre-selects it. The common move after putting a
      piece down is to recolour THAT piece, and making the customer hunt for it on the cake first is
      the friction that made this feature necessary in the first place. */
@@ -7215,10 +7241,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * ⚠️ The size dial keeps 0.15–0.9 step 0.02 and prints two decimals: at SizeDial's default one
    * decimal a clump reads "0.2…0.9" in eight jumps across its whole travel. */
-  const grassClumpCells = (patches, tier, onSize, onRemove) => (
+  /* ⚠️ `selected` AND `onSelect` ARE ARGUMENTS, not the grass closure they started as. Gypsophila
+   * arranges itself in clumps for the same reason grass does and drags them with the same handles,
+   * so a second copy of this row would be a second answer to one question (rule 1) — and it is
+   * about ten lines, which `check:dup` at 0.75% against a 0.79 threshold is roughly sized to
+   * catch. The grass wrapper below keeps both of its call sites untouched. */
+  const clumpCells = (patches, tier, onSize, onRemove, selected, onSelect) => (
     <ScrollFadeRow style={s.previewRow} fade="255,255,255">
       {patches.map((p, k) => {
-        const on = grassSelected?.tier === tier && grassSelected?.idx === k;
+        const on = selected?.tier === tier && selected?.idx === k;
         return (
           /* ⚠️ `ControlCell`, NOT A HAND-ROLLED COLUMN. This was the same column-plus-caption
              markup ControlCell was extracted for, minus the caption — so the dial sat on a row of
@@ -7230,7 +7261,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              caption selects; the dial sizes it." A first cut of this cell kept only the ×, which
              left selecting as a side effect of dragging the dial. The wrapper takes the tap now, so
              the whole cell selects and the × still removes, and the selected one is outlined. */
-          <span key={k} onClick={() => setGrassSelected({ tier, idx: k })}
+          <span key={k} onClick={() => onSelect({ tier, idx: k })}
             style={{ display: 'inline-flex', flexShrink: 0, borderRadius: 10, padding: '2px 4px',
               cursor: 'pointer',
               border: `1.5px solid ${on ? INK : 'transparent'}`,
@@ -7238,7 +7269,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <ControlCell label={`Clump ${k + 1}`}>
               <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
                 fmt={v => v.toFixed(2)}
-                onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
+                onChange={v => { onSelect({ tier, idx: k }); onSize(k, v); }} />
               <button title="Remove" aria-label={`Remove clump ${k + 1}`}
                 onClick={(e) => { e.stopPropagation(); onRemove(k); }}
                 style={{ padding: '2px 5px', border: 'none', background: 'transparent',
@@ -7249,6 +7280,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       })}
     </ScrollFadeRow>
   );
+
+  const grassClumpCells = (patches, tier, onSize, onRemove) =>
+    clumpCells(patches, tier, onSize, onRemove, grassSelected, setGrassSelected);
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
   // one at the same (u, v), so the second landed on top of the first and "+ Add clump" looked
@@ -13815,7 +13849,99 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * ⚠️ NOTHING HERE TELLS IT ABOUT THE ROSES. Clearance is automatic and universal — the canvas
    * hands it whatever is standing on that surface and it fills the gaps. There is no setting for it
    * because there is no decision to make: a stem through a petal is wrong on every cake. */
-  const gypTier = Math.max(0, design.tiers.length - 1);
+  /* ⚠️ THE TIER THAT HAS IT, not "the top one". The first version hardcoded the top tier, which was
+     right while a cake could only wear one cloud and wrong the moment Duplicate could put a second
+     one somewhere else: the card went on editing a tier with nothing on it. Falls back to the top
+     tier so `addGypsophila` still has an answer before anything exists. */
+  const gypTiers = design.tiers.map((t, k) => (t.gyp ? k : -1)).filter(k => k >= 0);
+  const gypTier = gypTiers.includes(gypPick)
+    ? gypPick
+    : (gypTiers[gypTiers.length - 1] ?? Math.max(0, design.tiers.length - 1));
+
+  /* Has anything changed since the card was opened? A live comparison rather than a flag each
+     writer has to remember to set — three dials, two wheels, Shuffle and the Where pills can all
+     change it, and a flag is one of them forgetting. An Undo that is always lit promises something
+     it cannot do (rule 7). */
+  const gypChanged = !!gypBefore
+    && (JSON.stringify(design.tiers.map(t => t.gyp ?? null)) !== JSON.stringify(gypBefore.tiers)
+        || JSON.stringify(design.boardGyp ?? null) !== JSON.stringify(gypBefore.board));
+
+  function undoGyp() {
+    if (!gypBefore) return;
+    design.tiers.forEach((t, k) => {
+      const was = gypBefore.tiers[k] ?? null;
+      if (JSON.stringify(t.gyp ?? null) !== JSON.stringify(was)) setTierGyp(k, was);
+    });
+    if (JSON.stringify(design.boardGyp ?? null) !== JSON.stringify(gypBefore.board)) {
+      setBoardGyp(gypBefore.board);
+    }
+  }
+
+  /* ⚠️ WHERE A DUPLICATE WOULD GO — and it is a TIER, never the board. The board already has a
+     control that puts a cloud on it (the Where row), and a second button doing the same job is two
+     answers to one question. What has no control is "the same cloud on the tier below", which on a
+     stacked cake is exactly what a baker means by duplicating it.
+     Null on a single-tier cake and on a cake where every tier already wears one — so the button is
+     absent rather than present and inert, because a surface treatment genuinely has nowhere to be
+     copied to when there is one surface (rule 7, INVARIANTS #8: a control means what its name
+     says). The Where pills still move the one cloud around. */
+  const gypDupTier = (() => {
+    const bare = design.tiers.map((t, k) => (!t.gyp ? k : -1)).filter(k => k >= 0);
+    // Downwards first: a cloud is added to the top and spread down, which is how the stack is read.
+    return bare.filter(k => k < gypTier).pop() ?? bare[0] ?? null;
+  })();
+
+  function duplicateGyp() {
+    const g = design.tiers[gypTier]?.gyp;
+    if (!g || gypDupTier == null) return;
+    setTierGyp(gypDupTier, { ...g });
+    setGypPick(gypDupTier);          // the copy is what you just made, so it is what you are editing
+  }
+
+  /* ── Gypsophila clumps: "I'll arrange" ────────────────────────────────────────────────────────
+   * The third placement, and a different KIND from the other two the way it is for grass: the rim
+   * band and the board ring answer "dress this surface", a clump answers "put one HERE". Sandeep
+   * asked for exactly that and gave the reason — *"let the roses be there on cake, let the user
+   * place the gypsophila wherever he wants. if it needs to go merged, he needs to make them."*
+   *
+   * ⚠️ IT IS THE SAME MECHANISM AS GRASS, DUST AND FOIL, down to the stored shape: polar (u, v)
+   * against the surface with a radius, dragged by a FinishHandles dot. `GypCloud` already took
+   * `patches`/`patchRadius` because it seats through `grassSeats`, so none of this is new geometry
+   * — it is a card writing the field the renderer was already reading.
+   *
+   * ⚠️ AND CLEARANCE STILL APPLIES INSIDE A CLUMP. `avoid` is handed to GypCloud by the canvas
+   * whatever the placement is, so a clump dropped between two roses fills the gap between them and
+   * does not grow through either (INVARIANTS #3b). That is the half of Sandeep's requirement 4 that
+   * needed no new code at all: the rule is on the surface, not on the placement. */
+  const [gypSelected, setGypSelected] = useState(null);   // { tier, idx }
+  const GYP_PATCH_R = 0.34;    // smaller than a grass clump: a posy, not a lawn
+
+  const newGypPatch = (existing = [], v = 0.55) => nextPatchSpot(existing, { v, r: GYP_PATCH_R });
+
+  function addGypPatch() {
+    const t = gypTier;
+    if (!design.tiers[t]?.gyp) return;
+    // From the LIVE list inside the updater, not from `design` as this component last rendered it —
+    // two quick presses otherwise read the same list and the second clump lands on the first.
+    updateGyp(t, cur => {
+      const list = cur.patches ?? [];
+      return { patches: [...list, newGypPatch(list)] };
+    });
+    setGypSelected({ tier: t, idx: (design.tiers[t].gyp.patches?.length ?? 0) });
+  }
+
+  function removeGypPatch(tier, idx) {
+    updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).filter((_, k) => k !== idx) });
+    setGypSelected(null);
+  }
+
+  function handleGypMove(tier, idx, u, v) {
+    updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).map((p, k) => k === idx ? { ...p, u, v } : p) });
+  }
+
+  function setGypPatchSize(tier, idx, r) {
+    updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).map((p, k) => k === idx ? { ...p, r } : p) });
+  }
 
   function renderGypBody() {
     const i = gypTier;
@@ -13843,11 +13969,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {pill('On the rim', !!g && where === 'rim',
               () => setTierGyp(i, { ...(g ?? design.boardGyp ?? {}), ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
                                     where: 'rim', spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
-                                    height: 0.20, droop: 0.6 }))}
+                                    height: 0.20, droop: 0.6,
+                                    /* ⚠️ A BAND AND CLUMPS CANNOT BOTH BE ON. `grassSeats` reads
+                                       `patches` whatever else it was given, so a leftover clump
+                                       from "I'll arrange" would seat a second cloud in the middle
+                                       of the ring and the rim pill would look broken. */
+                                    patches: null }))}
+            {/* ⚠️ IT STARTS AS ONE CLUMP, NOT A FLOODED TOP. The first version covered the whole
+                surface, which is "I'll cover it" — the opposite of what the pill says. A baker who
+                chose this is placing a posy and then another one; the clump is the unit, the handle
+                on the cake is how it moves, and `+ Add clump` is how the second one arrives. */}
             {pill("I'll arrange", !!g && where === 'free',
               () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
-                                    where: 'free', spacing: 0.14, jitter: 0.85, lay: 20, bury: 0.08,
-                                    height: 0.26, droop: 0.4 }))}
+                                    /* ⚠️ A CLUMP IS AS DENSE AS THE BAND, not sparser. At 0.14 a
+                                       clump of r=0.34 seats about six sprigs and reads as a smudge
+                                       — measured by looking at it, where the rim ring beside it is
+                                       solid. A posy is a BUNCH; the clump radius is what makes it
+                                       small, never the gaps between stems. */
+                                    where: 'free', spacing: 0.07, jitter: 0.8, lay: 20, bury: 0.08,
+                                    height: 0.26, droop: 0.4,
+                                    patches: g?.patches?.length ? g.patches : [newGypPatch()] }))}
             {pill('On the board', !!bg,
               () => (bg ? setBoardGyp(null)
                         : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18,
@@ -13856,40 +13997,89 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
 
-        {/* ⚠️ THE DIALS SIT IN A ROW THAT WRAPS, not stacked bare. Dropped straight into the card
-            they overlapped each other and the colour wheel below — a SizeDial draws outside its own
-            box, which only shows once two are near each other. */}
-        {g && where === 'rim' && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, margin: '14px 0 4px' }}>
-            <SizeDial size={g.rimOut ?? 0.10} min={0} max={0.4} step={0.01}
-              onChange={v => updateGyp(i, { rimOut: v })} label="Over the edge" isMobile={isMobile} />
-            <SizeDial size={g.rimIn ?? 0.14} min={0.03} max={0.6} step={0.01}
-              onChange={v => updateGyp(i, { rimIn: v })} label="In from the edge" isMobile={isMobile} />
+        {/* ── Which cloud, once there is more than one ──────────────────────────────────────────
+            Only the tiers that actually wear one, and only when two or more do: a row of pills
+            offering tiers with nothing on them would read as "put one here", which is Duplicate's
+            job. Numbered the way the grass card numbers them, because a baker meets ONE idea of
+            "tier 2" in this tool (INVARIANTS #14). */}
+        {gypTiers.length > 1 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>Tier</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {gypTiers.map(ti => pill(String(ti + 1), ti === gypTier, () => setGypPick(ti)))}
+            </div>
           </div>
+        )}
+
+        {/* ⚠️ `DialCell` IN A `ScrollFadeRow`, NOT BARE `SizeDial`s. SizeDial takes no `label` and no
+            `isMobile` — both were being passed and both silently ignored, so the card showed two
+            unnamed dials reading "0.1" and "0.1" and nothing said which was which. A control that
+            does not say what it acts on is the thing INVARIANTS #8 and #11 are about, and this is
+            the component that exists so it never has to be rebuilt: DialCell is the captioned dial
+            every other procedural card's control row is made of. Found by LOOKING at the card at
+            390px, not by reading the props I meant to pass. */}
+        {g && where === 'rim' && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Over the edge" value={g.rimOut ?? 0.10} min={0} max={0.4} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => updateGyp(i, { rimOut: v })} />
+            <DialCell label="In from the edge" value={g.rimIn ?? 0.14} min={0.03} max={0.6} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => updateGyp(i, { rimIn: v })} />
+          </ScrollFadeRow>
         )}
 
         {bg && (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 18, margin: '14px 0 4px' }}>
-            <SizeDial size={bg.ringWidth ?? 0.18} min={0.04} max={0.5} step={0.01}
-              onChange={v => updateBoardGyp({ ringWidth: v })} label="Ring width" isMobile={isMobile} />
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Ring width" value={bg.ringWidth ?? 0.18} min={0.04} max={0.5} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => updateBoardGyp({ ringWidth: v })} />
+          </ScrollFadeRow>
+        )}
+
+        {/* ── The clumps, when the baker is arranging them ───────────────────────────────────────
+            The same scrolling row of cells grass uses, with the same ×, the same dial and the same
+            "tap the cell to select it" — one idea of "a clump" in this tool, not two (INVARIANTS
+            #14). Each one is also dragged on the cake itself by the white dot; the dot is only
+            there while this card is open, so a finished arrangement is not covered in handles. */}
+        {g && where === 'free' && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>Clumps</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginBottom: 6 }}>
+              Drag the white dot on the cake to move one. It fills the gaps between whatever is
+              already standing there and never grows through it.
+            </div>
+            {clumpCells(g.patches ?? [], i,
+              (k, v) => setGypPatchSize(i, k, v),
+              (k) => removeGypPatch(i, k),
+              gypSelected, setGypSelected)}
+            <button onClick={addGypPatch}
+              style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+                border: `1.5px solid ${INK}`, background: INK, color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+              + Add clump
+            </button>
           </div>
         )}
 
-        {/* ⚠️ ONE WHEEL AT A TIME, STACKED. Two ColorWheels side by side were the first attempt and
-            at 390px they blew the card apart — each one opens a full picker, so a row of two is two
-            pickers fighting for a phone's width (rule 5: check at 375 before calling it done). The
-            bloom colour is the one a baker changes; the stem is a tap further down and rarely
-            touched, which is also the order of how often they are used (INVARIANTS #12). */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '12px 0 2px' }}>
-          <ColorWheel color={(g ?? bg)?.bloom ?? GYP_COLOURS.bloom}
-            onChange={c => { if (g) updateGyp(i, { bloom: c }); if (bg) updateBoardGyp({ bloom: c }); }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.6 }}>Bloom</span>
+        {/* ── Two colours, and only one of them is open at a time ────────────────────────────────
+            ⚠️ `compact={isMobile}` AND A WIDTH, which is what makes this a card rather than two
+            screens of colour picker. Without compact, ColorWheel draws its desktop layout — the
+            gradient square on top, swatches wrapped underneath — and TWO of those pushed the
+            clumps, the shuffle and every button off the bottom of a phone. Its own note says the
+            compact branch "was written for exactly this sheet", and the grass card was the one
+            caller passing it. Measured by screenshotting the card at 390px (rule 5/6), not by
+            reading the props I meant to pass.
+
+            ⚠️ AND ONLY THE CHOSEN ONE IS SHOWN. Even compact, two pickers stacked is most of a
+            phone. Bloom is the colour a baker changes and opens first (INVARIANTS #12 — laid out by
+            how often each is used); stem is a tap away. */}
+        <div style={{ display: 'flex', gap: 6, margin: '12px 0 6px' }}>
+          {pill('Bloom', gypInk === 'bloom', () => setGypInk('bloom'))}
+          {pill('Stem', gypInk === 'stem', () => setGypInk('stem'))}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '4px 0 2px' }}>
-          <ColorWheel color={(g ?? bg)?.stem ?? GYP_COLOURS.stem}
-            onChange={c => { if (g) updateGyp(i, { stem: c }); if (bg) updateBoardGyp({ stem: c }); }} />
-          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.6 }}>Stem</span>
-        </div>
+        <ColorWheel width={152} compact={isMobile}
+          color={(g ?? bg)?.[gypInk] ?? GYP_COLOURS[gypInk]}
+          onChange={c => { if (g) updateGyp(i, { [gypInk]: c }); if (bg) updateBoardGyp({ [gypInk]: c }); }}
+          cakeColors={[...new Set(collectElementColors(design))]} />
 
         {/* One Shuffle per feature, storing its own seed: a design that cannot reproduce the cloud a
             baker chose has not saved their work. Same rule as the skirt and the scraped edge. */}
@@ -13900,16 +14090,52 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
         </span>
 
-        {/* ⚠️ "Remove from cake", in `s.deleteBtn` — BOTH halves are the standard, set twice over:
+        {/* ── Undo, Duplicate, Remove ───────────────────────────────────────────────────────────
+            The same three the piped piece and the brushstroke offer, with the same glyph, the same
+            tones and the same order (INVARIANTS #14): a baker meets ONE Undo in this tool, not
+            three that look different because they were built in different months.
+
+            ⚠️ Undo IS LIT ONLY WHEN IT CAN DO SOMETHING. It puts every surface back the way it was
+            when this card was opened — one level, which is what a person wants after trying three
+            bloom colours and a shuffle.
+
+            ⚠️ "Remove from cake", in `s.deleteBtn` — BOTH halves are the standard, set twice over:
             a bare "Remove" beside a card that can itself be dismissed is genuinely ambiguous (the
             popup, or the decoration?), and the same words in a differently-styled button is still
             two standards. This takes BOTH placements off, because the card is the element and a
-            baker who asked to remove the gypsophila did not mean "the rim one only". */}
-        <button
-          onClick={() => { setTierGyp(i, null); setBoardGyp(null); clearAllSelections(); }}
-          style={{ ...s.deleteBtn, marginTop: 10, alignSelf: 'flex-start' }}>
-          Remove from cake
-        </button>
+            baker who asked to remove the gypsophila did not mean "the rim one only".
+
+            ⚠️ THE ROW WRAPS AND Remove TAKES ITS OWN LINE. Measured in this file already: a footer
+            of Duplicate (98px) and Remove from cake (158px) needs 276px of card, and this card is
+            390px wide on a phone with 12px of padding each side — three in a line does not fit
+            (rule 5). Remove is also the longest label and the destructive one, so it is the one
+            that gets its own row rather than the pair that are cheap to press by accident. */}
+        {gypDupTier != null && (
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginTop: 12 }}>
+            Duplicate puts the same cloud on tier {gypDupTier + 1}.
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          <button onClick={undoGyp} disabled={!gypChanged}
+            style={gypChanged
+              ? { ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11 }
+              : { ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11,
+                  color: INK_MUTED, cursor: 'not-allowed' }}>
+            &#8630; Undo
+          </button>
+          {gypDupTier != null && (
+            <button onClick={duplicateGyp}
+              style={{ ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11 }}>
+              Duplicate
+            </button>
+          )}
+          <button
+            onClick={() => { design.tiers.forEach((t, k) => { if (t.gyp) setTierGyp(k, null); });
+                             setBoardGyp(null); setGypPick(null); clearAllSelections(); }}
+            style={{ ...s.deleteBtn, flex: '1 1 100%', marginTop: 2 }}>
+            Remove from cake
+          </button>
+        </div>
       </>
     );
   }
@@ -15708,6 +15934,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   setToolsOpen(false);
                   focusEditor('decoration');
                   selectExclusive({ type: 'grass' });
+                }
+              }}
+              /* Gypsophila clumps are dragged by the very same dots — see the handles in the
+                 canvas. Paired exactly as grass pairs them: the tap sets which clump is selected
+                 AND reopens the card it belongs to, because the handles outlive the card. */
+              gypMode={selectedEl?.type === 'gyp'}
+              gypSelected={gypSelected}
+              onGypMove={handleGypMove}
+              onGypSelect={(tier, idx) => {
+                setGypSelected({ tier, idx });
+                if (selectedEl?.type !== 'gyp') {
+                  setElementsOpen(false);
+                  setToolsOpen(false);
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'gyp' });
                 }
               }}
               blocksMode={selectedEl?.type === 'blocks'}
