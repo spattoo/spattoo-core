@@ -61,6 +61,34 @@ export const DEFAULT_INSERT_LEAN_DEG = 12;
  * `radiusOf` is injected rather than imported so this file stays pure — the measurements live in the
  * canvas, where the models are.
  */
+/* ── How much room a placed thing needs KEPT CLEAR around it ─────────────────────────────────────
+ *
+ * ⚠️ A FRACTION, NOT A MARGIN, AND THAT INVERSION IS THE WHOLE FIX. This was 1.15 — `occupantRadius`
+ * grown by a further 15% "because a sprig has width of its own". But `occupantRadius` is already a
+ * MAXIMUM: it comes from the GLB's bounding box (`size.x / 2`), which is the widest section of a
+ * piece, taken across a box with empty corners. A rose is a dome — the circle it actually occupies
+ * where it meets the cake is well inside its widest section — so enlarging a maximal radius
+ * double-counted, and seats were refused a long way outside anything a customer can see.
+ *
+ * One rose hid it: cleared alone, the bare arc came out NARROWER than the rose's own span, so the
+ * filler looked like it was nestling. Several close together is where it shows. Reported on a rim
+ * with five roses on it: *"it should find the gaps between the roses and merge like an arrangement.
+ * but it simply skipped the area where roses are present."* Their discs overlapped — centres 0.537
+ * apart against a cleared radius of 0.515 each — so the union was one dead zone 171° wide across a
+ * run of roses spanning 122°.
+ *
+ * Measured by sweeping it against that cake and looking: 1.15 → 171° bare, 0.85 → 95°, 0.65 → 20°,
+ * 0.50 → 5°. At 0.50 the filler starts crowding onto the roses themselves; at 0.65 it fills the
+ * gaps and sits against them without climbing. See scripts/measure-gyp-merge.mjs.
+ *
+ * ⚠️ ONE COPY, AND IT LIVES HERE BECAUSE `occupantRadius` DOES. "How much room does this thing take
+ * up" is one question; the flat surfaces and the wall both ask it, and two constants would drift. */
+export const CLEARANCE_FRACTION = 0.65;
+
+export function clearanceRadius(occupant) {
+  return (occupant?.r ?? 0) * CLEARANCE_FRACTION;
+}
+
 export function occupantRadius(sticker, measured = null) {
   return (measured ?? STICKER_SIZE / 4) * (sticker?.scale ?? 1);
 }

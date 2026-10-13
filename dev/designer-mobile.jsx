@@ -1117,6 +1117,35 @@ const rainbow2Design = PARAMS.has('rainbow2') ? {
   ],
 } : null;
 
+/* ── A RUN OF ROSES ALONG THE RIM, the state the gypsophila merge complaint is about ─────────────
+ *
+ * `?rimroses=1`. Sandeep: *"added some roses on rim. now added gypsophila flowers. on the rim, it
+ * should find the gaps between the roses and merge like an arrangement. but it simply skipped the
+ * area where roses are present."*
+ *
+ * ⚠️ SEEDED, NOT TAPPED. Reaching this by script means placing five decorations and then dragging
+ * each onto the rim — and `updateSticker` lands through React state, so a loop that places and then
+ * moves reads the list as it was BEFORE its own earlier calls applied. Three attempts at it stacked
+ * all five roses on one spot and produced plausible-looking numbers for a cake that did not exist.
+ * A seeded design is the state itself, the way `?rainbow2` and `?sidesticker` are.
+ *
+ * ⚠️ AND AT A REAL SIZE. `sample-rosette.glb` measures about 0.063 at scale 1 — a bead — and five
+ * of those clear nothing worth looking at. The roses in the report are a fifth of the cake's radius
+ * each, which is this GLB at about 3.2x. Reproducing the SIZE is most of reproducing the fault. */
+const rimRosesDesign = PARAMS.has('rimroses') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: Array.from({ length: 5 }, (_, k) => {
+    const a = (-0.34 + k * 0.17) * Math.PI;
+    return {
+      id: `rr${k}`, elementId: 'e9', name: 'Rosette', imageUrl: '/sample-rosette.glb',
+      zone: 'top_surface', tierIndex: 0,
+      x: 1.02 * Math.sin(a), z: 1.02 * Math.cos(a), y: 0, scale: 3.2,
+      size: 1, rotation: 0, color: '#c41c1c',
+      allowedActions: { move: true, color: true, delete: true, resize: true },
+    };
+  }),
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -1194,5 +1223,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

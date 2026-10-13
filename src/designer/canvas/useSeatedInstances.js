@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { grassSeats } from '../geometry/grass.js';
 import { wallSeats } from '../geometry/wallSeats.js';
 import { mulberry32 } from '../utils/random.js';
+import { clearanceRadius } from '../placement.js';
 
 /* ── Seating an instanced field on a surface ─────────────────────────────────────────────────────
  *
@@ -132,9 +133,9 @@ export function instancedTriangleCount(geo, seatCount) {
  * purpose: at the call site it would build a fresh array every render and rebuild every seat on
  * every frame, which for a few thousand pieces is the whole frame budget.
  */
-/* How much further than a thing's own radius the filler keeps off it. A sprig is not a point: its
-   blooms sit out around the stem, so clearing to the exact footprint still lets them clip. */
-const AVOID_MARGIN = 1.15;
+/* How much room a placed thing needs kept clear — `CLEARANCE_FRACTION` in placement.js, which
+   carries the reasoning and the sweep behind it. Imported rather than restated: the wall path asks
+   the same question and two copies of the answer drift. */
 
 export function useSurfaceSeats({
   shape, spacing, jitter, inset = 0.98, seed = 7,
@@ -174,7 +175,7 @@ export function useSurfaceSeats({
        sprig has width of its own, and clearing to the exact radius still lets its blooms clip the
        thing it stands beside. */
     return avoid?.length
-      ? withoutCollarCentres(cleared, avoid.map(o => ({ x: o.x, z: o.z, inner: o.r * AVOID_MARGIN })))
+      ? withoutCollarCentres(cleared, avoid.map(o => ({ x: o.x, z: o.z, inner: clearanceRadius(o) })))
       : cleared;
   }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius,
       collars, avoid, wall]);

@@ -28,10 +28,18 @@ import { mulberry32 } from '../utils/random.js';
  * argument to `useSurfaceSeats`. Same rule, same margin, one dimension more (INVARIANTS #3b).
  */
 
-/* How much further than a thing's own radius the filler keeps off it — the same figure the flat
-   path uses, and deliberately the same constant's worth: a sprig is not a point, its blooms sit out
-   around the stem, so clearing to the exact footprint still lets them clip. */
-const AVOID_MARGIN = 1.15;
+/* ⚠️ THE WALL KEEPS ITS OWN, LARGER CLEARANCE, AND THAT IS A DELIBERATE DIFFERENCE RATHER THAN A
+ * STRAY COPY. The flat surfaces use `CLEARANCE_FRACTION` (0.65) because a rose RESTS on them: it is
+ * a dome, so the circle it occupies where it touches the cake is well inside its widest section,
+ * and `occupantRadius` reports the widest section. That argument is about resting, and it does not
+ * transfer here unexamined — a piece on a wall is pressed flat against it, and for a flat one the
+ * silhouette on the wall IS roughly the bounding box.
+ *
+ * So this stays where it was until somebody measures the wall case the way the rim case was
+ * measured (scripts/measure-gyp-merge.mjs). Importing the smaller figure made a wall test fail
+ * immediately — seats survived 0.19 from the centre of a 0.2 occupant — which is the gate catching
+ * a generalisation I had not earned. */
+const WALL_CLEARANCE = 1.15;
 
 /**
  * shape    the tier's outline descriptor (`tierShape(tier)`)
@@ -153,7 +161,7 @@ export function withoutWallOccupants(seats, occupants) {
   if (!occupants?.length) return seats;
   return seats.filter((s) => !occupants.some((o) => {
     const dx = s.x - o.x, dz = s.z - o.z, dy = s.dy - o.dy;
-    const r = o.r * AVOID_MARGIN;
+    const r = o.r * WALL_CLEARANCE;
     return dx * dx + dz * dz + dy * dy < r * r;
   }));
 }

@@ -89,7 +89,15 @@ export default function GypCloud({
   useLayoutEffect(() => {
     const { per, total } = instancedTriangleCount(geo, seats.length);
     onStats?.({ sprigs: seats.length, tris: total, perSprig: per });
-  }, [seats, geo, onStats]);
+    /* ⚠️ THE SEATS THE RENDERER ACTUALLY USED, published for measurement. "It skipped the area
+       where the roses are" is a precise, countable claim — how wide an arc of the rim carries no
+       sprig — and the only honest way to count it is off the seats that were drawn. A script that
+       recomputed them from the design would be re-implementing the clearance rule and would agree
+       with itself whatever the rule did. */
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      window.__gypSeats = { seats, avoid: avoid ?? [] };
+    }
+  }, [seats, geo, onStats, avoid]);
 
   if (!seats.length) return null;
   return (

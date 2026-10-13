@@ -8692,6 +8692,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Put a placed decoration where a baker would drag it, and at the size they would resize it to.
+       Both are pointer gestures on a 3D surface that a script cannot aim, and both go through the
+       SAME setter the gesture calls — a hook that re-implemented either would prove nothing. */
+    window.__patchSticker = (id, patch) => { updateSticker(id, patch); return true; };
     /* ⚠️ THE WHOLE DESIGN, for the decorations that live ON A TIER rather than in a flat list. A
      * rainbow's tier is not a field on the rainbow — it IS which tier's `rainbows` holds it — so
      * "did it move tiers" cannot be read from the object, only from the shape around it. The same
