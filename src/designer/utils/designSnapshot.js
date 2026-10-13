@@ -49,7 +49,7 @@
  * that was designed. `designSnapshot.test.js` derives what the renderer reads and fails on anything
  * this list has forgotten — it caught `coat` before the feature shipped, which would otherwise have
  * been a template silently losing its coating on reload. One list, used in both directions. */
-export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'balloons', 'topCavity', 'topSpiral', 'wafer', 'brushBand', 'brushStrokes', 'coat'];
+export const OPTIONAL_TIER_FIELDS = ['radius', 'height', 'shape', 'shapeFamily', 'shapeConfig', 'width', 'depth', 'cornerR', 'frostingType', 'frostingStyle', 'styleParams', 'gradient', 'stripes', 'glaze', 'dusting', 'grass', 'foil', 'creamLayers', 'rainbows', 'clouds', 'balloons', 'topCavity', 'topSpiral', 'wafer', 'brushBand', 'brushStrokes', 'coat', 'gyp'];
 
 // Copy only the present (non-null) optional tier fields → a spreadable object. Used in both directions.
 export function pickTierFields(t) {
@@ -120,6 +120,7 @@ export function buildDesignSnapshot(design) {
     // Design-level, not per-tier, because the BOARD is: a ring of grass round the cake's foot and a
     // name spelled in fondant cubes both stand on it, not on any one tier.
     boardGrass: design.boardGrass ?? null,
+    boardGyp: design.boardGyp ?? null,
     nameBlocks: design.nameBlocks ?? null,
   };
 }

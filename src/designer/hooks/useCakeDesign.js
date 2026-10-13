@@ -153,6 +153,11 @@ export function toCanvasConfig(design) {
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
+        /* ⚠️ A TIER IS REBUILT FROM THIS LIST, so a field missing here simply never reaches the
+           canvas — the state is right, the card is right, and nothing draws. The coat lost a day to
+           it and the gypsophila rim ring lost an hour: the board ring rendered (it is a design-level
+           field and bypasses this) while the tier's did not, which is the shape of the clue. */
+        gyp:          t.gyp ?? null,            // gypsophila dressing this tier's rim or top
         // ⚠️ FORWARDED HERE OR IT NEVER RENDERS — the same line stripes needed. The canvas reads
         // this config, not the design.
         rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
@@ -181,6 +186,7 @@ export function toCanvasConfig(design) {
     stickers: design.stickers ?? [],
     writings: normalizeWritings(design),
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
+    boardGyp: design.boardGyp ?? null,       // gypsophila ringing the foot of the cake
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
     garnishes: design.garnishes ?? [],
@@ -361,6 +367,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
+    boardGyp: templateDesign.boardGyp ?? null,
     nameBlocks: templateDesign.nameBlocks ?? null,
   };
 }
@@ -844,6 +851,41 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   // Same contract as updateBoardGrass — `changes` may be a function of this tier's current grass.
+  /* ── Gypsophila ───────────────────────────────────────────────────────────────────────────────
+   *
+   * The same shape as grass above, and deliberately so: one object on the tier, `null` to take it
+   * off, plus one at design level for the board. A cloud of a few hundred sprigs is derived from a
+   * handful of numbers — the band, the spacing, the seed — so storing the sprigs would be storing
+   * the output instead of the design, and a template could no longer re-cut them for a different
+   * tier size. Exactly the argument grass and the wafer skirt both make for themselves.
+   *
+   * ⚠️ `where` IS ON THE OBJECT, not a second field beside it. "On the rim", "on the board" and
+   * "I'll arrange it" are three answers to one question, and a baker who switches between them
+   * keeps the colours and the sprig they had chosen. */
+  function setTierGyp(index, gyp) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, gyp } : t),
+    }));
+  }
+
+  function updateGyp(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.gyp)
+        ? { ...t, gyp: { ...t.gyp, ...(typeof changes === 'function' ? changes(t.gyp) : changes) } }
+        : t),
+    }));
+  }
+
+  function setBoardGyp(gyp) { setDesign(prev => ({ ...prev, boardGyp: gyp })); }
+
+  function updateBoardGyp(changes) {
+    setDesign(prev => (prev.boardGyp
+      ? { ...prev, boardGyp: { ...prev.boardGyp, ...(typeof changes === 'function' ? changes(prev.boardGyp) : changes) } }
+      : prev));
+  }
+
   function updateGrass(index, changes) {
     setDesign(prev => ({
       ...prev,
@@ -1792,6 +1834,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setTierGyp, updateGyp, setBoardGyp, updateBoardGyp,
     setTierRainbows, updateTierRainbows, updateTierClouds,
     updateTierBalloons,
     setNameBlocks, updateNameBlocks,

@@ -378,6 +378,21 @@ CAT_ELEMENTS.push({
  * offsetX: 0.71 are the FALLING RIGHT shape", so a row authoring PART of a shape inherits the rest
  * from a different one and arrives as a shape none of the six tiles can produce. Authoring nothing
  * lets the arrangement logic decide, which is what a real row should do too. */
+/* ⚠️ A REAL ROW, because the card only exists for an element the catalogue offers. `procedural:
+ * 'gypsophila'` is the VALUE of `procedural` — the key into PROCEDURAL_TOOLS — not a nested key. */
+CAT_ELEMENTS.push({
+  id: 'e-gyp', name: 'Gypsophila', description: "baby's breath, a cloud of tiny blooms",
+  /* ⚠️ `element_type_id` AND `category_id`, not a `category` string. Written with the latter first
+     and the row simply never appeared — the picker groups by the two ids, and a row carrying
+     neither belongs to no group, so nothing renders it and nothing says so. */
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#eef2e6'), thumbnail_url: CAT_THUMB('#eef2e6'),
+  thumb_key: null, allowed_zones: ['top_surface'],
+  allowed_actions: { move: false, delete: true, resize: false },
+  placement_config: { procedural: 'gypsophila' },
+  default_color: '#fdfdfb', sort_order: 42,
+});
+
 CAT_ELEMENTS.push({
   id: 'e24', name: 'Fondant cloud', description: 'a cloud of pressed fondant balls',
   element_type_id: 'et-topper', category_id: 'cat-1',

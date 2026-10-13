@@ -36,9 +36,11 @@ import {
   DESIGNER_GROUND,
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
-  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y } from '../constants.js';
+  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import GypCloud from './GypCloud.jsx';
+import { outwardBand, rimBand } from './useSeatedInstances.js';
 import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
@@ -61,7 +63,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -3383,7 +3385,7 @@ function BrushBand({ band, tier, wallColour, onClick = null }) {
 }
 
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
@@ -3454,6 +3456,24 @@ function CakeContent({ config, scene, edit = null }) {
         />
       )}
 
+      {/* Gypsophila ringing the FOOT of the cake. The band is the bottom tier's own outline grown
+          outward (`outwardBand`), not the board's — seating it against the board fills everything
+          between the two, which floods it and reads as flowers standing in card. A board is hard;
+          you cannot push a stem into it, so the ring is laid at the join. */}
+      {boardGyp && bottomShp && (
+        <GypCloud
+          {...boardGyp}
+          shape={outwardBand(bottomShp, boardGyp.ringWidth ?? 0.18)}
+          hole={{ shape: bottomShp, scale: 1 }}
+          patchRadius={boundingRadius(bottomShp)}
+          topY={0.105}
+          avoid={surfaceOccupants(stickers, {
+            tierIndex: 0, zone: ZONES.RIM,
+            radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+          })}
+        />
+      )}
+
       {tierData.map((tier, i) => (
         <group key={i}>
           <CakeTier
@@ -3508,6 +3528,32 @@ function CakeContent({ config, scene, edit = null }) {
               {...tier.grass}
             />
           )}
+          {/* ── Gypsophila on this tier ──────────────────────────────────────────────────────────
+              ⚠️ `avoid` IS WHAT IS ALREADY STANDING HERE, and it is the whole reason this is wired
+              through the canvas rather than computed in the geometry: the measured radius of every
+              placed GLB lives in `glbXRadiusCache`, which only this file has. The filler clears
+              whatever it finds and fills the gaps between — a rose, a candle, a topper, all the
+              same, because it asks what is there and never what it is (INVARIANTS #3b: "ONE rule…
+              and it is not per-element"). */}
+          {tier.gyp && (() => {
+            const shp = tierShape(tier);
+            const band = tier.gyp.where === 'rim'
+              ? rimBand(shp, { inn: tier.gyp.rimIn ?? 0.14, out: tier.gyp.rimOut ?? 0.10 })
+              : null;
+            return (
+              <GypCloud
+                {...tier.gyp}
+                shape={band ? band.shape : shp}
+                bandInner={band ? band.bandInner : undefined}
+                patchRadius={band ? band.shape.radius : tier.radius}
+                topY={tier.baseY + tier.height}
+                avoid={surfaceOccupants(stickers, {
+                  tierIndex: i, zone: ZONES.TOP_SURFACE,
+                  radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                })}
+              />
+            );
+          })()}
           {/* Fondant rainbows belonging to THIS tier. The generator asks for { radius, topY, boardY }
               and has never cared whether that describes a whole cake or one tier of one — so tier 2's
               rainbow is the same code given tier 2's numbers: its radius, its top, and the surface it
