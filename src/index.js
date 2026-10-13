@@ -377,3 +377,5 @@ export { buildShellGeo, capShellScale, wallPerimeter, extractGeo } from './desig
 export { buildSwagRing, perimeterRing, ringPositions, perimeterSinglePos, angleAtPoint } from './designer/canvas/ringPositions.js';
 export { shellMatrix } from './designer/canvas/shellMatrix.js';
 export { buildFestoons, buildWrapBand, perimeterBreaks } from './designer/geometry/festoon.js';
+
+export { spatulaFramePath } from './shared/spatulaPath.js';

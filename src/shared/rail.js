@@ -26,6 +26,16 @@ export const RAIL = {
   width:      64,   // the nav column itself
   svgW:      158,   // SpatulaFrame's viewBox width — wider than the column, on purpose
   bladeHalf:  61,   // the silhouette's widest point, either side of centre
+  /* The handle's profile, measured off the reference photo and then clamped by the nav labels.
+     The photo's handle is 36px at the neck and 65px at the grip — it swells towards the hand, and
+     the first attempt here tapered it the other way and produced a bottle. See spatulaPath.js for
+     the shape and `spatulaPath.test.js` for the label widths that cap the swell. Here rather than
+     in the component because a test reading a literal out of a 20k-line file proves nothing about
+     what renders. */
+  tipHalf:    15,   // the rounded end of the grip
+  gripHalf:   30,   // widest point of the handle — in the hand, as the reference photo is
+  gripY:     120,   // where that widest point sits
+  neckHalf:   24,   // thinnest, where the handle meets the blade
 };
 
 /** Centre line of the rail, in viewport px. */

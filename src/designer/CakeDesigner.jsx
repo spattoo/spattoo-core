@@ -1505,7 +1505,7 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
     W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
-    tipHalf: RAIL.tipHalf, taperFromY: RAIL.taperFromY,
+    tipHalf: RAIL.tipHalf, gripHalf: RAIL.gripHalf, gripY: RAIL.gripY, neckHalf: RAIL.neckHalf,
   });
   /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
      resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,
@@ -1599,6 +1599,36 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
                 rather than into a near-black typed in when walnut was the only skin. */}
             <stop offset="1"    stopColor={DEFAULT_RAIL_SKIN.stops[0]} stopOpacity="1" />
           </linearGradient>
+          {/* ── The handle is a ROD, and this is the only thing that says so ──────────────────
+              Sandeep, twice, against a product photo: *"handle is a round one here"* and then
+              *"handle part is still not looking like round."*
+
+              ⚠️ THE SHAPE WAS NEVER THE PROBLEM — THE LIGHT WAS. `spat-body` runs TOP TO BOTTOM, so
+              nothing in the default rail varied ACROSS the handle, and a cylinder is exactly a
+              variation across. The one cross-handle gradient that existed, `spat-woodRound`, is
+              drawn only inside `woodEndY != null` — the walnut skin — and walnut is switched off by
+              migration 122. So the shipped rail had no roundness available to it at all, and the
+              silhouette was retuned twice before anyone read the paint.
+
+              Lit from the left to match `spat-spec`'s feDistantLight (azimuth 235), or the edge
+              highlight and the body highlight would name different suns.
+
+              ⚠️ GENTLE ON PURPOSE: the labels sit ON this. White at 0.78 over the default stops
+              reads ~12:1; this lifts the lit band to roughly 8:1, still well clear of the 4.5
+              floor. A brighter cylinder looks rounder and starts eating the nav. */}
+          {/* ⚠️ ALMOST NO DARKENING AT THE EDGES, AND THAT IS NOT A WEAK VERSION OF `spat-woodRound`.
+              `spat-inner` already lays a shadow just inside the silhouette. A cylinder gradient that
+              also goes dark at its ends stacks a second shadow on the same pixels, and the two
+              together read as a hard seam running down the handle a few px inside its edge — which
+              is what the first cut shipped to a screenshot. The light band is the part that does the
+              work; the edges are the part `spat-inner` already owns. */}
+          <linearGradient id="spat-round" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0"    stopColor="#000" stopOpacity="0.16" />
+            <stop offset="0.20" stopColor="#000" stopOpacity="0.01" />
+            <stop offset="0.38" stopColor="#fff" stopOpacity="0.115" />
+            <stop offset="0.72" stopColor="#000" stopOpacity="0.02" />
+            <stop offset="1"    stopColor="#000" stopOpacity="0.18" />
+          </linearGradient>
           <clipPath id="spat-sil"><path d={path} /></clipPath>
         </defs>
         <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
@@ -1637,6 +1667,15 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
                 fill="url(#spat-ferrule)" />
         </g>
         )}
+
+        {/* The handle's roundness. Over the HANDLE's span only — a spatula's blade is a flat sheet
+            and shading it like a tube is what made the first attempt look like a spoon. Clipped to
+            the silhouette, so it can never widen the shape; and before the edge shading below, so
+            the rim light sits on top of the cylinder rather than being flattened by it. */}
+        <g clipPath="url(#spat-sil)">
+          <rect x={cx - handleHalf - 2} y={0} width={handleHalf * 2 + 4} height={shoulderY}
+                fill="url(#spat-round)" />
+        </g>
 
         {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
         <path d={path} fill="#000" filter="url(#spat-inner)" />
