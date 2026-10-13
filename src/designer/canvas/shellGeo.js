@@ -145,8 +145,28 @@ export function shellRadialProfile(geo, m, wbox) {
  * `DecorationShells` got this in 47723762 (`seatMinY`); the cream path did not, so the two render
  * paths disagreed about where a tilted ring sits.
  */
-export function ringBaseY(anchorY, A) {
-  return anchorY - (A?.worldBotY ?? 0);
+/* ── Where a ring's shells SIT, vertically ───────────────────────────────────────────────────────
+ *
+ * The shell's ORIGIN goes on the surface. `extractGeo` seats geometry at min Y, so for an upright
+ * shell that is its base, which is what everyone means by "resting on the rim".
+ *
+ * ⚠️ IT USED TO SUBTRACT `worldBotY` — the post-tilt lowest point — AND THAT IS WHAT MADE A TILTED
+ * RING FLOAT. `PipingCalibrator.jsx` seats on `anchorY + yOffset` and nothing else, so the lift was
+ * a number admin could never show. Measured on Classic Shell Border: at `top_rotation [-68,_,175]`
+ * the cake put the origin 0.2915 above where the calibrator put it — 20% of the tier radius. The
+ * ring hung in the air, and Sandeep recalibrated the row to `[-102,_,0]` to chase it: the gap only
+ * narrowed to 0.2227, because `top_y_offset` is ADDED before the lift and so can never cancel it.
+ * *"classic shell is still floating."*
+ *
+ * ⚠️ THE TRADE IS DELIBERATE AND IT IS THE RIGHT WAY ROUND. A shell rotated past upright has
+ * geometry below its own origin, and that part now dips below the rim. That is a per-element
+ * matter, and `top_y_offset` fixes it — WHICH IS THE POINT: the calibrator seats the same way, so
+ * what an admin dials there is what the cake does. Lifting every tilted ring by its own bounding
+ * box instead was a rule nobody could see, tune, or override.
+ *
+ * The radial seat follows the same principle — see the note in CakeTier beside `seatHalfDepth`. */
+export function ringBaseY(anchorY) {
+  return anchorY;
 }
 
 // Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never exceeds

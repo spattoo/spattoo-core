@@ -169,7 +169,7 @@ describe('a ring seats on the shell it actually renders', () => {
  * `DecorationShells` got this fix in 47723762; the cream path never did, so the two render paths
  * disagreed about where a tilted ring sits.
  */
-describe('ringBaseY lifts a tilted shell clear of the surface', () => {
+describe('ringBaseY seats a shell on its own origin', () => {
   const disc = () => {
     const s = new THREE.Group();
     s.add(new THREE.Mesh(new THREE.BoxGeometry(1.890, 0.903, 1.901), new THREE.MeshStandardMaterial()));
@@ -182,11 +182,18 @@ describe('ringBaseY lifts a tilted shell clear of the surface', () => {
     expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10);   // nothing already placed moves
   });
 
-  it('a tilted shell reaches BELOW its origin, and the seat lifts it by exactly that', () => {
+  /* ⚠️ A TILT MUST NOT MOVE THE SEAT, and this is the contract with admin. `PipingCalibrator.jsx`
+     seats on `anchorY + yOffset` and nothing else, so lifting a tilted ring by its own post-tilt
+     bounding box put it somewhere admin could not show, tune or override. Measured on Classic Shell
+     Border at `top_rotation [-68,_,175]`: 0.2915 above where the calibrator put it, 20% of the tier
+     radius — a ring hanging in the air. Recalibrating the row to `[-102,_,0]` only narrowed it to
+     0.2227, because `top_y_offset` is ADDED before the lift and can never cancel it.
+     A shell that needs lifting says so with `top_y_offset`, which the calibrator shows. */
+  it('seats a tilted shell exactly where an upright one sits', () => {
     const A = buildShellGeo(disc(), false, 0.35, 1, [-90, 0, 0]);
-    expect(A.worldBotY).toBeLessThan(0);                       // half the disc is under the origin
-    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23 - A.worldBotY, 10);
-    expect(ringBaseY(1.23, A)).toBeGreaterThan(1.23);          // lifted, not sunk
+    expect(A.worldBotY).toBeLessThan(0);              // the geometry really does dip below its origin
+    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10); // and the seat does not care
+    expect(ringBaseY(1.23)).toBeCloseTo(1.23, 10);    // it does not even need the shell
   });
 
   it('survives a missing shell — the rings call it before a GLB has loaded', () => {

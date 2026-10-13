@@ -275,22 +275,20 @@ describe('a ring is seated radially on the upright half-depth', () => {
   });
 });
 
-describe('a tilted decoration ring is seated after the tilt', () => {
+describe('a decoration ring is seated on its own origin, whatever its tilt', () => {
   const TIER = readFileSync(new URL('./CakeTier.jsx', import.meta.url), 'utf8');
   const start = TIER.indexOf('function DecorationShells(');
   const body = TIER.slice(start, TIER.indexOf('\n}\n', start));
 
-  it('measures the seat from the TILTED bounds, not the authored minY', () => {
-    expect(body).toMatch(/setFromObject\(scene\)\.applyMatrix4/);
-    expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
-    // The untilted figure must not be what positions the shell any more.
-    expect(body).not.toMatch(/u\.pos\[1\] - minY \* shellScale/);
+  /* ⚠️ THE SAME CONTRACT AS `ringBaseY` — see the note there. Re-measuring the bounds after the
+     authored rotation lifted a tilted ring by a figure the calibrator never shows, which is what
+     made Classic Shell Border hang above the cake. The two render paths must not disagree. */
+  it('does not re-measure the bounds after the authored rotation', () => {
+    expect(body).not.toMatch(/setFromObject\(scene\)\.applyMatrix4/);
+    expect(body).toMatch(/const seatMinY = minY;/);
   });
 
-  /* ⚠️ AN UNTILTED ELEMENT MUST KEEP THE MEASURED minY EXACTLY. Recomputing for everything would
-     move every decoration ring already on a saved cake by whatever the two measurements disagree
-     about — a silent change to work customers have already approved. */
-  it('short-circuits to the authored minY when there is no tilt', () => {
-    expect(body).toMatch(/if \(!scene \|\| \(!tilt\[0\] && !tilt\[2\]\)\) return minY;/);
+  it('still seats the shell on that figure', () => {
+    expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
   });
 });
