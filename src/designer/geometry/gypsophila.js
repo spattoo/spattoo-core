@@ -51,11 +51,20 @@ export const GYP_DEFAULTS = Object.freeze({
      are big enough to justify it. */
   thickness:  0.0050,  // stem radius at the cut end
   /* Blooms per tip. A gypsophila tip is not one flower, it is a tight corymb of them. */
-  /* ⚠️ FEWER, BECAUSE THEY ARE BIGGER. Nine of them at the new size packed each tip into a solid
-     ball that buried every twig, and the whole ring went pure white — Sandeep: *"it only looks
-     white now. no green at all. which is wrong. previous one was good actually. we just needed to
-     increase the size of the flower."* Right: the size was the ask, the burial was my doing. */
-  florets:    3,
+  /* ⚠️ FEWER, BECAUSE THEY ARE BIGGER — and this is the knob that decides how much green survives,
+     which is the thing that has been judged three times. Nine at the new bloom size packed each tip
+     into a solid ball that buried every twig and the ring went pure white; three left it *"over
+     thick with flowers"*. Measured as the share of the ring that reads green rather than white:
+
+         9 per tip    0.0%      a solid white band
+         3 per tip    0.9%      the level that was approved before the blooms grew
+         2 per tip    2.1%   <- here
+         1 per tip    4.5%      matches the reference's 5%, and reads stemmy
+
+     ⚠️ The reference's own 5% is mostly FOLIAGE, which this sprig does not have — so 1 per tip
+     reaches that number by showing bare twig, which is not the same picture. 2 is where the blooms
+     still read as clusters and the green threads through them. */
+  florets:    2,
   /* ⚠️ A RADIUS, AND IT IS MEASURED OFF THE REFERENCE RATHER THAN REASONED ABOUT — twice now in
      opposite directions, which is why the measurement is written down.
      It started at 0.016, a bloom 11% as wide as the whole sprig, and rendered as a handful of flat
