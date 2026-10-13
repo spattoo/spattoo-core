@@ -2896,28 +2896,29 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (d.id === null) {
       const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
       d.id = id;
-      /* ⚠️ THE CHIP THE BAKER HAS SELECTED, NOT THE LAST STROKE'S COLOUR. This took the previous
-         stroke's settings first, which meant the first drawn stroke took the palette's FIRST colour
-         and every one after it copied that — so picking blue in the card and drawing produced
-         another pink stroke, and there was no way to draw in blue at all. Sandeep: *"when i
-         selected blue, strokes coming in blue only."* The selected chip is what the baker is
-         looking at, and `bandSlot` is which one that is — the same value the wheel below the
-         palette edits, so the colour under your finger IS the colour that lands.
-         Thickness and width still come from the last stroke: those are not shown as a selection,
-         and resetting them each time is the "its not keeping the same thickness, its resetting"
-         complaint the studio already has written up. */
+      /* ⚠️ THE COLOUR IS THE STROKE'S OWN NOW, not a chip on the card. Drawing mode has no palette —
+         Sandeep: *"user should be able to change color for each stroke separately. that color
+         should apply only to that specific piece."* So a new stroke starts from the one before it
+         (keep painting and you keep that colour, which is what a hand does) and from the band's
+         colour for the first. Everything after that happens in the stroke's own card, which opens
+         the moment it is laid down. */
       const prev = (t.brushStrokes ?? []).at(-1);
       const band = { ...BRUSH_BAND_DEFAULTS, ...(t.brushBand ?? {}) };
       const palette = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
       updateTierBrushStrokes(tierIndex, list => [...list, {
         id,
         surface: 'side',
-        color:  palette[Math.min(bandSlot, palette.length - 1)] ?? prev?.color ?? '#F6DCE2',
+        color:  prev?.color  ?? palette[0] ?? '#F6DCE2',
         width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
         weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
         seed:   1 + Math.floor(Math.random() * 9999),
         ...g,
       }]);
+      /* ⚠️ AND ITS CARD OPENS WITH IT. Sandeep: *"a separate sub popup should be opened (like we do
+         for piping hand drawing)."* The pen does exactly this — the piece you just made is the
+         piece in hand — and without it a baker had to find a thin stroke on the wall and tap it
+         before they could change anything about what they had just drawn. */
+      setPickedBrush({ tier: tierIndex, id });
     } else {
       updateBrushStroke(tierIndex, d.id, g);
     }
@@ -6736,6 +6737,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tuned = el?.placement_config?.cream_brush ?? {};
     setTierBrushBand(i, {
       ...tuned,
+      /* ⚠️ ONE COLOUR TO START, AND THE ROW'S OTHERS ARE NOT KEPT. Sandeep: *"default of this
+       * studio should not be 3 colors, let it be only single color when loaded… round with single
+       * color only, let the user select multi color."* The row authors three, which arrived as a
+       * three-tone band nobody had asked for and made the palette look like a fixed set rather
+       * than a choice. The + chip adds the others back in one tap.
+       *
+       * ⚠️ AND IT IS TAKEN FROM THE ROW, not replaced by a constant — the first authored colour is
+       * still the baker's own starting colour, so an admin who sets a house pink gets a house pink
+       * band. Only the COUNT is overridden, which is the thing that was wrong. */
+      colors: [(tuned.colors?.length ? tuned.colors : BRUSH_BAND_DEFAULTS.colors)[0]],
+      /* ⚠️ NOTHING ON THE CAKE UNTIL THE BAKER SAYS WHICH. Sandeep: *"by default dont surround the
+       * cake with the strokes. 'strokes round the cake' and 'drawing' need to be two different
+       * options explicitly user need to choose."* `ask` is that third state: the card opens with
+       * the two offers and the wall stays bare until one is picked. A band saved before this has
+       * no `mode` at all and still renders — see the renderer's test. */
+      mode: 'ask',
       elementId: el?.id ?? undefined,
       seed: tuned.seed ?? (1 + Math.floor(Math.random() * 9999)),
     });
@@ -13147,6 +13164,79 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const colors = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
     const slot = Math.min(bandSlot, colors.length - 1);
     const setColors = next => set({ colors: next });
+    const mode = band.mode ?? 'band';          // no mode = a band saved before the choice existed
+
+    /* ── Which of the two, asked outright ────────────────────────────────────────────────────
+     *
+     * Sandeep: *"'strokes round the cake' and 'drawing' need to be two different options
+     * explicitly user need to choose."* They were one card with a Draw-your-own button at the
+     * bottom, so placing the element wrapped the wall in a band first and drawing was something
+     * you found afterwards — on a cake you had not asked for.
+     *
+     * ⚠️ NOT A Segmented. That control is for a value with two settings, and this is a FORK: until
+     * one is chosen there is nothing on the cake and no third "neither" state to show as selected.
+     * Two full-width offers, each saying what it does, and the wall stays bare behind them. */
+    if (mode === 'ask') {
+      const choose = (m, extra) => () => { set({ mode: m, ...extra }); setBrushDraw(m === 'draw' ? { tierIndex: i } : null); };
+      return (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
+            Palette-knife strokes of cream. Ring the whole cake with them, or paint them on yourself.
+          </div>
+          <button onClick={choose('band')} style={{ ...s.neutralBtn, width: '100%', marginTop: 12,
+                                                    minHeight: 46, flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 800 }}>Strokes round the cake</span>
+            <span style={{ fontSize: 10, color: '#b29aa2' }}>One colour, repeated. Add more when you want them.</span>
+          </button>
+          <button onClick={choose('draw')} style={{ ...s.neutralBtn, width: '100%', marginTop: 8,
+                                                    minHeight: 46, flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 800 }}>Draw them myself</span>
+            <span style={{ fontSize: 10, color: '#b29aa2' }}>Drag on the cake. Each stroke gets its own card.</span>
+          </button>
+          <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
+            style={{ ...s.deleteBtn, width: '100%', marginTop: 10 }}>
+            Remove from cake
+          </button>
+        </>
+      );
+    }
+
+    /* ⚠️ DRAWING IS ITS OWN CARD NOW, not a button under the band's controls. A baker who chose to
+     * paint has no use for Strokes, Overlap or Shuffle the band — those describe a ring that is not
+     * on the cake — and every colour decision belongs to the stroke in hand, which is what the
+     * per-stroke card is for. */
+    if (mode === 'draw') {
+      const drawn = design.tiers[i]?.brushStrokes ?? [];
+      return (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
+            Drag down the side of the cake for an upright stroke, or across it for one that sweeps
+            round. Each stroke opens its own card — colour, thickness, width and pattern are set
+            there, and apply to that stroke alone.
+          </div>
+          <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
+            {drawn.length ? `${drawn.length} drawn. Tap one to change it.` : 'Nothing drawn yet.'}
+          </div>
+          {drawn.length > 0 && (
+            <button onClick={() => { updateTierBrushStrokes(i, () => []); setPickedBrush(null); }}
+              style={{ ...s.neutralBtn, width: '100%', marginTop: 10 }}>
+              Clear the ones I drew
+            </button>
+          )}
+          <button onClick={() => { set({ mode: 'ask' }); setBrushDraw(null); setPickedBrush(null); }}
+            style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+            Ring the cake instead
+          </button>
+          <button onClick={() => {
+            setTierBrushBand(i, null);
+            updateTierBrushStrokes(i, () => []);
+            setBrushDraw(null); setPickedBrush(null); clearAllSelections();
+          }} style={{ ...s.deleteBtn, width: '100%', marginTop: 8 }}>
+            Remove from cake
+          </button>
+        </>
+      );
+    }
 
     return (
       <>
@@ -13203,48 +13293,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Shuffle the band
         </button>
 
-        {/* ── Draw your own ───────────────────────────────────────────────────────────────────
-          *
-          * Sandeep: *"in the cream stroke studio, we did not integrate the hand stroke feature. we
-          * did this piece already in admin. user should be able to do the strokes by himself.
-          * vertical or horizontal."*
-          *
-          * ⚠️ BESIDE THE BAND, NOT INSTEAD OF IT. The admin studio offers these as two MODES
-          * because a studio is deciding which look to author. On a cake they compose: a baker lays
-          * a band round the bottom and then adds three taller strokes by hand, which is what every
-          * reference photograph of this technique shows. A mode switch would have made that cake
-          * unreachable.
-          *
-          * ⚠️ AND NO VERTICAL/HORIZONTAL BUTTONS. The drag IS the direction —
-          * `brushGestureFromDrag` reads the lean and the sweep out of where the hand started and
-          * where it got to. Two buttons would be a second, worse way to say the same thing.
-          *
-          * ⚠️ THE BUTTON IS A TOGGLE AND SAYS WHICH STATE IT IS IN, because while drawing is on the
-          * cake stops orbiting and starts taking strokes — a mode a baker cannot see they are in is
-          * the one they get stuck in. */}
-        <button
-          onClick={() => setBrushDraw(brushDraw?.tierIndex === i ? null : { tierIndex: i })}
-          style={{ ...s.neutralBtn, width: '100%', marginTop: 8,
-                   ...(brushDraw?.tierIndex === i
-                     ? { background: INK, color: '#fff', border: `1.5px solid ${INK}` } : null) }}>
-          {brushDraw?.tierIndex === i ? 'Done drawing' : 'Draw your own'}
+        {/* ⚠️ DRAWING IS NO LONGER A BUTTON DOWN HERE. It was a toggle under Shuffle, which made
+            the band the thing you got and drawing the thing you found — Sandeep: *"'strokes round
+            the cake' and 'drawing' need to be two different options explicitly user need to
+            choose."* The fork is at the top of this card now, and "Ring the cake instead" is the
+            way back from the other side. */}
+        <button onClick={() => { set({ mode: 'draw' }); setBrushDraw({ tierIndex: i }); }}
+          style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+          Draw them myself instead
         </button>
-        {brushDraw?.tierIndex === i && (
-          <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.45, marginTop: 6 }}>
-            Drag down the side of the cake for an upright stroke, or across it for one that sweeps
-            round. Each drag lays one stroke in the colour selected above — tap a stroke to change
-            its colour, thickness, width or pattern.
-            {(design.tiers[i]?.brushStrokes?.length ?? 0) > 0
-              && ` ${design.tiers[i].brushStrokes.length} drawn.`}
-          </div>
-        )}
-        {(design.tiers[i]?.brushStrokes?.length ?? 0) > 0 && (
-          <button onClick={() => updateTierBrushStrokes(i, () => [])}
-            style={{ ...s.neutralBtn, width: '100%', marginTop: 6 }}>
-            Clear the ones I drew
-          </button>
-        )}
-
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           {/* ⚠️ THE HAND-DRAWN ONES GO TOO, and that is not tidiness. This card only exists while
               the tier has a BAND — `renderBrushBandBody` returns null without one — so removing the

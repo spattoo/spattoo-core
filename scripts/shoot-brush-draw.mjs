@@ -43,14 +43,6 @@ await page.waitForTimeout(600);
 await page.evaluate(() => window.__loadElements?.());
 await page.waitForTimeout(1500);
 
-console.log('\nthe cream-strokes card');
-ok(await page.evaluate(() => window.__tapElementById?.('e33') ?? false), 'the Cream strokes row puts a band on the cake');
-await page.waitForTimeout(2500);
-ok(await page.evaluate(() => !!window.__design?.().tiers?.[0]?.brushBand), 'and the tier carries it');
-ok(await btn('Draw your own'), 'the card offers "Draw your own"');
-await page.waitForTimeout(900);
-
-/* The cake sits in the middle of the canvas; these are drags across its front. */
 const cv = await page.evaluate(() => {
   const r = document.querySelector('canvas').getBoundingClientRect();
   return { l: r.left, t: r.top, w: r.width, h: r.height };
@@ -65,6 +57,21 @@ const drag = async (x0, y0, x1, y1) => {
   await page.mouse.up();
   await page.waitForTimeout(1400);
 };
+
+console.log('\nthe cream-strokes card asks which');
+ok(await page.evaluate(() => window.__tapElementById?.('e33') ?? false), 'the Cream strokes row opens the card');
+await page.waitForTimeout(2500);
+const band0 = await page.evaluate(() => window.__design?.().tiers?.[0]?.brushBand ?? null);
+ok(band0?.mode === 'ask', `nothing is on the cake yet (mode ${band0?.mode})`);
+ok(band0?.colors?.length === 1, `and the palette starts at ONE colour (${(band0?.colors ?? []).join(', ')})`);
+ok(await page.evaluate(() => /Strokes round the cake/i.test(document.body.innerText)
+                          && /Draw them myself/i.test(document.body.innerText)),
+   'both offers are on the card');
+
+console.log('\nchoosing to draw');
+ok(await btn('Draw them myself'), 'picked drawing');
+await page.waitForTimeout(1200);
+ok(await page.evaluate(() => window.__design?.().tiers?.[0]?.brushBand?.mode === 'draw'), 'the tier is in drawing mode');
 
 console.log('\ndragging DOWN the wall');
 await drag(0.47, 0.50, 0.47, 0.70);
@@ -85,28 +92,43 @@ if (across) {
   ok(Math.abs(across.sweep) > 0.04, `and it SWEEPS round the wall (sweep ${across.sweep?.toFixed(3)})`);
   ok(Math.abs(across.climb) < Math.abs(down?.climb ?? 1), `travelling less up it than the first (climb ${across.climb?.toFixed(3)})`);
 }
-/* ⚠️ THE SELECTED CHIP, NOT THE LAST STROKE'S COLOUR. Sandeep: *"when i selected blue, strokes
-   coming in blue only."* Drawing used to copy the previous stroke, so the first took the palette's
-   FIRST colour and every one after it copied that — picking blue changed nothing. */
+/* ⚠️ EACH STROKE CARRIES ITS OWN COLOUR, AND ITS CARD OPENS WITH IT. Sandeep: *"a separate sub
+   popup should be opened (like we do for piping hand drawing). user should be able to change color
+   for each stroke separately. that color should apply only to that specific piece."* */
 ok(list.every(st => st.color), `each stroke carries a colour (${list.map(st => st.color).join(', ')})`);
-const palette = await page.evaluate(() => window.__design().tiers[0].brushBand.colors);
-ok(list.every(st => st.color === palette[0]), `drawn in the selected chip, which is the first (${palette[0]})`);
+ok(/This stroke/i.test(await page.evaluate(() => document.body.innerText)),
+   'the stroke just drawn has its own card open');
+ok(await page.evaluate(() => /Thickness/i.test(document.body.innerText) && /Width/i.test(document.body.innerText)
+                          && /Another pattern/i.test(document.body.innerText)),
+   'with thickness, width and pattern on it');
 
-console.log('\nselecting another colour and drawing again');
-/* ⚠️ THE CHIPS ARE `<div onClick>` WITH A TITLE, not buttons — they are among the 24 the root
-   CLAUDE.md counts. Hunting for "a small textless button" found the × badge that DROPS a colour
-   instead, which is a destructive click dressed as a selection. Their title is the contract. */
+console.log('\nrecolouring ONE stroke');
+const before = (await strokes()).map(st => st.color);
+/* ⚠️ THE SWATCHES ARE `<div onClick>` WITH A ROUND CHILD, not buttons — ColorWheel builds them that
+   way, and they are more of the 24 the root CLAUDE.md counts. Looking for a button found nothing
+   and read as "the card has no swatches". They are found by shape: a circular, coloured dot. */
 ok(await page.evaluate(() => {
-  const chip = document.querySelector('[title="Colour 2"]');
-  if (!chip) return false; chip.click(); return true;
-}), 'the second palette chip can be selected');
-await page.waitForTimeout(900);
-await drag(0.53, 0.52, 0.53, 0.68);
-const after = await strokes();
-ok(after.length === 3, `a third stroke is laid (${after.length})`);
-ok(after[2]?.color === palette[1],
-   `and it takes the NEWLY selected colour (${after[2]?.color} vs ${palette[1]})`);
-await page.screenshot({ path: `${OUT}/brush-draw.png` });
+  const head = [...document.querySelectorAll('*')].find(x => x.children.length === 0 && /^This stroke$/i.test(x.textContent.trim()));
+  let card = head?.parentElement;
+  while (card && card.querySelectorAll('div').length < 10) card = card.parentElement;
+  if (!card) return false;
+  const dots = [...card.querySelectorAll('div')].filter(d => {
+    const cs = getComputedStyle(d), r = d.getBoundingClientRect();
+    return cs.borderRadius === '50%' && r.width > 10 && r.width < 34
+        && /^rgb/.test(cs.backgroundColor) && cs.backgroundColor !== 'rgba(0, 0, 0, 0)';
+  });
+  if (dots.length < 3) return false;
+  /* ⚠️ ONE THAT IS NOT ALREADY THE COLOUR. Tapping the selected swatch calls onChange with the
+     value it already has, which changes nothing and reads as "the card does not work". */
+  const cur = getComputedStyle(dots[0]).backgroundColor;
+  const other = dots.find(d => getComputedStyle(d).backgroundColor !== cur) ?? dots[dots.length - 1];
+  (other.closest('[style*="cursor"]') ?? other.parentElement).click();
+  return true;
+}), 'a swatch on that card can be tapped');
+await page.waitForTimeout(1200);
+const after = (await strokes()).map(st => st.color);
+const changed = after.filter((c, k) => c !== before[k]).length;
+ok(changed === 1, `exactly ONE stroke changed colour (${changed}: ${before.join(',')} → ${after.join(',')})`);
 
 console.log('\nclearing');
 ok(await btn('Clear the ones I drew'), 'the card offers to clear them');

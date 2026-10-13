@@ -42,7 +42,7 @@ import GrassPatch from './GrassPatch.jsx';
 import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
-         BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
+         BRUSH_ON_CAKE_DEFAULTS, brushBandRings } from '../geometry/brushStrokeOnCake.js';
 import { creamMaterialProps, BRUSH_CREAM_SOFTNESS } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
@@ -3585,7 +3585,10 @@ function CakeContent({ config, scene, edit = null }) {
           {/* The brushstroke band on THIS tier's wall. Not draggable and not clickable — it is a
               treatment of the whole wall like dusting or foil, not a thing placed on it, so it
               raycasts to nothing and its card is reached from the tier. */}
-          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color}
+          {/* ⚠️ ONLY WHEN IT RINGS. A band in 'ask' or 'draw' is on the tier but not on the wall —
+              see brushBandRings, which also decides that a band saved before the field existed
+              still draws. */}
+          <BrushBand band={brushBandRings(tier.brushBand) ? tier.brushBand : null} tier={tier} wallColour={tier.color}
             onClick={onBrushBandClick ? () => onBrushBandClick(i) : null} />
           {/* And the hand-drawn ones. Clickable, because each has its own card. */}
           <BrushStrokes strokes={tier.brushStrokes ?? []} tier={tier} wallColour={tier.color}
