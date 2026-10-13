@@ -77,7 +77,10 @@ export function useSeatedInstances(seats, topY,
         tip.setFromAxisAngle(axis, s.lean);
         q.premultiply(tip);
       }
-      pos.set(s.x, topY, s.z);
+      /* ⚠️ A SEAT MAY SIT ABOVE THE SURFACE. Everything in a field normally shares one height, and
+         that is right for a band on a tier. It is wrong for filler MERGED into a bunch of flowers,
+         where some sprays rest on the blooms rather than between them — see `liftOverDomes`. */
+      pos.set(s.x, topY + (s.lift ?? 0), s.z);
       scl.setScalar(s.scale);
       mesh.setMatrixAt(i, m.compose(pos, q, scl));
       if (shaded) {
@@ -125,7 +128,7 @@ export function instancedTriangleCount(geo, seatCount) {
 export function useSurfaceSeats({
   shape, spacing, jitter, inset = 0.98, seed = 7,
   bandInner = null, hole = null, overhang = 0, patches = null, patchRadius = null,
-  collars = null,
+  collars = null, mergeOver = null, mergeKeep = 0.25,
 }) {
   return useMemo(() => {
     const R = patchRadius ?? shape.radius ?? 1;
@@ -141,8 +144,17 @@ export function useSurfaceSeats({
                    ...(collars ?? []).map(p => toWorld(p, 0.4))];
     const seats = grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole,
                                overhang, patches: world.length ? world : null });
-    return collars?.length ? withoutCollarCentres(seats, world.filter(w => w.inner > 0)) : seats;
-  }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius, collars]);
+    const cleared = collars?.length
+      ? withoutCollarCentres(seats, world.filter(w => w.inner > 0))
+      : seats;
+    /* ⚠️ MERGE IS THE OPPOSITE OF A COLLAR'S BITE, so a caller passes one or the other. Surrounding
+       clears the footprint; merging keeps those seats and lifts them onto the bloom. */
+    return mergeOver?.length
+      ? liftOverDomes(cleared, mergeOver.map(m => ({ ...toWorld(m, m.r ?? 0.3) })),
+                      { keep: mergeKeep, seed })
+      : cleared;
+  }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius,
+      collars, mergeOver, mergeKeep]);
 }
 
 /* ── A ring of pieces around something already on the cake ───────────────────────────────────────
@@ -161,6 +173,47 @@ export function useSurfaceSeats({
  * ⚠️ IT IS A SQUARED-DISTANCE TEST ON PURPOSE. A seat loop over a few thousand pieces and a handful
  * of collars runs this often enough that a `Math.hypot` per pair is worth not paying.
  */
+/* ── Merging into a bunch, as opposed to surrounding it ──────────────────────────────────────────
+ *
+ * ⚠️ SURROUNDING AND MERGING ARE TWO DIFFERENT THINGS, and only the first was built at first.
+ * Sandeep: *"you also surrounded the flower. surrounding and merging are two diff options."* He is
+ * right, and the references show both:
+ *
+ *   SURROUND — the filler rings each rose and keeps off it. `withoutCollarCentres`, which clears
+ *   the footprint so nothing grows through a bloom.
+ *   MERGE — the filler is part of the same mass. Sprays come up between the roses AND lie ACROSS
+ *   them, resting on the petals and poking out at every angle, so the two flowers read as one
+ *   arrangement rather than as a flower with a border.
+ *
+ * Merging needs seats over the rose, lifted onto its surface. Each rose is treated as a dome: a
+ * seat at its centre rides at full height, one at its rim at nothing, with a circular falloff
+ * between — so the sprays follow the bloom's curve instead of hovering on a disc above it.
+ */
+export function liftOverDomes(seats, domes, { keep = 0.25, seed = 7 } = {}) {
+  if (!domes?.length) return seats;
+  /* ⚠️ A FEW SPRAYS CROSS A BLOOM; A BLANKET DOES NOT. Lifting every seat that lands on a rose
+     covered it completely and the flowers vanished under the filler — which is merging taken past
+     the point where there is anything left to merge WITH. `keep` is the share of those seats that
+     survive, and the rest are dropped rather than pushed aside, because a spray resting on a petal
+     is occasional by nature. Seeded, so the arrangement does not re-roll on every render. */
+  const rand = mulberry32((seed + 7717) >>> 0);
+  const out = [];
+  for (const s of seats) {
+    let lift = 0;
+    for (const d of domes) {
+      const dx = s.x - d.x, dz = s.z - d.z;
+      const t = Math.hypot(dx, dz) / (d.r || 1);
+      if (t >= 1) continue;
+      /* The dome's own profile. The tallest wins where two roses overlap, which is what a spray
+         lying across both of them actually does. */
+      lift = Math.max(lift, (d.height ?? d.r) * Math.sqrt(1 - t * t));
+    }
+    if (lift <= 0) { out.push(s); continue; }
+    if (rand() < keep) out.push({ ...s, lift });
+  }
+  return out;
+}
+
 export function withoutCollarCentres(seats, collars) {
   if (!collars?.length) return seats;
   return seats.filter((s) => !collars.some((c) => {

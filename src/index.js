@@ -179,13 +179,13 @@ export { ELEMENT_WIRE_DEFAULTS, WIRE_ANGLE, WIRE_LENGTH, WIRE_BEND, WIRE_WAVES, 
 export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad, brushStriation,
          strokeFacesOutward, wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors,
          brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
-         buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS,
+         buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS, brushBandRings,
          BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
 export { balloonProfile, buildBalloon, BALLOON_DEFAULTS, BALLOON_PLACEMENT_DEFAULTS, BALLOON_SIZE_RANGE,
          balloonPlacement, balloonHandleAt, balloonDragTo } from './designer/geometry/balloon.js';
 export { default as WaferPaperMaterial } from './designer/canvas/WaferPaperMaterial.jsx';
 export { default as GypCloud } from './designer/canvas/GypCloud.jsx';
-export { outwardBand, rimBand, withoutCollarCentres } from './designer/canvas/useSeatedInstances.js';
+export { outwardBand, rimBand, withoutCollarCentres, liftOverDomes } from './designer/canvas/useSeatedInstances.js';
 export { buildGypSprig, gypTriangleCount, GYP_DEFAULTS, GYP_COLOURS } from './designer/geometry/gypsophila.js';
 export { waferPanel, buildWaferSkirt, WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS } from './designer/geometry/waferPaper.js';
 export { WAFER_PAPER_MATERIAL, waferFibreTexture } from './designer/geometry/waferPaperMaterial.js';
