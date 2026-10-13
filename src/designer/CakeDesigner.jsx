@@ -13278,7 +13278,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       return (
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
-            Palette-knife strokes of cream. Ring the whole cake with them, or paint them on yourself.
+            Palette-knife strokes of cream. Ring the whole cake with them, paint them on by hand, or
+            do both — start with whichever you like.
           </div>
           <button onClick={choose('band')} style={{ ...s.neutralBtn, width: '100%', marginTop: 12,
                                                     minHeight: 46, flexDirection: 'column', gap: 2 }}>
@@ -13320,9 +13321,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               Clear the ones I drew
             </button>
           )}
-          <button onClick={() => { set({ mode: 'ask' }); setBrushDraw(null); setPickedBrush(null); }}
+          {/* ⚠️ "TOO", AND IT KEEPS WHAT IS ALREADY DRAWN. This used to go back to the fork
+              (`mode: 'ask'`), which is the same either/or mistake from the other side: a baker who
+              had drawn six strokes and then wanted a band behind them was sent to a screen offering
+              to start over. `brushStrokes` is untouched, so the band simply appears behind them. */}
+          <button onClick={() => set({ mode: 'band' })}
             style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
-            Ring the cake instead
+            Ring the cake too
           </button>
           <button onClick={() => {
             setTierBrushBand(i, null);
@@ -13335,6 +13340,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       );
     }
 
+    const drawn = design.tiers[i]?.brushStrokes ?? [];
+    const drawing = brushDraw?.tierIndex === i;
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
@@ -13390,15 +13397,51 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Shuffle the band
         </button>
 
-        {/* ⚠️ DRAWING IS NO LONGER A BUTTON DOWN HERE. It was a toggle under Shuffle, which made
-            the band the thing you got and drawing the thing you found — Sandeep: *"'strokes round
-            the cake' and 'drawing' need to be two different options explicitly user need to
-            choose."* The fork is at the top of this card now, and "Ring the cake instead" is the
-            way back from the other side. */}
-        <button onClick={() => { set({ mode: 'draw' }); setBrushDraw({ tierIndex: i }); }}
-          style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
-          Draw them myself instead
-        </button>
+        {/* ── Hand strokes, ON TOP OF the band ────────────────────────────────────────────────
+         *
+         * ⚠️ THE TWO ARE NOT A FORK, AND READING THEM AS ONE WAS THE BUG. This said "Draw them
+         * myself INSTEAD" and set `mode: 'draw'`, which took the band off the cake. Sandeep:
+         * *"its not either 'round the cake' vs 'draw', it can be both. i can do the round first and
+         * then i want to add few strokes by hand above that. this was the reason i wanted a separate
+         * card popup for each hand stroke."*
+         *
+         * Nothing in the RENDERER ever disagreed: `BrushStrokes` draws `tier.brushStrokes` whatever
+         * the band is doing, and the per-stroke card is driven by `pickedBrush` alone. The band and
+         * the drawn strokes have always been separate fields. Only this card tied them together.
+         *
+         * So drawing is a MODE OF WORKING, not a mode of the element: `brushDraw` is UI state that
+         * says "a drag on this tier lays cream", and `mode` keeps meaning only "does a band ring the
+         * cake". Turning drawing on here leaves `mode: 'band'` exactly as it was. */}
+        <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 12, paddingTop: 10 }}>
+          {drawing ? (
+            <>
+              <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.5 }}>
+                Drag down the side for an upright stroke, or across it for one that sweeps round.
+                Each one opens its own card.
+              </div>
+              <button onClick={() => setBrushDraw(null)}
+                style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+                Done adding strokes
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setBrushDraw({ tierIndex: i })}
+              style={{ ...s.neutralBtn, width: '100%' }}>
+              Add strokes by hand
+            </button>
+          )}
+          {drawn.length > 0 && (
+            <>
+              <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
+                {drawn.length} added by hand. Tap one to change it.
+              </div>
+              <button onClick={() => { updateTierBrushStrokes(i, () => []); setPickedBrush(null); }}
+                style={{ ...s.neutralBtn, width: '100%', marginTop: 6 }}>
+                Clear the ones I drew
+              </button>
+            </>
+          )}
+        </div>
         <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
           {/* ⚠️ THE HAND-DRAWN ONES GO TOO, and that is not tidiness. This card only exists while
               the tier has a BAND — `renderBrushBandBody` returns null without one — so removing the
