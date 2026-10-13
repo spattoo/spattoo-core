@@ -39,12 +39,6 @@ export default function GypCloud({
   /* [{ u, v, r, inner }] — a ring of sprigs around something already placed, like a rose. `r` is
      how far the halo reaches, `inner` the footprint it must keep clear. See useSurfaceSeats. */
   collars = null,
-  /* [{ u, v, r, height }] — things the filler should MERGE with rather than ring. Seats over them
-     are lifted onto the dome, so sprays lie across a bloom instead of stopping at its edge. */
-  mergeOver = null,
-  /* What share of the seats landing ON a bloom survive. A few sprays cross a rose; a blanket is
-     not merging, it is burial. */
-  mergeKeep = 0.25,
   seed = GYP_DEFAULTS.seed,
   /* Degrees the sprig is tipped over from upright. 0 stands it up (a top surface, where the stem
      really is pushed into buttercream); 90 lays it flat (a board, which is card and cannot be
@@ -66,7 +60,7 @@ export default function GypCloud({
   );
 
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang,
-                                  patches, patchRadius, collars, mergeOver, mergeKeep });
+                                  patches, patchRadius, collars });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
   const ref = useSeatedInstances(seats, topY - bury,

@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
 import { layAxis, instancedTriangleCount, outwardBand, rimBand,
-         withoutCollarCentres, liftOverDomes } from './useSeatedInstances.js';
+         withoutCollarCentres } from './useSeatedInstances.js';
 
 /* ⚠️ THIS IS THE SIGN THE WAFER SKIRT GOT WRONG, and it cost a day. `fin` mounting sent every strip
  * INWARD through the cake instead of outward, which a render could not show (the strips were simply
@@ -172,65 +172,40 @@ describe('withoutCollarCentres — a ring around something already placed', () =
   });
 });
 
-/* ⚠️ SURROUNDING AND MERGING ARE TWO DIFFERENT ARRANGEMENTS, and only the first existed at first.
- * Sandeep: *"you also surrounded the flower. surrounding and merging are two diff options."* Both
- * are in the references — the filler can ring a bloom and keep off it, or be part of the same mass
- * with sprays lying ACROSS it. `withoutCollarCentres` is the first; this is the second, and they
- * are opposites: one clears the footprint, the other keeps those seats and lifts them onto it. */
-describe('liftOverDomes — merging into a bunch rather than ringing it', () => {
+/* ⚠️ MERGING IS NOT "SPRAYS ON TOP OF THE ROSE". A `liftOverDomes` that lifted seats onto each bloom
+ * so sprigs lay across the petals was written, rendered, tested and then deleted: it looked right
+ * at arm's length and was impossible, because zoomed in every stem ran THROUGH the rose. INVARIANTS
+ * #3b — nothing a customer places may penetrate what is already there. Sandeep: *"you are inserting
+ * into roses. that cannot happen in real. it should be between the rose bunch."*
+ *
+ * So BOTH arrangements clear every footprint and one function does both; what differs is the size
+ * of the bite. These two cases are that distinction, and they are why the clearing function takes a
+ * list rather than a single shape. */
+describe('one bite or many: surrounding a bunch versus filling between it', () => {
   const grid = [];
-  for (let x = -1; x <= 1; x += 0.05) for (let z = -1; z <= 1; z += 0.05) grid.push({ x, z });
-  const dome = [{ x: 0, z: 0, r: 0.5, height: 0.4 }];
+  for (let x = -1.2; x <= 1.2; x += 0.04) for (let z = -1.2; z <= 1.2; z += 0.04) grid.push({ x, z });
+  const roses = [{ x: -0.35, z: 0, r: 0.25 }, { x: 0.35, z: 0, r: 0.25 }];
+  const gap = (s) => Math.abs(s.x) < 0.08 && Math.abs(s.z) < 0.08;   // between the two roses
 
-  it('lifts seats onto the bloom and leaves the rest on the surface', () => {
-    const out = liftOverDomes(grid, dome, { keep: 1 });
-    const on = out.filter(s => Math.hypot(s.x, s.z) < 0.5);
-    const off = out.filter(s => Math.hypot(s.x, s.z) > 0.6);
-    expect(on.every(s => s.lift > 0)).toBe(true);
-    expect(off.every(s => !s.lift)).toBe(true);
+  it('MERGE — one bite per rose leaves the gap between them filled', () => {
+    const kept = withoutCollarCentres(grid, roses.map(r => ({ ...r, inner: r.r })));
+    expect(kept.some(gap)).toBe(true);
+    for (const r of roses) {
+      expect(kept.some(s => Math.hypot(s.x - r.x, s.z - r.z) < r.r)).toBe(false);
+    }
   });
 
-  /* The dome's own profile — a spray at the centre rides highest and one at the rim sits on the
-     surface, so the filler follows the bloom's curve instead of hovering on a disc above it. */
-  it('follows the curve: highest at the centre, nothing at the rim', () => {
-    const out = liftOverDomes(grid, dome, { keep: 1 });
-    const at = (r) => out.find(s => Math.abs(Math.hypot(s.x, s.z) - r) < 0.03)?.lift ?? 0;
-    expect(at(0.02)).toBeGreaterThan(at(0.25));
-    expect(at(0.25)).toBeGreaterThan(at(0.47));
-    expect(at(0.02)).toBeCloseTo(0.4, 1);
+  it('SURROUND — one bite over the whole bunch empties the gap too', () => {
+    const kept = withoutCollarCentres(grid, [{ x: 0, z: 0, inner: 0.7 }]);
+    expect(kept.some(gap)).toBe(false);
+    expect(kept.some(s => Math.hypot(s.x, s.z) > 0.8)).toBe(true);
   });
 
-  /* ⚠️ A FEW SPRAYS CROSS A BLOOM; A BLANKET DOES NOT. Keeping every seat that lands on a rose
-     covered it completely and the flowers vanished under the filler — merging taken past the point
-     where there is anything left to merge WITH. */
-  it('keeps only a share of the seats that land on a bloom', () => {
-    const all = liftOverDomes(grid, dome, { keep: 1 }).filter(s => s.lift > 0).length;
-    const few = liftOverDomes(grid, dome, { keep: 0.2 }).filter(s => s.lift > 0).length;
-    expect(few).toBeGreaterThan(0);
-    expect(few).toBeLessThan(all * 0.45);
-  });
-
-  it('never drops a seat that is not on a bloom', () => {
-    const off = (arr) => arr.filter(s => Math.hypot(s.x, s.z) > 0.6).length;
-    expect(off(liftOverDomes(grid, dome, { keep: 0.05 }))).toBe(off(grid));
-  });
-
-  it('is stable for a seed', () => {
-    const a = liftOverDomes(grid, dome, { keep: 0.3, seed: 5 });
-    const b = liftOverDomes(grid, dome, { keep: 0.3, seed: 5 });
-    expect(a.length).toBe(b.length);
-    expect(a.map(s => s.lift ?? 0)).toEqual(b.map(s => s.lift ?? 0));
-  });
-
-  it('two overlapping blooms: the taller one wins', () => {
-    const out = liftOverDomes([{ x: 0, z: 0 }],
-                              [{ x: 0, z: 0, r: 0.5, height: 0.2 },
-                               { x: 0.1, z: 0, r: 0.5, height: 0.9 }], { keep: 1 });
-    expect(out[0].lift).toBeGreaterThan(0.2);
-  });
-
-  it('no domes, nothing changed', () => {
-    expect(liftOverDomes(grid, null)).toBe(grid);
-    expect(liftOverDomes(grid, [])).toBe(grid);
+  /* A sprig has width of its own, so clearing to the exact radius still lets its blooms clip the
+     bloom it stands beside. The margin is what keeps contact from becoming penetration. */
+  it('a margin on the bite clears more than the footprint itself', () => {
+    const tight = withoutCollarCentres(grid, [{ x: 0, z: 0, inner: 0.25 }]).length;
+    const margin = withoutCollarCentres(grid, [{ x: 0, z: 0, inner: 0.25 * 1.18 }]).length;
+    expect(margin).toBeLessThan(tight);
   });
 });
