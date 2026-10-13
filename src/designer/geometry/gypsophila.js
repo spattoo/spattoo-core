@@ -121,32 +121,34 @@ export const GYP_COLOURS = Object.freeze({
    STABLE: unseeded, every bloom would re-roll on each render and the cloud would shimmer whenever
    an unrelated slider moved. */
 
-/* ── One floret: five petals round a centre ──────────────────────────────────────────────────────
+/* ── One floret: a ruffled pompom ────────────────────────────────────────────────────────────────
  *
- * ⚠️ IT WAS AN OCTAHEDRON AND IT READ AS A CUBE. Eight triangles is the cheapest convincing ball,
- * and the reasoning behind it was that at cake scale a floret is two or three millimetres and all
- * you see is a white dot. That is true at arm's length and false anywhere closer: an octahedron
- * seen down an axis is a SQUARE, and a cloud of them is a cloud of little diamonds. Sandeep:
- * *"the flowers are like small cubes. not in flower shape at least."*
+ * ⚠️ TWO WRONG SHAPES BEFORE THIS ONE, and they were wrong in opposite directions.
  *
- * A gypsophila floret really is a small five-petalled flower, so it is built as one: a centre and
- * five petals, each a quad that widens and then rounds off. Ten triangles against the octahedron's
- * eight — the shape is nearly free, it was only ever the wrong shape.
+ *   An OCTAHEDRON first — the cheapest convincing ball, on the reasoning that a floret is two or
+ *   three millimetres and all you see is a white dot. True at arm's length; seen down an axis an
+ *   octahedron is a SQUARE, and a cloud of them is a cloud of diamonds. *"the flowers are like
+ *   small cubes."*
  *
- * ⚠️ THE PETALS DISH UPWARD rather than lying flat. A flat rosette vanishes edge-on, and half the
- * florets in a cloud are seen edge-on at any moment; dished, the silhouette survives every angle,
- * which is the same argument `curl` makes for a wafer sheet. The material draws both faces for the
- * other half of it — a petal has no back.
+ *   Then a five-petal ROSETTE, which is what a single gypsophila flower looks like in a diagram and
+ *   not what is on a cake. *"i think ours is too thin now."* Right: florists use the DOUBLE variety,
+ *   and Sandeep's close-up shows it — every bloom is a tight ruffled pompom of many small petals,
+ *   nearly round, with a lobed edge. The ball had the right MASS and the wrong silhouette; the star
+ *   had the right silhouette and no mass.
+ *
+ * So: two rings of wide, overlapping petals, the inner one smaller, raised and rotated half a step.
+ * Overlapping is the whole point — petals that meet make a ruffled DISC where petals that do not
+ * make a star, and the second layer is what turns a disc into a pompom.
  */
 const PETALS = 5;
 const _q = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 function pushBloom(pos, nor, idx, centre, r, rand) {
   const base = idx.baseIndex;
-  /* ⚠️ EVERY FLORET GETS ITS OWN ROTATION, and without it a sprig reads as a scatter of identical
-     glyphs however good the glyph is — the fault that was visible when these were octahedra and
-     would be just as visible with petals. A uniformly random quaternion, not three Euler angles,
-     which clump toward the poles. */
+  /* ⚠️ EVERY FLORET GETS ITS OWN ROTATION. Built to one orientation, every bloom presents the same
+     outline at the same moment and the sprig reads as a repeated glyph — a fault that was visible
+     with octahedra and would be more so with a shape this recognisable. A uniformly random
+     quaternion, not three Euler angles, which clump toward the poles. */
   const u1 = rand(), u2 = rand(), u3 = rand();
   const s1 = Math.sqrt(1 - u1), s2 = Math.sqrt(u1);
   _q.set(s1 * Math.sin(2 * Math.PI * u2), s1 * Math.cos(2 * Math.PI * u2),
@@ -155,27 +157,39 @@ function pushBloom(pos, nor, idx, centre, r, rand) {
   const put = (x, y, z) => {
     _v.set(x, y, z).applyQuaternion(_q);
     pos.push(centre.x + _v.x, centre.y + _v.y, centre.z + _v.z);
-    /* The normal is the dish's own, so a petal shades as a cupped surface rather than as a flat
-       chip — flat facets cannot shade under this scene's near-uniform dome. */
-    _v.set(x * 0.35, 1, z * 0.35).normalize().applyQuaternion(_q);
+    /* The dome's own normal, so the pompom shades as a cupped mass rather than as flat chips —
+       flat facets cannot shade under this scene's near-uniform dome. */
+    _v.set(x * 0.5, r, z * 0.5).normalize().applyQuaternion(_q);
     nor.push(_v.x, _v.y, _v.z);
   };
 
-  const dish = r * 0.45;                       // how far the petal tips lift above the centre
-  put(0, 0, 0);                                 // 0: the eye of the flower
-  for (let i = 0; i < PETALS; i++) {
-    const a = (i / PETALS) * Math.PI * 2 + rand() * 0.12;
-    const wide = (Math.PI / PETALS) * 0.78;     // half the angular width of a petal
-    const mid = r * 0.52, tip = r * (0.85 + 0.3 * rand());
-    put(Math.cos(a - wide) * mid, dish * 0.35, Math.sin(a - wide) * mid);   // 1 + 3i
-    put(Math.cos(a) * tip,        dish,        Math.sin(a) * tip);          // 2 + 3i
-    put(Math.cos(a + wide) * mid, dish * 0.35, Math.sin(a + wide) * mid);   // 3 + 3i
+  /* ⚠️ THE NOTCH BETWEEN PETALS IS WHAT DECIDES POMPOM OR STAR, and it is one number. With the
+     petal's shoulders pulled in to half its tip radius the outline is a ten-pointed spike; carried
+     out to 0.86 it becomes a gentle scallop and the bloom reads round. A real double gypsophila has
+     so many petals that the edge is barely lobed at all — this is as close as five get. */
+  const SHOULDER = 0.86;
+  const wide = (Math.PI / PETALS) * 1.35;
+  /* Stacked high enough to be a BALL rather than two sheets of paper. The first attempt lifted the
+     layers by a third and four fifths of the petal radius and they read as one flat star, because
+     a floret is as deep as it is wide and these were nearly coplanar. */
+  const LAYERS = [{ k: 1.00, lift: 0.55, turn: 0 },
+                  { k: 0.70, lift: 1.30, turn: Math.PI / PETALS }];
+  for (const L of LAYERS) {
+    const ring = idx.baseIndex;
+    put(0, r * L.lift * 1.12, 0);                       // the layer's own crown
+    for (let i = 0; i < PETALS; i++) {
+      const a = (i / PETALS) * Math.PI * 2 + L.turn + rand() * 0.10;
+      const mid = r * SHOULDER * L.k, tip = r * L.k * (0.92 + 0.16 * rand());
+      put(Math.cos(a - wide) * mid, r * L.lift * 0.62, Math.sin(a - wide) * mid);
+      put(Math.cos(a) * tip,        r * L.lift * 0.78, Math.sin(a) * tip);
+      put(Math.cos(a + wide) * mid, r * L.lift * 0.62, Math.sin(a + wide) * mid);
+    }
+    for (let i = 0; i < PETALS; i++) {
+      const l = ring + 1 + i * 3;
+      idx.list.push(ring, l, l + 1, ring, l + 1, l + 2);
+    }
+    idx.baseIndex += 1 + PETALS * 3;
   }
-  for (let i = 0; i < PETALS; i++) {
-    const l = base + 1 + i * 3;
-    idx.list.push(base, l, l + 1, base, l + 1, l + 2);
-  }
-  idx.baseIndex += 1 + PETALS * 3;
 }
 
 /* ── How buried is each bloom? ───────────────────────────────────────────────────────────────────
@@ -319,6 +333,6 @@ export function gypTriangleCount(seatCount, opts = {}) {
   let stems = 0, tips = 1;
   for (let i = 1; i <= levels; i++) { stems += tips; tips *= perNode; }
   const stemTris = stems * STRAND_SIDES * STRAND_SEGS * 2;
-  const bloomTris = (tips / perNode) * Math.max(1, Math.round(o.florets)) * PETALS * 2;
+  const bloomTris = (tips / perNode) * Math.max(1, Math.round(o.florets)) * PETALS * 4;
   return Math.round(seatCount * (stemTris + bloomTris));
 }

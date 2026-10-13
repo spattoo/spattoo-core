@@ -86,14 +86,17 @@ describe('buildGypSprig — one sprig, seated at the origin', () => {
     expect(buildGypSprig().index.count / 3).toBeLessThan(1600);
   });
 
-  /* ⚠️ A FLORET IS A FLOWER, NOT A BALL. Sandeep: *"the flowers are like small cubes. not in flower
-     shape at least."* Five petals round a centre, dished upward so the silhouette survives being
-     seen edge-on — which half of them are at any moment. If it ever collapses back to a solid, the
-     vertices per bloom drop and the petal count stops mattering. */
-  it('builds each bloom from petals round a centre', () => {
+  /* ⚠️ A FLORET IS A RUFFLED POMPOM, and getting there took two wrong shapes in opposite
+     directions: an octahedron that read as a cube, then a five-petal rosette that was *"too
+     thin"*. Florists use the DOUBLE variety — a tight mass of many small petals, nearly round with
+     a lobed edge. TWO rings of overlapping petals, the inner raised and rotated half a step: the
+     overlap is what makes an edge ruffled rather than pointed, and the second ring is what turns a
+     disc into a pompom. If either is ever lost the vertex count per bloom falls and this catches
+     it. */
+  it('builds each bloom from two rings of petals', () => {
     const one = buildGypSprig({ florets: 1, levels: 1 }).getAttribute('position').count;
     const two = buildGypSprig({ florets: 2, levels: 1 }).getAttribute('position').count;
-    expect(two - one).toBe(16);          // 1 centre + 5 petals × 3 points
+    expect(two - one).toBe(32);          // 2 layers × (1 crown + 5 petals × 3 points)
   });
 
   it('dishes the petals so a floret is not flat', () => {
