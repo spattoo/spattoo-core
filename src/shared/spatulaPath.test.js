@@ -87,6 +87,38 @@ describe('the spatula handle carries the nav', () => {
   });
 });
 
+/* ⚠️ THE HOLE IS WHY THE RAIL LOST A MENU ITEM ONCE. The old one sat at y=62 with r=9 on a parallel
+ * bar, so the first nav item had to clear y=71 and `sidebarInner`'s top padding paid for it. It is
+ * affordable again only because the fitted nose put narrow, unusable paint up there. These two tests
+ * are what stop it costing anything a second time — measured on the live rail, the first nav item's
+ * box starts at y=52. */
+const FIRST_ITEM_TOP = 52;
+
+describe('the hang hole is free this time', () => {
+  it('ends above the first nav item', () => {
+    expect(RAIL.holeY + RAIL.holeRy).toBeLessThanOrEqual(FIRST_ITEM_TOP);
+  });
+
+  it('leaves real material either side of it', () => {
+    const atHole = halfWidthAt(RAIL.holeY, RAIL);
+    expect(atHole - RAIL.holeRx).toBeGreaterThan(8);
+  });
+
+  /* An oval, not a circle: the photo's is 20x33. A circle at this size reads as a rivet. */
+  it('is an oval, as the photo is', () => {
+    expect(RAIL.holeRy).toBeGreaterThan(RAIL.holeRx * 1.3);
+  });
+
+  /* ⚠️ The hole is a subpath of the SAME `d`, so it is only a hole under evenodd. Rendered with the
+     default nonzero winding it fills solid and the rail silently loses it. */
+  it('is wound into the outline, so it needs evenodd', () => {
+    const withHole = spatulaFramePath({ ...geo, ...RAIL });
+    const without = spatulaFramePath({ ...geo, ...RAIL, holeY: null });
+    expect(withHole.length).toBeGreaterThan(without.length);
+    expect(withHole).toContain(`a ${RAIL.holeRx} ${RAIL.holeRy}`);
+  });
+});
+
 describe('the outline itself', () => {
   it('is a closed path that starts at the tip', () => {
     const d = spatulaFramePath({ ...geo, ...RAIL });

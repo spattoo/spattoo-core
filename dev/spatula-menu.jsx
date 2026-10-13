@@ -119,13 +119,16 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
     bladeBotY,
     lCornerH, lCornerW, rCornerH, rCornerW,
     noseHalf, gripHalf, gripY, neckHalf,
+    holeY: RAIL.holeY, holeRx: RAIL.holeRx, holeRy: RAIL.holeRy,
   };
   const cx = W / 2;
-  const holeY = geo.capTopY + geo.handleHalf + 24; // hang hole, just below the cap
+  /* ⚠️ THE HOLE COMES FROM THE OUTLINE NOW, not from a circle typed in here. It used to be a
+     separate `hole` subpath concatenated onto `path` at every draw, with its own radius — so the
+     tuner's hole and the rail's could never be the same shape. It rides in `geo` with the rest. */
+  const holeY = RAIL.holeY;
   const path = spatulaFramePath(geo);
   // Hole as an opposite-wound circle, removed via even-odd fill.
-  const hr = 9;
-  const hole = `M ${cx} ${holeY - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
+  const hr = RAIL.holeRy;
 
   // Marbled-silicone swirls down the handle + a curl wrapping the hang hole.
   // Subtle, blurred, clipped to the body so it reads as moulded texture, not lines.
@@ -175,7 +178,7 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             </filter>
             <clipPath id="sil"><path d={path} /></clipPath>
           </defs>
-          <path d={`${path} ${hole}`} fill="url(#body)" fillRule="evenodd" filter="url(#soft)" />
+          <path d={path} fill="url(#body)" fillRule="evenodd" filter="url(#soft)" />
           {/* moulded marbled-silicone texture, clipped to the body — soft, low-contrast */}
           <g clipPath="url(#sil)">
             <g filter="url(#blur)">
@@ -190,12 +193,12 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#blurHole)" />
           </g>
           {/* 3D shading: inner shadow (depth) + rounded specular highlight */}
-          <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#inner)" />
+          <path d={path} fill="#000" fillRule="evenodd" filter="url(#inner)" />
           <path d={path} fill="#000" filter="url(#spec)" />
           {/* soft matte sheen + crisp inner edge */}
-          <path d={`${path} ${hole}`} fill="url(#sheen)" fillRule="evenodd" />
+          <path d={path} fill="url(#sheen)" fillRule="evenodd" />
           <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
-          <circle cx={cx} cy={holeY} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
+          <ellipse cx={cx} cy={holeY} rx={RAIL.holeRx} ry={RAIL.holeRy} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
         </svg>
 
         {/* nav overlay */}

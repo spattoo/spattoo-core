@@ -28,6 +28,12 @@
  *
  * @param noseHalf  how far out the nose's first control point reaches. NOT a tip radius — see the
  *                  warning below about why a radius is the wrong model for this end.
+ * @param holeY     centre of the hang hole, or null for none. `holeRx`/`holeRy` are its radii.
+ *
+ * ⚠️ THE HOLE IS PART OF THE SAME `d`, SO EVERY CONSUMER MUST SET `fillRule="evenodd"` — and
+ * `clipRule="evenodd"` where the path is used as a clip, or decoration paints across the hole.
+ * It is wound as a separate subpath rather than returned on its own because the silhouette and its
+ * hole have to stay one shape: two paths drift, and the clip would then disagree with the fill.
  * @param gripHalf  the handle's WIDEST point, at `gripY`. The reference photo's handle is 65px at
  *                  the grip and 36px at the neck — it swells towards the hand. Sandeep: *"there is
  *                  elevation on the bottom part."*
@@ -47,6 +53,7 @@ export function spatulaFramePath({
   lShoulderY, rShoulderY, bladeFullY, bladeBotY,
   lCornerH, lCornerW, rCornerH, rCornerW,
   noseHalf = null, gripHalf = handleHalf, gripY = null, neckHalf = handleHalf,
+  holeY = null, holeRx = 0, holeRy = 0,
 }) {
   const cx = W / 2;
   const nHalf = Math.min(neckHalf, handleHalf);
@@ -106,5 +113,14 @@ export function spatulaFramePath({
     shaped ? neckUp(lShoulderY) : `L ${cx - handleHalf} ${capCY}`,
     shaped ? noseUp : plainUp,
     'Z',
-  ].join(' ');
+    /* The hang hole. An OVAL, not a circle: measured off the photo it is 20x33, about 1:1.65, and a
+       circle at this size reads as a rivet rather than as something you would hang the thing on.
+       Wound as its own closed subpath; `fillRule="evenodd"` is what turns it into a hole. */
+    holeY == null ? '' : [
+      `M ${cx} ${holeY - holeRy}`,
+      `a ${holeRx} ${holeRy} 0 1 0 0 ${2 * holeRy}`,
+      `a ${holeRx} ${holeRy} 0 1 0 0 ${-2 * holeRy}`,
+      'Z',
+    ].join(' '),
+  ].filter(Boolean).join(' ');
 }

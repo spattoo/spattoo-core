@@ -38,6 +38,21 @@ export const RAIL = {
                     // HANDLE WIDTH, not rail height; 123 (scaled by height) measured 1.5-2px narrow
                     // at every row of the nose, which is the elongated look that reads as pointed
   neckHalf:   24,   // thinnest, where the handle meets the blade
+  /* ── The hang hole ─────────────────────────────────────────────────────────────────────────
+     Measured off the photo and scaled by handle width: 20x33 there becomes 18x30 here, centred 34px
+     from the tip becoming 31. It then moves UP 4px, to 35, and that is the whole negotiation — the
+     first nav item's box starts at y=52, and the faithful position runs to y=58.
+
+     ⚠️ THIS IS THE DETAIL THAT WAS REMOVED FOR COSTING A MENU ITEM, and it is affordable now only
+     because the nose changed. The old hole sat at y=62 with r=9 on a parallel 60px bar, so the
+     first item had to clear y=71 — `sidebarInner`'s top padding was buying that, a whole item's
+     worth of the most valuable space in the rail. Against the fitted nose the hole sits in the
+     narrow part nobody could use anyway and ends at y=50, clear of the item at 52. If the nose or
+     the item pitch ever changes, check this before assuming it still fits; spatulaPath.test.js
+     asserts the clearance and the material left either side. */
+  holeY:      35,
+  holeRx:      9,
+  holeRy:     15,
 };
 
 /** Centre line of the rail, in viewport px. */

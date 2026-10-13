@@ -1506,6 +1506,7 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
     noseHalf: RAIL.noseHalf, gripHalf: RAIL.gripHalf, gripY: RAIL.gripY, neckHalf: RAIL.neckHalf,
+    holeY: RAIL.holeY, holeRx: RAIL.holeRx, holeRy: RAIL.holeRy,
   });
   /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
      resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,
@@ -1629,9 +1630,9 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
             <stop offset="0.72" stopColor="#000" stopOpacity="0.02" />
             <stop offset="1"    stopColor="#000" stopOpacity="0.18" />
           </linearGradient>
-          <clipPath id="spat-sil"><path d={path} /></clipPath>
+          <clipPath id="spat-sil"><path d={path} clipRule="evenodd" /></clipPath>
         </defs>
-        <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
+        <path d={path} fillRule="evenodd" fill="url(#spat-body)" filter="url(#spat-soft)" />
         <g clipPath="url(#spat-sil)">
           <g filter="url(#spat-blur)">
             {swirls.slice(1).map((d, i) => (
@@ -1678,10 +1679,10 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
         </g>
 
         {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
-        <path d={path} fill="#000" filter="url(#spat-inner)" />
-        <path d={path} fill="#000" filter="url(#spat-spec)" />
-        <path d={path} fill="url(#spat-sheen)" />
-        <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
+        <path d={path} fillRule="evenodd" fill="#000" filter="url(#spat-inner)" />
+        <path d={path} fillRule="evenodd" fill="#000" filter="url(#spat-spec)" />
+        <path d={path} fillRule="evenodd" fill="url(#spat-sheen)" />
+        <path d={path} fillRule="evenodd" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
       </svg>
     </div>
   );
