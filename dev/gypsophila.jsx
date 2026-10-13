@@ -3,6 +3,7 @@ import './scene.js';
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
+import * as THREE from 'three';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import GypCloud from '../src/designer/canvas/GypCloud.jsx';
 import { outwardBand, rimBand } from '../src/designer/canvas/useSeatedInstances.js';
@@ -165,7 +166,8 @@ function Solo({ p }) {
   const geo = buildGypSprig(p);
   return (
     <mesh geometry={geo} position={[0, 0, 0]} castShadow receiveShadow scale={3.2}>
-      <meshStandardMaterial vertexColors color="#ffffff" roughness={0.78} metalness={0} />
+      <meshStandardMaterial vertexColors color="#ffffff" side={THREE.DoubleSide}
+                            roughness={0.78} metalness={0} />
     </mesh>
   );
 }

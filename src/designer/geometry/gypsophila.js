@@ -121,41 +121,61 @@ export const GYP_COLOURS = Object.freeze({
    STABLE: unseeded, every bloom would re-roll on each render and the cloud would shimmer whenever
    an unrelated slider moved. */
 
-/* One bloom: an octahedron, 8 triangles, with its vertices pushed out unevenly so it reads as a
-   puff rather than a bead. ⚠️ NOT a sphere — a sprig carries twenty of these and a cake carries
-   hundreds of sprigs, so the per-bloom budget is what decides whether this ships on a phone. At
-   this size (≈2mm against a 150mm cake) the silhouette is all there is, and eight facets with a
-   rough normal give it. */
-const OCTA_DIR = [
-  [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
-];
-const OCTA_FACE = [
-  [0, 2, 4], [2, 1, 4], [1, 3, 4], [3, 0, 4],
-  [2, 0, 5], [1, 2, 5], [3, 1, 5], [0, 3, 5],
-];
+/* ── One floret: five petals round a centre ──────────────────────────────────────────────────────
+ *
+ * ⚠️ IT WAS AN OCTAHEDRON AND IT READ AS A CUBE. Eight triangles is the cheapest convincing ball,
+ * and the reasoning behind it was that at cake scale a floret is two or three millimetres and all
+ * you see is a white dot. That is true at arm's length and false anywhere closer: an octahedron
+ * seen down an axis is a SQUARE, and a cloud of them is a cloud of little diamonds. Sandeep:
+ * *"the flowers are like small cubes. not in flower shape at least."*
+ *
+ * A gypsophila floret really is a small five-petalled flower, so it is built as one: a centre and
+ * five petals, each a quad that widens and then rounds off. Ten triangles against the octahedron's
+ * eight — the shape is nearly free, it was only ever the wrong shape.
+ *
+ * ⚠️ THE PETALS DISH UPWARD rather than lying flat. A flat rosette vanishes edge-on, and half the
+ * florets in a cloud are seen edge-on at any moment; dished, the silhouette survives every angle,
+ * which is the same argument `curl` makes for a wafer sheet. The material draws both faces for the
+ * other half of it — a petal has no back.
+ */
+const PETALS = 5;
 const _q = new THREE.Quaternion();
 const _v = new THREE.Vector3();
 function pushBloom(pos, nor, idx, centre, r, rand) {
   const base = idx.baseIndex;
-  /* ⚠️ EVERY BLOOM GETS ITS OWN ROTATION, and without it the whole sprig reads as a scatter of
-     identical white DIAMONDS. An octahedron seen down one of its axes has a square silhouette, and
-     built axis-aligned every single one presents the same square to the camera at the same time —
-     so the eye stops seeing flowers and starts seeing a repeated glyph. It is the same fault
-     `jitter` exists for everywhere else in this repo, and it costs nothing to fix: a random
-     orientation makes the same eight triangles read as a rough little ball.
-     A uniformly random quaternion, not three Euler angles — Euler clumps toward the poles. */
+  /* ⚠️ EVERY FLORET GETS ITS OWN ROTATION, and without it a sprig reads as a scatter of identical
+     glyphs however good the glyph is — the fault that was visible when these were octahedra and
+     would be just as visible with petals. A uniformly random quaternion, not three Euler angles,
+     which clump toward the poles. */
   const u1 = rand(), u2 = rand(), u3 = rand();
   const s1 = Math.sqrt(1 - u1), s2 = Math.sqrt(u1);
   _q.set(s1 * Math.sin(2 * Math.PI * u2), s1 * Math.cos(2 * Math.PI * u2),
          s2 * Math.sin(2 * Math.PI * u3), s2 * Math.cos(2 * Math.PI * u3));
-  for (const [x, y, z] of OCTA_DIR) {
-    const k = r * (0.75 + 0.5 * rand());
+
+  const put = (x, y, z) => {
     _v.set(x, y, z).applyQuaternion(_q);
-    pos.push(centre.x + _v.x * k, centre.y + _v.y * k, centre.z + _v.z * k);
+    pos.push(centre.x + _v.x, centre.y + _v.y, centre.z + _v.z);
+    /* The normal is the dish's own, so a petal shades as a cupped surface rather than as a flat
+       chip — flat facets cannot shade under this scene's near-uniform dome. */
+    _v.set(x * 0.35, 1, z * 0.35).normalize().applyQuaternion(_q);
     nor.push(_v.x, _v.y, _v.z);
+  };
+
+  const dish = r * 0.45;                       // how far the petal tips lift above the centre
+  put(0, 0, 0);                                 // 0: the eye of the flower
+  for (let i = 0; i < PETALS; i++) {
+    const a = (i / PETALS) * Math.PI * 2 + rand() * 0.12;
+    const wide = (Math.PI / PETALS) * 0.78;     // half the angular width of a petal
+    const mid = r * 0.52, tip = r * (0.85 + 0.3 * rand());
+    put(Math.cos(a - wide) * mid, dish * 0.35, Math.sin(a - wide) * mid);   // 1 + 3i
+    put(Math.cos(a) * tip,        dish,        Math.sin(a) * tip);          // 2 + 3i
+    put(Math.cos(a + wide) * mid, dish * 0.35, Math.sin(a + wide) * mid);   // 3 + 3i
   }
-  for (const [a, b, c] of OCTA_FACE) idx.list.push(base + a, base + b, base + c);
-  idx.baseIndex += OCTA_DIR.length;
+  for (let i = 0; i < PETALS; i++) {
+    const l = base + 1 + i * 3;
+    idx.list.push(base, l, l + 1, base, l + 1, l + 2);
+  }
+  idx.baseIndex += 1 + PETALS * 3;
 }
 
 /* ── How buried is each bloom? ───────────────────────────────────────────────────────────────────
@@ -299,6 +319,6 @@ export function gypTriangleCount(seatCount, opts = {}) {
   let stems = 0, tips = 1;
   for (let i = 1; i <= levels; i++) { stems += tips; tips *= perNode; }
   const stemTris = stems * STRAND_SIDES * STRAND_SEGS * 2;
-  const bloomTris = (tips / perNode) * Math.max(1, Math.round(o.florets)) * OCTA_FACE.length;
+  const bloomTris = (tips / perNode) * Math.max(1, Math.round(o.florets)) * PETALS * 2;
   return Math.round(seatCount * (stemTris + bloomTris));
 }

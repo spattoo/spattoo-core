@@ -47,11 +47,11 @@ describe('buildGypSprig — one sprig, seated at the origin', () => {
   });
 
   /* ⚠️ EVERY BLOOM IS ROTATED, and this is the test for a fault that was plainly visible in a render
-     and invisible to every other assertion here. An octahedron seen down an axis has a SQUARE
-     silhouette; built axis-aligned, every bloom shows the same square at the same time and the
-     sprig reads as a scatter of identical white diamonds rather than as flowers. If the rotation
-     is ever lost, the direction from a bloom's centre to its vertices collapses back onto ±x, ±y,
-     ±z for every bloom in the sprig. */
+     and invisible to every other assertion here: built to one orientation, every floret presents
+     the same silhouette at the same moment and the sprig reads as a scatter of identical glyphs
+     rather than as flowers. It was written when the blooms were octahedra — which showed a SQUARE
+     down each axis — and it matters just as much now they are five-petalled, because a rosette has
+     an even more recognisable outline to repeat. */
   it('gives every bloom its own orientation', () => {
     const g = buildGypSprig({ seed: 11 });
     const p = g.getAttribute('position');
@@ -79,8 +79,30 @@ describe('buildGypSprig — one sprig, seated at the origin', () => {
 
   /* A sprig is instanced in the hundreds, so its own budget is what decides whether a rim band
      ships on a phone. Grass's tuft is ~120 triangles; this carries blooms as well. */
+  /* A sprig is instanced in the hundreds, so its own budget decides whether a rim band ships on a
+     phone. ⚠️ The floret is five petals (10 triangles) rather than an octahedron (8) — the shape was
+     nearly free, it was only ever the wrong shape. */
   it('stays cheap enough to instance in the hundreds', () => {
     expect(buildGypSprig().index.count / 3).toBeLessThan(1600);
+  });
+
+  /* ⚠️ A FLORET IS A FLOWER, NOT A BALL. Sandeep: *"the flowers are like small cubes. not in flower
+     shape at least."* Five petals round a centre, dished upward so the silhouette survives being
+     seen edge-on — which half of them are at any moment. If it ever collapses back to a solid, the
+     vertices per bloom drop and the petal count stops mattering. */
+  it('builds each bloom from petals round a centre', () => {
+    const one = buildGypSprig({ florets: 1, levels: 1 }).getAttribute('position').count;
+    const two = buildGypSprig({ florets: 2, levels: 1 }).getAttribute('position').count;
+    expect(two - one).toBe(16);          // 1 centre + 5 petals × 3 points
+  });
+
+  it('dishes the petals so a floret is not flat', () => {
+    const g = buildGypSprig({ florets: 1, levels: 1, droop: 0, floretSize: 0.02 });
+    const p = g.getAttribute('position');
+    const ys = [];
+    for (let i = 0; i < p.count; i++) ys.push(p.getY(i));
+    const span = Math.max(...ys) - Math.min(...ys);
+    expect(span).toBeGreaterThan(0.01);   // not a flat disc
   });
 
   /* ⚠️ THE GREEN STEMS ARE NOT DECORATION. Every reference shows fine green stems carrying white

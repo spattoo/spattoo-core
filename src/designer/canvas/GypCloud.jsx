@@ -1,4 +1,5 @@
 import { useMemo, useLayoutEffect } from 'react';
+import * as THREE from 'three';
 import { buildGypSprig, GYP_DEFAULTS, GYP_COLOURS } from '../geometry/gypsophila.js';
 import { grassSeats } from '../geometry/grass.js';
 import { useSeatedInstances, useSurfaceSeats, instancedTriangleCount } from './useSeatedInstances.js';
@@ -94,8 +95,11 @@ export default function GypCloud({
           `buildGypSprig` writes it unconditionally — but the flag still reads it off the geometry
           rather than assuming, because a material with `vertexColors` and no attribute renders
           very nearly black. */}
+      {/* ⚠️ DoubleSide: A PETAL HAS NO BACK. A floret is five petals dished around a centre, and
+          single-sided every one of them vanishes the moment it faces away — which is half the
+          florets in a cloud at any angle. The same reason the wafer skirt draws both faces. */}
       <meshStandardMaterial vertexColors={!!geo.attributes.color} color="#ffffff"
-                            roughness={0.78} metalness={0} />
+                            side={THREE.DoubleSide} roughness={0.78} metalness={0} />
     </instancedMesh>
   );
 }
