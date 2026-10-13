@@ -39,6 +39,39 @@ export const DEFAULT_INSERT_LEAN_DEG = 12;
 // `pos` carries whatever coords that surface uses ({x,z} top/rim; {theta,y} round wall; {u,y} rect);
 // the returned object is `pos` with the relevant coord(s) nudged. `siblings` = same surface + tier
 // (the original is a sibling for duplication, so the copy is pushed off it). Pure.
+/* ── What is already standing on a surface, and how wide ─────────────────────────────────────────
+ *
+ * ⚠️ THIS RULE EXISTED AND WAS TRAPPED. `CakeCanvas` has cached every GLB's measured half-width since
+ * the faux-ball work (`glbXRadiusCache[url] = size.x / 2 * sc`), and used it to push a DRAGGED piece
+ * off its siblings so they touch and never penetrate. Correct, and written inline three times in one
+ * function — the copy-paste that INVARIANTS #3b calls a defect, with the `deOverlapSeat` cautionary
+ * tale directly above this line saying so.
+ *
+ * Trapped there it answers only one question: where may THIS piece be dragged. Everything else that
+ * needs to know what is on the cake — a filler looking for gaps between roses, a piping ring that
+ * should not drive through a decoration — has no way to ask. Sandeep: *"sometimes whats happening
+ * with piping elements is, if I add one piping over other, it gets penetrated into other. we should
+ * block penetration of gypsophila into roses are any other elements."*
+ *
+ * ⚠️ IT ASKS WHAT IS THERE, NEVER WHAT IT IS. No element type, no slug, no category — a candle, a
+ * topper and a rose all occupy space and the rule is identical for each (INVARIANTS #1, #3b: "ONE
+ * rule for this and it is not per-element"). An element that may legitimately be penetrated says so
+ * with a config flag; it is not inferred from a name.
+ *
+ * `radiusOf` is injected rather than imported so this file stays pure — the measurements live in the
+ * canvas, where the models are.
+ */
+export function occupantRadius(sticker, measured = null) {
+  return (measured ?? STICKER_SIZE / 4) * (sticker?.scale ?? 1);
+}
+
+export function surfaceOccupants(stickers, { tierIndex, zone, radiusOf = () => null, skipId = null } = {}) {
+  return (stickers ?? [])
+    .filter(s => s.id !== skipId && s.tierIndex === tierIndex && s.zone === zone
+                 && s.x != null && s.z != null)
+    .map(s => ({ x: s.x, z: s.z, r: occupantRadius(s, radiusOf(s)), id: s.id }));
+}
+
 export function deOverlapSeat(shape, zone, pos, siblings, step = STICKER_SIZE) {
   const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
   if (isSide && pos.u != null) {

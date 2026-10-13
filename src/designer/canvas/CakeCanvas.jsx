@@ -61,7 +61,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -2372,13 +2372,18 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
             : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
-          const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
+          /* ⚠️ ONE RULE, NOT THREE COPIES. This was written out inline here and twice more below,
+             with the measured radius, the fallback and the instance scale repeated each time. It is
+             `occupantRadius` now, and `surfaceOccupants` answers the same question for anything that
+             needs to know what is standing on a surface rather than only for the piece being
+             dragged — see the note on it in placement.js. */
+          const selfR = occupantRadius(sticker, glbXRadiusCache[sticker.imageUrl]);
           if (sticker.clusterBall) {
             // Manual faux-ball arrangement: physically seat the ball — on the cake surface (de-overlapped
             // so it touches but never penetrates) or cradled on ≥3 balls when dropped onto a real pocket.
             // It never balances on 1–2 balls and never floats. Gated on the config clusterBall flag.
             const balls = siblings.filter(s => s.clusterBall).map(s => {
-              const sR = (glbXRadiusCache[s.imageUrl] ?? STICKER_SIZE / 4) * (s.scale ?? 1);
+              const sR = occupantRadius(s, glbXRadiusCache[s.imageUrl]);
               return { x: s.x, z: s.z, y: topY + (s.yOffset ?? 0) + sR, r: sR };
             });
             const seat = manualSeat(newX, newZ, selfR, balls, topY);
@@ -2386,7 +2391,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
             onMove(sticker.id, { x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
           } else {
             for (const sib of siblings) {
-              const sibR  = (glbXRadiusCache[sib.imageUrl] ?? STICKER_SIZE / 4) * (sib.scale ?? 1);
+              const sibR  = occupantRadius(sib, glbXRadiusCache[sib.imageUrl]);
               const minDist = selfR + sibR;
               const ex = newX - sib.x, ez = newZ - sib.z;
               const dist = Math.sqrt(ex * ex + ez * ez);

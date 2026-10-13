@@ -39,6 +39,11 @@ export default function GypCloud({
   /* [{ u, v, r, inner }] — a ring of sprigs around something already placed, like a rose. `r` is
      how far the halo reaches, `inner` the footprint it must keep clear. See useSurfaceSeats. */
   collars = null,
+  /* ⚠️ WHAT IS ALREADY ON THIS SURFACE — `[{ x, z, r }]` from `surfaceOccupants`. The filler never
+     grows through a placed thing; it finds the gaps between them. It does not know or care WHAT
+     they are: a candle, a topper and a rose all occupy space and the rule is the same for each
+     (INVARIANTS #3b, which says in as many words that it is not a per-element rule). */
+  avoid = null,
   seed = GYP_DEFAULTS.seed,
   /* Degrees the sprig is tipped over from upright. 0 stands it up (a top surface, where the stem
      really is pushed into buttercream); 90 lays it flat (a board, which is card and cannot be
@@ -60,7 +65,7 @@ export default function GypCloud({
   );
 
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang,
-                                  patches, patchRadius, collars });
+                                  patches, patchRadius, collars, avoid });
 
   /* The seating loop is shared with GrassPatch — same seats, same matrices, same rim tipping. */
   const ref = useSeatedInstances(seats, topY - bury,

@@ -122,10 +122,14 @@ export function instancedTriangleCount(geo, seatCount) {
  * purpose: at the call site it would build a fresh array every render and rebuild every seat on
  * every frame, which for a few thousand pieces is the whole frame budget.
  */
+/* How much further than a thing's own radius the filler keeps off it. A sprig is not a point: its
+   blooms sit out around the stem, so clearing to the exact footprint still lets them clip. */
+const AVOID_MARGIN = 1.15;
+
 export function useSurfaceSeats({
   shape, spacing, jitter, inset = 0.98, seed = 7,
   bandInner = null, hole = null, overhang = 0, patches = null, patchRadius = null,
-  collars = null,
+  collars = null, avoid = null,
 }) {
   return useMemo(() => {
     const R = patchRadius ?? shape.radius ?? 1;
@@ -141,9 +145,19 @@ export function useSurfaceSeats({
                    ...(collars ?? []).map(p => toWorld(p, 0.4))];
     const seats = grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole,
                                overhang, patches: world.length ? world : null });
-    return collars?.length ? withoutCollarCentres(seats, world.filter(w => w.inner > 0)) : seats;
+    const cleared = collars?.length
+      ? withoutCollarCentres(seats, world.filter(w => w.inner > 0))
+      : seats;
+    /* ⚠️ THE SAME BITE, TAKEN FROM WHAT IS ALREADY THERE. A collar is a hole the caller ASKS for;
+       `avoid` is a hole the cake already has, and the geometry of the two is identical — so it is
+       the same function, with the occupants' own radii as the bite. A margin goes on top because a
+       sprig has width of its own, and clearing to the exact radius still lets its blooms clip the
+       thing it stands beside. */
+    return avoid?.length
+      ? withoutCollarCentres(cleared, avoid.map(o => ({ x: o.x, z: o.z, inner: o.r * AVOID_MARGIN })))
+      : cleared;
   }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius,
-      collars]);
+      collars, avoid]);
 }
 
 /* ── A ring of pieces around something already on the cake ───────────────────────────────────────

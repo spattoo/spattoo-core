@@ -128,6 +128,19 @@ const LAYOUTS = {
      what shows is the bloom mass at their shoulder and none of the stem — seated shallow it stood
      as a palisade of green sticks under the bunch, the "tree plantation" read all over again. */
 
+  /* ⚠️ `avoid` IS WHAT THE CAKE ALREADY HAS, and it is the one a baker never configures. The two
+     arrangements below ask for their own holes; this layout asks for none, places the filler across
+     the whole top, and lets it find the gaps between whatever is standing there. That is the case
+     Sandeep described: the baker puts roses where they like, puts gypsophila where they like, and
+     the filler simply never grows through anything. */
+  'fills the gaps': { roses: POSY,
+                      clouds: [{ spacing: 0.05, jitter: 0.9, lay: 16, layVary: 0.85,
+                                 height: 0.44, droop: 0.45, bury: 0.18,
+                                 avoid: POSY.map(r => ({
+                                   x: r.v * TIER.radius * Math.sin(r.u * Math.PI * 2),
+                                   z: r.v * TIER.radius * Math.cos(r.u * Math.PI * 2),
+                                   r: r.size })) }] },
+
   /* SURROUND: the whole bunch is cleared, so the filler rings the OUTSIDE of it. One bite, centred
      on the bunch, wide enough to take in every rose. */
   'posy, surrounded': { roses: POSY,
