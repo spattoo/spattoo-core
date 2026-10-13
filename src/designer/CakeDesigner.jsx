@@ -22,6 +22,7 @@ import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { spatulaFramePath } from '../shared/spatulaPath.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import TemplateGrid from './shared/TemplateGrid.jsx';
@@ -1440,42 +1441,6 @@ function ActionSheet({ open, onClose, align = 'left', children }) {
     </div>
   </>);
 }
-// ── Spatula silhouette ─────────────────────────────────────────────────────────
-// The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
-// long straight handle (stretches to the column height), then an asymmetric
-// rounded-rectangle blade at the bottom. Proportions traced from the design ref;
-// each bottom corner is a cubic (cornerH = where it leaves the vertical edge,
-// cornerW = how far it reaches along the bottom). See dev/spatula-menu.html.
-function spatulaFramePath({
-  W, handleHalf, bladeHalf, capTopY,
-  lShoulderY, rShoulderY, bladeFullY, bladeBotY,
-  lCornerH, lCornerW, rCornerH, rCornerW,
-}) {
-  const cx = W / 2;
-  const capR = handleHalf;
-  const capCY = capTopY + capR;
-  const Lh = cx - handleHalf, Rh = cx + handleHalf;
-  const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
-  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
-  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
-  const rSh = bladeFullY - rShoulderY;
-  const lSh = bladeFullY - lShoulderY;
-  return [
-    `M ${cx} ${capTopY}`,
-    `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`,
-    `L ${Rh} ${rShoulderY}`,
-    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
-    `L ${Rb} ${rEdgeBotY}`,
-    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
-    `L ${flatL} ${bladeBotY}`,
-    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
-    `L ${Lb} ${bladeFullY}`,
-    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
-    `L ${Lh} ${capCY}`,
-    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
-    'Z',
-  ].join(' ');
-}
 
 // Absolutely-positioned SVG that fills the sidebar (measured) and draws the
 // spatula behind the nav. The blade is wider than the handle, so it bulges out
@@ -1521,10 +1486,26 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
    * `null` is one material all the way down, which is what chrome and slate are. */
   const jointSpan = shoulderY - 18 - capTopY;
   const woodEndY  = skin.joint_at == null ? null : capTopY + jointSpan * Math.min(1, skin.joint_at + 0.38);
+  /* ── The grip tapers ────────────────────────────────────────────────────────────────────────
+   * Sandeep, beside a product photo: *"handle is a round one here. ours look just curved edges,
+   * but mostly did not give the feel of a spatula."* It was a parallel 60px bar with a semicircular
+   * cap, which at a glance is a rounded stick, not a handle.
+   *
+   * ⚠️ 140, AND IT IS THE LABELS THAT SET IT, NOT TASTE. The nav labels are centred on this shape,
+   * so each needs the paint to be at least as wide as it is. Measured on the live rail: "New Cake"
+   * wants 22.3 half-width at y=92 and "Decorations" wants 27.4 at y=157 — the widest label in the
+   * rail, and the one that pins the top of the handle open. A taper that runs the WHOLE handle (the
+   * reference photo's shape) is therefore impossible while that label reads "Decorations": even a
+   * tip of 26, a narrowing nobody would notice, misses it by 1.4px. So the taper is confined to
+   * the empty paint above the first label. `spatulaPath.test.js` holds the numbers.
+   *
+   * The swirls are clipped to this same path (`spat-clip`), so a narrower tip crops them rather
+   * than spilling them outside the silhouette. */
   const path = spatulaFramePath({
     W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+    tipHalf: RAIL.tipHalf, taperFromY: RAIL.taperFromY,
   });
   /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
      resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,
@@ -8637,6 +8618,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * answers for everything else, and a card highlighting the right number proves only that a
      * button took a click. */
     window.__design = () => design;
+    /* ⚠️ WRITES THE GYPSOPHILA ON THE TIER THAT HAS IT, so a sweep can vary one number at a time
+       and photograph the result. `size` and `lay` are the two that decide whether a wall posy reads
+       as flowers or as sprinkles, and neither can be driven from the card at the range a sweep
+       needs — SizeDial is a drag, which a script cannot aim. Same argument as `__setScatterBig`:
+       calls the SAME function the card calls, never a re-implementation, so what it proves is what
+       a baker would get. */
+    window.__setGyp = (patch) => { const i = design.tiers.findIndex(t => t.gyp);
+                                   if (i < 0) return false; updateGyp(i, patch); return true; };
     /* Big-sprinkle mix. The control is a DialCell — a drag, which a script cannot aim precisely —
        and `setScatterBigCount` is otherwise unreachable from the page, so the one thing most likely
        to be wrong (which instances turn big, at what size, and whether 0 truly changes nothing)
@@ -14007,8 +13996,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 would take a stripe out of the band from the board to the rim for every rose). */}
             {pill('On the side', !!g && where === 'side',
               () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
-                                    where: 'side', spacing: 0.05, jitter: 0.7, lay: 90, layVary: 0.3,
-                                    height: 0.20, droop: 0.5, bury: 0.04,
+                                    /* ⚠️ `lay: 90` POINTED EVERY SPRIG STRAIGHT OUT OF THE WALL,
+                                       so the camera saw each one END-ON — and a sprig end-on is its
+                                       bloom cluster and nothing else, which is precisely the
+                                       reported *"cluster of white dots/sprinkles"*. Measured over a
+                                       sweep of lay against size: at 30–35° the branching and the
+                                       green stems come back, and the posy fans UP the wall the way
+                                       a real one does. At 90° it also hung off the bottom of the
+                                       cake once the flower was big enough to read. */
+                                    where: 'side', spacing: 0.05, jitter: 0.7, lay: 35, layVary: 0.4,
+                                    height: 0.20, droop: 0.5, bury: 0.04, size: 1.6,
                                     sideLo: 0.18, sideHi: 0.68,
                                     /* ⚠️ ONE CLUMP, NOT A BAND ROUND THE CAKE. Sandeep: *"flowers
                                        on side is mostly hand drawn. usually people wont cover the
@@ -14062,6 +14059,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             same band must mean the same thing about a short tier and a tall one (INVARIANTS #8),
             and "40%" is a sentence a baker can read off a cake while "0.58" is not. The two edges
             are the two things a hand actually chooses about a band on a wall. */}
+        {/* ⚠️ ONE DIAL FOR THE FLOWER, AND IT IS NOT PER-PLACEMENT. How big baby's breath is drawn
+            is a fact about the flower, not about where it sits, so it rides above the Where row's
+            own controls and shows on all four. Asked for in as many words after a wall posy read as
+            specks: *"can we add a size control? its looking like a cluster of white
+            dots/sprinkles. not like gypsophila flowers."* */}
+        {(g || bg) && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Flower size" value={(g ?? bg)?.size ?? 1} min={0.6} max={2.6} step={0.1}
+              fmt={v => `${v.toFixed(1)}\u00d7`}
+              onChange={v => { if (g) updateGyp(i, { size: v }); if (bg) updateBoardGyp({ size: v }); }} />
+          </ScrollFadeRow>
+        )}
+
         {/* ⚠️ ONLY WHEN EVERY CLUMP HAS BEEN TAKEN OFF. With clumps placed these two do nothing —
             a clump carries its own height — and a control that is visible but inert is the thing
             rule 7 is about. Take them all off and the side becomes a sash the whole way round,

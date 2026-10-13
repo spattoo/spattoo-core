@@ -55,6 +55,10 @@ export default function GypCloud({
   /* Degrees the sprig is tipped over from upright. 0 stands it up (a top surface, where the stem
      really is pushed into buttercream); 90 lays it flat (a board, which is card and cannot be
      pushed into at all). See useSeatedInstances. */
+  /* How big each sprig is drawn, as a multiple of the sprig the row was authored with. The baker's
+     one word for "these are too small", and the only one of the sprig's numbers that can change
+     without rebuilding the geometry. */
+  size = 1,
   lay = 0, layVary = 0.35,
   /* ⚠️ HOW DEEP THE CUT END GOES IN, in cake units. A stem is PUSHED INTO buttercream — you do not
      stand it on the surface — so the bare lower part of it is simply not visible on a real cake.
@@ -79,7 +83,7 @@ export default function GypCloud({
      wall's own normal. Subtracting it from `topY` as well would sink the whole band toward the
      board — the same gesture pointed at the wrong surface. */
   const ref = useSeatedInstances(seats, topY - (wall ? 0 : bury),
-    { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo, shadeVary });
+    { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo, shadeVary, size });
   /* Everything below the surface is hidden by the cake itself, so this costs nothing to draw. */
 
   useLayoutEffect(() => {

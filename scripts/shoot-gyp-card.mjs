@@ -183,7 +183,6 @@ ok(await click3('On the side'), 'the card offers "On the side"');
 await page3.waitForTimeout(3000);
 const side = await page3.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp);
 ok(side?.where === 'side', `it stores where=side (${side?.where})`);
-ok(side?.lay === 90, `the sprigs lie against the wall (lay=${side?.lay})`);
 ok((side?.sideLo ?? 0) < (side?.sideHi ?? 0), `the band has a bottom and a top (${side?.sideLo}–${side?.sideHi})`);
 /* ⚠️ ONE CLUMP, NOT A SASH ROUND THE CAKE. *"flowers on side is mostly hand drawn. usually people
    wont cover the entire side with these flowers. on sides, its usually along with other flowers."*
@@ -191,6 +190,11 @@ ok((side?.sideLo ?? 0) < (side?.sideHi ?? 0), `the band has a bottom and a top (
 ok(side?.patches?.length === 1, `it starts as one clump on the wall (${side?.patches?.length})`);
 const t3 = await page3.evaluate(() => document.body.innerText);
 ok(/CLUMPS/i.test(t3), 'the card offers the clump row on the side');
+/* ⚠️ THE FLOWER'S OWN SIZE, which is what "a cluster of white dots/sprinkles" turned out to need —
+   together with laying the sprigs along the wall instead of pointing them at the viewer. */
+ok(/Flower size/.test(t3), 'the card offers a flower size');
+ok(side?.size > 1, `a wall posy starts bigger than the default sprig (${side?.size})`);
+ok(side?.lay < 60, `and lies along the wall rather than end-on (lay=${side?.lay})`);
 ok(!/Band bottom/.test(t3), 'and hides the band edges, which a placed clump ignores');
 ok(await click3('+ Add clump'), 'a second wall clump can be added');
 await page3.waitForTimeout(2000);

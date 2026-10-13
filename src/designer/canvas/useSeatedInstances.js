@@ -29,7 +29,7 @@ export function layAxis(out, into = new THREE.Vector3()) {
 
 export function useSeatedInstances(seats, topY,
                                    { lay = 0, layVary = 0, laySeed = 7, geo = null,
-                                     shadeVary = 0 } = {}) {
+                                     shadeVary = 0, size = 1 } = {}) {
   const ref = useRef(null);
   useLayoutEffect(() => {
     const mesh = ref.current;
@@ -83,7 +83,12 @@ export function useSeatedInstances(seats, topY,
          round the cake, and `wallSeats` returns that as `dy` above the tier's base. The flat path
          sets no `dy` and lands exactly where it did. */
       pos.set(s.x, topY + (s.dy ?? 0), s.z);
-      scl.setScalar(s.scale);
+      /* ⚠️ `size` SCALES THE WHOLE PIECE, which is why it is here and not a geometry parameter.
+         Growing `height` alone makes a longer sprig carrying the same tiny blooms; growing
+         `floretSize` alone makes beads on a twig. A flower that is simply BIGGER keeps its own
+         proportions, and doing it on the instance matrix costs nothing — no rebuild, one draw call,
+         and the seat's own 0.8–1.2 variation rides on top so a scaled field still has variety. */
+      scl.setScalar(s.scale * size);
       mesh.setMatrixAt(i, m.compose(pos, q, scl));
       if (shaded) {
         const k = 1 - shadeVary * rand();
@@ -102,7 +107,7 @@ export function useSeatedInstances(seats, topY,
        moved: *"when i increase the branches… rim bunch disappears when the value reaches 4."* The
        seats had not changed, so the effect did not re-run. `GrassPatch` carried the same latent
        fault and is fixed by the same line. */
-  }, [seats, topY, lay, layVary, laySeed, geo, shadeVary]);
+  }, [seats, topY, lay, layVary, laySeed, geo, shadeVary, size]);
   return ref;
 }
 

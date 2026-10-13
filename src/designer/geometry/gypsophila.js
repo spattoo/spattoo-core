@@ -27,6 +27,16 @@ import { mulberry32 } from '../utils/random.js';
 // the same question (root CLAUDE.md rule 1, INVARIANTS #1).
 
 export const GYP_DEFAULTS = Object.freeze({
+  /* ⚠️ HOW BIG THE FLOWER IS DRAWN, as a multiple of the sprig every number below describes — and
+     deliberately NOT one of them. Reported on a wall posy: *"its looking like a cluster of white
+     dots/sprinkles. not like gypsophila flowers."* Measured over a 3×3 sweep of size against lay:
+     at 1 the branching does not resolve and the eye gets pale specks; from about 1.6 the green
+     stems and separate florets read as baby's breath.
+     Growing `height` alone gives a longer sprig carrying the same tiny blooms, and growing
+     `floretSize` alone gives beads on a twig. Scaling the whole piece keeps its proportions — and
+     it rides the instance matrix, so it costs no geometry rebuild and the per-seat 0.8–1.2
+     variation still sits on top of it. */
+  size:       1,
   /* The sprig's own scale, in cake units — one stem from cut end to the furthest bloom. */
   height:     0.30,
   /* How many times the stem divides. 2 is a twig, 3 is a sprig, 4 is a branch and costs 3× the
