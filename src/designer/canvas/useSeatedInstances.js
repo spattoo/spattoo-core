@@ -125,17 +125,48 @@ export function instancedTriangleCount(geo, seatCount) {
 export function useSurfaceSeats({
   shape, spacing, jitter, inset = 0.98, seed = 7,
   bandInner = null, hole = null, overhang = 0, patches = null, patchRadius = null,
+  collars = null,
 }) {
   return useMemo(() => {
     const R = patchRadius ?? shape.radius ?? 1;
-    const world = patches?.length
-      ? patches.map(p => ({ x: p.v * R * Math.sin(p.u * Math.PI * 2),
-                            z: p.v * R * Math.cos(p.u * Math.PI * 2),
-                            r: p.r ?? 0.35 }))
-      : null;
-    return grassSeats({ shape, spacing, jitter, inset, seed: seed + 1,
-                        bandInner, hole, overhang, patches: world });
-  }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius]);
+    const toWorld = (p, fallbackR) => ({
+      x: p.v * R * Math.sin(p.u * Math.PI * 2),
+      z: p.v * R * Math.cos(p.u * Math.PI * 2),
+      r: p.r ?? fallbackR,
+      inner: p.inner ?? 0,
+    });
+    /* A collar IS a patch with a bite out of the middle, so it rides the same machinery — the outer
+       edge is the patch radius and the bite is applied afterwards. */
+    const world = [...(patches ?? []).map(p => toWorld(p, 0.35)),
+                   ...(collars ?? []).map(p => toWorld(p, 0.4))];
+    const seats = grassSeats({ shape, spacing, jitter, inset, seed: seed + 1, bandInner, hole,
+                               overhang, patches: world.length ? world : null });
+    return collars?.length ? withoutCollarCentres(seats, world.filter(w => w.inner > 0)) : seats;
+  }, [shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius, collars]);
+}
+
+/* ── A ring of pieces around something already on the cake ───────────────────────────────────────
+ *
+ * Gypsophila round a rose, which is how every florist-style cake uses it: the filler hugs the
+ * subject and radiates outward, so the rose reads as placed rather than stuck on. Sandeep: *"when
+ * there are roses, gypsophila flowers surround them. we should also be able to add these between
+ * the roses."*
+ *
+ * ⚠️ NEITHER `patches` NOR `hole` CAN SAY THIS, which is why it is a filter and not a fourth
+ * argument to `grassSeats`. `patches` gives a disc — flowers would grow THROUGH the rose. `hole` is
+ * an outline test against the tier's own centre (`hypot(x, z)`), so it can only bite the middle out
+ * of the cake, never a hole at an arbitrary spot. The outer edge of a collar is a patch and the
+ * bite is taken afterwards, which keeps grass's own file out of it.
+ *
+ * ⚠️ IT IS A SQUARED-DISTANCE TEST ON PURPOSE. A seat loop over a few thousand pieces and a handful
+ * of collars runs this often enough that a `Math.hypot` per pair is worth not paying.
+ */
+export function withoutCollarCentres(seats, collars) {
+  if (!collars?.length) return seats;
+  return seats.filter((s) => !collars.some((c) => {
+    const dx = s.x - c.x, dz = s.z - c.z;
+    return dx * dx + dz * dz < c.inner * c.inner;
+  }));
 }
 
 /* ── A ring hugging the foot of the cake ─────────────────────────────────────────────────────────

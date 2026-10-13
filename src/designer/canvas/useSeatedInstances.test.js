@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { layAxis, instancedTriangleCount, outwardBand, rimBand } from './useSeatedInstances.js';
+import { layAxis, instancedTriangleCount, outwardBand, rimBand,
+         withoutCollarCentres } from './useSeatedInstances.js';
 
 /* ⚠️ THIS IS THE SIGN THE WAFER SKIRT GOT WRONG, and it cost a day. `fin` mounting sent every strip
  * INWARD through the cake instead of outward, which a render could not show (the strips were simply
@@ -132,5 +133,41 @@ describe('rimBand — a band straddling the top edge', () => {
     expect(b.bandInner).toBeGreaterThan(0);
     expect(b.bandInner).toBeLessThanOrEqual(1);
     expect(b.shape.radius).toBeCloseTo(tier.radius, 6);
+  });
+});
+
+/* ⚠️ GYPSOPHILA GOES AROUND A ROSE, NOT THROUGH IT. Every florist-style reference puts the filler
+ * hugging the subject and radiating outward, which is what makes the rose read as placed rather
+ * than stuck on. Neither of the two placements that already existed can say it: `patches` gives a
+ * disc, so flowers grow through the rose, and `hole` is an outline test against the TIER's own
+ * centre, so it can only bite the middle out of the cake. */
+describe('withoutCollarCentres — a ring around something already placed', () => {
+  const seats = [];
+  for (let x = -1; x <= 1; x += 0.1) for (let z = -1; z <= 1; z += 0.1) seats.push({ x, z });
+
+  it('clears the footprint and keeps the ring', () => {
+    const kept = withoutCollarCentres(seats, [{ x: 0, z: 0, inner: 0.5 }]);
+    expect(kept.every(s => Math.hypot(s.x, s.z) >= 0.5 - 1e-9)).toBe(true);
+    expect(kept.some(s => Math.hypot(s.x, s.z) > 0.6)).toBe(true);
+    expect(kept.length).toBeLessThan(seats.length);
+  });
+
+  it('clears around EVERY rose, not just the first', () => {
+    const kept = withoutCollarCentres(seats, [{ x: -0.6, z: 0, inner: 0.25 },
+                                              { x: 0.6, z: 0, inner: 0.25 }]);
+    for (const c of [[-0.6, 0], [0.6, 0]]) {
+      expect(kept.some(s => Math.hypot(s.x - c[0], s.z - c[1]) < 0.25)).toBe(false);
+    }
+  });
+
+  it('a collar with no footprint takes nothing away', () => {
+    expect(withoutCollarCentres(seats, [{ x: 0, z: 0, inner: 0 }])).toHaveLength(seats.length);
+    expect(withoutCollarCentres(seats, [])).toBe(seats);
+    expect(withoutCollarCentres(seats, null)).toBe(seats);
+  });
+
+  it('leaves the seats it keeps untouched — they carry yaw and scale', () => {
+    const rich = [{ x: 2, z: 0, yaw: 1.2, scale: 0.8 }];
+    expect(withoutCollarCentres(rich, [{ x: 0, z: 0, inner: 0.5 }])[0]).toBe(rich[0]);
   });
 });
