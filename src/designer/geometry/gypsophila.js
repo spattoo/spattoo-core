@@ -106,7 +106,14 @@ export const GYP_DEFAULTS = Object.freeze({
      ⚠️ The run measure also SATURATES: once blooms overlap, the band becomes one run longer than a
      third of the frame and gets discarded, dragging the median down. Trust it while the blooms are
      separate and trust the arithmetic after. */
-  floretSize: 0.016,
+  /* ⚠️ 0.028, AND IT IS A DIFFERENT KNOB FROM `size`. Asked twice: *"flowers still dont look like
+     flowers. size should be little more bigger."* The first time I answered with overall `size`,
+     which scales the whole sprig — a bigger HAZE, not more legible blooms. What decides whether the
+     eye reads petals or fog is the bloom against its own branch. Swept at a fixed overall size
+     (scripts/sweep-gyp-floret.mjs): at 0.016 — 11% of the sprig — it is a haze; from 0.022
+     individual flowers start to read; at 0.028 (19%) they are plainly flowers with visible petals;
+     0.034 is chunky and loses the fineness baby's breath is for. */
+  floretSize: 0.028,
   /* How much the blooms differ in size within a cluster: buds and open flowers sit together, and a
      cluster of identical balls is the other classic way this reads as plastic. */
   floretVary: 0.55,
