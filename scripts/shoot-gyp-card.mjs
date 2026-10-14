@@ -50,6 +50,22 @@ console.log('\nit lands on the cake');
 const g = await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp ?? null);
 ok(!!g, `the tier carries it (${g ? `where=${g.where}` : 'nothing'})`);
 
+console.log('\nwhat the row allows');
+/* ⚠️ A CONTROL THE CATALOGUE NEVER GRANTED. Sandeep: *"in admin i did not select color changeable.
+   how come there is a color picker without explicitly selecting color changeable."* The `e-gyp` row
+   declares `allowed_actions: { move:false, delete:true, resize:false }` — no colour — and the card
+   offered two colour controls anyway, because it never asked. The fixture is checked here too, so
+   this test cannot pass by the row quietly gaining the permission. */
+const gypRow = await page.evaluate(() => window.__dumpElement?.('e-gyp') ?? null);
+ok(gypRow?.allowed_actions?.color !== true, 'the row does NOT grant colour');
+const cardTxt = await page.evaluate(() => document.body.innerText);
+ok(!/\bBloom\b/.test(cardTxt) && !/\bStem\b/.test(cardTxt),
+   'so the card offers no colour picker');
+/* And the design keeps the row, which is what lets it ask at all — and what a template bundle
+   scans for when it promotes a design to another environment. */
+ok((await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.elementId)) === 'e-gyp',
+   'the design remembers which row it came from');
+
 console.log('\nthe card');
 const txt = await page.evaluate(() => document.body.innerText);
 ok(/ON THE RIM|On the rim/i.test(txt), 'offers "On the rim"');

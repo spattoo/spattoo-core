@@ -6389,7 +6389,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tuned = el?.placement_config?.grass ?? {};
     // Defaults first, so a row that authors only a colour still gets a sensible field.
     if (!design.tiers[i]?.grass) {
-      setTierGrass(i, { ...GRASS_DEFAULTS, color: el?.default_color ?? '#4caf3d', ...tuned });
+      /* The row's id travels with the design — see addBrushBandFromRow, which has carried its own
+         since it was written. Two reasons, and both apply here: the card cannot ask what the
+         element ALLOWS without it, and a template bundle finds its elements by scanning the saved
+         design for uuids that match `cake_elements.id`. */
+      setTierGrass(i, { ...GRASS_DEFAULTS, color: el?.default_color ?? '#4caf3d', ...tuned,
+                        elementId: el?.id ?? undefined });
     }
     selectExclusive({ type: 'grass' });
   }
@@ -6410,9 +6415,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const i = Math.max(0, design.tiers.length - 1);
     const tuned = el?.placement_config?.gyp ?? {};
     if (!design.tiers[i]?.gyp) {
+      /* ⚠️ THE ROW'S ID TRAVELS WITH THE DESIGN, and leaving it out was two bugs at once. The card
+         could not find out what the element ALLOWS — so it offered a colour picker on a row that
+         never ticked colour-changeable, which is the whole complaint. And a template bundle finds
+         its elements by scanning the saved design for uuids that match `cake_elements.id`
+         (promotionBundle.elementIdsReferencedBy), so a template promoted to prod would render
+         correctly — the geometry is code plus these numbers — while the row behind it stayed
+         behind. The brush band already carries its id for exactly that second reason. */
       setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, where: 'rim',
                       spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
-                      height: 0.20, droop: 0.6, rimIn: 0.14, rimOut: 0.10, ...tuned });
+                      height: 0.20, droop: 0.6, rimIn: 0.14, rimOut: 0.10, ...tuned,
+                      elementId: el?.id ?? undefined });
     }
     selectExclusive({ type: 'gyp' });
   }
@@ -6724,7 +6737,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const zone = 'board';
       const tuned = el?.placement_config?.letter_blocks ?? {};
       const seed = { ...NAME_BLOCK_DEFAULTS, ...tuned,
-        ...(el?.default_color ? { blockColor: el.default_color } : {}) };
+        ...(el?.default_color ? { blockColor: el.default_color } : {}) ,
+        /* Same as grass and the brush band: without the id the card cannot ask what the element
+           allows, and a promoted template loses the row behind it. */
+        elementId: el?.id ?? undefined };
       setNameBlocks({ ...seed, zone, text: 'NAME', blocks: layoutBlocks('NAME', zone, seed) });
     }
     selectExclusive({ type: 'blocks' });
@@ -13257,6 +13273,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             second answer to a question the designer already answers, and it looked like one. The
             wheel also brings what a hand-rolled row does not: colours already ON this cake
             (cakeColors), so a name can be matched to a border without eyedropping it. */}
+        {/* Both wheels, and their captions, only if the row grants colour — see
+            `elementAllowsColour`. A caption with nothing under it is worse than neither. */}
+        {elementAllowsColour(nb) && (<>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Block colour</div>
         <ColorWheel color={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
           onChange={c => updateNameBlocks({ blockColor: c })} compact={isMobile}
@@ -13266,6 +13285,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <ColorWheel color={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
           onChange={c => updateNameBlocks({ letterColor: c })} compact={isMobile}
           cakeColors={blockCakeColors(nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor)} width={152} />
+        </>)}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           {/* The way back from an arrangement gone wrong — without retyping the name. */}
@@ -13404,6 +13424,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             gesture, so it should not look like a different control. */}
         {/* marginTop clears the × badges, which `gradientStopRemove` pins ABOVE each chip — without
             it the first row of them sits on top of the sentence above. */}
+        {/* ⚠️ THE WHOLE PALETTE, NOT JUST THE WHEEL, goes when the row does not grant colour — see
+            `elementAllowsColour`. Gating only the wheel would leave the + and × chips, which add
+            and drop colours: a baker could still change the band's palette through a control that
+            looks like a legend. */}
+        {elementAllowsColour(design.tiers[i]?.brushBand) && (<>
         <div style={{ ...s.gradientStops, marginTop: 14 }}>
           {colors.map((c, idx) => (
             <div key={idx} style={s.gradientStopWrap}>
@@ -13427,6 +13452,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onChange={c => setColors(colors.map((x, j) => (j === slot ? c : x)))}
             cakeColors={[...new Set(collectElementColors(design))]} />
         </div>
+        </>)}
 
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {BRUSH_BAND_FIELDS.map(([key, label, min, max, step]) => (
@@ -14084,12 +14110,41 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).map((p, k) => k === idx ? { ...p, r } : p) });
   }
 
+  /* ── May this element's colour be changed? ─────────────────────────────────────────────────────
+   *
+   * ⚠️ ASKED OF THE ROW, AND "NO ROW" MEANS NO. Sandeep: *"in admin i did not select color
+   * changeable. how come there is a color picker without explicitly selecting color changeable."*
+   * Four procedural cards drew a ColorWheel and none of them asked — gypsophila's row genuinely did
+   * not grant colour, and the other three were only correct by luck, because their rows happened to
+   * say yes. The day an admin unticks one, a picker nobody granted stays on the card.
+   *
+   * ⚠️ ONE FUNCTION, because this is one question. Four cards each testing `allowed_actions?.color`
+   * their own way is four places to get the "no row" case wrong, and that case is the whole point:
+   * a treatment placed from a Tools shortcut, or restored from a design saved before the id was
+   * kept, has nothing to ask — and the safe reading of "I did not grant this" is that it was not
+   * granted. Colours already chosen still RENDER; what goes is the ability to change them. */
+  function elementAllowsColour(thing) {
+    const el = thing?.elementId ? elementById.get(thing.elementId) : null;
+    return el?.allowed_actions?.color === true;
+  }
+
   function renderGypBody() {
     const i = gypTier;
     const g = design.tiers[i]?.gyp;
     const bg = design.boardGyp;
     if (!g && !bg) return null;
     const where = g?.where ?? 'rim';
+    /* ⚠️ WHAT THE ELEMENT ALLOWS, read off the ROW. Sandeep: *"in admin i did not select color
+       changeable. how come there is a color picker without explicitly selecting color changeable."*
+       He is right that this is the bigger question — the card was offering a control the catalogue
+       never granted, because it never asked. Every other surface asks: `caps` resolves
+       `allowed_actions` per selection, stickers carry theirs, and a decorEl card reads the
+       element's. This one answered to nothing.
+       ⚠️ AND NO ROW MEANS NO, not yes. A gypsophila placed from a Tools shortcut, or restored from
+       a design saved before the id was kept, has no row to ask — and the safe reading of "I did not
+       grant this" is that it was not granted. The colours already chosen still RENDER; what goes is
+       the ability to change them. */
+    const canColour = elementAllowsColour(g ?? bg);
     const pill = (label, on, fn) => (
       <button key={label} onClick={fn}
         style={{ flex: 1, padding: '7px 2px', borderRadius: 8, fontWeight: 700, fontSize: 11.5,
@@ -14171,7 +14226,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               () => (bg ? setBoardGyp(null)
                         : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18,
                                         spacing: 0.075, jitter: 0.7, lay: 78,
-                                        height: 0.22, droop: 0.3 })))}
+                                        height: 0.22, droop: 0.3,
+                                        /* The same row, so the board ring answers to the same
+                                           permissions and travels in the same bundle. */
+                                        elementId: g?.elementId ?? undefined })))}
           </div>
         </div>
 
@@ -14282,14 +14340,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ⚠️ AND ONLY THE CHOSEN ONE IS SHOWN. Even compact, two pickers stacked is most of a
             phone. Bloom is the colour a baker changes and opens first (INVARIANTS #12 — laid out by
             how often each is used); stem is a tap away. */}
-        <div style={{ display: 'flex', gap: 6, margin: '12px 0 6px' }}>
-          {pill('Bloom', gypInk === 'bloom', () => setGypInk('bloom'))}
-          {pill('Stem', gypInk === 'stem', () => setGypInk('stem'))}
-        </div>
-        <ColorWheel width={152} compact={isMobile}
-          color={(g ?? bg)?.[gypInk] ?? GYP_COLOURS[gypInk]}
-          onChange={c => { if (g) updateGyp(i, { [gypInk]: c }); if (bg) updateBoardGyp({ [gypInk]: c }); }}
-          cakeColors={[...new Set(collectElementColors(design))]} />
+        {canColour && (<>
+          <div style={{ display: 'flex', gap: 6, margin: '12px 0 6px' }}>
+            {pill('Bloom', gypInk === 'bloom', () => setGypInk('bloom'))}
+            {pill('Stem', gypInk === 'stem', () => setGypInk('stem'))}
+          </div>
+          <ColorWheel width={152} compact={isMobile}
+            color={(g ?? bg)?.[gypInk] ?? GYP_COLOURS[gypInk]}
+            onChange={c => { if (g) updateGyp(i, { [gypInk]: c }); if (bg) updateBoardGyp({ [gypInk]: c }); }}
+            cakeColors={[...new Set(collectElementColors(design))]} />
+        </>)}
 
         {/* One Shuffle per feature, storing its own seed: a design that cannot reproduce the cloud a
             baker chose has not saved their work. Same rule as the skirt and the scraped edge. */}
@@ -14555,8 +14615,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             by a hairline — its own note says that heading "cost a whole line of the sheet's height to
             label six swatches that are self-evident once they are beside the presets". Nine callers
             in this file, and only ONE was passing it. */}
-        <ColorWheel color={grassColor} onChange={setGrassColor} width={152} compact={isMobile}
-          cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
+        {/* Only if the row grants it — see `elementAllowsColour`. */}
+        {elementAllowsColour(design.tiers[grassTier]?.grass ?? design.boardGrass) && (
+          <ColorWheel color={grassColor} onChange={setGrassColor} width={152} compact={isMobile}
+            cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
+        )}
 
         {/* s.deleteBtn — the destructive tone, where the FIELD is the signal. It was a white button
             with pink text and a grey border, which at rest on a phone reads as an ordinary action. */}
