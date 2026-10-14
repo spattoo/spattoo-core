@@ -757,6 +757,20 @@ CAT_ELEMENTS.push({
  *
  * ⚠️ `single_per_slot` is what makes it a decorEl card, NOT the element type. A hero places one
  * instance per (tier × surface) through the chooser's checkboxes. */
+/* ⚠️ A HERO THAT MAY GO ON A STICK. `single_per_slot` opens the ELEMENT card, and the stick row was
+ * written for the per-instance sticker popup — so an admin could tick "Can add a stick" on a hero,
+ * save it, place it, and never see a pick. Dead config, and this row is what makes that testable:
+ * it is the only hero in the fixture that asks for one. */
+CAT_ELEMENTS.push({
+  id: 'e35', name: 'Hero on a pick', description: 'a single-per-slot hero that may go on a stick',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#C9A227'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false, stick: true },
+  placement_config: { single_per_slot: true, r: 0.7, top_surface: 'stand', side: 'hug', stick: { bury: 0.4 } },
+  default_color: '#C9A227', sort_order: 35,
+});
+
 CAT_ELEMENTS.push({
   id: 'e28', name: 'Fondant crown hero', description: 'a colourable single-per-slot hero',
   element_type_id: 'et-topper', category_id: 'cat-1',

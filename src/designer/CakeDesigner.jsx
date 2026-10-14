@@ -11173,7 +11173,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
-            : el.type === 'decorEl' ? {}   // one card per multi-slot element; controls built below
+            /* ⚠️ ONE CAPABILITY, NOT THE WHOLE SET. A multi-slot element gets one card per ELEMENT
+               and its controls are built below — slots, size, colour — which is why this was `{}`.
+               But `stick` is not among the ones built below, and nothing else renders it, so
+               ticking "Can add a stick" on a hero did nothing at all: an admin could save it, place
+               the topper and never see a pick. Handing back the element's whole `allowed_actions`
+               here would double up every control that IS built below; handing back the one that is
+               homeless fixes the dead config without moving anything else. */
+            : el.type === 'decorEl'
+              ? { stick: elementById.get(el.elementId)?.allowed_actions?.stick === true }
             : el.type === 'sticker' ? (design.stickers.find(s => s.id === el.id)?.allowedActions ?? STICKER_CAPS)
             : (allowedActionsBySlug[el.type] ?? null);
     if (!c) return null;
@@ -11947,8 +11955,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        deep it is pushed in. Its starting value is the element's own authored number — read through
        `elementStick`, never a literal here — for an instance placed before this feature existed and
        so carrying no `stick` of its own. */
-    if (el.type === 'sticker' && c.stick) {
-      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+    /* ⚠️ A HERO ELEMENT NEVER REACHES THIS ROW, and that made "Can add a stick" dead config for
+       every one of them. Tapping a `single_per_slot` decoration opens its ELEMENT card — one card
+       managing all its placements, which is deliberate — so the selection is a `decorEl` and this
+       branch, written for `sticker`, was skipped. An admin could tick the box, save, place the
+       topper and never see a pick. Sandeep: *"for image toppers i selected 'can add stick', but the
+       card popup in core designer does not show stick option."*
+
+       So the branch takes BOTH, and resolves the instance it acts on: a hero has one per slot, so
+       the element's placed stickers ARE the thing the card speaks for. `caps` already reads a
+       decorEl's capabilities off the live element rather than off a frozen copy, which is the
+       behaviour admin master data is supposed to have (see `isStickerMovable`). */
+    const stickTargets = el.type === 'sticker'
+      ? design.stickers.filter(stkr => stkr.id === el.id)
+      : el.type === 'decorEl'
+        ? design.stickers.filter(stkr => stkr.elementId === el.elementId)
+        : [];
+    if ((el.type === 'sticker' || el.type === 'decorEl') && c.stick && stickTargets.length) {
+      const sticker = stickTargets[0];
       const srcEl   = sticker && elementById.get(sticker.elementId);
       if (sticker) {
         const row  = elementStick(srcEl?.placement_config, srcEl?.allowed_actions);
@@ -11956,7 +11980,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const bury = st.bury ?? row.bury;
         const len  = st.length ?? row.length;
         const thk  = st.thickness ?? row.thickness;
-        const setStick = patch => updateSticker(el.id, { stick: { ...st, ...patch } });
+        /* ⚠️ EVERY INSTANCE THE CARD SPEAKS FOR, not just the first. A hero on both the top and the
+           side is two stickers under one card, and putting only one of them on a pick is a cake no
+           baker asked for. */
+        const setStick = patch => stickTargets.forEach(t => updateSticker(t.id, { stick: { ...(t.stick ?? st), ...patch } }));
         /* One stepper, three times — In, Long and Thick are the same control over three numbers, and
            three hand-rolled copies of it in one row is how they end up with three widths. */
         const dial = (key, label, value, fmt, set, lo, hi, step) => ([
