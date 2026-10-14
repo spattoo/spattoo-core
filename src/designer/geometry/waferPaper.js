@@ -276,11 +276,28 @@ export const WAFER_PRESETS = Object.freeze({
  * as well would hide them from the only screen that could bring them back — the set is read by the
  * baker's tier card alone. `WaferPaperStudio` goes on listing all five.
  *
+ * ⚠️ NEITHER IS WITHHELD FOR ITS COLOUR, and reading it that way sent me down a wrong path once.
+ * Sandeep: *"the issue is not color, but the pink one is too bad structurally. it neither looks like
+ * paper nor fits the cake height."* Both faults are in the SHAPE, and the numbers say so plainly —
+ * "Pink, notched hem" is the lowest preset in the table on every structural axis at once:
+ *
+ *     preset               height  ripples  taper
+ *     Pink, notched hem      0.80      2.4   0.02
+ *     White, waved           0.95      6.0   0.18
+ *     White, rippled         1.00      8.0   0.22
+ *     White, broad           0.98      3.0   0.06
+ *
  * What is wrong with each, so whoever picks this up is not starting from nothing:
- *   · Pink, notched hem — `height: 0.80` leaves a fifth of the wall bare under the hem, so it reads
- *     as a band stuck round the top rather than a skirt. Its own notch is fine.
+ *   · Pink, notched hem — TWO faults, both structural.
+ *       It does not read as paper: 2.4 folds across a panel with `taper: 0.02` is a flat
+ *       rectangular slab, nine to eleven times less taper than the whites, so the skirt comes out as
+ *       tiles stuck round the wall rather than a sheet pleated by hand. Folds and taper are where to
+ *       start, not the palette.
+ *       It does not fit the cake: `height: 0.80` leaves a fifth of the wall bare under the hem, so
+ *       it reads as a band round the top rather than a skirt that reaches the board.
  *   · White, broad — 20 panels at `width: 2.4` and `curl: 0.30` give sheets wide enough to show
- *     daylight between them, and the curl turns the gaps into flapping corners.
+ *     daylight between them, and the curl turns the gaps into flapping corners. `ripples: 3.0` and
+ *     `taper: 0.06` put it in the same flat-slab territory as the pink one, one step less severe.
  */
 export const WAFER_HIDDEN = Object.freeze(new Set(['Pink, notched hem', 'White, broad']));
 
@@ -330,7 +347,14 @@ export function waferPresetFor(tierColour, preferred = 'White, waved') {
    * waved'."*
    *
    * This function's own promise three paragraphs up is what it broke: "whatever arrives is one the
-   * baker can see selected and step away from in one tap." A hidden preset can be neither. */
+   * baker can see selected and step away from in one tap." A hidden preset can be neither.
+   *
+   * ⚠️ AND IT WAS NEVER A GOOD ANSWER TO THE CONTRAST PROBLEM EITHER, which is worth saying because
+   * the obvious reading of this change is "we lost our contrasting preset". We did not lose one — we
+   * never had one. The coral preset is withheld for its SHAPE (see WAFER_HIDDEN: 2.4 folds, taper
+   * 0.02, height 0.80), so the step-aside was answering "a white skirt cannot be seen here" by
+   * reaching for a skirt that does not read as paper and does not reach the board. Papering over one
+   * fault with another. If white-on-white needs an answer, it needs its own. */
   const entries = waferPresetsOffered();
   const base = (WAFER_HIDDEN.has(preferred) ? null : WAFER_PRESETS[preferred]) ?? entries[0][1];
   const wall = relLum(tierColour);

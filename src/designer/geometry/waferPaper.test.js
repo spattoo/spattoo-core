@@ -471,12 +471,14 @@ describe('waferPresetFor — the skirt arrives in something you can see', () => 
    * skirt arrives on a look with no chip active and no way back to it. Sandeep: *"pink option has
    * been moved from the popup but default only pink coming. default should be 'white waved'."*
    *
-   * ⚠️ AND THE COMPLAINT BEHIND THE OLD BEHAVIOUR IS NOT SOLVED, only out-ranked. White wafer paper
-   * on a white cake was reported once as *"i can hardly see the wafer paper. totally white and hard
-   * to differentiate."* Withholding the only coloured preset takes away the automatic answer to
-   * that; what is left is the baked AO in the panels and the colour wheel beside the chips. If it
-   * is reported again, the fix is a coloured preset good enough to offer — not a return to picking
-   * one nobody can see selected. */
+   * ⚠️ AND THE OLD BEHAVIOUR WAS NOT A SOLUTION BEING GIVEN UP. White wafer paper on a white cake
+   * was reported once as *"i can hardly see the wafer paper. totally white and hard to
+   * differentiate"*, and the step-aside answered it by reaching for the coral preset. But coral is
+   * withheld for its SHAPE, not its colour — 2.4 folds, taper 0.02, height 0.80 — so that answer
+   * was a skirt that does not read as paper and stops a fifth of the way up the wall. One fault
+   * papered over with another. Sandeep, on this: *"the issue is not color, but the pink one is too
+   * bad structurally."* If white-on-white needs an answer it needs its own, which is a preset that
+   * is good enough to OFFER, or the colour wheel beside the chips. */
   it('stays on white for a white cake, because that is what is offered', () => {
     expect(waferPresetFor('#ffffff').colour).toBe(WAFER_PRESETS['White, waved'].colour);
   });
