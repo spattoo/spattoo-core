@@ -140,6 +140,54 @@ export const GYP_DEFAULTS = Object.freeze({
  * skirt all week: *"we have the same white color over exposure issue."* Two colours in one buffer
  * means a vertex attribute rather than two materials — one draw call still, for hundreds of sprigs.
  */
+/* ── How the filler sits on each surface it is allowed on ────────────────────────────────────────
+ *
+ * ⚠️ SEEDED HERE, OVERLAID FROM THE ROW — root CLAUDE.md rule 3. These four sets were written out
+ * inside the tier card: four `where:` branches each carrying its own spacing, jitter, lay, bury,
+ * height and droop. Sandeep: *"placement is not driven by config. so many violations on driving
+ * the rendering from config. we already have invariant to honor the config but surprisingly many
+ * times its missing."*
+ *
+ * A card holding numbers is the violation in two ways at once. An admin cannot change how a filler
+ * sits without a deploy, which is rule 3 exactly; and "White, fine" and "Dense pompom" cannot
+ * differ in how they ARRIVE on a rim, only in the sprig, so two rows over one generator are less
+ * different than the product claims.
+ *
+ * `placement_config.gyp.zones[key]` overlays each set. The studio authors them; absent keys fall
+ * through to these, so a row saved before zones existed behaves exactly as it did.
+ *
+ * ⚠️ THE SPRIG IS NOT IN HERE. These are about PLACEMENT — where the sprigs sit and which way they
+ * point. What a sprig IS (reach, divisions, bloom size) is GYP_DEFAULTS above, one answer for the
+ * whole element, because it is one flower wherever it is put.
+ */
+export const GYP_PLACEMENTS = Object.freeze({
+  /* The ring every reference photograph shows, straddling the top edge. `lay: 45` tips the sprigs
+     outward over the rim; `bury` is the hand pushing the cut end into buttercream. */
+  rim:   Object.freeze({ spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
+                         height: 0.20, droop: 0.6, rimIn: 0.14, rimOut: 0.10 }),
+  /* Clumps the baker places. Looser and taller than a band — a posy stands up where a ring lies
+     along an edge. */
+  free:  Object.freeze({ spacing: 0.07, jitter: 0.8, lay: 20, bury: 0.08,
+                         height: 0.26, droop: 0.4 }),
+  /* ⚠️ `lay: 35`, NOT 90. At 90 every sprig points straight OUT of the wall and the camera sees it
+     end-on — which is its bloom cluster and nothing else, reported as *"a cluster of white
+     dots/sprinkles"*. At 30–35° the branching and the green stems come back and the posy fans UP
+     the wall the way a real one does. */
+  side:  Object.freeze({ spacing: 0.05, jitter: 0.7, lay: 35, layVary: 0.4, bury: 0.04,
+                         height: 0.20, droop: 0.5, sideLo: 0.18, sideHi: 0.68 }),
+  /* ⚠️ `lay: 78` — ALMOST FLAT. A board is card: you cannot push a stem into it, so the ring is
+     LAID at the join, stems tucked in sideways against the cake's foot and blooms fanning out over
+     the board. Seated upright it reads as a hedge round a building. */
+  board: Object.freeze({ spacing: 0.075, jitter: 0.7, lay: 78,
+                         height: 0.22, droop: 0.3, ringWidth: 0.18 }),
+});
+
+/* One placement, with whatever the row authored laid over the seeded set. The single reader, so a
+   card cannot quietly answer this question itself again. */
+export function gypPlacement(key, placementConfig = null) {
+  return { ...(GYP_PLACEMENTS[key] ?? {}), ...(placementConfig?.gyp?.zones?.[key] ?? {}) };
+}
+
 export const GYP_COLOURS = Object.freeze({
   stem:  '#8aa06a',   // a soft olive; gypsophila stems are grey-green, never a leaf green
   bloom: '#fdfdfb',

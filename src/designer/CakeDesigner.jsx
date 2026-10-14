@@ -58,7 +58,7 @@ import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
-import { GYP_DEFAULTS, GYP_COLOURS } from './geometry/gypsophila.js';
+import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { STICK_LENGTH_RANGE } from './geometry/topperPiece.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
@@ -6422,9 +6422,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          (promotionBundle.elementIdsReferencedBy), so a template promoted to prod would render
          correctly — the geometry is code plus these numbers — while the row behind it stayed
          behind. The brush band already carries its id for exactly that second reason. */
+      /* The rim set comes from `gypPlacement`, which seeds it in the geometry and lays the row's
+         own `zones.rim` over the top — the same single reader the card uses, so what a baker gets
+         on placing and what the Where pill gives are one answer rather than two copies. */
       setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, where: 'rim',
-                      spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
-                      height: 0.20, droop: 0.6, rimIn: 0.14, rimOut: 0.10, ...tuned,
+                      ...gypPlacement('rim', el?.placement_config), ...tuned,
                       elementId: el?.id ?? undefined });
     }
     selectExclusive({ type: 'gyp' });
@@ -7202,7 +7204,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const cur = design.tiers[i]?.gyp;
     if (!cur) {
       setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, where: 'free',
-                      spacing: 0.05, jitter: 0.8, bury: 0.06, droop: 0.5,
+                      /* A dropped bunch takes the surface it LANDED on — the wall's numbers when it
+                         was dropped on a wall — rather than one set for every drop. */
+                      ...gypPlacement(patch.surface === 'side' ? 'side' : 'free', el?.placement_config),
                       ...tuned, elementId: el?.id ?? undefined, patches: [patch] });
     } else {
       updateGyp(i, c => ({ where: 'free', patches: [...(c.patches ?? []), patch] }));
@@ -14236,6 +14240,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        without zones, must not lose its placements — absent is not the same as empty. */
     const zonesAllowed = gypEl?.allowed_zones?.length ? gypEl.allowed_zones : null;
     const mayGo = (zone) => !zonesAllowed || zonesAllowed.includes(zone);
+    /* ⚠️ HOW IT SITS ON EACH SURFACE IS ALSO THE ROW'S ANSWER. These four sets used to be written
+       out here — spacing, jitter, lay, bury, height, droop, four times over — which is the other
+       half of "placement is not driven by config": an admin could not change how a filler arrives
+       on a rim without a deploy (rule 3), and two rows over one generator could differ only in the
+       sprig. `gypPlacement` seeds them in the geometry and lays the row's own `zones` over the top.
+       The card asks; it no longer answers. */
+    const placement = (key) => gypPlacement(key, gypEl?.placement_config);
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
@@ -14251,8 +14262,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {mayGo(ZONES.TOP_SURFACE) && pill('On the rim', !!g && where === 'rim',
               () => setTierGyp(i, { ...(g ?? design.boardGyp ?? {}), ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
-                                    where: 'rim', spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
-                                    height: 0.20, droop: 0.6,
+                                    where: 'rim', ...placement('rim'),
                                     /* ⚠️ A BAND AND CLUMPS CANNOT BOTH BE ON. `grassSeats` reads
                                        `patches` whatever else it was given, so a leftover clump
                                        from "I'll arrange" would seat a second cloud in the middle
@@ -14269,8 +14279,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                        — measured by looking at it, where the rim ring beside it is
                                        solid. A posy is a BUNCH; the clump radius is what makes it
                                        small, never the gaps between stems. */
-                                    where: 'free', spacing: 0.07, jitter: 0.8, lay: 20, bury: 0.08,
-                                    height: 0.26, droop: 0.4,
+                                    where: 'free', ...placement('free'),
                                     patches: g?.patches?.length ? g.patches : [newGypPatch()] }))}
             {/* ⚠️ ON THE WALL — stems pushed in sideways, blooms fanning out, which is what `lay: 90`
                 means: tipped all the way over onto the wall's own outward normal. Burying is INWARD
@@ -14289,15 +14298,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                        green stems come back, and the posy fans UP the wall the way
                                        a real one does. At 90° it also hung off the bottom of the
                                        cake once the flower was big enough to read. */
-                                    where: 'side', spacing: 0.05, jitter: 0.7, lay: 35, layVary: 0.4,
+                                    where: 'side', ...placement('side'),
                                     /* ⚠️ NO `size` HERE. It used to carry 1.6 of its own, which was
                                        a second answer to "how big is this flower" — the rim had 1
                                        and the side 1.6 for the same baby's breath. The default is
                                        2, measured against a reference photograph, and every
                                        placement inherits it. What differs per placement is the
                                        sprig's REACH, which is `height`. */
-                                    height: 0.20, droop: 0.5, bury: 0.04,
-                                    sideLo: 0.18, sideHi: 0.68,
+
                                     /* ⚠️ ONE CLUMP, NOT A BAND ROUND THE CAKE. Sandeep: *"flowers
                                        on side is mostly hand drawn. usually people wont cover the
                                        entire side with these flowers. on sides, its usually along
@@ -14309,9 +14317,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                       ? g.patches : [{ u: 0, v: 0.42, r: 0.3 }] }))}
             {mayGo(ZONES.BOARD) && pill('On the board', !!bg,
               () => (bg ? setBoardGyp(null)
-                        : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18,
-                                        spacing: 0.075, jitter: 0.7, lay: 78,
-                                        height: 0.22, droop: 0.3,
+                        : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ...placement('board'),
                                         /* The same row, so the board ring answers to the same
                                            permissions and travels in the same bundle. */
                                         elementId: g?.elementId ?? undefined })))}
