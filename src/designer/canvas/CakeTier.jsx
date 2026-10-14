@@ -24,6 +24,7 @@ import { seatHalfDepth } from '../geometry/seating.js';
 import CakeCoat from './CakeCoat.jsx';
 import CakeWafer from './CakeWafer.jsx';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
+import { pipingLayerAtClick } from '../geometry/pipingPick.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams, buildDripFlood, paintDripColors } from '../geometry/chocolateDrip.js';
@@ -1885,15 +1886,18 @@ export default function CakeTier({
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
 
+  /* ⚠️ WHICH LAYER A BODY CLICK MEANT IS `pipingLayerAtClick`, and it may answer NOTHING. This
+     picked `tops[0]` — the first layer on the rim, whichever one was clicked — which is the only
+     possible answer with one layer and a coin-flip with two. On a cake wearing a drip and a ring of
+     chocolate balls on the same rim, the drip was added first and won every click: *"when i click
+     on chocolate ball, drip popup opens."* A click on either ring ITSELF is unaffected; each ring
+     renders its own shell and reports its own layerId. */
   function handleClick(e) {
     e.stopPropagation();
-    if (tops.length && e.point.y > topY - height * 0.25) {
-      onTopPipingClick?.(e, tops[0].layerId);
-    } else if (bottoms.length && e.point.y < yBase + height * 0.25) {
-      onBottomPipingClick?.(e, bottoms[0].layerId);
-    } else {
-      onClick?.(e);
-    }
+    const pick = pipingLayerAtClick({ tops, bottoms, y: e.point.y, topY, yBase, height });
+    if (pick?.zone === 'rim') onTopPipingClick?.(e, pick.layerId);
+    else if (pick?.zone === 'board') onBottomPipingClick?.(e, pick.layerId);
+    else onClick?.(e);
   }
 
   // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"

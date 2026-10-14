@@ -3575,9 +3575,21 @@ function CakeContent({ config, scene, edit = null }) {
               : null}
             /* A click on a raised cream band opens the cream card on THIS tier, at the band that was
                tapped — the same shape as the rim ring's handler above it. */
-            onCreamClick={(e, bandIndex) => { e.stopPropagation(); onCreamSelect(i, bandIndex); }}
-            onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
-            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
+            /* ⚠️ A GESTURE THAT BEGAN ON A DECORATION IS NOT A CLICK ON THE CAKE'S BORDERS, and
+               leaving that out is the foil bug again in a new place. Reported: *"when chocolate ball
+               is on chocolate drip, chocolate ball is loosing its pointer. when i click on chocolate
+               ball, drip popup opens."* A ring of balls hugs the rim, which is exactly where the
+               drip's shell is, so a press landed on the ball — `gestureOnStickerRef` was set, the
+               sticker WAS selected — and then the leaked r3f click reached the shell underneath and
+               `onTopPipingSelect` overwrote that selection within the same gesture. From the DOM it
+               looks like the ball has no pointer at all, which is how the original foil version of
+               this was misdiagnosed.
+               The tier's own `onClick` one line below has always made this check; the three border
+               handlers never did, and nothing sits on a tier's bare top often enough for it to
+               show. A ring arrangement puts decorations right on top of a ring of piping. */
+            onCreamClick={(e, bandIndex) => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onCreamSelect(i, bandIndex); }}
+            onTopPipingClick={(e, layerId) => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTopPipingSelect(i, layerId); }}
+            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTierClick(i); }}
           />
           {/* Piped grass on this tier's top. Outside CakeTier because it is not part of the cake's

@@ -8782,6 +8782,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        calls, with the same hit shape the canvas produces. */
     window.__dropElementAt = (id, hit) => { const e = elementById.get(id); if (!e) return false;
                                             handleElementDrop(e, hit); return true; };
+    /* Which piping layer a click selected, by NAME — "the drip" or "the ball ring". A rim can carry
+       several layers and they look alike from the DOM; the card's heading is the only thing on
+       screen that tells them apart, and reading a heading is reading the symptom. */
+    /* Put a piping ring on a rim or board. Placing one is a tap on the 3D rim to set the target and
+       then a style chosen from a popup — two gestures a script cannot aim — so this sets the same
+       target the tap sets and calls the SAME handler the popup calls. */
+    window.__placePiping = (tierIndex, zone, elementId) => {
+      const e = elementById.get(elementId); if (!e) return false;
+      setPipingTarget({ tierIndex, zone });
+      return true;
+    };
+    window.__choosePiping = (elementId) => {
+      const e = elementById.get(elementId); if (!e) return false;
+      handlePipingStyleSelect(e); return true;
+    };
+
+    /* Take a piping layer off, so a frame can be photographed without it — the honest way to find
+       which pixels on a 3D cake belong to a ring. Calls the same remover the card's button does. */
+    window.__removePiping = (tierIndex, zone, layerId) => { removePipingLayer(tierIndex, zone, layerId); return true; };
+    /* ⚠️ IT READS `expandedPipingId`, NOT `selectedPiping`. A ring click opens a CARD — the popup
+       keeps a list of cards and expands one by `cardId` (openCardForLayer → openPipingPopup) — and
+       `selectedPiping` is a different thing entirely, which is why a first version returned null on
+       a cake plainly showing the drip's card. The card is the thing the report is about: *"when i
+       click on chocolate ball, drip popup opens."* */
+    window.__selectedPiping = () => {
+      if (!expandedPipingId) return null;
+      for (const t of design.tiers) {
+        for (const [zone, arr] of [['rim', t.topPipings ?? []], ['board', t.bottomPipings ?? []]]) {
+          const p = arr.find(x => x.cardId === expandedPipingId);
+          if (p) return { name: p.name, layerId: p.layerId, zone };
+        }
+      }
+      return { unknown: expandedPipingId };
+    };
     /* ⚠️ THE WHOLE DESIGN, for the decorations that live ON A TIER rather than in a flat list. A
      * rainbow's tier is not a field on the rainbow — it IS which tier's `rainbows` holds it — so
      * "did it move tiers" cannot be read from the object, only from the shape around it. The same
