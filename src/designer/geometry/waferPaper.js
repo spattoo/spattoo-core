@@ -321,16 +321,32 @@ const relLum = (hex) => {
 const WAFER_MIN_CONTRAST = 0.12;
 
 export function waferPresetFor(tierColour, preferred = 'White, waved') {
-  const entries = Object.entries(WAFER_PRESETS);
-  const base = WAFER_PRESETS[preferred] ?? entries[0][1];
+  /* ⚠️ ONLY WHAT THE BAKER IS OFFERED. This read the WHOLE table, so on a white cake — where no
+   * white preset clears the contrast bar — it reached for the biggest luminance gap it could find
+   * and arrived on the coral "Pink, notched hem". That was defensible while coral was a chip you
+   * could see selected and step away from; the moment it was withheld, turning wafer paper on over
+   * a white cake produced a PINK skirt with no chip active and no way back to it. Sandeep: *"pink
+   * option has been moved from the popup but default only pink coming. default should be 'white
+   * waved'."*
+   *
+   * This function's own promise three paragraphs up is what it broke: "whatever arrives is one the
+   * baker can see selected and step away from in one tap." A hidden preset can be neither. */
+  const entries = waferPresetsOffered();
+  const base = (WAFER_HIDDEN.has(preferred) ? null : WAFER_PRESETS[preferred]) ?? entries[0][1];
   const wall = relLum(tierColour);
   if (Math.abs(relLum(base.colour) - wall) >= WAFER_MIN_CONTRAST) return { ...base };
-  let best = base, bestGap = -1;
+  /* ⚠️ ONLY STEP ASIDE FOR A PRESET THAT ACTUALLY CLEARS THE BAR. This used to take the LARGEST gap
+   * among the candidates whether or not it was a real improvement — fine while the table held a
+   * coral preset 0.5 away, and absurd once it holds only whites: an off-white cake landed on
+   * "White, rippled" because its luminance sat 0.01 further off than "White, waved"'s. That is not
+   * contrast, it is a tie broken by noise, and it quietly moved the default off the look Sandeep
+   * asked for. If nothing can be seen, the preferred preset is the honest answer. */
+  let best = null, bestGap = WAFER_MIN_CONTRAST;
   for (const [, preset] of entries) {
     const gap = Math.abs(relLum(preset.colour) - wall);
     if (gap > bestGap) { bestGap = gap; best = preset; }
   }
-  return { ...best };
+  return { ...(best ?? base) };
 }
 
 /* The customer-facing controls, in the two groups the technique actually has: what the SHEETS are,

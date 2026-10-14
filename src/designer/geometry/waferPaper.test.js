@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waferPanel, buildWaferSkirt, WAFER_PRESETS, WAFER_DEFAULTS, waferPresetFor, bakeWaferAO } from './waferPaper.js';
+import { waferPanel, buildWaferSkirt, WAFER_PRESETS, WAFER_DEFAULTS, waferPresetFor, bakeWaferAO , waferPresetsOffered } from './waferPaper.js';
 
 const bbox = (g) => {
   const p = g.getAttribute('position');
@@ -466,21 +466,51 @@ describe('waferPresetFor — the skirt arrives in something you can see', () => 
     expect(waferPresetFor('#6CB7CE').colour).toBe(WAFER_PRESETS['White, waved'].colour);
   });
 
-  it('steps aside on a white cake, where white cannot be seen', () => {
-    const picked = waferPresetFor('#ffffff');
-    expect(picked.colour).not.toBe(WAFER_PRESETS['White, waved'].colour);
-    expect(picked.colour).toBe(WAFER_PRESETS['Pink, notched hem'].colour);
+  /* ⚠️ THESE TWO USED TO ASSERT THE CORAL PRESET, and they were right to until coral was withheld.
+   * The contrast rule still runs — it just cannot reach for a preset a baker is not offered, or the
+   * skirt arrives on a look with no chip active and no way back to it. Sandeep: *"pink option has
+   * been moved from the popup but default only pink coming. default should be 'white waved'."*
+   *
+   * ⚠️ AND THE COMPLAINT BEHIND THE OLD BEHAVIOUR IS NOT SOLVED, only out-ranked. White wafer paper
+   * on a white cake was reported once as *"i can hardly see the wafer paper. totally white and hard
+   * to differentiate."* Withholding the only coloured preset takes away the automatic answer to
+   * that; what is left is the baked AO in the panels and the colour wheel beside the chips. If it
+   * is reported again, the fix is a coloured preset good enough to offer — not a return to picking
+   * one nobody can see selected. */
+  it('stays on white for a white cake, because that is what is offered', () => {
+    expect(waferPresetFor('#ffffff').colour).toBe(WAFER_PRESETS['White, waved'].colour);
   });
 
   it('and on an off-white one, which is what buttercream actually is', () => {
-    expect(waferPresetFor('#fbf7f2').colour).toBe(WAFER_PRESETS['Pink, notched hem'].colour);
-    expect(waferPresetFor('#F6F2E9').colour).toBe(WAFER_PRESETS['Pink, notched hem'].colour);
+    expect(waferPresetFor('#fbf7f2').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#F6F2E9').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+  });
+
+  /* ⚠️ A TIE BROKEN BY NOISE IS NOT CONTRAST. The step-aside used to take the LARGEST gap whether or
+     not it cleared the bar, so an off-white cake landed on "White, rippled" over "White, waved" on
+     a luminance difference of 0.01 — moving the default off the asked-for look for no visible
+     reason. It only steps aside now for a preset that genuinely clears WAFER_MIN_CONTRAST. */
+  it('does not swap one white for another over a hair of luminance', () => {
+    for (const wall of ['#ffffff', '#fbf7f2', '#fdfbf7', '#F6F2E9', '#faf8f5']) {
+      expect(waferPresetFor(wall).colour, `${wall} moved off the preferred look`)
+        .toBe(WAFER_PRESETS['White, waved'].colour);
+    }
+  });
+
+  /* The rule still WORKS where it has something to reach for: a dark cake keeps the white skirt,
+     which is the case the contrast check was really protecting. */
+  it('keeps white on a cake white can be seen against', () => {
+    expect(waferPresetFor('#2e2e2e').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#f2766d').colour).toBe(WAFER_PRESETS['White, waved'].colour);
   });
 
   /* ⚠️ A WHOLE PRESET, never a colour of its own invention: whatever arrives has to be one of the
      chips below, or none of them shows as active and the baker cannot step back to it in one tap. */
   it('always returns one of the offered presets', () => {
-    const offered = Object.values(WAFER_PRESETS).map(p => p.colour);
+    /* ⚠️ `waferPresetsOffered()`, NOT THE WHOLE TABLE — which is what this used to read, and why it
+       stayed green while the skirt was arriving on a withheld preset. A test that accepts anything
+       in the table cannot see the difference between offered and hidden. */
+    const offered = waferPresetsOffered().map(([, p]) => p.colour);
     for (const cake of ['#ffffff', '#000000', '#f2766d', '#c0d8ff', undefined, null, 'nonsense']) {
       expect(offered).toContain(waferPresetFor(cake).colour);
     }
