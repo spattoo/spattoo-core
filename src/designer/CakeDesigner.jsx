@@ -5321,7 +5321,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Open a piping card. From the palette (no cardId) this ALWAYS spawns a fresh instance, so
   // the same style can be placed several times as independent (e.g. differently coloured)
   // nested rings. From click-to-edit (cardId given) it focuses the card owning that ring.
-  async function openPipingPopup(el, { cardId } = {}) {
+  async function openPipingPopup(el, { cardId, ringZones = null } = {}) {
     const focusOnly = () => {
       focusEditor('piping'); setPipingPopupOpen(true); setElementsOpen(false);
     };
@@ -5332,9 +5332,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       return;
     }
     const newCardId = crypto.randomUUID();
+    const withZones = ringZones ? { ...el, ringZones } : el;
     // Single-zone elements have nothing to choose — auto-add the ring (nested/stacked) on the
     // bottom tier. Multi-zone elements stay manual via each ring's toggle.
-    const zones = (el.allowed_zones ?? []).filter(z => z === 'rim' || z === 'board');
+    /* `ringZones` (decoration rings) narrows this to the zones an admin actually ticked; null
+       (piping) keeps every allowed rim/board zone, which is right for cream. */
+    const zones = (el.allowed_zones ?? [])
+      .filter(z => z === 'rim' || z === 'board')
+      .filter(z => !ringZones || ringZones.includes(z));
     if (zones.length === 1) {
       const isTop = zones[0] === 'rim';
       const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
@@ -5350,7 +5355,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       }
       addRingLayer(0, zones[0], piping);
     }
-    setPipingCards(prev => [...prev, { ...el, cardId: newCardId }]);
+    setPipingCards(prev => [...prev, { ...withZones, cardId: newCardId }]);
     setExpandedPipingId(newCardId);
     focusOnly();
   }
@@ -7730,7 +7735,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const ringsRim   = rz.includes(ZONES.RIM)   && (rc?.top_ring_finish    ?? rc?.ring_finish) === 'element';
     const ringsBoard = rz.includes(ZONES.BOARD) && (rc?.bottom_ring_finish ?? rc?.ring_finish) === 'element';
     if (ringsRim || ringsBoard) {
-      openPipingPopup(element);
+      /* ⚠️ PASS WHICH ZONES ACTUALLY RING, or the card offers both. Admin's "Show full ring" is a
+         PER-ZONE tick that writes `top_ring_finish` (rim) or `bottom_ring_finish` (board), but the
+         card derives its tiles from `allowed_zones` — and it maps `side` → `board`, so an element
+         allowed on the wall for ordinary placement grew a BOARD ring tile it was never authored
+         for. Sandeep, having ticked the rim only: *"if i enable it, it is showing ring on the board
+         also."* A piping element passes nothing and still offers every allowed zone, because its
+         finish resolves to 'cream' on both — this restriction belongs to the decoration path. */
+      openPipingPopup(element, {
+        ringZones: [ringsRim && ZONES.RIM, ringsBoard && ZONES.BOARD].filter(Boolean),
+      });
       return;
     }
     const zones = element.allowed_zones ?? [];
@@ -17679,8 +17693,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // Only rim/board drive piping candidates. The admin's "Side" zone is the cake
               // wall — the same place board piping rides (y-adjustable) — so treat it as 'board'
               // here, otherwise a side-zoned piping element yields no candidates (blank card).
+              /* ⚠️ `side` MAPS TO `board` HERE, and that is what grew a board ring on a decoration.
+                 An element allowed on the wall for ordinary placement (a rose you stand on the side)
+                 arrives with `side` in its zones; mapped to `board` it became a second ring tile the
+                 admin never ticked. `ringZones` — set only on the decoration-ring path — says which
+                 zones were actually authored as rings. Piping carries none and is unchanged. */
               const allowed = (pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'])
-                .map(z => z === 'side' ? 'board' : z);
+                .map(z => z === 'side' ? 'board' : z)
+                .filter(z => !pipingPopupEl.ringZones || pipingPopupEl.ringZones.includes(z));
               const multi   = design.tiers.length > 1;
               // One card per candidate ring, ordered to mirror the cake top → bottom.
               // Each is independently editable; the checkbox beside its preview adds/removes
