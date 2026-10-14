@@ -2909,6 +2909,7 @@ function CakeScene({
   penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
+  onGypClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -3165,7 +3166,7 @@ function CakeScene({
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
-          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick,
         }}
       />
       </group>
@@ -3453,6 +3454,14 @@ function CakeContent({ config, scene, edit = null }) {
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit, onBrushStrokeClick,
     onBrushBandClick,
     onCloudMove, onRainbowMove, onBalloonClick: onBalloonClickEdit, onBalloonMove,
+    /* ⚠️ IN `edit`, AND IT HAS TO BE IN BOTH HALVES. The gypsophila is drawn by the SHARED renderer
+       — the one the thumbnail also uses — so a tap handler reaches it the way a selection cue does:
+       through `edit`, which is null on the capture path and therefore cannot leak into a captured
+       picture. Adding it to CakeCanvas's own signature and forwarding it was NOT enough; the render
+       reads it HERE, and leaving it out threw "onGypClick is not defined" at runtime past a green
+       build and a green suite. The comment two blocks up records the identical fault for
+       onCloudClick, which is how I knew where to look. */
+    onGypClick,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -3512,6 +3521,7 @@ function CakeContent({ config, scene, edit = null }) {
       {boardGyp && bottomShp && (
         <GypCloud
           {...boardGyp}
+          onPick={onGypClick}
           shape={outwardBand(bottomShp, boardGyp.ringWidth ?? 0.18)}
           hole={{ shape: bottomShp, scale: 1 }}
           patchRadius={boundingRadius(bottomShp)}
@@ -3607,6 +3617,7 @@ function CakeContent({ config, scene, edit = null }) {
               return (
                 <GypCloud
                   {...tier.gyp}
+                  onPick={onGypClick}
                   shape={shp}
                   topY={tier.baseY}
                   wall={{ height: tier.height,
@@ -3631,6 +3642,7 @@ function CakeContent({ config, scene, edit = null }) {
             return (
               <GypCloud
                 {...tier.gyp}
+                onPick={onGypClick}
                 shape={band ? band.shape : shp}
                 bandInner={band ? band.bandInner : undefined}
                 patchRadius={band ? band.shape.radius : tier.radius}
@@ -4550,6 +4562,7 @@ export default function CakeCanvas({
   penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
+  onGypClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
@@ -4752,6 +4765,7 @@ export default function CakeCanvas({
         gypSelected={gypSelected}
         onGypMove={onGypMove}
         onGypSelect={onGypSelect}
+        onGypClick={onGypClick}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}

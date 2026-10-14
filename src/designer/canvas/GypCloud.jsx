@@ -66,6 +66,12 @@ export default function GypCloud({
      wire: *"such thin stems cant hold the bunch… against physics… lets insert them bit low."*
      Burying is not a cheat for that, it is what the baker's hand does. */
   bury = 0,
+  /* ⚠️ TAPPING THE FLOWERS OPENS THEIR CARD. The side stack's own roadmap note names this as the
+     work that lets the stack go away: "pointer handlers for grass, letter blocks, luster dust and
+     anything else lacking them." Gypsophila was in that set, and on the RIM it is the only way in —
+     a band has no position of its own, so it carries no drag handle to tap instead. Sandeep:
+     *"gypsophila does not have a popup pointer."* */
+  onPick,
   onStats,
 }) {
   const geo = useMemo(
@@ -101,7 +107,14 @@ export default function GypCloud({
 
   if (!seats.length) return null;
   return (
-    <instancedMesh ref={ref} args={[geo, undefined, seats.length]} castShadow receiveShadow>
+    /* ⚠️ `isGypTap` IS NOT DECORATION. The canvas lists it in gesture ownership already, beside the
+       clump handles: without it the r3f click LEAKS to the tier underneath and
+       `selectExclusive({type:'tier'})` overwrites the selection this tap just made — which from the
+       DOM is indistinguishable from a tap that missed, and is the half of the original foil bug
+       that got misdiagnosed first time round. */
+    <instancedMesh ref={ref} args={[geo, undefined, seats.length]} castShadow receiveShadow
+      userData={{ isGypTap: true }}
+      onClick={onPick ? (e) => { e.stopPropagation(); onPick(); } : undefined}>
       {/* ⚠️ NO `albedoForLight` HERE YET, AND THAT IS A GAP, NOT A DECISION. Every surface in this
           library is calibrated against its own measured reference light (INVARIANTS #16) because a
           thin self-shadowing form eats far more light than a flat one — grass needs [1.901, 1.358,

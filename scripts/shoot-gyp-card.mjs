@@ -84,7 +84,10 @@ ok(p2.length === 2 && Math.abs((p2[0].u ?? 0) - (p2[1].u ?? 0)) > 0.05,
    'the second one lands clear of the first');
 /* The drag dots: a clump is a thing you pick up, a band is not. */
 const handles = await page.evaluate(() => window.__gypTapTargets?.() ?? null);
-ok(handles !== null, `the canvas exposes the clump handles (${handles})`);
+ok(Array.isArray(handles) && handles.length >= 2,
+   `the canvas exposes the clump handles (${handles?.length})`);
+/* Tapping the flowers to open their card is its own run — scripts/shoot-gyp-tap.mjs. It has to
+   CLOSE the card to prove anything, and closing it here stranded every section below this one. */
 await page.screenshot({ path: `${process.env.HOME}/Downloads/gyp-clumps.png` });
 
 console.log('\nback to the rim drops the clumps');
@@ -204,9 +207,14 @@ ok(sideP.every(q => q.v > 0.1 && q.v < 0.9), `both sit on the wall, not at its e
 /* ⚠️ THE HANDLE AND THE FLOWERS MUST AGREE. `u` is measured from the cake's FRONT here and from +X
    in `circlePerimeter` — a quarter turn apart on a round cake, which reads as "dragging that clump
    does nothing". Pinned by a unit test too; this one proves the dots exist on the wall at all. */
+/* ⚠️ THE CLOUD ITSELF IS A TAP TARGET NOW, so this counts one MORE than the clumps. `__gypTapTargets`
+   answers "what carries isGypTap / isGypHandle", and the flowers were given `isGypTap` so tapping
+   them opens their card — the thing a rim band has no handle for, since a band has no position of
+   its own. Sandeep: *"gypsophila does not have a popup pointer."* The old assertion expected
+   exactly 2 and went red on the feature working. */
 const wallHandles = await page3.evaluate(() => window.__gypTapTargets?.() ?? null);
-ok(Array.isArray(wallHandles) && wallHandles.length === 2,
-   `both clumps carry a drag handle (${wallHandles?.length})`);
+ok(Array.isArray(wallHandles) && wallHandles.length === 3,
+   `both clumps carry a drag handle, and the cloud itself is tappable (${wallHandles?.length})`);
 await page3.screenshot({ path: `${process.env.HOME}/Downloads/gyp-on-side.png` });
 
 await b.close();

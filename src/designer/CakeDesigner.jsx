@@ -14150,7 +14150,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                        a real one does. At 90° it also hung off the bottom of the
                                        cake once the flower was big enough to read. */
                                     where: 'side', spacing: 0.05, jitter: 0.7, lay: 35, layVary: 0.4,
-                                    height: 0.20, droop: 0.5, bury: 0.04, size: 1.6,
+                                    /* ⚠️ NO `size` HERE. It used to carry 1.6 of its own, which was
+                                       a second answer to "how big is this flower" — the rim had 1
+                                       and the side 1.6 for the same baby's breath. The default is
+                                       2, measured against a reference photograph, and every
+                                       placement inherits it. What differs per placement is the
+                                       sprig's REACH, which is `height`. */
+                                    height: 0.20, droop: 0.5, bury: 0.04,
                                     sideLo: 0.18, sideHi: 0.68,
                                     /* ⚠️ ONE CLUMP, NOT A BAND ROUND THE CAKE. Sandeep: *"flowers
                                        on side is mostly hand drawn. usually people wont cover the
@@ -16143,6 +16149,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* Gypsophila clumps are dragged by the very same dots — see the handles in the
                  canvas. Paired exactly as grass pairs them: the tap sets which clump is selected
                  AND reopens the card it belongs to, because the handles outlive the card. */
+              /* Tapping the flowers on the cake opens their card — the thing a band has no handle
+                 for, since it has no position of its own. Paired exactly as grass pairs its handle
+                 tap: set the selection AND bring the editor forward. */
+              onGypClick={() => {
+                setElementsOpen(false);
+                setToolsOpen(false);
+                focusEditor('decoration');
+                selectExclusive({ type: 'gyp' });
+              }}
               gypMode={selectedEl?.type === 'gyp'}
               gypSelected={gypSelected}
               onGypMove={handleGypMove}

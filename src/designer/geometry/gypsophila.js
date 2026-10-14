@@ -35,8 +35,21 @@ export const GYP_DEFAULTS = Object.freeze({
      Growing `height` alone gives a longer sprig carrying the same tiny blooms, and growing
      `floretSize` alone gives beads on a twig. Scaling the whole piece keeps its proportions — and
      it rides the instance matrix, so it costs no geometry rebuild and the per-seat 0.8–1.2
-     variation still sits on top of it. */
-  size:       1,
+     variation still sits on top of it.
+
+     ⚠️ 2, AND THE NUMBER COMES OFF A REFERENCE PHOTOGRAPH. Judged beside roses rather than alone:
+     *"in the ref image pls see the size ration between rose and the gypsophila. ours look like
+     sprinkles (too small for roses)."* Measured on that photograph a floret is about 13% of a
+     rose's diameter — 24px against 190px. At size 1 ours was 3.6% (a 0.032 bloom against a 0.896
+     rose), which is where "sprinkles" comes from. Rendered at 1x, 2x and 3x against the photograph
+     (scripts/shoot-gyp-vs-rose.mjs): 1 is specks beside the roses, 3 buries them, 2 matches.
+
+     ⚠️ AND IT IS THE DEFAULT RATHER THAN A PER-PLACEMENT NUMBER, because it is one flower. A rim
+     ring, a posy on the wall and a clump on the top are the same baby's breath put in three places;
+     giving each its own size was how the side ended up at 1.6 and the rim at 1, which is two
+     answers to "how big is this flower". What legitimately differs per placement is `height` — the
+     sprig's REACH — and those stay. */
+  size:       2,
   /* The sprig's own scale, in cake units — one stem from cut end to the furthest bloom. */
   height:     0.30,
   /* How many times the stem divides. 2 is a twig, 3 is a sprig, 4 is a branch and costs 3× the
