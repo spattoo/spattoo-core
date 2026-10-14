@@ -55,7 +55,7 @@ import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITIN
          THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
-import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } from './geometry/surface.js';
+import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { GYP_DEFAULTS, GYP_COLOURS } from './geometry/gypsophila.js';
@@ -7171,6 +7171,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * is right: an unknown key already falls through to the ordinary placement path below. */
   const isStudioElement = (el) => !!PROCEDURAL_TOOLS[el?.placement_config?.procedural]?.opensStudio;
 
+  /* ── A bunch of baby's breath, dropped where the baker let go ──────────────────────────────────
+   *
+   * ⚠️ A CLUMP CARRIES ITS OWN SURFACE, and that is the change that makes this possible at all. The
+   * tier's gypsophila used to have ONE `where`, so every clump was on whichever surface the mode
+   * named — and a cake with roses up the WALL could not have a bunch tucked between them while a
+   * ring sat on the rim. Sandeep: *"i have added rose flowers on the the side of top tier… i want
+   * to add gypsophila between those roses."* A faux ball knows its own zone; so does a clump now.
+   *
+   * ⚠️ AND THE HIT IS CONVERTED HERE, not stored raw. A hit speaks the canvas's language — world
+   * (x, z) on a lid, `theta` on a round wall, a perimeter fraction `u` on a faceted one — while a
+   * patch speaks the seat system's: a fraction round the shape and a fraction across it. Storing
+   * the hit as given would put three dialects in the design and make every reader convert. */
+  function dropGypsophilaAt(el, hit) {
+    const i = hit.tierIndex ?? 0;
+    const { baseY, height, shp, R } = tierGeom(i);
+    const TAU = Math.PI * 2;
+    const patch = hit.zone === ZONES.SIDE
+      ? { surface: 'side',
+          /* A round wall gives theta, a faceted one already gives the perimeter fraction. */
+          u: hit.u != null ? hit.u : (((hit.theta ?? 0) / TAU) % 1 + 1) % 1,
+          v: Math.max(0.05, Math.min(0.95, ((hit.y ?? baseY) - baseY) / Math.max(height, 1e-6))),
+          r: GYP_PATCH_R }
+      : { surface: 'top_surface',
+          u: ((Math.atan2(hit.x ?? 0, hit.z ?? 0) / TAU) % 1 + 1) % 1,
+          v: Math.min(0.95, Math.hypot(hit.x ?? 0, hit.z ?? 0) / Math.max(boundingRadius(shp) || R, 1e-6)),
+          r: GYP_PATCH_R };
+
+    const tuned = el?.placement_config?.gyp ?? {};
+    const cur = design.tiers[i]?.gyp;
+    if (!cur) {
+      setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, where: 'free',
+                      spacing: 0.05, jitter: 0.8, bury: 0.06, droop: 0.5,
+                      ...tuned, elementId: el?.id ?? undefined, patches: [patch] });
+    } else {
+      updateGyp(i, c => ({ where: 'free', patches: [...(c.patches ?? []), patch] }));
+    }
+    setGypSelected({ tier: i, idx: (cur?.patches?.length ?? 0) });
+    selectExclusive({ type: 'gyp' });
+  }
+
+  /* Which generators can be DROPPED at a point, and what to do with it. Separate from
+     PROCEDURAL_TOOLS because accepting a drop is a different capability from being placeable at
+     all: a rainbow spans a tier and a name sits on the board, and neither has a use for a hit. */
+  const PROCEDURAL_DROPS = {
+    gypsophila: dropGypsophilaAt,
+  };
+
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
     /* A filler, not an object: it dresses a surface the way grass does, so it places the moment it
@@ -8712,6 +8759,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        Both are pointer gestures on a 3D surface that a script cannot aim, and both go through the
        SAME setter the gesture calls — a hook that re-implemented either would prove nothing. */
     window.__patchSticker = (id, patch) => { updateSticker(id, patch); return true; };
+    /* Drop an element ON the cake at a given hit — the gesture is a pointer drag from a card in a
+       drawer onto a 3D surface, which a script cannot aim through. Calls the SAME function the drag
+       calls, with the same hit shape the canvas produces. */
+    window.__dropElementAt = (id, hit) => { const e = elementById.get(id); if (!e) return false;
+                                            handleElementDrop(e, hit); return true; };
     /* ⚠️ THE WHOLE DESIGN, for the decorations that live ON A TIER rather than in a flat list. A
      * rainbow's tier is not a field on the rainbow — it IS which tier's `rainbows` holds it — so
      * "did it move tiers" cannot be read from the object, only from the shape around it. The same
@@ -8993,6 +9045,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleElementDrop(element, hit) {
+    /* ── A procedural element dropped ON the cake knows WHERE it was dropped ─────────────────────
+     * ⚠️ IT DID NOT, AND THAT IS THE ROOT OF "placement is not driven by config". `tapPlaceElement`
+     * calls `proc(element)` with no hit — correctly, because a tap in the Decorations LIST has no
+     * point on the cake — and nothing ever called a procedural from the DROP path at all. So no
+     * generated element could be placed where the baker acted: gypsophila had to invent a spot and
+     * offer modes instead. Sandeep: *"i dont have a way to drag a bunch between the roses. see what
+     * we do for faux balls, i think a similar mechanism need to be implemented here."* A faux ball
+     * is dropped at its hit; this is the same door, opened for generators.
+     *
+     * ⚠️ `procDrop`, NOT `proc`. A generator that has nothing to do with a point — a rainbow, letter
+     * blocks — should go on behaving as it does, so the registry says which ones accept a drop
+     * rather than every one of them having to learn to ignore an argument. */
+    const procAt = PROCEDURAL_DROPS[element.placement_config?.procedural];
+    if (procAt && hit) {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      procAt(element, hit);
+      return;
+    }
     // Tier-finish elements (food foil) paint into the tier material, never place a sticker — open the
     // finish card. Covers the DRAG path (tapPlaceElement covers tap). Config-driven, no slug branch.
     if (element.placement_config?.kind === 'tier_finish') {
@@ -14144,6 +14215,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        a design saved before the id was kept, has no row to ask — and the safe reading of "I did not
        grant this" is that it was not granted. The colours already chosen still RENDER; what goes is
        the ability to change them. */
+    /* The row this gypsophila came from — it answers two questions now: what may be RECOLOURED and
+       where it may GO. Both used to be answered by the card itself, which is the shape of the
+       violation: a card is not the catalogue. */
+    const gypEl = (g ?? bg)?.elementId ? elementById.get((g ?? bg).elementId) : null;
     const canColour = elementAllowsColour(g ?? bg);
     const pill = (label, on, fn) => (
       <button key={label} onClick={fn}
@@ -14151,6 +14226,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           cursor: 'pointer', fontFamily: 'inherit', border: `1.5px solid ${LINE}`,
           background: on ? INK : SURFACE, color: on ? SURFACE : INK }}>{label}</button>
     );
+    /* ⚠️ WHERE IT MAY GO IS THE ROW'S ANSWER, NOT THIS CARD'S. Sandeep: *"placement is not driven
+       by config. so many violations on driving the rendering from config."* He is right: these four
+       pills were written out here and shown whatever `allowed_zones` said, so an admin who allowed
+       a filler on the board only still got a card offering the rim, the wall and the lid. The zone
+       vocabulary is already shared (ZONES, and `allowed_zones` on every row); nothing here needed
+       inventing, only asking.
+       ⚠️ A ROW THAT SAYS NOTHING KEEPS ALL FOUR. An element placed before this, or one authored
+       without zones, must not lose its placements — absent is not the same as empty. */
+    const zonesAllowed = gypEl?.allowed_zones?.length ? gypEl.allowed_zones : null;
+    const mayGo = (zone) => !zonesAllowed || zonesAllowed.includes(zone);
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
@@ -14164,7 +14249,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* ⚠️ THE ROW WRAPS NOW THERE ARE FOUR. Three pills fill a 390px card exactly; a fourth
               in the same rigid row squeezed every label to two lines. */}
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {pill('On the rim', !!g && where === 'rim',
+            {mayGo(ZONES.TOP_SURFACE) && pill('On the rim', !!g && where === 'rim',
               () => setTierGyp(i, { ...(g ?? design.boardGyp ?? {}), ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
                                     where: 'rim', spacing: 0.075, jitter: 0.65, lay: 45, bury: 0.06,
                                     height: 0.20, droop: 0.6,
@@ -14177,7 +14262,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 surface, which is "I'll cover it" — the opposite of what the pill says. A baker who
                 chose this is placing a posy and then another one; the clump is the unit, the handle
                 on the cake is how it moves, and `+ Add clump` is how the second one arrives. */}
-            {pill("I'll arrange", !!g && where === 'free',
+            {mayGo(ZONES.TOP_SURFACE) && pill("I'll arrange", !!g && where === 'free',
               () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
                                     /* ⚠️ A CLUMP IS AS DENSE AS THE BAND, not sparser. At 0.14 a
                                        clump of r=0.34 seats about six sprigs and reads as a smudge
@@ -14194,7 +14279,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 round the side arranges BETWEEN whatever is already on the wall and never grows
                 through it (`wallOccupants` + a three-dimensional clearance — on a wall a flat test
                 would take a stripe out of the band from the board to the rim for every rose). */}
-            {pill('On the side', !!g && where === 'side',
+            {mayGo(ZONES.SIDE) && pill('On the side', !!g && where === 'side',
               () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
                                     /* ⚠️ `lay: 90` POINTED EVERY SPRIG STRAIGHT OUT OF THE WALL,
                                        so the camera saw each one END-ON — and a sprig end-on is its
@@ -14222,7 +14307,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                        sits it below the middle, where a wall posy usually goes. */
                                     patches: g?.where === 'side' && g?.patches?.length
                                       ? g.patches : [{ u: 0, v: 0.42, r: 0.3 }] }))}
-            {pill('On the board', !!bg,
+            {mayGo(ZONES.BOARD) && pill('On the board', !!bg,
               () => (bg ? setBoardGyp(null)
                         : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ringWidth: 0.18,
                                         spacing: 0.075, jitter: 0.7, lay: 78,

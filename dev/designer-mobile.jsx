@@ -387,7 +387,12 @@ CAT_ELEMENTS.push({
      neither belongs to no group, so nothing renders it and nothing says so. */
   element_type_id: 'et-topper', category_id: 'cat-1',
   image_url: CAT_THUMB('#eef2e6'), thumbnail_url: CAT_THUMB('#eef2e6'),
-  thumb_key: null, allowed_zones: ['top_surface'],
+  /* ⚠️ THE ZONES THE STUDIO ACTUALLY AUTHORS. `GypsophilaStudio`'s buildPayload writes
+     `allowed_zones: ['top_surface', 'side', 'board']`, and this fixture said `['top_surface']`
+     alone — which stopped mattering only because the card ignored the field entirely. The moment
+     the Where row started deriving from it, the harness would have been testing a row no admin
+     ever saves. A fixture that disagrees with the real row proves the wrong thing. */
+  thumb_key: null, allowed_zones: ['top_surface', 'side', 'board'],
   allowed_actions: { move: false, delete: true, resize: false },
   placement_config: { procedural: 'gypsophila' },
   default_color: '#fdfdfb', sort_order: 42,

@@ -68,6 +68,13 @@ ok((await page.evaluate(() => window.__design?.().tiers?.slice(-1)[0]?.gyp?.elem
 
 console.log('\nthe card');
 const txt = await page.evaluate(() => document.body.innerText);
+/* ⚠️ THE PLACEMENTS COME FROM THE ROW. Sandeep: *"placement is not driven by config. so many
+   violations on driving the rendering from config."* These four pills were written out in the card
+   and shown whatever `allowed_zones` said. The fixture now carries the zones the STUDIO actually
+   authors, so this asserts the card against a row an admin could really save. */
+const zonesRow = await page.evaluate(() => window.__dumpElement?.('e-gyp')?.allowed_zones ?? null);
+ok(Array.isArray(zonesRow) && zonesRow.includes('side') && zonesRow.includes('board'),
+   `the row allows top, side and board (${zonesRow})`);
 ok(/ON THE RIM|On the rim/i.test(txt), 'offers "On the rim"');
 ok(/arrange/i.test(txt), "offers \"I'll arrange\"");
 ok(/ON THE BOARD|On the board/i.test(txt), 'offers "On the board"');

@@ -3266,8 +3266,13 @@ function CakeScene({
            one on the side against the wall — `FinishHandles` reads both, and `surface` is what
            picks the catcher AND where the dot is drawn. Hardcoding 'top_surface' here would float
            every side clump's handle above the cake, a long way from the flowers it holds. */
+        /* ⚠️ EACH PATCH REPORTS ITS OWN SURFACE. This used to read the tier's mode, which was right
+           while every clump shared one — and would now float a wall bunch's handle above the lid,
+           a long way from the flowers it holds. The fallback keeps designs saved before patches
+           carried a surface opening where they were left. */
         getPoints={t => (t.gyp?.patches?.length
-          ? t.gyp.patches.map(p => ({ ...p, surface: t.gyp.where === 'side' ? 'side' : 'top_surface' }))
+          ? t.gyp.patches.map(p => ({ ...p,
+              surface: p.surface ?? (t.gyp.where === 'side' ? 'side' : 'top_surface') }))
           : null)}
         board={board} boardPoints={null}
         selected={gypMode ? gypSelected : null} onMove={onGypMove} onSelect={onGypSelect}
@@ -3639,20 +3644,52 @@ function CakeContent({ config, scene, edit = null }) {
             const band = tier.gyp.where === 'rim'
               ? rimBand(shp, { inn: tier.gyp.rimIn ?? 0.14, out: tier.gyp.rimOut ?? 0.10 })
               : null;
-            return (
-              <GypCloud
-                {...tier.gyp}
-                onPick={onGypClick}
-                shape={band ? band.shape : shp}
-                bandInner={band ? band.bandInner : undefined}
-                patchRadius={band ? band.shape.radius : tier.radius}
-                topY={tier.baseY + tier.height}
-                avoid={surfaceOccupants(stickers, {
-                  tierIndex: i, zone: ZONES.TOP_SURFACE,
-                  radiusOf: (st) => glbXRadiusCache[st.imageUrl],
-                })}
-              />
-            );
+            /* ⚠️ A CLUMP CARRIES ITS OWN SURFACE, so one tier can wear a bunch on the WALL and
+               another on the lid at the same time. The tier used to have a single `where` and every
+               clump obeyed it, which is why a cake with roses up the side could not have baby's
+               breath tucked between them. Patches saved before this have no `surface`; they take
+               the tier's mode, so an old design opens exactly as it was. */
+            const patches = tier.gyp.patches ?? [];
+            const onSurface = (name) => {
+              const got = patches.filter(p => (p.surface ?? (tier.gyp.where === 'side' ? 'side' : 'top_surface')) === name);
+              return got.length ? got : null;
+            };
+            const topPatches = band ? null : onSurface('top_surface');
+            const sidePatches = onSurface('side');
+            return (<>
+              {/* The lid: a band when one was asked for, otherwise whatever clumps sit up there. */}
+              {(band || topPatches) && (
+                <GypCloud
+                  {...tier.gyp}
+                  onPick={onGypClick}
+                  patches={topPatches}
+                  shape={band ? band.shape : shp}
+                  bandInner={band ? band.bandInner : undefined}
+                  patchRadius={band ? band.shape.radius : tier.radius}
+                  topY={tier.baseY + tier.height}
+                  avoid={surfaceOccupants(stickers, {
+                    tierIndex: i, zone: ZONES.TOP_SURFACE,
+                    radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                  })}
+                />
+              )}
+              {/* And the wall, in the same breath rather than instead. */}
+              {sidePatches && (
+                <GypCloud
+                  {...tier.gyp}
+                  onPick={onGypClick}
+                  shape={shp}
+                  topY={tier.baseY}
+                  wall={{ height: tier.height, patches: sidePatches,
+                          lo: tier.gyp.sideLo ?? 0.18, hi: tier.gyp.sideHi ?? 0.68,
+                          bury: tier.gyp.bury ?? 0.04 }}
+                  avoid={wallOccupants(stickers, {
+                    tierIndex: i, shape: shp, baseY: tier.baseY,
+                    radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                  })}
+                />
+              )}
+            </>);
           })()}
           {/* Fondant rainbows belonging to THIS tier. The generator asks for { radius, topY, boardY }
               and has never cared whether that describes a whole cake or one tier of one — so tier 2's
