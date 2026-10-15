@@ -21,6 +21,10 @@
  */
 import { chromium } from 'playwright';
 
+/* ⚠️ MATCHES THE ROW BEING DEBUGGED, colour capability included. Borrowing a recolourable row
+   makes the designer neutralise the model's own colours and tint it — which looks exactly like a
+   missing surface when the tint matches the cake. */
+const ACTIONS = { move: true, tilt: true, color: false, delete: true, resize: true, duplicate: true };
 const BASE = { r: 2, scale: { max: 4, min: 1, step: 0.25 },
                metalness: 0.002445262491864701, roughness: 0.3453386420920417 };
 const b = await chromium.launch();
@@ -29,15 +33,17 @@ for (const mode of ['hug', 'stand']) {
   const pc = encodeURIComponent(JSON.stringify({ ...BASE, board: mode, top_surface: mode }));
   const page = await b.newPage({ viewport: { width: 1000, height: 900 }, deviceScaleFactor: 1 });
   page.on('pageerror', e => console.error('  PAGE ERROR:', e.message));
-  await page.goto(`http://localhost:5190/designer-mobile.html?catalog=1&glb=/_debug.glb&pc=${pc}&zones=top_surface,board`,
+  await page.goto(`http://localhost:5190/designer-mobile.html?catalog=1&glb=/_debug.glb&pc=${pc}&zones=top_surface,board&actions=${encodeURIComponent(JSON.stringify(ACTIONS))}`,
                   { waitUntil: 'domcontentloaded' });
   await page.waitForTimeout(6000);
   await page.evaluate(() => [...document.querySelectorAll('button')].find(x => x.textContent.trim() === 'Skip')?.click());
   await page.waitForTimeout(3000);
   await page.evaluate(async () => { await window.__loadElements?.(); });
   await page.waitForTimeout(2500);
-  await page.evaluate(() => window.__dropElementAt?.('e9', { zone: 'board', tierIndex: 0, x: 1.6, z: 0.9 }));
+  await page.evaluate(() => window.__dropElementAt?.('e9', { zone: 'top_surface', tierIndex: 0, x: 0, z: 0 }));
   await page.waitForTimeout(5000);
+  await page.evaluate(() => { const s = (window.__getStickers() || [])[0]; if (s) window.__patchSticker?.(s.id, { scale: 3 }); });
+  await page.waitForTimeout(2500);
   const st = await page.evaluate(() => (window.__getStickers() || [])[0] ?? null);
   console.log(`  ${mode.padEnd(5)} → placementMode=${st?.placementMode}  scale=${st?.scale}`);
   await page.screenshot({ path: `/tmp/glbmode-${mode}.png` });

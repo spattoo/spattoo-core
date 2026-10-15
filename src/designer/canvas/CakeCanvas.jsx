@@ -41,6 +41,7 @@ import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '.
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
+import { cleanTriangles } from '../geometry/glbClean.js';
 import { outwardBand, rimBand } from './useSeatedInstances.js';
 import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
@@ -1493,39 +1494,17 @@ function bendStickerScene(scene, fitScale, center, bendR, seatOffset = 0) {
   return out;
 }
 
-// Strip degenerate / noise triangles from a cloned GLB scene (mutates in place): drops tris
-// that are near-zero area, far larger than the mesh average, or extreme slivers. Improves
-// render quality for auto-generated meshes — applied to every GLB element (was topper-only).
+/* Strip genuinely broken triangles from a cloned GLB scene (mutates in place): near-zero area and
+   extreme slivers. The rule and its numbers live in geometry/glbClean.js, which carries the
+   measurement behind them — including why "larger than 50x the mesh average" was removed after it
+   deleted 45% of a decimated palette's surface. */
 function cleanGlbScene(clone) {
   clone.traverse(obj => {
     if (!obj.isMesh || !obj.geometry?.index) return;
     const geo = obj.geometry.clone();
     obj.geometry = geo;
-    const pos = geo.attributes.position;
-    const idx = geo.index.array;
-    const triCount = idx.length / 3;
-    const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
-    const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _e3 = new THREE.Vector3();
-    let totalArea = 0;
-    for (let i = 0; i < idx.length; i += 3) {
-      _a.fromBufferAttribute(pos, idx[i]); _b.fromBufferAttribute(pos, idx[i + 1]); _c.fromBufferAttribute(pos, idx[i + 2]);
-      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a);
-      totalArea += _e1.clone().cross(_e2).length() * 0.5;
-    }
-    const avgArea = totalArea / triCount;
-    const maxArea = avgArea * 50;
-    const minArea = 1e-7;
-    const newIdx = [];
-    for (let i = 0; i < idx.length; i += 3) {
-      _a.fromBufferAttribute(pos, idx[i]); _b.fromBufferAttribute(pos, idx[i + 1]); _c.fromBufferAttribute(pos, idx[i + 2]);
-      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a); _e3.subVectors(_c, _b);
-      const area = _e1.clone().cross(_e2).length() * 0.5;
-      const maxEdge = Math.max(_e1.length(), _e2.length(), _e3.length());
-      const minEdge = Math.min(_e1.length(), _e2.length(), _e3.length());
-      const aspectRatio = maxEdge / (minEdge + 1e-10);
-      if (area >= minArea && area <= maxArea && aspectRatio <= 150) newIdx.push(idx[i], idx[i + 1], idx[i + 2]);
-    }
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(newIdx), 1));
+    const { keep } = cleanTriangles(geo.attributes.position.array, geo.index.array);
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
   });
@@ -3057,6 +3036,25 @@ function CakeScene({
     window.__grassCatcherCount = catcherCount('Grass');
     window.__blockTapTargets = tapTargets('Block');
     window.__blockCatcherCount = catcherCount('Block');
+    /* ⚠️ WHAT THE SCENE ACTUALLY HOLDS, for "it looks fine in a plain viewer and wrong here". The
+       designer clones a GLB, may upgrade its material class, overrides roughness/metalness from
+       placement_config and can attach a clipping plane — and every one of those is invisible from
+       the outside. Reading the live material beats reasoning about which branch ran. */
+    window.__sceneMaterials = () => {
+      const out = [];
+      scene.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => out.push({
+          mesh: o.name || '(unnamed)', type: m.type, side: m.side,
+          transparent: m.transparent, opacity: m.opacity,
+          vertexColors: m.vertexColors, clip: (m.clippingPlanes || []).length,
+          roughness: m.roughness, metalness: m.metalness, visible: o.visible,
+          tris: o.geometry?.index ? o.geometry.index.count / 3 : null,
+        }));
+      });
+      return out;
+    };
     window.__gypTapTargets = tapTargets('Gyp');
     window.__gypCatcherCount = catcherCount('Gyp');
     return () => {

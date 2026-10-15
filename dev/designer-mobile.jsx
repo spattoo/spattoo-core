@@ -1232,6 +1232,13 @@ if (DEBUG_GLB) {
     row.name = 'Debug GLB';
     try { if (PARAMS.get('pc')) row.placement_config = JSON.parse(PARAMS.get('pc')); } catch {}
     if (PARAMS.get('zones')) row.allowed_zones = PARAMS.get('zones').split(',');
+    /* ⚠️ `?actions=` MATTERS MORE THAN IT LOOKS. The row this borrows is RECOLOURABLE, so the
+       designer neutralises the model's baked colour and tints it — and a model tinted the same
+       pink as the cake reads as see-through. I misdiagnosed exactly that before adding this: the
+       lid was present and pink, not missing. A debug row has to be able to match the row being
+       debugged, or the harness reproduces its own settings instead of the fault. */
+    try { if (PARAMS.get('actions')) row.allowed_actions = JSON.parse(PARAMS.get('actions')); } catch {}
+    if (PARAMS.get('color')) row.default_color = PARAMS.get('color');
   }
 }
 
