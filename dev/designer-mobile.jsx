@@ -321,7 +321,20 @@ CAT_ELEMENTS.push({
      swept section is built from that mesh. A CAT_THUMB data-URI here handed an SVG to the GLB
      loader: four "Unexpected token '<'" errors per open. Same mistake shape as photo `mask`, which
      is a mask IMAGE url. The THUMBNAIL is the picture; image_url is the geometry. */
-  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
+  /* ⚠️ `?shell=1` SWAPS IN THE REAL CLASSIC SHELL BORDER, and the stand-in is why a bug could not be
+     reproduced. `sample-rosette.glb` is near-spherical (1.0 x 0.8 x 0.9) and seats flush with the
+     rim, so its side band's outward reach is ~0 — an edge-seated piece next to it is pushed out by
+     nothing. The catalogue's Classic Shell Border is a long shell that OVERHANGS, and its band is
+     what shoves a ribbon off the cake. A satin bow floating in mid-air reproduced on the first try
+     with this flag and not once in five attempts without it.
+     ⚠️ THE FLAG WAS DOCUMENTED BEFORE IT EXISTED — `?bow=1`'s own comment has said "add `&shell=1`
+     for a border on the same wall to clear" since the ribbon seat was written, and there was no
+     `PARAMS.has('shell')` anywhere in this file. Reaching it through vite's `/cdn` proxy, so the
+     bytes are the live ones and nothing here can go stale. */
+  image_url: PARAMS.has('shell')
+    ? '/cdn/elements/files/3D/b87330d0-fc0b-475f-a87c-1ea1d22caa40.glb'
+    : '/sample-rosette.glb',
+  thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
   /* ⚠️ `gradient: true`, because the real row has it and this one did not — so the whole
      multi-colour editor (stops, Swirl/Vertical/Linear, and now Alternating) was unreachable in the
@@ -834,7 +847,16 @@ if (PARAMS.has('bow')) {
       rim: 'verge', side: { mode: 'hug', seat: 'proud' },
       // The row as it is in the catalogue today. `seat: 'hang'` is what this change adds; flip it
       // back to 'center' here to see the fault it was reported for.
-      verge: { seat: 'hang', y_offset: -0.27, angle_deg: -13.5, edge_inset: -0.09 } },
+      /* ⚠️ `?hang=0` DROPS THE `hang` SEAT, because it is OPT-IN PER ROW and the catalogue row may not
+         carry it. A fixture that always opts in cannot show what a row without it does. */
+      /* ⚠️ `y_offset: 0.27` — POSITIVE, COPIED FROM THE ROW. The fixture was written with -0.27,
+         the opposite sign, and that one character is why a floating bow could not be reproduced:
+         a negative offset drops the bow down the wall where it rests against the icing, a positive
+         one lifts it above the rim where nothing is holding it. This file's own comment warns that
+         "a fixture that disagrees with the row proves the wrong thing, confidently" — it did. */
+      verge: PARAMS.get('hang') === '0'
+        ? { y_offset: 0.27, angle_deg: -13.5, edge_inset: -0.09 }
+        : { seat: 'hang', y_offset: 0.27, angle_deg: -13.5, edge_inset: -0.09 } },
     default_color: '#1a1a1a', sort_order: 42,
   });
 }
