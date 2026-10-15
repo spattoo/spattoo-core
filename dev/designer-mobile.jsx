@@ -1214,6 +1214,27 @@ const STYLE_KEY = PARAMS.get('style');
  * DB row, so a dev harness with no database cannot name one — but a design tier carries its own
  * geometry (`shapeFamily` + `shapeConfig`, see cakeShapes.js), which is exactly what a row would hand
  * it. `?shape=heart` is therefore the same cake the catalog would build, minus the row. */
+/* ── `?glb=<path>` — render a REAL asset on a real cake ──────────────────────────────────────────
+ *
+ * Swaps the model behind the plain GLB row (`e9`) for any file the dev server can serve, and takes
+ * its placement_config from `?pc=<json>` so the row behaves exactly as the catalogue row does.
+ *
+ * ⚠️ THIS IS THE ONLY WAY TO ANSWER "it looks fine in admin and broken on the cake". Admin's editor
+ * previews a GLB on its own; the designer puts it through fit-scaling, seating, a placement MODE
+ * (hug/stand), material overrides from placement_config and the scene's own lighting. A fixture
+ * built from a made-up model cannot reproduce a fault that belongs to a particular asset, and
+ * downloading a customer's asset into the repo is not an answer either — this takes a path. */
+const DEBUG_GLB = PARAMS.get('glb');
+if (DEBUG_GLB) {
+  const row = CAT_ELEMENTS.find(e => e.id === 'e9');
+  if (row) {
+    row.image_url = DEBUG_GLB;
+    row.name = 'Debug GLB';
+    try { if (PARAMS.get('pc')) row.placement_config = JSON.parse(PARAMS.get('pc')); } catch {}
+    if (PARAMS.get('zones')) row.allowed_zones = PARAMS.get('zones').split(',');
+  }
+}
+
 const SHAPE = PARAMS.get('shape') || 'round';
 const shapeTier = SHAPE === 'rect' ? { shape: 'rect', width: 2.4, depth: 1.8 }
   : SHAPE !== 'round' ? { shapeFamily: SHAPE, shapeConfig: {}, width: 2.4, depth: 2.4 }
