@@ -139,17 +139,81 @@ export function occupantFootprint(sticker, half = null) {
   return { a: half.hx * s, b: (upright ? half.hz : half.hy) * s, yaw: surfaceYaw(sticker) };
 }
 
-// How far a footprint reaches along (dx, dz) — the ellipse's radius in that direction, in the
-// footprint's own turned frame. Zero-length direction → the larger semi-axis (the safe answer).
-export function radiusToward(fp, dx, dz) {
-  const a = Math.max(fp?.a ?? 0, 1e-6), b = Math.max(fp?.b ?? 0, 1e-6);
-  const len = Math.hypot(dx, dz);
-  if (!(len > 0)) return Math.max(a, b);
-  const c = Math.cos(fp.yaw ?? 0), sn = Math.sin(fp.yaw ?? 0);
-  // Rotate the direction INTO the footprint's frame (inverse of the yaw the renderer applies).
-  const ux = ( c * dx - sn * dz) / len;
-  const uz = ( sn * dx + c * dz) / len;
-  return 1 / Math.hypot(ux / a, uz / b);
+/* ── Two pieces, and how far apart they have to be ──────────────────────────────────────────────
+ *
+ * ⚠️ "THE RADIUS ALONG THE LINE OF CENTRES" IS NOT A SEPARATION TEST, and the first version of this
+ * fix used one. For a long thin piece aimed at a blob the contact is at the TIP, not on the line
+ * between the middles, and an ellipse's radius collapses to nearly nothing a few degrees off its
+ * long axis — so it waved the leaf through. Measured on the state it produced: the leaf's tip sat
+ * 0.1317 from the rose's centre against a rose half-extent of 0.2681, i.e. **0.136 INSIDE the
+ * rose**, which is the exact fault INVARIANTS #3b exists to prevent, arrived at by fixing a
+ * different one. Sandeep, looking at the render: *"is ginko penetrating into rose?"*
+ *
+ * So each footprint becomes a CAPSULE on the surface — a segment along its long axis, with the short
+ * half-extent as its radius — and the test is the distance between the two segments. That cannot
+ * miss a tip, because the segment IS the piece's length.
+ *
+ * ⚠️ IT DEGENERATES TO TODAY'S CIRCLE FOR ANYTHING ROUND. A near-spherical piece has a ≈ b, so its
+ * segment is a point and the capsule is the disc it has always been. Two roses keep their 0.56.
+ * What changes is only what was never true: a sheet is a sheet in the direction it is thin. Tip-first
+ * is unchanged too (0.5158) — the one approach the circle was right about, because a leaf really
+ * cannot push its point into a rose.
+ *
+ * ⚠️ WHAT THIS STILL APPROXIMATES, SAID RATHER THAN LEFT TO BE FOUND. A capsule is INSIDE its
+ * bounding box at the corners, so a genuinely RECTANGULAR piece — a chocolate bar stood on end —
+ * could clip a corner by a few per cent of its width. The honest alternative is an oriented-box
+ * (SAT) test, which is exact for a bar and WRONG for everything else: the corners of a rose's box
+ * are empty air, and over-counting them is the same mistake `CLEARANCE_FRACTION` was cut from 1.15
+ * to 0.65 to undo. Most decorations are organic, so the capsule is the better default; a boxy piece
+ * that proves to need it can declare so on its row, as a measured change.
+ */
+export function footprintCapsule(fp, x = 0, z = 0) {
+  const a = Math.max(fp?.a ?? 0, 0), b = Math.max(fp?.b ?? 0, 0);
+  const alongX = a >= b;
+  const r = alongX ? b : a;                       // the thin half-extent is the capsule's radius
+  const halfLen = Math.max((alongX ? a : b) - r, 0);
+  // The footprint's local +x in world is Ry(yaw)·(1,0,0) = (cos yaw, −sin yaw) in (x, z); a
+  // footprint that is longer across its z uses the perpendicular.
+  const yaw = fp?.yaw ?? 0;
+  const ax = alongX ?  Math.cos(yaw) : Math.sin(yaw);
+  const az = alongX ? -Math.sin(yaw) : Math.cos(yaw);
+  return { x, z, ax, az, halfLen, r };
+}
+
+// Closest points on two segments in the surface plane. Clamped projection, then a short exchange —
+// enough for two segments, and it is exact when either degenerates to a point (which is the common
+// case here: almost everything on a cake is round).
+function closestOnSegments(A, B) {
+  const pt = (C, t) => ({ x: C.x + C.ax * t, z: C.z + C.az * t });
+  const clamp = (C, t) => Math.max(-C.halfLen, Math.min(C.halfLen, t));
+  const proj = (C, p) => clamp(C, (p.x - C.x) * C.ax + (p.z - C.z) * C.az);
+  let p = pt(A, 0), q = pt(B, proj(B, p));
+  for (let i = 0; i < 3; i++) { p = pt(A, proj(A, q)); q = pt(B, proj(B, p)); }
+  return { p, q };
+}
+
+/* How far `self` must move so it rests against `sib` instead of through it — {dx, dz}, zero when
+ * they are already clear. The direction is between the CLOSEST POINTS, not between the centres, so
+ * a leaf pushed off a rose slides along the rose rather than being flung down the line of middles.
+ * Dead centre on top of each other (no direction to be had) falls back to the centre line, and then
+ * to +x, so a piece dropped exactly onto another still comes apart. */
+export function separationPush(self, sib) {
+  const need = self.r + sib.r;
+  const { p, q } = closestOnSegments(self, sib);
+  const dx = p.x - q.x, dz = p.z - q.z;
+  let d = Math.hypot(dx, dz);
+  if (d >= need) return { dx: 0, dz: 0 };
+  // The direction and the distance are worked out separately on purpose: when the two touch exactly
+  // (d = 0) there is a distance to close but no direction in it, and folding the two together is how
+  // a fallback direction of length 1 silently became a distance of 1 and pushed the wrong way.
+  let ux, uz;
+  if (d > 1e-6) { ux = dx / d; uz = dz / d; }
+  else {
+    const cx = self.x - sib.x, cz = self.z - sib.z, cd = Math.hypot(cx, cz);
+    if (cd > 1e-6) { ux = cx / cd; uz = cz / cd; } else { ux = 1; uz = 0; }
+    d = 0;
+  }
+  return { dx: ux * (need - d), dz: uz * (need - d) };
 }
 
 export function surfaceOccupants(stickers, { tierIndex, zone, radiusOf = () => null, skipId = null } = {}) {

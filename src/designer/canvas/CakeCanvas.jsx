@@ -65,7 +65,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, radiusToward, surfaceYaw } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -2386,23 +2386,26 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
             lastValidPos.current = { x: seat.x, z: seat.z };
             onMove(sticker.id, { x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
           } else {
-            /* ⚠️ HOW FAR EACH PIECE REACHES IN THIS DIRECTION, not how wide it is at its widest.
-               Both sides used `occupantRadius` — a circle on the model's x axis — which is true for a
-               near-spherical piece and badly wrong for a sheet: a Gingko leaf (0.047 thick against
-               1.602 wide) kept a 0.236 exclusion circle on the axis it is 0.0068 thick on, and
-               stopped half a leaf's width short of a rose with clear icing in between. Reported with
-               a screenshot: "though there is space between gingko leaf and rose, i am not able to
-               move it near to the rose." occupantFootprint/radiusToward, placement.js. An unmeasured
-               element (every 2D sticker) gets the same circle it got before. */
+            /* ⚠️ EACH PIECE AS THE SHAPE IT IS, not as a circle on its widest axis. Both sides used
+               `occupantRadius` — true for a near-spherical piece and badly wrong for a sheet: a
+               Gingko leaf (0.047 thick against 1.602 wide) kept a 0.236 exclusion circle on the axis
+               it is 0.0068 thick on, and stopped half a leaf's width short of a rose with clear
+               icing in between. Reported with a screenshot: "though there is space between gingko
+               leaf and rose, i am not able to move it near to the rose."
+               ⚠️ AND THE PUSH IS BETWEEN THE CLOSEST POINTS, NOT THE CENTRES. A first fix asked an
+               ellipse for its radius along the line of centres, which for a sheet aimed tip-first is
+               nearly nothing — it let the leaf's tip travel 0.136 INSIDE the rose while the
+               arithmetic said they touched. Caught by looking: "is ginko penetrating into rose?"
+               footprintCapsule / separationPush, placement.js. An unmeasured element (every 2D
+               sticker) is still exactly the circle it was. */
             const selfFp = occupantFootprint(sticker, glbHalfCache[sticker.imageUrl]);
             for (const sib of siblings) {
-              const ex = newX - sib.x, ez = newZ - sib.z;
-              const minDist = radiusToward(selfFp, ex, ez)
-                            + radiusToward(occupantFootprint(sib, glbHalfCache[sib.imageUrl]), ex, ez);
-              const dist = Math.sqrt(ex * ex + ez * ez);
-              if (dist < minDist && dist > 0.001) {
-                newX = sib.x + ex * (minDist / dist);
-                newZ = sib.z + ez * (minDist / dist);
+              const { dx: pushX, dz: pushZ } = separationPush(
+                footprintCapsule(selfFp, newX, newZ),
+                footprintCapsule(occupantFootprint(sib, glbHalfCache[sib.imageUrl]), sib.x, sib.z));
+              if (pushX || pushZ) {
+                newX += pushX;
+                newZ += pushZ;
                 ({ x: newX, z: newZ } = clampPt(newX, newZ));
               }
             }

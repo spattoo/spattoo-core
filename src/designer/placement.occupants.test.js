@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { occupantRadius, surfaceOccupants, occupantFootprint, radiusToward, surfaceYaw } from './placement.js';
+import { occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from './placement.js';
 import { STICKER_SIZE } from './constants.js';
 
 /* ⚠️ THE RULE EXISTED AND WAS TRAPPED IN ONE COMPONENT. `CakeCanvas` has cached every GLB's measured
@@ -115,42 +115,90 @@ describe('occupantFootprint — the patch of surface a piece covers', () => {
   });
 });
 
-describe('radiusToward — how far a piece reaches in one direction', () => {
-  const leaf = occupantFootprint({ placementMode: 'stand', scale: 2 }, LEAF);
-  const rose = occupantFootprint({ placementMode: 'stand', scale: 2 }, ROSE);
+/* A separation test has to answer for the whole piece, not for the point where the line of centres
+ * leaves it. The first version of this fix asked an ellipse for its radius along that line, and a
+ * sheet aimed tip-first at a rose has almost no radius there — so it let the leaf's TIP travel
+ * 0.136 inside the rose while the arithmetic said they were touching. Caught by looking at the
+ * render: *"is ginko penetrating into rose?"* These are the cases that fault would pass. */
+describe('separationPush — a piece rests against its neighbour, never through it', () => {
+  const capOf = (sticker, half, x, z) => footprintCapsule(occupantFootprint(sticker, half), x, z);
+  const leafAt = (x, z, rotation = 0) => capOf({ placementMode: 'stand', scale: 2, rotation }, LEAF, x, z);
+  const roseAt = (x, z) => capOf({ placementMode: 'stand', scale: 2 }, ROSE, x, z);
 
-  it('reaches its full width along its face and its thickness across it', () => {
-    expect(radiusToward(leaf, 1, 0)).toBeCloseTo(0.2358, 4);
-    expect(radiusToward(leaf, 0, 1)).toBeCloseTo(0.0068, 4);
+  // Distance between the two pieces' own outlines after the push, which is the only thing that
+  // decides whether they look joined or impaled.
+  const restAfter = (self, sib) => {
+    const { dx, dz } = separationPush(self, sib);
+    const moved = { ...self, x: self.x + dx, z: self.z + dz };
+    const back = separationPush(moved, sib);
+    return { centre: Math.hypot(moved.x - sib.x, moved.z - sib.z), stillPushes: Math.hypot(back.dx, back.dz) };
+  };
+
+  it('a leaf laid alongside a rose comes right up to it', () => {
+    // Broadside: the rose is off the leaf's FACE, where the leaf is 0.0068 thick.
+    const r = restAfter(leafAt(0, 0.1), roseAt(0, 0));
+    expect(r.centre).toBeCloseTo(0.2744, 3);     // 0.0068 + 0.2676, was 0.5158
+    expect(r.stillPushes).toBeLessThan(1e-9);
+  });
+
+  it('a leaf aimed TIP FIRST at a rose stops at its tip, which is the case that was broken', () => {
+    const r = restAfter(leafAt(0.3, 0), roseAt(0, 0));
+    /* The leaf's own length is in the way, so its MIDDLE cannot get near: 0.229 + 0.0124 + 0.2744.
+       ⚠️ That is 0.5158 — the number the old circle gave in EVERY direction. Tip-first is the one
+       approach the circle happened to be right about, and this must not improve: a leaf really
+       cannot push its point into a rose. The gain is entirely in the directions it was wrong. */
+    expect(r.centre).toBeCloseTo(0.5158, 3);
+    expect(r.stillPushes).toBeLessThan(1e-9);
+  });
+
+  /* ⚠️ THE REGRESSION, AS ONE NUMBER. This is the position the ellipse rule settled on; the tip was
+     0.136 inside the rose there. Whatever else changes, that state must not be reachable. */
+  it('refuses the state the ellipse rule produced', () => {
+    const { dx, dz } = separationPush(leafAt(-0.2633, -0.1288), roseAt(0, 0));
+    expect(Math.hypot(dx, dz)).toBeGreaterThan(0.1);
+  });
+
+  it('two roses keep the distance they always kept', () => {
+    const r = restAfter(roseAt(0.4, 0), roseAt(0, 0));
+    expect(r.centre).toBeCloseTo(0.5600, 3);
+  });
+
+  it('leaves pieces that are already clear exactly where they are', () => {
+    const { dx, dz } = separationPush(leafAt(0, 1.2), roseAt(0, 0));
+    expect(dx).toBe(0);
+    expect(dz).toBe(0);
+  });
+
+  /* Dropped dead centre on another piece there is no direction to be had — it must still come
+     apart rather than divide by zero and stay buried. */
+  it('separates two pieces at the very same point', () => {
+    const { dx, dz } = separationPush(roseAt(0, 0), roseAt(0, 0));
+    expect(Math.hypot(dx, dz)).toBeCloseTo(0.5352, 3);   // r + r, the whole gap to close
   });
 
   it('turns with the piece — a spun leaf is thin where it used to be wide', () => {
-    const spun = occupantFootprint({ placementMode: 'stand', scale: 2, rotation: Math.PI / 2 }, LEAF);
-    expect(radiusToward(spun, 1, 0)).toBeCloseTo(0.0068, 4);
-    expect(radiusToward(spun, 0, 1)).toBeCloseTo(0.2358, 4);
+    const r = restAfter(leafAt(0.1, 0, Math.PI / 2), roseAt(0, 0));
+    expect(r.centre).toBeCloseTo(0.2868, 3);   // 0.2744 + the rose's own 0.0124 of length
+  });
+});
+
+describe('footprintCapsule — a round piece is still a disc', () => {
+  it('collapses to a point-and-radius when the footprint is near-square', () => {
+    const c = footprintCapsule(occupantFootprint({ placementMode: 'stand', scale: 2 }, ROSE));
+    expect(c.r).toBeCloseTo(0.2676, 4);
+    expect(c.halfLen).toBeCloseTo(0.0124, 4);
   });
 
-  /* The whole point, as one number: the leaf may now come within a thickness of the rose when it
-     approaches edge-on, where before it stopped 0.5158 out whichever way it came. */
-  it('lets a leaf meet a rose face to face, where the circle held it half a leaf away', () => {
-    const before = occupantRadius({ scale: 2 }, LEAF.hx) + occupantRadius({ scale: 2 }, ROSE.hx);
-    const edgeOn = radiusToward(leaf, 0, 1) + radiusToward(rose, 0, 1);
-    expect(before).toBeCloseTo(0.5158, 4);
-    expect(edgeOn).toBeCloseTo(0.2744, 4);
-    expect(edgeOn).toBeLessThan(before / 1.8);
+  it('a sheet is a long segment with a thin radius', () => {
+    const c = footprintCapsule(occupantFootprint({ placementMode: 'stand', scale: 2 }, LEAF));
+    expect(c.r).toBeCloseTo(0.0068, 4);
+    expect(c.halfLen).toBeCloseTo(0.2290, 4);
   });
 
-  /* ⚠️ AND IT MUST NOT GIVE GROUND WHERE THE CIRCLE WAS RIGHT. A rose is near-spherical, so two of
-     them keep what they always kept — a change that loosened everything would be penetration, which
-     is the bug this rule exists to prevent (INVARIANTS #3b). */
-  it('leaves a near-spherical pair where it found them', () => {
-    const both = radiusToward(rose, 1, 0) + radiusToward(rose, 1, 0);
-    expect(both).toBeCloseTo(0.5600, 4);
-    expect(radiusToward(rose, 0, 1) + radiusToward(rose, 0, 1)).toBeGreaterThan(0.5 * both);
-  });
-
-  it('answers the larger semi-axis for a zero-length direction rather than dividing by it', () => {
-    expect(radiusToward(leaf, 0, 0)).toBeCloseTo(0.2358, 4);
+  it('an unmeasured element is exactly the circle it always was', () => {
+    const c = footprintCapsule(occupantFootprint({ scale: 2 }, null));
+    expect(c.halfLen).toBeCloseTo(0, 6);
+    expect(c.r).toBeCloseTo(occupantRadius({ scale: 2 }, null), 6);
   });
 });
 
