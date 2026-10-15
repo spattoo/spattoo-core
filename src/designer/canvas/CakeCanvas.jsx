@@ -65,7 +65,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw, edgeStandOff } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -428,24 +428,6 @@ function tierReliefSampler(tier) {
  * never holds a stale cake.
  */
 const EMPTY_TOP_BANDS = Object.freeze([]);
-/* The same memo for the WALL's bands. A rim-seated piece (a bow tied at the edge, its tails hanging
-   down the outside) has to clear the cream on the wall exactly as a side decoration does, and the
-   side path already resolves these per render — doing it again per sticker would re-measure every
-   shell on every frame. Keyed on the tier object, so a new tier object is a new answer. */
-const _sideBandsByTier = new WeakMap();
-function tierSideBands(tier) {
-  if (!tier) return EMPTY_TOP_BANDS;
-  let bands = _sideBandsByTier.get(tier);
-  if (!bands) {
-    bands = resolveSidePipingBands({
-      topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
-      bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
-      topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
-    });
-    _sideBandsByTier.set(tier, bands);
-  }
-  return bands;
-}
 const _topBandsByTier = new WeakMap();
 function tierTopBands(tier) {
   if (!tier) return [];
@@ -2170,7 +2152,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
  * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
  * grab, so the clamp pushes it back out. See boardRingClamp. */
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2217,15 +2199,6 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   // (default) rests the MID-SPINE on the rim edge so the body drapes over the lip; 'base' seats the
   // BODY base on the surface and leans from there. Other modes are unaffected.
   const isVergeBase = isVerge && sticker.vergeSeat === 'base';
-  /* ⚠️ `hang` — THE THIRD VERGE ANCHOR, and the one a RIBBON needs. `center` rests the model's
-     mid-spine on the lip and leans about that middle, which is right for a butterfly and wrong for
-     a bow: a bow is TIED at the rim and everything below the knot falls down the outside, so the
-     contact point is the model's TOP. With the pivot at the middle, tilting swings one end out and
-     the other IN — measured on the satin bow at its own 13.5°, the tails cut 0.131 into the wall,
-     against the 0.09 of clearance its row was authoring. Pivoting at the knot, a tilt swings the
-     tails through the air where they actually hang.
-     A value in a config, not a type (INVARIANTS #1): `placement_config.verge.seat`. */
-  const isVergeHang = isVerge && sticker.vergeSeat === 'hang';
   // Base-seated upright modes: stand, a base-seat verge, and a foldable card on a perch edge — all
   // stand on their BODY base. A centre-seat verge / perch sit centred at the rim edge height instead.
   const standSeat = isStand || isVergeBase || (isPerch && sticker.foldable === true);
@@ -2273,35 +2246,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
-    // A `hang` verge is tied AT the rim: its top meets the lip and the body falls below it.
-    : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2) * effScale
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
-
-  /* ── How far this piece stands out from the rim ───────────────────────────────────────────────
-     An edge-seated piece is drawn centred on the rim line, so half its depth is inside the cake —
-     reported on a satin bow: *"in vintage cakes, usually the satin ribbon is used ot decoration. but
-     in our case its penetrating into cake."* The wall path has always answered this; this is the
-     same two rules for the rim, so the back rests on the icing, or on the outer face of whatever
-     cream is in the way: *"on the side also there can be cream piping, in that case the ribbon need
-     to be above the cream piping."*
-     ⚠️ MEASURED, NOT AUTHORED — `seatHalfDepth` of the model's own rendered depth and the bands
-     actually on this wall, which is the rule the Depth knob was deleted in favour of. Gated on
-     `sideProud` (zoneSeat), so a scatter piece that wants to nestle still does. */
-  const edgeSeated = isPerch || isVerge;
-  const edgeProud  = edgeSeated && sticker.sideProud === true;
-  const halfH      = (seatHalf ?? STICKER_SIZE / 2) * effScale;
-  const standOff   = edgeSeated ? edgeStandOff({
-    proud: edgeProud,
-    halfDepth: seatHalfDepth((artBox?.d ?? 0) * effScale),
-    pipingClear: sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH }),
-    nudge: sticker.radialOffset ?? 0,
-  }) : 0;
-  // Outward is radial from the cake's centre — the same approximation the yaw already uses for a
-  // rect/outline tier, so the facing and the stand-off can never disagree about which way is out.
-  const outLen = Math.hypot(sticker.x ?? 0, sticker.z ?? 0) || 1;
-  const outX   = standOff ? ((sticker.x ?? 0) / outLen) * standOff : 0;
-  const outZ   = standOff ? ((sticker.z ?? 0) / outLen) * standOff : 0;
 
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
@@ -2503,11 +2449,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // (cancels when untilted; no-op for perch where seatLift = 0).
     // Base-pivot the tilt for stand-seated modes AND insert (an inserted bar leans about its buried
     // base, so the exposed part swings and the base stays put).
-    // The pivot sits `seatLift` BELOW the group origin (translate down, rotate, translate back), so a
-    // base-seated piece leans about its feet. A `hang` piece leans about its TOP, which is a
-    // NEGATIVE lift — the knot stays on the rim and the tails swing.
-    const seatLift = isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2)
-                   : (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
+    const seatLift = (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
     // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
@@ -2542,7 +2484,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       </group>
     );
     return (
-      <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
+      <group position={[sticker.x, py, sticker.z]} scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -4171,9 +4113,6 @@ function CakeContent({ config, scene, edit = null }) {
             topY={topY}
             /* A board decoration stands on the drum, which no rim ring reaches. */
             topBands={isBoard ? EMPTY_TOP_BANDS : tierTopBands(tier)}
-            /* What is on the WALL, for a piece seated on the rim with its body over the edge. The
-               board has no wall to clear. */
-            sideBands={isBoard ? EMPTY_TOP_BANDS : tierSideBands(tier)}
             topRadius={isBoard ? (board?.radius ?? tier.radius) : tier.radius}
             shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
             // The cake's own footprint is what a board decoration must not stand in.

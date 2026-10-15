@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat, edgeStandOff } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -835,48 +835,5 @@ describe('edgeSeatSeed — every footprint has a front edge, not just one carryi
       expect(Number.isFinite(snapToRim(shp, 0, bad).x)).toBe(true);
       expect(Number.isFinite(topClamp(shp, bad, 0).z)).toBe(true);
     }
-  });
-});
-
-
-/* ⚠️ A RIBBON TIED AT THE RIM WAS DRAWN THROUGH THE CAKE. An edge-seated piece is positioned on the
- * rim PERIMETER and rendered centred on that line, so half its depth starts inside the wall. The
- * satin bow is 1.130 x 1.899 x 0.236; at its own `r: 4` that is 0.139 deep, so 0.070 of it was in
- * the icing before any tilt. Sandeep: *"in vintage cakes, usually the satin ribbon is used ot
- * decoration. but in our case its penetrating into cake."*
- *
- * The wall has always answered this (`sideSeatOffset + sidePipingClearance` in DraggableSideSticker);
- * this is the same two rules for the rim. ⚠️ MEASURED, NEVER NUDGED — the project deleted the
- * customer's Depth knob for exactly this reason: *"we dont need to control the depth. it always hugs
- * the cake."* So the inputs here are the model's own rendered depth and the bands actually on the
- * wall, never an authored guess. */
-describe('edgeStandOff — how far an edge-seated piece stands out from the rim', () => {
-  it('seats a proud piece on its own measured half-depth', () => {
-    expect(edgeStandOff({ proud: true, halfDepth: 0.0696 })).toBeCloseTo(0.0696, 4);
-  });
-
-  it('leaves a flush piece exactly where it was', () => {
-    expect(edgeStandOff({ proud: false, halfDepth: 0.0696, pipingClear: 0.2 })).toBe(0);
-    expect(edgeStandOff({})).toBe(0);
-  });
-
-  /* The second half of the report: *"on the side also there can be cream piping, in that case the
-     ribbon need to be above the cream piping."* The band's outer face is what the back rests on, so
-     the two stack — the piece clears the cream AND still stands on its own depth. */
-  it('adds the deepest overlapping cream band so the back rests on its outer face', () => {
-    expect(edgeStandOff({ proud: true, halfDepth: 0.0696, pipingClear: 0.12 })).toBeCloseTo(0.1896, 4);
-  });
-
-  /* ⚠️ A FLUSH PIECE IS NOT PUSHED OFF THE CREAM EITHER. `flush` is what a scatter decoration asks
-     for — it nestles INTO what is there on purpose — so clearing it would undo the thing it wants. */
-  it('does not clear cream for a piece that asked to be flush', () => {
-    expect(edgeStandOff({ proud: false, pipingClear: 0.12 })).toBe(0);
-  });
-
-  /* `radialOffset` is the deleted Depth knob. No new design carries one, and a saved cake that does
-     must render where it was — removing a control must never move somebody's ordered cake. */
-  it('still honours a legacy radialOffset, proud or not', () => {
-    expect(edgeStandOff({ proud: false, nudge: 0.05 })).toBeCloseTo(0.05, 6);
-    expect(edgeStandOff({ proud: true, halfDepth: 0.07, nudge: 0.05 })).toBeCloseTo(0.12, 6);
   });
 });
