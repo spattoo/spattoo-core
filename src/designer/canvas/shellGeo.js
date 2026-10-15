@@ -20,7 +20,13 @@ const DEG = Math.PI / 180;
 // have scale configuration?"* It is a real rail — it is why a shell cannot be dragged off a small
 // tier — so it stays, as the value a row gets when it asks for nothing. `placement_config
 // .max_depth` overrides it per element (CLAUDE.md rule 3: every tunable value is DB-overlaid).
-const PIPING_MAX_DEPTH_FRAC = 0.16;
+/* ⚠️ 0.30, RAISED FROM 0.16 — THE OLD VALUE WAS BELOW THE SHELLS WE SHIP. At a tier radius of 1.2 a
+   normally-proportioned shell (as deep as it is tall) renders 0.230 deep at size 1 against a 0.192
+   ceiling, so the authored shell was ALREADY over the cap and the `Math.max` floor below was the
+   only thing in play — which pinned every Size dial at +15% however far the row let it travel.
+   Reported as *"why size control is not working for piping?"* with the card reading 3.25.
+   The rail itself is real and stays: it is what stops a shell being grown off a small tier. */
+const PIPING_MAX_DEPTH_FRAC = 0.30;
 
 // The radial ceiling this row actually authorised, as a fraction of the tier radius.
 function maxDepthFrac(placementConfig) {
@@ -80,6 +86,9 @@ export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 
   // the renderer places along), both AFTER the tilt, so the editor's clamps match the pixels.
   return {
     geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x,
+    /* What the Size dial may actually offer on this shell — computed HERE, where the tilted depth
+       the cap measures is already in hand, rather than re-derived by whoever draws the control. */
+    maxSize: maxShellSize(sc1, rbox.max.z - rbox.min.z, radius, placementConfig),
     worldTopY: wbox.max.y, worldBotY: wbox.min.y,
     worldMaxZ: wbox.max.z, worldMinZ: wbox.min.z,
     radialProfile,
@@ -178,8 +187,26 @@ export function ringBaseY(anchorY) {
 // byte-identical to before — that is deliberate, so no cake anyone has already approved moves — but
 // a row that needs a deeper shell can now say so instead of being silently clipped.
 export function capShellScale(sc1, sizeFactor, bbDepthZ, radius, placementConfig = null) {
+  return sc1 * Math.min(sizeFactor, maxShellSize(sc1, bbDepthZ, radius, placementConfig));
+}
+
+/* The largest Size a row can actually DELIVER on this shell — the cap expressed in the dial's own
+ * units, so the control can be bounded by it instead of advertising travel the renderer throws
+ * away. A dial whose top two thirds do nothing is a dead control (INVARIANTS #11), and the whole
+ * point of #8 is that a control means what its name says.
+ *
+ * ⚠️ IT IS RADIUS-INDEPENDENT, which is why one number serves every tier. `sc1` is proportional to
+ * the radius and so is the depth ceiling, so the ratio cancels: max(1.15, max_depth·height /
+ * (SHELL_HEIGHT_FRAC·depth)). The radius is still taken as an argument because the two terms are
+ * written the way the cap computes them, and a "simplification" that drops it is how the dial and
+ * the renderer would start disagreeing again.
+ *
+ * ⚠️ ONE FUNCTION, called by the cap itself — not a second copy of the arithmetic. That is the
+ * mistake this bug is made of: the card computed the range from the row and the renderer computed
+ * a different ceiling, and neither knew about the other. */
+export function maxShellSize(sc1, bbDepthZ, radius, placementConfig = null) {
   const maxSc = Math.max(sc1 * 1.15, (radius * maxDepthFrac(placementConfig)) / bbDepthZ);
-  return Math.min(sc1 * sizeFactor, maxSc);
+  return maxSc / sc1;
 }
 
 // The tier WALL perimeter a wrap band follows: a circle for round, the rounded-rect for sheet.

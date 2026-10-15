@@ -19,7 +19,7 @@ import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FR
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
-import { buildShellGeo, capShellScale, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
+import { buildShellGeo, capShellScale, maxShellSize, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
 import { seatHalfDepth } from '../geometry/seating.js';
 import CakeCoat from './CakeCoat.jsx';
 import CakeWafer from './CakeWafer.jsx';
@@ -32,7 +32,7 @@ import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/sec
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
-import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, setShellExtents, setShellSizeCap, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
 import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
 /* The extruded-footprint builders. ⚠️ They MOVED to geometry/prism.js and are re-exported here:
  * they are pure geometry, the modelled cream wall needs them to cut its lid to a shape, and a
@@ -279,6 +279,7 @@ function buildDecorationShell(scene, radius, sizeFactor, placementConfig = null)
   return {
     scene, minY: box.min.y, isElement: true,
     shellScale: sc, bbWidth: size.x, bbDepth: size.z,
+    maxSize: maxShellSize(sc1, size.z || 1e-3, radius, placementConfig),
     // Extents relative to the base-seat anchor (base at 0): for the Height/radial clamps + clearance.
     worldTopY: size.y * sc, worldBotY: 0,
     worldMaxZ: box.max.z * sc, worldMinZ: box.min.z * sc,
@@ -844,6 +845,7 @@ function TopPipingRingImpl({
       // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
       const off = Math.min(-halfRaw + extraRadialOffset + userRadialOffset,
                            -halfRaw + Math.max(0, extraRadialOffset));
+      setShellSizeCap(glbPath, flipTop, A.maxSize);
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
@@ -1043,6 +1045,7 @@ function BottomPipingRingImpl({
       // Outer-face reach INCLUDING positioning (see the top-ring note). A side/board shell's inner
       // face sits on the wall (off = half + radial nudge), so it projects out by ~its full depth.
       const off = halfRaw + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+      setShellSizeCap(glbPath, flipBottom, A.maxSize);
       setShellExtents(glbPath, flipBottom, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,

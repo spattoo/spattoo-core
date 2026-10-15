@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildShellGeo, capShellScale, extractGeo, ringBaseY, shellRadialProfile } from './shellGeo.js';
+import { buildShellGeo, capShellScale, maxShellSize, extractGeo, ringBaseY, shellRadialProfile } from './shellGeo.js';
 
 /** The smallest thing that looks like a loaded GLB scene: one mesh with real geometry. */
 function fakeScene() {
@@ -102,13 +102,47 @@ describe('an authored size range is live end to end', () => {
     expect(loose).toBeGreaterThan(tight);
   });
 
-  it('a row that authors nothing keeps the old rail exactly — no saved cake moves', () => {
-    const r = 0.35, sc1 = 0.044, depth = 0.903;
-    // The historical expression, inlined: this is what every existing row rendered at before.
-    const before = Math.min(sc1 * 5, Math.max(sc1 * 1.15, (r * 0.16) / depth));
-    expect(capShellScale(sc1, 5, depth, r)).toBeCloseTo(before, 10);
-    expect(capShellScale(sc1, 5, depth, r, {})).toBeCloseTo(before, 10);
-    expect(capShellScale(sc1, 5, depth, r, null)).toBeCloseTo(before, 10);
+  /* ⚠️ THE GUARANTEE NARROWED ON PURPOSE, AND THIS IS WHAT IT IS NOW. It used to be "a row that
+     authors nothing keeps the OLD RAIL exactly", pinning `PIPING_MAX_DEPTH_FRAC` at 0.16 so no
+     saved cake could move. That rail turned out to sit BELOW the shells we ship — a shell as deep
+     as it is tall renders 0.230 deep at radius 1.2 against a 0.192 ceiling — so the cap never
+     operated and the 1.15 floor pinned every Size dial at +15%, whatever the row authorised.
+     Raising it to 0.30 is a deliberate change to that promise, and what survives of it is the part
+     that matters: a cake at Size 1 renders EXACTLY as it did. The only cakes that move are ones
+     where a baker asked for a bigger shell and the renderer quietly refused. */
+  it('a cake at Size 1 renders exactly as it did — the rail only ever caps GROWTH', () => {
+    const r = 1.2;
+    for (const [y, z] of [[1.0, 1.0], [1.0, 0.8], [0.8, 0.9]]) {
+      const sc1 = (r * 0.24) / y;
+      expect(capShellScale(sc1, 1, z, r), `${y}x${z}`).toBeCloseTo(sc1, 10);
+      expect(capShellScale(sc1, 1, z, r, {}), `${y}x${z}`).toBeCloseTo(sc1, 10);
+    }
+  });
+
+  it('the dial can never ask for more than the rail delivers', () => {
+    const r = 1.2;
+    for (const [y, z] of [[1.0, 1.0], [1.0, 0.8], [1.0, 0.5], [0.8, 0.9]]) {
+      const sc1 = (r * 0.24) / y;
+      const top = maxShellSize(sc1, z, r);
+      // at the dial's own top the cap is not yet clipping
+      expect(capShellScale(sc1, top, z, r), `${y}x${z}`).toBeCloseTo(sc1 * top, 10);
+      // and one notch past it, nothing more happens — which is what the dial must not offer
+      expect(capShellScale(sc1, top + 0.5, z, r), `${y}x${z}`).toBeCloseTo(sc1 * top, 10);
+      expect(top).toBeGreaterThanOrEqual(1.15);
+    }
+  });
+
+  it('maxShellSize is radius-independent, so one number serves every tier', () => {
+    for (const r of [0.35, 1.2, 4.0]) {
+      const sc1 = (r * 0.24) / 1.0;
+      expect(maxShellSize(sc1, 0.8, r)).toBeCloseTo(maxShellSize((1.2 * 0.24) / 1.0, 0.8, 1.2), 10);
+    }
+  });
+
+  it('a row may still author a tighter rail than the default', () => {
+    const r = 1.2, sc1 = (r * 0.24) / 1.0;
+    expect(maxShellSize(sc1, 0.8, r, { max_depth: 0.16 }))
+      .toBeLessThan(maxShellSize(sc1, 0.8, r, null));
   });
 
   it('the cap measures the TILTED depth — third site of the untilted-measurement bug', () => {

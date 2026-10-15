@@ -161,7 +161,7 @@ const DEFAULT_RAIL_SKIN = {
 };
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
-import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, getShellExtents, getShellSizeCap, shellSizeCapKeys, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor, occupiesRimBand } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
@@ -8832,6 +8832,23 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     /* Take a piping layer off, so a frame can be photographed without it — the honest way to find
        which pixels on a 3D cake belong to a ring. Calls the same remover the card's button does. */
     window.__removePiping = (tierIndex, zone, layerId) => { removePipingLayer(tierIndex, zone, layerId); return true; };
+    /* ⚠️ THE SIZE DIAL IS A DRAG, WHICH A SCRIPT CANNOT AIM — the same argument as `__setGyp` and
+       `__setScatterBig`. Without this the one thing most worth checking about piping size could not
+       be looked at at all: that the shell actually grows, and that the ring's COUNT follows it.
+       Calls the SAME handler the popup's dial calls, never a re-implementation, so what it proves
+       is what a baker gets. Reads back the cap the canvas published, so a test can also assert the
+       dial is not offering travel the renderer will throw away. */
+    window.__setPipingSize = (tierIndex, zone, v) => { handlePipingSizeChange(tierIndex, zone, v); return true; };
+    /* ⚠️ THIS IS HOW A RING ACTUALLY GETS ONTO A CAKE — the card's own zone tile, which calls
+       `togglePipingZone` → `buildRingPiping`. `__placePiping` + `__choosePiping` below drive
+       `handlePipingStyleSelect` instead, and NOTHING in the product sets the `pipingTarget` that
+       path needs, so a script using it was exercising code no baker can reach (and which was
+       broken). Open the card first (`__openPiping`), then call this: two ticks, because the toggle
+       reads the open card's id. */
+    window.__togglePipingZone = (tierIndex, zone) => {
+      togglePipingZone(tierIndex, zone, !!ringPiping(tierIndex, zone)); return true;
+    };
+    window.__pipingSizeCap = (glbUrl, flip) => (glbUrl === undefined ? shellSizeCapKeys() : getShellSizeCap(glbUrl, flip));
     /* ⚠️ IT READS `expandedPipingId`, NOT `selectedPiping`. A ring click opens a CARD — the popup
        keeps a list of cards and expands one by `cardId` (openCardForLayer → openPipingPopup) — and
        `selectedPiping` is a different thing entirely, which is why a first version returned null on
@@ -9244,8 +9261,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!pipingTarget) return;
     const { tierIndex, zone } = pipingTarget;
     const isTop = zone === 'top';
+    /* ⚠️ `resolvePipingGlbs`, NOT `element.glbUrl` — NO ELEMENT HAS THAT FIELD. A catalogue row
+       carries `image_url` (and a pattern row carries its parts), which is why every other path
+       goes through the resolver. This one read a property that is always `undefined`, so the layer
+       it built could never draw: `BottomPipingRing` is handed `glbPath={p.glbUrl}` and returns
+       null on a falsy path. `size` was missing for the same reason — `buildRingPiping` sets it
+       from `pipingScaleFor` and this never did.
+       ⚠️ THE REASON IT SURVIVED IS THAT NOTHING REACHES IT. `pipingTarget` is what shows
+       `CreamStylePicker`, and the only thing that sets it is a DEV hook — so this function is dead
+       in the product and was exercised solely by a test harness, which is how a test came to be
+       driving a path no baker can. Fixed rather than deleted because deleting a UI path is a
+       product decision, not a cleanup. */
+    const { glbUrl, altGlbUrl } = resolvePipingGlbs(element);
     const piping = {
-      id: element.id, cardId: crypto.randomUUID(), glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8',
+      id: element.id, cardId: crypto.randomUUID(), glbUrl, altGlbUrl, name: element.name,
+      color: element.default_color ?? '#f5e6c8', size: pipingScaleFor(element),
       ...pipingPlacementFromConfig(element.placement_config, isTop),
     };
     if (isTop) { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
@@ -18163,9 +18193,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                               resolves a row's range against defaults — INVARIANTS #5b, "ONE size
                               path" — and the defaults handed to it are SizeDial's own, so a row
                               that authors nothing behaves exactly as before. */}
+                          {/* ⚠️ AND THEN THE RAIL'S, BECAUSE THE ROW'S RANGE IS NOT DELIVERABLE.
+                              `capShellScale` stops a shell growing once its radial depth reaches
+                              the row's `max_depth`, so a row authoring 0.5–3.25 drew a dial whose
+                              top two thirds moved nothing: Sandeep, with the card reading 3.25,
+                              *"why size control is not working for piping?"*. The ceiling is
+                              measured by the canvas (it needs the shell's TILTED depth) and
+                              published through `pipingMetrics`, the same seam the Height clamp
+                              reads — a second copy of the cap arithmetic here is precisely the
+                              drift that made the control lie in the first place.
+                              ⚠️ `null` until this shell has rendered once, and then the row's own
+                              range stands: a dial must never narrow on a measurement that does not
+                              exist yet. Floored at the current value too, so a cake saved with a
+                              bigger Size can still show what it has. */}
                           {(() => {
                             const sr = scaleRangeOf(pipingPopupEl, 0.5, 2, 0.05);
-                            return <SizeDial size={size} min={sr.min} max={sr.max} step={sr.step}
+                            const flip = isTopZone
+                              ? (p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false))
+                              : (p.userFlipBottom != null ? p.userFlipBottom : (p.flipBottom ?? true));
+                            const cap = getShellSizeCap(p.glbUrl, flip);
+                            const hi = cap == null ? sr.max
+                              : Math.max(sr.min + sr.step, Math.min(sr.max, cap), size ?? sr.min);
+                            return <SizeDial size={size} min={sr.min} max={hi} step={sr.step}
                                      fmt={v => v.toFixed(2)}
                                      onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />;
                           })()}

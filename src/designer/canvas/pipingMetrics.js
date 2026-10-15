@@ -36,6 +36,29 @@ export function getShellExtents(glbUrl, flip, size) {
     ?? { topFrac: SHELL_HEIGHT_FRAC * (size ?? 1), botFrac: 0, radialOutFrac: 0, radialInFrac: -SHELL_HEIGHT_FRAC * (size ?? 1), outerFrac: 0 };
 }
 
+// ── The largest Size this shell can actually reach ──────────────────────────────
+// The renderer caps a shell's growth at the row's radial rail (`capShellScale`), and the card's
+// Size dial took its range from the row alone — so a row authoring 0.5–3.25 drew a dial whose top
+// two thirds did nothing. Reported as "why size control is not working for piping?".
+//
+// ⚠️ THE SAME SEAM THE EXTENTS USE, for the same reason: only the canvas has measured the shell,
+// and only the card draws the control. A second copy of the cap arithmetic in CakeDesigner is
+// exactly the drift this bug is made of.
+//
+// Radius-independent (see `maxShellSize`), so one value serves every tier a cake has.
+const measuredSizeCap = new Map();
+export function setShellSizeCap(glbUrl, flip, cap) {
+  if (glbUrl && Number.isFinite(cap)) measuredSizeCap.set(`${glbUrl}|${flip ? 1 : 0}`, cap);
+}
+// `null` when this shell has not rendered yet — the caller keeps the row's own range until it has,
+// so a dial never narrows on the strength of a measurement that does not exist.
+export function getShellSizeCap(glbUrl, flip) {
+  return measuredSizeCap.get(`${glbUrl}|${flip ? 1 : 0}`) ?? null;
+}
+/* What has actually been measured, for a probe. A cap that silently never arrives leaves the dial
+   on the row's range — the exact failure this whole change is about — so it has to be visible. */
+export function shellSizeCapKeys() { return [...measuredSizeCap.entries()]; }
+
 // ── Wrap-band extents ───────────────────────────────────────────────────────────
 // A wrap band is a single pre-formed ring re-routed onto the wall. Like shells it publishes its
 // measured vertical reach (top/botFrac, relative to its anchor) and outward reach (radialOutFrac),
