@@ -1144,6 +1144,26 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
  * what the group is CALLED, what tapping does, and a mark on the tile so that difference survives
  * being scrolled past the heading — which a heading on its own does not.
  */
+/* ── Which zones may this decoration ring? ───────────────────────────────────────────────────────
+ *
+ * Admin's "Show full ring" tick is PER ZONE and writes the flat `top_ring_finish` (rim) or
+ * `bottom_ring_finish` (board). A decoration rings only where that finish resolves to `'element'`;
+ * a cream piping element is a different path entirely (its finish resolves to `'cream'` on every
+ * allowed zone, and it is opened from the piping picker).
+ *
+ * ⚠️ ONE FUNCTION BECAUSE TWO READERS MUST AGREE. The picker's tap decides whether a tap places or
+ * rings, and the placed piece's card decides whether to offer "Ring the rim" — asking the same
+ * question two ways is how an element came to offer a BOARD ring nobody had ticked.
+ */
+function ringZonesOf(element) {
+  const pc = element?.placement_config, zones = element?.allowed_zones ?? [];
+  const finish = (flat) => (flat ?? pc?.ring_finish) === 'element';
+  return [
+    zones.includes(ZONES.RIM)   && finish(pc?.top_ring_finish)    && ZONES.RIM,
+    zones.includes(ZONES.BOARD) && finish(pc?.bottom_ring_finish) && ZONES.BOARD,
+  ].filter(Boolean);
+}
+
 function ElementGrid({ groups = [], onElementTap, onDragStartSticker }) {
   const live = groups.filter(g => g.items?.length);
   if (!live.length) return null;
@@ -7731,23 +7751,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // (openPipingPopup → topPipings/bottomPipings); the renderer keeps its REAL materials because the
     // layer's finish resolves to 'element'. A finish KEY, never the element type (INVARIANTS #1/#6), so
     // the picker stays one uniform tap-to-open for every element.
-    const rc = element.placement_config, rz = element.allowed_zones ?? [];
-    const ringsRim   = rz.includes(ZONES.RIM)   && (rc?.top_ring_finish    ?? rc?.ring_finish) === 'element';
-    const ringsBoard = rz.includes(ZONES.BOARD) && (rc?.bottom_ring_finish ?? rc?.ring_finish) === 'element';
-    if (ringsRim || ringsBoard) {
-      /* ⚠️ PASS WHICH ZONES ACTUALLY RING, or the card offers both. Admin's "Show full ring" is a
-         PER-ZONE tick that writes `top_ring_finish` (rim) or `bottom_ring_finish` (board), but the
-         card derives its tiles from `allowed_zones` — and it maps `side` → `board`, so an element
-         allowed on the wall for ordinary placement grew a BOARD ring tile it was never authored
-         for. Sandeep, having ticked the rim only: *"if i enable it, it is showing ring on the board
-         also."* A piping element passes nothing and still offers every allowed zone, because its
-         finish resolves to 'cream' on both — this restriction belongs to the decoration path. */
-      openPipingPopup(element, {
-        ringZones: [ringsRim && ZONES.RIM, ringsBoard && ZONES.BOARD].filter(Boolean),
-      });
+    const rz = element.allowed_zones ?? [];
+    /* ⚠️ RINGING IS A CHOICE, NOT A MODE, AND A TAP IS NOT HOW IT IS CHOSEN.
+     *
+     * Ticking admin's "Show full ring" used to make the element BECOME a ring: every tap routed
+     * here, so the piece could no longer be placed singly from the picker at all. Sandeep: *"i
+     * cannot drag/add it to the side or add a single piece on the top. adding it single or ring
+     * should be a choice."*
+     *
+     * ⚠️ AND SINGLE PLACEMENT WAS NEVER ACTUALLY GONE — only unreachable by tapping. `handleElementDrop`
+     * has no ring check, so DRAGGING the row onto the cake placed a single piece on every zone the
+     * whole time. Measured on a fixture shaped like the reported row: drops on top_surface, side,
+     * middle_tier and rim each added one sticker and no ring. What was broken was that a tap did
+     * something different here than on every other element in the picker, so the capability looked
+     * lost. That is the inconsistency this removes.
+     *
+     * So a tap PLACES, exactly as it does for every other decoration, and the ring is offered as an
+     * action on the piece's own card (see `ringZonesOf`). The one exception is an element with
+     * nowhere else to go: if every zone it allows is a ring zone, a tap has nothing to place and the
+     * ring card is the only sensible destination. */
+    const ringZones = ringZonesOf(element);
+    const placeableZones = rz.filter(z => !ringZones.includes(z));
+    if (ringZones.length && !placeableZones.length) {
+      openPipingPopup(element, { ringZones });
       return;
     }
-    const zones = element.allowed_zones ?? [];
+    /* The ring zones are excluded: on a ring-capable element the rim is where the RING goes, so a
+       tap that fell through to it would place a lone piece on the rim and look like a failed ring. */
+    const zones = placeableZones.length ? placeableZones : (element.allowed_zones ?? []);
     // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
     // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).
     const zone = zones.includes(ZONES.TOP_SURFACE) ? ZONES.TOP_SURFACE : (zones[0] ?? ZONES.TOP_SURFACE);
@@ -12239,6 +12270,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (!sticker?.groupId) {
         actions.push(
           <button key="dup-sticker" style={s.neutralBtn} onClick={() => { duplicateSticker(el.id); clearAllSelections(); }}>Duplicate</button>
+        );
+      }
+    }
+    /* ── Ring the cake with this piece ──────────────────────────────────────────────────────────
+     *
+     * The OTHER half of the choice. A tap places one piece, the way a tap places every other
+     * decoration; this is how the same element becomes a full ring. Sandeep: *"adding it single or
+     * ring should be a choice."*
+     *
+     * ⚠️ IT IS AN ACTION, NOT A MODE. Both can be on the cake at once — a ring round the rim and a
+     * single rose on the wall — because the ring lives in `topPipings`/`bottomPipings` and the
+     * single piece is a sticker. Making this a mode is what removed single placement in the first
+     * place. Shown only where an admin ticked "Show full ring", via the one `ringZonesOf`. */
+    if (el.type === 'sticker') {
+      const sticker = design.stickers.find(s => s.id === el.id);
+      const srcEl = sticker ? elementById.get(sticker.elementId) : null;
+      const zones = srcEl ? ringZonesOf(srcEl) : [];
+      if (zones.length) {
+        const label = zones.length > 1 ? 'Add as a ring'
+          : zones[0] === ZONES.RIM ? 'Ring the rim' : 'Ring the board';
+        actions.push(
+          <button key="ring-it" style={s.neutralBtn}
+            onClick={() => { openPipingPopup(srcEl, { ringZones: zones }); }}>{label}</button>
         );
       }
     }
