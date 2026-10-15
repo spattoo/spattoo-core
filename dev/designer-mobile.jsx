@@ -771,6 +771,49 @@ CAT_ELEMENTS.push({
   default_color: '#C9A227', sort_order: 35,
 });
 
+/* ⚠️ TWO REAL CATALOGUE MODELS, because the DEFECT IS IN THE MEASUREMENT AND A STAND-IN CANNOT
+ * CARRY IT. Every GLB above is `sample-rosette.glb`, which is 1.0 x 0.8 x 0.9 — near-spherical. The
+ * rule that stops a dragged decoration penetrating its neighbours (`occupantRadius`, placement.js)
+ * reads ONE number, `size.x / 2`, and for a near-spherical blob that is right in every direction, so
+ * no fixture here could ever show it being wrong.
+ *
+ * The Gingko leaf is a SHEET: 1.602 x 1.902 x 0.047. Normalised to STICKER_SIZE its half-extents are
+ * 0.118 x 0.140 x 0.0034 — so the circle the rule gives it is 35x its own thickness, and at the
+ * element's own `r: 2` it keeps a 0.236 exclusion zone on an axis where the leaf is 0.0068 thick.
+ * Reported with a screenshot: *"though there is space between gingko leaf and rose, i am not able to
+ * move it near to the rose."*
+ *
+ * Both rows are the LIVE catalogue rows — the same GLB through vite's /cdn proxy, and the same
+ * placement_config, `r` and insert — so what happens here is what happens on a baker's cake.
+ * Reachable only with ?leafrose=1 (two 800KB models is not something every run should fetch). */
+const LEAF_ROSE = PARAMS.has('leafrose');
+if (LEAF_ROSE) {
+  CAT_ELEMENTS.push({
+    id: 'e40', name: 'Gingko leaf', description: 'a real SHEET model — 1.602 x 1.902 x 0.047',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/9e471701-bc50-48d0-bb8c-b4e414501205.glb',
+    thumbnail_url: CAT_THUMB('#C9A227'), thumb_key: null,
+    allowed_zones: ['top_surface', 'side'],
+    allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: { r: 2, scale: { max: 4, min: 1, step: 0.25 }, metalness: 0.9593882001197327,
+      roughness: 0.20649890084011036, ready_made: true, side: 'stand',
+      top_surface: { mode: 'stand', insert: { depth: 0.3, lean_deg: 12, jitter_deg: 0 } } },
+    default_color: null, sort_order: 40,
+  });
+  CAT_ELEMENTS.push({
+    id: 'e41', name: 'Rose', description: 'a real near-spherical model — 1.996 x 1.712 x 1.908',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/98cd9908-783e-40f6-8f54-30fd37889f3a.glb',
+    thumbnail_url: CAT_THUMB('#CD0C10'), thumb_key: null,
+    allowed_zones: ['top_surface', 'side'],
+    allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: { r: 2, scale: { max: 4, min: 1, step: 0.25 }, metalness: 0, roughness: 0.85,
+      ready_made: true,
+      top_surface: { mode: 'stand', insert: { depth: 0.2, lean_deg: 2, jitter_deg: 0.2 } } },
+    default_color: '#CD0C10', sort_order: 41,
+  });
+}
+
 CAT_ELEMENTS.push({
   id: 'e28', name: 'Fondant crown hero', description: 'a colourable single-per-slot hero',
   element_type_id: 'et-topper', category_id: 'cat-1',

@@ -65,7 +65,7 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, radiusToward, surfaceYaw } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -643,9 +643,13 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
 
 // ── Sticker components ────────────────────────────────────────────────────────
 
-// Cache of GLB URL → horizontal half-radius in model-local space (before group scale).
-// Populated by StickerModel when the bounding box is first computed.
-const glbXRadiusCache = {};
+/* Cache of GLB URL → the model's SCALED half-extents { hx, hy, hz } (before the instance scale).
+   Populated by StickerModel when the bounding box is first computed.
+   ⚠️ ALL THREE, not just x. `hx` alone is what "how much room does this need" used to mean, and for
+   a sheet (a Gingko leaf is 0.047 thick against 1.602 wide) that circle is almost entirely empty
+   space — see occupantFootprint in placement.js. One measurement, one cache: a second one taken
+   somewhere else is how the footprint and the render come to disagree. */
+const glbHalfCache = {};
 
 
 // Grid resolution of a RELIEF decal's mesh (per axis). Displacement is per-VERTEX, so this bounds how
@@ -1658,7 +1662,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     const ctr = new THREE.Vector3();
     box.getCenter(ctr);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
-    glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
+    glbHalfCache[imageUrl] = { hx: (size.x / 2) * sc, hy: (size.y / 2) * sc, hz: (size.z / 2) * sc };
     // The gradient blends in the model's local frame (same baked geometry the vertex shader reads),
     // so it stays put regardless of placement/instance scale. `halfW`/`seatHalf` are the model's
     // PER-AXIS half-extents (width/height), so the selection hit-plane is a tight rectangle around a
@@ -2365,24 +2369,36 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
              with the measured radius, the fallback and the instance scale repeated each time. It is
              `occupantRadius` now, and `surfaceOccupants` answers the same question for anything that
              needs to know what is standing on a surface rather than only for the piece being
-             dragged — see the note on it in placement.js. */
-          const selfR = occupantRadius(sticker, glbXRadiusCache[sticker.imageUrl]);
+             dragged — see the note on it in placement.js.
+             ⚠️ THE CIRCLE IS RIGHT HERE AND ONLY HERE. A faux ball IS a sphere, so one radius is
+             true in every direction and it is also the height it rests at. The push-off below asks
+             a different question — how far does this piece reach THIS WAY — and uses the footprint. */
+          const selfR = occupantRadius(sticker, glbHalfCache[sticker.imageUrl]?.hx);
           if (sticker.clusterBall) {
             // Manual faux-ball arrangement: physically seat the ball — on the cake surface (de-overlapped
             // so it touches but never penetrates) or cradled on ≥3 balls when dropped onto a real pocket.
             // It never balances on 1–2 balls and never floats. Gated on the config clusterBall flag.
             const balls = siblings.filter(s => s.clusterBall).map(s => {
-              const sR = occupantRadius(s, glbXRadiusCache[s.imageUrl]);
+              const sR = occupantRadius(s, glbHalfCache[s.imageUrl]?.hx);
               return { x: s.x, z: s.z, y: topY + (s.yOffset ?? 0) + sR, r: sR };
             });
             const seat = manualSeat(newX, newZ, selfR, balls, topY);
             lastValidPos.current = { x: seat.x, z: seat.z };
             onMove(sticker.id, { x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
           } else {
+            /* ⚠️ HOW FAR EACH PIECE REACHES IN THIS DIRECTION, not how wide it is at its widest.
+               Both sides used `occupantRadius` — a circle on the model's x axis — which is true for a
+               near-spherical piece and badly wrong for a sheet: a Gingko leaf (0.047 thick against
+               1.602 wide) kept a 0.236 exclusion circle on the axis it is 0.0068 thick on, and
+               stopped half a leaf's width short of a rose with clear icing in between. Reported with
+               a screenshot: "though there is space between gingko leaf and rose, i am not able to
+               move it near to the rose." occupantFootprint/radiusToward, placement.js. An unmeasured
+               element (every 2D sticker) gets the same circle it got before. */
+            const selfFp = occupantFootprint(sticker, glbHalfCache[sticker.imageUrl]);
             for (const sib of siblings) {
-              const sibR  = occupantRadius(sib, glbXRadiusCache[sib.imageUrl]);
-              const minDist = selfR + sibR;
               const ex = newX - sib.x, ez = newZ - sib.z;
+              const minDist = radiusToward(selfFp, ex, ez)
+                            + radiusToward(occupantFootprint(sib, glbHalfCache[sib.imageUrl]), ex, ez);
               const dist = Math.sqrt(ex * ex + ez * ez);
               if (dist < minDist && dist > 0.001) {
                 newX = sib.x + ex * (minDist / dist);
@@ -2436,8 +2452,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
     // outward +Z (+angle = lean over the edge). Stand/perch keep the caller's Y-spin and lean on −X.
     // Insert keeps just its own Y-spin (the baked per-instance fan) — no radial auto-face.
-    const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
-    const yaw   = radialYaw + (sticker.rotation ?? 0);
+    const yaw = surfaceYaw(sticker);
     /* ⚠️ ONE SIGN FOR EVERY POSE NOW, AND THE STAND USED TO INVERT IT. With `-tiltAngle` here, the
        up arrow laid a butterfly FLAT and the down arrow stood it up — measured, ↑ held to the limit
        left 64 lit pixels against 682 at centre. Sandeep, pressing arrows that seemed dead: *"arrows
@@ -3531,7 +3546,7 @@ function CakeContent({ config, scene, edit = null }) {
           topY={0.105}
           avoid={surfaceOccupants(stickers, {
             tierIndex: 0, zone: ZONES.RIM,
-            radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+            radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
           })}
         />
       )}
@@ -3605,7 +3620,7 @@ function CakeContent({ config, scene, edit = null }) {
           {/* ── Gypsophila on this tier ──────────────────────────────────────────────────────────
               ⚠️ `avoid` IS WHAT IS ALREADY STANDING HERE, and it is the whole reason this is wired
               through the canvas rather than computed in the geometry: the measured radius of every
-              placed GLB lives in `glbXRadiusCache`, which only this file has. The filler clears
+              placed GLB lives in `glbHalfCache`, which only this file has. The filler clears
               whatever it finds and fills the gaps between — a rose, a candle, a topper, all the
               same, because it asks what is there and never what it is (INVARIANTS #3b: "ONE rule…
               and it is not per-element"). */}
@@ -3646,7 +3661,7 @@ function CakeContent({ config, scene, edit = null }) {
                           bury: tier.gyp.bury ?? 0.04 }}
                   avoid={wallOccupants(stickers, {
                     tierIndex: i, shape: shp, baseY: tier.baseY,
-                    radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                    radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
                   })}
                 />
               );
@@ -3679,7 +3694,7 @@ function CakeContent({ config, scene, edit = null }) {
                   topY={tier.baseY + tier.height}
                   avoid={surfaceOccupants(stickers, {
                     tierIndex: i, zone: ZONES.TOP_SURFACE,
-                    radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                    radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
                   })}
                 />
               )}
@@ -3695,7 +3710,7 @@ function CakeContent({ config, scene, edit = null }) {
                           bury: tier.gyp.bury ?? 0.04 }}
                   avoid={wallOccupants(stickers, {
                     tierIndex: i, shape: shp, baseY: tier.baseY,
-                    radiusOf: (st) => glbXRadiusCache[st.imageUrl],
+                    radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
                   })}
                 />
               )}

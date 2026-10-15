@@ -93,6 +93,65 @@ export function occupantRadius(sticker, measured = null) {
   return (measured ?? STICKER_SIZE / 4) * (sticker?.scale ?? 1);
 }
 
+/* ── Which way a piece faces on the surface it stands on ─────────────────────────────────────────
+ * The renderer's own yaw, lifted out of it so the footprint below and the model on screen can never
+ * disagree about which way a piece is turned. A verge auto-orients radially OUTWARD (re-derived from
+ * its x/z so it reorients as it is dragged round the rim); every other pose keeps the spin the
+ * customer set. Radians. */
+const UPRIGHT_MODES = new Set(['stand', 'perch', 'verge']);
+export function surfaceYaw(sticker) {
+  const radial = sticker?.placementMode === 'verge' ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
+  return radial + (sticker?.rotation ?? 0);
+}
+
+/* ── The patch of surface a piece actually COVERS ────────────────────────────────────────────────
+ *
+ * ⚠️ `occupantRadius` IS A CIRCLE ON THE WIDEST AXIS, AND FOR A SHEET THAT IS MOSTLY EMPTY SPACE.
+ * It reads `size.x / 2` — fine for a rose (1.996 x 1.712 x 1.908, near-spherical, so one number is
+ * true in every direction) and wrong by a factor of 35 for a Gingko leaf (1.602 x 1.902 x 0.047).
+ * Normalised to STICKER_SIZE the leaf's half-extents are 0.118 x 0.140 x 0.0034, so at the element's
+ * own `r: 2` it carried a 0.236 exclusion circle on the axis where it is 0.0068 thick. Measured in
+ * dev/designer-mobile.html?leafrose=1: dragged at a rose, the leaf parked 0.5158 from its centre —
+ * exactly 0.236 + 0.280 — with a visible gap the size of the leaf between the two. Reported with a
+ * screenshot: *"though there is space between gingko leaf and rose, i am not able to move it near to
+ * the rose."*
+ *
+ * So a footprint is an ELLIPSE, not a circle, and `radiusToward` asks it the only question a
+ * separation test has: how far does this piece reach IN THIS DIRECTION.
+ *
+ * ⚠️ UNMEASURED → THE OLD CIRCLE, EXACTLY. A 2D sticker has no measured bounds, and in an upright
+ * pose it BILLBOARDS — it turns to face the camera, so it has no stable footprint to describe. Those
+ * keep `STICKER_SIZE / 4` in both axes, which is the circle they have today, so nothing that is not
+ * a measured GLB moves.
+ *
+ * ⚠️ WHICH TWO AXES depends on the pose, not on the element: an upright piece (stand / perch /
+ * verge, and insert, which is a modifier on an upright pose) stands its y up, so the surface sees
+ * x by z; anything lying flat shows x by y. Read off `placementMode`, never a slug (INVARIANTS #1).
+ *
+ * A lean (`tiltAngle`) tips an upright piece and so stretches its footprint slightly along the lean;
+ * that is not modelled — the upright footprint is used — because the error is a few per cent of a
+ * half-extent and the cost of getting it wrong is a piece that stops a hair early, not a penetration.
+ */
+export function occupantFootprint(sticker, half = null) {
+  const s = sticker?.scale ?? 1;
+  if (!half) { const r = (STICKER_SIZE / 4) * s; return { a: r, b: r, yaw: 0 }; }
+  const upright = UPRIGHT_MODES.has(sticker?.placementMode) || sticker?.insertDepth != null;
+  return { a: half.hx * s, b: (upright ? half.hz : half.hy) * s, yaw: surfaceYaw(sticker) };
+}
+
+// How far a footprint reaches along (dx, dz) — the ellipse's radius in that direction, in the
+// footprint's own turned frame. Zero-length direction → the larger semi-axis (the safe answer).
+export function radiusToward(fp, dx, dz) {
+  const a = Math.max(fp?.a ?? 0, 1e-6), b = Math.max(fp?.b ?? 0, 1e-6);
+  const len = Math.hypot(dx, dz);
+  if (!(len > 0)) return Math.max(a, b);
+  const c = Math.cos(fp.yaw ?? 0), sn = Math.sin(fp.yaw ?? 0);
+  // Rotate the direction INTO the footprint's frame (inverse of the yaw the renderer applies).
+  const ux = ( c * dx - sn * dz) / len;
+  const uz = ( sn * dx + c * dz) / len;
+  return 1 / Math.hypot(ux / a, uz / b);
+}
+
 export function surfaceOccupants(stickers, { tierIndex, zone, radiusOf = () => null, skipId = null } = {}) {
   return (stickers ?? [])
     .filter(s => s.id !== skipId && s.tierIndex === tierIndex && s.zone === zone
