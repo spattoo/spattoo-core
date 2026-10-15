@@ -285,6 +285,32 @@ export function edgeSeatSeed(placementConfig, shp, mode) {
   return { x: 0, z: edge - (cfg.edge_inset ?? 0), tiltAngle, yOffset: cfg.y_offset ?? 0 };
 }
 
+/* ── How far an edge-seated piece stands OUT from the rim ────────────────────────────────────────
+ *
+ * The wall twin of this already exists and is the model for it: a side decoration composes
+ * `sideSeatOffset(radius) + sidePipingClearance(...) + …` so its BACK rests on the wall, or on the
+ * outer face of whatever cream is in the way (see DraggableSideSticker). An edge-seated piece —
+ * perch, verge — had none of it: its stored x/z is the rim perimeter and the model is drawn centred
+ * on that line, so half of its depth is inside the cake before anything else happens.
+ *
+ * ⚠️ MEASURED, NEVER NUDGED. That is a decision this project already made, out loud, when the
+ * customer's Depth knob was deleted: *"we dont need to control the depth. it always hugs the cake."*
+ * So the magnitude here is `seatHalfDepth` of the model's OWN rendered depth and the cream clearance
+ * is `sidePipingClearance` of the bands actually on that wall — the two rules the side path uses,
+ * not a second set of numbers. A bow does not need an author to guess how thick it is.
+ *
+ * ⚠️ `verge.edge_inset` IS THE HAND-CRANKED VERSION AND IS NOW REDUNDANT for a proud piece. It is
+ * still honoured (it seeds the first position in `edgeSeatSeed`), because a row carrying one must
+ * keep rendering where it was — but it is a seed, so a drag round the rim has always discarded it,
+ * which is why authoring one never held.
+ *
+ * `nudge` is the legacy `radialOffset` a saved design may carry; absent on everything placed since
+ * the knob was removed.
+ */
+export function edgeStandOff({ proud = false, halfDepth = 0, pipingClear = 0, nudge = 0 } = {}) {
+  return (proud ? halfDepth : 0) + (proud ? pipingClear : 0) + nudge;
+}
+
 // Per-instance seat for an `insert` element (base sunk into the surface at an angle). Returns the
 // values BAKED onto the instance at add time: `tiltAngle` (base lean ± random jitter, radians),
 // `fanYaw` (a small random Y-spin so a scattered batch points different ways — the exploded look), and

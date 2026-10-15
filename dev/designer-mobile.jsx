@@ -814,6 +814,31 @@ if (LEAF_ROSE) {
   });
 }
 
+/* ⚠️ A RIBBON TIED AT THE RIM — the real satin bow row, because the fault is in how an EDGE-seated
+ * piece meets the wall and no stand-in carries it. The bow is 1.130 x 1.899 x 0.236; at its own
+ * `r: 4` that is 0.139 deep and 1.12 tall, and a centre-seat verge draws it centred on the rim line,
+ * so 0.070 of it starts inside the cake. Reported with a screenshot: *"in vintage cakes, usually the
+ * satin ribbon is used ot decoration. but in our case its penetrating into cake. if i tilt it, the
+ * falling part is inserting."*
+ * `?bow=1` places it on the rim; add `&shell=1` for a border on the same wall to clear. */
+if (PARAMS.has('bow')) {
+  CAT_ELEMENTS.push({
+    id: 'e42', name: 'satin bow', description: 'a ribbon tied at the rim — the real row',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/85579a66-7a6c-4fc2-9d4d-069d03a48d91.glb',
+    thumbnail_url: CAT_THUMB('#2b2b2b'), thumb_key: null,
+    allowed_zones: ['rim', 'side'],
+    allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: { r: 4, scale: { max: 9, min: 1.6, step: 0.5 }, material: 'satin',
+      metalness: 0, roughness: 0.4,
+      rim: 'verge', side: { mode: 'hug', seat: 'proud' },
+      // The row as it is in the catalogue today. `seat: 'hang'` is what this change adds; flip it
+      // back to 'center' here to see the fault it was reported for.
+      verge: { seat: 'hang', y_offset: -0.27, angle_deg: -13.5, edge_inset: -0.09 } },
+    default_color: '#1a1a1a', sort_order: 42,
+  });
+}
+
 CAT_ELEMENTS.push({
   id: 'e28', name: 'Fondant crown hero', description: 'a colourable single-per-slot hero',
   element_type_id: 'et-topper', category_id: 'cat-1',
