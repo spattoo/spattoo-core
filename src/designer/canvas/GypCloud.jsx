@@ -31,6 +31,11 @@ export default function GypCloud({
   florets = GYP_DEFAULTS.florets,
   floretSize = GYP_DEFAULTS.floretSize,
   floretVary = GYP_DEFAULTS.floretVary,
+  /* What makes the thing read as a bunch rather than a plant: how far down the sprig the blooms
+     ride, how far back along each branch, and how much bare stub is left at the bottom. */
+  bloomLevels = GYP_DEFAULTS.bloomLevels,
+  bloomSpan = GYP_DEFAULTS.bloomSpan,
+  baseFrac = GYP_DEFAULTS.baseFrac,
   ao = GYP_DEFAULTS.ao, aoFloor = GYP_DEFAULTS.aoFloor,
   /* How much sprigs differ from one another in brightness. See useSeatedInstances — it is the only
      thing that gives a packed field depth, because every instance shares one geometry. */
@@ -76,9 +81,10 @@ export default function GypCloud({
 }) {
   const geo = useMemo(
     () => buildGypSprig({ height, levels, forks, spread, shrink, droop, thickness,
-                          florets, floretSize, floretVary, seed, stem, bloom, ao, aoFloor }),
+                          florets, floretSize, floretVary, bloomLevels, bloomSpan, baseFrac,
+                          seed, stem, bloom, ao, aoFloor }),
     [height, levels, forks, spread, shrink, droop, thickness, florets, floretSize, floretVary,
-     seed, stem, bloom, ao, aoFloor],
+     bloomLevels, bloomSpan, baseFrac, seed, stem, bloom, ao, aoFloor],
   );
 
   const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang,
@@ -88,7 +94,13 @@ export default function GypCloud({
   /* On a wall, burying is INWARD and `wallSeats` has already done it, by moving each seat along the
      wall's own normal. Subtracting it from `topY` as well would sink the whole band toward the
      board — the same gesture pointed at the wrong surface. */
-  const ref = useSeatedInstances(seats, topY - (wall ? 0 : bury),
+  /* ⚠️ BURIAL IS IN UNITS OF THE SPRIG, SO IT SCALES WITH `size`. It did not, and that is why
+     growing the flowers made the stems worse: `size` scales the whole piece on the instance
+     matrix, so at size 2 the sprig stood twice as tall while the hand pushing it in stayed at the
+     same 0.06 — the bare run above the surface DOUBLED. Sandeep: *"i have asked previously to
+     increase the size of the flowers. you did it the wrong way."* A depth that does not scale with
+     the thing it is burying is a control that stops meaning what its name says (INVARIANTS #8). */
+  const ref = useSeatedInstances(seats, topY - (wall ? 0 : bury * size),
     { lay: (lay * Math.PI) / 180, layVary, laySeed: seed, geo, shadeVary, size });
   /* Everything below the surface is hidden by the cake itself, so this costs nothing to draw. */
 

@@ -26,6 +26,15 @@ import { mulberry32 } from '../utils/random.js';
 // (`hole`) against any tier outline, and a second distribution system would be a second answer to
 // the same question (root CLAUDE.md rule 1, INVARIANTS #1).
 
+/* ⚠️ THE LENGTH JITTER ONLY EVER SHORTENS, and the solve below has to know its mean or `height`
+   stops meaning what its name says (INVARIANTS #8). It was two-sided (mean 1) when the first stem
+   was half the sprig and unjittered; once `baseFrac` handed 84% of the reach to the branches, the
+   luckiest of ~25 paths ran 18% past the setting. One-sided fixes that, at the cost of a
+   systematic shortfall — which is why the mean is a named constant and not a number written twice. */
+const JIT_LO = 0.75;
+const JIT_RANGE = 1 - JIT_LO;
+const JIT_MEAN = JIT_LO + JIT_RANGE / 2;
+
 export const GYP_DEFAULTS = Object.freeze({
   /* ⚠️ HOW BIG THE FLOWER IS DRAWN, as a multiple of the sprig every number below describes — and
      deliberately NOT one of them. Reported on a wall posy: *"its looking like a cluster of white
@@ -88,6 +97,31 @@ export const GYP_DEFAULTS = Object.freeze({
      reaches that number by showing bare twig, which is not the same picture. 2 is where the blooms
      still read as clusters and the green threads through them. */
   florets:    2,
+  /* ⚠️ HOW FAR DOWN THE SPRIG THE BLOOMS RIDE, counted in levels from the tip — and this is what
+     decides whether the thing reads as a flower bunch or as a plant. At 2 the blooms sat on the
+     last two divisions only, which measured **60% of the sprig's height as bare stem**: a band of
+     white on top of a band of green, which is a picket fence. Sandeep, on the render: *"the below
+     stem part is more. it looks like plant not a flower bunch."*
+     ⚠️ AND IT IS WHY `size` MADE IT WORSE. `size` scales the whole sprig, so growing the flowers
+     through it grew the bare run in the same proportion — the answer to "bigger flowers" was never
+     a bigger sprig. Every reference photograph shows the stems threading THROUGH the cloud, never a
+     bare run beneath it. */
+  bloomLevels: 3,
+  /* ⚠️ HOW FAR BACK ALONG EACH FLOWERING BRANCH THE CLUSTERS GO — 0 is tip-only, 0.55 starts them
+     at 45% of the way up. Tip-only is what made the bare run: a cluster is a POINT at the end of a
+     strand, so putting blooms on more levels only moved that point down one fork, and measured
+     barely 6% off the bare stem. A gypsophila branch carries clusters ALL ALONG its fine ends —
+     that is where the cloud comes from, and it is what puts green inside the white instead of
+     under it. */
+  bloomSpan:  0.55,
+  /* ⚠️ THE BARE STUB AT THE BOTTOM, as a fraction of the sprig's reach — and it has to be its own
+     knob because the geometric chain will not give it up. Each level is `shrink` of its parent, so
+     the FIRST stem is always the longest single run: at shrink 0.58 over 4 levels it is 47% of the
+     chain by construction, and measured 60% of the height carried no bloom at all. That is a plant.
+     Sandeep: *"the below stem part is more. it looks like plant not a flower bunch."*
+     A florist cuts gypsophila to a stub and lets the head do the work, so the base is solved for
+     directly and the branches are given the rest of the reach. */
+  baseFrac:   0.16,
   /* ⚠️ A RADIUS, AND IT IS MEASURED OFF THE REFERENCE RATHER THAN REASONED ABOUT — twice now in
      opposite directions, which is why the measurement is written down.
      It started at 0.016, a bloom 11% as wide as the whole sprig, and rendered as a handful of flat
@@ -113,7 +147,28 @@ export const GYP_DEFAULTS = Object.freeze({
      (scripts/sweep-gyp-floret.mjs): at 0.016 — 11% of the sprig — it is a haze; from 0.022
      individual flowers start to read; at 0.028 (19%) they are plainly flowers with visible petals;
      0.034 is chunky and loses the fineness baby's breath is for. */
-  floretSize: 0.028,
+  /* ⚠️ 0.014, HALVED — AND THE SIZE IT WAS HALVED FROM WAS CHOSEN BY THE SAME MEASURE, POINTED AT
+     THE WRONG PICTURE. 0.028 was set to answer *"ours look like sprinkles (too small for roses)"*
+     by making one bloom bigger. It does make a bloom bigger, and at the density a posy sits at the
+     blooms then MERGE: every stem is hidden behind the one in front and the bunch renders as an
+     opaque white mass. Reported on the wall: *"it looks like a all white and hardly any green. it
+     no where looks like a flower bunch at all."*
+     What makes the eye read gypsophila is that you can SEE THROUGH it — small separate florets
+     with fine green between them. Measured on a wall posy against a frame of the same cake with no
+     flowers on it (see-through = the share of the posy's own bounding box the flowers do NOT
+     cover):
+
+         floretSize 0.028    73% see-through     0.2% green   <- an opaque lump
+         floretSize 0.020    76%                 1.1%
+         floretSize 0.014    77%                 4.3%   <- here
+         floretSize 0.010    79%                10.0%         airy, but stringy next to a rose
+
+     ⚠️ IT IS NOT A RETURN TO SPRINKLES, because `size` is what answers "too small for roses" and
+     it is 2 by default: a 0.014 bloom on a sprig scaled ×2 is the same absolute bloom 0.028 was at
+     size 1. Checked against the rim fixture's roses, which is where "too small" was judged. The
+     two complaints only looked opposed because one knob was being asked to do both jobs — the
+     bloom against its own branch, and the sprig against the cake. */
+  floretSize: 0.014,
   /* How much the blooms differ in size within a cluster: buds and open flowers sit together, and a
      cluster of identical balls is the other classic way this reads as plastic. */
   floretVary: 0.55,
@@ -173,7 +228,22 @@ export const GYP_PLACEMENTS = Object.freeze({
      end-on — which is its bloom cluster and nothing else, reported as *"a cluster of white
      dots/sprinkles"*. At 30–35° the branching and the green stems come back and the posy fans UP
      the wall the way a real one does. */
-  side:  Object.freeze({ spacing: 0.05, jitter: 0.7, lay: 35, layVary: 0.4, bury: 0.04,
+  /* ⚠️ `spacing: 0.13`, AND IT ONLY WORKS BESIDE THE SMALLER `floretSize`. Neither knob fixed this
+     alone, which is why both were tried and rejected before the pair was: at 0.13 with fat blooms
+     the posy was a sparser blob, and fine blooms at 0.05 were still 146 sprigs deep so the ones in
+     front hid everything behind them. Reported twice: *"it looks like a all white and hardly any
+     green"*, then *"side still looks like a blob"*.
+     ⚠️ THE NUMBER THAT MATTERS IS SPRIGS PER POSY, which nothing was counting. One patch at
+     `GYP_PATCH_R` 0.34 held:
+
+         spacing 0.05    146 sprigs   <- was here; ~2,900 blooms in a fist
+         spacing 0.13     20
+         spacing 0.18     10
+         spacing 0.24      7
+
+     A florist tucks five to fifteen stems into a cake side, not a hundred and fifty. 0.13 is the
+     fullest that still reads as separate sprigs rather than a mass. */
+  side:  Object.freeze({ spacing: 0.13, jitter: 0.7, lay: 35, layVary: 0.4, bury: 0.04,
                          height: 0.20, droop: 0.5, sideLo: 0.18, sideHi: 0.68 }),
   /* ⚠️ `lay: 78` — ALMOST FLAT. A board is card: you cannot push a stem into it, so the ring is
      LAID at the join, stems tucked in sideways against the cake's foot and blooms fanning out over
@@ -326,7 +396,7 @@ export function buildGypSprig(opts = {}) {
   /* Grown depth-first from the cut end. Each call draws its own stem and then either forks or
      flowers; the strand hands back where it actually ENDED, so a branch starts on its parent's tip
      rather than on a recomputed guess at the curve (which drifts, and the joints come apart). */
-  const grow = (origin, dir, len, r0, level) => {
+  const grow = (origin, dir, len, r0, level, childLen = null) => {
     /* A stem that forks does not taper to a point — it hands its thickness on. Only the last
        level, which carries the blooms, closes off. */
     const r1 = level >= levels ? 0 : r0 * o.shrink;
@@ -344,12 +414,31 @@ export function buildGypSprig(opts = {}) {
     /* ⚠️ BLOOMS RIDE THE LAST TWO LEVELS, NOT JUST THE TIPS. Flowering only at the ends gave a bare
        twig with a pom-pom on each arm — which is a dandelion clock, not gypsophila. A real stem
        carries clusters all along its finer branches, and that is where the cloud comes from. */
-    if (level >= levels - 1) {
-      const n = Math.max(1, Math.round(o.florets)) / (level >= levels ? 1 : 2);
-      for (let i = 0; i < n; i++) {
+    const bloomFrom = levels - Math.max(1, Math.round(o.bloomLevels)) + 1;
+    if (level >= bloomFrom) {
+      /* The strand's own curve, so a cluster placed at `t` sits ON the branch rather than on a
+         straight line between its ends — `pushStrand` bows quadratically and a chord would float
+         the lower clusters off the stem they are supposed to be growing from. */
+      const axis = dir.clone().normalize();
+      const at = t => origin.clone().addScaledVector(axis, len * t).addScaledVector(bend, len * t * t);
+      /* ⚠️ `florets` IS STILL BLOOMS PER STRAND — the nodes SPREAD that count along the branch,
+         they do not multiply it. Multiplying was the first version and it tripled the sprig to
+         2,358 triangles against a 1,600 budget: this thing is instanced in the hundreds round a
+         rim, so a cloud bought with triangles is a cloud nobody on a phone gets to see. Spreading
+         is free, and it is also the truer picture — a branch carries the same flowers, strung out
+         along it rather than bunched on the end. */
+      const perStrand = Math.max(1, Math.round(
+        Math.max(1, Math.round(o.florets)) / Math.pow(2, levels - level)));
+      const nodes = Math.max(1, Math.round(2 + o.bloomSpan * 2));
+      for (let i = 0; i < perStrand; i++) {
+        /* i = 0 is the tip, and it uses the strand's OWN reported end rather than the curve — the
+           two agree, but the tip is what `height` is solved against and it must not drift. */
+        const k = i % nodes;
+        const tk = nodes === 1 ? 1 : 1 - (k / (nodes - 1)) * o.bloomSpan;
+        const node = k === 0 ? end.tip.clone() : at(tk);
         const a = rand() * Math.PI * 2, b = Math.acos(2 * rand() - 1);
         const d = o.floretSize * 2.2 * Math.cbrt(rand());
-        const c = end.tip.clone().add(new THREE.Vector3(
+        const c = node.clone().add(new THREE.Vector3(
           Math.sin(b) * Math.cos(a) * d, Math.cos(b) * d, Math.sin(b) * Math.sin(a) * d));
         const b0 = idx.baseIndex;
         pushBloom(pos, nor, idx, c, o.floretSize * (1 - o.floretVary * rand()), rand);
@@ -375,7 +464,14 @@ export function buildGypSprig(opts = {}) {
         .addScaledVector(u, Math.sin(tilt) * Math.cos(roll))
         .addScaledVector(v, Math.sin(tilt) * Math.sin(roll))
         .normalize();
-      grow(end.tip.clone(), child, len * o.shrink * (0.8 + 0.4 * rand()), r1, level + 1);
+      /* ⚠️ THE JITTER ONLY EVER SHORTENS. It used to be `0.8 + 0.4·rand`, mean 1 — fine when the
+         first stem was half the sprig and unjittered, but once `baseFrac` handed 84% of the reach
+         to the branches, the luckiest of ~25 paths ran well past the solved chain and `height`
+         started overshooting by 18%. A control that lies about its units is INVARIANTS #8, so the
+         variation is one-sided: every branch is somewhere at or under its share, no path exceeds
+         it, and `height` is a ceiling the sprig reaches rather than a number it drifts past. */
+      const next = (childLen ?? len * o.shrink) * (JIT_LO + JIT_RANGE * rand());
+      grow(end.tip.clone(), child, next, r1, level + 1);
     }
   };
 
@@ -385,7 +481,15 @@ export function buildGypSprig(opts = {}) {
      `height * (1 - shrink)` first, which gave a 0.21 sprig for a 0.30 setting — a control that
      lies about its own units is the thing INVARIANTS #8 is about. The reach is still a little under
      `height` because droop trades length for lean, and that is the honest part of it. */
-  const chain = (1 - Math.pow(o.shrink, levels)) / (1 - o.shrink || 1);
+  /* The chain the BRANCHES sum to — levels 2..n, because level 1 is now solved separately.
+     ⚠️ IT USES THE JITTER'S MEAN, NOT A BARE `shrink`. Every child is multiplied by a draw in
+     [JIT_LO, 1], so a chain solved against `shrink` alone is systematically LONGER than the sprig
+     it builds — by 0.875³, a seventh, which `height` then under-reaches by. It passed at first
+     only because fat blooms padded the envelope; halving `floretSize` took the padding away and
+     the test caught it. Folding the mean into the ratio makes the expectation land on `height`,
+     and the luckiest of the paths lands just over it rather than a fifth over. */
+  const sEff = o.shrink * JIT_MEAN;
+  const chain = (1 - Math.pow(sEff, Math.max(1, levels - 1))) / (1 - sEff || 1);
   /* ⚠️ THE BLOOMS COUNT TOWARD THE REACH, because the control says "cut end to the furthest bloom"
      and a cluster stands proud of the stem that carries it. While the florets were tiny this was
      within the tolerance and nobody noticed; measuring them up to the reference's scale pushed the
@@ -394,9 +498,12 @@ export function buildGypSprig(opts = {}) {
      only the outermost bloom's own radius actually extends the envelope, and droop has already
      taken its share of the reach. Subtracting the whole cluster undershot the setting by 20%. */
   const bloomReach = o.floretSize * 1.4;
-  const stemLen = Math.max(o.height * 0.25, o.height - bloomReach) / chain;
+  const reach = Math.max(o.height * 0.25, o.height - bloomReach);
+  const baseLen = reach * Math.min(0.8, Math.max(0, o.baseFrac));
+  /* What is left of the reach after the stub, shared down the branch chain. */
+  const branchLen = Math.max(1e-4, reach - baseLen) / chain;
   grow(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 1, 0),
-       stemLen, o.thickness, 1);
+       baseLen, o.thickness, 1, branchLen);
 
   shadeBlooms(col, blooms, o);
   return finishGeometry(pos, nor, idx, col);
