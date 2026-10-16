@@ -163,7 +163,7 @@ import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getShellSizeCap, shellSizeCapKeys, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor, occupiesRimBand } from './piping/pipingLayer.js';
-import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
+import { useCakeDesign, normalizeDesign, tierShapeAt } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
@@ -7886,7 +7886,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (members.length) {
       const seed = [...members].sort((a, b) => a.id - b.id)[0];
       const start = startPositions[seed.id];
-      const shp = tierShape(design.tiers[seed.tierIndex ?? 0] ?? design.tiers[0]);
+      const shp = tierShapeAt(design.tiers, seed.tierIndex ?? 0);
       if (start && shp.kind !== 'rect') {
         const seedR = (seed.scale ?? 1) * CLUSTER_BASE_R;
         // A TOP/rim cluster locks to a ring just inside the rim; a SIDE cluster locks to the wall ring
@@ -11136,7 +11136,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
       let pos;
       if (slot.zone === ZONES.RIM) {
-        const shp = tierShape(design.tiers[slot.tierIndex] ?? design.tiers[0]);
+        const shp = tierShapeAt(design.tiers, slot.tierIndex);
         const seed = edgeSeatSeed(pc, shp, mode);
         pos = seed
           ? { x: seed.x, z: seed.z, tiltAngle: seed.tiltAngle, yOffset: seed.yOffset }

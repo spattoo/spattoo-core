@@ -39,6 +39,35 @@ export { TIER_RADII };   // re-export so existing imports from this file keep wo
 export function tierRadius(t, i) {
   return t?.radius ?? TIER_RADII[i] ?? 0.35;
 }
+
+/* ── The shape of tier i, with its REAL width resolved ───────────────────────────────────────────
+ *
+ * ⚠️ `tierShape(designTier)` IS WRONG FOR EVERY TIER BUT THE BOTTOM, and it is wrong silently.
+ * Its round branch ends `radius: tier.radius ?? 1.2` — a flat constant — while the stack's widths
+ * are POSITIONAL, `TIER_RADII = [1.2, 0.9, 0.65, 0.45]`. The two fallbacks agree only at index 0,
+ * so on a design tier carrying no radius of its own (which is most of them — see tierRadius above)
+ * every upper tier is measured as the bottom one.
+ *
+ * What that cost: a fondant doll perched on the TOP tier of a two-tier cake was seeded at
+ * z = 1.2 − edge_inset = 1.15 against a real rim of 0.9, landing 0.25 OUTSIDE the wall with nothing
+ * under her. Sandeep: *"fondant doll - is handing in the air."* Worse, the rim DRAG rail is built
+ * the same way, so she could not be dragged back on either — the track itself was off the cake, and
+ * *"let the user set the position"* cannot work while the rail is in the wrong place.
+ *
+ * `seededScale` in addSticker already did this correctly and said why — *"a design tier carries no
+ * width of its own"* — but it was an inline `{ ...t, radius: tierRadius(t, i) }` at one call site
+ * rather than a shared accessor, so the four sites that needed the same resolution did not get it.
+ * This is that accessor: ONE place that knows how, next to the function that knows the widths. */
+export function tierShapeAt(tiers, i) {
+  /* ⚠️ THE INDEX AND THE TIER MUST AGREE. Falling back to tier 0's object while keeping the asked-for
+     index would read TIER_RADII[9] — undefined — and resolve to the 0.35 floor, a width no tier in
+     the stack has. Caught by its own test. The callers' old expression (`tiers[i] ?? tiers[0]`) has
+     the same fallback, so resolving the index first keeps that behaviour and makes the width match
+     the tier actually used. */
+  const idx = tiers?.[i ?? 0] ? (i ?? 0) : 0;
+  const t = tiers?.[idx];
+  return tierShape(t ? { ...t, radius: tierRadius(t, idx) } : t);
+}
 // Frosting types now live in the frostings registry; re-export so existing importers
 // (FrostingPicker, admin CreateTemplate) keep resolving them from here.
 export { FROSTING_TYPES };
@@ -1138,7 +1167,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       if (!exact && placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
         // De-overlap off coincident stand siblings so both toppers have separate, selectable centres
         // (drag-time collision handles the rest). Shared rule — see deOverlapSeat.
-        const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+        const shp = tierShapeAt(prev.tiers, tierIndex ?? 0);
         const siblings = prev.stickers.filter(
           s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && s.placementMode === PLACEMENT_MODES.STAND
         );
@@ -1149,7 +1178,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         // the centre a perch would bury the figure / a verge would have nothing to lean over. Seed via
         // the shared helper, then nudge off a coincident same-mode sibling. The customer drags it
         // around the rim afterwards.
-        const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+        const shp = tierShapeAt(prev.tiers, tierIndex ?? 0);
         const seed = edgeSeatSeed(element.placement_config, shp, placementMode);
         px = seed.x;
         pz = seed.z;
@@ -1187,7 +1216,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ({ theta: seatTheta } = deOverlapSeat(null, zone, { theta: seatTheta, y: seatY }, siblings));
         } else if (zone === ZONES.TOP_SURFACE) {
           // Flat-on-top decals: cartesian nudge, kept inside the tier (shared rule).
-          const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+          const shp = tierShapeAt(prev.tiers, tierIndex ?? 0);
           const siblings = prev.stickers.filter(
             s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && isScatterSib(s)
           );
@@ -1624,7 +1653,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       // The copy starts ON the original, then de-overlaps off it (and any other same-surface sibling)
       // using the ONE shared surface-aware rule — so it lands visibly separate, in the right coordinate
       // system for its surface (x/z on top, around the rim, theta/u on a wall). No per-zone offset here.
-      const shp = tierShape(prev.tiers[original.tierIndex ?? 0] ?? prev.tiers[0]);
+      const shp = tierShapeAt(prev.tiers, original.tierIndex ?? 0);
       const siblings = prev.stickers.filter(s => s.zone === original.zone && s.tierIndex === original.tierIndex);
       const seat = deOverlapSeat(shp, original.zone, { x: original.x, z: original.z, theta: original.theta, y: original.y, u: original.u }, siblings);
       return {
