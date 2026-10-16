@@ -854,9 +854,11 @@ if (PARAMS.has('bow')) {
          a negative offset drops the bow down the wall where it rests against the icing, a positive
          one lifts it above the rim where nothing is holding it. This file's own comment warns that
          "a fixture that disagrees with the row proves the wrong thing, confidently" — it did. */
-      verge: PARAMS.get('hang') === '0'
-        ? { y_offset: 0.27, angle_deg: -13.5, edge_inset: -0.09 }
-        : { seat: 'hang', y_offset: 0.27, angle_deg: -13.5, edge_inset: -0.09 } },
+      /* `?yoff=` sweeps the row's height nudge, which is a WORLD-UNIT lift (placement.js ->
+         sticker.yOffset), not a fraction of the model. */
+      verge: { ...(PARAMS.get('hang') === '0' ? {} : { seat: 'hang' }),
+               y_offset: PARAMS.has('yoff') ? +PARAMS.get('yoff') : 0.27,
+               angle_deg: -13.5, edge_inset: -0.09 } },
     default_color: '#1a1a1a', sort_order: 42,
   });
 }

@@ -60,6 +60,31 @@ function Model() {
        identical terms rather than by eye. A triangle count that differs between a plain load and
        the designer's is the difference being looked for. */
     if (typeof window !== 'undefined') {
+      /* ⚠️ WHERE A MODEL NARROWS, which is how you find the part a decoration should be ANCHORED
+         by. A satin bow is loops over a knot over tails: the knot is the narrowest slice between
+         them, and it is the point that actually touches the cake. Reading it off the mesh beats
+         authoring a number per row, and it is unreachable from a script any other way — the GLB is
+         Draco-compressed, so there is nothing to measure until a loader has decoded it. */
+      window.__rawProfile = (bins = 24) => {
+        const out = [];
+        s.traverse(o => {
+          if (!o.isMesh) return;
+          const pos = o.geometry.attributes.position;
+          let lo = Infinity, hi = -Infinity;
+          for (let i = 0; i < pos.count; i++) { const y = pos.getY(i); if (y < lo) lo = y; if (y > hi) hi = y; }
+          const H = hi - lo || 1;
+          const w = Array.from({ length: bins }, () => ({ min: Infinity, max: -Infinity, n: 0 }));
+          for (let i = 0; i < pos.count; i++) {
+            const k = Math.min(bins - 1, Math.floor(((pos.getY(i) - lo) / H) * bins));
+            const x = pos.getX(i), b = w[k];
+            if (x < b.min) b.min = x; if (x > b.max) b.max = x; b.n++;
+          }
+          out.push({ name: o.name || '(unnamed)', lo, hi,
+            slices: w.map((b, k) => ({ f: +(((k + 0.5) / bins)).toFixed(3),
+                                       width: b.n ? +(b.max - b.min).toFixed(4) : 0 })) });
+        });
+        return out;
+      };
       window.__rawMeshes = () => {
         const out = [];
         s.traverse(o => {
