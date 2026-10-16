@@ -1257,6 +1257,17 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the rim edge so the body drapes over the lip; 'base' seats the body base on the surface.
           // Read by the render's isVergeBase branch; null/absent → centre.
           vergeSeat:     element.placement_config?.verge?.seat ?? null,
+          /* Perch seat anchor (placement_config.perch.seat), the same choice verge has had and the
+             one perch was missing: 'center' (default) straddles the edge with the body's MIDDLE on
+             the rim line; 'base' rests the body's BASE on the rim so it stands on the edge.
+             ⚠️ A FIGURE HAS NO MIDDLE TO BALANCE ON. Centre-seat is right for a thing that drapes
+             or straddles — a ribbon, a folded card — and wrong for anything that stands: it buries
+             the lower half below the rim plane, and at the edge that half is outside the wall, so
+             a fondant doll hung in mid-air beside the cake. Sandeep: *"fondant doll - is handing in
+             the air. i want this to sit on the rim."*
+             Read by the render's isPerchBase branch; null/absent → centre, so the catalogue does
+             not move. */
+          perchSeat:     element.placement_config?.perch?.seat ?? null,
           // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.

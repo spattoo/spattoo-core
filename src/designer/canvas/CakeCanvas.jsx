@@ -2231,9 +2231,20 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   // (default) rests the MID-SPINE on the rim edge so the body drapes over the lip; 'base' seats the
   // BODY base on the surface and leans from there. Other modes are unaffected.
   const isVergeBase = isVerge && sticker.vergeSeat === 'base';
-  // Base-seated upright modes: stand, a base-seat verge, and a foldable card on a perch edge — all
-  // stand on their BODY base. A centre-seat verge / perch sit centred at the rim edge height instead.
-  const standSeat = isStand || isVergeBase || (isPerch && sticker.foldable === true);
+  /* ⚠️ PERCH HAS THE SAME CHOICE NOW, AND NOT HAVING IT IS WHAT LEFT A DOLL IN MID-AIR. Centre-seat
+     is right for a piece that STRADDLES the edge — its middle on the rim line, half either side —
+     and wrong for one that STANDS on it: the lower half falls below the rim plane, and at the rim
+     that half is beyond the wall, so it hangs in the air beside the cake. A fondant doll
+     (perch, edge_inset 0.05) is the reported case.
+     ⚠️ AND `y_offset` IS NOT THE SAME FIX, which is why this is a seat and not a bigger number. A
+     nudge is a fixed world distance — `py` adds it raw while the base lift is multiplied by
+     `effScale` — so a figure tuned to look seated at one size sinks or floats at every other, and
+     the doll's own dial spans 4 to 7. The seat asks the model how tall it is; the nudge cannot. */
+  const isPerchBase = isPerch && sticker.perchSeat === 'base';
+  // Base-seated upright modes: stand, a base-seat verge, a base-seat perch, and a foldable card on a
+  // perch edge — all stand on their BODY base. A centre-seat verge / perch sit centred at the rim
+  // edge height instead.
+  const standSeat = isStand || isVergeBase || isPerchBase || (isPerch && sticker.foldable === true);
   // A photo frame on top is bounded so it (incl. its border ring) never overflows the rim/edges.
   const topFrameMax = sticker.photoMask
     ? frameTopMaxScale(shp, sticker.photoShape, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
@@ -2278,7 +2289,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
-    : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
+    : (isPerch || isVerge) ? 0   // centre at the rim edge height — a CENTRE-seat perch straddles, a centre-seat verge rests its mid-spine on the lip (a base-seat perch/verge took the standSeat branch above)
     : FLAT_STICKER_Y_OFFSET);
 
   /* ── How far an edge-seated piece stands OUT from the rim ─────────────────────────────────────

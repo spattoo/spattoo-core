@@ -916,7 +916,15 @@ CAT_ELEMENTS.push({
 CAT_ELEMENTS.push({
   id: 'e11', name: 'Fondant doll', description: 'a figure that sits on the cake edge',
   element_type_id: 'et-topper', category_id: 'cat-1',
-  image_url: CAT_THUMB('#e8b6c2'), thumbnail_url: CAT_THUMB('#e8b6c2'), thumb_key: null,
+  /* ⚠️ A FLAT SWATCH CANNOT SHOW A SEAT, and that is what this was. `CAT_THUMB` is a coloured
+     square, so its measured half-height is a hair — and the whole question on this row is where a
+     TALL body sits relative to the rim line. Centre-seat and base-seat looked identical here while
+     the real catalogue doll (r 4.5, a 41-part GLB) hung visibly in the air. ?dollglb=1 swaps in
+     real geometry with real bounds so the two seats separate.
+     ⚠️ IT IS A ROSETTE, NOT A DOLL — the only GLB in this repo. It stands in for HEIGHT, which is
+     all the seat arithmetic reads; the silhouette is not the claim. */
+  image_url: PARAMS.has('dollglb') ? '/sample-rosette-3d.glb' : CAT_THUMB('#e8b6c2'),
+  thumbnail_url: CAT_THUMB('#e8b6c2'), thumb_key: null,
   allowed_zones: ['rim', 'top_surface'],
   allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true },
   placement_config: {
@@ -924,7 +932,15 @@ CAT_ELEMENTS.push({
     // than dropped anywhere — which is the path that runs edgeSeatSeed, and the path that crashed.
     single_per_slot: true,
     r: 1, scale: { max: 6, min: 0.5, step: 0.5 },
-    rim: 'perch', perch: { tilt_deg: 12 },   // straddles the edge, leaning back a little
+    /* ?dollseat=base puts her BASE on the rim instead of her middle — the choice `perch` was
+       missing while `verge` had it, and the reason a doll hung in the air beside the cake. The
+       default (no flag) is the old centre-straddle, so this harness shows the regression and the
+       fix in the same place; `edge_inset` matches the catalogue row's 0.05 so the two agree about
+       how close to the lip she stands. */
+    rim: 'perch',
+    perch: { tilt_deg: 12,                  // straddles the edge, leaning back a little
+             edge_inset: 0.05,
+             ...(PARAMS.get('dollseat') === 'base' ? { seat: 'base', tilt_deg: 0 } : {}) },
     top_surface: 'stand',
   },
   default_color: '#E8B6C2', sort_order: 11,
