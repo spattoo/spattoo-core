@@ -352,7 +352,11 @@ CAT_ELEMENTS.push({
      one attitude for a rim and ANOTHER for a wall, and the pen used to take the rim's for both. With
      `top_rotation` absent, hand-piping on the side looked fine in the harness and lay face-down in
      the app. A fixture that disagrees with the row proves the wrong thing, confidently. */
-  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true,
+  /* ⚠️ `can_coat`, because without it the "Cover the cake" block does not render and the coat —
+     with its three scopes, its ombré, and the tap-the-roses-to-get-the-card-back path — was
+     unreachable in the harness. Same gap `hand_piping` and `gradient` above were added to close:
+     a fixture that cannot express the feature cannot show the bug in it. */
+  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true, can_coat: true,
                       top_surface: 'hug', rim: 'hug', side: 'hug',
                       top_rotation: [0, 0, 0], bottom_rotation: [-89, -174, -180] },
   default_color: '#F5E6C8', sort_order: 16,
