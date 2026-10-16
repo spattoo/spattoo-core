@@ -1072,7 +1072,25 @@ const STUBS = {
     { id: 'tpl5', name: 'Unicorn',      tier_count: 1, source: 'global',
       thumbnail_url: '/thumbs/cake5.webp' },
   ]),
-  fetchCakeShapes:     async () => ([]),
+  /* ⚠️ A TWO-TIER SHAPE, because a cake's tier count is a property of the SHAPE ROW and nothing
+     else. `applyCakeShapeConfig` reads `design.tiers` off each row and that stack is what the cake
+     starts as — there is no add-a-tier control in the designer, by design. Stubbing this `[]` left
+     only the built-in round/rect seeds, both single-tier, so EVERY multi-tier behaviour was
+     untestable here: which tier a card opens on, tapping a coat on the lower tier, a rim ring on an
+     upper tier's ledge, occlusion of a lower lid.
+     Shaped like the rows the Cake Shape Studio saves: a self-contained `design` whose tiers carry
+     shapeFamily/shapeConfig and a radius, narrower as it goes up — a 2-tier cake is a wide base and
+     a smaller one resting on it. */
+  fetchCakeShapes:     async () => (PARAMS.has('twotier') ? [{
+    key: 'round-2',
+    label: 'Round · 2 tier',
+    design: {
+      tiers: [
+        { shapeFamily: 'circle', shapeConfig: {}, radius: 1.2, height: 1.45, color: '#f5b8c8' },
+        { shapeFamily: 'circle', shapeConfig: {}, radius: 0.8, height: 1.2,  color: '#f5b8c8' },
+      ],
+    },
+  }] : []),
   fetchMaterials:      async () => ([]),
   fetchTextures:       async () => ([]),
   fetchTextStyles:     async () => ([]),
