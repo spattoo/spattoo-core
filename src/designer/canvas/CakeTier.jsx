@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { useMemo, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
@@ -1410,6 +1410,24 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
+  /* ⚠️ THE "MY SHAPE CHANGED" SIGNAL IS READ OFF THE GEOMETRY, NOT TAKEN ON TRUST. It used to be the
+     `geoSig` prop alone, and four of the five callers passed the geometry's own uuid — but the plain
+     round cylinder, the commonest cake there is, declares its geometry in JSX and had nothing to take
+     a uuid FROM, so it passed `r${radius}h${height}`. That string does not change when the geometry
+     object is rebuilt, and the paint below bails (un-patching the material) whenever it runs with no
+     geometry yet: so one early run with the mesh not ready left a tier that could never be striped
+     again until somebody resized it. Reported as stripes and ombre that stopped working on the wall
+     while the lid still took the colour — "whatever you change (including stripes) does not work.
+     only applies to to top".
+     A ref callback is how a geometry's ARRIVAL is observable at all; the `!==` guard is what stops it
+     being a render loop. `geoSig` stays in the deps because a caller swapping one geometry object for
+     another of the same identity-less kind is still a change worth hearing about. */
+  const [geoId, setGeoId] = useState(null);
+  const attachMesh = useCallback((m) => {
+    meshRef.current = m;
+    const id = m?.geometry?.uuid ?? null;
+    setGeoId(prev => (prev === id ? prev : id));
+  }, []);
   const grainMap = useMemo(
     () => (surf?.grain && grainExtent ? grainNormalMap(surf.grain, grainExtent[0], grainExtent[1], surf.grainDensity) : null),
     [surf?.grain, grainExtent?.[0], grainExtent?.[1], surf?.grainDensity],
@@ -1439,7 +1457,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
      * that flickers between them depending on which effect re-ran. */
     applyStripes(matRef.current, stripes, bb, tierAlbedo, finishMaps?.emissiveMap ?? null);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
-  }, [gradient, stripes, glaze, geoSig, finishMaps]);
+  }, [gradient, stripes, glaze, geoSig, geoId, finishMaps]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
@@ -1461,7 +1479,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   // the metal shards reflect the room (the "shine"). The grain/style normal stays. (Map binding requires
   // the needsUpdate recompile above.)
   return (
-    <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
+    <mesh ref={attachMesh} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
       <meshPhysicalMaterial ref={matRef} vertexColors={vertexColors} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
         map={finishMaps?.map ?? null}
