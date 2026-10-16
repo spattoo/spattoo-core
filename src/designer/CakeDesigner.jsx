@@ -12467,6 +12467,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       .map(k => ({ k, label: SURFACE_LABELS[k] }));
     return (
       <>
+        {/* ⚠️ A HOSTED MESSAGE IS NOT ON A CAKE SURFACE, so the Top/Side/Board chooser has nothing
+            to choose between — it is on the rainbow until it is removed. It is REPLACED rather than
+            dropped: a card that silently loses its first control leaves a baker wondering where the
+            message went, and the line also answers "why is there no Curve dial". */}
+        {w.on ? (
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.3,
+                        padding: '7px 2px', flexShrink: 0 }}>
+            ON THE RAINBOW · follows its curve
+          </div>
+        ) : (
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
           {SURFACES.map(sf => (
             <button key={sf.k} onClick={() => setWriting({ surface: sf.k })}
@@ -12476,6 +12486,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           ))}
         </div>
+        )}
 
         <textarea
           value={w.text ?? ''}
@@ -12758,8 +12769,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ] : []),
             ] : []),
             /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
-               from a sheet; bending the baseline is a piped-writing idea. */
-            ...(surface !== 'side' && !writingIsCut(w.style) ? [
+               from a sheet; bending the baseline is a piped-writing idea.
+               ⚠️ AND A HOSTED MESSAGE HAS NO CURVE OF ITS OWN EITHER. Written on an element, the
+               bend IS that element's shape — `writingSurface` takes it from the host and the dial's
+               value is never read. A control that cannot change anything is worse than no control
+               (INVARIANTS #11), so it goes rather than sitting there doing nothing. */
+            ...(surface !== 'side' && !writingIsCut(w.style) && !w.on ? [
               { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
                 fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
             ] : []),
@@ -12776,13 +12791,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ))}
         </ScrollFadeRow>
 
+        {/* ⚠️ A HOSTED MESSAGE IS NOT DRAGGED, so it must not be told to drag. The three lines below
+            each name a cake surface; on a rainbow the element decides where the line sits, and a
+            hint that says otherwise is a label that lies. */}
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
-          {surface === 'side' ? 'Drag the writing around and up the cake side.'
+          {w.on ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+            : surface === 'side' ? 'Drag the writing around and up the cake side.'
             : surface === 'board' ? 'Drag the writing around the cake board.'
             : 'Drag the writing anywhere on the cake top.'}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          {/* Recentre puts a dragged message back in the middle of its surface. A hosted one was
+              never anywhere else, so the button has nothing to undo (INVARIANTS #11). */}
+          {!w.on && (
           <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
               : surface === 'board' ? { boardX: undefined, boardZ: undefined }
               : { offsetX: 0, offsetZ: 0 })}
@@ -12790,6 +12812,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               color: INK, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
             Recentre
           </button>
+          )}
           <button onClick={() => { clearWriting(); clearAllSelections(); }}
             style={{ ...s.deleteBtn, flex: 1 }}>
             Remove from cake
@@ -14222,6 +14245,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             })}
           </div>
         </div>
+
+        {/* ── A message written ON this arch ────────────────────────────────────────────────────
+            ⚠️ GATED ON THE ROW'S `text_path`, so an element that cannot take text offers nothing
+            rather than a button that does nothing (INVARIANTS #11). The arch's own geometry decides
+            where the line goes and how far it bends — there is nothing to place and no curve to
+            set, which is why this is one button and not an editor.
+            ⚠️ IT OPENS THE MESSAGE'S OWN CARD. A second text editor here would be a second answer
+            to "what can you do with a message" — font, colour, material and Remove all already live
+            on that card, and the one that drifts is whichever is edited second (CLAUDE.md rule 1).
+            So this adds the message and hands over. */}
+        {rb.textPath?.kind && (() => {
+          const mine = (design.writings ?? []).filter(w => w.on?.id === rb.id);
+          return (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6B8C74', marginBottom: 4 }}>
+                MESSAGE ON THE RAINBOW
+              </div>
+              {/* ⚠️ `s.neutralBtn`, NOT A NavRow — the card's own button, for the reason the cream
+                  layer's note gives at length: a settings-list row sits white-on-white on this
+                  sheet and reads as a label rather than something you press. */}
+              {mine.map(w => (
+                <button key={w.id}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false);
+                                   selectExclusive({ type: 'writing', id: w.id }); }}
+                  style={{ ...s.neutralBtn, width: '100%', marginBottom: 6, textAlign: 'left' }}>
+                  {w.text?.trim() || 'Untitled message'}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  const id = addWriting({ font: DEFAULT_CREAM_FONT,
+                                          on: { kind: 'rainbow', tierIndex: card.tierIndex, id: rb.id } });
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'writing', id });
+                }}
+                style={{ ...s.neutralBtn, width: '100%' }}>
+                {mine.length ? 'Add another message' : 'Write on the rainbow'}
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Gated on the row, for the reason the cloud's is. */}
         {instanceActions(rb.elementId).delete && (
@@ -17889,11 +17953,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 if (allowsBoard && yAdjustable && i > 0) candidates.push({ tierIndex: i, zone: 'board', label: `${TIER_LABELS[i]} Side` });
               }
               if (allowsBoard) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
+              /* ⚠️ THE FALLBACK IS THE BOTTOM TIER, NOT THE FIRST TILE. `candidates` is built from
+                 the top down (so the tiles read top-to-bottom like the cake looks), which made
+                 `candidates[0]` the TOP tier — and since "Cover the cake" acts on whichever tile is
+                 active, covering a two-tier cake coated the little one on top. Sandeep: *"when i
+                 click on cover the cake option it covered the top tier... in case if default is
+                 needed, it should be to the bottom tier"*.
+                 The bottom tier is the biggest surface and the one a coat is nearly always meant
+                 for, so it is the default when nothing else has chosen. A stable sort keeps the
+                 zone order within that tier, so Rim still beats Board where both are offered. This
+                 is only the DEFAULT — the tiles choose, and the two earlier clauses still win:
+                 whatever the baker is actively editing, then wherever this card already has a ring. */
               const activeRing =
                 candidates.find(c => activePipingRing
                   && c.tierIndex === activePipingRing.tierIndex && c.zone === activePipingRing.zone)
                 ?? candidates.find(c => ringPiping(c.tierIndex, c.zone))
-                ?? candidates[0]
+                ?? [...candidates].sort((a, b) => a.tierIndex - b.tierIndex)[0]
                 ?? { tierIndex: -1, zone: null };
               /* The coat THIS card put on THAT tier. Another element's coat is not this card's to
                  mark, rescope or remove — the chips would otherwise light up on a card that had
