@@ -19,6 +19,10 @@ const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 export default function CreamWriting({
   writing, topY, topRadius, shape = 'round', width = 0, depth = 0, shp,
   tiers, boardRadius = 0, boardY = 0.1, boardShp,
+  /* Where this message's HOST puts it, when it is written on an element rather than on the cake.
+     Resolved by the canvas (only it knows what is on the tier) and handed in already shaped, so
+     this renderer never learns what a rainbow is. */
+  hostPath = null,
   onClick, onMove, onOrbitEnable, selected = false,
 }) {
   const { camera, gl } = useThree();
@@ -27,8 +31,8 @@ export default function CreamWriting({
   // made of. See geometry/surface.js: the tier comes from the height, for every renderer at once.
   const {
     surface, fit, cakeBaseR, sideY, sideTier, sideRect, sideR, sideH,
-    maxW, maxH, wrapRadius, minSideY, maxSideY,
-  } = writingSurface({ writing, tiers, topY, topRadius, shape, width, depth, boardRadius });
+    maxW, maxH, wrapRadius, minSideY, maxSideY, curve, host,
+  } = writingSurface({ writing, tiers, topY, topRadius, shape, width, depth, boardRadius, hostPath });
 
   const geo = useMemo(() => {
     if (!writing?.text?.trim()) return null;
@@ -36,9 +40,9 @@ export default function CreamWriting({
     return buildCreamWriting({
       text, font: writing.font, thickness, maxW, maxH,
       lineGap: writing.lineSpacing ?? 1.4, letterSpacing: writing.letterSpacing ?? 0,
-      curve: writing.curve ?? 0, wrapRadius,
+      curve, wrapRadius,
     });
-  }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.letterSpacing, writing?.curve, wrapRadius]);
+  }, [writing?.text, writing?.uppercase, writing?.font, thickness, maxW, maxH, writing?.lineSpacing, writing?.letterSpacing, curve, wrapRadius]);
 
   // Side-drag vertical bounds (also used by the drag resolver below).
   /* ⚠️ THE DRAG SPANS THE WHOLE CAKE, and clamping it to one tier was a regression I introduced and
@@ -61,7 +65,7 @@ export default function CreamWriting({
          is the seam between "choose a tier" and "drag between tiers": both end up saying the same
          thing. */
       if (surface === 'side' && !sideRect) return writingPlaceAt(where, cylinderHit(ray, sideR));
-      if (surface === 'side') {
+  if (surface === 'side') {
         // Rect side: intersect the front face plane (z = depth/2), drag in x & y.
         const t = new THREE.Vector3();
         return writingPlaceAt(where,
@@ -128,6 +132,30 @@ export default function CreamWriting({
 
   // ── Side: geometry is already wrapped & vertical, centred on +Z. Rotate around Y
   // to the drag angle, raise to the drag height. ──────────────────────────────────
+  /* ⚠️ A HOSTED MESSAGE STANDS IN ITS HOST'S PLANE, and the host says where that is. A rainbow is
+     flat and set back from the cake's centre by its own `standoff`, so the line stands upright at
+     the arch's centre and is pushed to the arch's face — stuck ON the fondant, not floating in
+     front of it. `warpArc` has already bent the glyphs to the arch's sweep, so nothing here rotates
+     them one at a time: the whole line is one upright plane, exactly like a baker pressing cut
+     letters onto a rope.
+     ⚠️ LIFTED BY THE ARCH'S RADIUS. `warpArc` leaves the bent line's CENTRE OF CURVATURE at
+     `(0, -R)` in its own frame, so seating the group on the arch's centre would put the word in
+     the middle of the hole. Raising it by the radius lands that centre on the arch's own.
+     ⚠️ AND IT BELONGS HERE, AMONG THE RENDER BRANCHES. The first version of this went in beside
+     an `if (surface === 'side')` that lives INSIDE the drag resolver — so it returned JSX as a
+     drag placement, never ran, and the message fell through to the `top` branch and was drawn on
+     the CAKE. It still looked bent and still tracked the band, because `writingSurface` had
+     already handed over the arch's curve and size: everything about it was right except where it
+     was. Reported in one line: *"text is not on rainbow. its on cake."* */
+  if (surface === 'host' && host) {
+    const face = host.face + thickness * 0.5 + 0.002;
+    return (
+      <group position={[host.centerX, host.centerY + host.radius, face]}>
+        <mesh geometry={geo} castShadow>{material}</mesh>
+        {grabPlane(bb.max.z + 0.01)}
+      </group>
+    );
+  }
   if (surface === 'side' && !sideRect) {
     return (
       <group rotation={[0, sideAngle, 0]}>

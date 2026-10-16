@@ -27,12 +27,15 @@ import AcrylicWord from './AcrylicWord.jsx';
 export default function AcrylicWriting({
   writing, topY, topRadius, shape = 'round', width = 0, depth = 0, shp,
   tiers, boardRadius = 0, boardY = 0.1, boardShp,
+  /* Where this message's HOST puts it, when it is written on an element rather than the cake.
+     Same prop and same resolver as the cream path — see CreamWriting. */
+  hostPath = null,
   onClick, onMove, onOrbitEnable, mmPerUnit,
 }) {
   const { camera, gl } = useThree();
   const {
-    surface, cakeBaseR, sideY, sideTier, sideRect, sideR, maxW, minSideY, maxSideY,
-  } = writingSurface({ writing, tiers, topY, topRadius, shape, width, depth, boardRadius });
+    surface, cakeBaseR, sideY, sideTier, sideRect, sideR, maxW, minSideY, maxSideY, host,
+  } = writingSurface({ writing, tiers, topY, topRadius, shape, width, depth, boardRadius, hostPath });
 
   /* An outline face is ~100KB fetched on demand, so this is a load and not a lookup — and it has to
    * finish before there is anything to draw. Rendering nothing meanwhile is right: a half-loaded
@@ -67,7 +70,13 @@ export default function AcrylicWriting({
    * builder: `lay` is lying face-up on a horizontal surface, which is exactly what hugging the top
    * is, and routing it anywhere else would have been a fourth pose for a pose we already have. */
   const topPose = writing?.style === 'fondant' && writing?.topPose !== 'stand' ? 'lay' : 'stand';
-  const pose = surface === 'side' ? 'flat' : surface === 'board' ? 'lay' : topPose;
+  /* ⚠️ A MESSAGE ON AN ELEMENT STANDS IN THAT ELEMENT'S PLANE — `flat`, the same pose a wall gets,
+     NOT `topPose`. A host is neither 'side' nor 'board', so it fell through to the top's pose, and
+     for fondant that defaults to `lay`: the letters were laid face-down as if on the icing and
+     rendered as thin shapes seen edge-on, scattered along the arc. A rainbow is a flat upright
+     thing and letters pressed onto it face the way it faces. */
+  const pose = surface === 'host' ? 'flat'
+             : surface === 'side' ? 'flat' : surface === 'board' ? 'lay' : topPose;
   const standing = pose === 'stand';
 
   const { grabProps } = useDragPlacement({
@@ -165,9 +174,30 @@ export default function AcrylicWriting({
   const word = (
     <AcrylicWord font={font} text={writingText(writing)} cfg={cfg} finish={finish}
                  medium={writing.style === 'fondant' ? 'fondant' : 'acrylic'} color={writing.color}
+                 /* The arch the letters follow. AcrylicWord ignores it on acrylic by design — a
+                    perspex topper is one cut piece and cannot follow a curve. */
+                 arc={host ? { radius: host.radius } : null}
                  pose={pose} span={maxW} mount={{}} onRise={setRise} />
   );
 
+  /* ⚠️ THE SAME SEAT AS THE CREAM PATH, deliberately — the word stands upright in the host's plane
+     at the arch's centre, raised by its radius, and pushed to the arch's face. `arcLetter` leaves
+     the letters on a circle centred at `(0, -radius)`, the same convention `warpArc` leaves cream
+     in, so switching Look between Piped cream and Fondant moves nothing but the material. */
+  if (surface === 'host' && host) {
+    const face = host.face + (cfg.thickness ?? 0.063) * 0.5 + 0.002;
+    return (
+      <group position={[host.centerX, host.centerY + host.radius, face]}>
+        {React.cloneElement(word, { mount: { x: 0, z: 0, y: 0, yaw: 0 } })}
+        {/* The same invisible grab plane the wall branches use, sized to the host's own box so a
+            tap anywhere across the arched line opens its card. */}
+        <mesh position={[0, -host.radius + host.maxH / 2, 0.02]} {...grabProps}>
+          <planeGeometry args={[host.maxW, host.maxH]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+        </mesh>
+      </group>
+    );
+  }
   if (surface === 'side' && !sideRect) {
     // Round wall: rotate to the drag angle, raise to the drag height. AcrylicWord places itself on
     // the tangent plane, so the lift at the ends is geometry rather than decoration.

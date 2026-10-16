@@ -1,4 +1,4 @@
-import { useMemo, useEffect, useLayoutEffect, useRef } from 'react';
+import { useMemo, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
@@ -19,9 +19,12 @@ import { frostingDef, frostingSupportsGradient, frostingAllowsStyles, DEFAULT_FR
 import { styleDef, resolveStyleParams, DEFAULT_STYLE } from '../creamStyles.js';
 import { buildStyledWall, buildStyledTop, strokeWallParams, buildStrokeWallOnShape } from '../geometry/creamWall.js';
 import { useStrokeMesh } from './strokeMesh.js';
-import { buildShellGeo, capShellScale, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
+import { buildShellGeo, capShellScale, maxShellSize, wallPerimeter, extractGeo, ringBaseY } from './shellGeo.js';
+import { seatHalfDepth } from '../geometry/seating.js';
 import CakeCoat from './CakeCoat.jsx';
+import CakeWafer from './CakeWafer.jsx';
 import { tierShape, pipingPerimeter, pipingPerimeters, pipingHolePerimeters, rectEdgeRing, perimeter, circlePerimeter, boxHit, isRoundWall } from '../geometry/surface.js';
+import { pipingLayerAtClick } from '../geometry/pipingPick.js';
 import { pointInPolygon } from '../geometry/shapes.js';
 import { buildFestoons, buildWrapBand } from '../geometry/festoon.js';
 import { buildDripGeometry, buildDripWeb, dripRenderParams, buildDripFlood, paintDripColors } from '../geometry/chocolateDrip.js';
@@ -29,7 +32,7 @@ import { buildSecondCreamLayer, buildSecondCreamEdgeLine } from '../geometry/sec
 import { makeGoldLeafMaps } from '../shared/textures/goldLeafTexture.js';
 import { GOLD_LEAF_DEFAULTS, GOLD_LEAF_COLORS } from '../shared/textures/goldLeafFlakes.js';
 import { PIPING_FRONT_ANGLE, TIER_RADII, BEND_ANCHOR_FRAC, SELECTION_COLOR } from '../constants.js';
-import { SHELL_HEIGHT_FRAC, setShellExtents, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
+import { SHELL_HEIGHT_FRAC, setShellExtents, setShellSizeCap, setFestoonExtents, setWrapExtents, festoonSig } from './pipingMetrics.js';
 import { ringPositions, angleAtPoint, perimeterRing } from './ringPositions.js';
 /* The extruded-footprint builders. ⚠️ They MOVED to geometry/prism.js and are re-exported here:
  * they are pure geometry, the modelled cream wall needs them to cut its lid to a shape, and a
@@ -276,6 +279,7 @@ function buildDecorationShell(scene, radius, sizeFactor, placementConfig = null)
   return {
     scene, minY: box.min.y, isElement: true,
     shellScale: sc, bbWidth: size.x, bbDepth: size.z,
+    maxSize: maxShellSize(sc1, size.z || 1e-3, radius, placementConfig),
     // Extents relative to the base-seat anchor (base at 0): for the Height/radial clamps + clearance.
     worldTopY: size.y * sc, worldBotY: 0,
     worldMaxZ: box.max.z * sc, worldMinZ: box.min.z * sc,
@@ -547,21 +551,11 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
      non-zero X or Z move, and for those the current render is the bug. */
   const tilt = [(baseRotation?.[0] ?? 0) * DEG, 0, (baseRotation?.[2] ?? 0) * DEG];
 
-  /* ⚠️ THE SEAT IS MEASURED AFTER THE TILT, or a tilted ring FLOATS. `minY` is the model's lowest
-     point measured upright, and the base is seated by subtracting it — correct while the only
-     freedom was yaw, which cannot change a height. A tilt can: lay a rosette face-up with -90° about
-     X and its lowest point moves from the bottom of a 1.9-tall model to the bottom of a 0.4-deep
-     one, so subtracting the upright figure lifts it by the difference. Measured on the real model:
-     (0.952 - 0.202) x shellScale of clear air between the rosettes and the rim.
-     The cream shell path already solved this — `buildShellGeo` applies the same tilt to the bounding
-     box to get `worldTopY`/`worldBotY`, "what makes 'top edge touches the rim' exact for tilted
-     shells". This is that, for the path that keeps the GLB's own materials.
-     Untilted elements keep the measured `minY` exactly, so nothing already on a cake moves. */
-  const seatMinY = useMemo(() => {
-    if (!scene || (!tilt[0] && !tilt[2])) return minY;
-    const m = new THREE.Matrix4().makeRotationFromEuler(new THREE.Euler(tilt[0], 0, tilt[2], 'XYZ'));
-    return new THREE.Box3().setFromObject(scene).applyMatrix4(m).min.y;
-  }, [scene, minY, tilt[0], tilt[2]]);
+  /* ⚠️ THE SEAT IS THE SHELL'S OWN ORIGIN, matching `ringBaseY` and the calibrator. Re-measuring
+     the bounding box after the authored tilt lifted a tilted ring clear of the cake by a number
+     admin could not see or override — see the note on `ringBaseY` in shellGeo.js. An element that
+     needs lifting says so with `top_y_offset`, which the calibrator shows. */
+  const seatMinY = minY;
   // A decoration keeps its own GLB scene, so there is no CreamMesh to hang PIPING_HANDLE_DATA on —
   // tag the clone's meshes directly, so CakeCanvas' capture-phase raycast suspends orbit for these
   // too. Cleared again when the ring stops being draggable (mode change / capability untick).
@@ -844,18 +838,22 @@ function TopPipingRingImpl({
          pixels are not. This read the UNTILTED `bbDepth` while the seat below had already moved to
          the tilted reach — one component disagreeing with itself, which is how the radial clamp
          came to be measured against a box the renderer no longer draws. */
-      const halfRaw = A.worldMaxZ;   // the render's positioning reach (see `off`, below)
+      const halfRaw = seatHalfDepth(A.bbDepth * A.shellScale);   // the positioning figure (see `off`)
       // `outerFrac` = how far the shell's OUTER face stands proud of the wall (radius fraction),
       // INCLUDING its radial positioning — the reach a side decoration must clear. A rim shell is
       // pulled inward (outer face ≤ edge) so this is ~0; a side/board shell projects out by ~its
       // full depth. (radialOutFrac is reach-beyond-centre, for ring de-overlap — a different frame.)
       const off = Math.min(-halfRaw + extraRadialOffset + userRadialOffset,
                            -halfRaw + Math.max(0, extraRadialOffset));
+      setShellSizeCap(glbPath, flipTop, A.maxSize);
       setShellExtents(glbPath, flipTop, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
         outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
+        // Height across the band, inner edge → outer, as fractions of the radius. What rests on a
+        // rim ring needs the height at ITS radius; the crest alone makes a dome read as a shelf.
+        radialProfile: A.radialProfile && Array.from(A.radialProfile, y => y / radius),
       });
     }
   }, [A, glbPath, flipTop, sizeFactor, radius, extraRadialOffset, userRadialOffset]);
@@ -901,7 +899,26 @@ function TopPipingRingImpl({
        *"why is it not on the rim? why inside"*.
        `worldMaxZ` IS `half` for an untilted shell (asserted in shellGeo.test.js), so this is the
        same number everywhere it was already right. */
-    const reach = A.worldMaxZ;                     // outward reach past the origin
+    /* ⚠️ THE UPRIGHT HALF-DEPTH, BECAUSE THAT IS WHAT THE ROW WAS CALIBRATED AGAINST.
+       `PipingCalibrator.jsx` seats on `(A.bbDepth / 2) * A.shellScale` while rendering the shell
+       tilted, so every authored `*_radial_offset` in the catalogue is relative to this figure.
+
+       ⚠️ IT MOVED TWICE IN ONE DAY AND NOBODY SAW IT, because an untilted shell is unaffected.
+       Measured on Classic Shell Border (`top_rotation [-68, -1, 175]`, r 2.2), ring width over
+       cake width: before `2c773cbf` 0.997 — flush with the rim; `2c773cbf` (half the TILTED depth)
+       0.904; `dedfee88` (`worldMaxZ`, the reach past the ORIGIN) 0.772 — a ring sitting in the
+       middle of the lid. A rotation makes a shell asymmetric about its own origin, so its outward
+       reach is nothing like half its box, and seating on it walks the ring inward by the
+       difference. Sandeep: *"why is this piping floating?"* — it was never floating, it was inset,
+       seen past the rim. Present in production too (0.1.689), which is why bisecting dev against
+       prod found nothing: both sides of that window already had it.
+
+       ⚠️ `worldMaxZ`/`worldMinZ` ARE STILL RIGHT FOR THE CLAMPS — the editor's radial limits and
+       the nesting maths need the reach the pixels actually have, which is `dedfee88`'s point and it
+       stands. What they are not is where the ring SITS. Two questions, two numbers. The VERTICAL
+       seat stays tilted (`ringBaseY`/`worldBotY`, `fa243aed`): a shell rotated past upright hangs
+       below its own origin, and seating that on the rim buries it in the wall. */
+    const reach = seatHalfDepth(A.bbDepth * A.shellScale);
     /* ⚠️ THE CEILING RISES WITH THE AUTHORED OFFSET; IT DOES NOT BAN POSITIVE USER INPUT. My first
      * cut clamped the customer's dial to ≤ 0, which would have moved SAVED DESIGNS: when an element
      * authors a NEGATIVE offset, `rimRadialTravel` computes a positive maximum for the dial — the
@@ -1028,11 +1045,15 @@ function BottomPipingRingImpl({
       // Outer-face reach INCLUDING positioning (see the top-ring note). A side/board shell's inner
       // face sits on the wall (off = half + radial nudge), so it projects out by ~its full depth.
       const off = halfRaw + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
+      setShellSizeCap(glbPath, flipBottom, A.maxSize);
       setShellExtents(glbPath, flipBottom, sizeFactor, {
         topFrac: A.worldTopY / radius, botFrac: A.worldBotY / radius,
         radialOutFrac: (A.worldMaxZ - halfRaw) / radius,
         radialInFrac:  (A.worldMinZ - halfRaw) / radius,
         outerFrac: Math.max(0, (off + A.worldMaxZ) / radius),
+        // Height across the band, inner edge → outer, as fractions of the radius. What rests on a
+        // rim ring needs the height at ITS radius; the crest alone makes a dome read as a shelf.
+        radialProfile: A.radialProfile && Array.from(A.radialProfile, y => y / radius),
       });
     }
   }, [A, glbPath, flipBottom, sizeFactor, radius, extraRadialOffset]);
@@ -1046,9 +1067,9 @@ function BottomPipingRingImpl({
   // Hoisted for the drag — see the matching note on the top ring.
   const off = useMemo(() => {
     if (!A) return 0;
-    // The piece's own INWARD reach — the mirror of the rim seat above, and identical to half the
-    // depth whenever the shell is symmetric about its origin. Puts the inner face on the wall.
-    const reach = -A.worldMinZ;
+    // The upright half-depth — the mirror of the rim seat above and for the same reason (see the
+    // note there). Puts the inner face on the wall, where the calibrator puts it.
+    const reach = seatHalfDepth(A.bbDepth * A.shellScale);
     let   o     = reach + Math.min(extraRadialOffset, radius * PIPING_RADIAL_PLAY);
     // Glyph: keep the outset within the stroke so the base border hugs the edge (see top ring).
     if (shape?.strokeW) o = Math.min(o, GLYPH_PIPE_INSET_FRAC * shape.strokeW);
@@ -1389,6 +1410,24 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   const meshRef = useRef();
   const matRef  = useRef();
   const finishOnRef = useRef(false);
+  /* ⚠️ THE "MY SHAPE CHANGED" SIGNAL IS READ OFF THE GEOMETRY, NOT TAKEN ON TRUST. It used to be the
+     `geoSig` prop alone, and four of the five callers passed the geometry's own uuid — but the plain
+     round cylinder, the commonest cake there is, declares its geometry in JSX and had nothing to take
+     a uuid FROM, so it passed `r${radius}h${height}`. That string does not change when the geometry
+     object is rebuilt, and the paint below bails (un-patching the material) whenever it runs with no
+     geometry yet: so one early run with the mesh not ready left a tier that could never be striped
+     again until somebody resized it. Reported as stripes and ombre that stopped working on the wall
+     while the lid still took the colour — "whatever you change (including stripes) does not work.
+     only applies to to top".
+     A ref callback is how a geometry's ARRIVAL is observable at all; the `!==` guard is what stops it
+     being a render loop. `geoSig` stays in the deps because a caller swapping one geometry object for
+     another of the same identity-less kind is still a change worth hearing about. */
+  const [geoId, setGeoId] = useState(null);
+  const attachMesh = useCallback((m) => {
+    meshRef.current = m;
+    const id = m?.geometry?.uuid ?? null;
+    setGeoId(prev => (prev === id ? prev : id));
+  }, []);
   const grainMap = useMemo(
     () => (surf?.grain && grainExtent ? grainNormalMap(surf.grain, grainExtent[0], grainExtent[1], surf.grainDensity) : null),
     [surf?.grain, grainExtent?.[0], grainExtent?.[1], surf?.grainDensity],
@@ -1418,7 +1457,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
      * that flickers between them depending on which effect re-ran. */
     applyStripes(matRef.current, stripes, bb, tierAlbedo, finishMaps?.emissiveMap ?? null);
     applyGlaze(matRef.current, glaze, bb);   // object-space marble (glaze finish); null/1-colour → solid
-  }, [gradient, stripes, glaze, geoSig, finishMaps]);
+  }, [gradient, stripes, glaze, geoSig, geoId, finishMaps]);
   // Adding/removing the dust maps on an EXISTING material needs a shader recompile, else three keeps
   // the old program (compiled without the map defines) and silently ignores emissiveMap/metalnessMap/
   // roughnessMap — the flecks never show and only the flat emissive colour leaks through.
@@ -1440,7 +1479,7 @@ function TierBody({ position, color, surf, grainExtent, overrideNormalMap = null
   // the metal shards reflect the room (the "shine"). The grain/style normal stays. (Map binding requires
   // the needsUpdate recompile above.)
   return (
-    <mesh ref={meshRef} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
+    <mesh ref={attachMesh} position={position} castShadow={castShadow} receiveShadow={receiveShadow}>
       {children}
       <meshPhysicalMaterial ref={matRef} vertexColors={vertexColors} color={finishMaps ? '#ffffff' : tierAlbedo(color)}
         map={finishMaps?.map ?? null}
@@ -1653,6 +1692,7 @@ export default function CakeTier({
      the tier, so it is its own field rather than a third entry in topPipings. */
   coat = null,
   onCoatClick = null,
+  wafer = null,
   onClick,
 }) {
   const topY    = yBase + height;
@@ -1867,15 +1907,18 @@ export default function CakeTier({
   const tops    = topPipings    ?? (topPiping    ? [topPiping]    : []);
   const bottoms = bottomPipings ?? (bottomPiping ? [bottomPiping] : []);
 
+  /* ⚠️ WHICH LAYER A BODY CLICK MEANT IS `pipingLayerAtClick`, and it may answer NOTHING. This
+     picked `tops[0]` — the first layer on the rim, whichever one was clicked — which is the only
+     possible answer with one layer and a coin-flip with two. On a cake wearing a drip and a ring of
+     chocolate balls on the same rim, the drip was added first and won every click: *"when i click
+     on chocolate ball, drip popup opens."* A click on either ring ITSELF is unaffected; each ring
+     renders its own shell and reports its own layerId. */
   function handleClick(e) {
     e.stopPropagation();
-    if (tops.length && e.point.y > topY - height * 0.25) {
-      onTopPipingClick?.(e, tops[0].layerId);
-    } else if (bottoms.length && e.point.y < yBase + height * 0.25) {
-      onBottomPipingClick?.(e, bottoms[0].layerId);
-    } else {
-      onClick?.(e);
-    }
+    const pick = pipingLayerAtClick({ tops, bottoms, y: e.point.y, topY, yBase, height });
+    if (pick?.zone === 'rim') onTopPipingClick?.(e, pick.layerId);
+    else if (pick?.zone === 'board') onBottomPipingClick?.(e, pick.layerId);
+    else onClick?.(e);
   }
 
   // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"
@@ -2079,6 +2122,12 @@ export default function CakeTier({
       {/* Last, so it sits over every finish — a coat replaces the cake's surface rather than
           decorating it. It reads the tier's own footprint, so a heart or a sheet packs correctly
           without this knowing what either is. */}
+      {/* ⚠️ AFTER the finishes and BEFORE the coat. Wafer paper stands OFF the wall — the gap, and
+          the light coming through it, is the whole look — so it goes over whatever the wall is
+          wearing. A coat replaces the surface entirely, so it stays last. */}
+      {wafer && (
+        <CakeWafer wafer={wafer} shp={shp} tierHeight={height} baseY={yBase} radius={radius} />
+      )}
       {coat?.glbUrl && (
         <CakeCoat coat={coat} shp={shp} tierHeight={height} baseY={yBase}
                   rot={coat.rot} softness={coat.softness ?? PIPING_SOFTNESS_DEFAULT}

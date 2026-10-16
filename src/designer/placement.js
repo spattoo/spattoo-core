@@ -39,6 +39,190 @@ export const DEFAULT_INSERT_LEAN_DEG = 12;
 // `pos` carries whatever coords that surface uses ({x,z} top/rim; {theta,y} round wall; {u,y} rect);
 // the returned object is `pos` with the relevant coord(s) nudged. `siblings` = same surface + tier
 // (the original is a sibling for duplication, so the copy is pushed off it). Pure.
+/* ── What is already standing on a surface, and how wide ─────────────────────────────────────────
+ *
+ * ⚠️ THIS RULE EXISTED AND WAS TRAPPED. `CakeCanvas` has cached every GLB's measured half-width since
+ * the faux-ball work (`glbXRadiusCache[url] = size.x / 2 * sc`), and used it to push a DRAGGED piece
+ * off its siblings so they touch and never penetrate. Correct, and written inline three times in one
+ * function — the copy-paste that INVARIANTS #3b calls a defect, with the `deOverlapSeat` cautionary
+ * tale directly above this line saying so.
+ *
+ * Trapped there it answers only one question: where may THIS piece be dragged. Everything else that
+ * needs to know what is on the cake — a filler looking for gaps between roses, a piping ring that
+ * should not drive through a decoration — has no way to ask. Sandeep: *"sometimes whats happening
+ * with piping elements is, if I add one piping over other, it gets penetrated into other. we should
+ * block penetration of gypsophila into roses are any other elements."*
+ *
+ * ⚠️ IT ASKS WHAT IS THERE, NEVER WHAT IT IS. No element type, no slug, no category — a candle, a
+ * topper and a rose all occupy space and the rule is identical for each (INVARIANTS #1, #3b: "ONE
+ * rule for this and it is not per-element"). An element that may legitimately be penetrated says so
+ * with a config flag; it is not inferred from a name.
+ *
+ * `radiusOf` is injected rather than imported so this file stays pure — the measurements live in the
+ * canvas, where the models are.
+ */
+/* ── How much room a placed thing needs KEPT CLEAR around it ─────────────────────────────────────
+ *
+ * ⚠️ A FRACTION, NOT A MARGIN, AND THAT INVERSION IS THE WHOLE FIX. This was 1.15 — `occupantRadius`
+ * grown by a further 15% "because a sprig has width of its own". But `occupantRadius` is already a
+ * MAXIMUM: it comes from the GLB's bounding box (`size.x / 2`), which is the widest section of a
+ * piece, taken across a box with empty corners. A rose is a dome — the circle it actually occupies
+ * where it meets the cake is well inside its widest section — so enlarging a maximal radius
+ * double-counted, and seats were refused a long way outside anything a customer can see.
+ *
+ * One rose hid it: cleared alone, the bare arc came out NARROWER than the rose's own span, so the
+ * filler looked like it was nestling. Several close together is where it shows. Reported on a rim
+ * with five roses on it: *"it should find the gaps between the roses and merge like an arrangement.
+ * but it simply skipped the area where roses are present."* Their discs overlapped — centres 0.537
+ * apart against a cleared radius of 0.515 each — so the union was one dead zone 171° wide across a
+ * run of roses spanning 122°.
+ *
+ * Measured by sweeping it against that cake and looking: 1.15 → 171° bare, 0.85 → 95°, 0.65 → 20°,
+ * 0.50 → 5°. At 0.50 the filler starts crowding onto the roses themselves; at 0.65 it fills the
+ * gaps and sits against them without climbing. See scripts/measure-gyp-merge.mjs.
+ *
+ * ⚠️ ONE COPY, AND IT LIVES HERE BECAUSE `occupantRadius` DOES. "How much room does this thing take
+ * up" is one question; the flat surfaces and the wall both ask it, and two constants would drift. */
+export const CLEARANCE_FRACTION = 0.65;
+
+export function clearanceRadius(occupant) {
+  return (occupant?.r ?? 0) * CLEARANCE_FRACTION;
+}
+
+export function occupantRadius(sticker, measured = null) {
+  return (measured ?? STICKER_SIZE / 4) * (sticker?.scale ?? 1);
+}
+
+/* ── Which way a piece faces on the surface it stands on ─────────────────────────────────────────
+ * The renderer's own yaw, lifted out of it so the footprint below and the model on screen can never
+ * disagree about which way a piece is turned. A verge auto-orients radially OUTWARD (re-derived from
+ * its x/z so it reorients as it is dragged round the rim); every other pose keeps the spin the
+ * customer set. Radians. */
+const UPRIGHT_MODES = new Set(['stand', 'perch', 'verge']);
+export function surfaceYaw(sticker) {
+  const radial = sticker?.placementMode === 'verge' ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
+  return radial + (sticker?.rotation ?? 0);
+}
+
+/* ── The patch of surface a piece actually COVERS ────────────────────────────────────────────────
+ *
+ * ⚠️ `occupantRadius` IS A CIRCLE ON THE WIDEST AXIS, AND FOR A SHEET THAT IS MOSTLY EMPTY SPACE.
+ * It reads `size.x / 2` — fine for a rose (1.996 x 1.712 x 1.908, near-spherical, so one number is
+ * true in every direction) and wrong by a factor of 35 for a Gingko leaf (1.602 x 1.902 x 0.047).
+ * Normalised to STICKER_SIZE the leaf's half-extents are 0.118 x 0.140 x 0.0034, so at the element's
+ * own `r: 2` it carried a 0.236 exclusion circle on the axis where it is 0.0068 thick. Measured in
+ * dev/designer-mobile.html?leafrose=1: dragged at a rose, the leaf parked 0.5158 from its centre —
+ * exactly 0.236 + 0.280 — with a visible gap the size of the leaf between the two. Reported with a
+ * screenshot: *"though there is space between gingko leaf and rose, i am not able to move it near to
+ * the rose."*
+ *
+ * So a footprint is an ELLIPSE, not a circle, and `radiusToward` asks it the only question a
+ * separation test has: how far does this piece reach IN THIS DIRECTION.
+ *
+ * ⚠️ UNMEASURED → THE OLD CIRCLE, EXACTLY. A 2D sticker has no measured bounds, and in an upright
+ * pose it BILLBOARDS — it turns to face the camera, so it has no stable footprint to describe. Those
+ * keep `STICKER_SIZE / 4` in both axes, which is the circle they have today, so nothing that is not
+ * a measured GLB moves.
+ *
+ * ⚠️ WHICH TWO AXES depends on the pose, not on the element: an upright piece (stand / perch /
+ * verge, and insert, which is a modifier on an upright pose) stands its y up, so the surface sees
+ * x by z; anything lying flat shows x by y. Read off `placementMode`, never a slug (INVARIANTS #1).
+ *
+ * A lean (`tiltAngle`) tips an upright piece and so stretches its footprint slightly along the lean;
+ * that is not modelled — the upright footprint is used — because the error is a few per cent of a
+ * half-extent and the cost of getting it wrong is a piece that stops a hair early, not a penetration.
+ */
+export function occupantFootprint(sticker, half = null) {
+  const s = sticker?.scale ?? 1;
+  if (!half) { const r = (STICKER_SIZE / 4) * s; return { a: r, b: r, yaw: 0 }; }
+  const upright = UPRIGHT_MODES.has(sticker?.placementMode) || sticker?.insertDepth != null;
+  return { a: half.hx * s, b: (upright ? half.hz : half.hy) * s, yaw: surfaceYaw(sticker) };
+}
+
+/* ── Two pieces, and how far apart they have to be ──────────────────────────────────────────────
+ *
+ * ⚠️ "THE RADIUS ALONG THE LINE OF CENTRES" IS NOT A SEPARATION TEST, and the first version of this
+ * fix used one. For a long thin piece aimed at a blob the contact is at the TIP, not on the line
+ * between the middles, and an ellipse's radius collapses to nearly nothing a few degrees off its
+ * long axis — so it waved the leaf through. Measured on the state it produced: the leaf's tip sat
+ * 0.1317 from the rose's centre against a rose half-extent of 0.2681, i.e. **0.136 INSIDE the
+ * rose**, which is the exact fault INVARIANTS #3b exists to prevent, arrived at by fixing a
+ * different one. Sandeep, looking at the render: *"is ginko penetrating into rose?"*
+ *
+ * So each footprint becomes a CAPSULE on the surface — a segment along its long axis, with the short
+ * half-extent as its radius — and the test is the distance between the two segments. That cannot
+ * miss a tip, because the segment IS the piece's length.
+ *
+ * ⚠️ IT DEGENERATES TO TODAY'S CIRCLE FOR ANYTHING ROUND. A near-spherical piece has a ≈ b, so its
+ * segment is a point and the capsule is the disc it has always been. Two roses keep their 0.56.
+ * What changes is only what was never true: a sheet is a sheet in the direction it is thin. Tip-first
+ * is unchanged too (0.5158) — the one approach the circle was right about, because a leaf really
+ * cannot push its point into a rose.
+ *
+ * ⚠️ WHAT THIS STILL APPROXIMATES, SAID RATHER THAN LEFT TO BE FOUND. A capsule is INSIDE its
+ * bounding box at the corners, so a genuinely RECTANGULAR piece — a chocolate bar stood on end —
+ * could clip a corner by a few per cent of its width. The honest alternative is an oriented-box
+ * (SAT) test, which is exact for a bar and WRONG for everything else: the corners of a rose's box
+ * are empty air, and over-counting them is the same mistake `CLEARANCE_FRACTION` was cut from 1.15
+ * to 0.65 to undo. Most decorations are organic, so the capsule is the better default; a boxy piece
+ * that proves to need it can declare so on its row, as a measured change.
+ */
+export function footprintCapsule(fp, x = 0, z = 0) {
+  const a = Math.max(fp?.a ?? 0, 0), b = Math.max(fp?.b ?? 0, 0);
+  const alongX = a >= b;
+  const r = alongX ? b : a;                       // the thin half-extent is the capsule's radius
+  const halfLen = Math.max((alongX ? a : b) - r, 0);
+  // The footprint's local +x in world is Ry(yaw)·(1,0,0) = (cos yaw, −sin yaw) in (x, z); a
+  // footprint that is longer across its z uses the perpendicular.
+  const yaw = fp?.yaw ?? 0;
+  const ax = alongX ?  Math.cos(yaw) : Math.sin(yaw);
+  const az = alongX ? -Math.sin(yaw) : Math.cos(yaw);
+  return { x, z, ax, az, halfLen, r };
+}
+
+// Closest points on two segments in the surface plane. Clamped projection, then a short exchange —
+// enough for two segments, and it is exact when either degenerates to a point (which is the common
+// case here: almost everything on a cake is round).
+function closestOnSegments(A, B) {
+  const pt = (C, t) => ({ x: C.x + C.ax * t, z: C.z + C.az * t });
+  const clamp = (C, t) => Math.max(-C.halfLen, Math.min(C.halfLen, t));
+  const proj = (C, p) => clamp(C, (p.x - C.x) * C.ax + (p.z - C.z) * C.az);
+  let p = pt(A, 0), q = pt(B, proj(B, p));
+  for (let i = 0; i < 3; i++) { p = pt(A, proj(A, q)); q = pt(B, proj(B, p)); }
+  return { p, q };
+}
+
+/* How far `self` must move so it rests against `sib` instead of through it — {dx, dz}, zero when
+ * they are already clear. The direction is between the CLOSEST POINTS, not between the centres, so
+ * a leaf pushed off a rose slides along the rose rather than being flung down the line of middles.
+ * Dead centre on top of each other (no direction to be had) falls back to the centre line, and then
+ * to +x, so a piece dropped exactly onto another still comes apart. */
+export function separationPush(self, sib) {
+  const need = self.r + sib.r;
+  const { p, q } = closestOnSegments(self, sib);
+  const dx = p.x - q.x, dz = p.z - q.z;
+  let d = Math.hypot(dx, dz);
+  if (d >= need) return { dx: 0, dz: 0 };
+  // The direction and the distance are worked out separately on purpose: when the two touch exactly
+  // (d = 0) there is a distance to close but no direction in it, and folding the two together is how
+  // a fallback direction of length 1 silently became a distance of 1 and pushed the wrong way.
+  let ux, uz;
+  if (d > 1e-6) { ux = dx / d; uz = dz / d; }
+  else {
+    const cx = self.x - sib.x, cz = self.z - sib.z, cd = Math.hypot(cx, cz);
+    if (cd > 1e-6) { ux = cx / cd; uz = cz / cd; } else { ux = 1; uz = 0; }
+    d = 0;
+  }
+  return { dx: ux * (need - d), dz: uz * (need - d) };
+}
+
+export function surfaceOccupants(stickers, { tierIndex, zone, radiusOf = () => null, skipId = null } = {}) {
+  return (stickers ?? [])
+    .filter(s => s.id !== skipId && s.tierIndex === tierIndex && s.zone === zone
+                 && s.x != null && s.z != null)
+    .map(s => ({ x: s.x, z: s.z, r: occupantRadius(s, radiusOf(s)), id: s.id }));
+}
+
 export function deOverlapSeat(shape, zone, pos, siblings, step = STICKER_SIZE) {
   const isSide = zone === ZONES.SIDE || zone === ZONES.MIDDLE_TIER;
   if (isSide && pos.u != null) {

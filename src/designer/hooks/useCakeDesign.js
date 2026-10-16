@@ -153,6 +153,11 @@ export function toCanvasConfig(design) {
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
+        /* ⚠️ A TIER IS REBUILT FROM THIS LIST, so a field missing here simply never reaches the
+           canvas — the state is right, the card is right, and nothing draws. The coat lost a day to
+           it and the gypsophila rim ring lost an hour: the board ring rendered (it is a design-level
+           field and bypasses this) while the tier's did not, which is the shape of the clue. */
+        gyp:          t.gyp ?? null,            // gypsophila dressing this tier's rim or top
         // ⚠️ FORWARDED HERE OR IT NEVER RENDERS — the same line stripes needed. The canvas reads
         // this config, not the design.
         rainbows:     t.rainbows ?? [],          // fondant arches standing on/against THIS tier
@@ -170,6 +175,7 @@ export function toCanvasConfig(design) {
         creamLayers:   t.creamLayers ?? [],   // raised two-tone bands (second cream layer)
         topCavity:     t.topCavity ?? null,   // scraped edge: cream heaped at the top rim, lower in the middle
         topSpiral:     t.topSpiral ?? null,   // the turntable knife mark coiling across that middle
+        wafer:         t.wafer ?? null,      // a skirt of pleated wafer-paper sheets round the wall
         brushBand:     t.brushBand ?? null,   // a ring of palette-knife brushstrokes round this tier's wall
         brushStrokes:  t.brushStrokes ?? [],  // and the ones drawn by hand, each its own piece
         ...(!isRound && { shape: t.shape, width, depth, cornerR: t.cornerR ?? 0 }),
@@ -180,6 +186,7 @@ export function toCanvasConfig(design) {
     stickers: design.stickers ?? [],
     writings: normalizeWritings(design),
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
+    boardGyp: design.boardGyp ?? null,       // gypsophila ringing the foot of the cake
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
     garnishes: design.garnishes ?? [],
@@ -242,6 +249,12 @@ const DEFAULT_WRITING = {
   thickness: 0.03, fit: WRITING_FIT.cream, softness: 0.7,
   curve: 0, lineSpacing: 1.4,
   surface: 'top',            // 'top' | 'side' | 'board'
+  /* ⚠️ THE ELEMENT THIS MESSAGE IS WRITTEN ON, when it is not written on the cake. `null` for every
+     message that exists today, and an absent key must keep meaning the cake — a saved design whose
+     "Happy Birthday" silently moved onto a rainbow would be somebody's ordered cake. Shape:
+     `{ kind, tierIndex, id }` — `kind` names the host's family (its text path is keyed off it, see
+     geometry/textPath.js), `id` the instance on that tier. */
+  on: null,
   yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,
   boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
   /* Side placement: where round the cake, and how high. ⚠️ The TIER is not stored — it is resolved
@@ -360,6 +373,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     // The board's own finishes — a grass ring at the cake's foot, a name in fondant cubes. Both were
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
+    boardGyp: templateDesign.boardGyp ?? null,
     nameBlocks: templateDesign.nameBlocks ?? null,
   };
 }
@@ -462,6 +476,24 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index
         ? { ...t, topSpiral: changes === null ? undefined : { ...(t.topSpiral ?? {}), ...changes } }
+        : t),
+    }));
+  }
+
+  /* ── Wafer paper ──────────────────────────────────────────────────────────────────────────────
+   *
+   * A skirt of cut, pleated sheets stood round the wall. Same shape as `setTierSpiral` above: ONE
+   * object on the tier, merged with what is already there, and `null` to take it off.
+   *
+   * ⚠️ A TIER TREATMENT, NOT A LIST OF PLACED PIECES. Every panel in the skirt is derived from the
+   * same handful of numbers — the count, the pleat, the seed — so storing thirty panels would be
+   * storing the output instead of the design, and a template could then no longer re-cut them for a
+   * different tier size. Exactly the argument the brushstroke band below makes for itself. */
+  function setTierWafer(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index
+        ? { ...t, wafer: changes === null ? undefined : { ...(t.wafer ?? {}), ...changes } }
         : t),
     }));
   }
@@ -825,6 +857,41 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   // Same contract as updateBoardGrass — `changes` may be a function of this tier's current grass.
+  /* ── Gypsophila ───────────────────────────────────────────────────────────────────────────────
+   *
+   * The same shape as grass above, and deliberately so: one object on the tier, `null` to take it
+   * off, plus one at design level for the board. A cloud of a few hundred sprigs is derived from a
+   * handful of numbers — the band, the spacing, the seed — so storing the sprigs would be storing
+   * the output instead of the design, and a template could no longer re-cut them for a different
+   * tier size. Exactly the argument grass and the wafer skirt both make for themselves.
+   *
+   * ⚠️ `where` IS ON THE OBJECT, not a second field beside it. "On the rim", "on the board" and
+   * "I'll arrange it" are three answers to one question, and a baker who switches between them
+   * keeps the colours and the sprig they had chosen. */
+  function setTierGyp(index, gyp) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, gyp } : t),
+    }));
+  }
+
+  function updateGyp(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.gyp)
+        ? { ...t, gyp: { ...t.gyp, ...(typeof changes === 'function' ? changes(t.gyp) : changes) } }
+        : t),
+    }));
+  }
+
+  function setBoardGyp(gyp) { setDesign(prev => ({ ...prev, boardGyp: gyp })); }
+
+  function updateBoardGyp(changes) {
+    setDesign(prev => (prev.boardGyp
+      ? { ...prev, boardGyp: { ...prev.boardGyp, ...(typeof changes === 'function' ? changes(prev.boardGyp) : changes) } }
+      : prev));
+  }
+
   function updateGrass(index, changes) {
     setDesign(prev => ({
       ...prev,
@@ -1767,12 +1834,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
 
   return {
     design,
-    setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
+    setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setTierGyp, updateGyp, setBoardGyp, updateBoardGyp,
     setTierRainbows, updateTierRainbows, updateTierClouds,
     updateTierBalloons,
     setNameBlocks, updateNameBlocks,

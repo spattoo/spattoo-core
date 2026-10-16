@@ -19,7 +19,7 @@ import { SceneLights, SceneEnv, CakePreview } from '../src/designer/canvas/CakeC
    written to end and whose cost it already lists. Side-effect import; see that file. */
 import './scene.js';
 
-import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
+import { creamMaterialProps, BRUSH_CREAM_SOFTNESS } from '../src/designer/geometry/creamMaterial.js';
 
 /* ── Brushstrokes painted on a cake wall ─────────────────────────────────────────────────────────
  *
@@ -33,6 +33,23 @@ import { creamMaterialProps } from '../src/designer/geometry/creamMaterial.js';
  * the wrong relief and relief is the entire subject.
  */
 const P = new URLSearchParams(location.search);
+
+/* ⚠️ A MATERIAL OVERRIDE, FOR SWEEPING ONLY. Sandeep: *"cream strokes look so dull, so matte, not
+ * like a cream. can we improve it?"* `creamMaterialProps` is THE answer to what cream looks like
+ * and this does not become a second one — the override exists so a sweep can ask "what would 0.6
+ * roughness do" without editing the shared function and re-reading it off a screenshot. Whatever
+ * the sweep settles on goes INTO creamMaterialProps; nothing in the product reads these.
+ * ?rough= ?spec= ?sheen=  — absent means the real material, unchanged. */
+const MAT = (base) => ({
+  ...base,
+  ...(P.has('rough') ? { roughness: +P.get('rough') } : null),
+  ...(P.has('spec')  ? { specularIntensity: +P.get('spec') } : null),
+  /* ⚠️ THE SHEEN COLOUR COMES WITH IT. three.js defaults sheenColor to BLACK, so overriding the
+     strength alone would sweep a lobe that adds no light and report that sheen does nothing —
+     `check:sheen-colour` catches exactly this, and caught it here. The base's colour is already the
+     calibrated albedo; carry it through. */
+  ...(P.has('sheen') ? { sheen: +P.get('sheen'), sheenColor: base.sheenColor } : null),
+});
 const R = 1, TIER_H = 1.25, BOARD_R = 1.5, BOARD_H = 0.07;
 const WEIGHTS = (P.get('weights') ?? '0,0.25,0.5,0.75,1').split(',').map(Number);
 const WIDTH = +(P.get('width') ?? D.width);
@@ -106,7 +123,7 @@ function Stroke({ at, weight, color, seed, idx }) {
           almost on the wall, and over a long grazing sweep the depth buffer loses: the wall punches
           through in stripes, which is what "breaking at extreme sweep" was. */}
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, color)} color="#ffffff" vertexColors />
+        polygonOffsetUnits={-1} {...MAT(creamMaterialProps(BRUSH_CREAM_SOFTNESS, color))} color="#ffffff" vertexColors />
     </mesh>
   );
 }
@@ -162,7 +179,7 @@ function Band() {
         ? <meshBasicMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
             polygonOffsetUnits={-1} color="#ffffff" vertexColors />
         : <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-            polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors
+            polygonOffsetUnits={-1} {...MAT(creamMaterialProps(BRUSH_CREAM_SOFTNESS, part.color))} color="#ffffff" vertexColors
             {...(P.has('nospec') ? { specularIntensity: 0 } : null)}
             {...(P.has('nosheen') ? { sheen: 0 } : null)}
             {...(P.has('noenv') ? { envMapIntensity: 0 } : null)} />}

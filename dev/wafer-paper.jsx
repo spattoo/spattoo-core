@@ -18,7 +18,8 @@ import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import { buildWaferSkirt, WAFER_DEFAULTS } from '../src/designer/geometry/waferPaper.js';
-import { WAFER_PAPER_MATERIAL, waferFibreTexture } from '../src/designer/geometry/waferPaperMaterial.js';
+import { WAFER_PAPER_MATERIAL } from '../src/designer/geometry/waferPaperMaterial.js';
+import WaferPaperMaterial from '../src/designer/canvas/WaferPaperMaterial.jsx';
 
 /* ── Does it read as wafer paper? Open /wafer-paper.html ─────────────────────────────────────────
  *
@@ -68,14 +69,17 @@ const REFS = {
 };
 
 function Skirt({ shape, p }) {
-  // One texture for the whole skirt, rebuilt only when the grain strength changes.
-  const fibre = useMemo(() => waferFibreTexture({ strength: p.fibre }), [p.fibre]);
   const geom = useMemo(() => buildWaferSkirt({
     shape, tierHeight: TIER.height, radius: TIER.radius,
     count: p.count, width: p.width, height: p.height, rise: p.rise, taper: p.taper,
     ripple: p.ripple, ripples: p.ripples, sway: p.sway, sways: p.sways,
-    curl: p.curl, splay: p.splay, lean: p.lean,
+    curl: p.curl, splay: p.splay, lean: p.lean, glue: p.glue,
     jitter: p.jitter, hem: p.hem, notch: p.notch, seed: p.seed,
+    ao: p.ao, aoFocus: p.aoFocus, aoFloor: p.aoFloor, aoOpenTop: p.aoOpenTop, fin: p.fin, finAngle: p.finAngle,
+    /* ⚠️ `ao` HAS TO BE HERE OR IT CANNOT BE SWEPT. This list is explicit, so a knob missing from it
+       silently takes WAFER_DEFAULTS and two different ?ao= values render identically — which they
+       did, and the measurement said so before the eye could. */
+    ao: p.ao,
     shingle: p.shingle, nest: p.nest,
     meander: p.meander, meanders: p.meanders, skew: p.skew, meanderLaps: p.meanderLaps,
   }), [shape, p]);
@@ -90,17 +94,15 @@ function Skirt({ shape, p }) {
           had two overlapping panels the same flat pink instead of getting denser where they cross.
           `alpha` is kept as a SEPARATE mode so the two can be compared rather than argued about. */}
       {p.alpha ? (
+        /* ⚠️ A DIAGNOSTIC, NOT THE MATERIAL. `transparent` + `opacity` puts the mesh on the
+           alpha-blended path and throws the transmission away — two overlapping panels come out
+           the same flat colour instead of getting denser where they cross. Kept as its own mode so
+           the two can be compared rather than argued about, and deliberately NOT the shared
+           component: `?alpha=1` is how you see what transmission is worth. */
         <meshStandardMaterial color={p.colour} side={THREE.DoubleSide} roughness={p.roughness}
-          transparent opacity={p.opacity} />
+          vertexColors={!!geom.attributes.color} transparent opacity={p.opacity} />
       ) : (
-        <meshPhysicalMaterial
-          color={p.colour} side={THREE.DoubleSide}
-          roughness={p.roughness} transmission={p.transmission}
-          thickness={p.thickness} ior={WAFER_PAPER_MATERIAL.ior}
-          sheen={p.sheen} sheenRoughness={WAFER_PAPER_MATERIAL.sheenRoughness}
-          sheenColor="#ffffff" specularIntensity={p.specular}
-          roughnessMap={p.fibre > 0 ? fibre : null}
-          metalness={0} />
+        <WaferPaperMaterial p={p} geometry={geom} />
       )}
     </mesh>
   );
@@ -113,7 +115,8 @@ function fromUrl() {
   const q = new URLSearchParams(location.search);
   const out = {};
   for (const [k, v] of q) {
-    if (k === 'hem' || k === 'colour' || k === 'bg' || k === 'cake') { out[k] = v; continue; }
+    if (k === 'hem' || k === 'colour' || k === 'bg' || k === 'cake' || k === 'cam') { out[k] = v; continue; }
+    if (k === 'fin') { out.fin = v === '1' || v === 'true'; continue; }
     const n = Number(v);
     if (Number.isFinite(n)) out[k] = n;
   }
@@ -125,7 +128,14 @@ export default function Harness() {
   const [shapeKey, setShapeKey] = useState('round');
   const [p, setP] = useState(() => {
     const base = PRESETS[new URLSearchParams(location.search).get('preset') || 'white waves'];
-    return { ...WAFER_DEFAULTS, ...base, seed: 7, roughness: 0.92, transmission: 0.35,
+    /* ⚠️ THE MATERIAL IS SPREAD IN, NOT RETYPED. This line used to say `roughness: 0.92,
+       transmission: 0.35` — a third copy of the material, and the transmission was less than half
+       what the cake uses (0.82). Everything it did not name (sheen, thickness, specular, grain)
+       reached the material as `undefined` and silently took three.js's own defaults, so the
+       harness ran with NO sheen and NO grain while both other surfaces had them.
+       ⚠️ THE `ao` CALIBRATION WAS DONE IN HERE AT transmission 0.35, against a material the cake
+       never had. The contrast numbers in WAFER_DEFAULTS are worth re-reading, not trusting. */
+    return { ...WAFER_DEFAULTS, ...WAFER_PAPER_MATERIAL, ...base, seed: 7,
              physical: true, ...fromUrl() };
   });
   const set = (k) => (v) => setP(o => ({ ...o, [k]: v }));
@@ -198,7 +208,14 @@ export default function Harness() {
       </div>
 
       <div style={{ flex: 1, position: 'relative', background: p.bg || '#efe7e2' }}>
-        <Canvas shadows camera={{ position: [0, 2.2, 5.0], fov: 40 }}
+        {/* ⚠️ `?cam=high` LOOKS INTO THE RIM, and that view is not a nicety. The default camera is
+            roughly eye level with the wall, where the crown gap is seen at a glance; from above you
+            meet it head-on, and that is where Sandeep saw the shading clip to black while every
+            measurement taken from the default angle said it never went below 56. A probe that
+            cannot reach the complaint reports a misleading clean. */}
+        <Canvas shadows fov={40}
+          camera={{ position: p.cam === 'top' ? [0, 6.2, 1.4]
+                             : p.cam === 'high' ? [0, 4.4, 3.2] : [0, 2.2, 5.0], fov: 40 }}
           gl={{ preserveDrawingBuffer: true }} style={{ position: 'absolute', inset: 0 }}>
           <color attach="background" args={[p.bg || '#efe7e2']} />
           {/* THE shared rig — see dev/grass.jsx and INVARIANTS #17. A harness lit differently from
@@ -208,7 +225,11 @@ export default function Harness() {
               the sheets, and that is most of what separates one panel from the next on a white cake.
               The harness ran without it while the admin studio had it, so the two were not the same
               scene and I was judging from the wrong one. */}
-          <SceneLights shadows />
+          {/* ⚠️ `?shadows=0` IS A DIAGNOSTIC, not a setting. A pleated sheet is thin and drawn
+              DoubleSide, which is the shape a shadow map is worst at: the same surface both casts
+              and receives, so bias errors land as grey smears ON the paper rather than as shadow
+              between the sheets. Turning the map off is how you tell a smear from an occlusion. */}
+          <SceneLights shadows={p.shadows !== 0} />
           <SceneEnv />
 
           {shapeKey === 'round' ? (

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { pipingPlacementFromConfig, pipingAllowedArrangements, pipingDefaultArrangement } from './pipingLayer.js';
+import { pipingPlacementFromConfig, pipingAllowedArrangements, pipingDefaultArrangement, occupiesRimBand } from './pipingLayer.js';
 
 /* ── An element is authored PER SURFACE, and the pen draws on both ───────────────────────────────
  *
@@ -181,5 +181,39 @@ describe('side_rotation', () => {
   it('is a BOTTOM-surface key — the rim branch does not carry it', () => {
     const p = pipingPlacementFromConfig({ side_rotation: [90, 0, 0] }, true);
     expect(p.sideRotation).toBeUndefined();
+  });
+});
+
+/* ⚠️ THE NESTING RULE NEEDS TO KNOW WHAT IS ACTUALLY IN THE WAY. Rim layers step inward by the
+ * measured width of what is already on the rim — and a chocolate drip, which hangs down the OUTSIDE
+ * of the wall, is not on it. Worse, it carries no `glbUrl`, so the extents lookup misses and hands
+ * back a FALLBACK band about `radius × 0.7` wide. On a 0.35 tier that is 0.245, which is why the
+ * first ring added to a cake with a drip arrived at -0.25 — in the middle of the lid — instead of
+ * flush with the edge at 0. */
+describe('occupiesRimBand — what a new rim ring has to nest inside', () => {
+  it('a drip occupies no band on the top: it hangs outside the wall', () => {
+    expect(occupiesRimBand({ drip: true })).toBe(false);
+    expect(occupiesRimBand({ drip: true, glbUrl: null, userRadialOffset: 0 })).toBe(false);
+  });
+
+  it('an ordinary shell ring does', () => {
+    expect(occupiesRimBand({ drip: false, glbUrl: 'shell.glb' })).toBe(true);
+    expect(occupiesRimBand({ glbUrl: 'shell.glb' })).toBe(true);   // absent drip flag → a real ring
+  });
+
+  it('a wrap band is left alone — not this change\'s question', () => {
+    expect(occupiesRimBand({ wrap: true, glbUrl: 'band.glb' })).toBe(true);
+  });
+
+  it('is false for nothing at all, so a filter never throws on a sparse array', () => {
+    expect(occupiesRimBand(null)).toBe(false);
+    expect(occupiesRimBand(undefined)).toBe(false);
+  });
+
+  /* The whole point, stated as the caller states it: a rim carrying only a drip must read as EMPTY,
+     so the first real ring lands flush at 0. */
+  it('a rim holding only a drip filters down to no rings at all', () => {
+    const rim = [{ drip: true }, { drip: true }];
+    expect(rim.filter(occupiesRimBand)).toHaveLength(0);
   });
 });

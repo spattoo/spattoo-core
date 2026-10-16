@@ -321,7 +321,20 @@ CAT_ELEMENTS.push({
      swept section is built from that mesh. A CAT_THUMB data-URI here handed an SVG to the GLB
      loader: four "Unexpected token '<'" errors per open. Same mistake shape as photo `mask`, which
      is a mask IMAGE url. The THUMBNAIL is the picture; image_url is the geometry. */
-  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
+  /* ⚠️ `?shell=1` SWAPS IN THE REAL CLASSIC SHELL BORDER, and the stand-in is why a bug could not be
+     reproduced. `sample-rosette.glb` is near-spherical (1.0 x 0.8 x 0.9) and seats flush with the
+     rim, so its side band's outward reach is ~0 — an edge-seated piece next to it is pushed out by
+     nothing. The catalogue's Classic Shell Border is a long shell that OVERHANGS, and its band is
+     what shoves a ribbon off the cake. A satin bow floating in mid-air reproduced on the first try
+     with this flag and not once in five attempts without it.
+     ⚠️ THE FLAG WAS DOCUMENTED BEFORE IT EXISTED — `?bow=1`'s own comment has said "add `&shell=1`
+     for a border on the same wall to clear" since the ribbon seat was written, and there was no
+     `PARAMS.has('shell')` anywhere in this file. Reaching it through vite's `/cdn` proxy, so the
+     bytes are the live ones and nothing here can go stale. */
+  image_url: PARAMS.has('shell')
+    ? '/cdn/elements/files/3D/b87330d0-fc0b-475f-a87c-1ea1d22caa40.glb'
+    : '/sample-rosette.glb',
+  thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
   allowed_zones: ['rim', 'board'],
   /* ⚠️ `gradient: true`, because the real row has it and this one did not — so the whole
      multi-colour editor (stops, Swirl/Vertical/Linear, and now Alternating) was unreachable in the
@@ -339,7 +352,11 @@ CAT_ELEMENTS.push({
      one attitude for a rim and ANOTHER for a wall, and the pen used to take the rim's for both. With
      `top_rotation` absent, hand-piping on the side looked fine in the harness and lay face-down in
      the app. A fixture that disagrees with the row proves the wrong thing, confidently. */
-  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true,
+  /* ⚠️ `can_coat`, because without it the "Cover the cake" block does not render and the coat —
+     with its three scopes, its ombré, and the tap-the-roses-to-get-the-card-back path — was
+     unreachable in the harness. Same gap `hand_piping` and `gradient` above were added to close:
+     a fixture that cannot express the feature cannot show the bug in it. */
+  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true, can_coat: true,
                       top_surface: 'hug', rim: 'hug', side: 'hug',
                       top_rotation: [0, 0, 0], bottom_rotation: [-89, -174, -180] },
   default_color: '#F5E6C8', sort_order: 16,
@@ -348,7 +365,14 @@ CAT_ELEMENTS.push({
 CAT_ELEMENTS.push({
   id: 'e15', name: 'Faux ball', description: 'a metallic ball you can scatter into a cluster',
   element_type_id: 'et-topper', category_id: 'cat-1',
-  image_url: CAT_THUMB('#c9a227'), thumbnail_url: CAT_THUMB('#c9a227'), thumb_key: null,
+  /* ⚠️ A GLB, NOT A THUMB, and the SVG that was here made this row untestable. A faux ball is a
+     SPHERE — the real row's image_url is a ball model — and with a flat SVG data URI the harness
+     rendered a billboarded plane the size of a thumbnail, which at the cluster's seats came out
+     invisible: nine stickers in `__getStickers()` and nothing on the cake. A click test written on
+     that fixture reports "the ball is not clickable" about a ball that was never drawn, which is
+     exactly what it did report. `sample-rosette.glb` measures 1.0 x 0.8 x 0.9 — near-spherical,
+     already in dev/, and its blobbiness is the point here rather than a limitation. */
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#c9a227'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, duplicate: true },
   placement_config: { cluster: true, r: 0.5, scale: { max: 3, min: 0.3, step: 0.05 },
@@ -371,6 +395,26 @@ CAT_ELEMENTS.push({
  * offsetX: 0.71 are the FALLING RIGHT shape", so a row authoring PART of a shape inherits the rest
  * from a different one and arrives as a shape none of the six tiles can produce. Authoring nothing
  * lets the arrangement logic decide, which is what a real row should do too. */
+/* ⚠️ A REAL ROW, because the card only exists for an element the catalogue offers. `procedural:
+ * 'gypsophila'` is the VALUE of `procedural` — the key into PROCEDURAL_TOOLS — not a nested key. */
+CAT_ELEMENTS.push({
+  id: 'e-gyp', name: 'Gypsophila', description: "baby's breath, a cloud of tiny blooms",
+  /* ⚠️ `element_type_id` AND `category_id`, not a `category` string. Written with the latter first
+     and the row simply never appeared — the picker groups by the two ids, and a row carrying
+     neither belongs to no group, so nothing renders it and nothing says so. */
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#eef2e6'), thumbnail_url: CAT_THUMB('#eef2e6'),
+  /* ⚠️ THE ZONES THE STUDIO ACTUALLY AUTHORS. `GypsophilaStudio`'s buildPayload writes
+     `allowed_zones: ['top_surface', 'side', 'board']`, and this fixture said `['top_surface']`
+     alone — which stopped mattering only because the card ignored the field entirely. The moment
+     the Where row started deriving from it, the harness would have been testing a row no admin
+     ever saves. A fixture that disagrees with the real row proves the wrong thing. */
+  thumb_key: null, allowed_zones: ['top_surface', 'side', 'board'],
+  allowed_actions: { move: false, delete: true, resize: false },
+  placement_config: { procedural: 'gypsophila' },
+  default_color: '#fdfdfb', sort_order: 42,
+});
+
 CAT_ELEMENTS.push({
   id: 'e24', name: 'Fondant cloud', description: 'a cloud of pressed fondant balls',
   element_type_id: 'et-topper', category_id: 'cat-1',
@@ -387,7 +431,15 @@ CAT_ELEMENTS.push({
   image_url: CAT_THUMB('#f5a3b8'), thumbnail_url: CAT_THUMB('#f5a3b8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
-  placement_config: { procedural: 'rainbow' },
+  /* ⚠️ `text_path` IS WHAT LETS A MESSAGE BE WRITTEN ON THIS ARCH. Every value in it is RELATIVE —
+     a fraction of a band, never a position — because the arch is derived (bandRadius over the row's
+     own numbers) and `fitOnTopScale` shrinks the whole thing to fit a small cake. An authored slot
+     would be left behind by any of that, silently. See geometry/textPath.js. */
+  placement_config: { procedural: 'rainbow',
+    text_path: { kind: 'arch',
+                 band: PARAMS.get('tband') || undefined,
+                 size: PARAMS.has('tsize') ? +PARAMS.get('tsize') : undefined,
+                 span: PARAMS.has('tspan') ? +PARAMS.get('tspan') : undefined } },
   default_color: '#f5a3b8', sort_order: 25,
 });
 
@@ -572,7 +624,17 @@ CAT_ELEMENTS.push({
   image_url: CAT_THUMB('#f0d9dd'), thumbnail_url: CAT_THUMB('#f0d9dd'), thumb_key: null,
   allowed_zones: ['top_surface'],
   allowed_actions: { move: true, delete: true, resize: true },
-  placement_config: { procedural: 'card_topper' },
+  /* ⚠️ WITH A PRESET PAYLOAD, LIKE THE REAL ROW. This carried only `procedural: 'card_topper'`,
+     so the harness opened an EMPTY studio — which is a different screen from the one a baker sees
+     when they tap "10" in Decorations, and the only one any check here could reach. The objects
+     carry NO ids on purpose: `topperPresets.js` mints them as they land ("picking the same preset
+     twice cannot produce two objects that share an id"), so a payload authored that way is the
+     shape that actually arrives. Verbatim from the `number` preset. */
+  placement_config: { procedural: 'card_topper',
+                      card_topper: { objects: [
+                        { kind: 'text', text: '10', face: '__block', size: 1.50, x: 0, y: 0,
+                          colour: '#FFFFFF', offset: 0.10, offsetColour: '#E4572E' },
+                      ] } },
   default_color: '#D94F6E', sort_order: 9,
 });
 
@@ -720,6 +782,99 @@ CAT_ELEMENTS.push({
  *
  * ⚠️ `single_per_slot` is what makes it a decorEl card, NOT the element type. A hero places one
  * instance per (tier × surface) through the chooser's checkboxes. */
+/* ⚠️ A HERO THAT MAY GO ON A STICK. `single_per_slot` opens the ELEMENT card, and the stick row was
+ * written for the per-instance sticker popup — so an admin could tick "Can add a stick" on a hero,
+ * save it, place it, and never see a pick. Dead config, and this row is what makes that testable:
+ * it is the only hero in the fixture that asks for one. */
+CAT_ELEMENTS.push({
+  id: 'e35', name: 'Hero on a pick', description: 'a single-per-slot hero that may go on a stick',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#C9A227'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, color: true, delete: true, resize: true, duplicate: false, stick: true },
+  placement_config: { single_per_slot: true, r: 0.7, top_surface: 'stand', side: 'hug', stick: { bury: 0.4 } },
+  default_color: '#C9A227', sort_order: 35,
+});
+
+/* ⚠️ TWO REAL CATALOGUE MODELS, because the DEFECT IS IN THE MEASUREMENT AND A STAND-IN CANNOT
+ * CARRY IT. Every GLB above is `sample-rosette.glb`, which is 1.0 x 0.8 x 0.9 — near-spherical. The
+ * rule that stops a dragged decoration penetrating its neighbours (`occupantRadius`, placement.js)
+ * reads ONE number, `size.x / 2`, and for a near-spherical blob that is right in every direction, so
+ * no fixture here could ever show it being wrong.
+ *
+ * The Gingko leaf is a SHEET: 1.602 x 1.902 x 0.047. Normalised to STICKER_SIZE its half-extents are
+ * 0.118 x 0.140 x 0.0034 — so the circle the rule gives it is 35x its own thickness, and at the
+ * element's own `r: 2` it keeps a 0.236 exclusion zone on an axis where the leaf is 0.0068 thick.
+ * Reported with a screenshot: *"though there is space between gingko leaf and rose, i am not able to
+ * move it near to the rose."*
+ *
+ * Both rows are the LIVE catalogue rows — the same GLB through vite's /cdn proxy, and the same
+ * placement_config, `r` and insert — so what happens here is what happens on a baker's cake.
+ * Reachable only with ?leafrose=1 (two 800KB models is not something every run should fetch). */
+const LEAF_ROSE = PARAMS.has('leafrose');
+if (LEAF_ROSE) {
+  CAT_ELEMENTS.push({
+    id: 'e40', name: 'Gingko leaf', description: 'a real SHEET model — 1.602 x 1.902 x 0.047',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/9e471701-bc50-48d0-bb8c-b4e414501205.glb',
+    thumbnail_url: CAT_THUMB('#C9A227'), thumb_key: null,
+    allowed_zones: ['top_surface', 'side'],
+    allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: { r: 2, scale: { max: 4, min: 1, step: 0.25 }, metalness: 0.9593882001197327,
+      roughness: 0.20649890084011036, ready_made: true, side: 'stand',
+      top_surface: { mode: 'stand', insert: { depth: 0.3, lean_deg: 12, jitter_deg: 0 } } },
+    default_color: null, sort_order: 40,
+  });
+  CAT_ELEMENTS.push({
+    id: 'e41', name: 'Rose', description: 'a real near-spherical model — 1.996 x 1.712 x 1.908',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/98cd9908-783e-40f6-8f54-30fd37889f3a.glb',
+    thumbnail_url: CAT_THUMB('#CD0C10'), thumb_key: null,
+    allowed_zones: ['top_surface', 'side'],
+    allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: { r: 2, scale: { max: 4, min: 1, step: 0.25 }, metalness: 0, roughness: 0.85,
+      ready_made: true,
+      top_surface: { mode: 'stand', insert: { depth: 0.2, lean_deg: 2, jitter_deg: 0.2 } } },
+    default_color: '#CD0C10', sort_order: 41,
+  });
+}
+
+/* ⚠️ A RIBBON TIED AT THE RIM — the real satin bow row, because the fault is in how an EDGE-seated
+ * piece meets the wall and no stand-in carries it. The bow is 1.130 x 1.899 x 0.236; at its own
+ * `r: 4` that is 0.139 deep and 1.12 tall, and a centre-seat verge draws it centred on the rim line,
+ * so 0.070 of it starts inside the cake. Reported with a screenshot: *"in vintage cakes, usually the
+ * satin ribbon is used ot decoration. but in our case its penetrating into cake. if i tilt it, the
+ * falling part is inserting."*
+ * `?bow=1` places it on the rim; add `&shell=1` for a border on the same wall to clear. */
+if (PARAMS.has('bow')) {
+  CAT_ELEMENTS.push({
+    id: 'e42', name: 'satin bow', description: 'a ribbon tied at the rim — the real row',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/85579a66-7a6c-4fc2-9d4d-069d03a48d91.glb',
+    thumbnail_url: CAT_THUMB('#2b2b2b'), thumb_key: null,
+    allowed_zones: ['rim', 'side'],
+    allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: { r: 4, scale: { max: 9, min: 1.6, step: 0.5 }, material: 'satin',
+      metalness: 0, roughness: 0.4,
+      rim: 'verge', side: { mode: 'hug', seat: 'proud' },
+      // The row as it is in the catalogue today. `seat: 'hang'` is what this change adds; flip it
+      // back to 'center' here to see the fault it was reported for.
+      /* ⚠️ `?hang=0` DROPS THE `hang` SEAT, because it is OPT-IN PER ROW and the catalogue row may not
+         carry it. A fixture that always opts in cannot show what a row without it does. */
+      /* ⚠️ `y_offset: 0.27` — POSITIVE, COPIED FROM THE ROW. The fixture was written with -0.27,
+         the opposite sign, and that one character is why a floating bow could not be reproduced:
+         a negative offset drops the bow down the wall where it rests against the icing, a positive
+         one lifts it above the rim where nothing is holding it. This file's own comment warns that
+         "a fixture that disagrees with the row proves the wrong thing, confidently" — it did. */
+      /* `?yoff=` sweeps the row's height nudge, which is a WORLD-UNIT lift (placement.js ->
+         sticker.yOffset), not a fraction of the model. */
+      verge: { ...(PARAMS.get('hang') === '0' ? {} : { seat: 'hang' }),
+               y_offset: PARAMS.has('yoff') ? +PARAMS.get('yoff') : 0.27,
+               angle_deg: -13.5, edge_inset: -0.09 } },
+    default_color: '#1a1a1a', sort_order: 42,
+  });
+}
+
 CAT_ELEMENTS.push({
   id: 'e28', name: 'Fondant crown hero', description: 'a colourable single-per-slot hero',
   element_type_id: 'et-topper', category_id: 'cat-1',
@@ -917,7 +1072,25 @@ const STUBS = {
     { id: 'tpl5', name: 'Unicorn',      tier_count: 1, source: 'global',
       thumbnail_url: '/thumbs/cake5.webp' },
   ]),
-  fetchCakeShapes:     async () => ([]),
+  /* ⚠️ A TWO-TIER SHAPE, because a cake's tier count is a property of the SHAPE ROW and nothing
+     else. `applyCakeShapeConfig` reads `design.tiers` off each row and that stack is what the cake
+     starts as — there is no add-a-tier control in the designer, by design. Stubbing this `[]` left
+     only the built-in round/rect seeds, both single-tier, so EVERY multi-tier behaviour was
+     untestable here: which tier a card opens on, tapping a coat on the lower tier, a rim ring on an
+     upper tier's ledge, occlusion of a lower lid.
+     Shaped like the rows the Cake Shape Studio saves: a self-contained `design` whose tiers carry
+     shapeFamily/shapeConfig and a radius, narrower as it goes up — a 2-tier cake is a wide base and
+     a smaller one resting on it. */
+  fetchCakeShapes:     async () => (PARAMS.has('twotier') ? [{
+    key: 'round-2',
+    label: 'Round · 2 tier',
+    design: {
+      tiers: [
+        { shapeFamily: 'circle', shapeConfig: {}, radius: 1.2, height: 1.45, color: '#f5b8c8' },
+        { shapeFamily: 'circle', shapeConfig: {}, radius: 0.8, height: 1.2,  color: '#f5b8c8' },
+      ],
+    },
+  }] : []),
   fetchMaterials:      async () => ([]),
   fetchTextures:       async () => ([]),
   fetchTextStyles:     async () => ([]),
@@ -1085,6 +1258,35 @@ const rainbow2Design = PARAMS.has('rainbow2') ? {
   ],
 } : null;
 
+/* ── A RUN OF ROSES ALONG THE RIM, the state the gypsophila merge complaint is about ─────────────
+ *
+ * `?rimroses=1`. Sandeep: *"added some roses on rim. now added gypsophila flowers. on the rim, it
+ * should find the gaps between the roses and merge like an arrangement. but it simply skipped the
+ * area where roses are present."*
+ *
+ * ⚠️ SEEDED, NOT TAPPED. Reaching this by script means placing five decorations and then dragging
+ * each onto the rim — and `updateSticker` lands through React state, so a loop that places and then
+ * moves reads the list as it was BEFORE its own earlier calls applied. Three attempts at it stacked
+ * all five roses on one spot and produced plausible-looking numbers for a cake that did not exist.
+ * A seeded design is the state itself, the way `?rainbow2` and `?sidesticker` are.
+ *
+ * ⚠️ AND AT A REAL SIZE. `sample-rosette.glb` measures about 0.063 at scale 1 — a bead — and five
+ * of those clear nothing worth looking at. The roses in the report are a fifth of the cake's radius
+ * each, which is this GLB at about 3.2x. Reproducing the SIZE is most of reproducing the fault. */
+const rimRosesDesign = PARAMS.has('rimroses') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: Array.from({ length: 5 }, (_, k) => {
+    const a = (-0.34 + k * 0.17) * Math.PI;
+    return {
+      id: `rr${k}`, elementId: 'e9', name: 'Rosette', imageUrl: '/sample-rosette.glb',
+      zone: 'top_surface', tierIndex: 0,
+      x: 1.02 * Math.sin(a), z: 1.02 * Math.cos(a), y: 0, scale: 3.2,
+      size: 1, rotation: 0, color: '#c41c1c',
+      allowedActions: { move: true, color: true, delete: true, resize: true },
+    };
+  }),
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -1134,6 +1336,34 @@ const STYLE_KEY = PARAMS.get('style');
  * DB row, so a dev harness with no database cannot name one — but a design tier carries its own
  * geometry (`shapeFamily` + `shapeConfig`, see cakeShapes.js), which is exactly what a row would hand
  * it. `?shape=heart` is therefore the same cake the catalog would build, minus the row. */
+/* ── `?glb=<path>` — render a REAL asset on a real cake ──────────────────────────────────────────
+ *
+ * Swaps the model behind the plain GLB row (`e9`) for any file the dev server can serve, and takes
+ * its placement_config from `?pc=<json>` so the row behaves exactly as the catalogue row does.
+ *
+ * ⚠️ THIS IS THE ONLY WAY TO ANSWER "it looks fine in admin and broken on the cake". Admin's editor
+ * previews a GLB on its own; the designer puts it through fit-scaling, seating, a placement MODE
+ * (hug/stand), material overrides from placement_config and the scene's own lighting. A fixture
+ * built from a made-up model cannot reproduce a fault that belongs to a particular asset, and
+ * downloading a customer's asset into the repo is not an answer either — this takes a path. */
+const DEBUG_GLB = PARAMS.get('glb');
+if (DEBUG_GLB) {
+  const row = CAT_ELEMENTS.find(e => e.id === 'e9');
+  if (row) {
+    row.image_url = DEBUG_GLB;
+    row.name = 'Debug GLB';
+    try { if (PARAMS.get('pc')) row.placement_config = JSON.parse(PARAMS.get('pc')); } catch {}
+    if (PARAMS.get('zones')) row.allowed_zones = PARAMS.get('zones').split(',');
+    /* ⚠️ `?actions=` MATTERS MORE THAN IT LOOKS. The row this borrows is RECOLOURABLE, so the
+       designer neutralises the model's baked colour and tints it — and a model tinted the same
+       pink as the cake reads as see-through. I misdiagnosed exactly that before adding this: the
+       lid was present and pink, not missing. A debug row has to be able to match the row being
+       debugged, or the harness reproduces its own settings instead of the fault. */
+    try { if (PARAMS.get('actions')) row.allowed_actions = JSON.parse(PARAMS.get('actions')); } catch {}
+    if (PARAMS.get('color')) row.default_color = PARAMS.get('color');
+  }
+}
+
 const SHAPE = PARAMS.get('shape') || 'round';
 const shapeTier = SHAPE === 'rect' ? { shape: 'rect', width: 2.4, depth: 1.8 }
   : SHAPE !== 'round' ? { shapeFamily: SHAPE, shapeConfig: {}, width: 2.4, depth: 2.4 }
@@ -1162,5 +1392,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

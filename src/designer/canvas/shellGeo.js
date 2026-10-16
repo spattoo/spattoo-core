@@ -20,7 +20,13 @@ const DEG = Math.PI / 180;
 // have scale configuration?"* It is a real rail — it is why a shell cannot be dragged off a small
 // tier — so it stays, as the value a row gets when it asks for nothing. `placement_config
 // .max_depth` overrides it per element (CLAUDE.md rule 3: every tunable value is DB-overlaid).
-const PIPING_MAX_DEPTH_FRAC = 0.16;
+/* ⚠️ 0.30, RAISED FROM 0.16 — THE OLD VALUE WAS BELOW THE SHELLS WE SHIP. At a tier radius of 1.2 a
+   normally-proportioned shell (as deep as it is tall) renders 0.230 deep at size 1 against a 0.192
+   ceiling, so the authored shell was ALREADY over the cap and the `Math.max` floor below was the
+   only thing in play — which pinned every Size dial at +15% however far the row let it travel.
+   Reported as *"why size control is not working for piping?"* with the card reading 3.25.
+   The rail itself is real and stays: it is what stops a shell being grown off a small tier. */
+const PIPING_MAX_DEPTH_FRAC = 0.30;
 
 // The radial ceiling this row actually authorised, as a fraction of the tier radius.
 function maxDepthFrac(placementConfig) {
@@ -75,13 +81,59 @@ export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 
   // its anchor. This is what makes "top edge touches the rim" exact for tilted shells.
   const m = rotM.clone().multiply(new THREE.Matrix4().makeScale(sc, sc, sc));
   const wbox = geo.boundingBox.clone().applyMatrix4(m);
+  const radialProfile = shellRadialProfile(geo, m, wbox);
   // worldTopY/BotY → vertical reach; worldMaxZ/MinZ → radial reach (local z = the radial axis
   // the renderer places along), both AFTER the tilt, so the editor's clamps match the pixels.
   return {
     geometry: geo, shellScale: sc, bbDepth: bbSize.z, bbWidth: bbSize.x,
+    /* What the Size dial may actually offer on this shell — computed HERE, where the tilted depth
+       the cap measures is already in hand, rather than re-derived by whoever draws the control. */
+    maxSize: maxShellSize(sc1, rbox.max.z - rbox.min.z, radius, placementConfig),
     worldTopY: wbox.max.y, worldBotY: wbox.min.y,
     worldMaxZ: wbox.max.z, worldMinZ: wbox.min.z,
+    radialProfile,
   };
+}
+
+/* How tall the shell is ACROSS its radial band — PROFILE_SAMPLES heights, inner edge to outer.
+ *
+ * ⚠️ A RING IS A DOME, NOT A SHELF, AND TREATING IT AS ONE PUT SPRINKLES IN A CIRCLE. Anything
+ * resting on a rim ring needs to know the height at ITS radius, not the ring's maximum. Measured on
+ * the catalogue Rosette after its authored -85° tilt: the crest sits at 100% in the middle of the
+ * band and falls to 42% at the inner edge and 33% at the outer. A single height for the whole
+ * annulus therefore floats by up to 0.374 — two thirds of the shell's own height — and scattered
+ * pieces only touch along one radius. Sandeep, looking at exactly that: *"why the sprinkles forming
+ * a circle on the cream layer. it should be random."*
+ *
+ * ⚠️ MEASURED HERE, where the tilt and the scale are already resolved. `m` is the same matrix
+ * worldTopY/worldMaxZ come from, so the profile cannot describe a differently-posed shell than the
+ * extents beside it — which is the class of bug that produced the two wrong cuts before this one.
+ *
+ * MAX per slice, not mean: something resting on cream sits on the highest cream under it.
+ */
+const PROFILE_SAMPLES = 16;
+
+export function shellRadialProfile(geo, m, wbox) {
+  const pos = geo.attributes?.position;
+  const span = wbox.max.z - wbox.min.z;
+  if (!pos || !(span > 1e-9)) return null;
+  const out = new Float32Array(PROFILE_SAMPLES).fill(-Infinity);
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i).applyMatrix4(m);
+    let k = Math.floor(((v.z - wbox.min.z) / span) * PROFILE_SAMPLES);
+    if (k < 0) k = 0; else if (k >= PROFILE_SAMPLES) k = PROFILE_SAMPLES - 1;
+    if (v.y > out[k]) out[k] = v.y;
+  }
+  /* An empty slice — a shell with a gap across its depth — takes its neighbour rather than
+     -Infinity, so an interpolation across it can never return a hole. */
+  for (let k = 0; k < PROFILE_SAMPLES; k++) {
+    if (out[k] !== -Infinity) continue;
+    let a = k - 1; while (a >= 0 && out[a] === -Infinity) a--;
+    let b = k + 1; while (b < PROFILE_SAMPLES && out[b] === -Infinity) b++;
+    out[k] = a >= 0 ? out[a] : (b < PROFILE_SAMPLES ? out[b] : wbox.max.y);
+  }
+  return out;
 }
 
 /* Where a ring's shells actually sit, given the surface they anchor to.
@@ -102,8 +154,28 @@ export function buildShellGeo(scene, flip, radius, sizeFactor, tiltDeg = [0, 0, 
  * `DecorationShells` got this in 47723762 (`seatMinY`); the cream path did not, so the two render
  * paths disagreed about where a tilted ring sits.
  */
-export function ringBaseY(anchorY, A) {
-  return anchorY - (A?.worldBotY ?? 0);
+/* ── Where a ring's shells SIT, vertically ───────────────────────────────────────────────────────
+ *
+ * The shell's ORIGIN goes on the surface. `extractGeo` seats geometry at min Y, so for an upright
+ * shell that is its base, which is what everyone means by "resting on the rim".
+ *
+ * ⚠️ IT USED TO SUBTRACT `worldBotY` — the post-tilt lowest point — AND THAT IS WHAT MADE A TILTED
+ * RING FLOAT. `PipingCalibrator.jsx` seats on `anchorY + yOffset` and nothing else, so the lift was
+ * a number admin could never show. Measured on Classic Shell Border: at `top_rotation [-68,_,175]`
+ * the cake put the origin 0.2915 above where the calibrator put it — 20% of the tier radius. The
+ * ring hung in the air, and Sandeep recalibrated the row to `[-102,_,0]` to chase it: the gap only
+ * narrowed to 0.2227, because `top_y_offset` is ADDED before the lift and so can never cancel it.
+ * *"classic shell is still floating."*
+ *
+ * ⚠️ THE TRADE IS DELIBERATE AND IT IS THE RIGHT WAY ROUND. A shell rotated past upright has
+ * geometry below its own origin, and that part now dips below the rim. That is a per-element
+ * matter, and `top_y_offset` fixes it — WHICH IS THE POINT: the calibrator seats the same way, so
+ * what an admin dials there is what the cake does. Lifting every tilted ring by its own bounding
+ * box instead was a rule nobody could see, tune, or override.
+ *
+ * The radial seat follows the same principle — see the note in CakeTier beside `seatHalfDepth`. */
+export function ringBaseY(anchorY) {
+  return anchorY;
 }
 
 // Cap the user-scaled shell scale so its rendered radial depth (bbDepthZ × scale) never exceeds
@@ -115,8 +187,26 @@ export function ringBaseY(anchorY, A) {
 // byte-identical to before — that is deliberate, so no cake anyone has already approved moves — but
 // a row that needs a deeper shell can now say so instead of being silently clipped.
 export function capShellScale(sc1, sizeFactor, bbDepthZ, radius, placementConfig = null) {
+  return sc1 * Math.min(sizeFactor, maxShellSize(sc1, bbDepthZ, radius, placementConfig));
+}
+
+/* The largest Size a row can actually DELIVER on this shell — the cap expressed in the dial's own
+ * units, so the control can be bounded by it instead of advertising travel the renderer throws
+ * away. A dial whose top two thirds do nothing is a dead control (INVARIANTS #11), and the whole
+ * point of #8 is that a control means what its name says.
+ *
+ * ⚠️ IT IS RADIUS-INDEPENDENT, which is why one number serves every tier. `sc1` is proportional to
+ * the radius and so is the depth ceiling, so the ratio cancels: max(1.15, max_depth·height /
+ * (SHELL_HEIGHT_FRAC·depth)). The radius is still taken as an argument because the two terms are
+ * written the way the cap computes them, and a "simplification" that drops it is how the dial and
+ * the renderer would start disagreeing again.
+ *
+ * ⚠️ ONE FUNCTION, called by the cap itself — not a second copy of the arithmetic. That is the
+ * mistake this bug is made of: the card computed the range from the row and the renderer computed
+ * a different ceiling, and neither knew about the other. */
+export function maxShellSize(sc1, bbDepthZ, radius, placementConfig = null) {
   const maxSc = Math.max(sc1 * 1.15, (radius * maxDepthFrac(placementConfig)) / bbDepthZ);
-  return Math.min(sc1 * sizeFactor, maxSc);
+  return maxSc / sc1;
 }
 
 // The tier WALL perimeter a wrap band follows: a circle for round, the rounded-rect for sheet.

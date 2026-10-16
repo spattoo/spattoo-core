@@ -161,3 +161,46 @@ describe('single-mode dy — per-piece height', () => {
     expect(at([{ id: 'a', angle: 2 }])[0].pos[1]).toBeCloseTo(baseY, 9);
   });
 });
+
+/* ── The ring follows the shell ───────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"why size control is not working for piping? … and how do we ensure the ring is
+ * uniform with increased/decreased piping shell size"*. Two questions with one answer: `step` IS
+ * the rendered instance width, so the count is a function of the shell's scale and the ring is
+ * then divided evenly. Nothing keeps it uniform — it cannot be anything else.
+ *
+ * What was broken was upstream: `capShellScale` pinned the scale at +15%, so the count was frozen
+ * too (26 shells at size 1.25, at 2.50 and at 3.25 alike). This pins the relationship itself, so a
+ * future cap bug shows up here as a flat count rather than as a baker's screenshot.
+ */
+describe('ring count tracks the rendered shell', () => {
+  const R = 1.2, BBW = 0.9, BBD = 0.8;
+  const ring = (shellScale) => ringPositions({
+    A: { shellScale, bbWidth: BBW, bbDepth: BBD }, radius: R, off: -0.1, baseY: 1, arrangement: 'ring',
+  });
+
+  it('puts fewer, wider-spaced shells on the ring as the shell grows', () => {
+    const scales = [0.288, 0.3168, 0.36, 0.4032, 0.4493];
+    const counts = scales.map(s => ring(s).length);
+    for (let i = 1; i < counts.length; i++) {
+      expect(counts[i], `scale ${scales[i]}`).toBeLessThan(counts[i - 1]);
+    }
+    expect(counts[0]).toBe(30);
+    expect(counts.at(-1)).toBe(19);
+  });
+
+  it('spaces them evenly whatever the size — the gap is one shell wide', () => {
+    for (const s of [0.288, 0.36, 0.4493]) {
+      const pts = ring(s);
+      const gaps = pts.map((p, i) => {
+        const q = pts[(i + 1) % pts.length];
+        return Math.hypot(p.pos[0] - q.pos[0], p.pos[2] - q.pos[2]);
+      });
+      const lo = Math.min(...gaps), hi = Math.max(...gaps);
+      expect(hi - lo, `scale ${s} evenness`).toBeLessThan(1e-9);
+      // and that gap tracks the shell's own width (0.9 of it — the deliberate overlap)
+      expect(lo).toBeGreaterThan(s * BBW * 0.75);
+      expect(lo).toBeLessThan(s * BBW * 1.05);
+    }
+  });
+});

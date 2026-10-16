@@ -36,6 +36,29 @@ export function getShellExtents(glbUrl, flip, size) {
     ?? { topFrac: SHELL_HEIGHT_FRAC * (size ?? 1), botFrac: 0, radialOutFrac: 0, radialInFrac: -SHELL_HEIGHT_FRAC * (size ?? 1), outerFrac: 0 };
 }
 
+// ── The largest Size this shell can actually reach ──────────────────────────────
+// The renderer caps a shell's growth at the row's radial rail (`capShellScale`), and the card's
+// Size dial took its range from the row alone — so a row authoring 0.5–3.25 drew a dial whose top
+// two thirds did nothing. Reported as "why size control is not working for piping?".
+//
+// ⚠️ THE SAME SEAM THE EXTENTS USE, for the same reason: only the canvas has measured the shell,
+// and only the card draws the control. A second copy of the cap arithmetic in CakeDesigner is
+// exactly the drift this bug is made of.
+//
+// Radius-independent (see `maxShellSize`), so one value serves every tier a cake has.
+const measuredSizeCap = new Map();
+export function setShellSizeCap(glbUrl, flip, cap) {
+  if (glbUrl && Number.isFinite(cap)) measuredSizeCap.set(`${glbUrl}|${flip ? 1 : 0}`, cap);
+}
+// `null` when this shell has not rendered yet — the caller keeps the row's own range until it has,
+// so a dial never narrows on the strength of a measurement that does not exist.
+export function getShellSizeCap(glbUrl, flip) {
+  return measuredSizeCap.get(`${glbUrl}|${flip ? 1 : 0}`) ?? null;
+}
+/* What has actually been measured, for a probe. A cap that silently never arrives leaves the dial
+   on the row's range — the exact failure this whole change is about — so it has to be visible. */
+export function shellSizeCapKeys() { return [...measuredSizeCap.entries()]; }
+
 // ── Wrap-band extents ───────────────────────────────────────────────────────────
 // A wrap band is a single pre-formed ring re-routed onto the wall. Like shells it publishes its
 // measured vertical reach (top/botFrac, relative to its anchor) and outward reach (radialOutFrac),
@@ -147,4 +170,101 @@ export function sidePipingClearance({ bands = [], yBottom, yTop }) {
     if (b.hiY >= yBottom && b.loY <= yTop) out = Math.max(out, b.out);
   }
   return out;
+}
+
+/* ── What a rim ring does to the LID, not to the wall ────────────────────────────────────────────
+ *
+ * The bands above answer "how far does this layer stick OUT", which is what a side decoration needs
+ * in order not to bury itself in a drip. A rim ring also does something to the TOP: it occupies an
+ * annulus of the lid and raises the surface there by its own height.
+ *
+ * ⚠️ SPRINKLES WERE THE REPORT, AND THEY SCATTERED AT THE LID NO MATTER WHAT WAS ON IT. Sandeep:
+ * *"when sprinkles are used, they always spread on cake only. if the cake has some cream piping,
+ * that area has piping, it should add on the piping. so whatever is the top surface that should be
+ * used."* On a cake with a rosette rim the sprinkles landed UNDER the roses — visible only in the
+ * bare middle, with a few caught against the roses' lower edge. The side already behaved: the same
+ * picture shows them sitting correctly on the chocolate drip, through `resolveSidePipingBands`.
+ * This is that mechanism for the other surface.
+ *
+ * A band is an annulus `[innerR, outerR]` measured from the tier centre, carrying the Y its top
+ * face sits at. Geometry comes from the same measured extents the renderer publishes, and the
+ * radial maths is `rimRadialBand`'s (CakeDesigner), so the lift and the nesting dial agree about
+ * where a ring is.
+ *
+ * ⚠️ THREE LAYERS ARE SKIPPED, EACH FOR A REASON THAT IS NOT TIDINESS:
+ *   · no `glbUrl` — a chocolate drip is procedural and hangs OUTSIDE the wall. It occupies no part
+ *     of the lid, which is the same fact `occupiesRimBand` encodes for nesting.
+ *   · `wrap` — a wrap band is re-routed onto the WALL. Nothing rests on it from above.
+ *   · `instances` — a SINGLE-arrangement layer is a few discrete shells at authored angles, not a
+ *     ring. An annulus would lift a sprinkle sitting at that radius three-quarters of the way round
+ *     the cake, where there is nothing under it. Under-applying leaves a sprinkle on the icing;
+ *     over-applying leaves it floating in mid-air, and only one of those is recoverable by eye.
+ */
+export function resolveTopPipingBands({ topPipings = [], topY, radius }) {
+  const bands = [];
+  for (const p of topPipings) {
+    if (!p?.glbUrl || p.wrap || p.instances?.length) continue;
+    const size = p.size ?? 1;
+    const flip = p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false);
+    const ext = getShellExtents(p.glbUrl, flip, size);
+    const anchorY = topY + (p.yOffset ?? 0) + (p.userYOffset ?? 0);
+    /* The renderer's own clamp, so the band sits where the ring is drawn: a positive AUTHORED
+       offset raises the ceiling, a user nudge may not push the ring off the rim. Mirrors CakeTier. */
+    const E = Math.min((p.extraRadialOffset ?? 0) + (p.userRadialOffset ?? 0),
+                       Math.max(0, p.extraRadialOffset ?? 0));
+    const a = radius + E + radius * (ext.radialInFrac ?? 0);
+    const b = radius + E + radius * (ext.radialOutFrac ?? 0);
+    bands.push({
+      innerR: Math.max(0, Math.min(a, b)),
+      outerR: Math.max(a, b),
+      /* Height across the band, inner → outer, in world units. Absent for a shell that has not
+         rendered yet; `topSurfaceYAt` then falls back to the crest, which is the old behaviour. */
+      profile: ext.radialProfile ? ext.radialProfile.map(f => anchorY + radius * f) : null,
+      flipped: a > b,   // the fracs can run outward→inward; the profile is always inner→outer in z
+      /* ⚠️ `topFrac` IS ALREADY MEASURED FROM THE ANCHOR — do not add `botFrac` back. The first cut
+         wrote `topFrac - botFrac`, reasoning from `ringBaseY` (which seats the shell at
+         `anchorY - worldBotY`) and so counting the shell's below-anchor reach twice. `botFrac` is
+         negative for any shell that dips below its anchor, so the surface came out a whole shell
+         depth too high and the sprinkles hovered in clear air above the cream. `bandForLayer` three
+         functions up has always had this right: `hiY: anchorY + ext.topFrac * radius`. */
+      surfaceY: anchorY + radius * (ext.topFrac ?? 0),
+    });
+  }
+  return bands;
+}
+
+/* The height something resting on the lid should sit at, `r` from the tier centre.
+ *
+ * ⚠️ IT READS THE PROFILE, NOT THE CREST. A rim ring is a dome across its band — measured on the
+ * catalogue Rosette, 100% in the middle falling to 42% and 33% at the edges — so a single height
+ * floats everything except a thin circle at the crest radius. That is precisely what shipped and
+ * what came back as *"why the sprinkles forming a circle on the cream layer. it should be random."*
+ *
+ * Linear between samples: the profile is 16 buckets of the real geometry, and a sprinkle is small
+ * compared with one bucket, so interpolating is as true as the sampling and far cheaper than
+ * carrying the mesh here.
+ *
+ * ⚠️ `max`, NOT "the last one wins". Rim rings nest, so two can cover the same radius and a piece
+ * rests on whichever is highest. Returns `topY` untouched when nothing is underneath — every cake
+ * with no rim ring, and so every design saved before this existed.
+ */
+export function topSurfaceYAt(bands, r, topY) {
+  let y = topY;
+  for (const b of bands) {
+    if (r < b.innerR || r > b.outerR) continue;
+    let h;
+    if (b.profile && b.profile.length) {
+      const span = b.outerR - b.innerR;
+      let t = span > 1e-9 ? (r - b.innerR) / span : 0;
+      if (b.flipped) t = 1 - t;
+      const x = t * (b.profile.length - 1);
+      const i = Math.min(b.profile.length - 1, Math.max(0, Math.floor(x)));
+      const j = Math.min(b.profile.length - 1, i + 1);
+      h = b.profile[i] + (b.profile[j] - b.profile[i]) * (x - i);
+    } else {
+      h = b.surfaceY;
+    }
+    if (h > y) y = h;
+  }
+  return y;
 }

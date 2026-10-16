@@ -4,7 +4,8 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
-import { BRUSH_BAND_DEFAULTS, brushBandCount } from './geometry/brushStrokeOnCake.js';
+import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
+         brushGestureFromDrag } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -21,6 +22,7 @@ import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { spatulaFramePath } from '../shared/spatulaPath.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
 import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches } from './templateFilter.js';
 import TemplateGrid from './shared/TemplateGrid.jsx';
@@ -53,9 +55,10 @@ import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITIN
          THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
-import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall } from './geometry/surface.js';
+import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { STICK_LENGTH_RANGE } from './geometry/topperPiece.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
@@ -158,8 +161,8 @@ const DEFAULT_RAIL_SKIN = {
 };
 import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
-import { SHELL_HEIGHT_FRAC, getShellExtents, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
-import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor } from './piping/pipingLayer.js';
+import { SHELL_HEIGHT_FRAC, getShellExtents, getShellSizeCap, shellSizeCapKeys, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
+import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor, occupiesRimBand } from './piping/pipingLayer.js';
 import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
@@ -205,6 +208,7 @@ import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
 import { ControlCell } from './shared/ControlCell.jsx';   // the captioned cell a control row is built from
 import { SECOND_CREAM_PRESETS, paintProfile } from './geometry/secondCreamLayer.js';   // drives the "Cream layer" finish element
+import { WAFER_DEFAULTS, WAFER_PRESETS, WAFER_CONTROLS, WAFER_HEMS, waferPresetFor, waferPresetsOffered } from './geometry/waferPaper.js';
 import ColorGuide from '../chefsdesk/ColorGuide';
 import EdiblePrintStudio from '../chefsdesk/EdiblePrintStudio.jsx';
 import OrderModal from '../orders/OrderModal';
@@ -1140,6 +1144,26 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
  * what the group is CALLED, what tapping does, and a mark on the tile so that difference survives
  * being scrolled past the heading — which a heading on its own does not.
  */
+/* ── Which zones may this decoration ring? ───────────────────────────────────────────────────────
+ *
+ * Admin's "Show full ring" tick is PER ZONE and writes the flat `top_ring_finish` (rim) or
+ * `bottom_ring_finish` (board). A decoration rings only where that finish resolves to `'element'`;
+ * a cream piping element is a different path entirely (its finish resolves to `'cream'` on every
+ * allowed zone, and it is opened from the piping picker).
+ *
+ * ⚠️ ONE FUNCTION BECAUSE TWO READERS MUST AGREE. The picker's tap decides whether a tap places or
+ * rings, and the placed piece's card decides whether to offer "Ring the rim" — asking the same
+ * question two ways is how an element came to offer a BOARD ring nobody had ticked.
+ */
+function ringZonesOf(element) {
+  const pc = element?.placement_config, zones = element?.allowed_zones ?? [];
+  const finish = (flat) => (flat ?? pc?.ring_finish) === 'element';
+  return [
+    zones.includes(ZONES.RIM)   && finish(pc?.top_ring_finish)    && ZONES.RIM,
+    zones.includes(ZONES.BOARD) && finish(pc?.bottom_ring_finish) && ZONES.BOARD,
+  ].filter(Boolean);
+}
+
 function ElementGrid({ groups = [], onElementTap, onDragStartSticker }) {
   const live = groups.filter(g => g.items?.length);
   if (!live.length) return null;
@@ -1437,42 +1461,6 @@ function ActionSheet({ open, onClose, align = 'left', children }) {
     </div>
   </>);
 }
-// ── Spatula silhouette ─────────────────────────────────────────────────────────
-// The sidebar is shaped like a silicone spatula: rounded top cap + hang-hole, a
-// long straight handle (stretches to the column height), then an asymmetric
-// rounded-rectangle blade at the bottom. Proportions traced from the design ref;
-// each bottom corner is a cubic (cornerH = where it leaves the vertical edge,
-// cornerW = how far it reaches along the bottom). See dev/spatula-menu.html.
-function spatulaFramePath({
-  W, handleHalf, bladeHalf, capTopY,
-  lShoulderY, rShoulderY, bladeFullY, bladeBotY,
-  lCornerH, lCornerW, rCornerH, rCornerW,
-}) {
-  const cx = W / 2;
-  const capR = handleHalf;
-  const capCY = capTopY + capR;
-  const Lh = cx - handleHalf, Rh = cx + handleHalf;
-  const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
-  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
-  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
-  const rSh = bladeFullY - rShoulderY;
-  const lSh = bladeFullY - lShoulderY;
-  return [
-    `M ${cx} ${capTopY}`,
-    `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`,
-    `L ${Rh} ${rShoulderY}`,
-    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
-    `L ${Rb} ${rEdgeBotY}`,
-    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
-    `L ${flatL} ${bladeBotY}`,
-    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
-    `L ${Lb} ${bladeFullY}`,
-    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
-    `L ${Lh} ${capCY}`,
-    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
-    'Z',
-  ].join(' ');
-}
 
 // Absolutely-positioned SVG that fills the sidebar (measured) and draws the
 // spatula behind the nav. The blade is wider than the handle, so it bulges out
@@ -1518,10 +1506,27 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
    * `null` is one material all the way down, which is what chrome and slate are. */
   const jointSpan = shoulderY - 18 - capTopY;
   const woodEndY  = skin.joint_at == null ? null : capTopY + jointSpan * Math.min(1, skin.joint_at + 0.38);
+  /* ── The grip tapers ────────────────────────────────────────────────────────────────────────
+   * Sandeep, beside a product photo: *"handle is a round one here. ours look just curved edges,
+   * but mostly did not give the feel of a spatula."* It was a parallel 60px bar with a semicircular
+   * cap, which at a glance is a rounded stick, not a handle.
+   *
+   * ⚠️ 140, AND IT IS THE LABELS THAT SET IT, NOT TASTE. The nav labels are centred on this shape,
+   * so each needs the paint to be at least as wide as it is. Measured on the live rail: "New Cake"
+   * wants 22.3 half-width at y=92 and "Decorations" wants 27.4 at y=157 — the widest label in the
+   * rail, and the one that pins the top of the handle open. A taper that runs the WHOLE handle (the
+   * reference photo's shape) is therefore impossible while that label reads "Decorations": even a
+   * tip of 26, a narrowing nobody would notice, misses it by 1.4px. So the taper is confined to
+   * the empty paint above the first label. `spatulaPath.test.js` holds the numbers.
+   *
+   * The swirls are clipped to this same path (`spat-clip`), so a narrower tip crops them rather
+   * than spilling them outside the silhouette. */
   const path = spatulaFramePath({
     W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
     lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
     lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+    noseHalf: RAIL.noseHalf, gripHalf: RAIL.gripHalf, gripY: RAIL.gripY, neckHalf: RAIL.neckHalf,
+    holeY: RAIL.holeY, holeRx: RAIL.holeRx, holeRy: RAIL.holeRy,
   });
   /* Grain. Deterministic, not random: a rail that re-rendered into a different grain on every
      resize would be a shape that cannot be recognised. Each line is a gentle S down the handle,
@@ -1615,9 +1620,39 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
                 rather than into a near-black typed in when walnut was the only skin. */}
             <stop offset="1"    stopColor={DEFAULT_RAIL_SKIN.stops[0]} stopOpacity="1" />
           </linearGradient>
-          <clipPath id="spat-sil"><path d={path} /></clipPath>
+          {/* ── The handle is a ROD, and this is the only thing that says so ──────────────────
+              Sandeep, twice, against a product photo: *"handle is a round one here"* and then
+              *"handle part is still not looking like round."*
+
+              ⚠️ THE SHAPE WAS NEVER THE PROBLEM — THE LIGHT WAS. `spat-body` runs TOP TO BOTTOM, so
+              nothing in the default rail varied ACROSS the handle, and a cylinder is exactly a
+              variation across. The one cross-handle gradient that existed, `spat-woodRound`, is
+              drawn only inside `woodEndY != null` — the walnut skin — and walnut is switched off by
+              migration 122. So the shipped rail had no roundness available to it at all, and the
+              silhouette was retuned twice before anyone read the paint.
+
+              Lit from the left to match `spat-spec`'s feDistantLight (azimuth 235), or the edge
+              highlight and the body highlight would name different suns.
+
+              ⚠️ GENTLE ON PURPOSE: the labels sit ON this. White at 0.78 over the default stops
+              reads ~12:1; this lifts the lit band to roughly 8:1, still well clear of the 4.5
+              floor. A brighter cylinder looks rounder and starts eating the nav. */}
+          {/* ⚠️ ALMOST NO DARKENING AT THE EDGES, AND THAT IS NOT A WEAK VERSION OF `spat-woodRound`.
+              `spat-inner` already lays a shadow just inside the silhouette. A cylinder gradient that
+              also goes dark at its ends stacks a second shadow on the same pixels, and the two
+              together read as a hard seam running down the handle a few px inside its edge — which
+              is what the first cut shipped to a screenshot. The light band is the part that does the
+              work; the edges are the part `spat-inner` already owns. */}
+          <linearGradient id="spat-round" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0"    stopColor="#000" stopOpacity="0.16" />
+            <stop offset="0.20" stopColor="#000" stopOpacity="0.01" />
+            <stop offset="0.38" stopColor="#fff" stopOpacity="0.115" />
+            <stop offset="0.72" stopColor="#000" stopOpacity="0.02" />
+            <stop offset="1"    stopColor="#000" stopOpacity="0.18" />
+          </linearGradient>
+          <clipPath id="spat-sil"><path d={path} clipRule="evenodd" /></clipPath>
         </defs>
-        <path d={path} fill="url(#spat-body)" filter="url(#spat-soft)" />
+        <path d={path} fillRule="evenodd" fill="url(#spat-body)" filter="url(#spat-soft)" />
         <g clipPath="url(#spat-sil)">
           <g filter="url(#spat-blur)">
             {swirls.slice(1).map((d, i) => (
@@ -1654,11 +1689,20 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
         </g>
         )}
 
+        {/* The handle's roundness. Over the HANDLE's span only — a spatula's blade is a flat sheet
+            and shading it like a tube is what made the first attempt look like a spoon. Clipped to
+            the silhouette, so it can never widen the shape; and before the edge shading below, so
+            the rim light sits on top of the cylinder rather than being flattened by it. */}
+        <g clipPath="url(#spat-sil)">
+          <rect x={cx - handleHalf - 2} y={0} width={handleHalf * 2 + 4} height={shoulderY}
+                fill="url(#spat-round)" />
+        </g>
+
         {/* 3D shading: thin inner shadow (depth) + rounded edge specular */}
-        <path d={path} fill="#000" filter="url(#spat-inner)" />
-        <path d={path} fill="#000" filter="url(#spat-spec)" />
-        <path d={path} fill="url(#spat-sheen)" />
-        <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
+        <path d={path} fillRule="evenodd" fill="#000" filter="url(#spat-inner)" />
+        <path d={path} fillRule="evenodd" fill="#000" filter="url(#spat-spec)" />
+        <path d={path} fillRule="evenodd" fill="url(#spat-sheen)" />
+        <path d={path} fillRule="evenodd" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
       </svg>
     </div>
   );
@@ -2799,7 +2843,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierBrushBand, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -2848,6 +2892,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [creamSel, setCreamSel] = useState(0);
   // Phase B: live spin-paint. creamPaint = the layer currently being scraped; creamAutoRotate spins the cake.
   const [creamPaint, setCreamPaint] = useState(null);   // { tierIndex, layerId } | null
+  /* ── Drawing cream strokes by hand ──────────────────────────────────────────────────────────
+   *
+   * Sandeep: *"in the cream stroke studio, we did not integrate the hand stroke feature. we did
+   * this piece already in admin. user should be able to do the strokes by himself. vertical or
+   * horizontal."*
+   *
+   * ⚠️ VERTICAL OR HORIZONTAL IS NOT A SETTING, IT IS THE DRAG. `brushGestureFromDrag` reads the
+   * lean and the sweep out of where the hand started and where it got to, so a drag straight down
+   * lays an upright stroke and a drag across lays one that sweeps round the wall. A pair of
+   * direction buttons would be a second way of saying the same thing, and the hand is the better
+   * one — it is also what the admin studio does, and this imports the same function rather than
+   * re-deciding what a hand means.
+   *
+   * ⚠️ A REF FOR THE DRAG IN PROGRESS, not state: it is read inside a pointer-move captured when
+   * the drag began, and a re-render would hand that closure a stale value. Same reason the
+   * studio's own `draw` is one. */
+  const [brushDraw, setBrushDraw] = useState(null);     // { tierIndex } | null
+  const brushDrawing = useRef(null);                    // { tierIndex, from, id } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
   /* ⚠️ THE STACK'S OWN HEIGHT, NOT mobilePanelHeight. That one is shared by the Templates and
    * Decorations flyouts (two call sites, one handlePanelDrag), so reusing it would mean dragging a
@@ -2855,6 +2917,56 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [stackDragH, setStackDragH] = useState(null);
   const handleCreamPaint = (tierIndex, layerId, theta01, frac) =>
     updateCreamLayer(tierIndex, layerId, l => ({ ...l, edge: paintProfile(l.edge, theta01, frac) }));
+
+  /* ⚠️ THE STROKE IS NOT CREATED ON PRESS, it is created on the first MOVE that has travelled far
+   * enough. Created on press, every tap on the cake would leave cream behind — and a tap is how a
+   * baker deselects, so the wall would fill with strokes nobody asked for. `brushGestureFromDrag`
+   * returns null until the hand has actually gone somewhere, which is the same "measure what was
+   * TRAVELLED" rule the pen's closed gesture needs. */
+  function handleBrushDrawStart(tierIndex, point) {
+    brushDrawing.current = { tierIndex, from: point, id: null };
+  }
+
+  function handleBrushDrawTo(tierIndex, point) {
+    const d = brushDrawing.current;
+    if (!d || d.tierIndex !== tierIndex) return;
+    const t = design.tiers[tierIndex];
+    if (!t) return;
+    const g = brushGestureFromDrag(d.from, point,
+      { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height });
+    if (!g) return;                                     // still a tap
+    if (d.id === null) {
+      const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
+      d.id = id;
+      /* ⚠️ THE COLOUR IS THE STROKE'S OWN NOW, not a chip on the card. Drawing mode has no palette —
+         Sandeep: *"user should be able to change color for each stroke separately. that color
+         should apply only to that specific piece."* So a new stroke starts from the one before it
+         (keep painting and you keep that colour, which is what a hand does) and from the band's
+         colour for the first. Everything after that happens in the stroke's own card, which opens
+         the moment it is laid down. */
+      const prev = (t.brushStrokes ?? []).at(-1);
+      const band = { ...BRUSH_BAND_DEFAULTS, ...(t.brushBand ?? {}) };
+      const palette = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
+      updateTierBrushStrokes(tierIndex, list => [...list, {
+        id,
+        surface: 'side',
+        color:  prev?.color  ?? palette[0] ?? '#F6DCE2',
+        width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
+        weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
+        seed:   1 + Math.floor(Math.random() * 9999),
+        ...g,
+      }]);
+      /* ⚠️ AND ITS CARD OPENS WITH IT. Sandeep: *"a separate sub popup should be opened (like we do
+         for piping hand drawing)."* The pen does exactly this — the piece you just made is the
+         piece in hand — and without it a baker had to find a thin stroke on the wall and tap it
+         before they could change anything about what they had just drawn. */
+      setPickedBrush({ tier: tierIndex, id });
+    } else {
+      updateBrushStroke(tierIndex, d.id, g);
+    }
+  }
+
+  function handleBrushDrawEnd() { brushDrawing.current = null; }
   // A new flick lands on the front of the wall (default camera view); the customer then aims it.
   const addDustToTier = (tierIndex) => {
     const count = design.tiers[tierIndex]?.dusting?.splashes?.length ?? 0;
@@ -3837,6 +3949,32 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const pieceChanged = !!pickedStroke && !!pickedBefore
     && ['color', 'thickness', 'point', 'points'].some(
       k => JSON.stringify(pickedStroke[k]) !== JSON.stringify(pickedBefore[k]));
+
+  /* ── The gypsophila, as it was when its card was opened ───────────────────────────────────────
+   * The piped piece's pattern above, verbatim and for its reasons: ONE level of Undo, keyed on the
+   * SELECTION and not on the design. Re-snapshotting whenever the design changes would capture each
+   * edit as it happened, and Undo would restore the state it had a moment ago — which is to say,
+   * do nothing. `design` is read here and deliberately NOT depended on.
+   *
+   * ⚠️ STATE, NOT A REF. Render reads it to light the button, and a ref set inside an effect mutates
+   * after the paint and schedules nothing — the bug that shipped on the piped version first.
+   *
+   * ⚠️ IT SNAPSHOTS EVERY SURFACE, not just the one the card is pointed at. Duplicate puts a cloud
+   * on a tier the card was not editing a moment ago, and an Undo that cannot take that back is an
+   * Undo that lies about what it undoes. */
+  const [gypBefore, setGypBefore] = useState(null);
+  /* Which tier's cloud the card is editing. Null means "whichever is top-most" — the common case,
+     because until Duplicate is pressed there is only one. */
+  const [gypPick, setGypPick] = useState(null);
+  /* Which of the two colours the one wheel is pointed at. Two wheels open at once is most of a
+     phone; bloom is the one a baker reaches for, so it is the one that opens. */
+  const [gypInk, setGypInk] = useState('bloom');
+  const gypOpen = selectedEl?.type === 'gyp';
+  useEffect(() => {
+    if (!gypOpen) { setGypBefore(null); return; }
+    setGypBefore({ tiers: design.tiers.map(t => t.gyp ?? null), board: design.boardGyp ?? null });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gypOpen]);
   /* ⚠️ THE LAST PIECE PLACED, so switching to Edit pre-selects it. The common move after putting a
      piece down is to recolour THAT piece, and making the customer hunt for it on the cake first is
      the friction that made this feature necessary in the first place. */
@@ -5203,7 +5341,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Open a piping card. From the palette (no cardId) this ALWAYS spawns a fresh instance, so
   // the same style can be placed several times as independent (e.g. differently coloured)
   // nested rings. From click-to-edit (cardId given) it focuses the card owning that ring.
-  async function openPipingPopup(el, { cardId } = {}) {
+  async function openPipingPopup(el, { cardId, ringZones = null } = {}) {
     const focusOnly = () => {
       focusEditor('piping'); setPipingPopupOpen(true); setElementsOpen(false);
     };
@@ -5214,9 +5352,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       return;
     }
     const newCardId = crypto.randomUUID();
+    const withZones = ringZones ? { ...el, ringZones } : el;
     // Single-zone elements have nothing to choose — auto-add the ring (nested/stacked) on the
     // bottom tier. Multi-zone elements stay manual via each ring's toggle.
-    const zones = (el.allowed_zones ?? []).filter(z => z === 'rim' || z === 'board');
+    /* `ringZones` (decoration rings) narrows this to the zones an admin actually ticked; null
+       (piping) keeps every allowed rim/board zone, which is right for cream. */
+    const zones = (el.allowed_zones ?? [])
+      .filter(z => z === 'rim' || z === 'board')
+      .filter(z => !ringZones || ringZones.includes(z));
     if (zones.length === 1) {
       const isTop = zones[0] === 'rim';
       const { glbUrl, altGlbUrl } = resolvePipingGlbs(el);
@@ -5232,7 +5375,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       }
       addRingLayer(0, zones[0], piping);
     }
-    setPipingCards(prev => [...prev, { ...el, cardId: newCardId }]);
+    setPipingCards(prev => [...prev, { ...withZones, cardId: newCardId }]);
     setExpandedPipingId(newCardId);
     focusOnly();
   }
@@ -5377,7 +5520,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // a nominal step let the next ring overlap it). Falls back to the nominal shell width only
   // before anything has rendered. Takes the widest existing ring so the step always clears it.
   function pipingRingRadialWidth(tierIndex, size = 1) {
-    const rings = design.tiers[tierIndex]?.topPipings ?? [];
+    // Only layers that actually sit in a band on the top — a drip hangs outside the wall and
+    // reports a fallback band it does not occupy. See occupiesRimBand.
+    const rings = (design.tiers[tierIndex]?.topPipings ?? []).filter(occupiesRimBand);
     let w = 0;
     rings.forEach(p => { const [lo, hi] = rimRadialBand(p, tierIndex); if (hi - lo > w) w = hi - lo; });
     return w > 0 ? w : pipingShellHeight(tierIndex, size);
@@ -5387,7 +5532,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // radial width, so its outer edge meets their inner edge (touching, not overlapping). First
   // ring is flush with the edge (0). Always returns a value; use rimHasRoom() to gate first.
   function nextRimRadialOffset(tierIndex) {
-    const rings = design.tiers[tierIndex]?.topPipings ?? [];
+    /* ⚠️ A DRIP IS NOT SOMETHING TO NEST INSIDE OF, and counting it is what put the first ring in
+       the middle of the lid. With a drip on the cake this returned -0.25 for a ring that should
+       have been flush with the edge at 0. See occupiesRimBand. */
+    const rings = (design.tiers[tierIndex]?.topPipings ?? []).filter(occupiesRimBand);
     if (!rings.length) return 0;
     let innermost = 0;
     rings.forEach(p => { const o = p.userRadialOffset ?? 0; if (o < innermost) innermost = o; });
@@ -5397,7 +5545,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // the floor — the cake center on the top tier, or the cylinder of the tier resting on this
   // rim (so middle/bottom tiers hold fewer rings).
   function rimHasRoom(tierIndex) {
-    if (!(design.tiers[tierIndex]?.topPipings ?? []).length) return true;
+    if (!(design.tiers[tierIndex]?.topPipings ?? []).filter(occupiesRimBand).length) return true;
     const radius    = canvasConfig.tiers[tierIndex]?.radius ?? 0.35;
     const half      = pipingRingRadialWidth(tierIndex, 1) / 2;
     const innerEdge = (radius - half + nextRimRadialOffset(tierIndex)) - half;
@@ -5601,6 +5749,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     const curCenter = (curIn + curOut) / 2;
     (design.tiers[tierIndex]?.topPipings ?? []).forEach(p => {
       if (p.layerId === cur.layerId) return;
+      // A drip is not a neighbour on the top — it would otherwise squeeze this dial's range with a
+      // band it does not occupy, the same phantom that broke nesting. See occupiesRimBand.
+      if (!occupiesRimBand(p)) return;
       const [nin, nout] = rimRadialBand(p, tierIndex);
       // Classify by which side the neighbour's centre sits — robust even if the bands currently
       // overlap (so we can never push further INTO a neighbour, only separate from it).
@@ -6263,9 +6414,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const tuned = el?.placement_config?.grass ?? {};
     // Defaults first, so a row that authors only a colour still gets a sensible field.
     if (!design.tiers[i]?.grass) {
-      setTierGrass(i, { ...GRASS_DEFAULTS, color: el?.default_color ?? '#4caf3d', ...tuned });
+      /* The row's id travels with the design — see addBrushBandFromRow, which has carried its own
+         since it was written. Two reasons, and both apply here: the card cannot ask what the
+         element ALLOWS without it, and a template bundle finds its elements by scanning the saved
+         design for uuids that match `cake_elements.id`. */
+      setTierGrass(i, { ...GRASS_DEFAULTS, color: el?.default_color ?? '#4caf3d', ...tuned,
+                        elementId: el?.id ?? undefined });
     }
     selectExclusive({ type: 'grass' });
+  }
+
+  // ── Gypsophila ──────────────────────────────────────────────────────────────
+  // Lands on the TOP tier for grass's reason: a filler dresses a surface, and the only top fully in
+  // view is the topmost one. The card moves it afterwards.
+  //
+  // `el` is the catalogue row when it is picked from Decorations, absent from a Tools shortcut —
+  // the optional-row contract addGrass has had since it was written. The row carries whatever an
+  // admin tuned in the studio (`placement_config.gyp`), which is the point of it being a row:
+  // "White, fine" and "Dense pompom" are two rows over one generator.
+  //
+  // ⚠️ IT LANDS ON THE RIM. Of the three placements, that is the one every reference photograph
+  // shows and the one a baker reaching for baby's breath almost always means. The other two are a
+  // tap away on the card — a default is a starting point, never a lock.
+  function addGypsophila(el) {
+    const i = Math.max(0, design.tiers.length - 1);
+    const tuned = el?.placement_config?.gyp ?? {};
+    if (!design.tiers[i]?.gyp) {
+      /* ⚠️ THE ROW'S ID TRAVELS WITH THE DESIGN, and leaving it out was two bugs at once. The card
+         could not find out what the element ALLOWS — so it offered a colour picker on a row that
+         never ticked colour-changeable, which is the whole complaint. And a template bundle finds
+         its elements by scanning the saved design for uuids that match `cake_elements.id`
+         (promotionBundle.elementIdsReferencedBy), so a template promoted to prod would render
+         correctly — the geometry is code plus these numbers — while the row behind it stayed
+         behind. The brush band already carries its id for exactly that second reason. */
+      /* The rim set comes from `gypPlacement`, which seeds it in the geometry and lays the row's
+         own `zones.rim` over the top — the same single reader the card uses, so what a baker gets
+         on placing and what the Where pill gives are one answer rather than two copies. */
+      setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, where: 'rim',
+                      ...gypPlacement('rim', el?.placement_config), ...tuned,
+                      elementId: el?.id ?? undefined });
+    }
+    selectExclusive({ type: 'gyp' });
   }
 
   // ── Fondant rainbows ────────────────────────────────────────────────────────
@@ -6307,6 +6496,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // result was a cake whose most visible decoration had no how-to at all.
         elementId: el?.id ?? null,
         elementName: el?.name ?? null,
+        /* ⚠️ WHERE TEXT MAY GO ON THIS ARCH, copied from the row at add time like every other tuned
+           value here. The instance carries it so the canvas can resolve a hosted message without
+           looking an element row back up mid-render — the same reason `elementName` is copied. */
+        textPath: el?.placement_config?.text_path ?? null,
         // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
         // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
         // for the shapes that fall off one side that is most of a radius. Placed with no position of
@@ -6575,7 +6768,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const zone = 'board';
       const tuned = el?.placement_config?.letter_blocks ?? {};
       const seed = { ...NAME_BLOCK_DEFAULTS, ...tuned,
-        ...(el?.default_color ? { blockColor: el.default_color } : {}) };
+        ...(el?.default_color ? { blockColor: el.default_color } : {}) ,
+        /* Same as grass and the brush band: without the id the card cannot ask what the element
+           allows, and a promoted template loses the row behind it. */
+        elementId: el?.id ?? undefined };
       setNameBlocks({ ...seed, zone, text: 'NAME', blocks: layoutBlocks('NAME', zone, seed) });
     }
     selectExclusive({ type: 'blocks' });
@@ -6655,10 +6851,38 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * seeded noise; a design that re-rolled would come back a different cake every time it was opened,
    * which is the rule brushGesture already states for a single stroke. */
   function addBrushBandFromRow(el) {
-    const i = rainbowTierIndex();
+    /* ⚠️ THE TOP-MOST TIER WITHOUT ONE, NOT "THE TOP TIER". A band is stored per tier and the cake
+     * already shows one CARD per tier that carries one — the model has always allowed a band on
+     * every tier. What there was no door to was putting a second one on: this landed on
+     * `rainbowTierIndex()` unconditionally, so tapping the row again silently OVERWROTE the band
+     * already on the top tier. Sandeep: *"right now i want to add strokes to both the tiers and i
+     * am not able to do."*
+     *
+     * ⚠️ AND WHEN EVERY TIER HAS ONE IT OVERWRITES NOTHING. Re-tapping then opens the top band's
+     * card instead — a tap that destroys a tuned band is a worse answer than a tap that shows you
+     * the band you already have. */
+    const bare = design.tiers.map((t, k) => (t.brushBand ? -1 : k)).filter(k => k >= 0);
+    if (!bare.length) { selectExclusive({ type: 'brushBand', tierIndex: rainbowTierIndex() }); return; }
+    const i = bare[bare.length - 1];
     const tuned = el?.placement_config?.cream_brush ?? {};
     setTierBrushBand(i, {
       ...tuned,
+      /* ⚠️ ONE COLOUR TO START, AND THE ROW'S OTHERS ARE NOT KEPT. Sandeep: *"default of this
+       * studio should not be 3 colors, let it be only single color when loaded… round with single
+       * color only, let the user select multi color."* The row authors three, which arrived as a
+       * three-tone band nobody had asked for and made the palette look like a fixed set rather
+       * than a choice. The + chip adds the others back in one tap.
+       *
+       * ⚠️ AND IT IS TAKEN FROM THE ROW, not replaced by a constant — the first authored colour is
+       * still the baker's own starting colour, so an admin who sets a house pink gets a house pink
+       * band. Only the COUNT is overridden, which is the thing that was wrong. */
+      colors: [(tuned.colors?.length ? tuned.colors : BRUSH_BAND_DEFAULTS.colors)[0]],
+      /* ⚠️ NOTHING ON THE CAKE UNTIL THE BAKER SAYS WHICH. Sandeep: *"by default dont surround the
+       * cake with the strokes. 'strokes round the cake' and 'drawing' need to be two different
+       * options explicitly user need to choose."* `ask` is that third state: the card opens with
+       * the two offers and the wall stays bare until one is picked. A band saved before this has
+       * no `mode` at all and still renders — see the renderer's test. */
+      mode: 'ask',
       elementId: el?.id ?? undefined,
       seed: tuned.seed ?? (1 + Math.floor(Math.random() * 9999)),
     });
@@ -6666,6 +6890,35 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        its own — placing one then showed you the tier's controls and nothing about the thing you had
        just put on the cake. */
     selectExclusive({ type: 'brushBand', tierIndex: i });
+  }
+
+  /* ── The same band, on another tier ────────────────────────────────────────────────────────────
+   * The card's answer to the same gap, and the better one: tapping the catalogue row again gives a
+   * FRESH band, while this carries the colours, height and stroke count already tuned — which is
+   * what a baker means by wanting strokes on both tiers.
+   *
+   * ⚠️ SAME WORD, SAME PLACE, SAME RULE AS GYPSOPHILA'S (INVARIANTS #14): the target is the next
+   * BARE tier, and the button is absent rather than inert when there is none. A baker meets one
+   * idea of "put this on another tier too" in this tool, not two that behave differently.
+   *
+   * ⚠️ A FRESH SEED, THOUGH. A band is thirty strokes of seeded noise, so copying the seed puts the
+   * strokes at the same angles on both tiers — on a stack that reads as a printed repeat rather
+   * than as a second pass of the same knife. The STYLE is duplicated; the hand is not.
+   *
+   * ⚠️ AND NOT THE HAND-DRAWN ONES. `brushStrokes` is a separate field holding strokes drawn at
+   * particular places on THAT tier's wall; copying them to a tier of a different radius would put
+   * cream where nobody painted it. */
+  function brushDupTier(from) {
+    const bare = design.tiers.map((t, k) => (t.brushBand ? -1 : k)).filter(k => k >= 0);
+    return bare.filter(k => k < from).pop() ?? bare[0] ?? null;
+  }
+
+  function duplicateBrushBand(from) {
+    const band = design.tiers[from]?.brushBand;
+    const to = brushDupTier(from);
+    if (!band || to == null) return;
+    setTierBrushBand(to, { ...band, seed: 1 + Math.floor(Math.random() * 9999) });
+    selectExclusive({ type: 'brushBand', tierIndex: to });
   }
 
   // ── The cream pen, from a catalogue row ───────────────────────────────────────────────────────
@@ -6949,8 +7202,60 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * is right: an unknown key already falls through to the ordinary placement path below. */
   const isStudioElement = (el) => !!PROCEDURAL_TOOLS[el?.placement_config?.procedural]?.opensStudio;
 
+  /* ── A bunch of baby's breath, dropped where the baker let go ──────────────────────────────────
+   *
+   * ⚠️ A CLUMP CARRIES ITS OWN SURFACE, and that is the change that makes this possible at all. The
+   * tier's gypsophila used to have ONE `where`, so every clump was on whichever surface the mode
+   * named — and a cake with roses up the WALL could not have a bunch tucked between them while a
+   * ring sat on the rim. Sandeep: *"i have added rose flowers on the the side of top tier… i want
+   * to add gypsophila between those roses."* A faux ball knows its own zone; so does a clump now.
+   *
+   * ⚠️ AND THE HIT IS CONVERTED HERE, not stored raw. A hit speaks the canvas's language — world
+   * (x, z) on a lid, `theta` on a round wall, a perimeter fraction `u` on a faceted one — while a
+   * patch speaks the seat system's: a fraction round the shape and a fraction across it. Storing
+   * the hit as given would put three dialects in the design and make every reader convert. */
+  function dropGypsophilaAt(el, hit) {
+    const i = hit.tierIndex ?? 0;
+    const { baseY, height, shp, R } = tierGeom(i);
+    const TAU = Math.PI * 2;
+    const patch = hit.zone === ZONES.SIDE
+      ? { surface: 'side',
+          /* A round wall gives theta, a faceted one already gives the perimeter fraction. */
+          u: hit.u != null ? hit.u : (((hit.theta ?? 0) / TAU) % 1 + 1) % 1,
+          v: Math.max(0.05, Math.min(0.95, ((hit.y ?? baseY) - baseY) / Math.max(height, 1e-6))),
+          r: GYP_PATCH_R }
+      : { surface: 'top_surface',
+          u: ((Math.atan2(hit.x ?? 0, hit.z ?? 0) / TAU) % 1 + 1) % 1,
+          v: Math.min(0.95, Math.hypot(hit.x ?? 0, hit.z ?? 0) / Math.max(boundingRadius(shp) || R, 1e-6)),
+          r: GYP_PATCH_R };
+
+    const tuned = el?.placement_config?.gyp ?? {};
+    const cur = design.tiers[i]?.gyp;
+    if (!cur) {
+      setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, where: 'free',
+                      /* A dropped bunch takes the surface it LANDED on — the wall's numbers when it
+                         was dropped on a wall — rather than one set for every drop. */
+                      ...gypPlacement(patch.surface === 'side' ? 'side' : 'free', el?.placement_config),
+                      ...tuned, elementId: el?.id ?? undefined, patches: [patch] });
+    } else {
+      updateGyp(i, c => ({ where: 'free', patches: [...(c.patches ?? []), patch] }));
+    }
+    setGypSelected({ tier: i, idx: (cur?.patches?.length ?? 0) });
+    selectExclusive({ type: 'gyp' });
+  }
+
+  /* Which generators can be DROPPED at a point, and what to do with it. Separate from
+     PROCEDURAL_TOOLS because accepting a drop is a different capability from being placeable at
+     all: a rainbow spans a tier and a name sits on the board, and neither has a use for a hit. */
+  const PROCEDURAL_DROPS = {
+    gypsophila: dropGypsophilaAt,
+  };
+
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
+    /* A filler, not an object: it dresses a surface the way grass does, so it places the moment it
+       is tapped and is edited from the card. */
+    gypsophila: addGypsophila,
     letter_blocks: addNameBlocks,
     rainbow: addRainbow,
     cloud: addCloud,
@@ -7007,11 +7312,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        that placed itself would make the words on it the ONE thing about the cake nobody could
        change, and the words are the whole point of a name topper. It arrives as a starting point
        that can be left. */
-    card_topper: opensStudio((el) => {
-      // Arriving from a catalogue row, so nothing here is a kept piece — clear the shelf door.
+    card_topper: opensStudio(() => {
+      /* ⚠️ THE CANVAS OPENS EMPTY, AND THE ROW'S OWN PAYLOAD IS DELIBERATELY NOT READ.
+       *
+       * Sandeep: *"do not default it to '10' with offset. empty canvas. if selecting from presets
+       * is selecting '10', lets keep the empty canvas and let the user pull from preset."*
+       *
+       * The row used to seed the canvas from `placement_config.card_topper`, so the studio opened
+       * with a finished-looking "10" already on it. That is a worse starting point than it sounds:
+       * the words are the whole point of a name topper, and a baker who wants "7" has to work out
+       * that the thing in front of them is editable at all. Three rounds of fixes went into opening
+       * it in its editor — a loaded word now does, through every door the harness can reach — and
+       * on the deployed app it still arrives merely selected, which I could not reproduce or
+       * explain even after reading the shipped bundle.
+       *
+       * So the answer is to stop putting a baker in that state. An empty canvas says "pick one",
+       * the preset rail says which ones, and tapping one of them lands it IN its editor with the
+       * text selected — which is the path that has been proven at every size and through a real
+       * mouse click. One tap more, and no screen that looks finished but is not.
+       *
+       * ⚠️ THE ROW'S PAYLOAD IS NOW DEAD CONFIG, and should be cleared in Manage Elements rather
+       * than left to look meaningful. It is not read here, and a value nothing reads is the thing
+       * that makes the next person distrust every other field on the row. */
       setOpenTopper(null);
-      const made = el?.placement_config?.card_topper;
-      setPendingTopper(made?.objects?.length ? { name: el?.name ?? '', payload: made } : null);
+      setPendingTopper(null);
       setTopperStudio(true);
     }),
     /* ⚠️ A PATTERN IS MADE BEFORE IT IS PLACED, which is what makes this a studio rather than a
@@ -7075,10 +7399,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * ⚠️ The size dial keeps 0.15–0.9 step 0.02 and prints two decimals: at SizeDial's default one
    * decimal a clump reads "0.2…0.9" in eight jumps across its whole travel. */
-  const grassClumpCells = (patches, tier, onSize, onRemove) => (
+  /* ⚠️ `selected` AND `onSelect` ARE ARGUMENTS, not the grass closure they started as. Gypsophila
+   * arranges itself in clumps for the same reason grass does and drags them with the same handles,
+   * so a second copy of this row would be a second answer to one question (rule 1) — and it is
+   * about ten lines, which `check:dup` at 0.75% against a 0.79 threshold is roughly sized to
+   * catch. The grass wrapper below keeps both of its call sites untouched. */
+  const clumpCells = (patches, tier, onSize, onRemove, selected, onSelect) => (
     <ScrollFadeRow style={s.previewRow} fade="255,255,255">
       {patches.map((p, k) => {
-        const on = grassSelected?.tier === tier && grassSelected?.idx === k;
+        const on = selected?.tier === tier && selected?.idx === k;
         return (
           /* ⚠️ `ControlCell`, NOT A HAND-ROLLED COLUMN. This was the same column-plus-caption
              markup ControlCell was extracted for, minus the caption — so the dial sat on a row of
@@ -7090,7 +7419,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              caption selects; the dial sizes it." A first cut of this cell kept only the ×, which
              left selecting as a side effect of dragging the dial. The wrapper takes the tap now, so
              the whole cell selects and the × still removes, and the selected one is outlined. */
-          <span key={k} onClick={() => setGrassSelected({ tier, idx: k })}
+          <span key={k} onClick={() => onSelect({ tier, idx: k })}
             style={{ display: 'inline-flex', flexShrink: 0, borderRadius: 10, padding: '2px 4px',
               cursor: 'pointer',
               border: `1.5px solid ${on ? INK : 'transparent'}`,
@@ -7098,7 +7427,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <ControlCell label={`Clump ${k + 1}`}>
               <SizeDial size={p.r ?? GRASS_PATCH_R} min={0.15} max={0.9} step={0.02}
                 fmt={v => v.toFixed(2)}
-                onChange={v => { setGrassSelected({ tier, idx: k }); onSize(k, v); }} />
+                onChange={v => { onSelect({ tier, idx: k }); onSize(k, v); }} />
               <button title="Remove" aria-label={`Remove clump ${k + 1}`}
                 onClick={(e) => { e.stopPropagation(); onRemove(k); }}
                 style={{ padding: '2px 5px', border: 'none', background: 'transparent',
@@ -7109,6 +7438,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       })}
     </ScrollFadeRow>
   );
+
+  const grassClumpCells = (patches, tier, onSize, onRemove) =>
+    clumpCells(patches, tier, onSize, onRemove, grassSelected, setGrassSelected);
 
   // A new clump goes wherever there is most ROOM, not at a fixed spot. The first version put every
   // one at the same (u, v), so the second landed on top of the first and "+ Add clump" looked
@@ -7341,12 +7673,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * It reopens the element's own piping card, which is where the colour, the ombré stops and the
    * balance already live. A second card for the same element would be a different product. */
+  /* ⚠️ THE COAT IS IN THE DESIGN; ITS CARD IS NOT. `coat` is saved on the tier and comes back with
+     any design that loads — but `pipingCards` is ephemeral UI state, and `resetEditors` empties it
+     on every template load. So a cake could arrive wearing a coat with no card anywhere in the
+     stack, and this function's old body looked the card up and silently gave up: tapping the cream
+     did nothing, with nothing on screen to explain it. Sandeep, with a covered cake and a stack
+     holding only two sticker cards: *"when i click on the cream, its not opening popup. see there
+     is no card for this cream on the side popup stack as well"*.
+     ⚠️ A RING ALREADY SOLVED THIS — `openCardForLayer` rebuilds the card from the layer, falling
+     back to a minimal element synthesised from what the layer itself stores when the catalogue has
+     not loaded. A coat stores the same three things (`id`, `name`, `glbUrl`), so it takes the same
+     route rather than a second one: `openPipingPopup` adds the card when it is missing and focuses
+     it when it is not, which is exactly the branch this used to half-implement. */
   function handleCoatSelect(tierIndex) {
     if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const coat = design.tiers[tierIndex]?.coat;
     if (!coat) return;
-    const card = pipingCards.find(c => c.cardId === coat.cardId);
-    if (card) { focusEditor('piping'); setPipingPopupOpen(true); setExpandedPipingId(card.cardId); }
+    const el = pipingElementById[coat.id]
+      ?? { id: coat.id, name: coat.name, image_url: coat.glbUrl, thumbnail_url: null };
+    openPipingPopup(el, { cardId: coat.cardId });
   }
 
   function handleTopPipingSelect(tierIndex, layerId) {
@@ -7423,14 +7768,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // (openPipingPopup → topPipings/bottomPipings); the renderer keeps its REAL materials because the
     // layer's finish resolves to 'element'. A finish KEY, never the element type (INVARIANTS #1/#6), so
     // the picker stays one uniform tap-to-open for every element.
-    const rc = element.placement_config, rz = element.allowed_zones ?? [];
-    const ringsRim   = rz.includes(ZONES.RIM)   && (rc?.top_ring_finish    ?? rc?.ring_finish) === 'element';
-    const ringsBoard = rz.includes(ZONES.BOARD) && (rc?.bottom_ring_finish ?? rc?.ring_finish) === 'element';
-    if (ringsRim || ringsBoard) {
-      openPipingPopup(element);
+    const rz = element.allowed_zones ?? [];
+    /* ⚠️ RINGING IS A CHOICE, NOT A MODE, AND A TAP IS NOT HOW IT IS CHOSEN.
+     *
+     * Ticking admin's "Show full ring" used to make the element BECOME a ring: every tap routed
+     * here, so the piece could no longer be placed singly from the picker at all. Sandeep: *"i
+     * cannot drag/add it to the side or add a single piece on the top. adding it single or ring
+     * should be a choice."*
+     *
+     * ⚠️ AND SINGLE PLACEMENT WAS NEVER ACTUALLY GONE — only unreachable by tapping. `handleElementDrop`
+     * has no ring check, so DRAGGING the row onto the cake placed a single piece on every zone the
+     * whole time. Measured on a fixture shaped like the reported row: drops on top_surface, side,
+     * middle_tier and rim each added one sticker and no ring. What was broken was that a tap did
+     * something different here than on every other element in the picker, so the capability looked
+     * lost. That is the inconsistency this removes.
+     *
+     * So a tap PLACES, exactly as it does for every other decoration, and the ring is offered as an
+     * action on the piece's own card (see `ringZonesOf`). The one exception is an element with
+     * nowhere else to go: if every zone it allows is a ring zone, a tap has nothing to place and the
+     * ring card is the only sensible destination. */
+    const ringZones = ringZonesOf(element);
+    const placeableZones = rz.filter(z => !ringZones.includes(z));
+    if (ringZones.length && !placeableZones.length) {
+      openPipingPopup(element, { ringZones });
       return;
     }
-    const zones = element.allowed_zones ?? [];
+    /* The ring zones are excluded: on a ring-capable element the rim is where the RING goes, so a
+       tap that fell through to it would place a lone piece on the rim and look like a failed ring. */
+    const zones = placeableZones.length ? placeableZones : (element.allowed_zones ?? []);
     // Prefer the top surface; a hero decoration belongs on the cake's actual top (the LAST/
     // topmost tier), not tier 0 (which is hidden under upper tiers on a multi-tier cake).
     const zone = zones.includes(ZONES.TOP_SURFACE) ? ZONES.TOP_SURFACE : (zones[0] ?? ZONES.TOP_SURFACE);
@@ -8456,6 +8821,66 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Put a placed decoration where a baker would drag it, and at the size they would resize it to.
+       Both are pointer gestures on a 3D surface that a script cannot aim, and both go through the
+       SAME setter the gesture calls — a hook that re-implemented either would prove nothing. */
+    window.__patchSticker = (id, patch) => { updateSticker(id, patch); return true; };
+    /* Drop an element ON the cake at a given hit — the gesture is a pointer drag from a card in a
+       drawer onto a 3D surface, which a script cannot aim through. Calls the SAME function the drag
+       calls, with the same hit shape the canvas produces. */
+    window.__dropElementAt = (id, hit) => { const e = elementById.get(id); if (!e) return false;
+                                            handleElementDrop(e, hit); return true; };
+    /* Which piping layer a click selected, by NAME — "the drip" or "the ball ring". A rim can carry
+       several layers and they look alike from the DOM; the card's heading is the only thing on
+       screen that tells them apart, and reading a heading is reading the symptom. */
+    /* Put a piping ring on a rim or board. Placing one is a tap on the 3D rim to set the target and
+       then a style chosen from a popup — two gestures a script cannot aim — so this sets the same
+       target the tap sets and calls the SAME handler the popup calls. */
+    window.__placePiping = (tierIndex, zone, elementId) => {
+      const e = elementById.get(elementId); if (!e) return false;
+      setPipingTarget({ tierIndex, zone });
+      return true;
+    };
+    window.__choosePiping = (elementId) => {
+      const e = elementById.get(elementId); if (!e) return false;
+      handlePipingStyleSelect(e); return true;
+    };
+
+    /* Take a piping layer off, so a frame can be photographed without it — the honest way to find
+       which pixels on a 3D cake belong to a ring. Calls the same remover the card's button does. */
+    window.__removePiping = (tierIndex, zone, layerId) => { removePipingLayer(tierIndex, zone, layerId); return true; };
+    /* ⚠️ THE SIZE DIAL IS A DRAG, WHICH A SCRIPT CANNOT AIM — the same argument as `__setGyp` and
+       `__setScatterBig`. Without this the one thing most worth checking about piping size could not
+       be looked at at all: that the shell actually grows, and that the ring's COUNT follows it.
+       Calls the SAME handler the popup's dial calls, never a re-implementation, so what it proves
+       is what a baker gets. Reads back the cap the canvas published, so a test can also assert the
+       dial is not offering travel the renderer will throw away. */
+    window.__setPipingSize = (tierIndex, zone, v) => { handlePipingSizeChange(tierIndex, zone, v); return true; };
+    /* ⚠️ THIS IS HOW A RING ACTUALLY GETS ONTO A CAKE — the card's own zone tile, which calls
+       `togglePipingZone` → `buildRingPiping`. `__placePiping` + `__choosePiping` below drive
+       `handlePipingStyleSelect` instead, and NOTHING in the product sets the `pipingTarget` that
+       path needs, so a script using it was exercising code no baker can reach (and which was
+       broken). Open the card first (`__openPiping`), then call this: two ticks, because the toggle
+       reads the open card's id. */
+    window.__togglePipingZone = (tierIndex, zone) => {
+      togglePipingZone(tierIndex, zone, !!ringPiping(tierIndex, zone)); return true;
+    };
+    window.__pipingSizeCap = (glbUrl, flip) => (glbUrl === undefined ? shellSizeCapKeys() : getShellSizeCap(glbUrl, flip));
+    /* ⚠️ IT READS `expandedPipingId`, NOT `selectedPiping`. A ring click opens a CARD — the popup
+       keeps a list of cards and expands one by `cardId` (openCardForLayer → openPipingPopup) — and
+       `selectedPiping` is a different thing entirely, which is why a first version returned null on
+       a cake plainly showing the drip's card. The card is the thing the report is about: *"when i
+       click on chocolate ball, drip popup opens."* */
+    window.__selectedPiping = () => {
+      if (!expandedPipingId) return null;
+      for (const t of design.tiers) {
+        for (const [zone, arr] of [['rim', t.topPipings ?? []], ['board', t.bottomPipings ?? []]]) {
+          const p = arr.find(x => x.cardId === expandedPipingId);
+          if (p) return { name: p.name, layerId: p.layerId, zone };
+        }
+      }
+      return { unknown: expandedPipingId };
+    };
     /* ⚠️ THE WHOLE DESIGN, for the decorations that live ON A TIER rather than in a flat list. A
      * rainbow's tier is not a field on the rainbow — it IS which tier's `rainbows` holds it — so
      * "did it move tiers" cannot be read from the object, only from the shape around it. The same
@@ -8463,6 +8888,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * answers for everything else, and a card highlighting the right number proves only that a
      * button took a click. */
     window.__design = () => design;
+    /* ⚠️ WHAT IS SELECTED, and which tier's band a card belongs to. A band is reached by CLICKING
+       THE STROKES on a 3D wall, which a script cannot aim, and two bands on two tiers look
+       identical from the DOM — the strip is covered by whichever card is open, so counting names on
+       screen reports one cake-wearing-two as one. These answer from the design instead. */
+    window.__selectedEl = () => selectedEl;
+    window.__selectBrushBand = (tierIndex) => { selectExclusive({ type: 'brushBand', tierIndex }); return true; };
+    /* ⚠️ WRITES THE GYPSOPHILA ON THE TIER THAT HAS IT, so a sweep can vary one number at a time
+       and photograph the result. `size` and `lay` are the two that decide whether a wall posy reads
+       as flowers or as sprinkles, and neither can be driven from the card at the range a sweep
+       needs — SizeDial is a drag, which a script cannot aim. Same argument as `__setScatterBig`:
+       calls the SAME function the card calls, never a re-implementation, so what it proves is what
+       a baker would get. */
+    /* ⚠️ WRITING ON AN ELEMENT CANNOT BE DRIVEN ANY OTHER WAY FROM A SCRIPT — the card's own path is
+       a tap on the arch then typing into a field, and neither is aimable. Calls the SAME `addWriting`
+       the card calls, so what it proves is what a baker gets. */
+    window.__writeOn = (host, text, patch = {}) => {
+      const id = addWriting({ text, on: host, style: 'cream', ...patch });
+      return id;
+    };
+    window.__getWritings = () => (design.writings ?? []).map(w =>
+      ({ id: w.id, text: w.text, style: w.style, surface: w.surface, on: w.on }));
+    window.__setGyp = (patch) => { const i = design.tiers.findIndex(t => t.gyp);
+                                   if (i < 0) return false; updateGyp(i, patch); return true; };
     /* Big-sprinkle mix. The control is a DialCell — a drag, which a script cannot aim precisely —
        and `setScatterBigCount` is otherwise unreachable from the page, so the one thing most likely
        to be wrong (which instances turn big, at what size, and whether 0 truly changes nothing)
@@ -8723,6 +9171,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
 
   function handleElementDrop(element, hit) {
+    /* ── A procedural element dropped ON the cake knows WHERE it was dropped ─────────────────────
+     * ⚠️ IT DID NOT, AND THAT IS THE ROOT OF "placement is not driven by config". `tapPlaceElement`
+     * calls `proc(element)` with no hit — correctly, because a tap in the Decorations LIST has no
+     * point on the cake — and nothing ever called a procedural from the DROP path at all. So no
+     * generated element could be placed where the baker acted: gypsophila had to invent a spot and
+     * offer modes instead. Sandeep: *"i dont have a way to drag a bunch between the roses. see what
+     * we do for faux balls, i think a similar mechanism need to be implemented here."* A faux ball
+     * is dropped at its hit; this is the same door, opened for generators.
+     *
+     * ⚠️ `procDrop`, NOT `proc`. A generator that has nothing to do with a point — a rainbow, letter
+     * blocks — should go on behaving as it does, so the registry says which ones accept a drop
+     * rather than every one of them having to learn to ignore an argument. */
+    const procAt = PROCEDURAL_DROPS[element.placement_config?.procedural];
+    if (procAt && hit) {
+      setElementsOpen(false);
+      focusEditor('decoration');
+      procAt(element, hit);
+      return;
+    }
     // Tier-finish elements (food foil) paint into the tier material, never place a sticker — open the
     // finish card. Covers the DRAG path (tapPlaceElement covers tap). Config-driven, no slug branch.
     if (element.placement_config?.kind === 'tier_finish') {
@@ -8820,8 +9287,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (!pipingTarget) return;
     const { tierIndex, zone } = pipingTarget;
     const isTop = zone === 'top';
+    /* ⚠️ `resolvePipingGlbs`, NOT `element.glbUrl` — NO ELEMENT HAS THAT FIELD. A catalogue row
+       carries `image_url` (and a pattern row carries its parts), which is why every other path
+       goes through the resolver. This one read a property that is always `undefined`, so the layer
+       it built could never draw: `BottomPipingRing` is handed `glbPath={p.glbUrl}` and returns
+       null on a falsy path. `size` was missing for the same reason — `buildRingPiping` sets it
+       from `pipingScaleFor` and this never did.
+       ⚠️ THE REASON IT SURVIVED IS THAT NOTHING REACHES IT. `pipingTarget` is what shows
+       `CreamStylePicker`, and the only thing that sets it is a DEV hook — so this function is dead
+       in the product and was exercised solely by a test harness, which is how a test came to be
+       driving a path no baker can. Fixed rather than deleted because deleting a UI path is a
+       product decision, not a cleanup. */
+    const { glbUrl, altGlbUrl } = resolvePipingGlbs(element);
     const piping = {
-      id: element.id, cardId: crypto.randomUUID(), glbUrl: element.glbUrl, name: element.name, color: '#f5e6c8',
+      id: element.id, cardId: crypto.randomUUID(), glbUrl, altGlbUrl, name: element.name,
+      color: element.default_color ?? '#f5e6c8', size: pipingScaleFor(element),
       ...pipingPlacementFromConfig(element.placement_config, isTop),
     };
     if (isTop) { const ro = nextRimRadialOffset(tierIndex); if (ro) piping.userRadialOffset = ro; }
@@ -9508,6 +9988,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // Grass shows a card for as long as any tier HAS grass — unlike the tools above it, which also
   // appear while merely selected. Grass is applied the moment you pick it (there is nothing to
   // compose first), so "has grass" and "should show a card" are the same condition.
+  /* Gypsophila, on the same condition as grass: it is applied the moment it is picked, so "has it"
+     and "should show a card" are the same question. */
+  if (design.tiers.some(t => t.gyp) || design.boardGyp) {
+    decorationCards.unshift({ key: 'gyp', type: 'gyp', name: 'Gypsophila', thumb: null });
+  }
   if (design.tiers.some(t => t.grass) || design.boardGrass) {
     decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
   }
@@ -9589,6 +10074,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
          : card.type === 'grass' ? true
+         : card.type === 'gyp' ? true
          : card.type === 'blocks' ? true
          : card.type === 'cream' ? true
          // A band belongs to ONE tier, so the tier is half of its identity — without this every
@@ -9814,6 +10300,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'topper'        ? { type: 'topper', id: card.id }
       : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
+      : card.type === 'gyp'           ? { type: 'gyp' }
       : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
       : card.type === 'pattern'       ? { type: 'pattern', patternId: card.patternId, patternElementId: card.patternElementId }
@@ -10807,7 +11294,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
     const c = el.type === 'tier'    ? TIER_CAPS
-            : el.type === 'decorEl' ? {}   // one card per multi-slot element; controls built below
+            /* ⚠️ ONE CAPABILITY, NOT THE WHOLE SET. A multi-slot element gets one card per ELEMENT
+               and its controls are built below — slots, size, colour — which is why this was `{}`.
+               But `stick` is not among the ones built below, and nothing else renders it, so
+               ticking "Can add a stick" on a hero did nothing at all: an admin could save it, place
+               the topper and never see a pick. Handing back the element's whole `allowed_actions`
+               here would double up every control that IS built below; handing back the one that is
+               homeless fixes the dead config without moving anything else. */
+            : el.type === 'decorEl'
+              ? { stick: elementById.get(el.elementId)?.allowed_actions?.stick === true }
             : el.type === 'sticker' ? (design.stickers.find(s => s.id === el.id)?.allowedActions ?? STICKER_CAPS)
             : (allowedActionsBySlug[el.type] ?? null);
     if (!c) return null;
@@ -11581,8 +12076,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        deep it is pushed in. Its starting value is the element's own authored number — read through
        `elementStick`, never a literal here — for an instance placed before this feature existed and
        so carrying no `stick` of its own. */
-    if (el.type === 'sticker' && c.stick) {
-      const sticker = design.stickers.find(stkr => stkr.id === el.id);
+    /* ⚠️ A HERO ELEMENT NEVER REACHES THIS ROW, and that made "Can add a stick" dead config for
+       every one of them. Tapping a `single_per_slot` decoration opens its ELEMENT card — one card
+       managing all its placements, which is deliberate — so the selection is a `decorEl` and this
+       branch, written for `sticker`, was skipped. An admin could tick the box, save, place the
+       topper and never see a pick. Sandeep: *"for image toppers i selected 'can add stick', but the
+       card popup in core designer does not show stick option."*
+
+       So the branch takes BOTH, and resolves the instance it acts on: a hero has one per slot, so
+       the element's placed stickers ARE the thing the card speaks for. `caps` already reads a
+       decorEl's capabilities off the live element rather than off a frozen copy, which is the
+       behaviour admin master data is supposed to have (see `isStickerMovable`). */
+    const stickTargets = el.type === 'sticker'
+      ? design.stickers.filter(stkr => stkr.id === el.id)
+      : el.type === 'decorEl'
+        ? design.stickers.filter(stkr => stkr.elementId === el.elementId)
+        : [];
+    if ((el.type === 'sticker' || el.type === 'decorEl') && c.stick && stickTargets.length) {
+      const sticker = stickTargets[0];
       const srcEl   = sticker && elementById.get(sticker.elementId);
       if (sticker) {
         const row  = elementStick(srcEl?.placement_config, srcEl?.allowed_actions);
@@ -11590,7 +12101,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         const bury = st.bury ?? row.bury;
         const len  = st.length ?? row.length;
         const thk  = st.thickness ?? row.thickness;
-        const setStick = patch => updateSticker(el.id, { stick: { ...st, ...patch } });
+        /* ⚠️ EVERY INSTANCE THE CARD SPEAKS FOR, not just the first. A hero on both the top and the
+           side is two stickers under one card, and putting only one of them on a pick is a cake no
+           baker asked for. */
+        const setStick = patch => stickTargets.forEach(t => updateSticker(t.id, { stick: { ...(t.stick ?? st), ...patch } }));
         /* One stepper, three times — In, Long and Thick are the same control over three numbers, and
            three hand-rolled copies of it in one row is how they end up with three widths. */
         const dial = (key, label, value, fmt, set, lo, hi, step) => ([
@@ -11815,6 +12329,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         );
       }
     }
+    /* ── Ring the cake with this piece ──────────────────────────────────────────────────────────
+     *
+     * The OTHER half of the choice. A tap places one piece, the way a tap places every other
+     * decoration; this is how the same element becomes a full ring. Sandeep: *"adding it single or
+     * ring should be a choice."*
+     *
+     * ⚠️ IT IS AN ACTION, NOT A MODE. Both can be on the cake at once — a ring round the rim and a
+     * single rose on the wall — because the ring lives in `topPipings`/`bottomPipings` and the
+     * single piece is a sticker. Making this a mode is what removed single placement in the first
+     * place. Shown only where an admin ticked "Show full ring", via the one `ringZonesOf`. */
+    if (el.type === 'sticker') {
+      const sticker = design.stickers.find(s => s.id === el.id);
+      const srcEl = sticker ? elementById.get(sticker.elementId) : null;
+      const zones = srcEl ? ringZonesOf(srcEl) : [];
+      if (zones.length) {
+        const label = zones.length > 1 ? 'Add as a ring'
+          : zones[0] === ZONES.RIM ? 'Ring the rim' : 'Ring the board';
+        actions.push(
+          <button key="ring-it" style={s.neutralBtn}
+            onClick={() => { openPipingPopup(srcEl, { ringZones: zones }); }}>{label}</button>
+        );
+      }
+    }
     // A grouped member can't be deleted on its own — the group is a lock. Ungroup (on the group
     // card) to delete a single piece; the group card's own "Remove group" deletes them all.
     const groupedMember = el.type === 'sticker' && !!design.stickers.find(s => s.id === el.id)?.groupId;
@@ -11943,6 +12480,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       .map(k => ({ k, label: SURFACE_LABELS[k] }));
     return (
       <>
+        {/* ⚠️ A HOSTED MESSAGE IS NOT ON A CAKE SURFACE, so the Top/Side/Board chooser has nothing
+            to choose between — it is on the rainbow until it is removed. It is REPLACED rather than
+            dropped: a card that silently loses its first control leaves a baker wondering where the
+            message went, and the line also answers "why is there no Curve dial". */}
+        {w.on ? (
+          <div style={{ fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.3,
+                        padding: '7px 2px', flexShrink: 0 }}>
+            ON THE RAINBOW · follows its curve
+          </div>
+        ) : (
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
           {SURFACES.map(sf => (
             <button key={sf.k} onClick={() => setWriting({ surface: sf.k })}
@@ -11952,6 +12499,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           ))}
         </div>
+        )}
 
         <textarea
           value={w.text ?? ''}
@@ -12058,7 +12606,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             The wheel is always open rather than behind a swatch, because unlike cream there is no
             Gold/Silver alternative for it to sit beside — a chooser of one is not a chooser. */}
         {w.style === 'fondant' && <>
-          {surface === 'top' && <>
+          {/* ⚠️ `!w.on` — "hug or stand" is a question about the cake's TOP, and a hosted message is
+              not on it. The card reads `w.surface`, which stays 'top' on a hosted message (it is
+              the cake surface it would fall back to), so without this the row offered a pose that
+              the renderer overrides: a message on a rainbow stands in the rainbow's plane whatever
+              this says. */}
+          {surface === 'top' && !w.on && <>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>On the top</div>
             <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
               {[{ k: 'hug', label: 'Hug the cake' }, { k: 'stand', label: 'Stand up' }].map(o => (
@@ -12234,8 +12787,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ] : []),
             ] : []),
             /* Acrylic has no curve at all — nothing on that path reads `curve`. A topper is cut flat
-               from a sheet; bending the baseline is a piped-writing idea. */
-            ...(surface !== 'side' && !writingIsCut(w.style) ? [
+               from a sheet; bending the baseline is a piped-writing idea.
+               ⚠️ AND A HOSTED MESSAGE HAS NO CURVE OF ITS OWN EITHER. Written on an element, the
+               bend IS that element's shape — `writingSurface` takes it from the host and the dial's
+               value is never read. A control that cannot change anything is worse than no control
+               (INVARIANTS #11), so it goes rather than sitting there doing nothing. */
+            ...(surface !== 'side' && !writingIsCut(w.style) && !w.on ? [
               { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
                 fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
             ] : []),
@@ -12252,13 +12809,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           ))}
         </ScrollFadeRow>
 
+        {/* ⚠️ A HOSTED MESSAGE IS NOT DRAGGED, so it must not be told to drag. The three lines below
+            each name a cake surface; on a rainbow the element decides where the line sits, and a
+            hint that says otherwise is a label that lies. */}
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
-          {surface === 'side' ? 'Drag the writing around and up the cake side.'
+          {w.on ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+            : surface === 'side' ? 'Drag the writing around and up the cake side.'
             : surface === 'board' ? 'Drag the writing around the cake board.'
             : 'Drag the writing anywhere on the cake top.'}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+          {/* Recentre puts a dragged message back in the middle of its surface. A hosted one was
+              never anywhere else, so the button has nothing to undo (INVARIANTS #11). */}
+          {!w.on && (
           <button onClick={() => setWriting(surface === 'side' ? { sideAngle: 0, sideY: undefined }
               : surface === 'board' ? { boardX: undefined, boardZ: undefined }
               : { offsetX: 0, offsetZ: 0 })}
@@ -12266,6 +12830,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               color: INK, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}>
             Recentre
           </button>
+          )}
           <button onClick={() => { clearWriting(); clearAllSelections(); }}
             style={{ ...s.deleteBtn, flex: 1 }}>
             Remove from cake
@@ -12349,20 +12914,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         )}
         <div>
-          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
-                        textTransform: 'uppercase', marginBottom: 6 }}>
-            How it sits
-          </div>
-          <Segmented
-            label="How the topper sits"
-            items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
-            value={t.mode ?? 'stand'}
-            onChange={mode => updateTopper(t.id, { mode })}
-            tone={primaryColor}
-          />
+          {/* ⚠️ NO CHOICE WHILE IT IS ON A STICK, and the chip is ABSENT rather than disabled.
+              Sandeep: *"'lying flat' should not be possible when on stick."* A stick is a thing you
+              push into the cake so the card stands above it; laid down, the stick sticks out
+              sideways with nothing holding either of them up — which is what the render showed. The
+              hint underneath already said "It stands on its stick" while the chip beside it said
+              Lying flat: two statements about one cake, disagreeing.
+
+              Absent, not greyed, for the reason the Spiral chip on the tier card states: this is a
+              line of chips a baker scans, and a permanently dead one in it is a worse answer than
+              one fewer. The heading goes with it — a section title over nothing is furniture.
+
+              ⚠️ AND THE RENDERER REFUSES IT TOO (`topperMode`). Hiding the chip alone would leave a
+              cake already SAVED lying flat on a stick stuck in that state, with the only control
+              that could change it now gone. */}
+          {!t.payload?.stick?.on && (<>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>
+              How it sits
+            </div>
+            <Segmented
+              label="How the topper sits"
+              items={[{ id: 'stand', label: 'Standing' }, { id: 'lie', label: 'Lying flat' }]}
+              value={t.mode ?? 'stand'}
+              onChange={mode => updateTopper(t.id, { mode })}
+              tone={primaryColor}
+            />
+          </>)}
           <div style={{ fontSize: 10.5, color: '#999', marginTop: 5, lineHeight: 1.45 }}>
             {t.payload?.stick?.on
-              ? 'It stands on its stick. Height sets how long the stick is; how deep it goes was set in the studio.'
+              ? 'It stands on its stick. Height sets how long the stick is; how deep it goes was set in the studio. Take the stick off in the studio to lay it flat.'
               : 'Standing pushes its bottom edge into the icing. Add a stick in the studio to raise it.'}
           </div>
         </div>
@@ -12980,6 +13561,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             second answer to a question the designer already answers, and it looked like one. The
             wheel also brings what a hand-rolled row does not: colours already ON this cake
             (cakeColors), so a name can be matched to a border without eyedropping it. */}
+        {/* Both wheels, and their captions, only if the row grants colour — see
+            `elementAllowsColour`. A caption with nothing under it is worse than neither. */}
+        {elementAllowsColour(nb) && (<>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 10, marginBottom: 6 }}>Block colour</div>
         <ColorWheel color={nb.blockColor ?? NAME_BLOCK_DEFAULTS.blockColor}
           onChange={c => updateNameBlocks({ blockColor: c })} compact={isMobile}
@@ -12989,6 +13573,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <ColorWheel color={nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor}
           onChange={c => updateNameBlocks({ letterColor: c })} compact={isMobile}
           cakeColors={blockCakeColors(nb.letterColor ?? NAME_BLOCK_DEFAULTS.letterColor)} width={152} />
+        </>)}
 
         <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
           {/* The way back from an arrangement gone wrong — without retyping the name. */}
@@ -13035,7 +13620,87 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const colors = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
     const slot = Math.min(bandSlot, colors.length - 1);
     const setColors = next => set({ colors: next });
+    const mode = band.mode ?? 'band';          // no mode = a band saved before the choice existed
 
+    /* ── Which of the two, asked outright ────────────────────────────────────────────────────
+     *
+     * Sandeep: *"'strokes round the cake' and 'drawing' need to be two different options
+     * explicitly user need to choose."* They were one card with a Draw-your-own button at the
+     * bottom, so placing the element wrapped the wall in a band first and drawing was something
+     * you found afterwards — on a cake you had not asked for.
+     *
+     * ⚠️ NOT A Segmented. That control is for a value with two settings, and this is a FORK: until
+     * one is chosen there is nothing on the cake and no third "neither" state to show as selected.
+     * Two full-width offers, each saying what it does, and the wall stays bare behind them. */
+    if (mode === 'ask') {
+      const choose = (m, extra) => () => { set({ mode: m, ...extra }); setBrushDraw(m === 'draw' ? { tierIndex: i } : null); };
+      return (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
+            Palette-knife strokes of cream. Ring the whole cake with them, paint them on by hand, or
+            do both — start with whichever you like.
+          </div>
+          <button onClick={choose('band')} style={{ ...s.neutralBtn, width: '100%', marginTop: 12,
+                                                    minHeight: 46, flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 800 }}>Strokes round the cake</span>
+            <span style={{ fontSize: 10, color: '#b29aa2' }}>One colour, repeated. Add more when you want them.</span>
+          </button>
+          <button onClick={choose('draw')} style={{ ...s.neutralBtn, width: '100%', marginTop: 8,
+                                                    minHeight: 46, flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 800 }}>Draw them myself</span>
+            <span style={{ fontSize: 10, color: '#b29aa2' }}>Drag on the cake. Each stroke gets its own card.</span>
+          </button>
+          <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
+            style={{ ...s.deleteBtn, width: '100%', marginTop: 10 }}>
+            Remove from cake
+          </button>
+        </>
+      );
+    }
+
+    /* ⚠️ DRAWING IS ITS OWN CARD NOW, not a button under the band's controls. A baker who chose to
+     * paint has no use for Strokes, Overlap or Shuffle the band — those describe a ring that is not
+     * on the cake — and every colour decision belongs to the stroke in hand, which is what the
+     * per-stroke card is for. */
+    if (mode === 'draw') {
+      const drawn = design.tiers[i]?.brushStrokes ?? [];
+      return (
+        <>
+          <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
+            Drag down the side of the cake for an upright stroke, or across it for one that sweeps
+            round. Each stroke opens its own card — colour, thickness, width and pattern are set
+            there, and apply to that stroke alone.
+          </div>
+          <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
+            {drawn.length ? `${drawn.length} drawn. Tap one to change it.` : 'Nothing drawn yet.'}
+          </div>
+          {drawn.length > 0 && (
+            <button onClick={() => { updateTierBrushStrokes(i, () => []); setPickedBrush(null); }}
+              style={{ ...s.neutralBtn, width: '100%', marginTop: 10 }}>
+              Clear the ones I drew
+            </button>
+          )}
+          {/* ⚠️ "TOO", AND IT KEEPS WHAT IS ALREADY DRAWN. This used to go back to the fork
+              (`mode: 'ask'`), which is the same either/or mistake from the other side: a baker who
+              had drawn six strokes and then wanted a band behind them was sent to a screen offering
+              to start over. `brushStrokes` is untouched, so the band simply appears behind them. */}
+          <button onClick={() => set({ mode: 'band' })}
+            style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+            Ring the cake too
+          </button>
+          <button onClick={() => {
+            setTierBrushBand(i, null);
+            updateTierBrushStrokes(i, () => []);
+            setBrushDraw(null); setPickedBrush(null); clearAllSelections();
+          }} style={{ ...s.deleteBtn, width: '100%', marginTop: 8 }}>
+            Remove from cake
+          </button>
+        </>
+      );
+    }
+
+    const drawn = design.tiers[i]?.brushStrokes ?? [];
+    const drawing = brushDraw?.tierIndex === i;
     return (
       <>
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
@@ -13047,6 +13712,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             gesture, so it should not look like a different control. */}
         {/* marginTop clears the × badges, which `gradientStopRemove` pins ABOVE each chip — without
             it the first row of them sits on top of the sentence above. */}
+        {/* ⚠️ THE WHOLE PALETTE, NOT JUST THE WHEEL, goes when the row does not grant colour — see
+            `elementAllowsColour`. Gating only the wheel would leave the + and × chips, which add
+            and drop colours: a baker could still change the band's palette through a control that
+            looks like a legend. */}
+        {elementAllowsColour(design.tiers[i]?.brushBand) && (<>
         <div style={{ ...s.gradientStops, marginTop: 14 }}>
           {colors.map((c, idx) => (
             <div key={idx} style={s.gradientStopWrap}>
@@ -13070,6 +13740,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             onChange={c => setColors(colors.map((x, j) => (j === slot ? c : x)))}
             cakeColors={[...new Set(collectElementColors(design))]} />
         </div>
+        </>)}
 
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {BRUSH_BAND_FIELDS.map(([key, label, min, max, step]) => (
@@ -13091,9 +13762,74 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Shuffle the band
         </button>
 
-        <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-          <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
-            style={{ ...s.deleteBtn, flex: 1 }}>
+        {/* ── Hand strokes, ON TOP OF the band ────────────────────────────────────────────────
+         *
+         * ⚠️ THE TWO ARE NOT A FORK, AND READING THEM AS ONE WAS THE BUG. This said "Draw them
+         * myself INSTEAD" and set `mode: 'draw'`, which took the band off the cake. Sandeep:
+         * *"its not either 'round the cake' vs 'draw', it can be both. i can do the round first and
+         * then i want to add few strokes by hand above that. this was the reason i wanted a separate
+         * card popup for each hand stroke."*
+         *
+         * Nothing in the RENDERER ever disagreed: `BrushStrokes` draws `tier.brushStrokes` whatever
+         * the band is doing, and the per-stroke card is driven by `pickedBrush` alone. The band and
+         * the drawn strokes have always been separate fields. Only this card tied them together.
+         *
+         * So drawing is a MODE OF WORKING, not a mode of the element: `brushDraw` is UI state that
+         * says "a drag on this tier lays cream", and `mode` keeps meaning only "does a band ring the
+         * cake". Turning drawing on here leaves `mode: 'band'` exactly as it was. */}
+        <div style={{ borderTop: `1px solid ${LINE}`, marginTop: 12, paddingTop: 10 }}>
+          {drawing ? (
+            <>
+              <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.5 }}>
+                Drag down the side for an upright stroke, or across it for one that sweeps round.
+                Each one opens its own card.
+              </div>
+              <button onClick={() => setBrushDraw(null)}
+                style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+                Done adding strokes
+              </button>
+            </>
+          ) : (
+            <button onClick={() => setBrushDraw({ tierIndex: i })}
+              style={{ ...s.neutralBtn, width: '100%' }}>
+              Add strokes by hand
+            </button>
+          )}
+          {drawn.length > 0 && (
+            <>
+              <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
+                {drawn.length} added by hand. Tap one to change it.
+              </div>
+              <button onClick={() => { updateTierBrushStrokes(i, () => []); setPickedBrush(null); }}
+                style={{ ...s.neutralBtn, width: '100%', marginTop: 6 }}>
+                Clear the ones I drew
+              </button>
+            </>
+          )}
+        </div>
+        {brushDupTier(i) != null && (
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginTop: 10 }}>
+            Duplicate puts the same strokes on tier {brushDupTier(i) + 1}.
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          {brushDupTier(i) != null && (
+            <button onClick={() => duplicateBrushBand(i)}
+              style={{ ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11 }}>
+              Duplicate
+            </button>
+          )}
+          {/* ⚠️ THE HAND-DRAWN ONES GO TOO, and that is not tidiness. This card only exists while
+              the tier has a BAND — `renderBrushBandBody` returns null without one — so removing the
+              band takes away the only door to the strokes drawn beside it. Leaving them would be
+              cream on the cake that cannot be selected, recoloured or deleted by any route. The
+              button above clears them on their own for anyone who wants to keep the band. */}
+          <button onClick={() => {
+            setTierBrushBand(i, null);
+            updateTierBrushStrokes(i, () => []);
+            setBrushDraw(null);
+            clearAllSelections();
+          }} style={{ ...s.deleteBtn, flex: '1 1 100%' }}>
             Remove from cake
           </button>
         </div>
@@ -13528,6 +14264,47 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           </div>
         </div>
 
+        {/* ── A message written ON this arch ────────────────────────────────────────────────────
+            ⚠️ GATED ON THE ROW'S `text_path`, so an element that cannot take text offers nothing
+            rather than a button that does nothing (INVARIANTS #11). The arch's own geometry decides
+            where the line goes and how far it bends — there is nothing to place and no curve to
+            set, which is why this is one button and not an editor.
+            ⚠️ IT OPENS THE MESSAGE'S OWN CARD. A second text editor here would be a second answer
+            to "what can you do with a message" — font, colour, material and Remove all already live
+            on that card, and the one that drifts is whichever is edited second (CLAUDE.md rule 1).
+            So this adds the message and hands over. */}
+        {rb.textPath?.kind && (() => {
+          const mine = (design.writings ?? []).filter(w => w.on?.id === rb.id);
+          return (
+            <div style={{ marginTop: 12 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: '#6B8C74', marginBottom: 4 }}>
+                MESSAGE ON THE RAINBOW
+              </div>
+              {/* ⚠️ `s.neutralBtn`, NOT A NavRow — the card's own button, for the reason the cream
+                  layer's note gives at length: a settings-list row sits white-on-white on this
+                  sheet and reads as a label rather than something you press. */}
+              {mine.map(w => (
+                <button key={w.id}
+                  onClick={() => { setColorOpen(false); setExpandedPipingId(null); setToolsOpen(false);
+                                   selectExclusive({ type: 'writing', id: w.id }); }}
+                  style={{ ...s.neutralBtn, width: '100%', marginBottom: 6, textAlign: 'left' }}>
+                  {w.text?.trim() || 'Untitled message'}
+                </button>
+              ))}
+              <button
+                onClick={() => {
+                  const id = addWriting({ font: DEFAULT_CREAM_FONT,
+                                          on: { kind: 'rainbow', tierIndex: card.tierIndex, id: rb.id } });
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'writing', id });
+                }}
+                style={{ ...s.neutralBtn, width: '100%' }}>
+                {mine.length ? 'Add another message' : 'Write on the rainbow'}
+              </button>
+            </div>
+          );
+        })()}
+
         {/* Gated on the row, for the reason the cloud's is. */}
         {instanceActions(rb.elementId).delete && (
           <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
@@ -13547,6 +14324,437 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // variation and jitter are what make it look like grass at all — they were tuned once in the admin
   // studio and are the same on every cake. Density, height and colour are the ones a cake actually
   // differs by: a putting green is short and dense, a meadow is long and sparse.
+  /* ── The gypsophila card ──────────────────────────────────────────────────────────────────────
+   *
+   * Three placements, and they are three answers to ONE question rather than three switches: a
+   * baker reaching for baby's breath is deciding where it goes, not assembling a set. `where` lives
+   * on the tier's own object, so switching keeps the colours and the sprig already chosen.
+   *
+   * ⚠️ "I'll arrange it" IS NOT A THIRD STYLE, it is the absence of a band — the filler covers the
+   * top and the baker moves it. Which is the house rule anyway (a preset is a starting point, never
+   * a lock) and the thing Sandeep asked for in as many words: *"let the user place the gypsophila
+   * wherever he wants."*
+   *
+   * ⚠️ NOTHING HERE TELLS IT ABOUT THE ROSES. Clearance is automatic and universal — the canvas
+   * hands it whatever is standing on that surface and it fills the gaps. There is no setting for it
+   * because there is no decision to make: a stem through a petal is wrong on every cake. */
+  /* ⚠️ THE TIER THAT HAS IT, not "the top one". The first version hardcoded the top tier, which was
+     right while a cake could only wear one cloud and wrong the moment Duplicate could put a second
+     one somewhere else: the card went on editing a tier with nothing on it. Falls back to the top
+     tier so `addGypsophila` still has an answer before anything exists. */
+  const gypTiers = design.tiers.map((t, k) => (t.gyp ? k : -1)).filter(k => k >= 0);
+  const gypTier = gypTiers.includes(gypPick)
+    ? gypPick
+    : (gypTiers[gypTiers.length - 1] ?? Math.max(0, design.tiers.length - 1));
+
+  /* Has anything changed since the card was opened? A live comparison rather than a flag each
+     writer has to remember to set — three dials, two wheels, Shuffle and the Where pills can all
+     change it, and a flag is one of them forgetting. An Undo that is always lit promises something
+     it cannot do (rule 7). */
+  const gypChanged = !!gypBefore
+    && (JSON.stringify(design.tiers.map(t => t.gyp ?? null)) !== JSON.stringify(gypBefore.tiers)
+        || JSON.stringify(design.boardGyp ?? null) !== JSON.stringify(gypBefore.board));
+
+  function undoGyp() {
+    if (!gypBefore) return;
+    design.tiers.forEach((t, k) => {
+      const was = gypBefore.tiers[k] ?? null;
+      if (JSON.stringify(t.gyp ?? null) !== JSON.stringify(was)) setTierGyp(k, was);
+    });
+    if (JSON.stringify(design.boardGyp ?? null) !== JSON.stringify(gypBefore.board)) {
+      setBoardGyp(gypBefore.board);
+    }
+  }
+
+  /* ⚠️ WHERE A DUPLICATE WOULD GO — and it is a TIER, never the board. The board already has a
+     control that puts a cloud on it (the Where row), and a second button doing the same job is two
+     answers to one question. What has no control is "the same cloud on the tier below", which on a
+     stacked cake is exactly what a baker means by duplicating it.
+     Null on a single-tier cake and on a cake where every tier already wears one — so the button is
+     absent rather than present and inert, because a surface treatment genuinely has nowhere to be
+     copied to when there is one surface (rule 7, INVARIANTS #8: a control means what its name
+     says). The Where pills still move the one cloud around. */
+  const gypDupTier = (() => {
+    const bare = design.tiers.map((t, k) => (!t.gyp ? k : -1)).filter(k => k >= 0);
+    // Downwards first: a cloud is added to the top and spread down, which is how the stack is read.
+    return bare.filter(k => k < gypTier).pop() ?? bare[0] ?? null;
+  })();
+
+  function duplicateGyp() {
+    const g = design.tiers[gypTier]?.gyp;
+    if (!g || gypDupTier == null) return;
+    setTierGyp(gypDupTier, { ...g });
+    setGypPick(gypDupTier);          // the copy is what you just made, so it is what you are editing
+  }
+
+  /* ── Gypsophila clumps: "I'll arrange" ────────────────────────────────────────────────────────
+   * The third placement, and a different KIND from the other two the way it is for grass: the rim
+   * band and the board ring answer "dress this surface", a clump answers "put one HERE". Sandeep
+   * asked for exactly that and gave the reason — *"let the roses be there on cake, let the user
+   * place the gypsophila wherever he wants. if it needs to go merged, he needs to make them."*
+   *
+   * ⚠️ IT IS THE SAME MECHANISM AS GRASS, DUST AND FOIL, down to the stored shape: polar (u, v)
+   * against the surface with a radius, dragged by a FinishHandles dot. `GypCloud` already took
+   * `patches`/`patchRadius` because it seats through `grassSeats`, so none of this is new geometry
+   * — it is a card writing the field the renderer was already reading.
+   *
+   * ⚠️ AND CLEARANCE STILL APPLIES INSIDE A CLUMP. `avoid` is handed to GypCloud by the canvas
+   * whatever the placement is, so a clump dropped between two roses fills the gap between them and
+   * does not grow through either (INVARIANTS #3b). That is the half of Sandeep's requirement 4 that
+   * needed no new code at all: the rule is on the surface, not on the placement. */
+  const [gypSelected, setGypSelected] = useState(null);   // { tier, idx }
+  const GYP_PATCH_R = 0.34;    // smaller than a grass clump: a posy, not a lawn
+
+  const newGypPatch = (existing = [], v = 0.55) => nextPatchSpot(existing, { v, r: GYP_PATCH_R });
+
+  /* ⚠️ A WALL CLUMP'S `v` IS HEIGHT UP THE TIER, a top clump's is distance out from the middle —
+     same field, two surfaces, and `nextPatchSpot` only knows about the second. So the wall picks
+     its own row to land on: 0.42 is where a posy usually sits, and the spot search still keeps a
+     new one clear of the ones already there. */
+  const GYP_WALL_V = 0.42;
+
+  function addGypPatch() {
+    const t = gypTier;
+    if (!design.tiers[t]?.gyp) return;
+    const onWall = design.tiers[t].gyp.where === 'side';
+    // From the LIVE list inside the updater, not from `design` as this component last rendered it —
+    // two quick presses otherwise read the same list and the second clump lands on the first.
+    updateGyp(t, cur => {
+      const list = cur.patches ?? [];
+      return { patches: [...list, newGypPatch(list, onWall ? GYP_WALL_V : 0.55)] };
+    });
+    setGypSelected({ tier: t, idx: (design.tiers[t].gyp.patches?.length ?? 0) });
+  }
+
+  function removeGypPatch(tier, idx) {
+    updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).filter((_, k) => k !== idx) });
+    setGypSelected(null);
+  }
+
+  function handleGypMove(tier, idx, u, v) {
+    updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).map((p, k) => k === idx ? { ...p, u, v } : p) });
+  }
+
+  function setGypPatchSize(tier, idx, r) {
+    updateGyp(tier, { patches: (design.tiers[tier]?.gyp?.patches ?? []).map((p, k) => k === idx ? { ...p, r } : p) });
+  }
+
+  /* ── May this element's colour be changed? ─────────────────────────────────────────────────────
+   *
+   * ⚠️ ASKED OF THE ROW, AND "NO ROW" MEANS NO. Sandeep: *"in admin i did not select color
+   * changeable. how come there is a color picker without explicitly selecting color changeable."*
+   * Four procedural cards drew a ColorWheel and none of them asked — gypsophila's row genuinely did
+   * not grant colour, and the other three were only correct by luck, because their rows happened to
+   * say yes. The day an admin unticks one, a picker nobody granted stays on the card.
+   *
+   * ⚠️ ONE FUNCTION, because this is one question. Four cards each testing `allowed_actions?.color`
+   * their own way is four places to get the "no row" case wrong, and that case is the whole point:
+   * a treatment placed from a Tools shortcut, or restored from a design saved before the id was
+   * kept, has nothing to ask — and the safe reading of "I did not grant this" is that it was not
+   * granted. Colours already chosen still RENDER; what goes is the ability to change them. */
+  function elementAllowsColour(thing) {
+    const el = thing?.elementId ? elementById.get(thing.elementId) : null;
+    return el?.allowed_actions?.color === true;
+  }
+
+  function renderGypBody() {
+    const i = gypTier;
+    const g = design.tiers[i]?.gyp;
+    const bg = design.boardGyp;
+    if (!g && !bg) return null;
+    const where = g?.where ?? 'rim';
+    /* ⚠️ WHAT THE ELEMENT ALLOWS, read off the ROW. Sandeep: *"in admin i did not select color
+       changeable. how come there is a color picker without explicitly selecting color changeable."*
+       He is right that this is the bigger question — the card was offering a control the catalogue
+       never granted, because it never asked. Every other surface asks: `caps` resolves
+       `allowed_actions` per selection, stickers carry theirs, and a decorEl card reads the
+       element's. This one answered to nothing.
+       ⚠️ AND NO ROW MEANS NO, not yes. A gypsophila placed from a Tools shortcut, or restored from
+       a design saved before the id was kept, has no row to ask — and the safe reading of "I did not
+       grant this" is that it was not granted. The colours already chosen still RENDER; what goes is
+       the ability to change them. */
+    /* The row this gypsophila came from — it answers two questions now: what may be RECOLOURED and
+       where it may GO. Both used to be answered by the card itself, which is the shape of the
+       violation: a card is not the catalogue. */
+    const gypEl = (g ?? bg)?.elementId ? elementById.get((g ?? bg).elementId) : null;
+    const canColour = elementAllowsColour(g ?? bg);
+    const pill = (label, on, fn) => (
+      <button key={label} onClick={fn}
+        style={{ flex: 1, padding: '7px 2px', borderRadius: 8, fontWeight: 700, fontSize: 11.5,
+          cursor: 'pointer', fontFamily: 'inherit', border: `1.5px solid ${LINE}`,
+          background: on ? INK : SURFACE, color: on ? SURFACE : INK }}>{label}</button>
+    );
+    /* ⚠️ WHERE IT MAY GO IS THE ROW'S ANSWER, NOT THIS CARD'S. Sandeep: *"placement is not driven
+       by config. so many violations on driving the rendering from config."* He is right: these four
+       pills were written out here and shown whatever `allowed_zones` said, so an admin who allowed
+       a filler on the board only still got a card offering the rim, the wall and the lid. The zone
+       vocabulary is already shared (ZONES, and `allowed_zones` on every row); nothing here needed
+       inventing, only asking.
+       ⚠️ A ROW THAT SAYS NOTHING KEEPS ALL FOUR. An element placed before this, or one authored
+       without zones, must not lose its placements — absent is not the same as empty. */
+    const zonesAllowed = gypEl?.allowed_zones?.length ? gypEl.allowed_zones : null;
+    const mayGo = (zone) => !zonesAllowed || zonesAllowed.includes(zone);
+    /* ⚠️ HOW IT SITS ON EACH SURFACE IS ALSO THE ROW'S ANSWER. These four sets used to be written
+       out here — spacing, jitter, lay, bury, height, droop, four times over — which is the other
+       half of "placement is not driven by config": an admin could not change how a filler arrives
+       on a rim without a deploy (rule 3), and two rows over one generator could differ only in the
+       sprig. `gypPlacement` seeds them in the geometry and lays the row's own `zones` over the top.
+       The card asks; it no longer answers. */
+    const placement = (key) => gypPlacement(key, gypEl?.placement_config);
+    return (
+      <>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Baby's breath — a cloud of tiny blooms. It fills the gaps around whatever is already on
+          the cake and never grows through it.
+        </div>
+
+        <div style={{ marginTop: 8 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                        textTransform: 'uppercase', marginBottom: 6 }}>Where</div>
+          {/* ⚠️ THE ROW WRAPS NOW THERE ARE FOUR. Three pills fill a 390px card exactly; a fourth
+              in the same rigid row squeezed every label to two lines. */}
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {mayGo(ZONES.TOP_SURFACE) && pill('On the rim', !!g && where === 'rim',
+              () => setTierGyp(i, { ...(g ?? design.boardGyp ?? {}), ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
+                                    where: 'rim', ...placement('rim'),
+                                    /* ⚠️ A BAND AND CLUMPS CANNOT BOTH BE ON. `grassSeats` reads
+                                       `patches` whatever else it was given, so a leftover clump
+                                       from "I'll arrange" would seat a second cloud in the middle
+                                       of the ring and the rim pill would look broken. */
+                                    patches: null }))}
+            {/* ⚠️ IT STARTS AS ONE CLUMP, NOT A FLOODED TOP. The first version covered the whole
+                surface, which is "I'll cover it" — the opposite of what the pill says. A baker who
+                chose this is placing a posy and then another one; the clump is the unit, the handle
+                on the cake is how it moves, and `+ Add clump` is how the second one arrives. */}
+            {mayGo(ZONES.TOP_SURFACE) && pill("I'll arrange", !!g && where === 'free',
+              () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
+                                    /* ⚠️ A CLUMP IS AS DENSE AS THE BAND, not sparser. At 0.14 a
+                                       clump of r=0.34 seats about six sprigs and reads as a smudge
+                                       — measured by looking at it, where the rim ring beside it is
+                                       solid. A posy is a BUNCH; the clump radius is what makes it
+                                       small, never the gaps between stems. */
+                                    where: 'free', ...placement('free'),
+                                    patches: g?.patches?.length ? g.patches : [newGypPatch()] }))}
+            {/* ⚠️ ON THE WALL — stems pushed in sideways, blooms fanning out, which is what `lay: 90`
+                means: tipped all the way over onto the wall's own outward normal. Burying is INWARD
+                here rather than downward, so a bare stem is inside the cake exactly as it is on a
+                real one. And it is the placement that answers the rest of requirement 4: a band
+                round the side arranges BETWEEN whatever is already on the wall and never grows
+                through it (`wallOccupants` + a three-dimensional clearance — on a wall a flat test
+                would take a stripe out of the band from the board to the rim for every rose). */}
+            {mayGo(ZONES.SIDE) && pill('On the side', !!g && where === 'side',
+              () => setTierGyp(i, { ...GYP_DEFAULTS, ...GYP_COLOURS, ...(g ?? {}),
+                                    /* ⚠️ `lay: 90` POINTED EVERY SPRIG STRAIGHT OUT OF THE WALL,
+                                       so the camera saw each one END-ON — and a sprig end-on is its
+                                       bloom cluster and nothing else, which is precisely the
+                                       reported *"cluster of white dots/sprinkles"*. Measured over a
+                                       sweep of lay against size: at 30–35° the branching and the
+                                       green stems come back, and the posy fans UP the wall the way
+                                       a real one does. At 90° it also hung off the bottom of the
+                                       cake once the flower was big enough to read. */
+                                    where: 'side', ...placement('side'),
+                                    /* ⚠️ NO `size` HERE. It used to carry 1.6 of its own, which was
+                                       a second answer to "how big is this flower" — the rim had 1
+                                       and the side 1.6 for the same baby's breath. The default is
+                                       2, measured against a reference photograph, and every
+                                       placement inherits it. What differs per placement is the
+                                       sprig's REACH, which is `height`. */
+
+                                    /* ⚠️ ONE CLUMP, NOT A BAND ROUND THE CAKE. Sandeep: *"flowers
+                                       on side is mostly hand drawn. usually people wont cover the
+                                       entire side with these flowers. on sides, its usually along
+                                       with other flowers."* A full sash was the first version and
+                                       it is the wrong default — this is a thing a baker places
+                                       beside the roses, two or three of, not a stripe. `v: 0.42`
+                                       sits it below the middle, where a wall posy usually goes. */
+                                    patches: g?.where === 'side' && g?.patches?.length
+                                      ? g.patches : [{ u: 0, v: 0.42, r: 0.3 }] }))}
+            {mayGo(ZONES.BOARD) && pill('On the board', !!bg,
+              () => (bg ? setBoardGyp(null)
+                        : setBoardGyp({ ...GYP_DEFAULTS, ...GYP_COLOURS, ...placement('board'),
+                                        /* The same row, so the board ring answers to the same
+                                           permissions and travels in the same bundle. */
+                                        elementId: g?.elementId ?? undefined })))}
+          </div>
+        </div>
+
+        {/* ── Which cloud, once there is more than one ──────────────────────────────────────────
+            Only the tiers that actually wear one, and only when two or more do: a row of pills
+            offering tiers with nothing on them would read as "put one here", which is Duplicate's
+            job. Numbered the way the grass card numbers them, because a baker meets ONE idea of
+            "tier 2" in this tool (INVARIANTS #14). */}
+        {gypTiers.length > 1 && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>Tier</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {gypTiers.map(ti => pill(String(ti + 1), ti === gypTier, () => setGypPick(ti)))}
+            </div>
+          </div>
+        )}
+
+        {/* ⚠️ `DialCell` IN A `ScrollFadeRow`, NOT BARE `SizeDial`s. SizeDial takes no `label` and no
+            `isMobile` — both were being passed and both silently ignored, so the card showed two
+            unnamed dials reading "0.1" and "0.1" and nothing said which was which. A control that
+            does not say what it acts on is the thing INVARIANTS #8 and #11 are about, and this is
+            the component that exists so it never has to be rebuilt: DialCell is the captioned dial
+            every other procedural card's control row is made of. Found by LOOKING at the card at
+            390px, not by reading the props I meant to pass. */}
+        {g && where === 'rim' && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Over the edge" value={g.rimOut ?? 0.10} min={0} max={0.4} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => updateGyp(i, { rimOut: v })} />
+            <DialCell label="In from the edge" value={g.rimIn ?? 0.14} min={0.03} max={0.6} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => updateGyp(i, { rimIn: v })} />
+          </ScrollFadeRow>
+        )}
+
+        {/* ⚠️ FRACTIONS OF THE TIER, SHOWN AS A PERCENTAGE OF ITS HEIGHT. Never world units: the
+            same band must mean the same thing about a short tier and a tall one (INVARIANTS #8),
+            and "40%" is a sentence a baker can read off a cake while "0.58" is not. The two edges
+            are the two things a hand actually chooses about a band on a wall. */}
+        {/* ⚠️ ONE DIAL FOR THE FLOWER, AND IT IS NOT PER-PLACEMENT. How big baby's breath is drawn
+            is a fact about the flower, not about where it sits, so it rides above the Where row's
+            own controls and shows on all four. Asked for in as many words after a wall posy read as
+            specks: *"can we add a size control? its looking like a cluster of white
+            dots/sprinkles. not like gypsophila flowers."* */}
+        {(g || bg) && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Flower size" value={(g ?? bg)?.size ?? 1} min={0.6} max={2.6} step={0.1}
+              fmt={v => `${v.toFixed(1)}\u00d7`}
+              onChange={v => { if (g) updateGyp(i, { size: v }); if (bg) updateBoardGyp({ size: v }); }} />
+          </ScrollFadeRow>
+        )}
+
+        {/* ⚠️ ONLY WHEN EVERY CLUMP HAS BEEN TAKEN OFF. With clumps placed these two do nothing —
+            a clump carries its own height — and a control that is visible but inert is the thing
+            rule 7 is about. Take them all off and the side becomes a sash the whole way round,
+            which a few cakes do wear, and then the band's edges are what there is to set. */}
+        {g && where === 'side' && !g.patches?.length && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Band bottom" value={g.sideLo ?? 0.18} min={0} max={0.9} step={0.02}
+              fmt={v => `${Math.round(v * 100)}%`}
+              onChange={v => updateGyp(i, { sideLo: Math.min(v, (g.sideHi ?? 0.68) - 0.02) })} />
+            <DialCell label="Band top" value={g.sideHi ?? 0.68} min={0.1} max={1} step={0.02}
+              fmt={v => `${Math.round(v * 100)}%`}
+              onChange={v => updateGyp(i, { sideHi: Math.max(v, (g.sideLo ?? 0.18) + 0.02) })} />
+          </ScrollFadeRow>
+        )}
+
+        {bg && (
+          <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+            <DialCell label="Ring width" value={bg.ringWidth ?? 0.18} min={0.04} max={0.5} step={0.01}
+              fmt={v => v.toFixed(2)} onChange={v => updateBoardGyp({ ringWidth: v })} />
+          </ScrollFadeRow>
+        )}
+
+        {/* ── The clumps, when the baker is arranging them ───────────────────────────────────────
+            The same scrolling row of cells grass uses, with the same ×, the same dial and the same
+            "tap the cell to select it" — one idea of "a clump" in this tool, not two (INVARIANTS
+            #14). Each one is also dragged on the cake itself by the white dot; the dot is only
+            there while this card is open, so a finished arrangement is not covered in handles. */}
+        {g && (where === 'free' || where === 'side') && (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+                          textTransform: 'uppercase', marginBottom: 6 }}>Clumps</div>
+            <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginBottom: 6 }}>
+              Drag the white dot on the cake {where === 'side' ? 'wall' : ''} to move one. It fills
+              the gaps between whatever is already standing there and never grows through it.
+            </div>
+            {clumpCells(g.patches ?? [], i,
+              (k, v) => setGypPatchSize(i, k, v),
+              (k) => removeGypPatch(i, k),
+              gypSelected, setGypSelected)}
+            <button onClick={addGypPatch}
+              style={{ marginTop: 4, padding: '5px 12px', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+                border: `1.5px solid ${INK}`, background: INK, color: '#fff', fontWeight: 700, fontFamily: 'inherit' }}>
+              + Add clump
+            </button>
+          </div>
+        )}
+
+        {/* ── Two colours, and only one of them is open at a time ────────────────────────────────
+            ⚠️ `compact={isMobile}` AND A WIDTH, which is what makes this a card rather than two
+            screens of colour picker. Without compact, ColorWheel draws its desktop layout — the
+            gradient square on top, swatches wrapped underneath — and TWO of those pushed the
+            clumps, the shuffle and every button off the bottom of a phone. Its own note says the
+            compact branch "was written for exactly this sheet", and the grass card was the one
+            caller passing it. Measured by screenshotting the card at 390px (rule 5/6), not by
+            reading the props I meant to pass.
+
+            ⚠️ AND ONLY THE CHOSEN ONE IS SHOWN. Even compact, two pickers stacked is most of a
+            phone. Bloom is the colour a baker changes and opens first (INVARIANTS #12 — laid out by
+            how often each is used); stem is a tap away. */}
+        {canColour && (<>
+          <div style={{ display: 'flex', gap: 6, margin: '12px 0 6px' }}>
+            {pill('Bloom', gypInk === 'bloom', () => setGypInk('bloom'))}
+            {pill('Stem', gypInk === 'stem', () => setGypInk('stem'))}
+          </div>
+          <ColorWheel width={152} compact={isMobile}
+            color={(g ?? bg)?.[gypInk] ?? GYP_COLOURS[gypInk]}
+            onChange={c => { if (g) updateGyp(i, { [gypInk]: c }); if (bg) updateBoardGyp({ [gypInk]: c }); }}
+            cakeColors={[...new Set(collectElementColors(design))]} />
+        </>)}
+
+        {/* One Shuffle per feature, storing its own seed: a design that cannot reproduce the cloud a
+            baker chose has not saved their work. Same rule as the skirt and the scraped edge. */}
+        <span style={s.topEdgePair}>
+          <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+            onClick={() => { const seed = 1 + Math.floor(Math.random() * 9999);
+                             if (g) updateGyp(i, { seed }); if (bg) updateBoardGyp({ seed }); }}>&#8635;</button>
+          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+        </span>
+
+        {/* ── Undo, Duplicate, Remove ───────────────────────────────────────────────────────────
+            The same three the piped piece and the brushstroke offer, with the same glyph, the same
+            tones and the same order (INVARIANTS #14): a baker meets ONE Undo in this tool, not
+            three that look different because they were built in different months.
+
+            ⚠️ Undo IS LIT ONLY WHEN IT CAN DO SOMETHING. It puts every surface back the way it was
+            when this card was opened — one level, which is what a person wants after trying three
+            bloom colours and a shuffle.
+
+            ⚠️ "Remove from cake", in `s.deleteBtn` — BOTH halves are the standard, set twice over:
+            a bare "Remove" beside a card that can itself be dismissed is genuinely ambiguous (the
+            popup, or the decoration?), and the same words in a differently-styled button is still
+            two standards. This takes BOTH placements off, because the card is the element and a
+            baker who asked to remove the gypsophila did not mean "the rim one only".
+
+            ⚠️ THE ROW WRAPS AND Remove TAKES ITS OWN LINE. Measured in this file already: a footer
+            of Duplicate (98px) and Remove from cake (158px) needs 276px of card, and this card is
+            390px wide on a phone with 12px of padding each side — three in a line does not fit
+            (rule 5). Remove is also the longest label and the destructive one, so it is the one
+            that gets its own row rather than the pair that are cheap to press by accident. */}
+        {gypDupTier != null && (
+          <div style={{ fontSize: 10, fontWeight: 600, color: '#999', marginTop: 12 }}>
+            Duplicate puts the same cloud on tier {gypDupTier + 1}.
+          </div>
+        )}
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 8 }}>
+          <button onClick={undoGyp} disabled={!gypChanged}
+            style={gypChanged
+              ? { ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11 }
+              : { ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11,
+                  color: INK_MUTED, cursor: 'not-allowed' }}>
+            &#8630; Undo
+          </button>
+          {gypDupTier != null && (
+            <button onClick={duplicateGyp}
+              style={{ ...s.neutralBtn, flex: '1 1 40%', padding: '7px 0', fontSize: 11 }}>
+              Duplicate
+            </button>
+          )}
+          <button
+            onClick={() => { design.tiers.forEach((t, k) => { if (t.gyp) setTierGyp(k, null); });
+                             setBoardGyp(null); setGypPick(null); clearAllSelections(); }}
+            style={{ ...s.deleteBtn, flex: '1 1 100%', marginTop: 2 }}>
+            Remove from cake
+          </button>
+        </div>
+      </>
+    );
+  }
+
   function renderGrassBody() {
     const i = grassTier;
     const g = design.tiers[i]?.grass;
@@ -13752,8 +14960,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             by a hairline — its own note says that heading "cost a whole line of the sheet's height to
             label six swatches that are self-evident once they are beside the presets". Nine callers
             in this file, and only ONE was passing it. */}
-        <ColorWheel color={grassColor} onChange={setGrassColor} width={152} compact={isMobile}
-          cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
+        {/* Only if the row grants it — see `elementAllowsColour`. */}
+        {elementAllowsColour(design.tiers[grassTier]?.grass ?? design.boardGrass) && (
+          <ColorWheel color={grassColor} onChange={setGrassColor} width={152} compact={isMobile}
+            cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== grassColor.toLowerCase())} />
+        )}
 
         {/* s.deleteBtn — the destructive tone, where the FIELD is the signal. It was a white button
             with pink text and a grey border, which at rest on a phone reads as an ordinary action. */}
@@ -15281,6 +16492,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               autoRotate={creamAutoRotate}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
+              brushDraw={brushDraw}
+              onBrushDrawStart={handleBrushDrawStart}
+              onBrushDrawTo={handleBrushDrawTo}
+              onBrushDrawEnd={handleBrushDrawEnd}
               selectedTier={selectedTier}
               onTierClick={handleTierClick}
               onDeselect={handleDeselect}
@@ -15337,6 +16552,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   setToolsOpen(false);
                   focusEditor('decoration');
                   selectExclusive({ type: 'grass' });
+                }
+              }}
+              /* Gypsophila clumps are dragged by the very same dots — see the handles in the
+                 canvas. Paired exactly as grass pairs them: the tap sets which clump is selected
+                 AND reopens the card it belongs to, because the handles outlive the card. */
+              /* Tapping the flowers on the cake opens their card — the thing a band has no handle
+                 for, since it has no position of its own. Paired exactly as grass pairs its handle
+                 tap: set the selection AND bring the editor forward. */
+              onGypClick={() => {
+                setElementsOpen(false);
+                setToolsOpen(false);
+                focusEditor('decoration');
+                selectExclusive({ type: 'gyp' });
+              }}
+              gypMode={selectedEl?.type === 'gyp'}
+              gypSelected={gypSelected}
+              onGypMove={handleGypMove}
+              onGypSelect={(tier, idx) => {
+                setGypSelected({ tier, idx });
+                if (selectedEl?.type !== 'gyp') {
+                  setElementsOpen(false);
+                  setToolsOpen(false);
+                  focusEditor('decoration');
+                  selectExclusive({ type: 'gyp' });
                 }
               }}
               blocksMode={selectedEl?.type === 'blocks'}
@@ -15557,6 +16796,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <DialCell label="Thickness" value={pickedBrushStroke.weight ?? 0.18}
               min={0} max={1} step={0.02} fmt={v => v.toFixed(2)}
               onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { weight: v })} />
+            {/* ⚠️ WIDTH IS NOT THICKNESS, and a baker drawing by hand needs both. Thickness is how
+                much cream the knife left — how proud the stroke stands off the wall. Width is how
+                broad the knife was. The band sets one width for all thirty of its strokes because
+                they are one gesture repeated; a stroke somebody DREW is its own gesture, and a wide
+                sweep beside a narrow one is most of what makes a hand-painted wall read as
+                hand-painted. */}
+            <DialCell label="Width" value={pickedBrushStroke.width ?? BRUSH_ON_CAKE_DEFAULTS.width}
+              min={0.08} max={0.9} step={0.02} fmt={v => v.toFixed(2)}
+              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v })} />
+          </div>
+          {/* ⚠️ THE PATTERN IS A SEED, NOT A DIAL. Sandeep asked for *"color and thickness, pattern
+              at stroke level"*. A stroke's pattern is where it tore, where the knife ran dry and
+              how its striations fell — `brushStriation` and `brushLoad` derive all of it from one
+              seed. Nobody wants seed 7 over seed 8; they want to see another one, which is why this
+              is the same Shuffle the band and the scraped edge already offer rather than a number.
+              Stored, or it is a preview toy: a design that cannot reproduce the stroke a baker
+              chose has not saved their work. */}
+          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+            <button type="button" style={{ ...s.neutralBtn, width: '100%', padding: '7px 0', fontSize: 11 }}
+              onClick={() => updateBrushStroke(pickedBrush.tier, pickedBrush.id,
+                { seed: 1 + Math.floor(Math.random() * 9999) })}>
+              &#8635; Another pattern
+            </button>
           </div>
           <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
             <button onClick={() => { if (pickedBrushBefore) updateBrushStroke(pickedBrush.tier, pickedBrush.id, pickedBrushBefore); }}
@@ -16114,6 +17376,129 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </span>
                     </button>
                   )}
+                  {/* ── Wafer paper: a skirt of cut, pleated sheets round the wall ───────────
+                    *
+                    * Sandeep: *"integrate the wafer paper studio into core designer. add another
+                    * option in the tier edit popup card. this is where user can select the wafer
+                    * paper. should be able to choose the adjustments as in admin."*
+                    *
+                    * ⚠️ IN FROSTING, BESIDE Cream layer, AND FOR THE SAME REASON. It is a TIER
+                    * TREATMENT — one choice about how this tier's wall is dressed — not a
+                    * decoration you place and move. Everything in the decorations drawer has a
+                    * position; this has a perimeter.
+                    *
+                    * ⚠️ AND NOT A STYLE CHIP. `frostingStyle` is ONE string per tier and those four
+                    * chips are mutually exclusive ways the CREAM is worked. Wafer paper is paper,
+                    * stood OFF the wall, and it composes with every one of them — a ribbed wall
+                    * behind a wafer skirt is a cake somebody makes. A fifth chip would delete that
+                    * combination, which is exactly the argument the Cream layer row above makes.
+                    *
+                    * ⚠️ INLINE, AND IT WAS A PANEL FIRST. Eleven sliders and five cuts looked like
+                    * a job for `Panel` — until the harness screenshot showed what that means on a
+                    * phone: a full-height sheet with the cake behind a blur, every slider live and
+                    * nothing to watch. That is INVARIANTS #11 in one picture, and the measurement
+                    * agreed — wall texture went DOWN when the skirt went on, because the probe was
+                    * reading the backdrop. The tier sheet already solves this: it sits at the
+                    * bottom and leaves the cake above it. So this is the Scraped edge idiom from
+                    * two blocks up — a chip turns it on, its controls unfold underneath, and the
+                    * tab scrolls. Long only once you have asked for it. */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+                    <Chip label="Wafer paper" isMobile={isMobile}
+                          active={!!tier?.wafer}
+                          /* Arrives in a preset that can be SEEN on this cake: white unless the
+                             tier is white too, in which case the one that contrasts. See
+                             waferPresetFor — it prefers white and only steps aside. */
+                          onClick={() => setTierWafer(selectedEl.index,
+                            tier?.wafer ? null : waferPresetFor(tier?.color))} />
+                  </div>
+                  {tier?.wafer && (() => {
+                    const w = { ...WAFER_DEFAULTS, ...tier.wafer };
+                    const set = (k, v) => setTierWafer(selectedEl.index, { [k]: v });
+                    return (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                        <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.45 }}>
+                          Thin sheets cut into strips, pleated by hand and pressed on along the top
+                          edge, so the hem hangs free.
+                        </div>
+
+                        {/* ⚠️ THE LOOKS COME FIRST BECAUSE THEY ARE THE ANSWER FOR MOST PEOPLE. Each
+                            is a claim about one reference cake — how many sheets, how deeply
+                            pleated, how far the hem swings — so they are the fastest route to
+                            something that works. Nobody arrives wanting "Folds across 6.0".
+                            A tap applies the whole look INCLUDING its colour: the four are coral or
+                            white-on-white, and half-applying one gives a cake no reference shows. */}
+                        <ScrollFadeRow style={{ gap: 7, marginTop: 2 }}>
+                          {/* ⚠️ `waferPresetsOffered()`, NOT THE WHOLE TABLE. Two of the five are
+                              hidden from a customer while they are not good enough — see
+                              WAFER_HIDDEN, which carries what is wrong with each. They are still in
+                              the table and still in the admin studio, because that is the screen
+                              that would fix them; this is the screen that sells them. */}
+                          {waferPresetsOffered().map(([name, preset]) => (
+                            <Chip key={name} label={name} isMobile={isMobile}
+                                  active={Object.entries(preset).every(([k, v]) => w[k] === v)}
+                                  onClick={() => setTierWafer(selectedEl.index, preset)} />
+                          ))}
+                        </ScrollFadeRow>
+
+                        {/* ColorWheel, like every other colour a customer picks (CLAUDE.md rule 1).
+                            Never a row of hand-rolled swatches, never a native input. */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '8px 0 2px' }}>
+                          <ColorWheel color={w.colour ?? '#fbf7f2'} onChange={c => set('colour', c)} />
+                          <span style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 0.6 }}>
+                            Paper colour
+                          </span>
+                        </div>
+
+                        {/* ⚠️ MOUNTING FIRST, because it changes what the sliders below it MEAN.
+                            Flat lays each sheet on the wall, so Width is its share of the
+                            perimeter; stood on edge the same number is how far the strip reaches
+                            OUT. Sandeep, four renders into the flat version: *"wafer paper strips
+                            are perpendicularly added to the cake surface. your screenshot shows
+                            like the strips are flat."* A preset sets it, and this is how a baker
+                            leaves the preset — presets are a starting point, never a lock. */}
+                        <div style={s.waferHead}>How it is stuck on</div>
+                        <ScrollFadeRow style={{ gap: 7, marginBottom: 10 }}>
+                          {[['Flat on the wall', false], ['Stood on edge', true]].map(([label, on]) => (
+                            <Chip key={label} label={label} isMobile={isMobile}
+                                  active={!!(w.fin ?? WAFER_DEFAULTS.fin) === on}
+                                  onClick={() => set('fin', on)} />
+                          ))}
+                        </ScrollFadeRow>
+                        {(w.fin ?? WAFER_DEFAULTS.fin) && (
+                          <StyleControls params={WAFER_CONTROLS.mount} values={w} onChange={set} />
+                        )}
+
+                        <div style={s.waferHead}>The sheets</div>
+                        <StyleControls params={WAFER_CONTROLS.sheets} values={w} onChange={set} />
+                        <div style={s.waferHead}>The pleat</div>
+                        <StyleControls params={WAFER_CONTROLS.pleat} values={w} onChange={set} />
+
+                        {/* ⚠️ THE CUT IS NOT A SLIDER. Four of these trim a strip and two make the
+                            piece a different SHAPE — a half-disc and a leaf — so there is no order
+                            to slide along and nothing in between two of them. */}
+                        <div style={s.waferHead}>The cut</div>
+                        <ScrollFadeRow style={{ gap: 7, marginBottom: 10 }}>
+                          {WAFER_HEMS.map(h => (
+                            <Chip key={h.key} label={h.label} isMobile={isMobile}
+                                  active={(w.hem ?? WAFER_DEFAULTS.hem) === h.key}
+                                  onClick={() => set('hem', h.key)} />
+                          ))}
+                        </ScrollFadeRow>
+                        <StyleControls values={w} onChange={set}
+                          params={[{ key: 'notch', label: 'Cut depth', min: 0, max: 0.4, step: 0.01 }]} />
+
+                        {/* One Shuffle per feature, each storing its own seed: a design that cannot
+                            reproduce the skirt a baker chose has not saved their work. Same rule as
+                            the scraped edge and the spiral above. */}
+                        <span style={s.topEdgePair}>
+                          <button type="button" style={s.tbIconBtn} title="Another hand's pass"
+                            onClick={() => set('seed', 1 + Math.floor(Math.random() * 9999))}>&#8635;</button>
+                          <span style={{ ...s.tbSizeLabel, fontSize: 9, color: '#888', letterSpacing: 0.3 }}>Shuffle</span>
+                        </span>
+                      </div>
+                    );
+                  })()}
+
                   </div>
 
                 </>
@@ -16466,6 +17851,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'cloud' ? renderCloudBody(card)
                            : card.type === 'balloon' ? renderBalloonBody(card)
                            : card.type === 'rainbow' ? renderRainbowBody(card)
+                           : card.type === 'gyp' ? renderGypBody()
                            : card.type === 'grass' ? renderGrassBody()
                            : card.type === 'blocks' ? renderBlocksBody()
                            : card.type === 'topper'  ? renderTopperBody(card.topper)
@@ -16547,8 +17933,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // Only rim/board drive piping candidates. The admin's "Side" zone is the cake
               // wall — the same place board piping rides (y-adjustable) — so treat it as 'board'
               // here, otherwise a side-zoned piping element yields no candidates (blank card).
+              /* ⚠️ `side` MAPS TO `board` HERE, and that is what grew a board ring on a decoration.
+                 An element allowed on the wall for ordinary placement (a rose you stand on the side)
+                 arrives with `side` in its zones; mapped to `board` it became a second ring tile the
+                 admin never ticked. `ringZones` — set only on the decoration-ring path — says which
+                 zones were actually authored as rings. Piping carries none and is unchanged. */
               const allowed = (pipingPopupEl.allowed_zones?.length ? pipingPopupEl.allowed_zones : ['rim', 'board'])
-                .map(z => z === 'side' ? 'board' : z);
+                .map(z => z === 'side' ? 'board' : z)
+                .filter(z => !pipingPopupEl.ringZones || pipingPopupEl.ringZones.includes(z));
               const multi   = design.tiers.length > 1;
               // One card per candidate ring, ordered to mirror the cake top → bottom.
               // Each is independently editable; the checkbox beside its preview adds/removes
@@ -16579,11 +17971,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 if (allowsBoard && yAdjustable && i > 0) candidates.push({ tierIndex: i, zone: 'board', label: `${TIER_LABELS[i]} Side` });
               }
               if (allowsBoard) candidates.push({ tierIndex: 0, zone: 'board', label: multi ? `${TIER_LABELS[0]} Board` : 'Board' });
+              /* ⚠️ THE FALLBACK IS THE BOTTOM TIER, NOT THE FIRST TILE. `candidates` is built from
+                 the top down (so the tiles read top-to-bottom like the cake looks), which made
+                 `candidates[0]` the TOP tier — and since "Cover the cake" acts on whichever tile is
+                 active, covering a two-tier cake coated the little one on top. Sandeep: *"when i
+                 click on cover the cake option it covered the top tier... in case if default is
+                 needed, it should be to the bottom tier"*.
+                 The bottom tier is the biggest surface and the one a coat is nearly always meant
+                 for, so it is the default when nothing else has chosen. A stable sort keeps the
+                 zone order within that tier, so Rim still beats Board where both are offered. This
+                 is only the DEFAULT — the tiles choose, and the two earlier clauses still win:
+                 whatever the baker is actively editing, then wherever this card already has a ring. */
               const activeRing =
                 candidates.find(c => activePipingRing
                   && c.tierIndex === activePipingRing.tierIndex && c.zone === activePipingRing.zone)
                 ?? candidates.find(c => ringPiping(c.tierIndex, c.zone))
-                ?? candidates[0]
+                ?? [...candidates].sort((a, b) => a.tierIndex - b.tierIndex)[0]
                 ?? { tierIndex: -1, zone: null };
               /* The coat THIS card put on THAT tier. Another element's coat is not this card's to
                  mark, rescope or remove — the chips would otherwise light up on a card that had
@@ -16745,17 +18148,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           : false}
                         onClick={() => coverEntireCake(pipingPopupEl, activeRing.tierIndex, sc.key)} />
                     ))}
-                    {/* Only once there is one to take off — an empty "Remove" is a dead control. */}
-                    {coatFromThisCard && (
-                      <button type="button"
-                        onClick={() => removeCoat(activeRing.tierIndex)}
-                        style={{ padding: isMobile ? '12px 16px' : '8px 14px', borderRadius: 12,
-                                 border: '1.5px solid #999999', background: 'transparent',
-                                 fontFamily: "'Quicksand',sans-serif", fontSize: isMobile ? 14 : 11,
-                                 fontWeight: 700, color: '#666', cursor: 'pointer' }}>
-                        Remove
-                      </button>
-                    )}
+                    {/* ⚠️ NO REMOVE IN THIS ROW. Sandeep: *"see the remove button placement. it should
+                        be the last one in any element card popup."* It sat here as a fourth chip
+                        beside Whole cake / Sides only / Top only, which reads as a fourth way to
+                        cover the cake rather than the way to take it off — and every other card in
+                        this designer ends with Remove. The card's own "Remove from cake" at the
+                        bottom takes the coat off now; see its note. */}
                   </div>
                 </div>
               )}
@@ -16901,9 +18299,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                               resolves a row's range against defaults — INVARIANTS #5b, "ONE size
                               path" — and the defaults handed to it are SizeDial's own, so a row
                               that authors nothing behaves exactly as before. */}
+                          {/* ⚠️ AND THEN THE RAIL'S, BECAUSE THE ROW'S RANGE IS NOT DELIVERABLE.
+                              `capShellScale` stops a shell growing once its radial depth reaches
+                              the row's `max_depth`, so a row authoring 0.5–3.25 drew a dial whose
+                              top two thirds moved nothing: Sandeep, with the card reading 3.25,
+                              *"why size control is not working for piping?"*. The ceiling is
+                              measured by the canvas (it needs the shell's TILTED depth) and
+                              published through `pipingMetrics`, the same seam the Height clamp
+                              reads — a second copy of the cap arithmetic here is precisely the
+                              drift that made the control lie in the first place.
+                              ⚠️ `null` until this shell has rendered once, and then the row's own
+                              range stands: a dial must never narrow on a measurement that does not
+                              exist yet. Floored at the current value too, so a cake saved with a
+                              bigger Size can still show what it has. */}
                           {(() => {
                             const sr = scaleRangeOf(pipingPopupEl, 0.5, 2, 0.05);
-                            return <SizeDial size={size} min={sr.min} max={sr.max} step={sr.step}
+                            const flip = isTopZone
+                              ? (p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false))
+                              : (p.userFlipBottom != null ? p.userFlipBottom : (p.flipBottom ?? true));
+                            const cap = getShellSizeCap(p.glbUrl, flip);
+                            const hi = cap == null ? sr.max
+                              : Math.max(sr.min + sr.step, Math.min(sr.max, cap), size ?? sr.min);
+                            return <SizeDial size={size} min={sr.min} max={hi} step={sr.step}
                                      fmt={v => v.toFixed(2)}
                                      onChange={v => handlePipingSizeChange(tierIndex, zone, v)} />;
                           })()}
@@ -17199,10 +18616,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   action the sticker/cluster/foil/cream cards offer. The per-zone checkboxes above stay as
                   the fine-grained control. Config-gated on allowed_actions.delete; hidden when it isn't
                   on the cake at all (nothing to remove). */}
-              {pipingDeletable && candidates.some(c => ringPiping(c.tierIndex, c.zone)) && (
+              {/* ⚠️ A COAT COUNTS AS BEING ON THE CAKE. This asked only whether a RING was placed, so
+                  a cake wearing nothing but a coat from this card showed no Remove at all — which is
+                  why the coat grew its own, up among the scope chips where it read as a fourth way to
+                  cover the cake. One Remove, at the end, meaning what it says on every other card:
+                  take this decoration off. */}
+              {pipingDeletable
+                && (candidates.some(c => ringPiping(c.tierIndex, c.zone)) || !!coatFromThisCard) && (
                 <div style={{ borderTop: '1px solid #999999', paddingTop: 10, marginTop: 2 }}>
                   <button
-                    onPointerDown={e => { e.stopPropagation(); removePipingCard(pipingPopupEl.cardId); }}
+                    onPointerDown={e => {
+                      e.stopPropagation();
+                      if (coatFromThisCard) removeCoat(activeRing.tierIndex);
+                      removePipingCard(pipingPopupEl.cardId);
+                    }}
                     style={s.deleteBtn}>
                     Remove from cake
                   </button>
@@ -19033,6 +20460,10 @@ const s = {
      the line below the dial it names, immediately under a DIFFERENT dial. A label naming the wrong
      control is worse than no label, and INVARIANTS #11 is about exactly this pairing. */
   topEdgePair: { display: 'inline-flex', alignItems: 'center', gap: 6, whiteSpace: 'nowrap' },
+  /* The wafer panel's group headings — the same small caps the tier card uses for TOP EDGE, so a
+     baker crossing from one to the other is reading the same typography. */
+  waferHead: { fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1,
+               textTransform: 'uppercase', margin: '4px 0 8px' },
   tbSizeLabel: {
     fontSize:13, fontWeight:700, color:'#222', minWidth:26, textAlign:'center',
   },

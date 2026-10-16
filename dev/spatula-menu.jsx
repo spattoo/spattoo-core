@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import ReactDOM from 'react-dom/client';
+import { spatulaFramePath } from '../src/index.js';
+import { RAIL } from '../src/shared/rail.js';   // the shipped numbers, so the tuner opens on what a baker sees
 
 /*
  * Standalone preview of the left nav strip re-shaped as a silicone SPATULA.
@@ -76,42 +78,9 @@ const NAV = [
 //  · both shoulders flare symmetrically & gradually (~65px span each)
 //  · bottom is asymmetric: a tight, LOW left heel + a big gentle right sweep,
 //    with the flat (lowest) bottom sitting left-of-centre.
-function spatulaPath({
-  W, handleHalf, bladeHalf, capTopY,
-  lShoulderY, rShoulderY, bladeFullY, bladeBotY,
-  lCornerH, lCornerW, rCornerH, rCornerW,
-}) {
-  const cx = W / 2;
-  const capR = handleHalf;
-  const capCY = capTopY + capR;
-  const Lh = cx - handleHalf, Rh = cx + handleHalf;
-  const Lb = cx - bladeHalf,  Rb = cx + bladeHalf;
-  // Each bottom corner: a cubic from the vertical edge (edgeBotY = where the curve
-  // starts) into the flat (flatX = how far it reaches along the bottom).
-  const rEdgeBotY = bladeBotY - rCornerH, flatR = Rb - rCornerW;
-  const lEdgeBotY = bladeBotY - lCornerH, flatL = Lb + lCornerW;
-  const rSh = bladeFullY - rShoulderY;
-  const lSh = bladeFullY - lShoulderY;
-  return [
-    `M ${cx} ${capTopY}`,
-    `A ${capR} ${capR} 0 0 1 ${Rh} ${capCY}`,
-    `L ${Rh} ${rShoulderY}`,
-    // right shoulder: flare out to full blade width
-    `C ${Rh} ${rShoulderY + rSh * 0.5} ${Rb} ${bladeFullY - rSh * 0.5} ${Rb} ${bladeFullY}`,
-    `L ${Rb} ${rEdgeBotY}`,                                  // right edge straight down
-    // bottom-right corner sweeping into the flat
-    `C ${Rb} ${bladeBotY} ${flatR + (Rb - flatR) * 0.45} ${bladeBotY} ${flatR} ${bladeBotY}`,
-    `L ${flatL} ${bladeBotY}`,                               // flat bottom (lowest)
-    // bottom-left corner up to the left edge
-    `C ${flatL - (flatL - Lb) * 0.45} ${bladeBotY} ${Lb} ${bladeBotY} ${Lb} ${lEdgeBotY}`,
-    `L ${Lb} ${bladeFullY}`,                                 // left edge straight up
-    // left shoulder: flare back into the handle
-    `C ${Lb} ${bladeFullY - lSh * 0.5} ${Lh} ${lShoulderY + lSh * 0.5} ${Lh} ${lShoulderY}`,
-    `L ${Lh} ${capCY}`,
-    `A ${capR} ${capR} 0 0 1 ${cx} ${capTopY}`,
-    'Z',
-  ].join(' ');
-}
+/* ⚠️ THE OUTLINE IS IMPORTED, NOT COPIED. This file used to carry its own `spatulaPath`, so the
+   sliders moved a curve nobody shipped while the rail kept whatever had last been pasted across
+   (INVARIANTS #15; CLAUDE.md, "THE STUDIO IMPORTS THE GEOMETRY"). It now tunes the real one. */
 
 function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
   const [active, setActive] = useState('elements');
@@ -124,6 +93,21 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
   const [lCornerW,  setLCornerW]  = useState(37);  // LEFT  corner: how far it reaches along the bottom
   const [rCornerH,  setRCornerH]  = useState(90);  // RIGHT corner: where the curve starts up the edge
   const [rCornerW,  setRCornerW]  = useState(77);  // RIGHT corner: how far it reaches along the bottom
+  /* ── The handle ────────────────────────────────────────────────────────────────────────────
+   * Sandeep, against a product photo: "handle is a round one here. ours look just curved edges,
+   * but mostly did not give the feel of a spatula."
+   * The handle is three points: a rounded tip, the widest `gripHalf` at `gripY`, then a narrowing
+   * into `neckHalf` where the blade takes over. Measured off the photo: its handle is 36px at the
+   * neck and 65px at the grip — it swells towards the hand. Sliders start at the SHIPPED values
+   * (RAIL), so the tuner opens on what a baker sees rather than on someone's last experiment.
+   * ⚠️ THE LABELS CAP THE SWELL, NOT TASTE. They are centred on this shape, so the paint under each
+   * has to be at least as wide as the label: "Decorations" needs 27.4 half-width at y=157 and
+   * "Customers" 24.1 at y=478. That is why the neck cannot reach the photo's 26%-of-blade.
+   * `src/shared/spatulaPath.test.js` holds every number and fails if a change breaks one. */
+  const [noseHalf,  setNoseHalf]  = useState(RAIL.noseHalf);
+  const [gripHalf,  setGripHalf]  = useState(RAIL.gripHalf);
+  const [gripY,     setGripY]     = useState(RAIL.gripY);
+  const [neckHalf,  setNeckHalf]  = useState(RAIL.neckHalf);
 
   // Geometry (SVG units == px so the overlay lines up 1:1).
   const W = 160, H = bladeBotY + 16;
@@ -134,13 +118,17 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
     bladeFullY: 757,                     // full blade width reached here
     bladeBotY,
     lCornerH, lCornerW, rCornerH, rCornerW,
+    noseHalf, gripHalf, gripY, neckHalf,
+    holeY: RAIL.holeY, holeRx: RAIL.holeRx, holeRy: RAIL.holeRy,
   };
   const cx = W / 2;
-  const holeY = geo.capTopY + geo.handleHalf + 24; // hang hole, just below the cap
-  const path = spatulaPath(geo);
+  /* ⚠️ THE HOLE COMES FROM THE OUTLINE NOW, not from a circle typed in here. It used to be a
+     separate `hole` subpath concatenated onto `path` at every draw, with its own radius — so the
+     tuner's hole and the rail's could never be the same shape. It rides in `geo` with the rest. */
+  const holeY = RAIL.holeY;
+  const path = spatulaFramePath(geo);
   // Hole as an opposite-wound circle, removed via even-odd fill.
-  const hr = 9;
-  const hole = `M ${cx} ${holeY - hr} a ${hr} ${hr} 0 1 0 0 ${2 * hr} a ${hr} ${hr} 0 1 0 0 ${-2 * hr} Z`;
+  const hr = RAIL.holeRy;
 
   // Marbled-silicone swirls down the handle + a curl wrapping the hang hole.
   // Subtle, blurred, clipped to the body so it reads as moulded texture, not lines.
@@ -190,7 +178,7 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             </filter>
             <clipPath id="sil"><path d={path} /></clipPath>
           </defs>
-          <path d={`${path} ${hole}`} fill="url(#body)" fillRule="evenodd" filter="url(#soft)" />
+          <path d={path} fill="url(#body)" fillRule="evenodd" filter="url(#soft)" />
           {/* moulded marbled-silicone texture, clipped to the body — soft, low-contrast */}
           <g clipPath="url(#sil)">
             <g filter="url(#blur)">
@@ -205,12 +193,12 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
             <path d={swirls[0]} fill="none" stroke="rgba(0,0,0,0.30)" strokeWidth={5} strokeLinecap="round" filter="url(#blurHole)" />
           </g>
           {/* 3D shading: inner shadow (depth) + rounded specular highlight */}
-          <path d={`${path} ${hole}`} fill="#000" fillRule="evenodd" filter="url(#inner)" />
+          <path d={path} fill="#000" fillRule="evenodd" filter="url(#inner)" />
           <path d={path} fill="#000" filter="url(#spec)" />
           {/* soft matte sheen + crisp inner edge */}
-          <path d={`${path} ${hole}`} fill="url(#sheen)" fillRule="evenodd" />
+          <path d={path} fill="url(#sheen)" fillRule="evenodd" />
           <path d={path} fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="1.5" />
-          <circle cx={cx} cy={holeY} r={hr} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
+          <ellipse cx={cx} cy={holeY} rx={RAIL.holeRx} ry={RAIL.holeRy} fill="none" stroke="rgba(0,0,0,0.4)" strokeWidth="1.5" />
         </svg>
 
         {/* nav overlay */}
@@ -252,6 +240,10 @@ function SpatulaMenu({ primaryColor = '#7d7f4a', initials = 'ST' }) {
       {/* ── Tweak panel ── */}
       <div style={s.panel}>
         <div style={s.panelTitle}>Blade</div>
+        <Slider label="Nose reach"      value={noseHalf} set={setNoseHalf} min={1}  max={24} />
+        <Slider label="Grip half-width" value={gripHalf} set={setGripHalf} min={16} max={34} />
+        <Slider label="Grip sits at Y"  value={gripY}    set={setGripY}    min={40} max={300} />
+        <Slider label="Neck half-width" value={neckHalf} set={setNeckHalf} min={12} max={30} />
         <Slider label="Width"   value={bladeHalf} set={setBladeHalf} min={40} max={75} />
         <Slider label="Bottom Y" value={bladeBotY} set={setBladeBotY} min={900} max={990} />
 

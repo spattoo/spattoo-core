@@ -12,7 +12,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
-import { buildShellGeo, capShellScale, extractGeo, ringBaseY } from './shellGeo.js';
+import { buildShellGeo, capShellScale, maxShellSize, extractGeo, ringBaseY, shellRadialProfile } from './shellGeo.js';
 
 /** The smallest thing that looks like a loaded GLB scene: one mesh with real geometry. */
 function fakeScene() {
@@ -102,13 +102,47 @@ describe('an authored size range is live end to end', () => {
     expect(loose).toBeGreaterThan(tight);
   });
 
-  it('a row that authors nothing keeps the old rail exactly — no saved cake moves', () => {
-    const r = 0.35, sc1 = 0.044, depth = 0.903;
-    // The historical expression, inlined: this is what every existing row rendered at before.
-    const before = Math.min(sc1 * 5, Math.max(sc1 * 1.15, (r * 0.16) / depth));
-    expect(capShellScale(sc1, 5, depth, r)).toBeCloseTo(before, 10);
-    expect(capShellScale(sc1, 5, depth, r, {})).toBeCloseTo(before, 10);
-    expect(capShellScale(sc1, 5, depth, r, null)).toBeCloseTo(before, 10);
+  /* ⚠️ THE GUARANTEE NARROWED ON PURPOSE, AND THIS IS WHAT IT IS NOW. It used to be "a row that
+     authors nothing keeps the OLD RAIL exactly", pinning `PIPING_MAX_DEPTH_FRAC` at 0.16 so no
+     saved cake could move. That rail turned out to sit BELOW the shells we ship — a shell as deep
+     as it is tall renders 0.230 deep at radius 1.2 against a 0.192 ceiling — so the cap never
+     operated and the 1.15 floor pinned every Size dial at +15%, whatever the row authorised.
+     Raising it to 0.30 is a deliberate change to that promise, and what survives of it is the part
+     that matters: a cake at Size 1 renders EXACTLY as it did. The only cakes that move are ones
+     where a baker asked for a bigger shell and the renderer quietly refused. */
+  it('a cake at Size 1 renders exactly as it did — the rail only ever caps GROWTH', () => {
+    const r = 1.2;
+    for (const [y, z] of [[1.0, 1.0], [1.0, 0.8], [0.8, 0.9]]) {
+      const sc1 = (r * 0.24) / y;
+      expect(capShellScale(sc1, 1, z, r), `${y}x${z}`).toBeCloseTo(sc1, 10);
+      expect(capShellScale(sc1, 1, z, r, {}), `${y}x${z}`).toBeCloseTo(sc1, 10);
+    }
+  });
+
+  it('the dial can never ask for more than the rail delivers', () => {
+    const r = 1.2;
+    for (const [y, z] of [[1.0, 1.0], [1.0, 0.8], [1.0, 0.5], [0.8, 0.9]]) {
+      const sc1 = (r * 0.24) / y;
+      const top = maxShellSize(sc1, z, r);
+      // at the dial's own top the cap is not yet clipping
+      expect(capShellScale(sc1, top, z, r), `${y}x${z}`).toBeCloseTo(sc1 * top, 10);
+      // and one notch past it, nothing more happens — which is what the dial must not offer
+      expect(capShellScale(sc1, top + 0.5, z, r), `${y}x${z}`).toBeCloseTo(sc1 * top, 10);
+      expect(top).toBeGreaterThanOrEqual(1.15);
+    }
+  });
+
+  it('maxShellSize is radius-independent, so one number serves every tier', () => {
+    for (const r of [0.35, 1.2, 4.0]) {
+      const sc1 = (r * 0.24) / 1.0;
+      expect(maxShellSize(sc1, 0.8, r)).toBeCloseTo(maxShellSize((1.2 * 0.24) / 1.0, 0.8, 1.2), 10);
+    }
+  });
+
+  it('a row may still author a tighter rail than the default', () => {
+    const r = 1.2, sc1 = (r * 0.24) / 1.0;
+    expect(maxShellSize(sc1, 0.8, r, { max_depth: 0.16 }))
+      .toBeLessThan(maxShellSize(sc1, 0.8, r, null));
   });
 
   it('the cap measures the TILTED depth — third site of the untilted-measurement bug', () => {
@@ -169,7 +203,7 @@ describe('a ring seats on the shell it actually renders', () => {
  * `DecorationShells` got this fix in 47723762; the cream path never did, so the two render paths
  * disagreed about where a tilted ring sits.
  */
-describe('ringBaseY lifts a tilted shell clear of the surface', () => {
+describe('ringBaseY seats a shell on its own origin', () => {
   const disc = () => {
     const s = new THREE.Group();
     s.add(new THREE.Mesh(new THREE.BoxGeometry(1.890, 0.903, 1.901), new THREE.MeshStandardMaterial()));
@@ -182,15 +216,95 @@ describe('ringBaseY lifts a tilted shell clear of the surface', () => {
     expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10);   // nothing already placed moves
   });
 
-  it('a tilted shell reaches BELOW its origin, and the seat lifts it by exactly that', () => {
+  /* ⚠️ A TILT MUST NOT MOVE THE SEAT, and this is the contract with admin. `PipingCalibrator.jsx`
+     seats on `anchorY + yOffset` and nothing else, so lifting a tilted ring by its own post-tilt
+     bounding box put it somewhere admin could not show, tune or override. Measured on Classic Shell
+     Border at `top_rotation [-68,_,175]`: 0.2915 above where the calibrator put it, 20% of the tier
+     radius — a ring hanging in the air. Recalibrating the row to `[-102,_,0]` only narrowed it to
+     0.2227, because `top_y_offset` is ADDED before the lift and can never cancel it.
+     A shell that needs lifting says so with `top_y_offset`, which the calibrator shows. */
+  it('seats a tilted shell exactly where an upright one sits', () => {
     const A = buildShellGeo(disc(), false, 0.35, 1, [-90, 0, 0]);
-    expect(A.worldBotY).toBeLessThan(0);                       // half the disc is under the origin
-    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23 - A.worldBotY, 10);
-    expect(ringBaseY(1.23, A)).toBeGreaterThan(1.23);          // lifted, not sunk
+    expect(A.worldBotY).toBeLessThan(0);              // the geometry really does dip below its origin
+    expect(ringBaseY(1.23, A)).toBeCloseTo(1.23, 10); // and the seat does not care
+    expect(ringBaseY(1.23)).toBeCloseTo(1.23, 10);    // it does not even need the shell
   });
 
   it('survives a missing shell — the rings call it before a GLB has loaded', () => {
     expect(ringBaseY(0.5, null)).toBe(0.5);
     expect(ringBaseY(0.5, {})).toBe(0.5);
+  });
+});
+
+/* ⚠️ A RING IS A DOME ACROSS ITS BAND, AND PRETENDING OTHERWISE PUT SPRINKLES IN A CIRCLE.
+ * Measured on the catalogue Rosette after its authored -85° tilt: the crest is 100% in the middle
+ * of the radial band and falls to 42% at the inner edge and 33% at the outer — a flat plane at the
+ * crest floats by 0.374, two thirds of the shell's own height, so anything resting on it touches
+ * only along one radius. Sandeep: *"why the sprinkles forming a circle on the cream layer. it
+ * should be random."* */
+describe('shellRadialProfile — the height ACROSS a shell, inner edge to outer', () => {
+  // A ridge running along X: tallest at z = 0, falling to nothing at z = ±1.
+  function ridge() {
+    const pts = [];
+    for (let i = 0; i <= 40; i++) {
+      const z = -1 + (i / 40) * 2;
+      const y = 1 - Math.abs(z);
+      pts.push(-0.5, y, z, 0, y, z, 0.5, y, z);
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array(pts), 3));
+    g.computeBoundingBox();
+    return g;
+  }
+
+  const identity = new THREE.Matrix4();
+
+  it('reports the crest in the middle and the fall-off at both edges', () => {
+    const g = ridge();
+    const prof = shellRadialProfile(g, identity, g.boundingBox);
+    expect(prof).toBeTruthy();
+    const mid = prof[Math.floor(prof.length / 2)];
+    expect(mid).toBeCloseTo(1, 1);                 // crest
+    expect(prof[0]).toBeLessThan(0.2);             // inner edge, near nothing
+    expect(prof[prof.length - 1]).toBeLessThan(0.2);
+    expect(Math.max(...prof)).toBeCloseTo(1, 1);
+  });
+
+  /* MAX per slice, not mean: something resting on cream sits on the HIGHEST cream under it. */
+  it('takes the tallest point in each slice', () => {
+    const g = new THREE.BufferGeometry();
+    // two points in the same z slice at different heights
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      0, 0.2, -1, 0, 0.9, -1, 0, 0.1, 1,
+    ]), 3));
+    g.computeBoundingBox();
+    const prof = shellRadialProfile(g, identity, g.boundingBox);
+    expect(prof[0]).toBeCloseTo(0.9, 6);
+  });
+
+  /* ⚠️ MEASURED THROUGH THE SAME MATRIX the extents beside it use, or the profile would describe a
+     differently-posed shell — the class of fault that produced two wrong cuts before this. */
+  it('is measured through the transform, so a tilt moves it', () => {
+    const g = ridge();
+    const m = new THREE.Matrix4().makeScale(1, 2, 1);
+    const box = g.boundingBox.clone().applyMatrix4(m);
+    const prof = shellRadialProfile(g, m, box);
+    expect(Math.max(...prof)).toBeCloseTo(2, 1);
+  });
+
+  it('is null for geometry with no depth to profile', () => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(new Float32Array([0, 0, 0]), 3));
+    g.computeBoundingBox();
+    expect(shellRadialProfile(g, identity, g.boundingBox)).toBeNull();
+  });
+
+  it('buildShellGeo carries one, so the renderer can publish it', () => {
+    const g = ridge();
+    const scene = new THREE.Scene();
+    scene.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial()));
+    const A = buildShellGeo(scene, false, 0.35, 1, [0, 0, 0], null);
+    expect(A.radialProfile).toBeTruthy();
+    expect(A.radialProfile.length).toBeGreaterThan(1);
   });
 });

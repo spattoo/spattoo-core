@@ -40,6 +40,10 @@ const problems = [];
 // with a reason each, because "it does not apply" is a claim somebody should have to write down.
 const NOT_DRAGGED = {
   grass: 'a treatment that covers the top — it has no position of its own',
+  // Same shape as grass, and for the same reason: the ELEMENT is a band or a field on a surface and
+  // has no position to drag. If clumps become draggable they go through FinishHandles exactly as
+  // grass's patches do, which is not what this contract asks about.
+  gypsophila: 'a treatment that dresses a surface — it has no position of its own',
   letter_blocks: 'placed as a row along the cake, positioned by the row and not by a drag',
   // Dust is `tier.dusting` — a wall treatment, not an object. There is no decoration to take hold
   // of: a tap flicks a splash where you tapped, and a splash is adjusted through its own card. The

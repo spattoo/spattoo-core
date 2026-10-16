@@ -5,6 +5,7 @@ import { drawTopperMatcap } from '../geometry/topperMatcap.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { FONDANT_WRITING_COLOR } from '../constants.js';
 import { albedoForLight } from '../shared/albedoForLight.js';
+import { arcLetter } from '../geometry/textPath.js';
 
 /* ⚠️ MEASURED FOR FONDANT LETTERING, and it is NOT inherited from anything. `buildSolidWallMaterial`
  * takes its colour raw — correct for a relief cut-out's side walls, which were calibrated as part of
@@ -67,8 +68,15 @@ export default function AcrylicWord({
   /* 'acrylic' (a baked matcap, see below) | 'fondant' (a lit physical material with the fondant
      grain). Default acrylic, so every existing caller — admin's studio included — is untouched. */
   medium = 'acrylic', color = FONDANT_WRITING_COLOR,
+  /* ⚠️ THE ARC THE LETTERS FOLLOW, in world units — `{ radius }`, from the element the message is
+     written on. FONDANT ONLY, and that is a statement about the material rather than a limitation:
+     a fondant letter is cut flat and PRESSED ON, so a baker lays each one along the curve; a
+     perspex topper is cut from one sheet in one piece and cannot follow a curve at all. Sandeep:
+     *"acrylic wont bend like arch. so we dont need acrylic bend."* */
+  arc = null,
   onRise,
 }) {
+  const arcR = arc?.radius ?? 0;
   const built = useMemo(() => {
     if (!font || !text?.trim()) return null;
 
@@ -96,7 +104,14 @@ export default function AcrylicWord({
     });
     if (!t.parts?.length) return null;
 
-    const bridges = cfg.bridge === false ? [] : bridgeLoose(t.parts, { width: height * 0.022 });
+    /* ⚠️ NO BRIDGES ON AN ARC, and dropping them is the point rather than a casualty. A bridge
+       exists so a cut-from-one-sheet topper comes off the machine in one piece; separate fondant
+       letters pressed onto a rainbow are not one piece and never were, so a bar joining them would
+       be inventing a thing no baker makes. It also could not survive the turn: each letter rotates
+       about its own centre, and a bridge drawn between them on the straight baseline would end up
+       cutting across their faces. */
+    const onArc = !!arcR && medium === 'fondant';
+    const bridges = (cfg.bridge === false || onArc) ? [] : bridgeLoose(t.parts, { width: height * 0.022 });
     const parts = [...t.parts, ...bridges];
     const thickness = cfg.thickness ?? 0.063;
 
@@ -123,6 +138,17 @@ export default function AcrylicWord({
        * the scene, which is what the matcap deliberately gave up. It is a trade, not a bug. */
       const g = new THREE.ExtrudeGeometry(shape, { depth: thickness, bevelEnabled: false });
       g.translate(0, 0, -thickness / 2);
+      /* ⚠️ TURNED ABOUT ITS OWN CENTRE, NOT WARPED. `arcLetter` answers where this letter goes and
+         how far round to turn it; the glyph keeps the shape its cutter made. Only `kind: 'glyph'`
+         parts move — a baseline bar or a leg belongs to a STANDING topper, which never takes an
+         arc, and turning one would be turning the thing the word stands on. */
+      if (onArc && p.kind === 'glyph') {
+        const cx = (Math.min(...p.outer.map(q => q.x)) + Math.max(...p.outer.map(q => q.x))) / 2;
+        const seat = arcLetter(cx, arcR);
+        g.translate(-cx, 0, 0);
+        g.rotateZ(seat.rot);
+        g.translate(seat.x, seat.y, 0);
+      }
       return g;
     });
 
@@ -142,7 +168,21 @@ export default function AcrylicWord({
      * The build is the only place that knows, and it already has the bounds. */
     return { geos, seat, thickness, pieces: components(parts).length, width: t.width,
              feature: t.feature, rise: Math.max(0.05, highest - seat) };
-  }, [font, text, cfg, pose, span]);
+  /* `arcR` and `medium` are in here because the geometry is built FROM them — a rebuild is the
+     only way the letters move onto the curve. Leaving them out is how a message would keep the
+     straight baseline it was first built with when a baker resized the rainbow under it. */
+  }, [font, text, cfg, pose, span, arcR, medium]);
+
+  /* ⚠️ ONLY THE ARC'd WORD. The card renders a row of FONT PREVIEWS, each its own AcrylicWord,
+     so an unfiltered probe reports whichever rendered last — a preview, not the cake. */
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && built && arcR > 0) {
+    /* The geometries are separate, so the word's real extent is their union. */
+    const bb = new THREE.Box3();
+    built.geos.forEach(g => { g.computeBoundingBox(); bb.union(g.boundingBox); });
+    window.__wordBox = { medium, pose, span, arcR, seat: +built.seat.toFixed(4),
+      min: [+bb.min.x.toFixed(3), +bb.min.y.toFixed(3)], max: [+bb.max.x.toFixed(3), +bb.max.y.toFixed(3)],
+      rise: +((built.rise ?? 0).toFixed(4)) };
+  }
 
   // Reported UP, because only the build can measure it and only the caller can use it — see `rise`.
   // In an effect rather than during render: this sets state in the parent, and doing that while

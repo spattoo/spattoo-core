@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
-import { topperSheets, topperBox, topperStick, stickStock } from '../geometry/topperPiece.js';
+import { topperSheets, topperBox, topperStick, stickStock, topperMode } from '../geometry/topperPiece.js';
 import { garnishPlacement, garnishDragTo } from '../geometry/garnishPlacement.js';
 import { loadTopperFace } from '../geometry/topperFaces.js';
 import { CardStock, cardAlbedo, cardExtrude, cardFront } from './CardStock.jsx';
@@ -223,7 +223,10 @@ function Topper({ t, cake, fonts, onSelect, onMove, onOrbitEnable, selected }) {
   }, [built]);
 
   if (!built) return null;
-  const place = garnishPlacement(t, cake, { ...built.size, sink: built.sink });
+  /* ⚠️ THE MODE IS RESOLVED, NOT READ. A card on a stick can only stand — see `topperMode`. Doing
+     it here rather than only hiding the chip is what rescues a cake ALREADY saved lying flat on a
+     stick: the stored value stays, and the cake stops obeying it. */
+  const place = garnishPlacement({ ...t, mode: topperMode(t) }, cake, { ...built.size, sink: built.sink });
 
   return (
     <group position={place.position} rotation={place.rotation}>

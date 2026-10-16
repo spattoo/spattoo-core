@@ -1089,6 +1089,32 @@ export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256 } = {}) 
  * on the far side of the cake, after the design is saved. Rounded to the nearest multiple, never
  * below one of each.
  */
+/* ── Does a band ring the cake? ──────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"'strokes round the cake' and 'drawing' need to be two different options explicitly
+ * user need to choose."* Three states, not two, because the third is the one that was missing: a
+ * band arrived already wrapped round the wall and the baker had to undo it to get to drawing.
+ *
+ *   'ask'   nothing on the cake yet — the card is showing the two offers
+ *   'band'  the ring, repeated round the wall
+ *   'draw'  no ring (yet)
+ *
+ * ⚠️ THIS ASKS ABOUT THE BAND ONLY — IT IS NOT "BAND OR DRAWING". Hand-drawn strokes live in
+ * `tier.brushStrokes` and are rendered by `BrushStrokes` whatever this returns, so a cake can carry
+ * a ring with strokes added on top of it, which is what bakers actually do. Sandeep, after the card
+ * had been built as a fork: *"its not either 'round the cake' vs 'draw', it can be both. i can do
+ * the round first and then i want to add few strokes by hand above that."* 'draw' therefore means
+ * "no ring", not "drawing instead of a ring" — reading it the second way is what made the designer
+ * take the band off the cake when someone reached for the brush.
+ *
+ * ⚠️ UNDEFINED IS A RING, and that is not tidiness — every band saved before this field existed has
+ * no `mode`, and reading a missing value as "ask" would wipe the band off every one of those cakes
+ * the moment they were opened. The default is the behaviour that already shipped. */
+export function brushBandRings(band) {
+  const mode = band?.mode;
+  return !!band && (mode == null || mode === 'band');
+}
+
 export const BRUSH_BAND_DEFAULTS = {
   colors:   ['#F6DCE2', '#8EC5E8', '#F4C542'],
   /* ⚠️ THE DEFAULTS ARE THE ONES SANDEEP SETTLED ON IN THE STUDIO, not a guess — he drove the

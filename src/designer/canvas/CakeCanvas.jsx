@@ -36,14 +36,19 @@ import {
   DESIGNER_GROUND,
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
-  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y } from '../constants.js';
+  BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import GypCloud from './GypCloud.jsx';
+import { wallOccupants } from '../geometry/wallSeats.js';
+import { textPathFor } from '../geometry/textPath.js';
+import { cleanTriangles } from '../geometry/glbClean.js';
+import { outwardBand, rimBand } from './useSeatedInstances.js';
 import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
-         BRUSH_ON_CAKE_DEFAULTS } from '../geometry/brushStrokeOnCake.js';
-import { creamMaterialProps } from '../geometry/creamMaterial.js';
+         BRUSH_ON_CAKE_DEFAULTS, brushBandRings } from '../geometry/brushStrokeOnCake.js';
+import { creamMaterialProps, BRUSH_CREAM_SOFTNESS } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
   from '../geometry/rainbow.js';
@@ -61,13 +66,13 @@ import { textStyleOf } from '../textStyles.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { makeRefCountedCache } from '../shared/refCountedCache.js';
 import { seatHalfDepth } from '../geometry/seating.js';
-import { resolveSidePipingBands, sidePipingClearance } from './pipingMetrics.js';
+import { resolveSidePipingBands, sidePipingClearance, resolveTopPipingBands, topSurfaceYAt } from './pipingMetrics.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -186,6 +191,13 @@ function boardRingInset(board, cakeShape, ringWidth = 1) {
 // at the surface sits INSIDE it — still clickable (the grass mesh has no pointer handlers, so the
 // ray passes straight through to the grab sphere) but invisible, with nothing to aim at. That reads
 // as "the clump will not move", which is exactly how it was reported.
+// The same question for gypsophila, and only the tier tops ask it — a rim or board ring carries no
+// handle at all, so there is nothing to float over those.
+function gypHandleLift(tierData) {
+  return 0.06 + Math.max(0,
+    ...tierData.map(t => (t.gyp?.patches?.length ? (t.gyp.height ?? 0) : 0)));
+}
+
 function grassHandleLift(tierData, boardGrass) {
   const heights = [
     ...tierData.map(t => (t.grass?.patches?.length ? (t.grass.height ?? 0) : 0)),
@@ -321,12 +333,29 @@ export function configureSceneEnv(partial) { if (partial) Object.assign(SCENE_EN
 // which overexposed the cake top + camera-facing wall and washed the diffuse colour toward white
 // head-on (true colour only appeared once orbited). `shadows` enables the key's shadow (live scene
 // only). The ONE light rig — edit here, every scene follows.
-export function SceneLights({ shadows = false }) {
+/* The shipped rig, as numbers rather than as literals buried in JSX — so a calibration harness can
+ * vary them without forking the component, and so "what is the key-to-fill ratio" is answerable by
+ * reading one object instead of three attributes.
+ *
+ * ⚠️ 0.45 / 1.1 / 0.4 IS KEY-TO-FILL OF ABOUT 1.3 : 1, where daylight runs 3:1 to 5:1. That is why
+ * renders read flat and bright beside a photograph (measured: mean 193–205 against a reference's
+ * 169, at 60–87% of its contrast) and why white-on-white had nothing to separate it. It is a known
+ * open question, not an accident — every reference light in this repo was measured under exactly
+ * these numbers, so moving them invalidates all of them at once. See dev/scene-light.jsx. */
+export const SCENE_RIG = Object.freeze({ ambient: 0.45, key: 1.1, fill: 0.4 });
+
+export function SceneLights({ shadows = false,
+                              ambient = SCENE_RIG.ambient,
+                              keyLight = SCENE_RIG.key,
+                              fill = SCENE_RIG.fill }) {
+  /* ⚠️ `keyLight`, NOT `key`. React eats a prop called `key` before a component ever sees it, so the
+     obvious name would have silently used the default and a sweep would have reported that the key
+     light does nothing. */
   return (
     <>
-      <ambientLight intensity={0.45} />
-      <directionalLight position={[6, 14, 8]} intensity={1.1} castShadow={shadows} />
-      <directionalLight position={[-4, 4, -4]} intensity={0.4} />
+      <ambientLight intensity={ambient} />
+      <directionalLight position={[6, 14, 8]} intensity={keyLight} castShadow={shadows} />
+      <directionalLight position={[-4, 4, -4]} intensity={fill} />
     </>
   );
 }
@@ -390,6 +419,60 @@ function tierReliefSampler(tier) {
   const dripS = dripReliefSamplerOf(tier);
   if (wallS && dripS) return (theta, v) => Math.max(wallS(theta, v), dripS(theta, v));
   return dripS ?? wallS;
+}
+
+/* The LID's piping annuli for this tier — what a sprinkle lands on when it falls where a rim ring is.
+ *
+ * ⚠️ BUILT ONCE PER TIER, NOT ONCE PER SPRINKLE. A scattered element is many instances of the same
+ * thing (a hundred is ordinary), and every one of them asks this identical question. Keyed on the
+ * tier object, which `tierData` rebuilds each render, so the cache dedupes within a render and
+ * never holds a stale cake.
+ */
+const EMPTY_TOP_BANDS = Object.freeze([]);
+/* ⚠️ THE ARCH'S INPUTS, IN ONE EXPRESSION. `rainbowBands` is asked the same question twice — once
+   to DRAW the arch and once to work out where a message written on it goes — and the two must be
+   handed the identical cake or they describe different arches. They did: the text path was built
+   with `boardY: BOARD_TOP_Y` and no `supportRadius`, which moved `archY` and dropped the whole line
+   to the foot of the arch. Rendered fine, tracked the band, and was simply in the wrong place.
+   INVARIANTS #15 — a preview and the thing previewed ask ONE function. */
+function rainbowCakeFor(tier, i, tierData, board) {
+  return {
+    radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
+    supportRadius: rainbowSupportRadius(tierData, i, board),
+  };
+}
+const _topBandsByTier = new WeakMap();
+function tierTopBands(tier) {
+  if (!tier) return [];
+  let bands = _topBandsByTier.get(tier);
+  if (!bands) {
+    bands = resolveTopPipingBands({
+      topPipings: tier.topPipings ?? [],
+      topY: tier.baseY + tier.height,
+      radius: tier.radius,
+    });
+    _topBandsByTier.set(tier, bands);
+  }
+  return bands;
+}
+
+/* The same memo for the WALL's bands. A ribbon tied at the rim hangs its tails down the outside,
+   so it has to clear the cream on the wall exactly as a side decoration does — and the side path
+   already resolves these per render, so doing it again per sticker would re-measure every shell on
+   every frame. Keyed on the tier object, so a new tier is a new answer. */
+const _sideBandsByTier = new WeakMap();
+function tierSideBands(tier) {
+  if (!tier) return EMPTY_TOP_BANDS;
+  let bands = _sideBandsByTier.get(tier);
+  if (!bands) {
+    bands = resolveSidePipingBands({
+      topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
+      bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+      topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+    });
+    _sideBandsByTier.set(tier, bands);
+  }
+  return bands;
 }
 
 // REST an element on the displaced wall: return the HIGHEST relief under the patch the element covers
@@ -592,9 +675,13 @@ function DraggableText({ textEl, radius, shp = { kind: 'round', radius }, select
 
 // ── Sticker components ────────────────────────────────────────────────────────
 
-// Cache of GLB URL → horizontal half-radius in model-local space (before group scale).
-// Populated by StickerModel when the bounding box is first computed.
-const glbXRadiusCache = {};
+/* Cache of GLB URL → the model's SCALED half-extents { hx, hy, hz } (before the instance scale).
+   Populated by StickerModel when the bounding box is first computed.
+   ⚠️ ALL THREE, not just x. `hx` alone is what "how much room does this need" used to mean, and for
+   a sheet (a Gingko leaf is 0.047 thick against 1.602 wide) that circle is almost entirely empty
+   space — see occupantFootprint in placement.js. One measurement, one cache: a second one taken
+   somewhere else is how the footprint and the render come to disagree. */
+const glbHalfCache = {};
 
 
 // Grid resolution of a RELIEF decal's mesh (per axis). Displacement is per-VERTEX, so this bounds how
@@ -1443,39 +1530,17 @@ function bendStickerScene(scene, fitScale, center, bendR, seatOffset = 0) {
   return out;
 }
 
-// Strip degenerate / noise triangles from a cloned GLB scene (mutates in place): drops tris
-// that are near-zero area, far larger than the mesh average, or extreme slivers. Improves
-// render quality for auto-generated meshes — applied to every GLB element (was topper-only).
+/* Strip genuinely broken triangles from a cloned GLB scene (mutates in place): near-zero area and
+   extreme slivers. The rule and its numbers live in geometry/glbClean.js, which carries the
+   measurement behind them — including why "larger than 50x the mesh average" was removed after it
+   deleted 45% of a decimated palette's surface. */
 function cleanGlbScene(clone) {
   clone.traverse(obj => {
     if (!obj.isMesh || !obj.geometry?.index) return;
     const geo = obj.geometry.clone();
     obj.geometry = geo;
-    const pos = geo.attributes.position;
-    const idx = geo.index.array;
-    const triCount = idx.length / 3;
-    const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
-    const _e1 = new THREE.Vector3(), _e2 = new THREE.Vector3(), _e3 = new THREE.Vector3();
-    let totalArea = 0;
-    for (let i = 0; i < idx.length; i += 3) {
-      _a.fromBufferAttribute(pos, idx[i]); _b.fromBufferAttribute(pos, idx[i + 1]); _c.fromBufferAttribute(pos, idx[i + 2]);
-      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a);
-      totalArea += _e1.clone().cross(_e2).length() * 0.5;
-    }
-    const avgArea = totalArea / triCount;
-    const maxArea = avgArea * 50;
-    const minArea = 1e-7;
-    const newIdx = [];
-    for (let i = 0; i < idx.length; i += 3) {
-      _a.fromBufferAttribute(pos, idx[i]); _b.fromBufferAttribute(pos, idx[i + 1]); _c.fromBufferAttribute(pos, idx[i + 2]);
-      _e1.subVectors(_b, _a); _e2.subVectors(_c, _a); _e3.subVectors(_c, _b);
-      const area = _e1.clone().cross(_e2).length() * 0.5;
-      const maxEdge = Math.max(_e1.length(), _e2.length(), _e3.length());
-      const minEdge = Math.min(_e1.length(), _e2.length(), _e3.length());
-      const aspectRatio = maxEdge / (minEdge + 1e-10);
-      if (area >= minArea && area <= maxArea && aspectRatio <= 150) newIdx.push(idx[i], idx[i + 1], idx[i + 2]);
-    }
-    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(newIdx), 1));
+    const { keep } = cleanTriangles(geo.attributes.position.array, geo.index.array);
+    geo.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
     geo.computeBoundingBox();
     geo.computeBoundingSphere();
   });
@@ -1629,7 +1694,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     const ctr = new THREE.Vector3();
     box.getCenter(ctr);
     const sc = STICKER_SIZE / Math.max(size.x, size.y, size.z, 0.01);
-    glbXRadiusCache[imageUrl] = (size.x / 2) * sc;
+    glbHalfCache[imageUrl] = { hx: (size.x / 2) * sc, hy: (size.y / 2) * sc, hz: (size.z / 2) * sc };
     // The gradient blends in the model's local frame (same baked geometry the vertex shader reads),
     // so it stays put regardless of placement/instance scale. `halfW`/`seatHalf` are the model's
     // PER-AXIS half-extents (width/height), so the selection hit-plane is a tight rectangle around a
@@ -2119,7 +2184,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
  * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
  * grab, so the clamp pushes it back out. See boardRingClamp. */
-function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2194,13 +2259,81 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     ? wireFor(artBox, sticker.wire, null, { axis: isVerge ? 'lip' : 'down' })
     : null;
   const lift = (wire ? wireLift(wire) : stickLift(stick)) * effScale;
-  const py = topY + (sticker.yOffset ?? 0) + lift + (
+  /* ⚠️ A SCATTERED PIECE RESTS ON WHAT IS THERE, NOT ON THE LID. Where a rim ring covers the top,
+     the surface at that radius IS the ring, and sprinkles belong on it — Sandeep, with a cake whose
+     roses had swallowed them: *"whatever is the top surface that should be used."* The side has
+     always done this (sidePipingClearance keeps a sprinkle on the chocolate drip); this is the same
+     rule for the other face.
+     ⚠️ SCATTER ONLY, DELIBERATELY. Every other top decoration is placed by hand at a point the
+     baker chose, and lifting those would move pieces on designs already saved — a topper that
+     happens to overlap the rim band would jump on top of the roses. A sprinkle is thrown, not
+     placed, so it is the one that should follow the surface.
+     ⚠️ AND THE DRAG PLANE STAYS ON THE LID. `plane` is what a pointer drag solves against, in x/z;
+     moving it with the piping would make the grab jump as a sprinkle crossed the ring's inner edge. */
+  const seatY = sticker.scatter
+    ? topSurfaceYAt(topBands, Math.hypot(sticker.x ?? 0, sticker.z ?? 0), topY)
+    : topY;
+  const py = seatY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
+
+  /* ── How far an edge-seated piece stands OUT from the rim ─────────────────────────────────────
+   *
+   * A perch/verge piece is positioned on the rim PERIMETER and drawn centred on that line, so half
+   * its depth starts inside the wall. Reported on a satin bow twice: *"in vintage cakes, usually
+   * the satin ribbon is used ot decoration. but in our case its penetrating into cake"*, and again
+   * once it was seated low enough to meet the wall: *"at -0.3, its penetrating into cake."*
+   *
+   * ⚠️ HALF THE MODEL'S OWN DEPTH, AND NOTHING ELSE. An earlier version (2a6cc242, reverted) added
+   * the outward reach of the deepest piping band the piece overlaps, so a ribbon would rest ON a
+   * cream border rather than in it. That half could never be reproduced and shipped a bow floating
+   * beside the cake, so it is deliberately left out: this is the rule that is measurable from the
+   * piece alone and provable without a border on the cake. The border case is still open.
+   *
+   * ⚠️ MEASURED, NOT AUTHORED — `seatHalfDepth` of the model's rendered depth, the same rule the
+   * wall path uses and the same one piping uses to sit its shells on the rim. `verge.edge_inset`
+   * is the hand-cranked version of this and stays only as a seed a drag discards. */
+  const edgeSeated = isPerch || isVerge;
+  const edgeProud  = edgeSeated && sticker.sideProud === true;
+  /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
+     ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
+     screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
+     the wall, and a ribbon drawn at the wall's own radius is behind them.
+     ⚠️ OVER THE PIECE'S OWN VERTICAL SPAN. The version that shipped and was reverted took the
+     deepest band ANYWHERE the piece overlapped, and a scale-4 bow spans most of the wall — so a
+     board border could set the stand-off for a knot tied at the rim. `wallReachBetween` asks only
+     what is behind the ribbon between the heights it actually occupies.
+     ⚠️ CREAM ONLY, SO FAR. A DECORATION on the wall is still invisible to this — a ball placed
+     under the tails is run straight through, at any height. That is INVARIANTS #3b unanswered for
+     the edge seat, and it wants `wallOccupants`, which nothing on this path reads yet. Named here
+     rather than left to be rediscovered. */
+  const halfH      = (seatHalf ?? STICKER_SIZE / 2) * effScale;
+  const standOff   = edgeProud
+    ? seatHalfDepth((artBox?.d ?? 0) * effScale)
+      + sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH })
+    : 0;
+  /* ⚠️ THE STAND-OFF'S OWN TERMS, published for measurement. "The bow is still behind the cream"
+     and "the clearance came out zero" look identical on a cake, and only one of them is a seating
+     bug — the other is a band reporting no outward reach. */
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && edgeSeated) {
+    window.__edgeStandOff = {
+      id: sticker.id, proud: edgeProud,
+      halfDepth: +seatHalfDepth((artBox?.d ?? 0) * effScale).toFixed(4),
+      pipingClear: +sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH }).toFixed(4),
+      standOff: +standOff.toFixed(4),
+      span: [+(py - halfH).toFixed(3), +(py + halfH).toFixed(3)],
+      bands: (sideBands ?? []).map(b => ({ loY: +b.loY.toFixed(3), hiY: +b.hiY.toFixed(3), out: +b.out.toFixed(4) })),
+    };
+  }
+  // Outward is radial from the centre — the same approximation the yaw already uses on a
+  // rect/outline tier, so the facing and the stand-off cannot disagree about which way is out.
+  const outLen = Math.hypot(sticker.x ?? 0, sticker.z ?? 0) || 1;
+  const outX   = standOff ? ((sticker.x ?? 0) / outLen) * standOff : 0;
+  const outZ   = standOff ? ((sticker.z ?? 0) / outLen) * standOff : 0;
 
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
@@ -2318,27 +2451,47 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
             : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
-          const selfR = (glbXRadiusCache[sticker.imageUrl] ?? STICKER_SIZE / 4) * (sticker.scale ?? 1);
+          /* ⚠️ ONE RULE, NOT THREE COPIES. This was written out inline here and twice more below,
+             with the measured radius, the fallback and the instance scale repeated each time. It is
+             `occupantRadius` now, and `surfaceOccupants` answers the same question for anything that
+             needs to know what is standing on a surface rather than only for the piece being
+             dragged — see the note on it in placement.js.
+             ⚠️ THE CIRCLE IS RIGHT HERE AND ONLY HERE. A faux ball IS a sphere, so one radius is
+             true in every direction and it is also the height it rests at. The push-off below asks
+             a different question — how far does this piece reach THIS WAY — and uses the footprint. */
+          const selfR = occupantRadius(sticker, glbHalfCache[sticker.imageUrl]?.hx);
           if (sticker.clusterBall) {
             // Manual faux-ball arrangement: physically seat the ball — on the cake surface (de-overlapped
             // so it touches but never penetrates) or cradled on ≥3 balls when dropped onto a real pocket.
             // It never balances on 1–2 balls and never floats. Gated on the config clusterBall flag.
             const balls = siblings.filter(s => s.clusterBall).map(s => {
-              const sR = (glbXRadiusCache[s.imageUrl] ?? STICKER_SIZE / 4) * (s.scale ?? 1);
+              const sR = occupantRadius(s, glbHalfCache[s.imageUrl]?.hx);
               return { x: s.x, z: s.z, y: topY + (s.yOffset ?? 0) + sR, r: sR };
             });
             const seat = manualSeat(newX, newZ, selfR, balls, topY);
             lastValidPos.current = { x: seat.x, z: seat.z };
             onMove(sticker.id, { x: seat.x, z: seat.z, yOffset: seat.y - topY - selfR });
           } else {
+            /* ⚠️ EACH PIECE AS THE SHAPE IT IS, not as a circle on its widest axis. Both sides used
+               `occupantRadius` — true for a near-spherical piece and badly wrong for a sheet: a
+               Gingko leaf (0.047 thick against 1.602 wide) kept a 0.236 exclusion circle on the axis
+               it is 0.0068 thick on, and stopped half a leaf's width short of a rose with clear
+               icing in between. Reported with a screenshot: "though there is space between gingko
+               leaf and rose, i am not able to move it near to the rose."
+               ⚠️ AND THE PUSH IS BETWEEN THE CLOSEST POINTS, NOT THE CENTRES. A first fix asked an
+               ellipse for its radius along the line of centres, which for a sheet aimed tip-first is
+               nearly nothing — it let the leaf's tip travel 0.136 INSIDE the rose while the
+               arithmetic said they touched. Caught by looking: "is ginko penetrating into rose?"
+               footprintCapsule / separationPush, placement.js. An unmeasured element (every 2D
+               sticker) is still exactly the circle it was. */
+            const selfFp = occupantFootprint(sticker, glbHalfCache[sticker.imageUrl]);
             for (const sib of siblings) {
-              const sibR  = (glbXRadiusCache[sib.imageUrl] ?? STICKER_SIZE / 4) * (sib.scale ?? 1);
-              const minDist = selfR + sibR;
-              const ex = newX - sib.x, ez = newZ - sib.z;
-              const dist = Math.sqrt(ex * ex + ez * ez);
-              if (dist < minDist && dist > 0.001) {
-                newX = sib.x + ex * (minDist / dist);
-                newZ = sib.z + ez * (minDist / dist);
+              const { dx: pushX, dz: pushZ } = separationPush(
+                footprintCapsule(selfFp, newX, newZ),
+                footprintCapsule(occupantFootprint(sib, glbHalfCache[sib.imageUrl]), sib.x, sib.z));
+              if (pushX || pushZ) {
+                newX += pushX;
+                newZ += pushZ;
                 ({ x: newX, z: newZ } = clampPt(newX, newZ));
               }
             }
@@ -2388,8 +2541,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
     // outward +Z (+angle = lean over the edge). Stand/perch keep the caller's Y-spin and lean on −X.
     // Insert keeps just its own Y-spin (the baked per-instance fan) — no radial auto-face.
-    const radialYaw = isVerge ? Math.atan2(sticker.x ?? 0, sticker.z ?? 0) : 0;
-    const yaw   = radialYaw + (sticker.rotation ?? 0);
+    const yaw = surfaceYaw(sticker);
     /* ⚠️ ONE SIGN FOR EVERY POSE NOW, AND THE STAND USED TO INVERT IT. With `-tiltAngle` here, the
        up arrow laid a butterfly FLAT and the down arrow stood it up — measured, ↑ held to the limit
        left 64 lit pixels against 682 at centre. Sandeep, pressing arrows that seemed dead: *"arrows
@@ -2418,7 +2570,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
       </group>
     );
     return (
-      <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+      <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -2486,7 +2638,7 @@ function DraggableTopSticker({ sticker, topY, topRadius = Infinity, shp = { kind
   const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
-    <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+    <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
@@ -2733,27 +2885,46 @@ function FrontMarker({ frontZ }) {
 // all the way around as the cake turns. The angle convention matches the band geometry
 // (a = atan2(z, x)), so the painted edge lands exactly where the pointer is. Orbit-rotate
 // is suspended over it (CakeScene's capture-phase handler) while auto-rotate keeps spinning.
-function CreamPaintTarget({ tier, onPaint }) {
+/* ── One invisible cylinder, two gestures ────────────────────────────────────────────────────────
+ *
+ * The wall, as something you can drag ALONG: a mesh the size of the tier that catches the pointer,
+ * holds it through a drag, and says where on the cake the hand is.
+ *
+ * ⚠️ IT REPORTS THE POINT AS WELL AS THE ANGLE, which is why this is one component and not two.
+ * The cream scrape wants "how far round, how far up" — it is painting a 1-D edge. A brushstroke
+ * wants the 3-D POINT, because `brushGestureFromDrag` works out the stroke's lean and sweep from
+ * where the hand started and where it got to. A second copy of this for the second gesture would be
+ * two pointer-capture implementations, two window-pointerup guards and two sets of the bug where a
+ * release off the mesh leaves the cake stuck in a drag.
+ *
+ * ⚠️ THE WINDOW pointerup IS NOT BELT AND BRACES. A release can land off the mesh — the cake
+ * auto-rotates under the hand, or the pointer leaves the canvas — and without it the drag never
+ * ends and the next click continues the old one.
+ */
+function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   const { camera, gl } = useThree();
   const pressed = useRef(false);
   const last = useRef({ x: 0, y: 0 });
   const R = tier.radius + 0.04;   // hit just outside the proud band
 
-  const sample = (clientX, clientY) => {
+  const sample = (clientX, clientY, fn) => {
     const p = cylinderHitPoint(buildRay(clientX, clientY, gl.domElement, camera), R);
-    if (!p) return;
+    if (!p || !fn) return;
     let a = Math.atan2(p.z, p.x); if (a < 0) a += Math.PI * 2;
     const frac = Math.max(0, Math.min(1, (p.y - tier.baseY) / tier.height));
-    onPaint(a / (Math.PI * 2), frac);
+    /* ⚠️ AN OBJECT, NOT AN ARRAY. `wallCoordsOf` reads point.x / .y / .z, so a [x, y, z] gives it
+       three undefineds, every coordinate falls back to 0, and `brushGestureFromDrag` sees a drag
+       that travelled nowhere — it returns null for a tap, so the whole gesture silently did
+       nothing. Nothing threw; the cake simply never took a stroke. */
+    fn({ point: { x: p.x, y: p.y, z: p.z }, theta01: a / (Math.PI * 2), frac });
   };
 
-  useFrame(() => { if (pressed.current) sample(last.current.x, last.current.y); });
-  // Window pointerup guarantees release even if the up lands off the mesh (capture/auto-rotate).
+  useFrame(() => { if (pressed.current) sample(last.current.x, last.current.y, onDrag); });
   useEffect(() => {
-    const onUp = () => { pressed.current = false; };
-    window.addEventListener('pointerup', onUp);
-    return () => window.removeEventListener('pointerup', onUp);
-  }, []);
+    const end = () => { if (pressed.current) { pressed.current = false; onUp?.(); } };
+    window.addEventListener('pointerup', end);
+    return () => window.removeEventListener('pointerup', end);
+  }, [onUp]);
 
   return (
     <mesh position={[0, tier.baseY + tier.height / 2, 0]} userData={{ isCreamPaint: true }}
@@ -2761,10 +2932,13 @@ function CreamPaintTarget({ tier, onPaint }) {
         e.stopPropagation();
         pressed.current = true; last.current = { x: e.clientX, y: e.clientY };
         try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-        sample(e.clientX, e.clientY);
+        sample(e.clientX, e.clientY, onDown ?? onDrag);
       }}
-      onPointerMove={e => { if (pressed.current) { last.current = { x: e.clientX, y: e.clientY }; sample(e.clientX, e.clientY); } }}
-      onPointerUp={e => { pressed.current = false; try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {} }}>
+      onPointerMove={e => { if (pressed.current) { last.current = { x: e.clientX, y: e.clientY }; sample(e.clientX, e.clientY, onDrag); } }}
+      onPointerUp={e => {
+        pressed.current = false; onUp?.();
+        try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
+      }}>
       <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />
       <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
     </mesh>
@@ -2817,6 +2991,8 @@ function CakeScene({
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  gypMode = false, gypSelected = null, onGypMove, onGypSelect,
+  onGypClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -2827,6 +3003,9 @@ function CakeScene({
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
+  /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
+     surface you drag ALONG, and each drag lays one stroke that follows the hand. */
+  brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
   tierDataRef,
 }) {
   // Only what the EDITING surface itself draws (handles, catchers) is read here — everything that is
@@ -2869,7 +3048,8 @@ function CakeScene({
       const overPen = hits.some(h => h.object.userData.isPenCatcher);
       // Dragging a finish handle (luster-dust splash / gold-leaf flake) must not rotate the cake.
       const overDust = hits.some(h => h.object.userData.isDustHandle || h.object.userData.isFoilHandle
-        || h.object.userData.isGrassHandle || h.object.userData.isBlockHandle);
+        || h.object.userData.isGrassHandle || h.object.userData.isBlockHandle
+        || h.object.userData.isGypHandle);
       // Painting the second-cream edge suspends ROTATE only (so the drag paints), but
       // leaves controls enabled so auto-rotate keeps spinning the cake under the pointer.
       const overCream = hits.some(h => h.object.userData.isCreamPaint);
@@ -2893,7 +3073,8 @@ function CakeScene({
       const overFinish = hits.some(h => h.object.userData.isFoilTap || h.object.userData.isFoilHandle
         || h.object.userData.isDustTap || h.object.userData.isDustHandle
         || h.object.userData.isGrassTap || h.object.userData.isGrassHandle
-        || h.object.userData.isBlockTap || h.object.userData.isBlockHandle);
+        || h.object.userData.isBlockTap || h.object.userData.isBlockHandle
+        || h.object.userData.isGypTap || h.object.userData.isGypHandle);
       // This gesture belongs to a decoration/grip → the tier & background click handlers must ignore
       // the click it leaks (see gestureOnStickerRef). Set fresh every pointer-down.
       gestureOnStickerRef.current = overSticker || overGrip || overFinish;
@@ -2959,11 +3140,33 @@ function CakeScene({
     window.__grassCatcherCount = catcherCount('Grass');
     window.__blockTapTargets = tapTargets('Block');
     window.__blockCatcherCount = catcherCount('Block');
+    /* ⚠️ WHAT THE SCENE ACTUALLY HOLDS, for "it looks fine in a plain viewer and wrong here". The
+       designer clones a GLB, may upgrade its material class, overrides roughness/metalness from
+       placement_config and can attach a clipping plane — and every one of those is invisible from
+       the outside. Reading the live material beats reasoning about which branch ran. */
+    window.__sceneMaterials = () => {
+      const out = [];
+      scene.traverse((o) => {
+        if (!o.isMesh || !o.material) return;
+        const mats = Array.isArray(o.material) ? o.material : [o.material];
+        mats.forEach((m) => out.push({
+          mesh: o.name || '(unnamed)', type: m.type, side: m.side,
+          transparent: m.transparent, opacity: m.opacity,
+          vertexColors: m.vertexColors, clip: (m.clippingPlanes || []).length,
+          roughness: m.roughness, metalness: m.metalness, visible: o.visible,
+          tris: o.geometry?.index ? o.geometry.index.count / 3 : null,
+        }));
+      });
+      return out;
+    };
+    window.__gypTapTargets = tapTargets('Gyp');
+    window.__gypCatcherCount = catcherCount('Gyp');
     return () => {
       delete window.__foilTapTargets; delete window.__foilCatcherCount;
       delete window.__dustTapTargets; delete window.__dustCatcherCount;
       delete window.__grassTapTargets; delete window.__grassCatcherCount;
       delete window.__blockTapTargets; delete window.__blockCatcherCount;
+      delete window.__gypTapTargets; delete window.__gypCatcherCount;
     };
   }, [gl, camera, scene]);
 
@@ -3065,16 +3268,25 @@ function CakeScene({
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
-          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick,
         }}
       />
       </group>
       <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight} />
 
+      {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
+          wants the angle. One component answers both — see WallDragTarget. */}
+      {brushDraw && tierData[brushDraw.tierIndex] && (
+        <WallDragTarget
+          tier={tierData[brushDraw.tierIndex]}
+          onDown={({ point }) => onBrushDrawStart?.(brushDraw.tierIndex, point)}
+          onDrag={({ point }) => onBrushDrawTo?.(brushDraw.tierIndex, point)}
+          onUp={() => onBrushDrawEnd?.(brushDraw.tierIndex)} />
+      )}
       {creamPaint && tierData[creamPaint.tierIndex] && (
-        <CreamPaintTarget
+        <WallDragTarget
           tier={tierData[creamPaint.tierIndex]}
-          onPaint={(theta01, frac) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
+          onDrag={({ theta01, frac }) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
         />
       )}
 
@@ -3134,6 +3346,46 @@ function CakeScene({
         // White and near-black: both read against green. The usual selColor is a dark GREEN,
         // which would be the one colour invisible against the thing it marks.
         color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker={grassMode} />}
+
+      {/* ── Gypsophila clumps ──────────────────────────────────────────────────────────────────
+          The grass block above, with one word changed, and that is the point: a clump of baby's
+          breath is a placed mark on a surface moved by its handle, which is what dust, foil, grass
+          and letter blocks all are. Writing a fifth way to drag something would be a fifth thing
+          to get wrong (root CLAUDE.md rule 1).
+
+          ⚠️ ALL THREE PARTS, in the shape the foil bug taught: catchers only while the card is
+          open (they wrap the whole cake and would swallow taps meant for what is underneath), the
+          handle flag swapped to `isGypTap` once the card is shut so orbit ignores a sphere that
+          cannot drag anything, and both flags listed in gesture ownership above or the leaked r3f
+          click selects the tier out from under the selection the tap just made.
+
+          ⚠️ THE BAND PLACEMENTS GET NO HANDLES. A rim ring and a board ring have no position of
+          their own — they are the tier's outline, and `check:movable` records gypsophila as "a
+          treatment that dresses a surface" for exactly that reason. Only a clump is a thing you
+          can pick up, so `getPoints` returns null unless there are clumps. */}
+      {(gypMode || tierData.some(t => t.gyp?.patches?.length)) && <FinishHandles tierData={tierData}
+        /* ⚠️ THE SURFACE COMES FROM THE PLACEMENT. A clump on the top is dragged against the lid,
+           one on the side against the wall — `FinishHandles` reads both, and `surface` is what
+           picks the catcher AND where the dot is drawn. Hardcoding 'top_surface' here would float
+           every side clump's handle above the cake, a long way from the flowers it holds. */
+        /* ⚠️ EACH PATCH REPORTS ITS OWN SURFACE. This used to read the tier's mode, which was right
+           while every clump shared one — and would now float a wall bunch's handle above the lid,
+           a long way from the flowers it holds. The fallback keeps designs saved before patches
+           carried a surface opening where they were left. */
+        getPoints={t => (t.gyp?.patches?.length
+          ? t.gyp.patches.map(p => ({ ...p,
+              surface: p.surface ?? (t.gyp.where === 'side' ? 'side' : 'top_surface') }))
+          : null)}
+        board={board} boardPoints={null}
+        selected={gypMode ? gypSelected : null} onMove={onGypMove} onSelect={onGypSelect}
+        catchers={gypMode}
+        catcherFlag="isGypCatcher" handleFlag={gypMode ? 'isGypHandle' : 'isGypTap'}
+        // Clear of the tallest cloud on the cake, so a marker is never buried inside the clump it
+        // marks — the same reason grass computes its lift from its own height.
+        lift={gypHandleLift(tierData)}
+        // White blooms, so the usual white dot would vanish into them: near-black is the one that
+        // reads against a cloud of baby's breath, with white for the unselected rest.
+        color="#ffffff" selColor="#1a1a1a" dotScale={1.6} showMarker={gypMode} />}
 
       {/* Mounted whenever the cake carries dust, for the same reason foil is below — after Done a
           placed dusting had no hit target at all, so tapping a flick did nothing. Same three parts:
@@ -3253,7 +3505,7 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
     <mesh key={st.id} geometry={geo} castShadow receiveShadow
       onClick={e => { e.stopPropagation(); onPick?.(st.id); }}>
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, st.color ?? '#F6DCE2')}
+        polygonOffsetUnits={-1} {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, st.color ?? '#F6DCE2')}
         color="#ffffff" vertexColors />
     </mesh>
   ));
@@ -3284,13 +3536,13 @@ function BrushBand({ band, tier, wallColour, onClick = null }) {
           run — the call CreamPen already makes for cream. polygonOffset because the thinnest film
           sits almost on the wall and the depth buffer loses over a long grazing sweep. */}
       <meshPhysicalMaterial side={THREE.DoubleSide} polygonOffset polygonOffsetFactor={-1}
-        polygonOffsetUnits={-1} {...creamMaterialProps(0.7, part.color)} color="#ffffff" vertexColors />
+        polygonOffsetUnits={-1} {...creamMaterialProps(BRUSH_CREAM_SOFTNESS, part.color)} color="#ffffff" vertexColors />
     </mesh>
   ));
 }
 
 function CakeContent({ config, scene, edit = null }) {
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
@@ -3309,6 +3561,14 @@ function CakeContent({ config, scene, edit = null }) {
     selectedGenerated, onCloudClick: onCloudClickEdit, onRainbowClick: onRainbowClickEdit, onBrushStrokeClick,
     onBrushBandClick,
     onCloudMove, onRainbowMove, onBalloonClick: onBalloonClickEdit, onBalloonMove,
+    /* ⚠️ IN `edit`, AND IT HAS TO BE IN BOTH HALVES. The gypsophila is drawn by the SHARED renderer
+       — the one the thumbnail also uses — so a tap handler reaches it the way a selection cue does:
+       through `edit`, which is null on the capture path and therefore cannot leak into a captured
+       picture. Adding it to CakeCanvas's own signature and forwarding it was NOT enough; the render
+       reads it HERE, and leaving it out threw "onGypClick is not defined" at runtime past a green
+       build and a green suite. The comment two blocks up records the identical fault for
+       onCloudClick, which is how I knew where to look. */
+    onGypClick,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -3361,6 +3621,25 @@ function CakeContent({ config, scene, edit = null }) {
         />
       )}
 
+      {/* Gypsophila ringing the FOOT of the cake. The band is the bottom tier's own outline grown
+          outward (`outwardBand`), not the board's — seating it against the board fills everything
+          between the two, which floods it and reads as flowers standing in card. A board is hard;
+          you cannot push a stem into it, so the ring is laid at the join. */}
+      {boardGyp && bottomShp && (
+        <GypCloud
+          {...boardGyp}
+          onPick={onGypClick}
+          shape={outwardBand(bottomShp, boardGyp.ringWidth ?? 0.18)}
+          hole={{ shape: bottomShp, scale: 1 }}
+          patchRadius={boundingRadius(bottomShp)}
+          topY={0.105}
+          avoid={surfaceOccupants(stickers, {
+            tierIndex: 0, zone: ZONES.RIM,
+            radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
+          })}
+        />
+      )}
+
       {tierData.map((tier, i) => (
         <group key={i}>
           <CakeTier
@@ -3389,6 +3668,7 @@ function CakeContent({ config, scene, edit = null }) {
             bottomPipings={tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : [])}
             creamLayers={tier.creamLayers ?? []}
             topCavity={tier.topCavity ?? null} topSpiral={tier.topSpiral ?? null}
+            wafer={tier.wafer ?? null}
             highlightPipingId={highlightPipingId}
             pipingMovable={isPipingMovable}
             onPipingLayerHeight={onPipingLayerHeight ? (layerId, wallY) => onPipingLayerHeight(i, layerId, wallY) : null}
@@ -3397,9 +3677,21 @@ function CakeContent({ config, scene, edit = null }) {
               : null}
             /* A click on a raised cream band opens the cream card on THIS tier, at the band that was
                tapped — the same shape as the rim ring's handler above it. */
-            onCreamClick={(e, bandIndex) => { e.stopPropagation(); onCreamSelect(i, bandIndex); }}
-            onTopPipingClick={(e, layerId) => { e.stopPropagation(); onTopPipingSelect(i, layerId); }}
-            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); onBottomPipingSelect(i, layerId); }}
+            /* ⚠️ A GESTURE THAT BEGAN ON A DECORATION IS NOT A CLICK ON THE CAKE'S BORDERS, and
+               leaving that out is the foil bug again in a new place. Reported: *"when chocolate ball
+               is on chocolate drip, chocolate ball is loosing its pointer. when i click on chocolate
+               ball, drip popup opens."* A ring of balls hugs the rim, which is exactly where the
+               drip's shell is, so a press landed on the ball — `gestureOnStickerRef` was set, the
+               sticker WAS selected — and then the leaked r3f click reached the shell underneath and
+               `onTopPipingSelect` overwrote that selection within the same gesture. From the DOM it
+               looks like the ball has no pointer at all, which is how the original foil version of
+               this was misdiagnosed.
+               The tier's own `onClick` one line below has always made this check; the three border
+               handlers never did, and nothing sits on a tier's bare top often enough for it to
+               show. A ring arrangement puts decorations right on top of a ring of piping. */
+            onCreamClick={(e, bandIndex) => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onCreamSelect(i, bandIndex); }}
+            onTopPipingClick={(e, layerId) => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTopPipingSelect(i, layerId); }}
+            onBottomPipingClick={(e, layerId) => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onBottomPipingSelect(i, layerId); }}
             onClick={e => { e.stopPropagation(); if (!gestureOnStickerRef?.current) onTierClick(i); }}
           />
           {/* Piped grass on this tier's top. Outside CakeTier because it is not part of the cake's
@@ -3414,6 +3706,105 @@ function CakeContent({ config, scene, edit = null }) {
               {...tier.grass}
             />
           )}
+          {/* ── Gypsophila on this tier ──────────────────────────────────────────────────────────
+              ⚠️ `avoid` IS WHAT IS ALREADY STANDING HERE, and it is the whole reason this is wired
+              through the canvas rather than computed in the geometry: the measured radius of every
+              placed GLB lives in `glbHalfCache`, which only this file has. The filler clears
+              whatever it finds and fills the gaps between — a rose, a candle, a topper, all the
+              same, because it asks what is there and never what it is (INVARIANTS #3b: "ONE rule…
+              and it is not per-element"). */}
+          {tier.gyp && (() => {
+            const shp = tierShape(tier);
+            /* ── On the WALL ──────────────────────────────────────────────────────────────────
+             * The other half of what a florist does with baby's breath, and the one surface
+             * `grassSeats` cannot describe: its seats differ in HEIGHT as well as in where they
+             * are round the cake, and a sprig points out of the wall rather than up out of the
+             * cake. `wallSeats` walks `perimeter(shape)` — the same interface piping and writing
+             * use, so a sheet, a heart and a letter get a band that follows their own outline.
+             *
+             * ⚠️ `wallOccupants`, NOT `surfaceOccupants`. A side decoration is not stored in
+             * (x, z) at all — a round wall keeps `theta`, a faceted one keeps `u`, and both keep a
+             * world `y` — so the flat version filters on `x != null` and returns NOTHING against a
+             * wall. That reads exactly like "the cake is empty", and the filler would have grown
+             * straight through every rose on the side: the half of Sandeep's requirement 4 that
+             * needed real work. *"if there are flowers on the side, and user opts to draw and draws
+             * in between flowers, it should be arranged between flowers, not penetrate."*
+             *
+             * ⚠️ `topY` IS THE TIER'S BASE HERE, not its top: each seat carries its own height
+             * above it. */
+            if (tier.gyp.where === 'side') {
+              return (
+                <GypCloud
+                  {...tier.gyp}
+                  onPick={onGypClick}
+                  shape={shp}
+                  topY={tier.baseY}
+                  wall={{ height: tier.height,
+                          /* ⚠️ CLUMPS ARE THE NORMAL CASE HERE, not a band. *"flowers on side is
+                             mostly hand drawn. usually people wont cover the entire side with these
+                             flowers. on sides, its usually along with other flowers."* The band is
+                             what is left when every clump is taken off. */
+                          patches: tier.gyp.patches ?? null,
+                          lo: tier.gyp.sideLo ?? 0.18, hi: tier.gyp.sideHi ?? 0.68,
+                          from: tier.gyp.sideFrom ?? null, to: tier.gyp.sideTo ?? null,
+                          bury: tier.gyp.bury ?? 0.04 }}
+                  avoid={wallOccupants(stickers, {
+                    tierIndex: i, shape: shp, baseY: tier.baseY,
+                    radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
+                  })}
+                />
+              );
+            }
+            const band = tier.gyp.where === 'rim'
+              ? rimBand(shp, { inn: tier.gyp.rimIn ?? 0.14, out: tier.gyp.rimOut ?? 0.10 })
+              : null;
+            /* ⚠️ A CLUMP CARRIES ITS OWN SURFACE, so one tier can wear a bunch on the WALL and
+               another on the lid at the same time. The tier used to have a single `where` and every
+               clump obeyed it, which is why a cake with roses up the side could not have baby's
+               breath tucked between them. Patches saved before this have no `surface`; they take
+               the tier's mode, so an old design opens exactly as it was. */
+            const patches = tier.gyp.patches ?? [];
+            const onSurface = (name) => {
+              const got = patches.filter(p => (p.surface ?? (tier.gyp.where === 'side' ? 'side' : 'top_surface')) === name);
+              return got.length ? got : null;
+            };
+            const topPatches = band ? null : onSurface('top_surface');
+            const sidePatches = onSurface('side');
+            return (<>
+              {/* The lid: a band when one was asked for, otherwise whatever clumps sit up there. */}
+              {(band || topPatches) && (
+                <GypCloud
+                  {...tier.gyp}
+                  onPick={onGypClick}
+                  patches={topPatches}
+                  shape={band ? band.shape : shp}
+                  bandInner={band ? band.bandInner : undefined}
+                  patchRadius={band ? band.shape.radius : tier.radius}
+                  topY={tier.baseY + tier.height}
+                  avoid={surfaceOccupants(stickers, {
+                    tierIndex: i, zone: ZONES.TOP_SURFACE,
+                    radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
+                  })}
+                />
+              )}
+              {/* And the wall, in the same breath rather than instead. */}
+              {sidePatches && (
+                <GypCloud
+                  {...tier.gyp}
+                  onPick={onGypClick}
+                  shape={shp}
+                  topY={tier.baseY}
+                  wall={{ height: tier.height, patches: sidePatches,
+                          lo: tier.gyp.sideLo ?? 0.18, hi: tier.gyp.sideHi ?? 0.68,
+                          bury: tier.gyp.bury ?? 0.04 }}
+                  avoid={wallOccupants(stickers, {
+                    tierIndex: i, shape: shp, baseY: tier.baseY,
+                    radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
+                  })}
+                />
+              )}
+            </>);
+          })()}
           {/* Fondant rainbows belonging to THIS tier. The generator asks for { radius, topY, boardY }
               and has never cared whether that describes a whole cake or one tier of one — so tier 2's
               rainbow is the same code given tier 2's numbers: its radius, its top, and the surface it
@@ -3481,22 +3872,17 @@ function CakeContent({ config, scene, edit = null }) {
             <RainbowArch
               key={rb.id}
               params={rb}
-              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
-                      // What a falling foot lands ON: the tier below, or — off the bottom tier —
-                      // THE BOARD. The board does not grow here the way it does in the studio. It is
-                      // a real thing the baker buys, sized to the cake and priced with it, so
-                      // widening it silently is changing the order to fit the decoration.
-                      //
-                      // A rect board is measured across its narrow way, so the arch lands on it at
-                      // any angle rather than only over the corners.
-                      supportRadius: rainbowSupportRadius(tierData, i, board) }}
+              cake={rainbowCakeFor(tier, i, tierData, board)}
             />
             </DraggableGenerated>
           ))}
           {/* The brushstroke band on THIS tier's wall. Not draggable and not clickable — it is a
               treatment of the whole wall like dusting or foil, not a thing placed on it, so it
               raycasts to nothing and its card is reached from the tier. */}
-          <BrushBand band={tier.brushBand ?? null} tier={tier} wallColour={tier.color}
+          {/* ⚠️ ONLY WHEN IT RINGS. A band in 'ask' or 'draw' is on the tier but not on the wall —
+              see brushBandRings, which also decides that a band saved before the field existed
+              still draws. */}
+          <BrushBand band={brushBandRings(tier.brushBand) ? tier.brushBand : null} tier={tier} wallColour={tier.color}
             onClick={onBrushBandClick ? () => onBrushBandClick(i) : null} />
           {/* And the hand-drawn ones. Clickable, because each has its own card. */}
           <BrushStrokes strokes={tier.brushStrokes ?? []} tier={tier} wallColour={tier.color}
@@ -3630,10 +4016,22 @@ function CakeContent({ config, scene, edit = null }) {
            CreamWriting, which would have rendered it — as piped icing, convincingly, in the wrong
            material. */
         const Renderer = w.style === 'acrylic' || w.style === 'fondant' ? AcrylicWriting : CreamWriting;
+        /* ⚠️ THE HOST IS RESOLVED HERE because only the canvas knows what is standing on a tier.
+           The renderer is handed a finished path and never learns what a rainbow is — the same
+           split that keeps `wallOccupants` out of the sticker renderers. */
+        const hostPath = (() => {
+          if (!w.on) return null;
+          const ht = tierData?.[w.on.tierIndex];
+          const host = (ht?.rainbows ?? []).find(r => r.id === w.on.id);
+          if (!host) return null;
+          return textPathFor(host.textPath, host,
+            rainbowCakeFor(ht, w.on.tierIndex, tierData, board));
+        })();
         return (
         <Renderer
           key={w.id}
           writing={w}
+          hostPath={hostPath}
           topY={stackY}
           topRadius={topTier.radius}
           shape={topTier.shape ?? 'round'}
@@ -3803,6 +4201,11 @@ function CakeContent({ config, scene, edit = null }) {
             key={sticker.id}
             sticker={sticker}
             topY={topY}
+            /* A board decoration stands on the drum, which no rim ring reaches. */
+            topBands={isBoard ? EMPTY_TOP_BANDS : tierTopBands(tier)}
+            /* What is on the WALL, for a piece seated on the rim with its body over the edge.
+               The board has no wall to clear. */
+            sideBands={isBoard ? EMPTY_TOP_BANDS : tierSideBands(tier)}
             topRadius={isBoard ? (board?.radius ?? tier.radius) : tier.radius}
             shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
             // The cake's own footprint is what a board decoration must not stand in.
@@ -3835,14 +4238,19 @@ function CakeContent({ config, scene, edit = null }) {
 // capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
 // letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
 // the studio background belong to the editor, not to the cake.
-function CakeThumbnailScene({ config, shadows = false }) {
+function CakeThumbnailScene({ config, shadows = false, lights = null }) {
   return (
     <>
       {/* ⚠️ `shadows` EXISTS SO A HARNESS CAN MATCH THE LIVE SCENE, which renders `<SceneLights
           shadows />` while this preview does not. Default stays OFF — production thumbnails and
           previews are unchanged — but a page MEASURING the cake has to render what a baker sees, and
           a cast shadow lands on the tier wall, which is exactly where colour is sampled. */}
-      <SceneLights shadows={shadows} />
+      {/* ⚠️ `lights` EXISTS FOR THE SAME REASON `shadows` DOES, just above: a harness has to render
+          the real cake under something other than the shipped rig, and the only alternative is a
+          second copy of this scene — which drifts, and whose numbers then describe a cake nobody
+          loads (dev/scene.js records that cost). Calibrating the rig means varying it and measuring,
+          so varying it has to be possible without forking it. Null = production, unchanged. */}
+      {lights ?? <SceneLights shadows={shadows} />}
       {/* Same env rule as the live scene (SceneEnv): the configured HDRI, else the neutral
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
@@ -4244,6 +4652,7 @@ export function CakePreview({
   fov = CAMERA_FOV, cameraPosition = CAMERA_POSITION, target = null,
   children = null,          // extra scene contents — a plain composition slot, not a debug hook
   shadows = false,          // match the LIVE scene's shadows; off by default so previews are unchanged
+  lights = null,            // override the rig — calibration harness only; null = production
 }) {
   const config = useMemo(() => toCanvasConfig(design ?? { tiers: [] }), [design]);
   // Aim at THIS cake's middle by default, the same rule the editor uses (cakeAimTarget) — a preview
@@ -4265,7 +4674,7 @@ export function CakePreview({
       >
         <CameraRig fov={fov} position={cameraPosition} />
         <Suspense fallback={null}>
-          <CakeThumbnailScene config={config} shadows={shadows} />
+          <CakeThumbnailScene config={config} shadows={shadows} lights={lights} />
         </Suspense>
         <OrbitControls enableZoom={enableZoom} enablePan={false} autoRotate={autoRotate} autoRotateSpeed={1.4} target={aim} />
         {children}
@@ -4310,6 +4719,8 @@ export default function CakeCanvas({
   onWritingClick, onWritingMove, selectedWritingId = null,
   penDrawMode = false, penMoveMode = false, penStyle, onAddStroke, onMoveStroke, onPickStroke,
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
+  gypMode = false, gypSelected = null, onGypMove, onGypSelect,
+  onGypClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
@@ -4317,6 +4728,9 @@ export default function CakeCanvas({
   dustMode = false, dustSelected = null, onDustMove, onDustSelect,
   foilMode = false, foilSelected = null, onFoilMove, onFoilSelect,
   creamPaint = null, onCreamPaint,
+  /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
+     surface you drag ALONG, and each drag lays one stroke that follows the hand. */
+  brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -4501,6 +4915,15 @@ export default function CakeCanvas({
         onAddStroke={onAddStroke}
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
+        brushDraw={brushDraw}
+        onBrushDrawStart={onBrushDrawStart}
+        onBrushDrawTo={onBrushDrawTo}
+        onBrushDrawEnd={onBrushDrawEnd}
+        gypMode={gypMode}
+        gypSelected={gypSelected}
+        onGypMove={onGypMove}
+        onGypSelect={onGypSelect}
+        onGypClick={onGypClick}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
@@ -4541,7 +4964,7 @@ export default function CakeCanvas({
         ref={orbitRef}
         enableZoom={false}
         enablePan={false}
-        autoRotate={autoRotate && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
+        autoRotate={autoRotate && brushDraw == null && (creamPaint != null || (selectedTier === null && selectedTextId === null && !pipingTarget))}
         autoRotateSpeed={0.8}
         maxPolarAngle={Math.PI / 2.05}
         // NO `target` prop, deliberately. FitCakeToView owns both the aim and the distance now, and

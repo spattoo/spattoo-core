@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { waferPanel, buildWaferSkirt } from './waferPaper.js';
+import { waferPanel, buildWaferSkirt, WAFER_PRESETS, WAFER_DEFAULTS, waferPresetFor, bakeWaferAO , waferPresetsOffered } from './waferPaper.js';
 
 const bbox = (g) => {
   const p = g.getAttribute('position');
@@ -452,5 +452,360 @@ describe('the paper can be cut to a shape', () => {
     const r = dropsAcross('round', 0), p = dropsAcross('petal', 0);
     const sum = (a) => a.reduce((s, v) => s + v, 0);
     expect(sum(p)).toBeGreaterThan(sum(r));
+  });
+});
+
+/* ⚠️ A SKIRT THAT ARRIVES INVISIBLE IS A CONTROL THAT LOOKS BROKEN. The chip applied
+ * "White, waved" (#fbf7f2) whatever the cake was, so turning wafer paper on over white buttercream
+ * gave off-white sheets against a white wall — all the geometry, none of it legible. Sandeep:
+ * *"i can hardly see the wafer paper. totally white and hard to differentiate."* */
+describe('waferPresetFor — the skirt arrives in something you can see', () => {
+  it('keeps the white preset on a coloured cake — white IS the right default', () => {
+    expect(waferPresetFor('#f2a0c0').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#4a2c1b').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#6CB7CE').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+  });
+
+  /* ⚠️ THESE TWO USED TO ASSERT THE CORAL PRESET, and they were right to until coral was withheld.
+   * The contrast rule still runs — it just cannot reach for a preset a baker is not offered, or the
+   * skirt arrives on a look with no chip active and no way back to it. Sandeep: *"pink option has
+   * been moved from the popup but default only pink coming. default should be 'white waved'."*
+   *
+   * ⚠️ AND THE OLD BEHAVIOUR WAS NOT A SOLUTION BEING GIVEN UP. White wafer paper on a white cake
+   * was reported once as *"i can hardly see the wafer paper. totally white and hard to
+   * differentiate"*, and the step-aside answered it by reaching for the coral preset. But coral is
+   * withheld for its SHAPE, not its colour — 2.4 folds, taper 0.02, height 0.80 — so that answer
+   * was a skirt that does not read as paper and stops a fifth of the way up the wall. One fault
+   * papered over with another. Sandeep, on this: *"the issue is not color, but the pink one is too
+   * bad structurally."* If white-on-white needs an answer it needs its own, which is a preset that
+   * is good enough to OFFER, or the colour wheel beside the chips. */
+  it('stays on white for a white cake, because that is what is offered', () => {
+    expect(waferPresetFor('#ffffff').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+  });
+
+  it('and on an off-white one, which is what buttercream actually is', () => {
+    expect(waferPresetFor('#fbf7f2').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#F6F2E9').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+  });
+
+  /* ⚠️ A TIE BROKEN BY NOISE IS NOT CONTRAST. The step-aside used to take the LARGEST gap whether or
+     not it cleared the bar, so an off-white cake landed on "White, rippled" over "White, waved" on
+     a luminance difference of 0.01 — moving the default off the asked-for look for no visible
+     reason. It only steps aside now for a preset that genuinely clears WAFER_MIN_CONTRAST. */
+  it('does not swap one white for another over a hair of luminance', () => {
+    for (const wall of ['#ffffff', '#fbf7f2', '#fdfbf7', '#F6F2E9', '#faf8f5']) {
+      expect(waferPresetFor(wall).colour, `${wall} moved off the preferred look`)
+        .toBe(WAFER_PRESETS['White, waved'].colour);
+    }
+  });
+
+  /* The rule still WORKS where it has something to reach for: a dark cake keeps the white skirt,
+     which is the case the contrast check was really protecting. */
+  it('keeps white on a cake white can be seen against', () => {
+    expect(waferPresetFor('#2e2e2e').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+    expect(waferPresetFor('#f2766d').colour).toBe(WAFER_PRESETS['White, waved'].colour);
+  });
+
+  /* ⚠️ A WHOLE PRESET, never a colour of its own invention: whatever arrives has to be one of the
+     chips below, or none of them shows as active and the baker cannot step back to it in one tap. */
+  it('always returns one of the offered presets', () => {
+    /* ⚠️ `waferPresetsOffered()`, NOT THE WHOLE TABLE — which is what this used to read, and why it
+       stayed green while the skirt was arriving on a withheld preset. A test that accepts anything
+       in the table cannot see the difference between offered and hidden. */
+    const offered = waferPresetsOffered().map(([, p]) => p.colour);
+    for (const cake of ['#ffffff', '#000000', '#f2766d', '#c0d8ff', undefined, null, 'nonsense']) {
+      expect(offered).toContain(waferPresetFor(cake).colour);
+    }
+  });
+
+  it('is a copy, so editing one skirt cannot edit the preset table', () => {
+    const a = waferPresetFor('#ffffff');
+    a.colour = '#123456';
+    expect(WAFER_PRESETS['Pink, notched hem'].colour).toBe('#f2766d');
+  });
+});
+
+/* ⚠️ THE SCENE IS A NEAR-UNIFORM DOME, so a white skirt in front of a white wall carries almost no
+ * shading of its own. Measured against a reference photograph of a real wafer cake: the render's
+ * p5–p95 luminance range over the wall was 10.8 where the photograph is 80.1. Making the sheets four
+ * times denser moved it to 12.1 — *"still cant see anything. total white."* It was never geometry.
+ * `bakeCreaseAO` (creamWall.js) is this repo's existing answer to the same problem on the piped
+ * wall; this is that answer for the skirt. */
+describe('bakeWaferAO — what darkens a white skirt on a white cake', () => {
+  const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, rng: () => 0.5 });
+
+  it('paints a colour attribute the material can read', () => {
+    const g = bakeWaferAO(panel(), 0.73);
+    const col = g.getAttribute('color');
+    expect(col).toBeTruthy();
+    expect(col.count).toBe(g.getAttribute('position').count);
+    expect(col.itemSize).toBe(3);
+  });
+
+  /* The ramp is on the panel's LOCAL z — 0 at the wall, positive outward — so it behaves the same on
+     a round tier and a sheet one without knowing which it is on. */
+  /* ⚠️ THE STRENGTH IS A DECAY RATE, NOT A SLOPE. These used to pass 0.73 and 0.6, which were
+     readable numbers while the shade was `1 - ao*phi`. It is `floor + (1-floor)*exp(-ao*phi)` now,
+     so the same figures barely darken anything and the assertions failed on the MAGNITUDE while
+     the thing they exist to check — which axis the ramp follows — was still correct. Updated
+     rather than loosened: the crest must still be open and the root must still be in shadow. */
+  it('darkens what is tucked toward the wall and leaves the outer crest alone', () => {
+    const g = bakeWaferAO(panel(), 3);
+    const pos = g.getAttribute('position'), col = g.getAttribute('color');
+    let maxZ = 0;
+    for (let i = 0; i < pos.count; i++) maxZ = Math.max(maxZ, pos.getZ(i));
+    let crest = -1, deep = 2;
+    for (let i = 0; i < pos.count; i++) {
+      const z = pos.getZ(i), c = col.getX(i);
+      if (z > maxZ * 0.98) crest = Math.max(crest, c);
+      if (z < maxZ * 0.02) deep = Math.min(deep, c);
+    }
+    expect(crest).toBeGreaterThan(0.95);   // open to the sky
+    expect(deep).toBeLessThan(0.45);       // in the gap
+  });
+
+  /* ⚠️ OCCLUSION ATTENUATES LIGHT; IT NEVER EXTINGUISHES IT. A crease between two sheets of white
+     paper a millimetre apart is grey, because light bounces into it from both sides — it is not
+     black at any exposure. The ramp was `Math.max(0, 1 - ao*phi)`, which with any strength above 1
+     clipped the root vertices to PURE BLACK; Sandeep saw it at the rim, where you look straight
+     down the gap: *"black think is still there."* No strength may reach zero. */
+  /* ⚠️ A GAP IS OPEN AT THE TOP. Depth from the wall is only half of what decides whether light
+     reaches a point; the other half is whether the sky can see it, and the bake had no idea how
+     high a vertex was. So the crown — the one place a real skirt is BRIGHTEST, because the key
+     light falls straight into the open channel — came out as a ring of dark slots. Sandeep:
+     *"that black part is still there… thats not how it looks when you really add a wafer paper."* */
+  it('leaves the open top of a gap alone, however deep it is', () => {
+    const g = bakeWaferAO(panel(), 10);
+    const pos = g.getAttribute('position'), col = g.getAttribute('color');
+    let yTop = -Infinity, yBot = Infinity;
+    for (let i = 0; i < pos.count; i++) {
+      const y = pos.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y;
+    }
+    let crown = 2, deep = 2;
+    for (let i = 0; i < pos.count; i++) {
+      const d = (yTop - pos.getY(i)) / (yTop - yBot);
+      if (d < 0.01) crown = Math.min(crown, col.getX(i));   // at the rim, whatever its depth
+      if (d > 0.90) deep = Math.min(deep, col.getX(i));     // near the hem, roofed over
+    }
+    expect(crown).toBeGreaterThan(0.95);   // open to the sky
+    expect(deep).toBeLessThan(0.5);        // and the shading still happens lower down
+  });
+
+  it('never reaches black, however hard the gaps are shaded', () => {
+    for (const ao of [1, 4, 10, 40]) {
+      const col = bakeWaferAO(panel(), ao).getAttribute('color');
+      let min = 1;
+      for (let i = 0; i < col.count; i++) min = Math.min(min, col.getX(i));
+      expect(min, `ao ${ao}`).toBeGreaterThan(0.1);
+    }
+  });
+
+  it('is grey — occlusion darkens, it does not tint', () => {
+    const g = bakeWaferAO(panel(), 0.73);
+    const col = g.getAttribute('color');
+    for (let i = 0; i < col.count; i += 37) {
+      expect(col.getY(i)).toBeCloseTo(col.getX(i), 6);
+      expect(col.getZ(i)).toBeCloseTo(col.getX(i), 6);
+    }
+  });
+
+  it('never goes below black, however hard it is pushed', () => {
+    const col = bakeWaferAO(panel(), 4).getAttribute('color');
+    for (let i = 0; i < col.count; i++) expect(col.getX(i)).toBeGreaterThanOrEqual(0);
+  });
+
+  it('is a no-op at zero, so the old flat look is still reachable', () => {
+    expect(bakeWaferAO(panel(), 0).getAttribute('color')).toBeUndefined();
+  });
+
+  it('a built skirt carries it, or the material has nothing to read', () => {
+    const g = buildWaferSkirt({ shape: { kind: 'round', radius: 1 }, tierHeight: 1, radius: 1, count: 6 });
+    expect(g.getAttribute('color')).toBeTruthy();
+  });
+});
+
+/* ⚠️ GROUNDWORK, DEFAULT OFF. A skirt's panels are mounted FACE-OUT, so every sheet lies on the
+ * wall like printed wrap. Real wafer paper is strips stood on EDGE: Sandeep, after an afternoon I
+ * spent shading the wrong shape, *"wafer paper strips are perpendicularly added to the cake
+ * surface. your screenshot shows like the strips are flat."* `fin` is that correction. It is not
+ * finished — the look is not the reference yet — but the geometry below is settled and tested, and
+ * nothing reaches a cake until a preset asks for it. */
+describe('fin mode — a strip stood on edge, not laid flat', () => {
+  const opts = { shape: { kind: 'round', radius: 1 }, tierHeight: 1, radius: 1, count: 12, jitter: 0 };
+
+  it('is off by default, so no existing cake moves', () => {
+    const flat = buildWaferSkirt(opts);
+    const fin  = buildWaferSkirt({ ...opts, fin: true });
+    expect(flat).toBeTruthy();
+    expect(fin).toBeTruthy();
+    // a different mounting produces different geometry; the default must be the flat one
+    const a = flat.getAttribute('position'), b = fin.getAttribute('position');
+    let same = a.count === b.count;
+    if (same) for (let i = 0; i < a.count * 3 && same; i++) same = Math.abs(a.array[i] - b.array[i]) < 1e-9;
+    expect(same).toBe(false);
+  });
+
+  it('builds without NaN, which a bad transform would introduce silently', () => {
+    const g = buildWaferSkirt({ ...opts, fin: true, finAngle: 46, width: 3, ripple: 0.2 });
+    const p = g.getAttribute('position');
+    for (let i = 0; i < p.count * 3; i++) expect(Number.isFinite(p.array[i])).toBe(true);
+  });
+
+  /* ⚠️ THE COVERAGE RELATIONSHIP, written down because it is counter-intuitive and cost a render to
+     find: a strip's TANGENTIAL extent is `width × gap × sin(finAngle)`, so the fraction of the wall
+     it covers is `width × sin(finAngle)` — INDEPENDENT OF COUNT, since the gap shrinks with it.
+     Raising `count` alone can never close the gaps between strips; only width or a lower angle can.
+     At the control's current max (width 3.2) a 90° mounting covers nothing at all. */
+  it('coverage is width x sin(angle), and count cannot change it', () => {
+    const cover = (width, deg) => width * Math.sin(deg * Math.PI / 180);
+    expect(cover(3.0, 90)).toBeCloseTo(3.0, 6);
+    expect(cover(3.0, 46)).toBeCloseTo(2.158, 3);
+    expect(cover(1.3, 74)).toBeCloseTo(1.250, 3);
+    // the same two strips at twice the count still cover the same fraction of the wall
+    const g1 = buildWaferSkirt({ ...opts, fin: true, count: 20, width: 2 });
+    const g2 = buildWaferSkirt({ ...opts, fin: true, count: 40, width: 2 });
+    expect(g1.getAttribute('position').count * 2).toBe(g2.getAttribute('position').count);
+  });
+
+  it('a strip reaches OUT from the wall rather than straddling it', () => {
+    const g = buildWaferSkirt({ ...opts, fin: true, finAngle: 90, width: 2, ripple: 0, curl: 0, sway: 0 });
+    const p = g.getAttribute('position');
+    let minR = Infinity, maxR = -Infinity;
+    for (let i = 0; i < p.count; i++) {
+      const r = Math.hypot(p.getX(i), p.getZ(i));
+      if (r < minR) minR = r; if (r > maxR) maxR = r;
+    }
+    expect(minR).toBeGreaterThan(0.9);   // nothing buried inside the tier
+    expect(maxR).toBeGreaterThan(1.0);   // and it stands proud of it
+  });
+});
+
+/* ⚠️ THE AO AXIS TURNS WITH THE PANEL, and getting it wrong does not read as bad occlusion — it
+ * reads as scorching. Lying flat, "away from the wall" is local Z. Stood on edge, local Z is the
+ * WAVE axis and local X is the radius, so the flat ramp paints a gradient ACROSS each strip's face:
+ * *"the shadows are so bad that it looks like burnt paper."* */
+/* ⚠️ GLUED MEANS TOUCHING, and it only shows from directly above. The transform pins a panel's top
+ * EDGE to the wall, but the sheet itself left it there: at the glue line the pleat was already 35%
+ * open and `bow` stood the side edges off as well. Looking straight down you saw board between the
+ * cake and its own skirt — Sandeep: *"there is a gap between cake and wafer papers. they look
+ * separate."* From the side the sheet in front hides it, which is why it survived every render
+ * taken at eye level. */
+describe('the sheet is stuck ON the cake, not hovering beside it', () => {
+  const panelAt = (glue) => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, curl: 0.3,
+                                         splay: 0.1, rng: () => 0.5, glue });
+  // +Z is outward from the wall, so z IS the standoff.
+  const standoff = (g, a, b) => {
+    const p = g.getAttribute('position');
+    let yTop = -Infinity, yBot = Infinity;
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+    let n = 0, sum = 0;
+    for (let i = 0; i < p.count; i++) {
+      const d = (yTop - p.getY(i)) / (yTop - yBot);
+      if (d >= a && d < b) { sum += p.getZ(i); n++; }
+    }
+    return n ? sum / n : NaN;
+  };
+
+  it('touches the wall along the glue line', () => {
+    expect(standoff(panelAt(0.10), 0, 0.02)).toBeLessThan(0.01);
+  });
+
+  it('and still opens into a pleat below it', () => {
+    const g = panelAt(0.10);
+    expect(standoff(g, 0.3, 0.5)).toBeGreaterThan(standoff(g, 0, 0.02) + 0.05);
+  });
+
+  /* ⚠️ THE GLUE LINE IS THE RIM, NOT THE TOP OF THE PANEL. A panel starts `riseFrac` of its drop
+     ABOVE the rim, and that part is stuck to nothing — there is no cake behind it. Pressing it
+     flat (which measuring the pinch from the panel's top does) leaves a zero-width vertical sliver
+     at exactly the tier's radius, and from directly above that hides under the cake's own top
+     edge: the skirt then reads as a ring the cake is sitting IN. Sandeep, after the first glue
+     fix: *"there is still some gap from the top view."* So the pinch is a V about the rim. */
+  it('splays over the rim instead of hiding under the cake edge', () => {
+    const g = waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, curl: 0.3,
+                           rng: () => 0.5, glue: 0.10, riseFrac: 0.2 });
+    const p = g.getAttribute('position');
+    // Panel-local y: 0 at the top, -height at the hem, so the rim sits at -riseFrac × height.
+    let yTop = -Infinity, yBot = Infinity;
+    for (let i = 0; i < p.count; i++) { const y = p.getY(i); if (y > yTop) yTop = y; if (y < yBot) yBot = y; }
+    const rimY = yTop - 0.2 * (yTop - yBot);
+    const reach = (lo, hi) => {
+      let n = 0, sum = 0;
+      for (let i = 0; i < p.count; i++) {
+        const y = p.getY(i);
+        if (y > lo && y <= hi) { sum += p.getZ(i); n++; }
+      }
+      return n ? sum / n : NaN;
+    };
+    expect(reach(rimY + 1e-6, yTop)).toBeGreaterThan(reach(rimY - 0.02, rimY + 0.02));
+  });
+
+  it('glue 0 is the old behaviour — the pleat opens at the glue line', () => {
+    expect(standoff(panelAt(0), 0, 0.02)).toBeGreaterThan(standoff(panelAt(0.10), 0, 0.02));
+  });
+});
+
+describe('bakeWaferAO follows the mounting', () => {
+  const panel = () => waferPanel({ width: 1, height: 1, ripple: 0.4, ripples: 6, rng: () => 0.5, fin: true });
+
+  it('a fin darkens by RADIUS (local x), not by its wave', () => {
+    const g = bakeWaferAO(panel(), 3, true);
+    const pos = g.getAttribute('position'), col = g.getAttribute('color');
+    let lo = Infinity, hi = -Infinity;
+    for (let i = 0; i < pos.count; i++) { const x = pos.getX(i); if (x < lo) lo = x; if (x > hi) hi = x; }
+    let atWall = 2, atFree = -1;
+    for (let i = 0; i < pos.count; i++) {
+      const t = (pos.getX(i) - lo) / (hi - lo), c = col.getX(i);
+      if (t < 0.02) atWall = Math.min(atWall, c);
+      if (t > 0.98) atFree = Math.max(atFree, c);
+    }
+    expect(atFree).toBeGreaterThan(0.95);   // the open edge is lit
+    expect(atWall).toBeLessThan(0.6);       // the root is in the gap
+  });
+
+  /* The two modes must disagree, or the axis is not being honoured at all. */
+  it('flat and fin shade the same geometry differently', () => {
+    const a = bakeWaferAO(panel(), 3, false).getAttribute('color');
+    const b = bakeWaferAO(panel(), 3, true).getAttribute('color');
+    let same = true;
+    for (let i = 0; i < a.count && same; i++) same = Math.abs(a.getX(i) - b.getX(i)) < 1e-9;
+    expect(same).toBe(false);
+  });
+});
+
+/* ⚠️ THE SHADING FOLLOWS THE MOUNTING, and getting this wrong is what "burnt paper" was. 0.86 was
+ * calibrated against the reference photograph with every sheet lying FLAT, where a neighbour
+ * overlaps you by two whole widths. A fin's occluder is the thin gap at its root, so the same ramp
+ * darkens paper that nothing is shading. Not a per-look number, which is why it is NOT in the
+ * presets — and an explicit value still has to win, or no sweep can ever measure it. */
+describe('ao is a property of how the paper is stuck on', () => {
+  const build = (opts) => buildWaferSkirt({
+    shape: { kind: 'round', radius: 1 }, tierHeight: 1, radius: 1,
+    count: 12, width: 1.4, jitter: 0, seed: 3, ...opts,
+  });
+  // The darkest vertex colour the bake produced: a deeper ramp reaches a darker floor.
+  const floor = (geo) => {
+    const c = geo.attributes.color;
+    let min = 1;
+    for (let i = 0; i < c.count; i++) min = Math.min(min, c.getX(i));
+    return min;
+  };
+
+  it('a fin is shaded less than a flat sheet, with nothing said either way', () => {
+    expect(floor(build({ fin: true }))).toBeGreaterThan(floor(build({ fin: false })));
+  });
+
+  it('an explicit ao wins over the mounting default', () => {
+    expect(floor(build({ fin: true, ao: WAFER_DEFAULTS.ao })))
+      .toBeCloseTo(floor(build({ fin: false, ao: WAFER_DEFAULTS.ao })), 5);
+  });
+
+  /* At 0 the bake does not write a colour attribute at all, which is the real "off": a mesh with
+     no vertex colours is lit by the scene alone. Asserting the attribute's ABSENCE rather than a
+     floor of 1, because an all-white attribute would also pass that and would still cost memory on
+     every panel of every skirt. */
+  it('ao: 0 writes no vertex colours at all, on either mounting', () => {
+    expect(build({ fin: true,  ao: 0 }).attributes.color).toBeUndefined();
+    expect(build({ fin: false, ao: 0 }).attributes.color).toBeUndefined();
   });
 });

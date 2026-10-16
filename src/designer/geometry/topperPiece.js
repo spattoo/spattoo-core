@@ -175,6 +175,27 @@ const clampScale = (v, lo, hi, fallback) =>
  * (INVARIANTS #5b: ONE size path), so the card reads its bounds from here. */
 export const STICK_LENGTH_RANGE = Object.freeze({ min: 0.25, max: 6, step: 0.05, default: 1 });
 
+/* ── A card on a stick can only STAND ────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"i selected 'on stick' in card topper studio. then selected 'lying flat' option. it
+ * sleeps like this on cake. 'lying flat' should not be possible when on stick."*
+ *
+ * It is not a rendering accident, it is a contradiction: a stick is a thing you push into the cake
+ * so the card stands ABOVE it, and laying the card down leaves the stick sticking out sideways with
+ * nothing holding either of them up. The card's own hint already said *"It stands on its stick"*
+ * while the chip beside it said Lying flat — two statements about one cake, disagreeing.
+ *
+ * ⚠️ ONE FUNCTION, ASKED BY THE CARD AND BY THE RENDERER, for the reason `topperStick` above states
+ * about its own question: the screen hides a choice that cannot apply, and the renderer refuses it
+ * whatever is stored. Only the second half rescues the cakes ALREADY saved in the impossible state —
+ * hiding the chip would leave those stuck in it with no control left to change it.
+ *
+ * The mirror of this rule is already in the card: "Height" is absent WITHOUT a stick, because
+ * without one there is no stem to lengthen. */
+export function topperMode(t) {
+  return t?.payload?.stick?.on ? 'stand' : (t?.mode ?? 'stand');
+}
+
 export function topperStick(box, stick) {
   if (!stick?.on || !box || !(box.h > 0)) return null;
   const lengthScale = clampScale(stick.lengthScale,
