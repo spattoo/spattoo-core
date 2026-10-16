@@ -7673,12 +7673,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    *
    * It reopens the element's own piping card, which is where the colour, the ombré stops and the
    * balance already live. A second card for the same element would be a different product. */
+  /* ⚠️ THE COAT IS IN THE DESIGN; ITS CARD IS NOT. `coat` is saved on the tier and comes back with
+     any design that loads — but `pipingCards` is ephemeral UI state, and `resetEditors` empties it
+     on every template load. So a cake could arrive wearing a coat with no card anywhere in the
+     stack, and this function's old body looked the card up and silently gave up: tapping the cream
+     did nothing, with nothing on screen to explain it. Sandeep, with a covered cake and a stack
+     holding only two sticker cards: *"when i click on the cream, its not opening popup. see there
+     is no card for this cream on the side popup stack as well"*.
+     ⚠️ A RING ALREADY SOLVED THIS — `openCardForLayer` rebuilds the card from the layer, falling
+     back to a minimal element synthesised from what the layer itself stores when the catalogue has
+     not loaded. A coat stores the same three things (`id`, `name`, `glbUrl`), so it takes the same
+     route rather than a second one: `openPipingPopup` adds the card when it is missing and focuses
+     it when it is not, which is exactly the branch this used to half-implement. */
   function handleCoatSelect(tierIndex) {
     if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
     const coat = design.tiers[tierIndex]?.coat;
     if (!coat) return;
-    const card = pipingCards.find(c => c.cardId === coat.cardId);
-    if (card) { focusEditor('piping'); setPipingPopupOpen(true); setExpandedPipingId(card.cardId); }
+    const el = pipingElementById[coat.id]
+      ?? { id: coat.id, name: coat.name, image_url: coat.glbUrl, thumbnail_url: null };
+    openPipingPopup(el, { cardId: coat.cardId });
   }
 
   function handleTopPipingSelect(tierIndex, layerId) {
