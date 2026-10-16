@@ -249,6 +249,12 @@ const DEFAULT_WRITING = {
   thickness: 0.03, fit: WRITING_FIT.cream, softness: 0.7,
   curve: 0, lineSpacing: 1.4,
   surface: 'top',            // 'top' | 'side' | 'board'
+  /* ⚠️ THE ELEMENT THIS MESSAGE IS WRITTEN ON, when it is not written on the cake. `null` for every
+     message that exists today, and an absent key must keep meaning the cake — a saved design whose
+     "Happy Birthday" silently moved onto a rainbow would be somebody's ordered cake. Shape:
+     `{ kind, tierIndex, id }` — `kind` names the host's family (its text path is keyed off it, see
+     geometry/textPath.js), `id` the instance on that tier. */
+  on: null,
   yaw: 0, offsetX: 0, offsetZ: 0, lift: 0.02,
   boardX: undefined, boardZ: undefined,   // board placement (default seeded in CreamWriting)
   /* Side placement: where round the cake, and how high. ⚠️ The TIER is not stored — it is resolved

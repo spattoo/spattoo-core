@@ -671,7 +671,28 @@ export function writingText(writing) {
 
 export function writingSurface({
   writing, tiers, topY, topRadius, shape = 'round', width = 0, depth = 0, boardRadius = 0,
+  /* The element this message is written ON, already resolved to a path by `textPathFor` — see
+     geometry/textPath.js. Absent for every message written on the cake itself, which is all of
+     them until a baker puts one on a rainbow. */
+  hostPath = null,
 }) {
+  /* ⚠️ A HOSTED MESSAGE TAKES ITS PLACEMENT FROM ITS HOST, AND NOTHING FROM THE CAKE. Sandeep:
+     *"we have texts element, but that writes only on cake. we need to have a way to attach the
+     texts to different other elements."* It lands here rather than in a renderer because this is
+     the ONE resolver every material already shares — put it in CreamWriting and acrylic/fondant
+     would silently keep writing on the cake, which is the same message in a different material.
+     ⚠️ `curve` COMES FROM THE SHAPE, not from the control. On the cake the baker bends a line by
+     hand; on an arch the bend IS the arch, so the Curve dial has nothing left to say and the card
+     hides it (INVARIANTS #11). */
+  if (hostPath) {
+    return {
+      surface: 'host', host: hostPath, fit: writing?.fit ?? writingFit(writing?.style),
+      maxW: hostPath.maxW, maxH: hostPath.maxH,
+      curve: hostPath.curve, wrapRadius: 0,
+      // A hosted line does not drag on a cake surface, so the cake's own bounds are not its bounds.
+      minSideY: 0, maxSideY: 0, cakeBaseR: topRadius,
+    };
+  }
   const surface = writing?.surface ?? 'top';
   const fit     = writing?.fit ?? writingFit(writing?.style);
   const isRect  = shape === 'rect';
@@ -693,7 +714,10 @@ export function writingSurface({
   const minSideY = 0.14, maxSideY = Math.max(minSideY + 0.05, topY - 0.14);
   return {
     surface, fit, bottom, cakeBaseR, sideY, sideTier, sideRect, sideR, sideH, sideFaceW,
-    maxW, maxH, minSideY, maxSideY,
+    maxW, maxH, minSideY, maxSideY, host: null,
+    /* On the cake the baker's own dial decides the bend; `??` rather than a default so a saved
+       `curve: 0` still means straight. */
+    curve: writing?.curve ?? 0,
     wrapRadius: surface === 'side' && !sideRect ? sideR + 0.006 : 0,
   };
 }

@@ -41,6 +41,7 @@ import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '.
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
+import { textPathFor } from '../geometry/textPath.js';
 import { cleanTriangles } from '../geometry/glbClean.js';
 import { outwardBand, rimBand } from './useSeatedInstances.js';
 import { hoverCursorProps } from './pointerCursor.js';
@@ -428,6 +429,18 @@ function tierReliefSampler(tier) {
  * never holds a stale cake.
  */
 const EMPTY_TOP_BANDS = Object.freeze([]);
+/* ⚠️ THE ARCH'S INPUTS, IN ONE EXPRESSION. `rainbowBands` is asked the same question twice — once
+   to DRAW the arch and once to work out where a message written on it goes — and the two must be
+   handed the identical cake or they describe different arches. They did: the text path was built
+   with `boardY: BOARD_TOP_Y` and no `supportRadius`, which moved `archY` and dropped the whole line
+   to the foot of the arch. Rendered fine, tracked the band, and was simply in the wrong place.
+   INVARIANTS #15 — a preview and the thing previewed ask ONE function. */
+function rainbowCakeFor(tier, i, tierData, board) {
+  return {
+    radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
+    supportRadius: rainbowSupportRadius(tierData, i, board),
+  };
+}
 const _topBandsByTier = new WeakMap();
 function tierTopBands(tier) {
   if (!tier) return [];
@@ -3859,15 +3872,7 @@ function CakeContent({ config, scene, edit = null }) {
             <RainbowArch
               key={rb.id}
               params={rb}
-              cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY,
-                      // What a falling foot lands ON: the tier below, or — off the bottom tier —
-                      // THE BOARD. The board does not grow here the way it does in the studio. It is
-                      // a real thing the baker buys, sized to the cake and priced with it, so
-                      // widening it silently is changing the order to fit the decoration.
-                      //
-                      // A rect board is measured across its narrow way, so the arch lands on it at
-                      // any angle rather than only over the corners.
-                      supportRadius: rainbowSupportRadius(tierData, i, board) }}
+              cake={rainbowCakeFor(tier, i, tierData, board)}
             />
             </DraggableGenerated>
           ))}
@@ -4011,10 +4016,22 @@ function CakeContent({ config, scene, edit = null }) {
            CreamWriting, which would have rendered it — as piped icing, convincingly, in the wrong
            material. */
         const Renderer = w.style === 'acrylic' || w.style === 'fondant' ? AcrylicWriting : CreamWriting;
+        /* ⚠️ THE HOST IS RESOLVED HERE because only the canvas knows what is standing on a tier.
+           The renderer is handed a finished path and never learns what a rainbow is — the same
+           split that keeps `wallOccupants` out of the sticker renderers. */
+        const hostPath = (() => {
+          if (!w.on) return null;
+          const ht = tierData?.[w.on.tierIndex];
+          const host = (ht?.rainbows ?? []).find(r => r.id === w.on.id);
+          if (!host) return null;
+          return textPathFor(host.textPath, host,
+            rainbowCakeFor(ht, w.on.tierIndex, tierData, board));
+        })();
         return (
         <Renderer
           key={w.id}
           writing={w}
+          hostPath={hostPath}
           topY={stackY}
           topRadius={topTier.radius}
           shape={topTier.shape ?? 'round'}

@@ -6496,6 +6496,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // result was a cake whose most visible decoration had no how-to at all.
         elementId: el?.id ?? null,
         elementName: el?.name ?? null,
+        /* ⚠️ WHERE TEXT MAY GO ON THIS ARCH, copied from the row at add time like every other tuned
+           value here. The instance carries it so the canvas can resolve a hosted message without
+           looking an element row back up mid-render — the same reason `elementName` is copied. */
+        textPath: el?.placement_config?.text_path ?? null,
         // ── The first one lands in the MIDDLE ───────────────────────────────────────────────────
         // An arch carries its own lean — `offsetX` is how far it straddles along its own plane, and
         // for the shapes that fall off one side that is most of a radius. Placed with no position of
@@ -8883,6 +8887,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        needs — SizeDial is a drag, which a script cannot aim. Same argument as `__setScatterBig`:
        calls the SAME function the card calls, never a re-implementation, so what it proves is what
        a baker would get. */
+    /* ⚠️ WRITING ON AN ELEMENT CANNOT BE DRIVEN ANY OTHER WAY FROM A SCRIPT — the card's own path is
+       a tap on the arch then typing into a field, and neither is aimable. Calls the SAME `addWriting`
+       the card calls, so what it proves is what a baker gets. */
+    window.__writeOn = (host, text, patch = {}) => {
+      const id = addWriting({ text, on: host, style: 'cream', ...patch });
+      return id;
+    };
+    window.__getWritings = () => (design.writings ?? []).map(w =>
+      ({ id: w.id, text: w.text, style: w.style, surface: w.surface, on: w.on }));
     window.__setGyp = (patch) => { const i = design.tiers.findIndex(t => t.gyp);
                                    if (i < 0) return false; updateGyp(i, patch); return true; };
     /* Big-sprinkle mix. The control is a DialCell — a drag, which a script cannot aim precisely —

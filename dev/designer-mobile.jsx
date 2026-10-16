@@ -427,7 +427,15 @@ CAT_ELEMENTS.push({
   image_url: CAT_THUMB('#f5a3b8'), thumbnail_url: CAT_THUMB('#f5a3b8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: false },
-  placement_config: { procedural: 'rainbow' },
+  /* ⚠️ `text_path` IS WHAT LETS A MESSAGE BE WRITTEN ON THIS ARCH. Every value in it is RELATIVE —
+     a fraction of a band, never a position — because the arch is derived (bandRadius over the row's
+     own numbers) and `fitOnTopScale` shrinks the whole thing to fit a small cake. An authored slot
+     would be left behind by any of that, silently. See geometry/textPath.js. */
+  placement_config: { procedural: 'rainbow',
+    text_path: { kind: 'arch',
+                 band: PARAMS.get('tband') || undefined,
+                 size: PARAMS.has('tsize') ? +PARAMS.get('tsize') : undefined,
+                 span: PARAMS.has('tspan') ? +PARAMS.get('tspan') : undefined } },
   default_color: '#f5a3b8', sort_order: 25,
 });
 
