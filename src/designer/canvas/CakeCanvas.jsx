@@ -2241,6 +2241,21 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      `effScale` — so a figure tuned to look seated at one size sinks or floats at every other, and
      the doll's own dial spans 4 to 7. The seat asks the model how tall it is; the nudge cannot. */
   const isPerchBase = isPerch && sticker.perchSeat === 'base';
+  /* ⚠️ `hang` — THE THIRD VERGE ANCHOR, AND THE ONE A RIBBON NEEDS. `center` rests the model's
+     mid-spine on the lip and leans about that middle: right for a butterfly, wrong for a bow, which
+     is TIED at the rim with everything below the knot falling down the outside. The contact point
+     is the model's TOP. With the pivot in the middle a tilt swings one end out and the other IN —
+     measured on the satin bow at its own 13.5°, the tails cut 0.131 into the wall against the 0.09
+     its row was authoring. Pivoting at the knot swings the tails through the air, where they hang.
+     ⚠️ RESTORED, AND THE REVERT THAT TOOK IT WAS AIMED AT ITS NEIGHBOUR. `4fd9c157` shipped this
+     anchor AND the rim stand-off together; `ed349c76` reverted the pair because *"a satin bow ended
+     up beside the cake"*. The stand-off has since come back on its own, so admin kept offering a
+     `hang` seat (with help text describing it in detail) that core silently read as `center` —
+     a row could author it, the screen could show it, and nothing would happen. Measured on the
+     reported cake: the bow's stand-off is 0.0696 with piping clearance 0, far too small to have
+     thrown it anywhere, while a centre seat left 0.29 of bow below the rim and outside the wall.
+     A value in a config, not a type (INVARIANTS #1): `placement_config.verge.seat`. */
+  const isVergeHang = isVerge && sticker.vergeSeat === 'hang';
   // Base-seated upright modes: stand, a base-seat verge, a base-seat perch, and a foldable card on a
   // perch edge — all stand on their BODY base. A centre-seat verge / perch sit centred at the rim
   // edge height instead.
@@ -2289,6 +2304,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
+    // A `hang` verge is tied AT the rim: its top meets the lip and the body falls below it.
+    : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2) * effScale
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — a CENTRE-seat perch straddles, a centre-seat verge rests its mid-spine on the lip (a base-seat perch/verge took the standSeat branch above)
     : FLAT_STICKER_Y_OFFSET);
 
@@ -2309,7 +2326,18 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
    * wall path uses and the same one piping uses to sit its shells on the rim. `verge.edge_inset`
    * is the hand-cranked version of this and stays only as a seed a drag discards. */
   const edgeSeated = isPerch || isVerge;
-  const edgeProud  = edgeSeated && sticker.sideProud === true;
+  /* ⚠️ A PIECE THAT STANDS ON THE RIM HAS NOTHING TO STAND CLEAR OF. The stand-off below exists
+     because an edge piece is drawn CENTRED on the rim line, so half its depth starts inside the
+     wall — true of a bow draped over the lip, and false of anything base-seated, whose body is
+     entirely ABOVE the top surface. Pushing one of those out by half its own box moves it off the
+     cake: a fondant doll at scale 4.8 measures 0.735 deep, so she was shoved 0.368 past a 0.9 wall
+     and hung in the air. Sandeep, pointing at her selection box: *"its considering the box space.
+     it should not."*
+     ⚠️ AND `sideProud` IS NOT THE FLAG TO ASK — `zoneSeat` documents itself as *"only meaningful
+     for wall-hug; verge/stand/perch seat by their own logic and ignore it"*, yet the stand-off
+     reads it for exactly those modes, where a bare `"rim": "perch"` silently defaults to proud.
+     The seat is what actually knows whether the body crosses the rim line, so it decides. */
+  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat;
   /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
      ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
      screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
@@ -2546,7 +2574,11 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // (cancels when untilted; no-op for perch where seatLift = 0).
     // Base-pivot the tilt for stand-seated modes AND insert (an inserted bar leans about its buried
     // base, so the exposed part swings and the base stays put).
-    const seatLift = (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
+    /* The pivot sits `seatLift` BELOW the group origin (translate down, rotate, translate back), so
+       a base-seated piece leans about its feet. A `hang` piece leans about its TOP, which is a
+       NEGATIVE lift — the knot stays on the rim and the tails swing. */
+    const seatLift = isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2)
+                   : (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
     // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that

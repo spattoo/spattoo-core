@@ -134,7 +134,12 @@ CAT_ELEMENTS.push({
   allowed_zones: ['top_surface', 'side'],
   allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: true },
   placement_config: {
-    r: 1, scale: { max: 6, min: 0.5, step: 0.5 },
+    /* ⚠️ THE CATALOGUE ROW'S OWN NUMBERS under ?realdoll — r 4.5 and a 4–7 dial, not r 1 and 0.5–6.
+       A fixture that disagrees with the row proves the wrong thing, and SIZE is the axis this bug
+       lives on: the reported instance sits at scale 4.8. */
+    ...(PARAMS.has('realdoll')
+      ? { r: 4.5, scale: { max: 7, min: 4, step: 0.25 } }
+      : { r: 1,   scale: { max: 6, min: 0.5, step: 0.5 } }),
     top_surface: { mode: 'stand', modes: ['stand', 'hug'] },
     side: 'hug',
   },
@@ -861,15 +866,17 @@ if (PARAMS.has('bow')) {
       // back to 'center' here to see the fault it was reported for.
       /* ⚠️ `?hang=0` DROPS THE `hang` SEAT, because it is OPT-IN PER ROW and the catalogue row may not
          carry it. A fixture that always opts in cannot show what a row without it does. */
-      /* ⚠️ `y_offset: 0.27` — POSITIVE, COPIED FROM THE ROW. The fixture was written with -0.27,
-         the opposite sign, and that one character is why a floating bow could not be reproduced:
-         a negative offset drops the bow down the wall where it rests against the icing, a positive
-         one lifts it above the rim where nothing is holding it. This file's own comment warns that
-         "a fixture that disagrees with the row proves the wrong thing, confidently" — it did. */
+      /* ⚠️ `y_offset: -0.3` — THE ROW'S ACTUAL VALUE, read back out of the catalogue on 2026-10-17:
+         `{"seat":"hang","y_offset":-0.3,"angle_deg":-13.5,"edge_inset":-0.09}`.
+         This comment previously said the row was +0.27 and that the fixture had been corrected TO
+         match it. Both halves were false — the row is negative — so the file carried a confident
+         claim about data nobody had re-read, which is the exact failure its own warning describes:
+         "a fixture that disagrees with the row proves the wrong thing, confidently". Checked against
+         the row this time, not against a memory of it. */
       /* `?yoff=` sweeps the row's height nudge, which is a WORLD-UNIT lift (placement.js ->
          sticker.yOffset), not a fraction of the model. */
       verge: { ...(PARAMS.get('hang') === '0' ? {} : { seat: 'hang' }),
-               y_offset: PARAMS.has('yoff') ? +PARAMS.get('yoff') : 0.27,
+               y_offset: PARAMS.has('yoff') ? +PARAMS.get('yoff') : -0.3,
                angle_deg: -13.5, edge_inset: -0.09 } },
     default_color: '#1a1a1a', sort_order: 42,
   });
@@ -923,7 +930,15 @@ CAT_ELEMENTS.push({
      real geometry with real bounds so the two seats separate.
      ⚠️ IT IS A ROSETTE, NOT A DOLL — the only GLB in this repo. It stands in for HEIGHT, which is
      all the seat arithmetic reads; the silhouette is not the claim. */
-  image_url: PARAMS.has('dollglb') ? '/sample-rosette-3d.glb' : CAT_THUMB('#e8b6c2'),
+  /* ?realdoll=1 is the CATALOGUE's own doll, through vite's /cdn proxy — same-origin, always the
+     current asset, no stale local copy. The rosette stand-in below could only ever show HEIGHT;
+     this is the model whose placement was reported, on a cake with the reported tier radii
+     (?twotier, [1.2, 0.9]). Measured straight from the GLB: 41 primitives, bounds
+     1.2754 x 1.9983 x 1.0934, centre 0.0000/0.0008/-0.0001 — it IS centred on its own origin,
+     which is what ruled the model out as the cause. */
+  image_url: PARAMS.has('realdoll')
+    ? '/cdn/elements/files/3D/f12b2a94-ff09-4d33-8397-51a5b3a2c491.glb'
+    : PARAMS.has('dollglb') ? '/sample-rosette-3d.glb' : CAT_THUMB('#e8b6c2'),
   thumbnail_url: CAT_THUMB('#e8b6c2'), thumb_key: null,
   allowed_zones: ['rim', 'top_surface'],
   allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true },
@@ -931,16 +946,29 @@ CAT_ELEMENTS.push({
     // A hero figure: one per surface, so it is placed by CHOOSING a slot ("Edge" for the rim) rather
     // than dropped anywhere — which is the path that runs edgeSeatSeed, and the path that crashed.
     single_per_slot: true,
-    r: 1, scale: { max: 6, min: 0.5, step: 0.5 },
+    /* ⚠️ UNDER ?realdoll THESE ARE THE CATALOGUE ROW'S OWN NUMBERS, and the size is the axis this
+       bug lives on. `r` seeds the instance scale (defaultScale), so the doll starts at 4.5 the way
+       she does on a real cake — at 1.0 a centre seat and a base seat are indistinguishable, which
+       is exactly why this was invisible. Every term that put her in the air scales with it: the
+       half-height a centre seat drops below the rim, and the half-DEPTH the stand-off pushes her
+       out by. A fixture that disagrees with the row proves the wrong thing. */
+    ...(PARAMS.has('realdoll')
+      ? { r: 4.5, scale: { max: 7, min: 4, step: 0.25 } }
+      : { r: 1,   scale: { max: 6, min: 0.5, step: 0.5 } }),
     /* ?dollseat=base puts her BASE on the rim instead of her middle — the choice `perch` was
        missing while `verge` had it, and the reason a doll hung in the air beside the cake. The
        default (no flag) is the old centre-straddle, so this harness shows the regression and the
        fix in the same place; `edge_inset` matches the catalogue row's 0.05 so the two agree about
        how close to the lip she stands. */
     rim: 'perch',
-    perch: { tilt_deg: 12,                  // straddles the edge, leaning back a little
-             edge_inset: 0.05,
-             ...(PARAMS.get('dollseat') === 'base' ? { seat: 'base', tilt_deg: 0 } : {}) },
+    // ?realdoll uses the row's own perch block (tilt 0, the hand-cranked y_offset, inset 0.05);
+    // ?dollseat=base is the fix — base seat, and the y_offset dropped as it must be.
+    perch: PARAMS.has('realdoll')
+      ? (PARAMS.get('dollseat') === 'base'
+          ? { tilt_deg: 0, edge_inset: 0.05, seat: 'base' }
+          : { tilt_deg: 0, edge_inset: 0.05, y_offset: 0.31 })
+      : { tilt_deg: 12, edge_inset: 0.05,
+          ...(PARAMS.get('dollseat') === 'base' ? { seat: 'base', tilt_deg: 0 } : {}) },
     top_surface: 'stand',
   },
   default_color: '#E8B6C2', sort_order: 11,
@@ -1097,14 +1125,26 @@ const STUBS = {
      Shaped like the rows the Cake Shape Studio saves: a self-contained `design` whose tiers carry
      shapeFamily/shapeConfig and a radius, narrower as it goes up — a 2-tier cake is a wide base and
      a smaller one resting on it. */
+  /* ⚠️ `?twotier=bare` IS THE CASE THE PLAIN FIXTURE CANNOT SHOW, and the difference is one field.
+     The row below writes an explicit `radius` per tier, so `tierShape` reads it and every seat lands
+     correctly — but a design tier does NOT carry its own radius (see tierRadius): the stack's widths
+     are positional, resolved on the way to the canvas. A cake whose tiers have no radius is the one
+     where `tierShape`'s flat `?? 1.2` fallback measures every upper tier as the bottom one, and a
+     perched figure is seeded outside the wall. Reported as *"fondant doll - is handing in the air."*
+     Same two tiers, radius omitted, so the harness can show the fault and the fix. */
   fetchCakeShapes:     async () => (PARAMS.has('twotier') ? [{
     key: 'round-2',
     label: 'Round · 2 tier',
     design: {
-      tiers: [
-        { shapeFamily: 'circle', shapeConfig: {}, radius: 1.2, height: 1.45, color: '#f5b8c8' },
-        { shapeFamily: 'circle', shapeConfig: {}, radius: 0.8, height: 1.2,  color: '#f5b8c8' },
-      ],
+      tiers: PARAMS.get('twotier') === 'bare'
+        ? [
+            { shapeFamily: 'circle', shapeConfig: {}, height: 1.45, color: '#f5b8c8' },
+            { shapeFamily: 'circle', shapeConfig: {}, height: 1.2,  color: '#f5b8c8' },
+          ]
+        : [
+            { shapeFamily: 'circle', shapeConfig: {}, radius: 1.2, height: 1.45, color: '#f5b8c8' },
+            { shapeFamily: 'circle', shapeConfig: {}, radius: 0.8, height: 1.2,  color: '#f5b8c8' },
+          ],
     },
   }] : []),
   fetchMaterials:      async () => ([]),
