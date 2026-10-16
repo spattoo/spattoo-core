@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { curveForArc, archTextPath, textPathFor, WARP_SWEEP_AT_ONE } from './textPath.js';
+import { curveForArc, archTextPath, textPathFor, arcLetter, WARP_SWEEP_AT_ONE } from './textPath.js';
 import { RAINBOW_DEFAULTS, rainbowBands } from './rainbow.js';
 
 const CAKE = { radius: 1.2, topY: 1.5, boardY: 0 };
@@ -129,5 +129,51 @@ describe('textPathFor — the one reader', () => {
     expect(textPathFor(null, RAINBOW_DEFAULTS, CAKE)).toBeNull();
     expect(textPathFor({}, RAINBOW_DEFAULTS, CAKE)).toBeNull();
     expect(textPathFor({ kind: 'spiral' }, RAINBOW_DEFAULTS, CAKE)).toBeNull();
+  });
+});
+
+describe('arcLetter — a CUT letter is turned, not bent', () => {
+  it('leaves the middle letter alone', () => {
+    const p = arcLetter(0, 2);
+    expect(p.x).toBeCloseTo(0, 12);
+    expect(p.y).toBeCloseTo(0, 12);
+    expect(p.rot).toBeCloseTo(0, 12);
+  });
+
+  it('drops the outer letters and turns them away from the crown', () => {
+    const r = arcLetter(1, 2), l = arcLetter(-1, 2);
+    expect(r.y).toBeLessThan(0);                  // a ∩, so the ends fall
+    expect(l.y).toBeCloseTo(r.y, 12);             // symmetric
+    expect(r.rot).toBeLessThan(0);                // turned clockwise on the right
+    expect(l.rot).toBeCloseTo(-r.rot, 12);
+  });
+
+  /* Every letter must land ON the circle the cream's own warp uses, or the two materials would sit
+     at different depths on the same arch. */
+  it('puts every letter on the circle centred at (0, -radius)', () => {
+    for (const x of [-1.4, -0.5, 0, 0.7, 1.9]) {
+      const p = arcLetter(x, 2.5);
+      expect(Math.hypot(p.x - 0, p.y + 2.5)).toBeCloseTo(2.5, 10);
+    }
+  });
+
+  it('preserves arc length, so tracking is not stretched by the curve', () => {
+    const a = arcLetter(0.6, 3), b = arcLetter(1.2, 3);
+    expect(Math.abs(b.rot - a.rot) * 3).toBeCloseTo(0.6, 10);
+  });
+
+  it('is a straight line when there is no arc', () => {
+    expect(arcLetter(1.3, 0)).toEqual({ x: 1.3, y: 0, rot: 0 });
+  });
+});
+
+describe('the face a message is pressed onto', () => {
+  /* ⚠️ A BAND IS A TUBE. Seating a message on the arch's centre plane buries it inside the fondant
+     and only slivers of letter show — which is how it rendered before this existed. */
+  it('stands a half-thickness proud of the arch\'s own plane', () => {
+    const { thickness, standoff } = rainbowBands(RAINBOW_DEFAULTS, CAKE);
+    const p = archTextPath(RAINBOW_DEFAULTS, CAKE);
+    expect(p.face).toBeCloseTo(standoff + thickness / 2, 10);
+    expect(p.face).toBeGreaterThan(p.standoff);
   });
 });

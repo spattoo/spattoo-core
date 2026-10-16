@@ -41,6 +41,29 @@ export function curveForArc(width, radius) {
   return -Math.max(0, Math.min(1, theta / WARP_SWEEP_AT_ONE));
 }
 
+/* ── A CUT letter placed on an arc ───────────────────────────────────────────────────────────────
+ *
+ * ⚠️ CUT LETTERS ARE NOT BENT, THEY ARE TURNED, and that is the difference between the two materials
+ * rather than a shortcut. Piped cream is laid down by a nozzle travelling along a path, so the
+ * stroke itself genuinely curves — `warpArc` warps its centrelines. A fondant letter is cut flat
+ * with a cutter and pressed on; it keeps its own shape and the baker ROTATES it to follow the
+ * curve. Warping one would render a letter no cutter makes.
+ *
+ * Acrylic deliberately gets neither. Sandeep: *"acrylic wont bend like arch. so we dont need
+ * acrylic bend."* A perspex topper is cut from one sheet in one piece — it cannot follow a curve at
+ * all, and the bridges that hold it together say so.
+ *
+ * `x` is the letter's centre along the straight baseline, `radius` the arc's, both in the same
+ * units. Returns where that letter goes and how far to turn it, in a frame whose origin is the
+ * middle of the line and whose centre of curvature is at `(0, -radius)` — the SAME convention
+ * `warpArc` leaves cream in, so the two materials seat identically on the host.
+ */
+export function arcLetter(x, radius) {
+  if (!(radius > 0)) return { x, y: 0, rot: 0 };
+  const ang = x / radius;
+  return { x: radius * Math.sin(ang), y: radius * (Math.cos(ang) - 1), rot: -ang };
+}
+
 export const ARCH_TEXT_DEFAULTS = Object.freeze({
   /* Which rope the line rides: 'inner', 'mid', 'outer', or a band index. 'mid' is the default
      because that is what the reference does — the letters are stuck ACROSS the stack, centred on
@@ -103,6 +126,13 @@ export function archTextPath(params, cake, cfg = {}) {
   return {
     kind: 'arch',
     centerX, centerY: archY, standoff,
+    /* ⚠️ THE FRONT OF THE ROPE, NOT THE PLANE THE ARCH IS CENTRED ON. A band is a TUBE: its
+       centreline sits at `standoff`, but its surface stands a half-thickness proud of that. A
+       message placed at the centreline is INSIDE the fondant with only slivers of letter poking
+       through — which is exactly how it rendered, as a row of white ticks along the ropes. The
+       caller adds its own half-thickness on top, because how thick a letter is belongs to the
+       letter and not to the arch. */
+    face: standoff + thickness / 2,
     radius, maxW, maxH, capH, sweep,
     curve: curveForArc(arcLen, radius),
   };

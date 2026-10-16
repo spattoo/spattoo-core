@@ -148,7 +148,7 @@ export default function CreamWriting({
      already handed over the arch's curve and size: everything about it was right except where it
      was. Reported in one line: *"text is not on rainbow. its on cake."* */
   if (surface === 'host' && host) {
-    const face = host.standoff + thickness * 0.5 + 0.002;
+    const face = host.face + thickness * 0.5 + 0.002;
     return (
       <group position={[host.centerX, host.centerY + host.radius, face]}>
         <mesh geometry={geo} castShadow>{material}</mesh>

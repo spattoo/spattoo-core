@@ -12593,7 +12593,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             The wheel is always open rather than behind a swatch, because unlike cream there is no
             Gold/Silver alternative for it to sit beside — a chooser of one is not a chooser. */}
         {w.style === 'fondant' && <>
-          {surface === 'top' && <>
+          {/* ⚠️ `!w.on` — "hug or stand" is a question about the cake's TOP, and a hosted message is
+              not on it. The card reads `w.surface`, which stays 'top' on a hosted message (it is
+              the cake surface it would fall back to), so without this the row offered a pose that
+              the renderer overrides: a message on a rainbow stands in the rainbow's plane whatever
+              this says. */}
+          {surface === 'top' && !w.on && <>
             <div style={{ fontSize: 10, fontWeight: 700, color: '#888', letterSpacing: 1, textTransform: 'uppercase', marginTop: 8 }}>On the top</div>
             <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
               {[{ k: 'hug', label: 'Hug the cake' }, { k: 'stand', label: 'Stand up' }].map(o => (
