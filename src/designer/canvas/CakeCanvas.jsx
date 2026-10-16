@@ -443,6 +443,25 @@ function tierTopBands(tier) {
   return bands;
 }
 
+/* The same memo for the WALL's bands. A ribbon tied at the rim hangs its tails down the outside,
+   so it has to clear the cream on the wall exactly as a side decoration does — and the side path
+   already resolves these per render, so doing it again per sticker would re-measure every shell on
+   every frame. Keyed on the tier object, so a new tier is a new answer. */
+const _sideBandsByTier = new WeakMap();
+function tierSideBands(tier) {
+  if (!tier) return EMPTY_TOP_BANDS;
+  let bands = _sideBandsByTier.get(tier);
+  if (!bands) {
+    bands = resolveSidePipingBands({
+      topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
+      bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+      topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+    });
+    _sideBandsByTier.set(tier, bands);
+  }
+  return bands;
+}
+
 // REST an element on the displaced wall: return the HIGHEST relief under the patch the element covers
 // (its centre ± half its world footprint, expressed as an arc half-span dTheta and a height half-span
 // dV). One rule for any size — a tiny sprinkle's patch ≈ a point (it nestles into a rib), a wide flower's
@@ -2152,7 +2171,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
  * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
  * grab, so the clamp pushes it back out. See boardRingClamp. */
-function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2248,6 +2267,60 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
     : FLAT_STICKER_Y_OFFSET);
+
+  /* ── How far an edge-seated piece stands OUT from the rim ─────────────────────────────────────
+   *
+   * A perch/verge piece is positioned on the rim PERIMETER and drawn centred on that line, so half
+   * its depth starts inside the wall. Reported on a satin bow twice: *"in vintage cakes, usually
+   * the satin ribbon is used ot decoration. but in our case its penetrating into cake"*, and again
+   * once it was seated low enough to meet the wall: *"at -0.3, its penetrating into cake."*
+   *
+   * ⚠️ HALF THE MODEL'S OWN DEPTH, AND NOTHING ELSE. An earlier version (2a6cc242, reverted) added
+   * the outward reach of the deepest piping band the piece overlaps, so a ribbon would rest ON a
+   * cream border rather than in it. That half could never be reproduced and shipped a bow floating
+   * beside the cake, so it is deliberately left out: this is the rule that is measurable from the
+   * piece alone and provable without a border on the cake. The border case is still open.
+   *
+   * ⚠️ MEASURED, NOT AUTHORED — `seatHalfDepth` of the model's rendered depth, the same rule the
+   * wall path uses and the same one piping uses to sit its shells on the rim. `verge.edge_inset`
+   * is the hand-cranked version of this and stays only as a seed a drag discards. */
+  const edgeSeated = isPerch || isVerge;
+  const edgeProud  = edgeSeated && sticker.sideProud === true;
+  /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
+     ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
+     screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
+     the wall, and a ribbon drawn at the wall's own radius is behind them.
+     ⚠️ OVER THE PIECE'S OWN VERTICAL SPAN. The version that shipped and was reverted took the
+     deepest band ANYWHERE the piece overlapped, and a scale-4 bow spans most of the wall — so a
+     board border could set the stand-off for a knot tied at the rim. `wallReachBetween` asks only
+     what is behind the ribbon between the heights it actually occupies.
+     ⚠️ CREAM ONLY, SO FAR. A DECORATION on the wall is still invisible to this — a ball placed
+     under the tails is run straight through, at any height. That is INVARIANTS #3b unanswered for
+     the edge seat, and it wants `wallOccupants`, which nothing on this path reads yet. Named here
+     rather than left to be rediscovered. */
+  const halfH      = (seatHalf ?? STICKER_SIZE / 2) * effScale;
+  const standOff   = edgeProud
+    ? seatHalfDepth((artBox?.d ?? 0) * effScale)
+      + sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH })
+    : 0;
+  /* ⚠️ THE STAND-OFF'S OWN TERMS, published for measurement. "The bow is still behind the cream"
+     and "the clearance came out zero" look identical on a cake, and only one of them is a seating
+     bug — the other is a band reporting no outward reach. */
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && edgeSeated) {
+    window.__edgeStandOff = {
+      id: sticker.id, proud: edgeProud,
+      halfDepth: +seatHalfDepth((artBox?.d ?? 0) * effScale).toFixed(4),
+      pipingClear: +sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH }).toFixed(4),
+      standOff: +standOff.toFixed(4),
+      span: [+(py - halfH).toFixed(3), +(py + halfH).toFixed(3)],
+      bands: (sideBands ?? []).map(b => ({ loY: +b.loY.toFixed(3), hiY: +b.hiY.toFixed(3), out: +b.out.toFixed(4) })),
+    };
+  }
+  // Outward is radial from the centre — the same approximation the yaw already uses on a
+  // rect/outline tier, so the facing and the stand-off cannot disagree about which way is out.
+  const outLen = Math.hypot(sticker.x ?? 0, sticker.z ?? 0) || 1;
+  const outX   = standOff ? ((sticker.x ?? 0) / outLen) * standOff : 0;
+  const outZ   = standOff ? ((sticker.z ?? 0) / outLen) * standOff : 0;
 
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
@@ -2484,7 +2557,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
       </group>
     );
     return (
-      <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+      <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -2552,7 +2625,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], topRadius = Infinit
   const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
-    <group position={[sticker.x, py, sticker.z]} scale={effScale}>
+    <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
@@ -4113,6 +4186,9 @@ function CakeContent({ config, scene, edit = null }) {
             topY={topY}
             /* A board decoration stands on the drum, which no rim ring reaches. */
             topBands={isBoard ? EMPTY_TOP_BANDS : tierTopBands(tier)}
+            /* What is on the WALL, for a piece seated on the rim with its body over the edge.
+               The board has no wall to clear. */
+            sideBands={isBoard ? EMPTY_TOP_BANDS : tierSideBands(tier)}
             topRadius={isBoard ? (board?.radius ?? tier.radius) : tier.radius}
             shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
             // The cake's own footprint is what a board decoration must not stand in.
