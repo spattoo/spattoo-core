@@ -1,7 +1,6 @@
 import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
-import { TransformControls as TransformControlsImpl } from 'three/examples/jsm/controls/TransformControls.js';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
@@ -2136,9 +2135,32 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // the decoration. Half-depth keeps the border on the body while still clearing most of it.
   const boxZ = isGlb ? depth * 0.5 : depth;
 
+  /* ── Free hand on the WALL ───────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE WALL HAS NO INVERSE TO WRITE BACK INTO. A side decoration is positioned by `theta` (the
+   * angle round the tier) and `y` (its height), and is held ON the wall surface by construction —
+   * so there is no field that can express "a hand put it HERE", off the cylinder. The rim path
+   * could be inverted exactly because its group position already IS (x, py, z); this one cannot.
+   * So free hand stores the position itself, on the instance, and the wall's own derivation stands
+   * down while it is set. Absent — which is every decoration today — nothing changes.
+   * ⚠️ AND IT LANDS ON THE SIDE ZONE BECAUSE THAT IS WHERE THE PIECE ACTUALLY IS. The gizmo first
+   * went only onto the rim path, which is where the seating work had been; the satin bow it was
+   * built for is seated SIDE, so the control appeared nowhere. Reported as *"i dont see any control
+   * on the popup to control the bow freely"*. */
+  const freeRef = useRef(null);
+  const freeHandOn = sticker.freeHand === true;
+  const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
+  useEffect(() => {
+    if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
+    const p = freeRef.current.position;
+    if (![p.x, p.y, p.z].every(Number.isFinite)) return;
+    onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
+  }, [sticker.freeHand, sticker.freePos, sticker.id]);
+
   return (
     <group
-      position={[cx, posY + wireUp, cz]}
+      ref={freeRef}
+      position={fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
@@ -2175,9 +2197,11 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       )}
       <StickerHitMesh
         volume={hitVolume({ box: glbFoot ? vext?.box : null, width: hitBox.width, height: hitBox.height, centerY: hitBox.centerY })}
-        onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
-        onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
+        onPointerEnter={e => { e.stopPropagation(); if (!freeHandOn) onOrbitEnable(false); }}
+        onPointerLeave={e => { e.stopPropagation(); if (!freeHandOn && !pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
+          // Same rule as the rim path: with free hand on, the gizmo owns the move.
+          if (freeHandOn) { e.stopPropagation(); return; }
           e.stopPropagation();
           pressedRef.current   = true;
           onOrbitEnable(false);
@@ -2276,41 +2300,6 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * cake spins as you reach for an arrow — the same reason every other grab here takes the orbit
  * down first.
  */
-function FreeHandGizmo({ on, target, onCommit, onOrbitEnable }) {
-  const { camera, gl, scene } = useThree();
-  useEffect(() => {
-    const obj = target?.current;
-    if (!on || !obj) return undefined;
-    /* ⚠️ THREE'S OWN CONTROLS, NOT drei's WRAPPER. On three 0.183 `TransformControls extends
-       Controls` and the visible handles come from `getHelper()`; drei 9.122 still renders the
-       controls object itself as a `<primitive>`, which on this version is not an Object3D. It threw
-       nothing and logged nothing — the whole canvas simply went blank, which is a long way from
-       "the gizmo did not appear". Pinned here so the next person meets the version gap, not the
-       symptom. */
-    const tc = new TransformControlsImpl(camera, gl.domElement);
-    tc.setMode('translate');
-    tc.setSize(0.8);
-    tc.attach(obj);
-    const helper = tc.getHelper();
-    scene.add(helper);
-    // Both the gizmo and the camera answer a drag; with both live the cake spins as you reach for
-    // an arrow. Same reason every other grab in this file takes the orbit down first.
-    const onDragging = (e) => onOrbitEnable?.(!e.value);
-    const onObjChange = () => onCommit?.(obj);
-    tc.addEventListener('dragging-changed', onDragging);
-    tc.addEventListener('objectChange', onObjChange);
-    return () => {
-      tc.removeEventListener('dragging-changed', onDragging);
-      tc.removeEventListener('objectChange', onObjChange);
-      tc.detach();
-      scene.remove(helper);
-      tc.dispose?.();
-      onOrbitEnable?.(true);
-    };
-  }, [on, target, camera, gl, scene, onCommit, onOrbitEnable]);
-  return null;
-}
-
 function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
@@ -2529,7 +2518,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      bug — the other is a band reporting no outward reach. */
   if (import.meta.env?.DEV && typeof window !== 'undefined' && edgeSeated) {
     window.__edgeStandOff = {
-      id: sticker.id, proud: edgeProud,
+      id: sticker.id, proud: edgeProud, freeHand: sticker.freeHand ?? null, freePos: sticker.freePos ?? null,
       halfDepth: +seatHalfDepth((artBox?.d ?? 0) * effScale).toFixed(4),
       pipingClear: +sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH }).toFixed(4),
       standOff: +standOff.toFixed(4),
@@ -2593,17 +2582,24 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      so turning free hand off later leaves the piece where the seat puts it rather than somewhere
      arbitrary. Committed on every change, not on release: a drag that is abandoned mid-way (the
      pointer leaving the canvas) still leaves the piece where it was let go. */
+  /* ── Free hand: the card moves it, the instance remembers where ─────────────────────────────
+   *
+   * ⚠️ ONE FIELD FOR BOTH ZONES, because one control in the card has to serve both. The rim path
+   * could express a hand-placed position as x/z/yOffset; the WALL cannot — a side decoration is
+   * derived from `theta` and `y` and is held on the cylinder by construction. So free hand stores
+   * the position itself and both paths honour it. Absent — every decoration today — nothing changes.
+   * ⚠️ SEEDED FROM WHERE IT ALREADY IS, once. Without that the first nudge would jump the piece to
+   * the origin, because the card knows the patch it wants to send and nothing about where the
+   * piece currently sits in the world. The renderer is the only thing that knows, so it says so. */
   const freeRef = useRef(null);
-  const freeHandOn = sticker.freeHand === true && selected;
-  const seatBaseY  = py - (sticker.yOffset ?? 0);
-  const commitFreeHand = (obj) => {
-    if (!obj) return;
-    const { x, y, z } = obj.position;
-    if (![x, y, z].every(Number.isFinite)) return;
-    const next = { x: +x.toFixed(4), z: +z.toFixed(4), yOffset: +(y - seatBaseY).toFixed(4) };
-    if (next.x === sticker.x && next.z === sticker.z && next.yOffset === (sticker.yOffset ?? 0)) return;
-    onMove(sticker.id, next);
-  };
+  const freeHandOn = sticker.freeHand === true;
+  const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
+  useEffect(() => {
+    if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
+    const p = freeRef.current.position;
+    if (![p.x, p.y, p.z].every(Number.isFinite)) return;
+    onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
+  }, [sticker.freeHand, sticker.freePos, sticker.id]);
   const footYaw = footSeat ? surfaceYaw(sticker) : 0;
   const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
   const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
@@ -2670,6 +2666,18 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   );
 
   const onDown = e => {
+    /* ⚠️ THE PIECE'S OWN DRAG MUST STAND ASIDE FOR THE GIZMO, or the arrows look dead. Pressing a
+       handle that overlaps the decoration starts BOTH: this drag captures the pointer on the canvas
+       and writes a new x/z every move, overwriting whatever the gizmo just set. Reported as *"gizmo
+       is showing but not working"* — it was working, and being undone in the same frame. It only
+       looked fine in the harness because that drag grabbed the green arrow ABOVE the bow, where the
+       two do not overlap. Free hand means the gizmo is the mover; selection and the long-press menu
+       still work, because those are taps rather than drags. */
+    /* ⚠️ THE CARD IS THE MOVER UNDER FREE HAND, so this drag stands aside. It writes x/z, which no
+       longer positions a free-hand piece (`freePos` does) — left live it would run, change nothing
+       on screen, and read as a broken drag. Selection and the long-press menu are taps, not drags,
+       and still work. */
+    if (freeHandOn) { e.stopPropagation(); return; }
     e.stopPropagation();
     pressedRef.current = true;
     onOrbitEnable(false);
@@ -2868,9 +2876,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       </group>
     );
     return (
-      <>
-      <FreeHandGizmo on={freeHandOn} target={freeRef} onCommit={commitFreeHand} onOrbitEnable={onOrbitEnable} />
-      <group ref={freeRef} position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
+      <group ref={freeRef}
+             position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
+             scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -2907,7 +2915,6 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           ? inner
           : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
-      </>
     );
   }
   /* ── Flat mode (sticker laid horizontal on top surface) ──────────────────────────────────────
@@ -2939,9 +2946,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
-    <>
-    <FreeHandGizmo on={freeHandOn} target={freeRef} onCommit={commitFreeHand} onOrbitEnable={onOrbitEnable} />
-    <group ref={freeRef} position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
+    <group ref={freeRef}
+           position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
+           scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
@@ -2958,7 +2965,6 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
         </group>
       </group>
     </group>
-    </>
   );
 }
 

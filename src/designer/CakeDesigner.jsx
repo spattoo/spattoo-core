@@ -988,6 +988,65 @@ function TiltRow({ tiltAngle, rollAngle, onChange }) {
   );
 }
 
+/* ── Free-hand move, in the card ─────────────────────────────────────────────────────────────────
+ *
+ * Three axes in Blender's own colours — X red, Y green, Z blue — because that mapping is the one
+ * thing about a 3D gizmo everybody already knows, and the point of this control is that the person
+ * using it is judging by eye.
+ *
+ * ⚠️ IN THE CARD, NOT ON THE CAKE, and the scene gizmo it replaces is why. Drawn in the scene, its
+ * handles sat on top of the decoration, so pressing one started the piece's OWN drag as well — the
+ * arrows worked and were overwritten in the same frame. Sandeep: *"gizmo is showing but not
+ * working"*, then *"can we keep the gizmo on the popup itself"*. In the card there is nothing to
+ * fight: the only thing that moves the piece is this.
+ *
+ * ⚠️ PRESS-AND-HOLD REPEATS, because a 0.02 step is right for placing and tedious for travelling.
+ * Held, it accelerates to a coarse step, so the same control does both without a second mode.
+ */
+const MOVE_STEP = 0.02;
+const AXES = [
+  { key: 'x', label: 'X', colour: '#d8464a', less: '←', more: '→', title: 'Left / right' },
+  { key: 'y', label: 'Y', colour: '#4c9a4c', less: '↓', more: '↑', title: 'Down / up' },
+  { key: 'z', label: 'Z', colour: '#3f6fd8', less: '↙', more: '↗', title: 'Back / forward' },
+];
+function MoveRow({ freePos, onChange }) {
+  const p = freePos ?? { x: 0, y: 0, z: 0 };
+  const held = useRef(null);
+  const start = (axis, dir) => {
+    let n = 0;
+    const tick = () => {
+      n += 1;
+      const step = MOVE_STEP * (n > 12 ? 4 : n > 5 ? 2 : 1);   // hold to travel, tap to place
+      onChange({ [axis]: +((p[axis] ?? 0) + dir * step).toFixed(4) });
+    };
+    tick();
+    held.current = setInterval(tick, 110);
+  };
+  const stop = () => { if (held.current) { clearInterval(held.current); held.current = null; } };
+  useEffect(() => stop, []);
+  const btn = (a, dir, glyph) => (
+    <button key={`${a.key}${dir}`} type="button" title={`${a.title} (${a.label})`}
+      onPointerDown={() => start(a.key, dir)} onPointerUp={stop}
+      onPointerLeave={stop} onPointerCancel={stop}
+      style={{ ...s.tbIconBtn, color: a.colour, fontWeight: 800 }}>{glyph}</button>
+  );
+  return (
+    // No label of its own — the control group it sits in already says "Move", and both showed.
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
+      {AXES.map(a => (
+        <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <span style={{ fontSize: 10, fontWeight: 800, color: a.colour, width: 10, textAlign: 'center' }}>{a.label}</span>
+          {btn(a, -1, a.less)}
+          <span style={{ fontSize: 10, fontWeight: 700, minWidth: 34, textAlign: 'center', color: '#5a4a50' }}>
+            {(p[a.key] ?? 0).toFixed(2)}
+          </span>
+          {btn(a, +1, a.more)}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // Bury stepper (−/%/+) — how far an INSERTED decoration's base sinks INTO the cake. Only meaningful
 // for an inserted instance (insertDepth != null), the same signal the renderer's isInsert uses.
 // Writes the length-FRACTION buried (0 = flush/standing, 0.5 = half-buried) the renderer already reads.
@@ -12051,6 +12110,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // row to ride in. When the Size row took them, pushing here would show Tilt twice.
     if (tiltCtls.length && !tiltInSizeRow) {
       groups.push({ key: 'ta', divider: true, panelLabel: 'Tilt', controls: tiltCtls });
+    }
+
+    /* ── Free hand ───────────────────────────────────────────────────────────────────────────
+       Its own group, because it is a whole position rather than a modifier on one.
+       ⚠️ BUILT HERE AND NOT IN `PlacementChooser`, where it went first and never rendered: that
+       component's `slot.sticker` is `!instance ? find(...) : null`, so it is null for exactly the
+       case this control is for — a selected instance. The Tilt row beside it comes from here for
+       the same reason, which is the clue the first attempt missed. */
+    if (el.type === 'sticker') {
+      const fh = design.stickers.find(stkr => stkr.id === el.id);
+      if (fh?.freeHand === true) {
+        groups.push({
+          key: 'freehand', divider: true, panelLabel: 'Move',
+          controls: [<MoveRow key="fh" freePos={fh.freePos}
+                              onChange={patch => updateSticker(el.id,
+                                { freePos: { ...(fh.freePos ?? { x: 0, y: 0, z: 0 }), ...patch } })} />],
+        });
+      }
     }
 
     /* ── On a stick ──────────────────────────────────────────────────────────────────────────
