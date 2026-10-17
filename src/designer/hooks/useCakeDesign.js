@@ -1327,6 +1327,16 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              works while somebody remembers to type it, and this row already carried three stale
              hand-cranks that nobody updated. The override exists for a model the measurement reads
              wrongly, not as the way the feature is normally used. */
+          /* ⚠️ THE ESCAPE HATCH FROM AUTOMATIC SEATING, and it is deliberate rather than a defeat.
+             Where a piece belongs on a rim turned out not to be derivable: a bow is tied at its
+             knot, a doll sits on her seat with her legs hanging, and a flat ribbon on a round wall
+             lifts at its edges no matter where its anchor is. Sandeep: *"lets give a free hand
+             moment to the user for this now. user can move it anywhere he wants."* With this on,
+             the rim lock is released, the automatic stand-off stands down, and the card offers
+             direct X / height / depth nudges — what the baker sets is where it goes.
+             Authored per row (`placement_config.free_hand`), because most decorations should keep
+             being seated for them. */
+          freeHand:      element.placement_config?.free_hand === true,
           footSeat:      element.placement_config?.perch?.foot
                       ?? element.placement_config?.verge?.foot ?? null,
           // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card

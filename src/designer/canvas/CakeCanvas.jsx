@@ -1,6 +1,7 @@
-import { useRef, useMemo, useEffect, useState, Suspense } from 'react';
+import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
+import { TransformControls as TransformControlsImpl } from 'three/examples/jsm/controls/TransformControls.js';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
@@ -72,7 +73,7 @@ import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { makeRefCountedCache } from '../shared/refCountedCache.js';
 import { seatHalfDepth } from '../geometry/seating.js';
-import { resolveSidePipingBands, sidePipingClearance, resolveTopPipingBands, topSurfaceYAt } from './pipingMetrics.js';
+import { resolveSidePipingBands, sidePipingClearance, resolveTopPipingBands, topSurfaceYAt, pipingExtentsKnown, subscribeExtents, extentsVersionSnapshot } from './pipingMetrics.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -465,12 +466,32 @@ function tierSideBands(tier) {
   if (!tier) return EMPTY_TOP_BANDS;
   let bands = _sideBandsByTier.get(tier);
   if (!bands) {
+    const topPipings    = tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []);
+    const bottomPipings = tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []);
     bands = resolveSidePipingBands({
-      topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
-      bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+      topPipings, bottomPipings,
       topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
     });
+    /* ⚠️ DO NOT CACHE AN ANSWER TAKEN BEFORE THE CREAM WAS MEASURED. `getShellExtents` returns
+       `outerFrac: 0` for a border nobody has rendered yet, and a band with no outward reach is
+       dropped as "nothing to penetrate" — so an UNMEASURED border and a flush one are the same
+       value. Cached, that zero is permanent: a satin bow tied over a shell border sat against the
+       wall, behind the cream, because its bands were resolved one frame too early and never again.
+       Sandeep's rule is the test — *"if there is cream piping, it should be on the cream piping;
+       if there is no cream piping on the rim, it should be on the rim"* — and both halves look
+       identical from here unless the measurement is known to have happened. */
+    if (!pipingExtentsKnown({ topPipings, bottomPipings })) return bands;   // recompute next frame
     _sideBandsByTier.set(tier, bands);
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      const tp = tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []);
+      const bp = tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []);
+      window.__sideBands = {
+        topPipings: tp.length, bottomPipings: bp.length,
+        withGlb: tp.filter(p => p?.glbUrl).length + bp.filter(p => p?.glbUrl).length,
+        sample: (tp[0] ? Object.keys(tp[0]).slice(0, 14) : null),
+        bands: bands.length,
+      };
+    }
   }
   return bands;
 }
@@ -2240,6 +2261,56 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
  * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
  * grab, so the clamp pushes it back out. See boardRingClamp. */
+/* ── The free-hand move gizmo ────────────────────────────────────────────────────────────────────
+ *
+ * The Blender translate handles — three coloured axis arrows drawn ON the piece, dragged in the
+ * scene. Sandeep: *"the 3 dimenstional control should look like the one in blender. not dialers or
+ * rails."* Which is the right instinct for this job: a dial asks you to think in numbers about an
+ * axis you cannot see, and the whole reason this control exists is that the pose could not be
+ * derived — so the person placing it is looking at the cake, not at a readout.
+ *
+ * ⚠️ ONLY WHILE SELECTED, AND ONLY ON A ROW THAT ASKED FOR IT. The gizmo is three solid arrows
+ * through the middle of a decoration; drawn on everything it would bury the cake it is meant to
+ * help place something on.
+ * ⚠️ ORBIT OFF WHILE DRAGGING. Both the gizmo and the camera answer a drag, and with both live the
+ * cake spins as you reach for an arrow — the same reason every other grab here takes the orbit
+ * down first.
+ */
+function FreeHandGizmo({ on, target, onCommit, onOrbitEnable }) {
+  const { camera, gl, scene } = useThree();
+  useEffect(() => {
+    const obj = target?.current;
+    if (!on || !obj) return undefined;
+    /* ⚠️ THREE'S OWN CONTROLS, NOT drei's WRAPPER. On three 0.183 `TransformControls extends
+       Controls` and the visible handles come from `getHelper()`; drei 9.122 still renders the
+       controls object itself as a `<primitive>`, which on this version is not an Object3D. It threw
+       nothing and logged nothing — the whole canvas simply went blank, which is a long way from
+       "the gizmo did not appear". Pinned here so the next person meets the version gap, not the
+       symptom. */
+    const tc = new TransformControlsImpl(camera, gl.domElement);
+    tc.setMode('translate');
+    tc.setSize(0.8);
+    tc.attach(obj);
+    const helper = tc.getHelper();
+    scene.add(helper);
+    // Both the gizmo and the camera answer a drag; with both live the cake spins as you reach for
+    // an arrow. Same reason every other grab in this file takes the orbit down first.
+    const onDragging = (e) => onOrbitEnable?.(!e.value);
+    const onObjChange = () => onCommit?.(obj);
+    tc.addEventListener('dragging-changed', onDragging);
+    tc.addEventListener('objectChange', onObjChange);
+    return () => {
+      tc.removeEventListener('dragging-changed', onDragging);
+      tc.removeEventListener('objectChange', onObjChange);
+      tc.detach();
+      scene.remove(helper);
+      tc.dispose?.();
+      onOrbitEnable?.(true);
+    };
+  }, [on, target, camera, gl, scene, onCommit, onOrbitEnable]);
+  return null;
+}
+
 function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
@@ -2431,7 +2502,11 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      ⚠️ AND IT KEEPS THE PERCH CALIBRATOR HONEST. That screen draws no stand-off, so a radial
      correction tuned there (`edge_inset`) is measured against a model sitting on the rim line;
      with perch excluded there is nothing added afterwards, and what ships is what was calibrated. */
-  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat && isVerge;
+  /* ⚠️ AND FREE HAND STANDS IT DOWN, because an automatic radial push fights the hand doing the
+     placing: the baker moves the piece to where they want it and the renderer quietly adds 0.07
+     somewhere else. What is set is where it goes. */
+  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat && isVerge
+                     && !sticker.freeHand;
   /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
      ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
      screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
@@ -2458,6 +2533,18 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       halfDepth: +seatHalfDepth((artBox?.d ?? 0) * effScale).toFixed(4),
       pipingClear: +sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH }).toFixed(4),
       standOff: +standOff.toFixed(4),
+      /* ⚠️ THE RADIAL ANSWER, not the ingredients. "It is floating beside the cake" and "it is
+         resting on the wall" are a few pixels apart on a screenshot and worlds apart in fact, and
+         several rounds were lost to reading them off renders. `gap` is what actually matters: how
+         far the piece's INNER face sits from the wall it should be touching. 0 is resting on it,
+         positive is daylight, negative is buried. */
+      radial: (() => {
+        const r = Math.hypot(sticker.x ?? 0, sticker.z ?? 0);
+        const halfD = seatHalfDepth((artBox?.d ?? 0) * effScale);
+        return { seatR: +r.toFixed(4), standOff: +standOff.toFixed(4),
+                 centreR: +(r + standOff).toFixed(4), halfDepth: +halfD.toFixed(4),
+                 innerFace: +(r + standOff - halfD).toFixed(4) };
+      })(),
       span: [+(py - halfH).toFixed(3), +(py + halfH).toFixed(3)],
       bands: (sideBands ?? []).map(b => ({ loY: +b.loY.toFixed(3), hiY: +b.hiY.toFixed(3), out: +b.out.toFixed(4) })),
     };
@@ -2486,7 +2573,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      piece that does anything else is seated by — a bow tied at its knot, a doll sitting on the rim
      with her legs hanging. Her lowest geometry is then resting on nothing, so measuring it would
      pull her backwards onto the cake by the depth of a dangling foot. */
-  const footSeat = standSeat && edgeAnchor == null && (isPerch || isVerge) && sticker.footSeat !== false
+  const footSeat = standSeat && edgeAnchor == null && !sticker.freeHand
+    && (isPerch || isVerge) && sticker.footSeat !== false
     ? (Number.isFinite(sticker.footSeat)
         ? { x: 0, z: sticker.footSeat * ((artBox?.d ?? 0) / 2) }
         : { x: artBox?.footX ?? 0, z: artBox?.footZ ?? 0 })
@@ -2499,6 +2587,23 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      already paid for once (`LibraryPanel`'s `sectioned`, which built clean, passed check:bindings
      and threw on mount, because the name IS declared, just later). The helper is pure, so calling
      it twice costs nothing and cannot drift. */
+  /* ⚠️ THE GIZMO WRITES BACK IN THE SAME TERMS THE SEAT READS. Under free hand the stand-off and
+     the measured foot pull are both off, so this group's position IS (x, py, z) and the inverse is
+     exact: `yOffset` is whatever the handle added on top of the seat the row would otherwise give,
+     so turning free hand off later leaves the piece where the seat puts it rather than somewhere
+     arbitrary. Committed on every change, not on release: a drag that is abandoned mid-way (the
+     pointer leaving the canvas) still leaves the piece where it was let go. */
+  const freeRef = useRef(null);
+  const freeHandOn = sticker.freeHand === true && selected;
+  const seatBaseY  = py - (sticker.yOffset ?? 0);
+  const commitFreeHand = (obj) => {
+    if (!obj) return;
+    const { x, y, z } = obj.position;
+    if (![x, y, z].every(Number.isFinite)) return;
+    const next = { x: +x.toFixed(4), z: +z.toFixed(4), yOffset: +(y - seatBaseY).toFixed(4) };
+    if (next.x === sticker.x && next.z === sticker.z && next.yOffset === (sticker.yOffset ?? 0)) return;
+    onMove(sticker.id, next);
+  };
   const footYaw = footSeat ? surfaceYaw(sticker) : 0;
   const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
   const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
@@ -2627,9 +2732,14 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           // a flat decal keeps its footprint on the cake. All derived from mode/seat + size on the
           // instance — never a config flag. (Future: faux-ball verge → edge_drag:'outward' allows
           // dragging OUT over the lip while still clamping inward to the rim; see PLACEMENT_CONFIG.md.)
-          const isEdgeMode = isPerch || (isVerge && !isVergeBase);
+          const isEdgeMode = (isPerch || (isVerge && !isVergeBase)) && !sticker.freeHand;
           const edgeMargin = (isStand || isEdgeMode) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
-          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z)
+          /* ⚠️ FREE HAND MEANS NO CLAMP AT ALL. Every rule above exists to stop a piece burying
+             itself or sliding off, and each is right for a decoration the app is seating. A row
+             that asks for free hand has given up on being seated automatically — clamping it back
+             to the perimeter would be the app overruling the person it just handed control to. */
+          const clampPt = (x, z) => sticker.freeHand ? { x, z }
+            : isEdgeMode ? snapToRim(shp, x, z)
             : hole ? boardRingClamp(shp, hole, x, z, edgeMargin)
             : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
@@ -2758,7 +2868,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       </group>
     );
     return (
-      <group position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
+      <>
+      <FreeHandGizmo on={freeHandOn} target={freeRef} onCommit={commitFreeHand} onOrbitEnable={onOrbitEnable} />
+      <group ref={freeRef} position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -2795,6 +2907,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           ? inner
           : <Billboard lockX={true} lockY={false} lockZ={true}>{inner}</Billboard>}
       </group>
+      </>
     );
   }
   /* ── Flat mode (sticker laid horizontal on top surface) ──────────────────────────────────────
@@ -2826,7 +2939,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
-    <group position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
+    <>
+    <FreeHandGizmo on={freeHandOn} target={freeRef} onCommit={commitFreeHand} onOrbitEnable={onOrbitEnable} />
+    <group ref={freeRef} position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
@@ -2843,6 +2958,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
         </group>
       </group>
     </group>
+    </>
   );
 }
 
@@ -3730,6 +3846,13 @@ function BrushBand({ band, tier, wallColour, onClick = null }) {
 }
 
 function CakeContent({ config, scene, edit = null }) {
+  /* ⚠️ RE-RENDER WHEN THE CREAM FINISHES MEASURING ITSELF. A tier writes its shells' extents as it
+     draws them, into a module-level Map that React cannot see — so a decoration resolved one frame
+     earlier read `outerFrac: 0`, stood clear of nothing, and had no way to learn better. A satin
+     bow tied over a shell border sat behind the cream for exactly that reason. Subscribing here
+     (the component that hands `sideBands` to every rim-seated piece) is what makes the second look
+     happen. The store bumps only on a real change, so this cannot loop with the measuring. */
+  useSyncExternalStore(subscribeExtents, extentsVersionSnapshot, extentsVersionSnapshot);
   const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {

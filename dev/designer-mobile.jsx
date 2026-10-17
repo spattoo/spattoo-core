@@ -860,6 +860,8 @@ if (PARAMS.has('bow')) {
     allowed_zones: ['rim', 'side'],
     allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
     placement_config: { r: 4, scale: { max: 9, min: 1.6, step: 0.5 }, material: 'satin',
+      // ?freehand=1 — the row switches on the move gizmo and the seating rules stand down
+      ...(PARAMS.has('freehand') ? { free_hand: true } : {}),
       metalness: 0, roughness: 0.4,
       rim: 'verge', side: { mode: 'hug', seat: 'proud' },
       // The row as it is in the catalogue today. `seat: 'hang'` is what this change adds; flip it
@@ -880,7 +882,13 @@ if (PARAMS.has('bow')) {
          the tails then splaying back to 0.98), so the KNOT's centre is near 0.10 — which is where
          a bow is actually tied. `hang` alone is f = 0 and hangs the whole bow, knot included,
          below the lip. */
-      verge: { ...(PARAMS.has('anchor') ? { anchor: +PARAMS.get('anchor') } : {}),
+      /* ⚠️ `?bowrow=1` IS THE CATALOGUE ROW AS IT STANDS ON 2026-10-17, verbatim. Reproducing from
+         the row rather than from the sweep flags is what this file's own warning is about — the
+         fixture has disagreed with this very row twice already (a +0.27 y_offset that was really
+         -0.3, and a comment asserting it had been checked). */
+      verge: PARAMS.has('bowrow')
+        ? { seat: 'hang', anchor: 0.1, y_offset: 0, angle_deg: 0, edge_inset: 0 }
+        : { ...(PARAMS.has('anchor') ? { anchor: +PARAMS.get('anchor') } : {}),
                ...(PARAMS.get('hang') === '0' ? {} : { seat: 'hang' }),
                y_offset: PARAMS.has('yoff') ? +PARAMS.get('yoff') : -0.3,
                /* ⚠️ `?angle=` SWEEPS THE LEAN, the THIRD stale hand-crank on this row. -13.5 was

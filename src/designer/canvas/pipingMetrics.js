@@ -21,8 +21,54 @@ const measured = new Map();
 const keyFor = (glbUrl, flip, size) => `${glbUrl}|${flip ? 1 : 0}|${(size ?? 1).toFixed(2)}`;
 
 // Publish a measured shell's vertical extents (fractions of the tier radius).
+/* ⚠️ A SEAM FOR "HAS THIS BEEN MEASURED YET", because the fallback below is indistinguishable from
+   a real answer. `getShellExtents` returns `outerFrac: 0` for a shell nobody has rendered — and a
+   band with no outward reach is dropped by `resolveSidePipingBands` as "nothing to penetrate", so
+   an unmeasured border and a flush one come out the same. Anything that CACHES that result then
+   caches a zero for good: a satin bow tied over a shell border sat against the wall, behind the
+   cream, because its bands were resolved before the border had been measured and never again.
+   Callers that cache must ask this first. */
+/* ── Telling React the cream has been measured ───────────────────────────────────────────────────
+ *
+ * ⚠️ THESE MAPS ARE INVISIBLE TO RENDERING, and that is the second half of the same bug. The
+ * extents are written by the tier as it draws its border; anything that READ them one frame earlier
+ * got the `outerFrac: 0` fallback and had no way to learn otherwise, because a module-level Map
+ * fires no update. Not caching the early answer is not enough — without a re-render, nothing ever
+ * asks again. A store with a version is the smallest thing that closes it, and it is the same shape
+ * `CakeTier` already uses to hear its own geometry arrive.
+ * ⚠️ BUMPED ONLY ON A REAL CHANGE. A tier measures its shells every time it draws them, so bumping
+ * unconditionally is render → measure → bump → render, forever. */
+let extentsVersion = 0;
+const extentsListeners = new Set();
+const sameExtents = (a, b) => a && b
+  && a.topFrac === b.topFrac && a.botFrac === b.botFrac
+  && a.radialOutFrac === b.radialOutFrac && a.radialInFrac === b.radialInFrac
+  && a.outerFrac === b.outerFrac;
+function bumpExtents() { extentsVersion++; for (const fn of extentsListeners) fn(); }
+export function subscribeExtents(fn) { extentsListeners.add(fn); return () => extentsListeners.delete(fn); }
+export function extentsVersionSnapshot() { return extentsVersion; }
+
+export function shellExtentsKnown(glbUrl, flip, size) {
+  return measured.has(keyFor(glbUrl, flip, size));
+}
+// Every layer on a tier, answered in one call — the shape `resolveSidePipingBands` takes.
+export function pipingExtentsKnown({ topPipings = [], bottomPipings = [] }) {
+  const ready = (p, flip) => !p?.glbUrl
+    || (p.bend ? measuredFestoon.has(festoonKey(p.glbUrl, festoonSig({
+          size: p.size ?? 1, bendDepth: p.bendDepth ?? 0.4, festoons: p.festoons ?? 6,
+          bendRing: !!p.bendRing, bendTilt: p.bendTilt ?? 0 })))
+       : p.wrap ? measuredWrap.has(wrapKey(p.glbUrl, p.size ?? 1))
+       : shellExtentsKnown(p.glbUrl, flip, p.size ?? 1));
+  return topPipings.every(p => ready(p, p.userFlipTop !== undefined ? p.userFlipTop : (p.flipTop ?? false)))
+      && bottomPipings.every(p => ready(p, p.userFlipBottom !== undefined ? p.userFlipBottom : (p.flipBottom ?? true)));
+}
+
 export function setShellExtents(glbUrl, flip, size, extents) {
-  if (glbUrl) measured.set(keyFor(glbUrl, flip, size), extents);
+  if (!glbUrl) return;
+  const k = keyFor(glbUrl, flip, size);
+  const changed = !sameExtents(measured.get(k), extents);
+  measured.set(k, extents);
+  if (changed) bumpExtents();
 }
 
 // Read back measured extents, or fall back to the upright normalisation (no tilt,
