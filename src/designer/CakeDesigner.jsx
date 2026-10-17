@@ -1031,11 +1031,57 @@ function AxisCube({ x, y, colour, lit }) {
   );
 }
 
-function MoveGizmo({ freePos, onChange }) {
+/* ── Turn: the same gizmo, rotating instead of moving ───────────────────────────────────────────
+ *
+ * ⚠️ ROTATION HAD NO THIRD AXIS. The card's Tilt arrows drive `tiltAngle` (lean) and `rollAngle`
+ * (roll); nothing drove `rotation`, the SPIN about the vertical — so a bow could be leaned and
+ * rolled but never turned clockwise. Sandeep: *"i cannot turn it clcokwise or anti clockwise… can
+ * we use the gizmo rotate the bow?"* It is the right home: the piece is already placed by hand, and
+ * the same three colours now answer both questions.
+ * ⚠️ RINGS, GRABBED AND SWIRLED, which is what Blender does and what the shape suggests. The angle
+ * is taken around the widget's CENTRE, so a drag anywhere on a ring turns it — no need to stay on
+ * a 2px stroke with a thumb.
+ * ⚠️ `rotation` IS ADDITIVE ON TOP OF THE AUTO YAW (`surfaceYaw` = radial + rotation), so a verge
+ * piece keeps facing outward as it is dragged round the rim AND honours a spin the baker set. The
+ * two are not in competition, which is why this can be offered on every pose rather than gated.
+ */
+const TURN_AXES = [
+  { key: 'rotation',  colour: '#4f6fd0', lit: '#7f99e4', rot: 0,   ry: 0.34, title: 'Turn clockwise / anticlockwise' },
+  { key: 'tiltAngle', colour: '#5a9e5a', lit: '#88c288', rot: 68,  ry: 0.34, title: 'Lean forward / back' },
+  { key: 'rollAngle', colour: '#c05f5f', lit: '#dc9090', rot: -68, ry: 0.34, title: 'Roll left / right' },
+];
+const DEG = Math.PI / 180;
+
+function MoveGizmo({ freePos, onChange, angles, onAngles }) {
   const live = useRef(freePos ?? { x: 0, y: 0, z: 0 });
   useEffect(() => { live.current = freePos ?? { x: 0, y: 0, z: 0 }; }, [freePos]);
+  const liveA = useRef(angles ?? {});
+  useEffect(() => { liveA.current = angles ?? {}; }, [angles]);
   const drag = useRef(null);
   const [held, setHeld] = useState(null);
+  const [mode, setMode] = useState('move');
+  const svgRef = useRef(null);
+
+  // A ring is swirled: the angle is taken around the widget's centre, so the whole disc is the grab.
+  const angleAt = (e) => {
+    const r = svgRef.current?.getBoundingClientRect();
+    if (!r) return 0;
+    return Math.atan2(e.clientY - (r.y + r.height / 2), e.clientX - (r.x + r.width / 2));
+  };
+  const onTurnDown = (e, axis) => {
+    e.preventDefault(); e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    drag.current = { turn: axis, a0: angleAt(e), from: liveA.current[axis.key] ?? 0 };
+    setHeld(axis.key);
+  };
+  const onTurnMove = (e) => {
+    const g = drag.current; if (!g?.turn) return;
+    e.preventDefault(); e.stopPropagation();
+    let d = angleAt(e) - g.a0;
+    while (d >  Math.PI) d -= 2 * Math.PI;      // shortest way round, so a swirl past 180° does not flip
+    while (d < -Math.PI) d += 2 * Math.PI;
+    onAngles({ [g.turn.key]: +(g.from + d).toFixed(4) });
+  };
 
   const onDown = (e, arm) => {
     e.preventDefault(); e.stopPropagation();
@@ -1057,11 +1103,42 @@ function MoveGizmo({ freePos, onChange }) {
     drag.current = null; setHeld(null);
     try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
   };
+  const tab = (k, label) => (
+    <button type="button" key={k} onClick={() => setMode(k)}
+      style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase',
+               padding: '2px 7px', borderRadius: 7, cursor: 'pointer',
+               border: `1.5px solid ${mode === k ? '#2C4433' : '#d8cfd2'}`,
+               background: mode === k ? '#2C4433' : '#fff', color: mode === k ? '#fff' : '#8d7f85' }}>
+      {label}
+    </button>
+  );
 
   const tip = a => [GZ + a.dir[0] * a.len, GZ + a.dir[1] * a.len];
+  const deg = v => `${Math.round((v ?? 0) / DEG)}°`;
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-      <svg width={GZ * 2} height={GZ * 2} style={{ touchAction: 'none', flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4 }}>{tab('move', 'Move')}{tab('turn', 'Turn')}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {mode === 'turn' ? (
+        <svg ref={svgRef} width={GZ * 2} height={GZ * 2} style={{ touchAction: 'none', flexShrink: 0 }}>
+          <circle cx={GZ} cy={GZ} r={3.5} fill="#8d7f85" />
+          {TURN_AXES.map(a => (
+            <g key={a.key} style={{ cursor: 'grab' }}
+               onPointerDown={e => onTurnDown(e, a)} onPointerMove={onTurnMove}
+               onPointerUp={onUp} onPointerCancel={onUp}>
+              <title>{`${a.title} — drag round`}</title>
+              <ellipse cx={GZ} cy={GZ} rx={36} ry={36 * a.ry}
+                       transform={`rotate(${a.rot} ${GZ} ${GZ})`}
+                       fill="none" stroke={a.colour} strokeWidth={held === a.key ? 4 : 2.6} />
+              {/* The ring itself is a 3px stroke; this is the thumb-sized grab. */}
+              <ellipse cx={GZ} cy={GZ} rx={36} ry={36 * a.ry}
+                       transform={`rotate(${a.rot} ${GZ} ${GZ})`}
+                       fill="none" stroke="transparent" strokeWidth={16} />
+            </g>
+          ))}
+        </svg>
+      ) : (
+      <svg ref={svgRef} width={GZ * 2} height={GZ * 2} style={{ touchAction: 'none', flexShrink: 0 }}>
         {/* The faint plane guides the reference draws between the arms. */}
         {GIZMO_ARMS.map((a, i) => {
           const b = GIZMO_ARMS[(i + 1) % GIZMO_ARMS.length];
@@ -1087,15 +1164,17 @@ function MoveGizmo({ freePos, onChange }) {
           );
         })}
       </svg>
+      )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-        {GIZMO_ARMS.map(a => (
+        {(mode === 'turn' ? TURN_AXES : GIZMO_ARMS).map(a => (
           <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
             <span style={{ width: 8, height: 8, borderRadius: 2, background: a.colour }} />
             <span style={{ fontSize: 11, fontWeight: 700, color: '#5a4a50', minWidth: 36, textAlign: 'right' }}>
-              {((freePos ?? {})[a.key] ?? 0).toFixed(2)}
+              {mode === 'turn' ? deg((angles ?? {})[a.key]) : ((freePos ?? {})[a.key] ?? 0).toFixed(2)}
             </span>
           </div>
         ))}
+      </div>
       </div>
     </div>
   );
@@ -12176,10 +12255,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const fh = design.stickers.find(stkr => stkr.id === el.id);
       if (fh?.freeHand === true) {
         groups.push({
-          key: 'freehand', divider: true, panelLabel: 'Move',
+          // "Place", not "Move" — the widget's own tabs are MOVE and TURN, and a group label
+          // reading Move beside a Move tab says the tab is the group's name rather than a choice.
+          key: 'freehand', divider: true, panelLabel: 'Place',
           controls: [<MoveGizmo key="fh" freePos={fh.freePos}
                               onChange={patch => updateSticker(el.id,
-                                { freePos: { ...(fh.freePos ?? { x: 0, y: 0, z: 0 }), ...patch } })} />],
+                                { freePos: { ...(fh.freePos ?? { x: 0, y: 0, z: 0 }), ...patch } })}
+                              angles={{ rotation: fh.rotation ?? 0,
+                                        tiltAngle: fh.tiltAngle ?? 0,
+                                        rollAngle: fh.rollAngle ?? 0 }}
+                              onAngles={patch => updateSticker(el.id, patch)} />],
         });
       }
     }
