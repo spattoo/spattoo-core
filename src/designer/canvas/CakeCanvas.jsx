@@ -37,7 +37,7 @@ import {
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
-import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
+import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
@@ -2149,6 +2149,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
    * on the popup to control the bow freely"*. */
   const freeRef = useRef(null);
   const freeHandOn = sticker.freeHand === true;
+  const freeDrag = useRef(null);
   const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
   useEffect(() => {
     if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
@@ -2200,11 +2201,19 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
         onPointerEnter={e => { e.stopPropagation(); if (!freeHandOn) onOrbitEnable(false); }}
         onPointerLeave={e => { e.stopPropagation(); if (!freeHandOn && !pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
-          // Same rule as the rim path: with free hand on, the gizmo owns the move.
-          if (freeHandOn) { e.stopPropagation(); return; }
           e.stopPropagation();
           pressedRef.current   = true;
           onOrbitEnable(false);
+          /* Free hand drags on a camera-facing plane and writes `freePos`; the wall solve below
+             writes theta/y, which no longer positions this piece. */
+          if (freeHandOn) {
+            const at = sticker.freePos ?? { x: cx, y: posY + wireUp, z: cz };
+            freeDrag.current = { plane: freeDragPlane(camera, at), grab: null };
+            const hit = planePoint(pointerRay(e, gl.domElement, camera), freeDrag.current.plane);
+            if (hit) freeDrag.current.grab = { x: hit.x - at.x, y: hit.y - at.y, z: hit.z - at.z };
+            try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+            return;
+          }
           try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
           didDrag.current      = false;
           pointerDownTime.current = Date.now();
@@ -2231,6 +2240,17 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           const canvas = gl.domElement;
           const clampY = clampWallY;   // keep the bottom edge on the wall, not in the board
           function onMoveHandler(ev) {
+            if (freeHandOn) {
+              const fd = freeDrag.current;
+              if (!fd) return;
+              const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
+              if (!hit) return;
+              const g = fd.grab ?? { x: 0, y: 0, z: 0 };
+              onMove(sticker.id, { freePos: {
+                x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+              didDrag.current = true;
+              return;
+            }
             const dx = ev.clientX - startPos.current.x;
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
@@ -2300,6 +2320,26 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * cake spins as you reach for an arrow — the same reason every other grab here takes the orbit
  * down first.
  */
+/* ── Dragging a free-hand piece ──────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A GIZMO IS FOR PRECISION, NOT FOR CARRYING SOMETHING ACROSS A CAKE. Free hand first DISABLED
+ * the piece's own drag so the gizmo could own the move — which left the gizmo as the only way to
+ * travel, one arm at a time. Sandeep: *"the problem is i cant move this from one place to other…
+ * i cannot drag it either."* Both belong: drag to place it roughly where it goes, then an arm to
+ * settle one axis without disturbing the other two.
+ *
+ * ⚠️ THE PLANE FACES THE CAMERA, through the piece's current position. Every other drag here solves
+ * against a surface — the top plane, the wall cylinder — because every other drag keeps the piece
+ * ON something. A free-hand piece is on nothing, so the only sensible plane is the one the viewer
+ * is looking at: the decoration follows the pointer exactly, and depth is left to the gizmo's third
+ * arm rather than guessed from a 2D gesture.
+ */
+function freeDragPlane(camera, at) {
+  const n = new THREE.Vector3();
+  camera.getWorldDirection(n);
+  return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
+}
+
 function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
@@ -2593,6 +2633,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
    * piece currently sits in the world. The renderer is the only thing that knows, so it says so. */
   const freeRef = useRef(null);
   const freeHandOn = sticker.freeHand === true;
+  const freeDrag = useRef(null);
   const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
   useEffect(() => {
     if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
@@ -2673,12 +2714,18 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
        looked fine in the harness because that drag grabbed the green arrow ABOVE the bow, where the
        two do not overlap. Free hand means the gizmo is the mover; selection and the long-press menu
        still work, because those are taps rather than drags. */
-    /* ⚠️ THE CARD IS THE MOVER UNDER FREE HAND, so this drag stands aside. It writes x/z, which no
-       longer positions a free-hand piece (`freePos` does) — left live it would run, change nothing
-       on screen, and read as a broken drag. Selection and the long-press menu are taps, not drags,
-       and still work. */
-    if (freeHandOn) { e.stopPropagation(); return; }
     e.stopPropagation();
+    /* Free hand drags on a camera-facing plane and writes `freePos`; everything below solves
+       against the top surface and writes x/z, which no longer positions this piece. */
+    if (freeHandOn) {
+      const at = sticker.freePos ?? { x: sticker.x ?? 0, y: py, z: sticker.z ?? 0 };
+      freeDrag.current = { plane: freeDragPlane(camera, at), from: { ...at }, grab: null };
+      const hit = planePoint(pointerRay(e, gl.domElement, camera), freeDrag.current.plane);
+      if (hit) freeDrag.current.grab = { x: hit.x - at.x, y: hit.y - at.y, z: hit.z - at.z };
+      pressedRef.current = true;
+      onOrbitEnable(false);
+      try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+    }
     pressedRef.current = true;
     onOrbitEnable(false);
     try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
@@ -2709,6 +2756,17 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
 
     const canvas = gl.domElement;
     function onMoveHandler(ev) {
+      if (freeHandOn) {
+        const fd = freeDrag.current;
+        if (!fd) return;
+        const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
+        if (!hit) return;
+        const g = fd.grab ?? { x: 0, y: 0, z: 0 };
+        onMove(sticker.id, { freePos: {
+          x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+        didDrag.current = true;
+        return;
+      }
       const dx = ev.clientX - startPos.current.x;
       const dy = ev.clientY - startPos.current.y;
       if (dx * dx + dy * dy > 25) didDrag.current = true;
