@@ -988,61 +988,114 @@ function TiltRow({ tiltAngle, rollAngle, onChange }) {
   );
 }
 
-/* ── Free-hand move, in the card ─────────────────────────────────────────────────────────────────
+/* ── Free-hand move: the three-axis gizmo, drawn isometrically and DRAGGED ──────────────────────
  *
- * Three axes in Blender's own colours — X red, Y green, Z blue — because that mapping is the one
- * thing about a 3D gizmo everybody already knows, and the point of this control is that the person
- * using it is judging by eye.
+ * Blender's move gizmo: three arms from one origin with a cube on each tip, in isometric, with the
+ * faint guide lines that show the planes. Sandeep sent the picture — *"something like this on the
+ * popup card"* — after two attempts that were not it.
  *
- * ⚠️ IN THE CARD, NOT ON THE CAKE, and the scene gizmo it replaces is why. Drawn in the scene, its
- * handles sat on top of the decoration, so pressing one started the piece's OWN drag as well — the
- * arrows worked and were overwritten in the same frame. Sandeep: *"gizmo is showing but not
- * working"*, then *"can we keep the gizmo on the popup itself"*. In the card there is nothing to
- * fight: the only thing that moves the piece is this.
- *
- * ⚠️ PRESS-AND-HOLD REPEATS, because a 0.02 step is right for placing and tedious for travelling.
- * Held, it accelerates to a coarse step, so the same control does both without a second mode.
+ * ⚠️ A DRAG, NOT A STEPPER. The first version was arrow buttons nudging 0.02: *"i have to click so
+ * many times to achive anything."* Fifty presses to cross a cake. A drag gives coarse and fine in
+ * one gesture — travel far by moving far — which is the whole point of a gizmo.
+ * ⚠️ IN THE CARD, NOT THE SCENE. Drawn on the cake, the handles sat on top of the decoration and
+ * pressing one started the piece's own drag too, overwriting the gizmo in the same frame. Here
+ * there is nothing to fight.
+ * ⚠️ COLOUR BY DIRECTION, NOT BY LETTER, and no X/Y/Z captions. The picture's blue arm is up
+ * because Blender's up is Z; ours is Y, so keeping the letters would have meant either a green
+ * vertical (right for our axes, wrong against the reference) or calling our up-axis Z (wrong
+ * outright). A baker is placing a bow, not reading a coordinate system — three coloured arms you
+ * grab is the whole interface, and the tooltip says what each one does in words.
+ * ⚠️ ONE ARM, ONE AXIS. A free 2D pad would couple two of them and make a deliberate single-axis
+ * adjustment — "out from the wall, nothing else" — impossible without undoing it.
  */
-const MOVE_STEP = 0.02;
-const AXES = [
-  { key: 'x', label: 'X', colour: '#d8464a', less: '←', more: '→', title: 'Left / right' },
-  { key: 'y', label: 'Y', colour: '#4c9a4c', less: '↓', more: '↑', title: 'Down / up' },
-  { key: 'z', label: 'Z', colour: '#3f6fd8', less: '↙', more: '↗', title: 'Back / forward' },
+const GIZMO_ARMS = [
+  { key: 'y', colour: '#4f6fd0', lit: '#7f99e4', dir: [0, -1],        len: 38, title: 'Up / down' },
+  { key: 'x', colour: '#5a9e5a', lit: '#88c288', dir: [0.94, -0.16],  len: 36, title: 'Left / right' },
+  { key: 'z', colour: '#c05f5f', lit: '#dc9090', dir: [0.46, 0.60],   len: 30, title: 'Forward / back' },
 ];
-function MoveRow({ freePos, onChange }) {
-  const p = freePos ?? { x: 0, y: 0, z: 0 };
-  const held = useRef(null);
-  const start = (axis, dir) => {
-    let n = 0;
-    const tick = () => {
-      n += 1;
-      const step = MOVE_STEP * (n > 12 ? 4 : n > 5 ? 2 : 1);   // hold to travel, tap to place
-      onChange({ [axis]: +((p[axis] ?? 0) + dir * step).toFixed(4) });
-    };
-    tick();
-    held.current = setInterval(tick, 110);
-  };
-  const stop = () => { if (held.current) { clearInterval(held.current); held.current = null; } };
-  useEffect(() => stop, []);
-  const btn = (a, dir, glyph) => (
-    <button key={`${a.key}${dir}`} type="button" title={`${a.title} (${a.label})`}
-      onPointerDown={() => start(a.key, dir)} onPointerUp={stop}
-      onPointerLeave={stop} onPointerCancel={stop}
-      style={{ ...s.tbIconBtn, color: a.colour, fontWeight: 800 }}>{glyph}</button>
-  );
+// Screen pixels per world unit while dragging. A cake is ~2.4 across, so one 380px sweep crosses it
+// — comfortable on a phone, and fine enough at the slow end to land a bow on a rim.
+const MOVE_PX_PER_UNIT = 160;
+const GZ = 52;                                   // widget half-size
+
+// A cube on the tip, the way the reference draws it: top face lit, front face body, side darker.
+function AxisCube({ x, y, colour, lit }) {
+  const h = 5.5, d = 3.2;
   return (
-    // No label of its own — the control group it sits in already says "Move", and both showed.
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, alignItems: 'center' }}>
-      {AXES.map(a => (
-        <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 10, fontWeight: 800, color: a.colour, width: 10, textAlign: 'center' }}>{a.label}</span>
-          {btn(a, -1, a.less)}
-          <span style={{ fontSize: 10, fontWeight: 700, minWidth: 34, textAlign: 'center', color: '#5a4a50' }}>
-            {(p[a.key] ?? 0).toFixed(2)}
-          </span>
-          {btn(a, +1, a.more)}
-        </div>
-      ))}
+    <g>
+      <polygon points={`${x-h},${y-h} ${x},${y-h-d} ${x+h},${y-h} ${x},${y-h+d}`} fill={lit} />
+      <polygon points={`${x-h},${y-h} ${x-h},${y+h-d} ${x},${y+h} ${x},${y-h+d}`} fill={colour} />
+      <polygon points={`${x+h},${y-h} ${x+h},${y+h-d} ${x},${y+h} ${x},${y-h+d}`} fill={colour} opacity={0.72} />
+    </g>
+  );
+}
+
+function MoveGizmo({ freePos, onChange }) {
+  const live = useRef(freePos ?? { x: 0, y: 0, z: 0 });
+  useEffect(() => { live.current = freePos ?? { x: 0, y: 0, z: 0 }; }, [freePos]);
+  const drag = useRef(null);
+  const [held, setHeld] = useState(null);
+
+  const onDown = (e, arm) => {
+    e.preventDefault(); e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    drag.current = { arm, cx: e.clientX, cy: e.clientY, from: live.current[arm.key] ?? 0 };
+    setHeld(arm.key);
+  };
+  const onMoveEvt = (e) => {
+    const g = drag.current; if (!g) return;
+    e.preventDefault(); e.stopPropagation();
+    const along = ((e.clientX - g.cx) * g.arm.dir[0] + (e.clientY - g.cy) * g.arm.dir[1]) / MOVE_PX_PER_UNIT;
+    /* No per-axis sign fix needed: each arm's `dir` already points the way the WORLD axis grows, so
+       the projection carries the sense. The vertical arm is [0, -1] because SVG's +y is down, which
+       is what makes dragging up increase world Y. */
+    onChange({ [g.arm.key]: +(g.from + along).toFixed(4) });
+  };
+  const onUp = (e) => {
+    if (!drag.current) return;
+    drag.current = null; setHeld(null);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+
+  const tip = a => [GZ + a.dir[0] * a.len, GZ + a.dir[1] * a.len];
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <svg width={GZ * 2} height={GZ * 2} style={{ touchAction: 'none', flexShrink: 0 }}>
+        {/* The faint plane guides the reference draws between the arms. */}
+        {GIZMO_ARMS.map((a, i) => {
+          const b = GIZMO_ARMS[(i + 1) % GIZMO_ARMS.length];
+          const [ax, ay] = tip(a), [bx, by] = tip(b);
+          return <line key={`g${a.key}`} x1={ax} y1={ay} x2={bx} y2={by}
+                       stroke={a.colour} strokeWidth={0.7} opacity={0.35} />;
+        })}
+        <ellipse cx={GZ} cy={GZ} rx={7} ry={3.4} fill="#6b7a99" opacity={0.75} />
+        {GIZMO_ARMS.map(a => {
+          const [ex, ey] = tip(a);
+          const on = held === a.key;
+          return (
+            <g key={a.key} style={{ cursor: 'grab' }}
+               onPointerDown={e => onDown(e, a)} onPointerMove={onMoveEvt}
+               onPointerUp={onUp} onPointerCancel={onUp}>
+              <title>{`${a.title} — drag`}</title>
+              <line x1={GZ} y1={GZ} x2={ex} y2={ey} stroke={a.colour}
+                    strokeWidth={on ? 4 : 2.6} strokeLinecap="round" />
+              <AxisCube x={ex} y={ey} colour={a.colour} lit={on ? '#ffffff' : a.lit} />
+              {/* A generous invisible target: the drawn cube is 11px and a thumb is not. */}
+              <circle cx={ex} cy={ey} r={16} fill="transparent" />
+            </g>
+          );
+        })}
+      </svg>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {GIZMO_ARMS.map(a => (
+          <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: a.colour }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#5a4a50', minWidth: 36, textAlign: 'right' }}>
+              {((freePos ?? {})[a.key] ?? 0).toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -12123,7 +12176,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       if (fh?.freeHand === true) {
         groups.push({
           key: 'freehand', divider: true, panelLabel: 'Move',
-          controls: [<MoveRow key="fh" freePos={fh.freePos}
+          controls: [<MoveGizmo key="fh" freePos={fh.freePos}
                               onChange={patch => updateSticker(el.id,
                                 { freePos: { ...(fh.freePos ?? { x: 0, y: 0, z: 0 }), ...patch } })} />],
         });
