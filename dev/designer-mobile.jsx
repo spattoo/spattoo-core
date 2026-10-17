@@ -1014,6 +1014,28 @@ CAT_ELEMENTS.push({
   default_color: '#E8B6C2', sort_order: 11,
 });
 
+/* ⚠️ A HERO THAT HUGS THE TOP, which nothing here had — and that gap is why a broken Size dial
+ * shipped. `isDynamicHug` matched any single-per-slot hug regardless of zone, so a piece hugging the
+ * TOP SURFACE was handed the wall-relative `hugMul` control (capped at 3) while the top path renders
+ * from `scale` and never reads `hugMul`: the dial moved and the picture did not. Every hero fixture
+ * above offers `top_surface: 'stand'` with `side: 'hug'`, so the broken combination could not occur.
+ * Reported on a heart cake — *"i cant resize image on heart size cake"* — which was a coincidence of
+ * which cake it was tried on, not a property of the shape. `?shape=heart` still opens it there. */
+CAT_ELEMENTS.push({
+  id: 'e43', name: 'couple photo', description: 'a hero image offering BOTH top poses',
+  element_type_id: 'et-image', category_id: 'cat-1',
+  image_url: CAT_THUMB('#c9a66b'), thumbnail_url: CAT_THUMB('#c9a66b'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side'],
+  allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true },
+  placement_config: {
+    single_per_slot: true, r: 3,
+    scale: { min: 0.5, max: 8, step: 0.25 },
+    top_surface: { modes: ['stand', 'hug'] },
+    side: 'hug',
+  },
+  default_color: '#C9A66B', sort_order: 43,
+});
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.
