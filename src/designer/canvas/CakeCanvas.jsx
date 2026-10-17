@@ -2418,13 +2418,20 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      for wall-hug; verge/stand/perch seat by their own logic and ignore it"*, yet the stand-off
      reads it for exactly those modes, where a bare `"rim": "perch"` silently defaults to proud.
      The seat is what actually knows whether the body crosses the rim line, so it decides. */
-  /* ⚠️ AND AN AUTHORED ANCHOR SUPPRESSES IT, so the Perch Calibrator and the cake agree. That
-     screen draws no stand-off, so any radial correction a human tunes there (`edge_inset`) is
-     measured against a model sitting ON the rim line — add 0.34 of automatic push afterwards and
-     what ships is not what was calibrated. The stand-off is the default for a piece nobody has
-     positioned; an anchor means somebody has. Sandeep calibrates there: *"ill calibrate it in
-     perchcalibrator"*, and WYSIWYG is the whole value of that screen. */
-  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat && edgeAnchor == null;
+  /* ⚠️ A VERGE DRAPES AGAINST THE WALL; A PERCH SITS ON THE EDGE — and only the first has anything
+     to stand clear of. The stand-off was built for a satin bow tied at the rim, whose body falls
+     down the OUTSIDE: drawn centred on the rim line, half its depth is in the icing, so pushing it
+     out by half its own depth rests its back on the wall. A perched figure's body is above the top
+     surface, and half ITS depth is 0.3447 at the doll's size — a shove that put her off the cake.
+     ⚠️ KEYED ON THE MODE, NOT ON THE ANCHOR, and the anchor version was tried first and broke the
+     bow. Suppressing it whenever a pose was calibrated looked right for the doll and silently took
+     the ribbon's clearance away with it: the bow carries an anchor too, and its 0.0696 IS the fix
+     it was reported for. The question the stand-off answers is "does this body hang against the
+     wall", which is what the mode says.
+     ⚠️ AND IT KEEPS THE PERCH CALIBRATOR HONEST. That screen draws no stand-off, so a radial
+     correction tuned there (`edge_inset`) is measured against a model sitting on the rim line;
+     with perch excluded there is nothing added afterwards, and what ships is what was calibrated. */
+  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat && isVerge;
   /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
      ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
      screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
