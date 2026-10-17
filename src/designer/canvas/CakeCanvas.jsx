@@ -2099,6 +2099,12 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const wireUp = wireLift(wire) * effScale;
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
+  /* ⚠️ DECLARED HERE, ABOVE THE YAW BLOCK THAT READS IT. `const` is not hoisted, so leaving this
+     where it used to sit — below — made the yaw line a temporal dead zone: "Cannot access 'fp'
+     before initialization", on every frame, with `check:bindings` passing because the name IS
+     declared, just later. The third time this file has paid for that; the other two are noted at
+     LibraryPanel's `sectioned` and at the foot-seat debug line. */
+  const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
   let cx, cz, yaw, curveRadius;
   if (facetWall) {
     const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
@@ -2115,7 +2121,18 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       : 0;
     const surfaceR = radius + off + lift;
     cx = surfaceR * Math.sin(sticker.theta); cz = surfaceR * Math.cos(sticker.theta);
-    yaw = sticker.theta; curveRadius = surfaceR;
+    /* ⚠️ `+ rotation`, AND THE WALL NEVER READ IT. Yaw here was `sticker.theta` alone, so the spin
+       a baker sets had no effect on a side piece at all — the Turn ring wrote `rotation` and this
+       line threw it away. Reported as *"i cannot turn it clcokwise or anti clockwise"*. Every other
+       pose goes through `surfaceYaw`, which is `radial + rotation`; this is the wall joining them.
+       ⚠️ AND A FREE-HAND PIECE FACES OUT FROM WHERE IT NOW IS, not from where it was created.
+       `theta` is the wall angle the piece was placed at, and free hand moves it by `freePos` without
+       touching it — so a bow dragged from the front to the right side kept facing the front, and no
+       amount of nudging could fix it because the control that would have was the one being ignored
+       above. Derived from the position it actually has, so it auto-faces outward like a verge, with
+       `rotation` on top for the baker's own turn. */
+    yaw = (fp ? Math.atan2(fp.x, fp.z) : sticker.theta) + (sticker.rotation ?? 0);
+    curveRadius = surfaceR;
   }
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
@@ -2150,7 +2167,6 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const freeRef = useRef(null);
   const freeHandOn = sticker.freeHand === true;
   const freeDrag = useRef(null);
-  const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
   useEffect(() => {
     if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
     const p = freeRef.current.position;
