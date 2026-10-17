@@ -2206,13 +2206,18 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           onOrbitEnable(false);
           /* Free hand drags on a camera-facing plane and writes `freePos`; the wall solve below
              writes theta/y, which no longer positions this piece. */
+          /* ⚠️ NO EARLY RETURN HERE. It had one, and that is why free-hand drag did nothing on the
+             wall: the `pointermove` listener is registered at the END of this handler, so returning
+             set up a drag that nothing was listening for. The rim path has no such return, which is
+             exactly why a test there passed while the reported bow — seated SIDE — would not move.
+             Testing the path that was reported, rather than the one that was convenient, is the
+             whole lesson. The setup below is harmless under free hand (`onMoveHandler` branches on
+             it before reading any of those refs), so the handler runs to completion either way. */
           if (freeHandOn) {
             const at = sticker.freePos ?? { x: cx, y: posY + wireUp, z: cz };
             freeDrag.current = { plane: freeDragPlane(camera, at), grab: null };
             const hit = planePoint(pointerRay(e, gl.domElement, camera), freeDrag.current.plane);
             if (hit) freeDrag.current.grab = { x: hit.x - at.x, y: hit.y - at.y, z: hit.z - at.z };
-            try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
-            return;
           }
           try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
           didDrag.current      = false;

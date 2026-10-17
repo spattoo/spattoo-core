@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
+import { BUILD } from './buildId.js';
 import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
          brushGestureFromDrag } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
@@ -20994,10 +20995,20 @@ const s = {
 
 // Wrap the designer in a reporting error boundary so a render crash surfaces to
 // telemetry (with baker context) and shows a fallback instead of white-screening.
+/* ⚠️ THE RUNNING BUILD, NAMED WHERE ANYONE CAN READ IT. `BUILD.version` has existed since the
+   renderer-floor work and was exposed nowhere, so neither a baker nor whoever is helping them could
+   answer "is the fix you just shipped actually in the thing I am looking at?". Five releases in one
+   day were each followed by a re-test with no way to confirm the bundle had changed, and at least
+   one "still not working" is indistinguishable from "still on the old build" without it.
+   `window.__spattooCore` in the console, and a `data-` attribute for anyone reading the DOM. One
+   line, no UI, and it ends a whole class of wasted round trip. */
 export default function CakeDesigner(props) {
+  if (typeof window !== 'undefined') window.__spattooCore = BUILD.version;
   return (
     <ErrorBoundary screen="CakeDesigner">
-      <CakeDesignerInner {...props} />
+      <div data-spattoo-core={BUILD.version} style={{ display: 'contents' }}>
+        <CakeDesignerInner {...props} />
+      </div>
     </ErrorBoundary>
   );
 }
