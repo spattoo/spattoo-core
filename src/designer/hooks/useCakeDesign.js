@@ -1297,6 +1297,38 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              Read by the render's isPerchBase branch; null/absent → centre, so the catalogue does
              not move. */
           perchSeat:     element.placement_config?.perch?.seat ?? null,
+          /* Where ALONG the model the rim line touches it, as a fraction of its height measured
+             from the TOP: 0 = the top (what `hang` means), 0.5 = the middle (`center`), 1 = the
+             base. `placement_config.verge.anchor`.
+             ⚠️ A FRACTION, NOT A NUDGE, AND THAT IS THE WHOLE POINT. The contact point on a satin
+             bow is the centre of its KNOT, which the model puts at 0.10 of its height from the top
+             — not at the very top, so `hang` alone hangs the whole bow below the rim. Sandeep:
+             *"the center of the folded part of the bow should be on the edge."* The same
+             correction in `y_offset` would be 0.106 at size 4 and 0.24 at size 9, and this bow's
+             dial spans 1.6 to 9, so a nudge is right at exactly one size. A fraction is right at
+             every size, because it is a statement about the MODEL rather than about the world. */
+          /* Where ALONG the model the rim line touches it, as a fraction of its height from the
+             TOP — on EITHER edge mode, because the question is the same one. 0 = the top (what a
+             verge `hang` means), 0.5 = the middle (`center`), 1 = the base.
+             ⚠️ A FIGURE'S CONTACT POINT IS NOT ALWAYS ITS FEET. The catalogue doll is modelled
+             SITTING: she belongs on the rim with her legs hanging down the outside, so the point
+             that touches is her SEAT, somewhere mid-body, and her lowest geometry should rest on
+             nothing at all. Sandeep: *"doll is in sitting position. she needs to sit on the cake
+             rim, legs hanging below."* Neither `base` (lowest point on the surface) nor the
+             measured foot seat can express that; a fraction can, and it holds at every size. */
+          edgeAnchor:    element.placement_config?.perch?.anchor
+                      ?? element.placement_config?.verge?.anchor ?? null,
+          /* Whether an edge-seated figure stands on its MEASURED feet rather than on its box
+             centre — `perch.foot` / `verge.foot`. Absent (the default) measures; `false` keeps the
+             box centre; a NUMBER overrides the measurement, as a fraction of the model's half-depth
+             (+ = toward the model's front).
+             ⚠️ MEASURED BY DEFAULT ON PURPOSE. Sandeep: *"there could be more dolls in future with
+             different dimentions, does this logic work for them too?"* — a per-model number only
+             works while somebody remembers to type it, and this row already carried three stale
+             hand-cranks that nobody updated. The override exists for a model the measurement reads
+             wrongly, not as the way the feature is normally used. */
+          footSeat:      element.placement_config?.perch?.foot
+                      ?? element.placement_config?.verge?.foot ?? null,
           // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.

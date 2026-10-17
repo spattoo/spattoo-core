@@ -1687,7 +1687,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center, depthScaled, seatHalf, halfW, gradBBox } = useMemo(() => {
+  const { scale, position, center, depthScaled, seatHalf, halfW, footX: footCx, footZ: footCz, gradBBox } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -1699,8 +1699,48 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     // so it stays put regardless of placement/instance scale. `halfW`/`seatHalf` are the model's
     // PER-AXIS half-extents (width/height), so the selection hit-plane is a tight rectangle around a
     // non-square model — a tall-narrow bow gets a tall-narrow box, not a STICKER_SIZE square.
+    /* ── Where this model actually touches down ────────────────────────────────────────────────
+     * ⚠️ A BOX IS CENTRED; A FIGURE NEED NOT BE. Measured on the catalogue's fondant doll (77,338
+     * vertices): her bounding box centres at x 0.0000 / z -0.0001, but her FEET sit at z +0.4747 —
+     * 87% of the way to the front face, because she is mid-dance and leaning back. Seat her by the
+     * box at a rim and her feet land past it: *"doll is still hanging in air… its considering the
+     * box space."*
+     * ⚠️ MEASURED, NOT AUTHORED, which is the rule this file already applies to the stand-off and
+     * the seat half-height. Sandeep, on a per-model number: *"there could be more dolls in future
+     * with different dimentions, does this logic work for them too?"* — it does only if nobody has
+     * to remember to type it. A row can still override or switch it off (`perch.foot`).
+     * ⚠️ MEASURED HERE, NOT IN `box3`. The first attempt scanned the BENT scene, which only exists
+     * for a piece wrapped around a wall — so for every perched figure it silently fell through to
+     * the fallback and returned a foot offset of exactly zero. The numbers looked plausible and the
+     * render barely moved; publishing the scan's own terms is what showed it had never run.
+     * ⚠️ THE LOWEST MESHES, NOT THE LOWEST VERTICES — parts are separate meshes (41 on the doll,
+     * shoes among them), so a band catches whole feet without a vertex scan. 8% is deliberately
+     * generous: a sole is thin, and a toe lifted mid-step must still count as touching down. */
+    const FOOT_BAND = 0.08;
+    const cut = box.min.y + FOOT_BAND * (size.y || 1);
+    /* ⚠️ VERTICES IN THE BAND, NOT MESHES THAT REACH IT — and the mesh version was tried first and
+       measured exactly zero. A leg is one mesh from hip to sole, so its bounding box dips into the
+       band while its CENTRE sits mid-body; union enough of those and the answer collapses back to
+       the middle of the model, which is the number this whole correction exists to avoid. Only the
+       meshes that touch the band are opened, so this is a short scan, done once per model. */
+    const footBox = new THREE.Box3();
+    const v = new THREE.Vector3();
+    clonedScene.traverse(o => {
+      if (!o.isMesh || !o.geometry?.attributes?.position) return;
+      const bb = new THREE.Box3().setFromObject(o);
+      if (bb.min.y > cut) return;                       // nothing of this part is near the ground
+      o.updateWorldMatrix(true, false);
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        if (v.y <= cut) footBox.expandByPoint(v);
+      }
+    });
+    const fc = footBox.isEmpty() ? ctr : footBox.getCenter(new THREE.Vector3());
     return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc,
       seatHalf: (size.y * sc) / 2, halfW: (size.x * sc) / 2,
+      // Offset from the model's own centre — the group origin — in the same normalised units.
+      footX: (fc.x - ctr.x) * sc, footZ: (fc.z - ctr.z) * sc,
       gradBBox: { min: box.min.clone(), size: size.clone(), center: ctr.clone() } };
   }, [clonedScene, imageUrl]);
 
@@ -1737,11 +1777,27 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
       bentScene.traverse(o => { if (o.isMesh && o.geometry) { o.geometry.computeBoundingBox?.(); if (o.geometry.boundingBox) b.union(o.geometry.boundingBox); } });
       if (!b.isEmpty()) {
         const s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
-        return { w: s.x, h: s.y, d: s.z, cy: c.y, cz: c.z, frontZ: b.max.z };
+        /* ── WHERE THIS MODEL ACTUALLY TOUCHES DOWN ──────────────────────────────────────────────
+         * ⚠️ A BOX IS CENTRED; A FIGURE NEED NOT BE. Measured on the catalogue's fondant doll
+         * (77,338 vertices): her bounding box centres at x 0.0000 / z -0.0001, but her FEET sit at
+         * z +0.4747 — 87% of the way to the front face, because she is mid-dance and leaning back.
+         * Seat her by the box and her feet land 0.316 past a rim she is supposed to stand on, which
+         * is the whole of *"doll is still hanging in air… its considering the box space."*
+         * ⚠️ MEASURED, NOT AUTHORED — the rule this file already applies to the stand-off and the
+         * seat half-height. Sandeep, on a per-model number: *"there could be more dolls in future
+         * with different dimentions, does this logic work for them too?"* — it does only if nobody
+         * has to remember to type it. A row can still override or switch it off; see `footSeat`.
+         * ⚠️ THE LOWEST MESHES, NOT THE LOWEST VERTICES. Parts are separate meshes here (the doll
+         * has 41, shoes among them), so the band below catches whole feet without a vertex scan.
+         * The 8% band is deliberately generous: a sole is thin, and a toe lifted mid-step must not
+         * be the only thing that counts as "touching down". */
+        return { w: s.x, h: s.y, d: s.z, cy: c.y, cz: c.z, frontZ: b.max.z,
+                 footX: footCx, footZ: footCz };
       }
     }
-    return { w: 2 * halfW, h: 2 * seatHalf, d: depthScaled, cy: 0, cz: 0, frontZ: depthScaled / 2 };
-  }, [bentScene, halfW, seatHalf, depthScaled]);
+    return { w: 2 * halfW, h: 2 * seatHalf, d: depthScaled, cy: 0, cz: 0, frontZ: depthScaled / 2,
+             footX: footCx, footZ: footCz };
+  }, [bentScene, halfW, seatHalf, depthScaled, footCx, footCz]);
   useEffect(() => { onDepth?.(box3.frontZ); }, [onDepth, box3]);
   useEffect(() => { onVExtent?.({ down: seatHalf, up: seatHalf, halfW, box: box3 }); }, [seatHalf, halfW, box3]);
 
@@ -2256,6 +2312,23 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      thrown it anywhere, while a centre seat left 0.29 of bow below the rim and outside the wall.
      A value in a config, not a type (INVARIANTS #1): `placement_config.verge.seat`. */
   const isVergeHang = isVerge && sticker.vergeSeat === 'hang';
+  /* ⚠️ `hang` IS THE f = 0 CASE OF A GENERAL ANCHOR, and some pieces need a different f. It is read
+     on BOTH edge modes (`perch.anchor` / `verge.anchor`), because "where does the rim line touch
+     this model" is one question: a bow is tied at its knot, a sitting doll rests on her SEAT with
+     her legs hanging below the lip, and neither point is the top, the middle or the base. The seat
+     terms below are three points on one line: a model whose height is 2·halfH, touching the rim at
+     the fraction f of that height measured from the TOP, has its CENTRE at `halfH·(2f − 1)` — which
+     is −halfH at f=0 (hang, the top on the lip), 0 at f=0.5 (center, the mid-spine), and +halfH at
+     f=1 (base). So one expression covers all three and everything between.
+     A satin bow's contact point is the centre of its KNOT, measured off the model at f ≈ 0.10: its
+     loops occupy the top 19% (width 1.13 falling to 0.53 at the waist, then the tails splaying
+     again to 0.98 — so a width test alone finds the tails too; the loops are the TOP wide band).
+     At f = 0 the whole bow, knot included, hangs below the lip.
+     ⚠️ ONLY WHERE IT IS AUTHORED, so nothing moves: absent → `hang` keeps its exact -halfH and
+     `center`/`base` never reach this branch at all. */
+  const edgeAnchor = (isPerch || isVerge) && Number.isFinite(sticker.edgeAnchor)
+    ? Math.min(1, Math.max(0, sticker.edgeAnchor))
+    : null;
   // Base-seated upright modes: stand, a base-seat verge, a base-seat perch, and a foldable card on a
   // perch edge — all stand on their BODY base. A centre-seat verge / perch sit centred at the rim
   // edge height instead.
@@ -2304,7 +2377,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
-    // A `hang` verge is tied AT the rim: its top meets the lip and the body falls below it.
+    // An authored anchor: the model touches the rim at fraction `edgeAnchor` of its height from
+    // the top. A `hang` verge with none is that same line at f = 0 — its top meets the lip.
+    : edgeAnchor != null ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (2 * edgeAnchor - 1)
     : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2) * effScale
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — a CENTRE-seat perch straddles, a centre-seat verge rests its mid-spine on the lip (a base-seat perch/verge took the standSeat branch above)
     : FLAT_STICKER_Y_OFFSET);
@@ -2373,6 +2448,56 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const outLen = Math.hypot(sticker.x ?? 0, sticker.z ?? 0) || 1;
   const outX   = standOff ? ((sticker.x ?? 0) / outLen) * standOff : 0;
   const outZ   = standOff ? ((sticker.z ?? 0) / outLen) * standOff : 0;
+
+  /* ── A figure stands on its FEET, not on the centre of its box ───────────────────────────────
+   *
+   * ⚠️ ONLY AT AN EDGE, AND ONLY BASE-SEATED. On a top surface there is cake all round, so seating
+   * by the box costs nothing and moving it would re-place every standing GLB on every saved design.
+   * At a rim there is nothing past the edge, so the difference between the box centre and the real
+   * contact point is the difference between standing and hanging in the air. And a piece that is
+   * not base-seated has no feet on anything: a centre-seat verge straddles, a `hang` bow dangles.
+   *
+   * `artBox.footX/footZ` are measured from the model (the lowest meshes' own centre); `footSeat`
+   * on the row can override with a fraction of half-depth, or `false` to keep the box centre.
+   * Measured on the reported doll: footZ 0.4747 of a 0.547 half-depth, so at size 4.8 her feet were
+   * landing 0.316 past the rim she was standing on.
+   */
+  /* ⚠️ AN AUTHORED ANCHOR WINS OVER THE MEASURED FEET, because they answer the same question and
+     only one of them can be right. The foot seat is for a figure that STANDS; an anchor is what a
+     piece that does anything else is seated by — a bow tied at its knot, a doll sitting on the rim
+     with her legs hanging. Her lowest geometry is then resting on nothing, so measuring it would
+     pull her backwards onto the cake by the depth of a dangling foot. */
+  const footSeat = standSeat && edgeAnchor == null && (isPerch || isVerge) && sticker.footSeat !== false
+    ? (Number.isFinite(sticker.footSeat)
+        ? { x: 0, z: sticker.footSeat * ((artBox?.d ?? 0) / 2) }
+        : { x: artBox?.footX ?? 0, z: artBox?.footZ ?? 0 })
+    : null;
+  /* The offset lives in the model's own frame, so it has to turn with the yaw before it can be
+     taken off a world position — and it is applied to the WHOLE group, so the selection box and the
+     hit plane travel with the body instead of being left behind where the box used to be. */
+  /* ⚠️ `surfaceYaw` CALLED HERE, NOT THE `yaw` BELOW. That one is declared inside the render body
+     120 lines down, so reading it from here is a temporal dead zone — the trap this codebase has
+     already paid for once (`LibraryPanel`'s `sectioned`, which built clean, passed check:bindings
+     and threw on mount, because the name IS declared, just later). The helper is pure, so calling
+     it twice costs nothing and cannot drift. */
+  const footYaw = footSeat ? surfaceYaw(sticker) : 0;
+  const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
+  const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
+  /* ⚠️ PUBLISHED HERE, NOT BESIDE THE STAND-OFF'S OWN TERMS 50 LINES UP — `const` is not hoisted,
+     and reading `footX` there threw "Cannot access 'footX' before initialization" on every frame.
+     The same temporal-dead-zone trap this file and LibraryPanel have both paid for; it passed
+     check:bindings again, because the name IS declared, just later. Opening the screen found it.
+     "She is still off the cake" and "the measurement came back zero" look identical on a render,
+     so the terms are published rather than inferred. */
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && (isPerch || isVerge)) {
+    window.__footSeat = {
+      id: sticker.id, mode: sticker.placementMode, standSeat,
+      perchSeat: sticker.perchSeat ?? null, cfg: sticker.footSeat ?? null,
+      measured: artBox ? { x: +(artBox.footX ?? 0).toFixed(4), z: +(artBox.footZ ?? 0).toFixed(4),
+                           d: +(artBox.d ?? 0).toFixed(4) } : null,
+      applied: { x: +footX.toFixed(4), z: +footZ.toFixed(4) },
+    };
+  }
 
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
@@ -2577,7 +2702,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     /* The pivot sits `seatLift` BELOW the group origin (translate down, rotate, translate back), so
        a base-seated piece leans about its feet. A `hang` piece leans about its TOP, which is a
        NEGATIVE lift — the knot stays on the rim and the tails swing. */
-    const seatLift = isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2)
+    const seatLift = edgeAnchor != null ? (seatHalf ?? STICKER_SIZE / 2) * (2 * edgeAnchor - 1)
+                   : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2)
                    : (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
     // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
@@ -2613,7 +2739,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       </group>
     );
     return (
-      <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
+      <group position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -2681,7 +2807,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
-    <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
+    <group position={[sticker.x + outX - footX, py, sticker.z + outZ - footZ]} scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a

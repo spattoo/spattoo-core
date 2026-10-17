@@ -875,9 +875,28 @@ if (PARAMS.has('bow')) {
          the row this time, not against a memory of it. */
       /* `?yoff=` sweeps the row's height nudge, which is a WORLD-UNIT lift (placement.js ->
          sticker.yOffset), not a fraction of the model. */
-      verge: { ...(PARAMS.get('hang') === '0' ? {} : { seat: 'hang' }),
+      /* ⚠️ `?anchor=` SWEEPS WHERE THE RIM TOUCHES THE MODEL, as a fraction of its height from the
+         top. Measured off the GLB: the loops occupy the top ~19% (width 1.13 → 0.53 at the waist,
+         the tails then splaying back to 0.98), so the KNOT's centre is near 0.10 — which is where
+         a bow is actually tied. `hang` alone is f = 0 and hangs the whole bow, knot included,
+         below the lip. */
+      verge: { ...(PARAMS.has('anchor') ? { anchor: +PARAMS.get('anchor') } : {}),
+               ...(PARAMS.get('hang') === '0' ? {} : { seat: 'hang' }),
                y_offset: PARAMS.has('yoff') ? +PARAMS.get('yoff') : -0.3,
-               angle_deg: -13.5, edge_inset: -0.09 } },
+               /* ⚠️ `?angle=` SWEEPS THE LEAN, the THIRD stale hand-crank on this row. -13.5 was
+                  authored while the pivot was the model's MIDDLE, where a negative lean tipped the
+                  tails INTO the wall and had to be fought. A `hang` piece pivots at the KNOT, so
+                  the same number now swings the tails OUT through the air: over this bow's 1.12 of
+                  height that is 1.12 x sin(13.5) = 0.26 clear of the wall at the bottom. Invisible
+                  at the FRONT of the cake, where the lean points at the camera — which is why the
+                  harness showed a bow resting on the wall while the report showed one leaning off
+                  the side. Look at it in profile. */
+               angle_deg: PARAMS.has('angle') ? +PARAMS.get('angle') : -13.5,
+               /* ⚠️ `?inset=` SWEEPS THE ROW'S RADIAL PULL-IN, the second of the two stale
+                  hand-cranks on this row. NEGATIVE pushes the piece OUT past the lip: it was
+                  authored when nothing seated an edge piece automatically, and the measured
+                  stand-off now does that job, so the two stack and the bow never reaches the wall. */
+               edge_inset: PARAMS.has('inset') ? +PARAMS.get('inset') : -0.09 } },
     default_color: '#1a1a1a', sort_order: 42,
   });
 }
@@ -964,8 +983,15 @@ CAT_ELEMENTS.push({
     // ?realdoll uses the row's own perch block (tilt 0, the hand-cranked y_offset, inset 0.05);
     // ?dollseat=base is the fix — base seat, and the y_offset dropped as it must be.
     perch: PARAMS.has('realdoll')
-      ? (PARAMS.get('dollseat') === 'base'
-          ? { tilt_deg: 0, edge_inset: 0.05, seat: 'base' }
+      ? (PARAMS.has('dollanchor')
+          /* ⚠️ SHE IS MODELLED SITTING. `?dollanchor=` sweeps WHERE the rim touches her, as a
+             fraction of her height from the top — her SEAT, not her feet, which hang below the lip
+             and rest on nothing. Neither `base` nor the measured foot seat can say that. */
+          ? { tilt_deg: 0, edge_inset: 0.05, anchor: +PARAMS.get('dollanchor') }
+          : PARAMS.get('dollseat') === 'base'
+          ? { tilt_deg: 0, edge_inset: 0.05, seat: 'base',
+              // ?dollfoot=off keeps the old box-centre seat, to show the difference
+              ...(PARAMS.get('dollfoot') === 'off' ? { foot: false } : {}) }
           : { tilt_deg: 0, edge_inset: 0.05, y_offset: 0.31 })
       : { tilt_deg: 12, edge_inset: 0.05,
           ...(PARAMS.get('dollseat') === 'base' ? { seat: 'base', tilt_deg: 0 } : {}) },
