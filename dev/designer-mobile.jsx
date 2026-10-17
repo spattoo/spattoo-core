@@ -983,7 +983,13 @@ CAT_ELEMENTS.push({
     // ?realdoll uses the row's own perch block (tilt 0, the hand-cranked y_offset, inset 0.05);
     // ?dollseat=base is the fix — base seat, and the y_offset dropped as it must be.
     perch: PARAMS.has('realdoll')
-      ? (PARAMS.has('dollanchor')
+      /* ⚠️ `?dollcal=1` IS THE ROW AS CALIBRATED ON 2026-10-17, stale `seat` and all. It is kept
+         WITH the leftover `seat: "base"` deliberately: a named seat and an anchor say the same
+         thing in different words, and tested in the wrong order the seat silently won and the
+         calibration did nothing. This fixture is what proves the explicit number beats it. */
+      ? (PARAMS.has('dollcal')
+          ? { seat: 'base', tilt_deg: 0, edge_inset: 0.09, anchor: 0.5, y_offset: 0.24 }
+          : PARAMS.has('dollanchor')
           /* ⚠️ SHE IS MODELLED SITTING. `?dollanchor=` sweeps WHERE the rim touches her, as a
              fraction of her height from the top — her SEAT, not her feet, which hang below the lip
              and rest on nothing. Neither `base` nor the measured foot seat can say that. */

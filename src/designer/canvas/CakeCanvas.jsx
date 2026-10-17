@@ -2376,10 +2376,16 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
-    : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
-    // An authored anchor: the model touches the rim at fraction `edgeAnchor` of its height from
-    // the top. A `hang` verge with none is that same line at f = 0 — its top meets the lip.
+    /* An authored anchor: the model touches the rim at fraction `edgeAnchor` of its height from the
+       top. A `hang` verge with none is that same line at f = 0 — its top meets the lip.
+       ⚠️ BEFORE `standSeat`, BECAUSE THE EXPLICIT NUMBER BEATS THE SHORTHAND. A named seat IS a
+       fraction (base = 1, center = 0.5, hang = 0), so a row carrying both states the same thing
+       twice — and tested the other way round, `seat: "base"` silently won and the anchor did
+       nothing. That is not a hypothetical: the doll was calibrated to `anchor: 0.5` on a row still
+       holding `seat: "base"` from an earlier attempt, and the two differ by a full half-height —
+       she would have stood on her feet on the cake after being tuned sitting on the rim. */
     : edgeAnchor != null ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (2 * edgeAnchor - 1)
+    : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
     : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2) * effScale
     : (isPerch || isVerge) ? 0   // centre at the rim edge height — a CENTRE-seat perch straddles, a centre-seat verge rests its mid-spine on the lip (a base-seat perch/verge took the standSeat branch above)
     : FLAT_STICKER_Y_OFFSET);
@@ -2412,7 +2418,13 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      for wall-hug; verge/stand/perch seat by their own logic and ignore it"*, yet the stand-off
      reads it for exactly those modes, where a bare `"rim": "perch"` silently defaults to proud.
      The seat is what actually knows whether the body crosses the rim line, so it decides. */
-  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat;
+  /* ⚠️ AND AN AUTHORED ANCHOR SUPPRESSES IT, so the Perch Calibrator and the cake agree. That
+     screen draws no stand-off, so any radial correction a human tunes there (`edge_inset`) is
+     measured against a model sitting ON the rim line — add 0.34 of automatic push afterwards and
+     what ships is not what was calibrated. The stand-off is the default for a piece nobody has
+     positioned; an anchor means somebody has. Sandeep calibrates there: *"ill calibrate it in
+     perchcalibrator"*, and WYSIWYG is the whole value of that screen. */
+  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat && edgeAnchor == null;
   /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
      ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
      screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
