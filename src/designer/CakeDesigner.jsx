@@ -13654,10 +13654,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             wobble is the difference between a piped cake and a dragged mouse — a real baker's hand
             is steadied by the turntable and the cake's own edge, and this is the equivalent.
             It only ever snaps to a circle about the cake's axis or to a straight line, and only when
-            the drawing is clearly one of those. A heart, a name, a deliberate squiggle come back
-            exactly as drawn — guessing wrong destroys work, so the bar is high and the fallback is
-            always "leave it alone". Applied when the stroke is COMMITTED, so what is saved is what
-            is meant. */}
+            the drawing is clearly one of those. A heart, a name, a deliberate squiggle keep their
+            shape — guessing wrong destroys work, so the bar is high.
+            ⚠️ THE FALLBACK IS NO LONGER "LEAVE IT ALONE". It was, and that made this an
+            all-or-nothing switch: anything with a real curve in it came back with every tremor of
+            the hand that drew it, and the straight fit was loose enough to flatten a curve that was
+            meant — *"auto correction is making the curved piping to a straight line. here my
+            expectation is a smoother curved path."* Now a stroke that is neither primitive is
+            SOFTENED instead: resampled evenly and corner-cut, which removes the shake and leaves
+            the shape where it was drawn. Applied when the stroke is COMMITTED, so what is saved is
+            what is meant. */}
         <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
           <input type="checkbox" checked={penStyle.autoShape ?? false}
             onChange={e => setPenStyle(ps => ({ ...ps, autoShape: e.target.checked }))}
@@ -13665,7 +13671,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
             <span style={{ fontSize: 11, fontWeight: 800, color: INK }}>Auto-correct shape</span>
             <span style={{ fontSize: 9.5, fontWeight: 600, color: '#b29aa2', lineHeight: 1.35 }}>
-              Tidies a rim border into a true circle, and a near-straight run into a straight one.
+              Rounds a rim border into a true circle, straightens a near-straight run, and takes
+              the shake out of every other line without changing its shape.
             </span>
           </span>
         </label>

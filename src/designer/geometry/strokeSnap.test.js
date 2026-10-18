@@ -33,6 +33,17 @@ const maxOffLine = (pts, ax, bx) => {
 };
 const radii = (pts, cx = 0, cz = 0) => pts.map(p => Math.hypot(p[0] - cx, p[2] - cz));
 
+/* How far the tidied stroke wanders from the one that was DRAWN, as a fraction of the drawing's own
+ * size. This replaced `toEqual(drawn)` when Auto-correct stopped being all-or-nothing: the promise
+ * was never "the array is untouched", it was "what you meant is still there". A smoothed stroke
+ * fails the first and keeps the second, and a stroke flattened into a bar fails both. */
+const strayFrom = (drawn, out) => {
+  const d3 = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+  const spread = ax => Math.max(...drawn.map(p => p[ax])) - Math.min(...drawn.map(p => p[ax]));
+  const extent = Math.max(spread(0), spread(1), spread(2)) || 1;
+  return Math.max(...out.map(p => Math.min(...drawn.map(q => d3(p, q))))) / extent;
+};
+
 describe('snapStroke', () => {
   it('leaves a stroke with too few points alone', () => {
     const pts = [[0, 1, 0], [0.1, 1, 0], [0.2, 1, 0]];
@@ -94,24 +105,27 @@ describe('snapStroke', () => {
       expect(shape).not.toBe('circle');
     });
 
-    it('leaves a deliberate squiggle completely alone', () => {
+    it('keeps a deliberate squiggle a squiggle, tidying the hand and not the shape', () => {
       const drawn = Array.from({ length: 50 }, (_, i) => {
         const t = i / 49;
         return [-0.8 + 1.6 * t, 1, Math.sin(t * Math.PI * 5) * 0.4];
       });
       const { points, shape } = snapStroke(drawn, { axis: [0, 0] });
-      expect(shape).toBeNull();
-      expect(points).toEqual(drawn);                   // untouched, not merely similar
+      expect(shape).toBe('smooth');                    // tidied, never snapped to a primitive
+      expect(strayFrom(drawn, points)).toBeLessThan(0.06);
     });
 
-    it('leaves a heart alone', () => {
+    it('keeps a heart a heart', () => {
       const drawn = Array.from({ length: 60 }, (_, i) => {
         const t = (i / 59) * Math.PI * 2;
         const x = 16 * Math.sin(t) ** 3;
         const z = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
         return [x / 20, 1, z / 20];
       });
-      expect(snapStroke(drawn, { axis: [0, 0] }).shape).toBeNull();
+      const { points, shape } = snapStroke(drawn, { axis: [0, 0] });
+      expect(shape).not.toBe('circle');                // the one that would destroy it
+      expect(shape).not.toBe('line');
+      expect(strayFrom(drawn, points)).toBeLessThan(0.06);
     });
 
     it('keeps every point at the height it was drawn at', () => {
@@ -164,12 +178,57 @@ describe('snapStroke', () => {
       expect(Math.max(...angs) - Math.min(...angs)).toBeLessThan(0.01);
     });
 
-    it('leaves a scalloped swag on the wall alone', () => {
+    it('keeps a scalloped swag scalloped', () => {
       const drawn = wallPoints(60, (i, n) => {
         const t = i / (n - 1);
         return { a: -1 + 2 * t, y: 0.9 + Math.sin(t * Math.PI * 4) * 0.25 };
       });
-      expect(snapStroke(drawn, { normal: [1, 0, 0], axis: [0, 0] }).shape).toBeNull();
+      const { points, shape } = snapStroke(drawn, { normal: [1, 0, 0], axis: [0, 0] });
+      expect(shape).toBe('smooth');
+      expect(strayFrom(drawn, points)).toBeLessThan(0.06);
+    });
+
+    /* ── The reported bug ───────────────────────────────────────────────────────────────────────
+       Sandeep piped a curved band round a tier with Auto-correct on and got a straight one:
+       *"auto correction is making the curved piping to a straight line. here my expectation is a
+       smoother curved path."* The old ceiling of 0.035 of the path length admitted a bow of nearly
+       an eighth of that length, because for a bowed path the RMS to the best-fit line is only
+       about 0.3 of the sagitta. */
+    it('keeps a deliberately bowed band curved instead of flattening it', () => {
+      const SAG = 0.22;                                 // bow, as a fraction of the run
+      const drawn = wallPoints(60, (i, n) => {
+        const t = i / (n - 1);
+        return { a: -0.9 + 1.8 * t, y: 1.0 + Math.sin(t * Math.PI) * SAG };
+      });
+      const { points, shape } = snapStroke(drawn, { normal: [1, 0, 0], axis: [0, 0] });
+      expect(shape).toBe('smooth');                     // NOT 'line'
+      const ys = points.map(p => p[1]);
+      // the arch is still there: the middle still rides well above both ends
+      const ends = (ys[0] + ys[ys.length - 1]) / 2;
+      expect(Math.max(...ys) - ends).toBeGreaterThan(SAG * 0.8);
+    });
+
+    /* ⚠️ AND THE OTHER HALF, which tightening the threshold alone broke: a tremor is not a bow.
+       Both leave the same residual, so straightness is judged on the SOFTENED path — the wobble is
+       gone by then and a genuinely straight run still snaps. */
+    it('still straightens a run that is only wobbly, not bowed', () => {
+      const drawn = wallPoints(40, (i, n) => ({
+        a: -0.8 + 1.6 * (i / (n - 1)),
+        y: 1.0 + wobble(i, 0.035),
+      }));
+      expect(snapStroke(drawn, { normal: [1, 0, 0], axis: [0, 0] }).shape).toBe('line');
+    });
+
+    it('takes the tremor out of a curve it keeps', () => {
+      // a clean arc, and the same arc drawn by a shaking hand
+      const arc  = (i, n) => ({ a: -0.9 + 1.8 * (i / (n - 1)), y: 1.0 + Math.sin((i / (n - 1)) * Math.PI) * 0.22 });
+      const clean = wallPoints(60, arc);
+      const shaky = wallPoints(60, (i, n) => { const p = arc(i, n); return { a: p.a, y: p.y + wobble(i, 0.03) }; });
+      const { points } = snapStroke(shaky, { normal: [1, 0, 0], axis: [0, 0] });
+      // distance from the TRUE arc, before and after
+      const d3 = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+      const toClean = set => set.reduce((s, p) => s + Math.min(...clean.map(q => d3(p, q))), 0) / set.length;
+      expect(toClean(points)).toBeLessThan(toClean(shaky) * 0.6);
     });
   });
 });
