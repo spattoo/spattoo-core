@@ -196,7 +196,7 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
-import { AGE_MATERIAL_KEYS, AGE_FINISH_COLORS } from './canvas/AgeNumber.jsx';
+import { AGE_MATERIAL_KEYS, AGE_FINISH_COLORS, AGE_MATERIALS } from './canvas/AgeNumber.jsx';
 import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS, cutAssembly } from './geometry/acrylicConfig.js';
 import { writingScaleFrom, writingMaxFit } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
@@ -3576,6 +3576,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* What colour the number IS. `finish` is only the preset last tapped; the wheel writes `color`
      and leaves it behind, so every reader asks this and never `finish`. */
   const ageColour       = selectedAge?.color ?? AGE_FINISH_COLORS[selectedAge?.finish ?? 'gold'];
+  const ageMat          = AGE_MATERIALS[selectedAge?.material] ?? AGE_MATERIALS.acrylic;
+  /* Clamped the same way the renderer clamps it, so the slider's handle never sits somewhere the
+     number is not actually built — the control and the thing agree or the control is lying. */
+  const ageThickness    = Math.min(ageMat.depthMax,
+                            Math.max(ageMat.depthMin, selectedAge?.slab ?? ageMat.depth));
   const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
   // For a selected `hue_regions` sticker, derive its colour regions (from the image) once — the toolbar
   // feeds them into the shared "Customise colours" swatches (one per region). No-op for other elements.
@@ -17192,6 +17197,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.material ?? 'acrylic') === m ? '#b8860b' : '#ddd'}`, background: (selectedAge.material ?? 'acrylic') === m ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{m}</button>
                     ))}
                   </div>
+                </div>
+                {/* ⚠️ BOUNDED BY THE MATERIAL, which is what lets this exist at all. Sandeep asked
+                    to *"reduce the thickness, or let user control it"*; a free slider would build a
+                    3mm mirror slab in fondant or a 2cm acrylic block, so the range comes from the
+                    material and only the position inside it is his. Switching material re-clamps.
+                    ⚠️ NO MILLIMETRES ON THE LABEL — the designer has no world-to-cm scale anywhere,
+                    so a figure in mm would be invented at the point of display. */}
+                <div>
+                  <Slider label="Thickness" min={ageMat.depthMin} max={ageMat.depthMax} step={0.005}
+                          value={ageThickness}
+                          fmt={v => `${Math.round((v - ageMat.depthMin) / (ageMat.depthMax - ageMat.depthMin) * 100)}%`}
+                          onChange={v => updateAge(selectedAge.id, { slab: v })} />
                 </div>
                 {/* ⚠️ THE WHEEL, NOT A ROW OF SWATCHES. `ColorWheel` is THE colour control a customer
                     picks with anywhere in this app (root CLAUDE.md rule 1), and a number topper had

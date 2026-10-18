@@ -1093,6 +1093,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         value:     '1',
         font:      DEFAULT_AGE_FONT,
         size:      0.95,
+        // ⚠️ DEAD SINCE THE TUBE SWEEP WAS REPLACED BY Text3D, and kept only because it is in every
+        // saved design. Nothing reads it. The slab depth a baker controls is `slab` (a fraction of
+        // the digit height, clamped to the material's range) — see AGE_MATERIALS. Do not reuse this
+        // name for it: a fresh age would start at 0.085 and so would every cake already saved.
         thickness: 0.085,
         finish:    'gold',
         offsetX:   0,

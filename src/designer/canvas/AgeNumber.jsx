@@ -42,14 +42,28 @@ function shade(hex, k) {
  *
  * ⚠️ MATERIAL CARRIES THE THICKNESS, because the two are one fact about the object. A laser-cut
  * acrylic topper is a thin sheet with a mirror edge; a fondant one is hand-cut, chunkier and matte.
- * Offering a separate thickness slider would let a baker build a 3mm mirror slab that exists in no
- * bakery. Sandeep asked for both in one breath — *"its too thick. reduce the thickness, or let user
- * control it. and add a new thing, let the user choose the material acrylic vs fondant"* — and the
- * material IS the control.
- * ⚠️ `depth` IS A FRACTION OF THE DIGIT HEIGHT, so it holds at every Size. It was a flat 0.34 of
- * the height for everything, which is what read as too thick: at the default size that is a slab
- * about a third as deep as the number is tall. Acrylic is 0.10 (a sheet), fondant 0.20 (cut by
- * hand). Both are thinner than what shipped, which is the reported complaint.
+ * Sandeep asked for both in one breath — *"its too thick. reduce the thickness, or let user control
+ * it"* — and the first pass answered only the first half, with numbers that were still far too deep.
+ * ⚠️ **THE MATERIAL SETS THE RANGE; THE BAKER MOVES INSIDE IT.** That is how both halves are true
+ * at once. A free slider would let someone build a 3mm mirror slab in fondant or a 2cm acrylic
+ * block, neither of which exists in a bakery; a fixed depth ignores a direct request. So each
+ * material carries `depth` (what it is by default), `depthMin` and `depthMax` (what that substance
+ * can plausibly be), and `age.slab` is clamped into that window.
+ * ⚠️ **`slab`, NOT `thickness` — the obvious name is TAKEN AND DEAD.** `addAge` has always seeded
+ * `thickness: 0.085`, a tube RADIUS from the cream-sweep number candle this replaced; nothing has
+ * read it since, but it is written into every saved design. Taking the name over silently gave
+ * every fresh number 0.085 (and every acrylic one its 0.08 ceiling, clamped) and would have
+ * back-dated the same depth onto every cake already saved. This file's own card had the identical
+ * collision once before — it *"wrote `thickness` while the acrylic builder reads `sheet`, so it
+ * moved a number nothing consumed"*. A field being unread does not make its name free.
+ * ⚠️ `depth` IS A FRACTION OF THE DIGIT HEIGHT, so it holds at every Size.
+ * ⚠️ **MEASURED AGAINST THE STROKE, NOT AGAINST THE HEIGHT — that is the error the first pass
+ * made.** A fraction of the digit height sounds thin at 0.22 until you measure the thing a reader
+ * actually compares it with: the stroke of a `1` in this font is 0.242 of its height, so a 0.22
+ * slab is 0.91x the stroke width — a square column, which is exactly why it still read as thick
+ * after being "reduced". Grounded in the real objects instead: a fondant number is rolled to about
+ * 5mm and stands 8-10cm (~0.06 of its height), laser-cut acrylic is a 3mm sheet (~0.035). Those
+ * are the defaults now; the old 0.10/0.22 were three to four times too deep.
  * ⚠️ `bevel` SCALES WITH THE DEPTH rather than staying at the old absolute, or a thin acrylic sheet
  * is mostly chamfer and the flat face disappears.
  */
@@ -62,7 +76,7 @@ export const AGE_MATERIALS = {
      ⚠️ `grain` IS THE SHARED FONDANT NORMAL MAP, the one every other fondant decoration already
      wears (`useSharedFondantTexture` → getFondantNormalMap). Without it a matte gold number is
      just unlit acrylic: *"it does not have fondant texture"*. Matte alone is not a substance. */
-  acrylic: { depth: 0.10, bevel: 0.28, bevelSegments: 3,  grain: false, edgeShade: 0.78,
+  acrylic: { depth: 0.035, depthMin: 0.02, depthMax: 0.08, bevel: 0.28, bevelSegments: 3,  grain: false, edgeShade: 0.78,
              metalness: 0.95, roughness: 0.14,
              clearcoat: 0.9, clearcoatRoughness: 0.06, emissiveIntensity: 0.28 },
   /* ⚠️ `edgeShade: 1` — THE EDGE IS THE SAME COLOUR AS THE FACE, and anything else draws a border.
@@ -72,7 +86,7 @@ export const AGE_MATERIALS = {
      darker colour became a thick outline drawn round the digit — reported as *"why there is a
      border like thing for number 2"*, and introduced by the rounding that fixed the sharp edges.
      A fondant number is cut from ONE sheet and is one colour all the way through. */
-  fondant: { depth: 0.22, bevel: 0.46, bevelSegments: 14, grain: true, edgeShade: 1,
+  fondant: { depth: 0.06, depthMin: 0.035, depthMax: 0.13, bevel: 0.46, bevelSegments: 14, grain: true, edgeShade: 1,
              metalness: 0.0,  roughness: 0.92,
              clearcoat: 0.0, clearcoatRoughness: 0.9, emissiveIntensity: 0.06 },
 };
@@ -87,6 +101,11 @@ export default function AgeNumber({
   const value = String(age?.value ?? '').replace(/[^0-9]/g, '');    // digits only
   const fin   = FINISHES[age?.finish] ?? FINISHES.gold;
   const mat   = AGE_MATERIALS[age?.material] ?? AGE_MATERIALS.acrylic;
+  /* ⚠️ CLAMPED INTO THE MATERIAL'S OWN WINDOW, every frame — not just when the slider moves.
+     Switching acrylic -> fondant carries a `thickness` chosen under the old range, and an
+     unclamped read would render a fondant number at an acrylic sheet's depth. */
+  const depthFrac = Math.min(mat.depthMax, Math.max(mat.depthMin, age?.slab ?? mat.depth));
+  const slabDepth = size * depthFrac;
   /* An authored colour wins over the preset, so the wheel can reach anything and Gold/Silver stay
      one tap away. Edge and emissive are DERIVED from it — see `shade`. */
   const face  = age?.color ?? fin.face;
@@ -122,7 +141,7 @@ export default function AgeNumber({
     if (import.meta.env?.DEV && typeof window !== 'undefined') {
       window.__ageGrain = { applied: mats.map(nm => !!nm.normalMap), uv: !!m.geometry.attributes.uv };
     }
-  }, [value, size, mat, age?.finish, age?.color]);
+  }, [value, size, mat, depthFrac, age?.finish, age?.color]);
 
   // Drag on the cake-top plane → snap inside the surface footprint; shared press/drag/tap behaviour.
   const { grabProps } = useDragPlacement({
@@ -143,7 +162,7 @@ export default function AgeNumber({
       hasOnMove: typeof onMove === 'function',
       material: age?.material ?? 'acrylic',
       finish: age?.finish ?? 'gold', face, side,
-      depth: +(size * mat.depth).toFixed(4) };
+      slab: +depthFrac.toFixed(4), depth: +slabDepth.toFixed(4) };
   }
 
   if (!value) return null;
@@ -185,11 +204,11 @@ export default function AgeNumber({
           key={`${value}-${age.finish}-${age.material ?? 'acrylic'}`}
           font={helvetikerBold}
           size={size}
-          height={size * mat.depth}
+          height={slabDepth}
           curveSegments={12}
           bevelEnabled
-          bevelThickness={size * mat.depth * mat.bevel}
-          bevelSize={size * mat.depth * mat.bevel * 0.72}
+          bevelThickness={slabDepth * mat.bevel}
+          bevelSize={slabDepth * mat.bevel * 0.72}
           bevelOffset={0}
           bevelSegments={mat.bevelSegments}
         >
