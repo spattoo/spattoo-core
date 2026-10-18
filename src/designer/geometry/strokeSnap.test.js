@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { snapStroke } from './strokeSnap.js';
+import { readFileSync } from 'node:fs';
+import { snapStroke, softenStroke, SMOOTH_DEFAULT } from './strokeSnap.js';
 
 // ── Tidying a hand-drawn piping line ─────────────────────────────────────────────────────────────
 // The risk here is not that it fails to tidy — it is that it tidies something the customer MEANT.
@@ -225,10 +226,134 @@ describe('snapStroke', () => {
       const clean = wallPoints(60, arc);
       const shaky = wallPoints(60, (i, n) => { const p = arc(i, n); return { a: p.a, y: p.y + wobble(i, 0.03) }; });
       const { points } = snapStroke(shaky, { normal: [1, 0, 0], axis: [0, 0] });
-      // distance from the TRUE arc, before and after
-      const d3 = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
-      const toClean = set => set.reduce((s, p) => s + Math.min(...clean.map(q => d3(p, q))), 0) / set.length;
+      /* Distance from the TRUE arc, before and after — measured to the arc's SEGMENTS, not to its
+         sample points. Nearest-point is density-sensitive: a smoothed stroke carries more points
+         than the arc does, so the extra ones land BETWEEN its samples and are charged up to half
+         the sample spacing for sitting exactly where they should. That penalty grew with the point
+         count and failed this test on a change that had made the stroke smoother, not rougher. */
+      const toSeg = (p, a, bb) => {
+        const vx = bb[0] - a[0], vy = bb[1] - a[1], vz = bb[2] - a[2];
+        const wx = p[0] - a[0], wy = p[1] - a[1], wz = p[2] - a[2];
+        const L2 = vx * vx + vy * vy + vz * vz;
+        const t = L2 < 1e-12 ? 0 : Math.max(0, Math.min(1, (wx * vx + wy * vy + wz * vz) / L2));
+        return Math.hypot(wx - vx * t, wy - vy * t, wz - vz * t);
+      };
+      const toClean = set => set.reduce((s, p) =>
+        s + Math.min(...clean.slice(1).map((q, i) => toSeg(p, clean[i], q))), 0) / set.length;
       expect(toClean(points)).toBeLessThan(toClean(shaky) * 0.6);
     });
+  });
+});
+
+
+/* ── The Smooth dial ─────────────────────────────────────────────────────────────────────────────
+ * Smoothing shipped welded to the Auto-correct checkbox at one fixed strength: *"so its still not
+ * smooth. can we have a smooth control. so every turn is smooth?"* Two complaints — the setting was
+ * too weak, and there was no way to say so. Auto-correct decides whether a drawing BECOMES a circle
+ * or a line; Smooth decides how much of the hand survives either way.
+ */
+describe('the Smooth control', () => {
+  const wobble = (i, amp) => Math.sin(i * 2.399963) * amp + Math.sin(i * 5.7) * amp * 0.6;
+  const shakyArc = (n = 90, R = 1.2) => Array.from({ length: n }, (_, i) => {
+    const t = i / (n - 1), a = -0.9 + 1.8 * t;
+    return [Math.cos(a) * R, 1.0 + Math.sin(t * Math.PI) * 0.22 + wobble(i, 0.018), Math.sin(a) * R];
+  });
+  // worst direction change between consecutive segments — "is every turn smooth?", as a number
+  const worstTurn = (pts) => {
+    let w = 0;
+    for (let i = 0; i + 2 < pts.length; i++) {
+      const v1 = [pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1], pts[i+1][2]-pts[i][2]];
+      const v2 = [pts[i+2][0]-pts[i+1][0], pts[i+2][1]-pts[i+1][1], pts[i+2][2]-pts[i+1][2]];
+      const l1 = Math.hypot(...v1), l2 = Math.hypot(...v2);
+      if (l1 < 1e-9 || l2 < 1e-9) continue;
+      const c = Math.min(1, Math.max(-1, (v1[0]*v2[0]+v1[1]*v2[1]+v1[2]*v2[2]) / (l1 * l2)));
+      w = Math.max(w, Math.acos(c) * 180 / Math.PI);
+    }
+    return w;
+  };
+  const wall = { normal: [1, 0, 0], axis: [0, 0] };
+
+  it('smooths without snapping — Auto-correct is a separate decision', () => {
+    const drawn = shakyArc();
+    const { points, shape } = softenStroke(drawn, { ...wall, smooth: 0.6 });
+    expect(shape).toBe('smooth');                       // never 'line', never 'circle'
+    expect(worstTurn(points)).toBeLessThan(worstTurn(drawn) / 4);
+  });
+
+  it('is OFF at zero — every point exactly where it was drawn', () => {
+    const drawn = shakyArc();
+    expect(softenStroke(drawn, { ...wall, smooth: 0 }).points).toEqual(drawn);
+  });
+
+  it('turns get smoother as the dial goes up', () => {
+    const drawn = shakyArc();
+    const turnAt = a => worstTurn(softenStroke(drawn, { ...wall, smooth: a }).points);
+    expect(turnAt(1)).toBeLessThan(turnAt(0.25));
+    expect(turnAt(0.25)).toBeLessThan(worstTurn(drawn));
+  });
+
+  /* ⚠️ THE END WAS THE LAST ROUGH JOINT, and it was rough by construction: smoothPath pins the
+     ends, so each pass pulls the neighbours geometrically onto the final point, leaving hops a
+     hundredth of a rope's thickness whose direction is rounding error at the four decimals a
+     stroke is saved on. It measured 8-13 degrees against 3-4 everywhere else. */
+  it('leaves no kink at the end, and no segment too short to mean anything', () => {
+    const drawn = shakyArc();
+    for (const a of [0.25, 0.5, 0.75, 1]) {
+      const { points } = softenStroke(drawn, { ...wall, smooth: a });
+      expect(worstTurn(points), `worst turn at ${a}`).toBeLessThan(6);
+      const segs = points.slice(1).map((p, i) =>
+        Math.hypot(p[0] - points[i][0], p[1] - points[i][1], p[2] - points[i][2]));
+      expect(Math.min(...segs), `shortest segment at ${a}`).toBeGreaterThan(1e-3);
+    }
+  });
+
+  it('keeps the ends where they were drawn, at every setting', () => {
+    const drawn = shakyArc();
+    for (const a of [0.25, 1]) {
+      const { points } = softenStroke(drawn, { ...wall, smooth: a });
+      for (const [got, want] of [[points[0], drawn[0]], [points[points.length - 1], drawn[drawn.length - 1]]]) {
+        expect(Math.hypot(got[0] - want[0], got[1] - want[1], got[2] - want[2])).toBeLessThan(1e-3);
+      }
+    }
+  });
+
+  it('is the same amount whether or not Auto-correct is on', () => {
+    // a shape neither straight nor round: the snapper falls through to its own softening, and that
+    // must be the softening the dial asked for rather than a second fixed one
+    const drawn = shakyArc();
+    const snapped  = snapStroke(drawn,   { ...wall, smooth: 0.8 });
+    const softened = softenStroke(drawn, { ...wall, smooth: 0.8 });
+    expect(snapped.shape).toBe('smooth');
+    expect(snapped.points).toEqual(softened.points);
+  });
+
+  it('has a default in the middle of its travel, not at an end', () => {
+    expect(SMOOTH_DEFAULT).toBeGreaterThan(0);
+    expect(SMOOTH_DEFAULT).toBeLessThan(1);
+  });
+});
+
+
+/* The dial has to be ON THE CARD and wired to the pen, and the vitest environment here is `node`
+ * with no DOM, so this is asserted the way this codebase asserts UI — by reading the source. It is
+ * a weak check standing in for a strong one: the pen screen is not reachable in the dev harness
+ * (the Cream pen fixture never gets past placement), so the control itself has not been turned by
+ * hand in a browser. Worth fixing the fixture; until then this at least fails if the wiring goes.
+ */
+describe('the Smooth dial is wired to the pen', () => {
+  const designer = readFileSync(new URL('../CakeDesigner.jsx', import.meta.url), 'utf8');
+  const pen      = readFileSync(new URL('../canvas/CreamPen.jsx', import.meta.url), 'utf8');
+
+  it('sits in the cream branch of the pen row and writes penStyle.smooth', () => {
+    expect(designer).toMatch(/k: 'Smooth'[\s\S]{0,260}penStyle\.smooth/);
+    expect(designer).toMatch(/k: 'Smooth'[\s\S]{0,400}smooth: v/);
+  });
+
+  it('reads "off" at zero rather than 0.00 beside Softness', () => {
+    expect(designer).toMatch(/k: 'Smooth'[\s\S]{0,260}'off'/);
+  });
+
+  it('is applied whether or not Auto-correct is on', () => {
+    expect(pen).toMatch(/s\.autoShape \? snapStroke\(pts2, opts\) : softenStroke\(pts2, opts\)/);
   });
 });

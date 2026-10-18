@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { pickSeat } from '../geometry/penSeat.js';
-import { snapStroke } from '../geometry/strokeSnap.js';
+import { snapStroke, softenStroke, SMOOTH_DEFAULT } from '../geometry/strokeSnap.js';
 import { translateStroke, distanceToStroke, strokePoints, isUprightNormal } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
@@ -219,10 +219,18 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
           //
           // Taps are exempt: a single dab has no shape to correct, and `snapStroke` would be reading
           // hand-jitter as intent.
+          /* ⚠️ SMOOTH IS ITS OWN CONTROL, not a side-effect of Auto-correct. Auto-correct decides
+             whether the drawing BECOMES a circle or a straight line; Smooth decides how much of
+             the hand comes through. Wanting a steady curve that is nobody's idea of a circle is an
+             ordinary thing to want, and while smoothing lived inside the checkbox it could not be
+             asked for: *"can we have a smooth control. so every turn is smooth?"*
+             With Auto-correct ON the snapper does the softening itself — it has to, because it
+             judges straightness on the softened path — so it is told the amount rather than being
+             handed an already-softened path to soften twice. */
           let pts2 = pts.map(round);
-          if (s.autoShape && !isTap) {
-            const snapped = snapStroke(pts2, { normal: nrm ?? [0, 1, 0], axis: [0, 0] });
-            pts2 = snapped.points;
+          if (!isTap) {
+            const opts = { normal: nrm ?? [0, 1, 0], axis: [0, 0], smooth: s.smooth ?? SMOOTH_DEFAULT };
+            pts2 = (s.autoShape ? snapStroke(pts2, opts) : softenStroke(pts2, opts)).points;
           }
           if (s.stampId && s.stampUrl && (nrm || !isTap)) {
             // GLB stamp mode: tap → one stamp, drag → a row of stamps along the path.

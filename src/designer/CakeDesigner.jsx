@@ -206,6 +206,7 @@ import { SPIRAL_DEFAULTS, SPIRAL_RISE } from './geometry/topSpiral.js';
 import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
 import { SearchField } from '../shared/SearchField.jsx';
+import { SMOOTH_DEFAULT } from './geometry/strokeSnap.js';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
@@ -3268,7 +3269,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      branch (check:hooks). Shared across pieces on purpose: it is a tool setting, "how many do you
      want", not a property of any one garnish. */
   const [fanCount, setFanCount] = useState(5);
-  const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
+  const [penStyle, setPenStyle] = useState({ medium: DEFAULT_MEDIUM, nozzle: 'round', color: '#ffffff', thickness: PEN_DEFAULT_THICKNESS, softness: 0.7, smooth: SMOOTH_DEFAULT, heapHeight: HEAP_HEIGHT_PER_DIAMETER, stampId: null, stampUrl: null, spacing: 0.85 });
   const [writingColorOpen, setWritingColorOpen] = useState(false);   // Texts: collapsible colour picker
   const [elementTypes, setElementTypes] = useState([]);
   const [elementTypesLoading, setElementTypesLoading] = useState(false);
@@ -13627,6 +13628,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                    path never reads it, so it is absent there rather than present-and-dead. */
                 { k: 'Softness', v: penStyle.softness, min: 0, max: 1, step: 0.05,
                   fmt: v => v.toFixed(2), set: v => setPenStyle(ps => ({ ...ps, softness: v })) },
+                /* ⚠️ SMOOTH IS NOT SOFTNESS, and they sit next to each other, so the difference has
+                   to survive being read quickly. Softness shapes the rope's CROSS-SECTION — how
+                   rounded the piped bead is. Smooth is about the PATH — how much of the hand's
+                   shake survives the turn. Same word family, different axis, which is why the
+                   readout says "off" at zero rather than "0.00": a dial reading 0.00 beside
+                   another reading 0.00 invites the two to be read as one setting.
+                   ⚠️ And it is NOT inside Auto-correct. That checkbox decides whether a drawing
+                   becomes a circle or a bar; this decides how steady the line is either way —
+                   *"can we have a smooth control. so every turn is smooth?"* */
+                { k: 'Smooth', v: penStyle.smooth ?? SMOOTH_DEFAULT, min: 0, max: 1, step: 0.05,
+                  fmt: v => (v <= 0 ? 'off' : v.toFixed(2)),
+                  set: v => setPenStyle(ps => ({ ...ps, smooth: v })) },
               ]
           ).map(d => (
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
