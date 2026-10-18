@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { Text3D, Center } from '@react-three/drei';
@@ -5,6 +6,7 @@ import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { numberTopperPlaceAt } from '../geometry/surface.js';
 import { planeHit } from '../utils/raycasting.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
+import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
 
 const DEG = Math.PI / 180;
 
@@ -37,10 +39,20 @@ const FINISHES = {
  * is mostly chamfer and the flat face disappears.
  */
 export const AGE_MATERIALS = {
-  acrylic: { depth: 0.10, bevel: 0.30, metalness: 0.95, roughness: 0.14,
+  /* ⚠️ THE EDGE IS HALF OF WHAT THE MATERIAL IS. Acrylic is sawn and polished: a shallow chamfer
+     over few segments, so the corner stays crisp and catches a hard line of light. Fondant is
+     rolled and cut by hand and has no sharp edge anywhere — *"fondant should not have sharp
+     edges"* — so its bevel takes nearly half the depth over enough segments to read as a ROUNDED
+     roll rather than a chamfer. Same geometry, two different objects.
+     ⚠️ `grain` IS THE SHARED FONDANT NORMAL MAP, the one every other fondant decoration already
+     wears (`useSharedFondantTexture` → getFondantNormalMap). Without it a matte gold number is
+     just unlit acrylic: *"it does not have fondant texture"*. Matte alone is not a substance. */
+  acrylic: { depth: 0.10, bevel: 0.28, bevelSegments: 3,  grain: false,
+             metalness: 0.95, roughness: 0.14,
              clearcoat: 0.9, clearcoatRoughness: 0.06, emissiveIntensity: 0.28 },
-  fondant: { depth: 0.20, bevel: 0.16, metalness: 0.05, roughness: 0.78,
-             clearcoat: 0.08, clearcoatRoughness: 0.6, emissiveIntensity: 0.10 },
+  fondant: { depth: 0.22, bevel: 0.46, bevelSegments: 14, grain: true,
+             metalness: 0.0,  roughness: 0.92,
+             clearcoat: 0.0, clearcoatRoughness: 0.9, emissiveIntensity: 0.06 },
 };
 export const AGE_MATERIAL_KEYS = Object.keys(AGE_MATERIALS);
 
@@ -53,6 +65,37 @@ export default function AgeNumber({
   const value = String(age?.value ?? '').replace(/[^0-9]/g, '');    // digits only
   const fin   = FINISHES[age?.finish] ?? FINISHES.gold;
   const mat   = AGE_MATERIALS[age?.material] ?? AGE_MATERIALS.acrylic;
+
+  /* ⚠️ THE GRAIN GOES ON AFTER THE GEOMETRY EXISTS, because Text3D builds it. The same two steps
+     the sticker path runs for `useSharedFondantTexture`: box-UV the extrusion (it has no UVs of its
+     own worth using) and hang the shared normal map on both material slots — face and side+bevel —
+     or the roll reads as fondant and the flat face stays plastic.
+     ⚠️ KEYED ON WHAT REBUILDS THE MESH. Text3D remounts on value/size/material, so the geometry
+     this ran against can be replaced underneath it; the deps list every input that does so. */
+  const textRef = useRef(null);
+  useEffect(() => {
+    const m = textRef.current;
+    if (!m?.geometry || !m.material) return;
+    const mats = Array.isArray(m.material) ? m.material : [m.material];
+    if (!mat.grain) {
+      mats.forEach(nm => { if (nm.normalMap) { nm.normalMap = null; nm.needsUpdate = true; } });
+      return;
+    }
+    applyBoxUVs(m.geometry, 0.11);                 // finer than a sticker's 0.18: a digit is small
+    const normal = getFondantNormalMap();
+    mats.forEach(nm => {
+      nm.normalMap = normal;
+      nm.normalScale = new THREE.Vector2(1.1, 1.1);
+      nm.needsUpdate = true;
+    });
+    /* ⚠️ REPORTED FROM INSIDE THE EFFECT, not from the render. A render-time read of
+       `textRef.current` runs BEFORE this has applied anything, so it answers "no grain" on the very
+       frame that is about to add it — a probe that cannot see the thing it is probing. Same trap as
+       every other check-after-the-conclusion in this codebase. */
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      window.__ageGrain = { applied: mats.map(nm => !!nm.normalMap), uv: !!m.geometry.attributes.uv };
+    }
+  }, [value, size, mat, age?.finish]);
 
   // Drag on the cake-top plane → snap inside the surface footprint; shared press/drag/tap behaviour.
   const { grabProps } = useDragPlacement({
@@ -70,7 +113,9 @@ export default function AgeNumber({
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     window.__ageTopper = { id: age?.id, value, size,
       offsetX: +(age?.offsetX ?? 0).toFixed(4), offsetZ: +(age?.offsetZ ?? 0).toFixed(4),
-      hasOnMove: typeof onMove === 'function' };
+      hasOnMove: typeof onMove === 'function',
+      material: age?.material ?? 'acrylic',
+      depth: +(size * mat.depth).toFixed(4) };
   }
 
   if (!value) return null;
@@ -108,6 +153,7 @@ export default function AgeNumber({
     <group position={[ox, topY + 0.01, oz]} rotation={[0, yaw, 0]}>
       <Center disableY>
         <Text3D
+          ref={textRef}
           key={`${value}-${age.finish}-${age.material ?? 'acrylic'}`}
           font={helvetikerBold}
           size={size}
@@ -117,7 +163,7 @@ export default function AgeNumber({
           bevelThickness={size * mat.depth * mat.bevel}
           bevelSize={size * mat.depth * mat.bevel * 0.72}
           bevelOffset={0}
-          bevelSegments={6}
+          bevelSegments={mat.bevelSegments}
         >
           {value}
           <meshPhysicalMaterial attach="material-0" {...matProps(fin.face)} />
