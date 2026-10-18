@@ -374,3 +374,53 @@ describe('buildFieldCap', () => {
     expect(buildFieldCap(round, { scale: 0 })).toBeNull();
   });
 });
+
+/* ── The two faults reported after Pitch shipped ────────────────────────────────────────────────
+ * *"it does not have a pointer to popup card. when i click on the grass, it does not open the
+ * popup card"* and *"field size is only changing the grass count. actually it should reduce the
+ * green part along with surrounded grass"*.
+ *
+ * Both are wiring rather than geometry, so they are asserted the way this codebase asserts wiring —
+ * by reading the source, in the absence of a DOM in this test environment. The behaviour itself was
+ * driven in the app: four points on the ring and the field each fire the pick and select the grass,
+ * and the field's green area tracks the dial (14925 → 23553 → 29554 px across its travel).
+ */
+import { readFileSync } from 'node:fs';
+describe('the grass card can be reached by pointing at the grass', () => {
+  const canvas = readFileSync(new URL('../canvas/CakeCanvas.jsx', import.meta.url), 'utf8');
+  const patch  = readFileSync(new URL('../canvas/GrassPatch.jsx', import.meta.url), 'utf8');
+
+  /* ⚠️ FOUR PLACES, and missing one is silent. `onGypClick`'s own note in CakeCanvas records the
+     identical fault: the handler is simply undefined, the tap falls through to whatever is behind
+     the grass, and the selection CLEARS — so it reads as "clicking does nothing" rather than as a
+     missing prop. Build and suite both stay green. */
+  it('is plumbed through every layer, not just the mount', () => {
+    expect(canvas).toMatch(/^\s*onGrassClick,$/m);                 // CakeScene's signature
+    expect(canvas).toMatch(/onGypClick, onGrassClick,/);           // packed into `edit`
+    expect(canvas).toMatch(/onGrassClick=\{onGrassClick\}/);       // forwarded by CakeCanvas
+    expect((canvas.match(/onPick=\{onGrassClick\}/g) ?? []).length).toBe(2);  // tier AND board
+  });
+
+  it('puts the handler on the grass itself and on the field it encloses', () => {
+    expect((patch.match(/onClick=\{onPick \? /g) ?? []).length).toBe(2);
+  });
+});
+
+describe('a pitch ring has an outer edge of its own', () => {
+  const patch = readFileSync(new URL('../canvas/GrassPatch.jsx', import.meta.url), 'utf8');
+
+  /* ⚠️ THIS IS THE DIFFERENCE BETWEEN A PITCH AND A RIM BAND. A band runs from `bandInner` out to
+     the tier's edge, so Field size could only ever change how FAT the grass was — the green was
+     the same size and only the ring grew. Every reference shows the cake's own top OUTSIDE the
+     ring: fondant, then grass, then green. */
+  it('bounds the grass at field + ringWidth rather than at the tier edge', () => {
+    expect(patch).toMatch(/effInset\s*=\s*pitch \? Math\.min\(1, bandInner \+ ringWidth\)/);
+    expect(patch).toMatch(/inset: effInset/);
+  });
+
+  /* Nothing hangs over an edge that is not the cake's — the ring's outer edge is in the middle of
+     the top, where a leaning tuft would be drooping into thin air. */
+  it('refuses overhang on a pitch', () => {
+    expect(patch).toMatch(/effOver\s*=\s*pitch \? 0 : overhang/);
+  });
+});

@@ -15202,8 +15202,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                board into mid-air. Applies to all three top modes — a clump dragged to the rim
                drapes for the same reason a full lawn does. Defaults to 0, so no existing cake
                changes and the drape is something a baker turns on. */
-            { k: 'Over the edge', v: g.overhang ?? 0, min: 0, max: 1, step: 0.05,
-              fmt: v => (v === 0 ? 'none' : `${Math.round(v * 100)}%`), set: v => updateGrass(i, { overhang: v }) },
+            /* ⚠️ ABSENT ON A PITCH, where the ring's outer edge is in the MIDDLE of the top and
+               there is nothing to hang over. Left in, it would lean the outermost tufts into thin
+               air — a control that moves and makes the cake worse, which is the one thing this row
+               has always refused to carry. */
+            ...(g.field ? [] : [
+              { k: 'Over the edge', v: g.overhang ?? 0, min: 0, max: 1, step: 0.05,
+                fmt: v => (v === 0 ? 'none' : `${Math.round(v * 100)}%`), set: v => updateGrass(i, { overhang: v }) },
+            ]),
           ].map(d => (
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step} fmt={d.fmt} onChange={d.set} />
           ))}
@@ -16826,6 +16832,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* Tapping the flowers on the cake opens their card — the thing a band has no handle
                  for, since it has no position of its own. Paired exactly as grass pairs its handle
                  tap: set the selection AND bring the editor forward. */
+              /* Tapping the grass opens its card. Handles exist only in Clumps mode, so a band or
+                 a lawn was the one decoration on the cake that could not be got back to by
+                 pointing at it — reported as *"when i click on the grass, it does not open the
+                 popup card"*. Paired exactly as gypsophila pairs its own: set the selection AND
+                 bring the editor forward. */
+              onGrassClick={() => {
+                setElementsOpen(false);
+                setToolsOpen(false);
+                focusEditor('decoration');
+                selectExclusive({ type: 'grass' });
+              }}
               onGypClick={() => {
                 setElementsOpen(false);
                 setToolsOpen(false);

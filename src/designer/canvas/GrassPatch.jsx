@@ -35,12 +35,28 @@ export default function GrassPatch({
   thickness = GRASS_DEFAULTS.thickness,
   lengthVary = GRASS_DEFAULTS.lengthVary,
   bandInner = null, hole = null, inset = 0.98, overhang = 0, patches = null, patchRadius = null, seed = 7,
-  field = false, fieldColor = null,
+  field = false, fieldColor = null, ringWidth = 0.2,
+  onPick,
   onStats,
 }) {
   /* ⚠️ THE FLAT FIELD INSIDE THE RING. Only ever with a band — a cap under a whole-top patch would
      be buried, and under clumps it would be a disc nobody asked for. Reached by a key (`field`),
      not by a branch on which decoration this is. */
+  /* ⚠️ A PITCH'S RING HAS AN OUTER EDGE OF ITS OWN — and that is the whole difference between
+     this and a rim band. A band runs from `bandInner` out to the tier's edge, so "Field size" only
+     ever changed how FAT the grass was. Every reference of the cricket cake shows the cake's own
+     top outside the ring: white fondant, then a ring of grass, then the green. So the grass gets a
+     width (`ringWidth`) and sits at [field, field + width], with Field size moving the whole
+     assembly inward and outward together — *"it should reduce the green part along with
+     surrounded grass"*.
+     ⚠️ AND NOTHING HANGS OVER AN EDGE THAT IS NOT THE CAKE'S. `overhang` tips the outermost tufts
+     so they drape down the side; in a pitch the outer edge is in the middle of the top, where
+     there is nothing to drape over, so it is forced off rather than left to lean tufts into thin
+     air. The card hides the control in this mode for the same reason. */
+  const pitch = field && bandInner != null;
+  const effInset  = pitch ? Math.min(1, bandInner + ringWidth) : inset;
+  const effOver   = pitch ? 0 : overhang;
+
   /* ⚠️ THE CAP RUNS UNDER THE RING, it does not stop where the ring begins. Cut exactly at
      `bandInner` it left a sliver of bare cake between the green and the innermost tufts: the band
      starts AT that edge, and a tuft seated on it covers the line only where jitter happens to put
@@ -50,22 +66,22 @@ export default function GrassPatch({
      one setting (INVARIANTS #8). */
   const overlap = Math.min(0.12, (spacing * 1.25) / Math.max(0.001, patchRadius || 1));
   const cap = useMemo(
-    () => (field && bandInner != null
-      ? buildFieldCap(shape, { scale: Math.min(1, bandInner + overlap) })
-      : null),
-    [field, bandInner, overlap, shape],
+    () => (pitch ? buildFieldCap(shape, { scale: Math.min(1, bandInner + overlap) }) : null),
+    [pitch, bandInner, overlap, shape],
   );
   const geo = useMemo(
     () => buildGrassTuft({ strands, height, thickness, splay, droop, lengthVary, seed }),
     [strands, height, thickness, splay, droop, lengthVary, seed],
   );
-  const seats = useSurfaceSeats({ shape, spacing, jitter, inset, seed, bandInner, hole, overhang, patches, patchRadius });
+  const seats = useSurfaceSeats({ shape, spacing, jitter, inset: effInset, seed, bandInner, hole,
+                                  overhang: effOver, patches, patchRadius });
 
   /* The field's own terms, published like the other canvas hooks: "no flat green" has three
      possible causes — the mode never reached the config, the cap was not built, or it was built
      and is not visible — and they look identical on screen. */
   if (import.meta.env?.DEV && typeof window !== 'undefined') {
     window.__grassField = { field, bandInner, builtCap: !!cap, topY, seats: seats.length,
+                            hasPick: typeof onPick === 'function',
                             verts: cap?.attributes?.position?.count ?? 0 };
   }
 
@@ -101,12 +117,19 @@ export default function GrassPatch({
            the library. A flat cap is a flat surface and takes the light a flat surface takes, so
            putting the grass correction on it would wash it out by exactly the amount the blades
            needed back (INVARIANTS #16: every reference light is PER SURFACE). */
-        <mesh geometry={cap} position={[0, topY + FLAT_STICKER_Y_OFFSET, 0]} receiveShadow>
+        <mesh geometry={cap} position={[0, topY + FLAT_STICKER_Y_OFFSET, 0]} receiveShadow
+          onClick={onPick ? (e) => { e.stopPropagation(); onPick(); } : undefined}>
           <meshStandardMaterial color={fieldColor ?? color} roughness={0.85} metalness={0} />
         </mesh>
       )}
       {!!seats.length && (
-        <instancedMesh ref={ref} args={[geo, undefined, seats.length]} castShadow receiveShadow>
+        /* ⚠️ TAPPING THE GRASS OPENS ITS CARD, which it could not do until now. Handles only
+           exist in Clumps mode — a band and a whole top have no position of their own to hang one
+           on — so a lawn was the one decoration on the cake you could not get back to by pointing
+           at it. Gypsophila already carries `onPick` for exactly this case, and its note says it is
+           "the thing a band has no handle for"; grass simply never got the same treatment. */
+        <instancedMesh ref={ref} args={[geo, undefined, seats.length]} castShadow receiveShadow
+          onClick={onPick ? (e) => { e.stopPropagation(); onPick(); } : undefined}>
           {/* Flat-ish and slightly waxy, like coloured buttercream — a shiny blade reads as plastic. */}
           <meshStandardMaterial color={albedoForLight(color, GRASS_REFERENCE_LIGHT, { rolloff: GRASS_ROLLOFF })} roughness={0.72} metalness={0} />
         </instancedMesh>

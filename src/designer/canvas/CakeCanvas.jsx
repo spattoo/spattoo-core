@@ -3396,6 +3396,7 @@ function CakeScene({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   onGypClick,
+  onGrassClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -3671,7 +3672,7 @@ function CakeScene({
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
-          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick, onGrassClick,
         }}
       />
       </group>
@@ -3979,6 +3980,9 @@ function CakeContent({ config, scene, edit = null }) {
        build and a green suite. The comment two blocks up records the identical fault for
        onCloudClick, which is how I knew where to look. */
     onGypClick,
+    // Same deal, and for the same reason the note above gives: read HERE or it is undefined at
+    // runtime past a green build. Grass is drawn by the shared renderer too.
+    onGrassClick,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -4022,6 +4026,7 @@ function CakeContent({ config, scene, edit = null }) {
       {boardGrass && board && (
         <GrassPatch
           {...boardGrass}
+          onPick={onGrassClick}
           shape={board}
           topY={0.1}
           patchRadius={board.radius}
@@ -4113,6 +4118,7 @@ function CakeContent({ config, scene, edit = null }) {
               shape={tierShape(tier)}
               topY={tier.baseY + tier.height}
               patchRadius={tier.radius}
+              onPick={onGrassClick}
               {...tier.grass}
             />
           )}
@@ -5131,6 +5137,11 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   onGypClick,
+  // ⚠️ FOUR PLACES, as the onGypClick note two hundred lines down records: this signature, the
+  // `edit` object it is packed into, the inner renderer that unpacks it, and the mounts. Added to
+  // one of them, the handler is simply undefined and the tap falls through to whatever is behind
+  // the grass — which deselects, so it looks like the click "does nothing".
+  onGrassClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
@@ -5334,6 +5345,7 @@ export default function CakeCanvas({
         onGypMove={onGypMove}
         onGypSelect={onGypSelect}
         onGypClick={onGypClick}
+        onGrassClick={onGrassClick}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
