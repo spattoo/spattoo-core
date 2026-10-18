@@ -279,8 +279,16 @@ export function edgeSeatSeed(placementConfig, shp, mode) {
   // crash when a fondant doll was perched on a heart cake. Round cakes never showed it because
   // they have the field the branch assumed everything had.
   const edge = shapeReach(shp, { x: 0, z: 1 });
+  /* ⚠️ A `hang` SEAT DEFAULTS TO NO LEAN, because the 35° default is a statement about a DIFFERENT
+     anchor. `center` rests the mid-spine on the lip and reclines the body out over the edge — that
+     is what a butterfly or a flower does, and 35° is its calibrated recline. A `hang` piece is TIED
+     at the rim with the body falling down the OUTSIDE, pivoting at its top: the same 35° swings the
+     tails out through the air instead, clear of the wall they are supposed to lie against. Over the
+     satin bow's 1.12 of height even 13.5° lifts them 0.26 off the wall, which is what was reported.
+     So a row that authors `hang` and says nothing about lean gets a ribbon that hangs straight
+     down, and `angle_deg` stays available for one that should kick out. */
   const tiltAngle = isVerge
-    ? (cfg.angle_deg ?? DEFAULT_VERGE_ANGLE_DEG) * Math.PI / 180
+    ? (cfg.angle_deg ?? (cfg.seat === 'hang' ? 0 : DEFAULT_VERGE_ANGLE_DEG)) * Math.PI / 180
     : (cfg.tilt_deg ?? 0) * Math.PI / 180;
   return { x: 0, z: edge - (cfg.edge_inset ?? 0), tiltAngle, yOffset: cfg.y_offset ?? 0 };
 }
@@ -342,7 +350,18 @@ export function wallClampY(y, baseY, wallHeight, down, up = down) {
 // (single_per_slot) hugging a surface. Scattered decor (NOT single_per_slot) keeps its own r
 // so many small stickers don't each balloon to wall height. Config/mode-driven, never by type.
 export function isDynamicHug(sticker) {
-  return sticker?.singlePerSlot === true && sticker?.placementMode === PLACEMENT_MODES.HUG;
+  /* ⚠️ A WALL STATEMENT, AND IT NEVER CHECKED THE WALL. This says "size yourself from the tier's
+     WALL HEIGHT" — `hugScale(height, …)`, read in exactly one place, inside DraggableSideSticker.
+     Without the zone test a single-per-slot piece hugging the TOP SURFACE matched too, so it was
+     handed the `hugMul` dial (a wall-relative multiplier, capped at 3) while the top path renders
+     from `scale` and never reads `hugMul`. The dial moved, the number changed, the picture did not:
+     *"i cant resize image on heart size cake"* — nothing to do with the heart, everything to do
+     with TOP HUGGING. The cake shape was a coincidence of which cake it was tried on.
+     ⚠️ NOTHING MOVES ON SCREEN FROM THIS. A top hug was already being RENDERED from `scale`; this
+     only stops the control from writing somewhere else. */
+  return sticker?.singlePerSlot === true
+      && sticker?.placementMode === PLACEMENT_MODES.HUG
+      && (sticker?.zone === ZONES.SIDE || sticker?.zone === ZONES.MIDDLE_TIER);
 }
 
 // The SizeDial's absolute-scale range for an element, from config — never branched on type.

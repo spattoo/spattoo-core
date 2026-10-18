@@ -4,6 +4,7 @@ import { createPortal } from 'react-dom';
 import { ErrorBoundary } from '../telemetry/ErrorBoundary.jsx';
 import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
+import { BUILD } from './buildId.js';
 import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
          brushGestureFromDrag } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
@@ -163,7 +164,7 @@ import { BOARD_TIER } from './canvas/FinishHandles.jsx';
 import { finishToMaterial, finishOf } from './geometry/finish.js';
 import { SHELL_HEIGHT_FRAC, getShellExtents, getShellSizeCap, shellSizeCapKeys, getFestoonExtents, festoonSig, resolveSidePipingBands, sidePipingClearance } from './canvas/pipingMetrics.js';
 import { pipingAllowedArrangements, pipingDefaultArrangement, pipingPlacementFromConfig, makePipingLayer, pipingScaleFor, occupiesRimBand } from './piping/pipingLayer.js';
-import { useCakeDesign, normalizeDesign } from './hooks/useCakeDesign';
+import { useCakeDesign, normalizeDesign, tierShapeAt } from './hooks/useCakeDesign';
 import { useDesignSession } from './hooks/useDesignSession';
 import SessionPanel from './SessionPanel.jsx';
 import { captureThumbnailBlob, uploadThumbnail, captureAndUploadThumbnail, previewPosition } from './utils/thumbnail.js';
@@ -195,6 +196,7 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
+import { AGE_MATERIAL_KEYS, AGE_FINISH_COLORS, AGE_MATERIALS } from './canvas/AgeNumber.jsx';
 import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS, cutAssembly } from './geometry/acrylicConfig.js';
 import { writingScaleFrom, writingMaxFit } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
@@ -984,6 +986,197 @@ function TiltRow({ tiltAngle, rollAngle, onChange }) {
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', gap: 4 }}>
       <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Tilt</span>
       {leanArrows(ta, ra, onChange)}
+    </div>
+  );
+}
+
+/* ── Free-hand move: the three-axis gizmo, drawn isometrically and DRAGGED ──────────────────────
+ *
+ * Blender's move gizmo: three arms from one origin with a cube on each tip, in isometric, with the
+ * faint guide lines that show the planes. Sandeep sent the picture — *"something like this on the
+ * popup card"* — after two attempts that were not it.
+ *
+ * ⚠️ A DRAG, NOT A STEPPER. The first version was arrow buttons nudging 0.02: *"i have to click so
+ * many times to achive anything."* Fifty presses to cross a cake. A drag gives coarse and fine in
+ * one gesture — travel far by moving far — which is the whole point of a gizmo.
+ * ⚠️ IN THE CARD, NOT THE SCENE. Drawn on the cake, the handles sat on top of the decoration and
+ * pressing one started the piece's own drag too, overwriting the gizmo in the same frame. Here
+ * there is nothing to fight.
+ * ⚠️ COLOUR BY DIRECTION, NOT BY LETTER, and no X/Y/Z captions. The picture's blue arm is up
+ * because Blender's up is Z; ours is Y, so keeping the letters would have meant either a green
+ * vertical (right for our axes, wrong against the reference) or calling our up-axis Z (wrong
+ * outright). A baker is placing a bow, not reading a coordinate system — three coloured arms you
+ * grab is the whole interface, and the tooltip says what each one does in words.
+ * ⚠️ ONE ARM, ONE AXIS. A free 2D pad would couple two of them and make a deliberate single-axis
+ * adjustment — "out from the wall, nothing else" — impossible without undoing it.
+ */
+const GIZMO_ARMS = [
+  { key: 'y', colour: '#4f6fd0', lit: '#7f99e4', dir: [0, -1],        len: 38, title: 'Up / down' },
+  { key: 'x', colour: '#5a9e5a', lit: '#88c288', dir: [0.94, -0.16],  len: 36, title: 'Left / right' },
+  { key: 'z', colour: '#c05f5f', lit: '#dc9090', dir: [0.46, 0.60],   len: 30, title: 'Forward / back' },
+];
+// Screen pixels per world unit while dragging. A cake is ~2.4 across, so one 380px sweep crosses it
+// — comfortable on a phone, and fine enough at the slow end to land a bow on a rim.
+const MOVE_PX_PER_UNIT = 160;
+const GZ = 52;                                   // widget half-size
+
+// A cube on the tip, the way the reference draws it: top face lit, front face body, side darker.
+function AxisCube({ x, y, colour, lit }) {
+  const h = 5.5, d = 3.2;
+  return (
+    <g>
+      <polygon points={`${x-h},${y-h} ${x},${y-h-d} ${x+h},${y-h} ${x},${y-h+d}`} fill={lit} />
+      <polygon points={`${x-h},${y-h} ${x-h},${y+h-d} ${x},${y+h} ${x},${y-h+d}`} fill={colour} />
+      <polygon points={`${x+h},${y-h} ${x+h},${y+h-d} ${x},${y+h} ${x},${y-h+d}`} fill={colour} opacity={0.72} />
+    </g>
+  );
+}
+
+/* ── Turn: the same gizmo, rotating instead of moving ───────────────────────────────────────────
+ *
+ * ⚠️ ROTATION HAD NO THIRD AXIS. The card's Tilt arrows drive `tiltAngle` (lean) and `rollAngle`
+ * (roll); nothing drove `rotation`, the SPIN about the vertical — so a bow could be leaned and
+ * rolled but never turned clockwise. Sandeep: *"i cannot turn it clcokwise or anti clockwise… can
+ * we use the gizmo rotate the bow?"* It is the right home: the piece is already placed by hand, and
+ * the same three colours now answer both questions.
+ * ⚠️ RINGS, GRABBED AND SWIRLED, which is what Blender does and what the shape suggests. The angle
+ * is taken around the widget's CENTRE, so a drag anywhere on a ring turns it — no need to stay on
+ * a 2px stroke with a thumb.
+ * ⚠️ `rotation` IS ADDITIVE ON TOP OF THE AUTO YAW (`surfaceYaw` = radial + rotation), so a verge
+ * piece keeps facing outward as it is dragged round the rim AND honours a spin the baker set. The
+ * two are not in competition, which is why this can be offered on every pose rather than gated.
+ */
+const TURN_AXES = [
+  { key: 'rotation',  colour: '#4f6fd0', lit: '#7f99e4', rot: 0,   ry: 0.34, title: 'Turn clockwise / anticlockwise' },
+  { key: 'tiltAngle', colour: '#5a9e5a', lit: '#88c288', rot: 68,  ry: 0.34, title: 'Lean forward / back' },
+  { key: 'rollAngle', colour: '#c05f5f', lit: '#dc9090', rot: -68, ry: 0.34, title: 'Roll left / right' },
+];
+const DEG = Math.PI / 180;
+
+function MoveGizmo({ freePos, onChange, angles, onAngles }) {
+  const live = useRef(freePos ?? { x: 0, y: 0, z: 0 });
+  useEffect(() => { live.current = freePos ?? { x: 0, y: 0, z: 0 }; }, [freePos]);
+  const liveA = useRef(angles ?? {});
+  useEffect(() => { liveA.current = angles ?? {}; }, [angles]);
+  const drag = useRef(null);
+  const [held, setHeld] = useState(null);
+  const [mode, setMode] = useState('move');
+  const svgRef = useRef(null);
+
+  // A ring is swirled: the angle is taken around the widget's centre, so the whole disc is the grab.
+  const angleAt = (e) => {
+    const r = svgRef.current?.getBoundingClientRect();
+    if (!r) return 0;
+    return Math.atan2(e.clientY - (r.y + r.height / 2), e.clientX - (r.x + r.width / 2));
+  };
+  const onTurnDown = (e, axis) => {
+    e.preventDefault(); e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    drag.current = { turn: axis, a0: angleAt(e), from: liveA.current[axis.key] ?? 0 };
+    setHeld(axis.key);
+  };
+  const onTurnMove = (e) => {
+    const g = drag.current; if (!g?.turn) return;
+    e.preventDefault(); e.stopPropagation();
+    let d = angleAt(e) - g.a0;
+    while (d >  Math.PI) d -= 2 * Math.PI;      // shortest way round, so a swirl past 180° does not flip
+    while (d < -Math.PI) d += 2 * Math.PI;
+    onAngles({ [g.turn.key]: +(g.from + d).toFixed(4) });
+  };
+
+  const onDown = (e, arm) => {
+    e.preventDefault(); e.stopPropagation();
+    try { e.currentTarget.setPointerCapture(e.pointerId); } catch (_) {}
+    drag.current = { arm, cx: e.clientX, cy: e.clientY, from: live.current[arm.key] ?? 0 };
+    setHeld(arm.key);
+  };
+  const onMoveEvt = (e) => {
+    const g = drag.current; if (!g) return;
+    e.preventDefault(); e.stopPropagation();
+    const along = ((e.clientX - g.cx) * g.arm.dir[0] + (e.clientY - g.cy) * g.arm.dir[1]) / MOVE_PX_PER_UNIT;
+    /* No per-axis sign fix needed: each arm's `dir` already points the way the WORLD axis grows, so
+       the projection carries the sense. The vertical arm is [0, -1] because SVG's +y is down, which
+       is what makes dragging up increase world Y. */
+    onChange({ [g.arm.key]: +(g.from + along).toFixed(4) });
+  };
+  const onUp = (e) => {
+    if (!drag.current) return;
+    drag.current = null; setHeld(null);
+    try { e.currentTarget.releasePointerCapture(e.pointerId); } catch (_) {}
+  };
+  const tab = (k, label) => (
+    <button type="button" key={k} onClick={() => setMode(k)}
+      style={{ fontSize: 9, fontWeight: 800, letterSpacing: 0.4, textTransform: 'uppercase',
+               padding: '2px 7px', borderRadius: 7, cursor: 'pointer',
+               border: `1.5px solid ${mode === k ? '#2C4433' : '#d8cfd2'}`,
+               background: mode === k ? '#2C4433' : '#fff', color: mode === k ? '#fff' : '#8d7f85' }}>
+      {label}
+    </button>
+  );
+
+  const tip = a => [GZ + a.dir[0] * a.len, GZ + a.dir[1] * a.len];
+  const deg = v => `${Math.round((v ?? 0) / DEG)}°`;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, alignItems: 'center' }}>
+      <div style={{ display: 'flex', gap: 4 }}>{tab('move', 'Move')}{tab('turn', 'Turn')}</div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      {mode === 'turn' ? (
+        <svg ref={svgRef} width={GZ * 2} height={GZ * 2} style={{ touchAction: 'none', flexShrink: 0 }}>
+          <circle cx={GZ} cy={GZ} r={3.5} fill="#8d7f85" />
+          {TURN_AXES.map(a => (
+            <g key={a.key} style={{ cursor: 'grab' }}
+               onPointerDown={e => onTurnDown(e, a)} onPointerMove={onTurnMove}
+               onPointerUp={onUp} onPointerCancel={onUp}>
+              <title>{`${a.title} — drag round`}</title>
+              <ellipse cx={GZ} cy={GZ} rx={36} ry={36 * a.ry}
+                       transform={`rotate(${a.rot} ${GZ} ${GZ})`}
+                       fill="none" stroke={a.colour} strokeWidth={held === a.key ? 4 : 2.6} />
+              {/* The ring itself is a 3px stroke; this is the thumb-sized grab. */}
+              <ellipse cx={GZ} cy={GZ} rx={36} ry={36 * a.ry}
+                       transform={`rotate(${a.rot} ${GZ} ${GZ})`}
+                       fill="none" stroke="transparent" strokeWidth={16} />
+            </g>
+          ))}
+        </svg>
+      ) : (
+      <svg ref={svgRef} width={GZ * 2} height={GZ * 2} style={{ touchAction: 'none', flexShrink: 0 }}>
+        {/* The faint plane guides the reference draws between the arms. */}
+        {GIZMO_ARMS.map((a, i) => {
+          const b = GIZMO_ARMS[(i + 1) % GIZMO_ARMS.length];
+          const [ax, ay] = tip(a), [bx, by] = tip(b);
+          return <line key={`g${a.key}`} x1={ax} y1={ay} x2={bx} y2={by}
+                       stroke={a.colour} strokeWidth={0.7} opacity={0.35} />;
+        })}
+        <ellipse cx={GZ} cy={GZ} rx={7} ry={3.4} fill="#6b7a99" opacity={0.75} />
+        {GIZMO_ARMS.map(a => {
+          const [ex, ey] = tip(a);
+          const on = held === a.key;
+          return (
+            <g key={a.key} style={{ cursor: 'grab' }}
+               onPointerDown={e => onDown(e, a)} onPointerMove={onMoveEvt}
+               onPointerUp={onUp} onPointerCancel={onUp}>
+              <title>{`${a.title} — drag`}</title>
+              <line x1={GZ} y1={GZ} x2={ex} y2={ey} stroke={a.colour}
+                    strokeWidth={on ? 4 : 2.6} strokeLinecap="round" />
+              <AxisCube x={ex} y={ey} colour={a.colour} lit={on ? '#ffffff' : a.lit} />
+              {/* A generous invisible target: the drawn cube is 11px and a thumb is not. */}
+              <circle cx={ex} cy={ey} r={16} fill="transparent" />
+            </g>
+          );
+        })}
+      </svg>
+      )}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+        {(mode === 'turn' ? TURN_AXES : GIZMO_ARMS).map(a => (
+          <div key={a.key} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: a.colour }} />
+            <span style={{ fontSize: 11, fontWeight: 700, color: '#5a4a50', minWidth: 36, textAlign: 'right' }}>
+              {mode === 'turn' ? deg((angles ?? {})[a.key]) : ((freePos ?? {})[a.key] ?? 0).toFixed(2)}
+            </span>
+          </div>
+        ))}
+      </div>
+      </div>
     </div>
   );
 }
@@ -3380,6 +3573,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // is most of why it was not obvious from production. Keep derivations next to what they derive.
   const selectedWritingId = selectedEl?.type === 'writing' ? (selectedEl.id ?? null) : null;
   const selectedAge     = design.ages.find(a => a.id === selectedAgeId) ?? null;
+  /* What colour the number IS. `finish` is only the preset last tapped; the wheel writes `color`
+     and leaves it behind, so every reader asks this and never `finish`. */
+  const ageColour       = selectedAge?.color ?? AGE_FINISH_COLORS[selectedAge?.finish ?? 'gold'];
+  const ageMat          = AGE_MATERIALS[selectedAge?.material] ?? AGE_MATERIALS.acrylic;
+  /* Clamped the same way the renderer clamps it, so the slider's handle never sits somewhere the
+     number is not actually built — the control and the thing agree or the control is lying. */
+  const ageThickness    = Math.min(ageMat.depthMax,
+                            Math.max(ageMat.depthMin, selectedAge?.slab ?? ageMat.depth));
   const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
   // For a selected `hue_regions` sticker, derive its colour regions (from the image) once — the toolbar
   // feeds them into the shared "Customise colours" swatches (one per region). No-op for other elements.
@@ -7886,7 +8087,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (members.length) {
       const seed = [...members].sort((a, b) => a.id - b.id)[0];
       const start = startPositions[seed.id];
-      const shp = tierShape(design.tiers[seed.tierIndex ?? 0] ?? design.tiers[0]);
+      const shp = tierShapeAt(design.tiers, seed.tierIndex ?? 0);
       if (start && shp.kind !== 'rect') {
         const seedR = (seed.scale ?? 1) * CLUSTER_BASE_R;
         // A TOP/rim cluster locks to a ring just inside the rim; a SIDE cluster locks to the wall ring
@@ -11136,7 +11337,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // (updateSticker) lands identically to the add path. Non-edge rim modes get a bare edge point.
       let pos;
       if (slot.zone === ZONES.RIM) {
-        const shp = tierShape(design.tiers[slot.tierIndex] ?? design.tiers[0]);
+        const shp = tierShapeAt(design.tiers, slot.tierIndex);
         const seed = edgeSeatSeed(pc, shp, mode);
         pos = seed
           ? { x: seed.x, z: seed.z, tiltAngle: seed.tiltAngle, yOffset: seed.yOffset }
@@ -12051,6 +12252,30 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // row to ride in. When the Size row took them, pushing here would show Tilt twice.
     if (tiltCtls.length && !tiltInSizeRow) {
       groups.push({ key: 'ta', divider: true, panelLabel: 'Tilt', controls: tiltCtls });
+    }
+
+    /* ── Free hand ───────────────────────────────────────────────────────────────────────────
+       Its own group, because it is a whole position rather than a modifier on one.
+       ⚠️ BUILT HERE AND NOT IN `PlacementChooser`, where it went first and never rendered: that
+       component's `slot.sticker` is `!instance ? find(...) : null`, so it is null for exactly the
+       case this control is for — a selected instance. The Tilt row beside it comes from here for
+       the same reason, which is the clue the first attempt missed. */
+    if (el.type === 'sticker') {
+      const fh = design.stickers.find(stkr => stkr.id === el.id);
+      if (fh?.freeHand === true) {
+        groups.push({
+          // "Place", not "Move" — the widget's own tabs are MOVE and TURN, and a group label
+          // reading Move beside a Move tab says the tab is the group's name rather than a choice.
+          key: 'freehand', divider: true, panelLabel: 'Place',
+          controls: [<MoveGizmo key="fh" freePos={fh.freePos}
+                              onChange={patch => updateSticker(el.id,
+                                { freePos: { ...(fh.freePos ?? { x: 0, y: 0, z: 0 }), ...patch } })}
+                              angles={{ rotation: fh.rotation ?? 0,
+                                        tiltAngle: fh.tiltAngle ?? 0,
+                                        rollAngle: fh.rollAngle ?? 0 }}
+                              onAngles={patch => updateSticker(el.id, patch)} />],
+        });
+      }
     }
 
     /* ── On a stick ──────────────────────────────────────────────────────────────────────────
@@ -16959,13 +17184,57 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <SizeDial size={selectedAge.size ?? 0.95} min={0.4} max={2} step={0.05} onChange={v => updateAge(selectedAge.id, { size: v })} />
                   <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Size</span>
                 </div>
+                {/* ⚠️ MATERIAL ABOVE FINISH, because it is the bigger question: acrylic or fondant
+                    decides what the thing IS, and the finish only colours it. It also carries the
+                    THICKNESS — a laser-cut acrylic sheet is thin with a mirror edge, hand-cut
+                    fondant is chunkier and matte — so there is no separate depth control to get
+                    out of step with the look. */}
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>MATERIAL</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {AGE_MATERIAL_KEYS.map(m => (
+                      <button key={m} onClick={() => updateAge(selectedAge.id, { material: m })}
+                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.material ?? 'acrylic') === m ? '#b8860b' : '#ddd'}`, background: (selectedAge.material ?? 'acrylic') === m ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{m}</button>
+                    ))}
+                  </div>
+                </div>
+                {/* ⚠️ BOUNDED BY THE MATERIAL, which is what lets this exist at all. Sandeep asked
+                    to *"reduce the thickness, or let user control it"*; a free slider would build a
+                    3mm mirror slab in fondant or a 2cm acrylic block, so the range comes from the
+                    material and only the position inside it is his. Switching material re-clamps.
+                    ⚠️ NO MILLIMETRES ON THE LABEL — the designer has no world-to-cm scale anywhere,
+                    so a figure in mm would be invented at the point of display. */}
+                <div>
+                  <Slider label="Thickness" min={ageMat.depthMin} max={ageMat.depthMax} step={0.005}
+                          value={ageThickness}
+                          fmt={v => `${Math.round((v - ageMat.depthMin) / (ageMat.depthMax - ageMat.depthMin) * 100)}%`}
+                          onChange={v => updateAge(selectedAge.id, { slab: v })} />
+                </div>
+                {/* ⚠️ THE WHEEL, NOT A ROW OF SWATCHES. `ColorWheel` is THE colour control a customer
+                    picks with anywhere in this app (root CLAUDE.md rule 1), and a number topper had
+                    only two hard-coded choices — fine for an acrylic order, useless for fondant,
+                    which is tinted to match the cake. Gold and Silver stay as one-tap presets
+                    beside it; both write the same `color` field, so there is no "custom" mode to
+                    fall out of step. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <ColorWheel color={ageColour} onChange={c => updateAge(selectedAge.id, { color: c })} />
+                  <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Colour</span>
+                </div>
+                {/* ⚠️ LIT BY THE COLOUR, NOT BY `finish`. Both these buttons and the wheel write the
+                    same `color`, so `finish` only records which preset was last TAPPED — it stays
+                    'gold' forever once tapped, and the row went on showing Gold selected under a
+                    teal number. The same discriminator the foil FINISH row uses: ask what the
+                    thing IS now, never what the last tap was. */}
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>FINISH</div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {['gold', 'silver'].map(f => (
-                      <button key={f} onClick={() => updateAge(selectedAge.id, { finish: f })}
-                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.finish ?? 'gold') === f ? '#b8860b' : '#ddd'}`, background: (selectedAge.finish ?? 'gold') === f ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{f}</button>
-                    ))}
+                    {['gold', 'silver'].map(f => {
+                      const on = ageColour.toLowerCase() === AGE_FINISH_COLORS[f].toLowerCase();
+                      return (
+                      <button key={f} onClick={() => updateAge(selectedAge.id, { finish: f, color: AGE_FINISH_COLORS[f] })}
+                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${on ? '#b8860b' : '#ddd'}`, background: on ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{f}</button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
@@ -20864,10 +21133,20 @@ const s = {
 
 // Wrap the designer in a reporting error boundary so a render crash surfaces to
 // telemetry (with baker context) and shows a fallback instead of white-screening.
+/* ⚠️ THE RUNNING BUILD, NAMED WHERE ANYONE CAN READ IT. `BUILD.version` has existed since the
+   renderer-floor work and was exposed nowhere, so neither a baker nor whoever is helping them could
+   answer "is the fix you just shipped actually in the thing I am looking at?". Five releases in one
+   day were each followed by a re-test with no way to confirm the bundle had changed, and at least
+   one "still not working" is indistinguishable from "still on the old build" without it.
+   `window.__spattooCore` in the console, and a `data-` attribute for anyone reading the DOM. One
+   line, no UI, and it ends a whole class of wasted round trip. */
 export default function CakeDesigner(props) {
+  if (typeof window !== 'undefined') window.__spattooCore = BUILD.version;
   return (
     <ErrorBoundary screen="CakeDesigner">
-      <CakeDesignerInner {...props} />
+      <div data-spattoo-core={BUILD.version} style={{ display: 'contents' }}>
+        <CakeDesignerInner {...props} />
+      </div>
     </ErrorBoundary>
   );
 }

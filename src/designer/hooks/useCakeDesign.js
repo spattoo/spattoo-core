@@ -39,6 +39,35 @@ export { TIER_RADII };   // re-export so existing imports from this file keep wo
 export function tierRadius(t, i) {
   return t?.radius ?? TIER_RADII[i] ?? 0.35;
 }
+
+/* ── The shape of tier i, with its REAL width resolved ───────────────────────────────────────────
+ *
+ * ⚠️ `tierShape(designTier)` IS WRONG FOR EVERY TIER BUT THE BOTTOM, and it is wrong silently.
+ * Its round branch ends `radius: tier.radius ?? 1.2` — a flat constant — while the stack's widths
+ * are POSITIONAL, `TIER_RADII = [1.2, 0.9, 0.65, 0.45]`. The two fallbacks agree only at index 0,
+ * so on a design tier carrying no radius of its own (which is most of them — see tierRadius above)
+ * every upper tier is measured as the bottom one.
+ *
+ * What that cost: a fondant doll perched on the TOP tier of a two-tier cake was seeded at
+ * z = 1.2 − edge_inset = 1.15 against a real rim of 0.9, landing 0.25 OUTSIDE the wall with nothing
+ * under her. Sandeep: *"fondant doll - is handing in the air."* Worse, the rim DRAG rail is built
+ * the same way, so she could not be dragged back on either — the track itself was off the cake, and
+ * *"let the user set the position"* cannot work while the rail is in the wrong place.
+ *
+ * `seededScale` in addSticker already did this correctly and said why — *"a design tier carries no
+ * width of its own"* — but it was an inline `{ ...t, radius: tierRadius(t, i) }` at one call site
+ * rather than a shared accessor, so the four sites that needed the same resolution did not get it.
+ * This is that accessor: ONE place that knows how, next to the function that knows the widths. */
+export function tierShapeAt(tiers, i) {
+  /* ⚠️ THE INDEX AND THE TIER MUST AGREE. Falling back to tier 0's object while keeping the asked-for
+     index would read TIER_RADII[9] — undefined — and resolve to the 0.35 floor, a width no tier in
+     the stack has. Caught by its own test. The callers' old expression (`tiers[i] ?? tiers[0]`) has
+     the same fallback, so resolving the index first keeps that behaviour and makes the width match
+     the tier actually used. */
+  const idx = tiers?.[i ?? 0] ? (i ?? 0) : 0;
+  const t = tiers?.[idx];
+  return tierShape(t ? { ...t, radius: tierRadius(t, idx) } : t);
+}
 // Frosting types now live in the frostings registry; re-export so existing importers
 // (FrostingPicker, admin CreateTemplate) keep resolving them from here.
 export { FROSTING_TYPES };
@@ -1064,6 +1093,10 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         value:     '1',
         font:      DEFAULT_AGE_FONT,
         size:      0.95,
+        // ⚠️ DEAD SINCE THE TUBE SWEEP WAS REPLACED BY Text3D, and kept only because it is in every
+        // saved design. Nothing reads it. The slab depth a baker controls is `slab` (a fraction of
+        // the digit height, clamped to the material's range) — see AGE_MATERIALS. Do not reuse this
+        // name for it: a fresh age would start at 0.085 and so would every cake already saved.
         thickness: 0.085,
         finish:    'gold',
         offsetX:   0,
@@ -1138,7 +1171,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       if (!exact && placementMode === PLACEMENT_MODES.STAND && zone === ZONES.TOP_SURFACE) {
         // De-overlap off coincident stand siblings so both toppers have separate, selectable centres
         // (drag-time collision handles the rest). Shared rule — see deOverlapSeat.
-        const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+        const shp = tierShapeAt(prev.tiers, tierIndex ?? 0);
         const siblings = prev.stickers.filter(
           s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && s.placementMode === PLACEMENT_MODES.STAND
         );
@@ -1149,7 +1182,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
         // the centre a perch would bury the figure / a verge would have nothing to lean over. Seed via
         // the shared helper, then nudge off a coincident same-mode sibling. The customer drags it
         // around the rim afterwards.
-        const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+        const shp = tierShapeAt(prev.tiers, tierIndex ?? 0);
         const seed = edgeSeatSeed(element.placement_config, shp, placementMode);
         px = seed.x;
         pz = seed.z;
@@ -1187,7 +1220,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           ({ theta: seatTheta } = deOverlapSeat(null, zone, { theta: seatTheta, y: seatY }, siblings));
         } else if (zone === ZONES.TOP_SURFACE) {
           // Flat-on-top decals: cartesian nudge, kept inside the tier (shared rule).
-          const shp = tierShape(prev.tiers[tierIndex ?? 0] ?? prev.tiers[0]);
+          const shp = tierShapeAt(prev.tiers, tierIndex ?? 0);
           const siblings = prev.stickers.filter(
             s => s.zone === ZONES.TOP_SURFACE && s.tierIndex === (tierIndex ?? 0) && isScatterSib(s)
           );
@@ -1257,6 +1290,59 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // the rim edge so the body drapes over the lip; 'base' seats the body base on the surface.
           // Read by the render's isVergeBase branch; null/absent → centre.
           vergeSeat:     element.placement_config?.verge?.seat ?? null,
+          /* Perch seat anchor (placement_config.perch.seat), the same choice verge has had and the
+             one perch was missing: 'center' (default) straddles the edge with the body's MIDDLE on
+             the rim line; 'base' rests the body's BASE on the rim so it stands on the edge.
+             ⚠️ A FIGURE HAS NO MIDDLE TO BALANCE ON. Centre-seat is right for a thing that drapes
+             or straddles — a ribbon, a folded card — and wrong for anything that stands: it buries
+             the lower half below the rim plane, and at the edge that half is outside the wall, so
+             a fondant doll hung in mid-air beside the cake. Sandeep: *"fondant doll - is handing in
+             the air. i want this to sit on the rim."*
+             Read by the render's isPerchBase branch; null/absent → centre, so the catalogue does
+             not move. */
+          perchSeat:     element.placement_config?.perch?.seat ?? null,
+          /* Where ALONG the model the rim line touches it, as a fraction of its height measured
+             from the TOP: 0 = the top (what `hang` means), 0.5 = the middle (`center`), 1 = the
+             base. `placement_config.verge.anchor`.
+             ⚠️ A FRACTION, NOT A NUDGE, AND THAT IS THE WHOLE POINT. The contact point on a satin
+             bow is the centre of its KNOT, which the model puts at 0.10 of its height from the top
+             — not at the very top, so `hang` alone hangs the whole bow below the rim. Sandeep:
+             *"the center of the folded part of the bow should be on the edge."* The same
+             correction in `y_offset` would be 0.106 at size 4 and 0.24 at size 9, and this bow's
+             dial spans 1.6 to 9, so a nudge is right at exactly one size. A fraction is right at
+             every size, because it is a statement about the MODEL rather than about the world. */
+          /* Where ALONG the model the rim line touches it, as a fraction of its height from the
+             TOP — on EITHER edge mode, because the question is the same one. 0 = the top (what a
+             verge `hang` means), 0.5 = the middle (`center`), 1 = the base.
+             ⚠️ A FIGURE'S CONTACT POINT IS NOT ALWAYS ITS FEET. The catalogue doll is modelled
+             SITTING: she belongs on the rim with her legs hanging down the outside, so the point
+             that touches is her SEAT, somewhere mid-body, and her lowest geometry should rest on
+             nothing at all. Sandeep: *"doll is in sitting position. she needs to sit on the cake
+             rim, legs hanging below."* Neither `base` (lowest point on the surface) nor the
+             measured foot seat can express that; a fraction can, and it holds at every size. */
+          edgeAnchor:    element.placement_config?.perch?.anchor
+                      ?? element.placement_config?.verge?.anchor ?? null,
+          /* Whether an edge-seated figure stands on its MEASURED feet rather than on its box
+             centre — `perch.foot` / `verge.foot`. Absent (the default) measures; `false` keeps the
+             box centre; a NUMBER overrides the measurement, as a fraction of the model's half-depth
+             (+ = toward the model's front).
+             ⚠️ MEASURED BY DEFAULT ON PURPOSE. Sandeep: *"there could be more dolls in future with
+             different dimentions, does this logic work for them too?"* — a per-model number only
+             works while somebody remembers to type it, and this row already carried three stale
+             hand-cranks that nobody updated. The override exists for a model the measurement reads
+             wrongly, not as the way the feature is normally used. */
+          /* ⚠️ THE ESCAPE HATCH FROM AUTOMATIC SEATING, and it is deliberate rather than a defeat.
+             Where a piece belongs on a rim turned out not to be derivable: a bow is tied at its
+             knot, a doll sits on her seat with her legs hanging, and a flat ribbon on a round wall
+             lifts at its edges no matter where its anchor is. Sandeep: *"lets give a free hand
+             moment to the user for this now. user can move it anywhere he wants."* With this on,
+             the rim lock is released, the automatic stand-off stands down, and the card offers
+             direct X / height / depth nudges — what the baker sets is where it goes.
+             Authored per row (`placement_config.free_hand`), because most decorations should keep
+             being seated for them. */
+          freeHand:      element.placement_config?.free_hand === true,
+          footSeat:      element.placement_config?.perch?.foot
+                      ?? element.placement_config?.verge?.foot ?? null,
           // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card
           // butterfly's wings). Present → the renderer recolours those pixels to `color` (driven by
           // the same ColorWheel/allowed_actions.color as GLB tint). Absent → image renders as-is.
@@ -1613,7 +1699,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
       // The copy starts ON the original, then de-overlaps off it (and any other same-surface sibling)
       // using the ONE shared surface-aware rule — so it lands visibly separate, in the right coordinate
       // system for its surface (x/z on top, around the rim, theta/u on a wall). No per-zone offset here.
-      const shp = tierShape(prev.tiers[original.tierIndex ?? 0] ?? prev.tiers[0]);
+      const shp = tierShapeAt(prev.tiers, original.tierIndex ?? 0);
       const siblings = prev.stickers.filter(s => s.zone === original.zone && s.tierIndex === original.tierIndex);
       const seat = deOverlapSeat(shp, original.zone, { x: original.x, z: original.z, theta: original.theta, y: original.y, u: original.u }, siblings);
       return {

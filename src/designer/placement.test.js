@@ -104,7 +104,20 @@ describe('tier stacking — ONE occlusion rule (rim rings AND top-surface finish
 
 describe('isDynamicHug — only HERO hugs auto-fit; scattered decor keeps its own r', () => {
   it('hero element hugging a side is dynamic', () => {
-    expect(isDynamicHug({ singlePerSlot: true, placementMode: 'hug' })).toBe(true);
+    expect(isDynamicHug({ singlePerSlot: true, placementMode: 'hug', zone: 'side' })).toBe(true);
+    expect(isDynamicHug({ singlePerSlot: true, placementMode: 'hug', zone: 'middle_tier' })).toBe(true);
+  });
+  /* ⚠️ THE ZONE IS PART OF THE CLAIM, and these fixtures used to omit it while their own names said
+     "hugging a SIDE". `hugScale(height, …)` sizes a piece from the tier's WALL, so the predicate is
+     meaningless anywhere else — and without the zone test a hero hugging the TOP SURFACE matched,
+     was handed the wall-relative `hugMul` dial, and could not be resized at all: the top path
+     renders from `scale` and never reads `hugMul`. Reported as "i cant resize image on heart size
+     cake"; the heart was a coincidence of which cake it was tried on. */
+  it('a hero hugging the TOP SURFACE is NOT dynamic — there is no wall to size from', () => {
+    expect(isDynamicHug({ singlePerSlot: true, placementMode: 'hug', zone: 'top_surface' })).toBe(false);
+    expect(isDynamicHug({ singlePerSlot: true, placementMode: 'hug', zone: 'board' })).toBe(false);
+    // and with no zone at all — an under-specified sticker must not fall into the wall branch
+    expect(isDynamicHug({ singlePerSlot: true, placementMode: 'hug' })).toBe(false);
   });
   it('scattered decor (not single_per_slot) hugging a side stays absolute', () => {
     expect(isDynamicHug({ singlePerSlot: false, placementMode: 'hug' })).toBe(false);
@@ -267,9 +280,21 @@ describe('stickerSizeControl — the ONE size field + bounds for a sticker', () 
 
   it('a hero hug sizes by `hugMul`, NOT scale — and ignores placement_config.scale', () => {
     const el = { placement_config: { scale: { min: 0.5, max: 1.2 } } };
-    const hug = { singlePerSlot: true, placementMode: 'hug', hugMul: 1.5, scale: 99 };
+    const hug = { singlePerSlot: true, placementMode: 'hug', zone: 'side', hugMul: 1.5, scale: 99 };
     expect(isDynamicHug(hug)).toBe(true);
     expect(stickerSizeControl(el, hug, tier)).toEqual({ key: 'hugMul', value: 1.5, ...HUG_MUL_RANGE });
+  });
+
+  /* The same hero on the TOP surface gets the ABSOLUTE dial, because that is the field the top path
+     renders from. Capped at 3 by `hugMul`'s range, a baker's Size control simply stopped. */
+  it('the same hero hugging the TOP gets `scale`, with the element\'s own range', () => {
+    const el = { placement_config: { scale: { min: 0.5, max: 6 } } };
+    const top = { singlePerSlot: true, placementMode: 'hug', zone: 'top_surface', hugMul: 1.5, scale: 3 };
+    expect(isDynamicHug(top)).toBe(false);
+    const ctl = stickerSizeControl(el, top, tier);
+    expect(ctl.key).toBe('scale');
+    expect(ctl.value).toBe(3);
+    expect(ctl.max).toBe(6);            // the row's max, not hugMul's 3
   });
 
   it('defaults each missing value rather than throwing', () => {

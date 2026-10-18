@@ -339,9 +339,19 @@ export default function LibraryPanel({ open, onClose, apiClient, onPickTemplate,
                            boxSizing: 'border-box', background: '#ffffff' }}
                 />
                 <span style={{ fontSize: 12, fontWeight: 700, color: '#2C4433' }}>
+                  {/* ⚠️ "ALREADY", BECAUSE TWO BARE NUMBERS EITHER SIDE OF A DOT READ AS A
+                        FRACTION. "8 to choose from · 34 in your catalogue" was read as "choose 8
+                        out of 34" — Sandeep: *"sounds like you need to choose 8 from 34. thats not
+                        the fact here. 8 to choose from library. there already 34 in your
+                        catalogue."* The two counts are DISJOINT by this screen's founding rule —
+                        "a template should appear either in library or in catalogue at a given
+                        time" — so the one thing the line must never imply is that one is drawn from
+                        the other. `already` marks the 34 as settled and elsewhere, which is the
+                        whole difference. The searching line needs no such word: its own "of" says
+                        what the ratio is, and names it. */}
                   {searching
-                    ? `${shown.length} of ${available} match · ${offered.size} in your catalogue`
-                    : `${available} to choose from · ${offered.size} in your catalogue`}
+                    ? `${shown.length} of ${available} match · ${offered.size} already in your catalogue`
+                    : `${available} to choose from · ${offered.size} already in your catalogue`}
                 </span>
                 {busy && (
                   <span style={{ fontSize: 11, color: '#9BB5A2', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>

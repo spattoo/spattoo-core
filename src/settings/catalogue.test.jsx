@@ -230,9 +230,13 @@ describe('the library is a grid, not a list of rows', () => {
   });
 
   /* The count is what now says where everything went, since the tiles no longer carry two states:
-     what is left to choose, and how many are in the catalogue instead. */
+     what is left to choose, and how many are in the catalogue instead.
+
+     ⚠️ AND IT MUST NOT READ AS A FRACTION. The two numbers are disjoint sets, but a dot between
+     them was read as "choose 8 out of 34" — the exact opposite of the rule that a template is in
+     ONE of the two places. `already` is what keeps them apart, so it is asserted, not incidental. */
   it('says how many are left to choose and how many were chosen', () => {
-    expect(library).toMatch(/\$\{available\} to choose from · \$\{offered\.size\} in your catalogue/);
+    expect(library).toMatch(/\$\{available\} to choose from · \$\{offered\.size\} already in your catalogue/);
   });
 
   /* ⚠️ THE SHELF'S SIZE AND THE SEARCH RESULT ARE DIFFERENT CLAIMS. `available` counts what is left

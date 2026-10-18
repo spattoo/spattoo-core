@@ -60,3 +60,17 @@ export function planeHit(ray, plane) {
   const target = new THREE.Vector3();
   return ray.intersectPlane(plane, target) ? { x: target.x, z: target.z } : null;
 }
+
+/**
+ * The same intersection, keeping Y. `planeHit` drops it because every caller before this one
+ * solved against a HORIZONTAL plane, where y is a constant the caller already knows. A free-hand
+ * drag solves against a plane facing the CAMERA, so all three coordinates are answers.
+ *
+ * @param {THREE.Ray}   ray
+ * @param {THREE.Plane} plane
+ * @returns {{ x: number, y: number, z: number } | null}
+ */
+export function planePoint(ray, plane) {
+  const target = new THREE.Vector3();
+  return ray.intersectPlane(plane, target) ? { x: target.x, y: target.y, z: target.z } : null;
+}

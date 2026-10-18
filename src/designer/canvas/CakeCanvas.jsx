@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState, Suspense } from 'react';
+import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import * as THREE from 'three';
@@ -37,7 +37,7 @@ import {
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
-import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, buildRay } from '../utils/raycasting.js';
+import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
@@ -72,7 +72,7 @@ import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
 import { makeRefCountedCache } from '../shared/refCountedCache.js';
 import { seatHalfDepth } from '../geometry/seating.js';
-import { resolveSidePipingBands, sidePipingClearance, resolveTopPipingBands, topSurfaceYAt } from './pipingMetrics.js';
+import { resolveSidePipingBands, sidePipingClearance, resolveTopPipingBands, topSurfaceYAt, pipingExtentsKnown, subscribeExtents, extentsVersionSnapshot } from './pipingMetrics.js';
 import { buildSolidWallMaterial } from '../geometry/solidFinishes.js';
 import { applyGradient } from '../shared/color/gradientMaterial.js';
 import { styleDef, resolveStyleParams } from '../creamStyles.js';
@@ -465,12 +465,32 @@ function tierSideBands(tier) {
   if (!tier) return EMPTY_TOP_BANDS;
   let bands = _sideBandsByTier.get(tier);
   if (!bands) {
+    const topPipings    = tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []);
+    const bottomPipings = tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []);
     bands = resolveSidePipingBands({
-      topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
-      bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+      topPipings, bottomPipings,
       topY: tier.baseY + tier.height, yBase: tier.baseY, height: tier.height, radius: tier.radius,
     });
+    /* ⚠️ DO NOT CACHE AN ANSWER TAKEN BEFORE THE CREAM WAS MEASURED. `getShellExtents` returns
+       `outerFrac: 0` for a border nobody has rendered yet, and a band with no outward reach is
+       dropped as "nothing to penetrate" — so an UNMEASURED border and a flush one are the same
+       value. Cached, that zero is permanent: a satin bow tied over a shell border sat against the
+       wall, behind the cream, because its bands were resolved one frame too early and never again.
+       Sandeep's rule is the test — *"if there is cream piping, it should be on the cream piping;
+       if there is no cream piping on the rim, it should be on the rim"* — and both halves look
+       identical from here unless the measurement is known to have happened. */
+    if (!pipingExtentsKnown({ topPipings, bottomPipings })) return bands;   // recompute next frame
     _sideBandsByTier.set(tier, bands);
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      const tp = tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []);
+      const bp = tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []);
+      window.__sideBands = {
+        topPipings: tp.length, bottomPipings: bp.length,
+        withGlb: tp.filter(p => p?.glbUrl).length + bp.filter(p => p?.glbUrl).length,
+        sample: (tp[0] ? Object.keys(tp[0]).slice(0, 14) : null),
+        bands: bands.length,
+      };
+    }
   }
   return bands;
 }
@@ -1687,7 +1707,7 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     }
   }, [clipY, clonedScene]);
 
-  const { scale, position, center, depthScaled, seatHalf, halfW, gradBBox } = useMemo(() => {
+  const { scale, position, center, depthScaled, seatHalf, halfW, footX: footCx, footZ: footCz, gradBBox } = useMemo(() => {
     const box = new THREE.Box3().setFromObject(clonedScene);
     const size = new THREE.Vector3();
     box.getSize(size);
@@ -1699,8 +1719,48 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     // so it stays put regardless of placement/instance scale. `halfW`/`seatHalf` are the model's
     // PER-AXIS half-extents (width/height), so the selection hit-plane is a tight rectangle around a
     // non-square model — a tall-narrow bow gets a tall-narrow box, not a STICKER_SIZE square.
+    /* ── Where this model actually touches down ────────────────────────────────────────────────
+     * ⚠️ A BOX IS CENTRED; A FIGURE NEED NOT BE. Measured on the catalogue's fondant doll (77,338
+     * vertices): her bounding box centres at x 0.0000 / z -0.0001, but her FEET sit at z +0.4747 —
+     * 87% of the way to the front face, because she is mid-dance and leaning back. Seat her by the
+     * box at a rim and her feet land past it: *"doll is still hanging in air… its considering the
+     * box space."*
+     * ⚠️ MEASURED, NOT AUTHORED, which is the rule this file already applies to the stand-off and
+     * the seat half-height. Sandeep, on a per-model number: *"there could be more dolls in future
+     * with different dimentions, does this logic work for them too?"* — it does only if nobody has
+     * to remember to type it. A row can still override or switch it off (`perch.foot`).
+     * ⚠️ MEASURED HERE, NOT IN `box3`. The first attempt scanned the BENT scene, which only exists
+     * for a piece wrapped around a wall — so for every perched figure it silently fell through to
+     * the fallback and returned a foot offset of exactly zero. The numbers looked plausible and the
+     * render barely moved; publishing the scan's own terms is what showed it had never run.
+     * ⚠️ THE LOWEST MESHES, NOT THE LOWEST VERTICES — parts are separate meshes (41 on the doll,
+     * shoes among them), so a band catches whole feet without a vertex scan. 8% is deliberately
+     * generous: a sole is thin, and a toe lifted mid-step must still count as touching down. */
+    const FOOT_BAND = 0.08;
+    const cut = box.min.y + FOOT_BAND * (size.y || 1);
+    /* ⚠️ VERTICES IN THE BAND, NOT MESHES THAT REACH IT — and the mesh version was tried first and
+       measured exactly zero. A leg is one mesh from hip to sole, so its bounding box dips into the
+       band while its CENTRE sits mid-body; union enough of those and the answer collapses back to
+       the middle of the model, which is the number this whole correction exists to avoid. Only the
+       meshes that touch the band are opened, so this is a short scan, done once per model. */
+    const footBox = new THREE.Box3();
+    const v = new THREE.Vector3();
+    clonedScene.traverse(o => {
+      if (!o.isMesh || !o.geometry?.attributes?.position) return;
+      const bb = new THREE.Box3().setFromObject(o);
+      if (bb.min.y > cut) return;                       // nothing of this part is near the ground
+      o.updateWorldMatrix(true, false);
+      const pos = o.geometry.attributes.position;
+      for (let i = 0; i < pos.count; i++) {
+        v.fromBufferAttribute(pos, i).applyMatrix4(o.matrixWorld);
+        if (v.y <= cut) footBox.expandByPoint(v);
+      }
+    });
+    const fc = footBox.isEmpty() ? ctr : footBox.getCenter(new THREE.Vector3());
     return { scale: sc, position: [-ctr.x * sc, -ctr.y * sc, -ctr.z * sc], center: ctr, depthScaled: size.z * sc,
       seatHalf: (size.y * sc) / 2, halfW: (size.x * sc) / 2,
+      // Offset from the model's own centre — the group origin — in the same normalised units.
+      footX: (fc.x - ctr.x) * sc, footZ: (fc.z - ctr.z) * sc,
       gradBBox: { min: box.min.clone(), size: size.clone(), center: ctr.clone() } };
   }, [clonedScene, imageUrl]);
 
@@ -1737,11 +1797,27 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
       bentScene.traverse(o => { if (o.isMesh && o.geometry) { o.geometry.computeBoundingBox?.(); if (o.geometry.boundingBox) b.union(o.geometry.boundingBox); } });
       if (!b.isEmpty()) {
         const s = b.getSize(new THREE.Vector3()), c = b.getCenter(new THREE.Vector3());
-        return { w: s.x, h: s.y, d: s.z, cy: c.y, cz: c.z, frontZ: b.max.z };
+        /* ── WHERE THIS MODEL ACTUALLY TOUCHES DOWN ──────────────────────────────────────────────
+         * ⚠️ A BOX IS CENTRED; A FIGURE NEED NOT BE. Measured on the catalogue's fondant doll
+         * (77,338 vertices): her bounding box centres at x 0.0000 / z -0.0001, but her FEET sit at
+         * z +0.4747 — 87% of the way to the front face, because she is mid-dance and leaning back.
+         * Seat her by the box and her feet land 0.316 past a rim she is supposed to stand on, which
+         * is the whole of *"doll is still hanging in air… its considering the box space."*
+         * ⚠️ MEASURED, NOT AUTHORED — the rule this file already applies to the stand-off and the
+         * seat half-height. Sandeep, on a per-model number: *"there could be more dolls in future
+         * with different dimentions, does this logic work for them too?"* — it does only if nobody
+         * has to remember to type it. A row can still override or switch it off; see `footSeat`.
+         * ⚠️ THE LOWEST MESHES, NOT THE LOWEST VERTICES. Parts are separate meshes here (the doll
+         * has 41, shoes among them), so the band below catches whole feet without a vertex scan.
+         * The 8% band is deliberately generous: a sole is thin, and a toe lifted mid-step must not
+         * be the only thing that counts as "touching down". */
+        return { w: s.x, h: s.y, d: s.z, cy: c.y, cz: c.z, frontZ: b.max.z,
+                 footX: footCx, footZ: footCz };
       }
     }
-    return { w: 2 * halfW, h: 2 * seatHalf, d: depthScaled, cy: 0, cz: 0, frontZ: depthScaled / 2 };
-  }, [bentScene, halfW, seatHalf, depthScaled]);
+    return { w: 2 * halfW, h: 2 * seatHalf, d: depthScaled, cy: 0, cz: 0, frontZ: depthScaled / 2,
+             footX: footCx, footZ: footCz };
+  }, [bentScene, halfW, seatHalf, depthScaled, footCx, footCz]);
   useEffect(() => { onDepth?.(box3.frontZ); }, [onDepth, box3]);
   useEffect(() => { onVExtent?.({ down: seatHalf, up: seatHalf, halfW, box: box3 }); }, [seatHalf, halfW, box3]);
 
@@ -1840,7 +1916,21 @@ function ElementStick({ stick }) {
   useEffect(() => () => geo?.dispose(), [geo]);
   if (!geo) return null;
   return (
-    <mesh geometry={geo} position={[0, stick.baseY, 0]} castShadow receiveShadow raycast={() => {}}>
+    /* ⚠️ BEHIND THE ARTWORK, NOT IN ITS PLANE. The rod sat at z = 0 — exactly where a 2D sticker's
+       artwork plane is — and "drawn first so the artwork covers it" is not what decides this: the
+       rod is OPAQUE, so it renders in the opaque pass and writes depth, while the sticker's artwork
+       is TRANSPARENT and is drawn afterwards and depth-TESTED against it. At equal z the rod wins,
+       and a pick appeared across the front of the star it was supposed to be holding up.
+       Pushed back by its own radius, so its nearest surface is tangent to the artwork plane and
+       nothing of it crosses in front. ⚠️ A SAFE NUMBER FOR A 3D ELEMENT TOO: the rod still enters
+       the model, just a radius further back — imperceptible on a ball, and the alternative (clearing
+       the model's whole depth) would hang the pick off the back of it.
+       ⚠️ THIS WORKS BECAUSE THE STICK IS INSIDE THE BILLBOARD. It rides with the artwork, so local
+       −Z is "away from the viewer" at every camera angle; outside it the offset would only be
+       behind from one direction. A vertical cylinder is symmetric about Y, so riding the Y-locked
+       billboard costs it nothing — which is exactly why the WIRE, which is not symmetric, is kept
+       outside it (see the note at the group below). */
+    <mesh geometry={geo} position={[0, stick.baseY, -stick.radius]} castShadow receiveShadow raycast={() => {}}>
       <meshStandardMaterial color="#D8BE93" roughness={0.85} metalness={0} />
     </mesh>
   );
@@ -2023,6 +2113,12 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const wireUp = wireLift(wire) * effScale;
   // Round: angle theta around the cylinder, decal curved to the wall. Faceted wall (rect/heart/…):
   // perimeter fraction u, decal flat against the local facet (the outward normal it faces).
+  /* ⚠️ DECLARED HERE, ABOVE THE YAW BLOCK THAT READS IT. `const` is not hoisted, so leaving this
+     where it used to sit — below — made the yaw line a temporal dead zone: "Cannot access 'fp'
+     before initialization", on every frame, with `check:bindings` passing because the name IS
+     declared, just later. The third time this file has paid for that; the other two are noted at
+     LibraryPanel's `sectioned` and at the foot-seat debug line. */
+  const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
   let cx, cz, yaw, curveRadius;
   if (facetWall) {
     const pl = rectSidePlacement(shp, sticker.u ?? 0, off);
@@ -2039,7 +2135,18 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       : 0;
     const surfaceR = radius + off + lift;
     cx = surfaceR * Math.sin(sticker.theta); cz = surfaceR * Math.cos(sticker.theta);
-    yaw = sticker.theta; curveRadius = surfaceR;
+    /* ⚠️ `+ rotation`, AND THE WALL NEVER READ IT. Yaw here was `sticker.theta` alone, so the spin
+       a baker sets had no effect on a side piece at all — the Turn ring wrote `rotation` and this
+       line threw it away. Reported as *"i cannot turn it clcokwise or anti clockwise"*. Every other
+       pose goes through `surfaceYaw`, which is `radial + rotation`; this is the wall joining them.
+       ⚠️ AND A FREE-HAND PIECE FACES OUT FROM WHERE IT NOW IS, not from where it was created.
+       `theta` is the wall angle the piece was placed at, and free hand moves it by `freePos` without
+       touching it — so a bow dragged from the front to the right side kept facing the front, and no
+       amount of nudging could fix it because the control that would have was the one being ignored
+       above. Derived from the position it actually has, so it auto-faces outward like a verge, with
+       `rotation` on top for the baker's own turn. */
+    yaw = (fp ? Math.atan2(fp.x, fp.z) : sticker.theta) + (sticker.rotation ?? 0);
+    curveRadius = surfaceR;
   }
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
@@ -2059,9 +2166,32 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // the decoration. Half-depth keeps the border on the body while still clearing most of it.
   const boxZ = isGlb ? depth * 0.5 : depth;
 
+  /* ── Free hand on the WALL ───────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE WALL HAS NO INVERSE TO WRITE BACK INTO. A side decoration is positioned by `theta` (the
+   * angle round the tier) and `y` (its height), and is held ON the wall surface by construction —
+   * so there is no field that can express "a hand put it HERE", off the cylinder. The rim path
+   * could be inverted exactly because its group position already IS (x, py, z); this one cannot.
+   * So free hand stores the position itself, on the instance, and the wall's own derivation stands
+   * down while it is set. Absent — which is every decoration today — nothing changes.
+   * ⚠️ AND IT LANDS ON THE SIDE ZONE BECAUSE THAT IS WHERE THE PIECE ACTUALLY IS. The gizmo first
+   * went only onto the rim path, which is where the seating work had been; the satin bow it was
+   * built for is seated SIDE, so the control appeared nowhere. Reported as *"i dont see any control
+   * on the popup to control the bow freely"*. */
+  const freeRef = useRef(null);
+  const freeHandOn = sticker.freeHand === true;
+  const freeDrag = useRef(null);
+  useEffect(() => {
+    if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
+    const p = freeRef.current.position;
+    if (![p.x, p.y, p.z].every(Number.isFinite)) return;
+    onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
+  }, [sticker.freeHand, sticker.freePos, sticker.id]);
+
   return (
     <group
-      position={[cx, posY + wireUp, cz]}
+      ref={freeRef}
+      position={fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
@@ -2098,12 +2228,27 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       )}
       <StickerHitMesh
         volume={hitVolume({ box: glbFoot ? vext?.box : null, width: hitBox.width, height: hitBox.height, centerY: hitBox.centerY })}
-        onPointerEnter={e => { e.stopPropagation(); onOrbitEnable(false); }}
-        onPointerLeave={e => { e.stopPropagation(); if (!pressedRef.current) onOrbitEnable(true); }}
+        onPointerEnter={e => { e.stopPropagation(); if (!freeHandOn) onOrbitEnable(false); }}
+        onPointerLeave={e => { e.stopPropagation(); if (!freeHandOn && !pressedRef.current) onOrbitEnable(true); }}
         onPointerDown={e => {
           e.stopPropagation();
           pressedRef.current   = true;
           onOrbitEnable(false);
+          /* Free hand drags on a camera-facing plane and writes `freePos`; the wall solve below
+             writes theta/y, which no longer positions this piece. */
+          /* ⚠️ NO EARLY RETURN HERE. It had one, and that is why free-hand drag did nothing on the
+             wall: the `pointermove` listener is registered at the END of this handler, so returning
+             set up a drag that nothing was listening for. The rim path has no such return, which is
+             exactly why a test there passed while the reported bow — seated SIDE — would not move.
+             Testing the path that was reported, rather than the one that was convenient, is the
+             whole lesson. The setup below is harmless under free hand (`onMoveHandler` branches on
+             it before reading any of those refs), so the handler runs to completion either way. */
+          if (freeHandOn) {
+            const at = sticker.freePos ?? { x: cx, y: posY + wireUp, z: cz };
+            freeDrag.current = { plane: freeDragPlane(camera, at), grab: null };
+            const hit = planePoint(pointerRay(e, gl.domElement, camera), freeDrag.current.plane);
+            if (hit) freeDrag.current.grab = { x: hit.x - at.x, y: hit.y - at.y, z: hit.z - at.z };
+          }
           try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
           didDrag.current      = false;
           pointerDownTime.current = Date.now();
@@ -2130,6 +2275,17 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           const canvas = gl.domElement;
           const clampY = clampWallY;   // keep the bottom edge on the wall, not in the board
           function onMoveHandler(ev) {
+            if (freeHandOn) {
+              const fd = freeDrag.current;
+              if (!fd) return;
+              const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
+              if (!hit) return;
+              const g = fd.grab ?? { x: 0, y: 0, z: 0 };
+              onMove(sticker.id, { freePos: {
+                x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+              didDrag.current = true;
+              return;
+            }
             const dx = ev.clientX - startPos.current.x;
             const dy = ev.clientY - startPos.current.y;
             if (dx * dx + dy * dy > 25) didDrag.current = true;
@@ -2184,6 +2340,41 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * the board's footprint minus the cake's. Everything else on a flat surface clamps to a solid shape.
  * A decoration dragged into the hole would walk under an opaque cake and be lost with nothing to
  * grab, so the clamp pushes it back out. See boardRingClamp. */
+/* ── The free-hand move gizmo ────────────────────────────────────────────────────────────────────
+ *
+ * The Blender translate handles — three coloured axis arrows drawn ON the piece, dragged in the
+ * scene. Sandeep: *"the 3 dimenstional control should look like the one in blender. not dialers or
+ * rails."* Which is the right instinct for this job: a dial asks you to think in numbers about an
+ * axis you cannot see, and the whole reason this control exists is that the pose could not be
+ * derived — so the person placing it is looking at the cake, not at a readout.
+ *
+ * ⚠️ ONLY WHILE SELECTED, AND ONLY ON A ROW THAT ASKED FOR IT. The gizmo is three solid arrows
+ * through the middle of a decoration; drawn on everything it would bury the cake it is meant to
+ * help place something on.
+ * ⚠️ ORBIT OFF WHILE DRAGGING. Both the gizmo and the camera answer a drag, and with both live the
+ * cake spins as you reach for an arrow — the same reason every other grab here takes the orbit
+ * down first.
+ */
+/* ── Dragging a free-hand piece ──────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ A GIZMO IS FOR PRECISION, NOT FOR CARRYING SOMETHING ACROSS A CAKE. Free hand first DISABLED
+ * the piece's own drag so the gizmo could own the move — which left the gizmo as the only way to
+ * travel, one arm at a time. Sandeep: *"the problem is i cant move this from one place to other…
+ * i cannot drag it either."* Both belong: drag to place it roughly where it goes, then an arm to
+ * settle one axis without disturbing the other two.
+ *
+ * ⚠️ THE PLANE FACES THE CAMERA, through the piece's current position. Every other drag here solves
+ * against a surface — the top plane, the wall cylinder — because every other drag keeps the piece
+ * ON something. A free-hand piece is on nothing, so the only sensible plane is the one the viewer
+ * is looking at: the decoration follows the pointer exactly, and depth is left to the gizmo's third
+ * arm rather than guessed from a 2D gesture.
+ */
+function freeDragPlane(camera, at) {
+  const n = new THREE.Vector3();
+  camera.getWorldDirection(n);
+  return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
+}
+
 function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
@@ -2231,9 +2422,52 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   // (default) rests the MID-SPINE on the rim edge so the body drapes over the lip; 'base' seats the
   // BODY base on the surface and leans from there. Other modes are unaffected.
   const isVergeBase = isVerge && sticker.vergeSeat === 'base';
-  // Base-seated upright modes: stand, a base-seat verge, and a foldable card on a perch edge — all
-  // stand on their BODY base. A centre-seat verge / perch sit centred at the rim edge height instead.
-  const standSeat = isStand || isVergeBase || (isPerch && sticker.foldable === true);
+  /* ⚠️ PERCH HAS THE SAME CHOICE NOW, AND NOT HAVING IT IS WHAT LEFT A DOLL IN MID-AIR. Centre-seat
+     is right for a piece that STRADDLES the edge — its middle on the rim line, half either side —
+     and wrong for one that STANDS on it: the lower half falls below the rim plane, and at the rim
+     that half is beyond the wall, so it hangs in the air beside the cake. A fondant doll
+     (perch, edge_inset 0.05) is the reported case.
+     ⚠️ AND `y_offset` IS NOT THE SAME FIX, which is why this is a seat and not a bigger number. A
+     nudge is a fixed world distance — `py` adds it raw while the base lift is multiplied by
+     `effScale` — so a figure tuned to look seated at one size sinks or floats at every other, and
+     the doll's own dial spans 4 to 7. The seat asks the model how tall it is; the nudge cannot. */
+  const isPerchBase = isPerch && sticker.perchSeat === 'base';
+  /* ⚠️ `hang` — THE THIRD VERGE ANCHOR, AND THE ONE A RIBBON NEEDS. `center` rests the model's
+     mid-spine on the lip and leans about that middle: right for a butterfly, wrong for a bow, which
+     is TIED at the rim with everything below the knot falling down the outside. The contact point
+     is the model's TOP. With the pivot in the middle a tilt swings one end out and the other IN —
+     measured on the satin bow at its own 13.5°, the tails cut 0.131 into the wall against the 0.09
+     its row was authoring. Pivoting at the knot swings the tails through the air, where they hang.
+     ⚠️ RESTORED, AND THE REVERT THAT TOOK IT WAS AIMED AT ITS NEIGHBOUR. `4fd9c157` shipped this
+     anchor AND the rim stand-off together; `ed349c76` reverted the pair because *"a satin bow ended
+     up beside the cake"*. The stand-off has since come back on its own, so admin kept offering a
+     `hang` seat (with help text describing it in detail) that core silently read as `center` —
+     a row could author it, the screen could show it, and nothing would happen. Measured on the
+     reported cake: the bow's stand-off is 0.0696 with piping clearance 0, far too small to have
+     thrown it anywhere, while a centre seat left 0.29 of bow below the rim and outside the wall.
+     A value in a config, not a type (INVARIANTS #1): `placement_config.verge.seat`. */
+  const isVergeHang = isVerge && sticker.vergeSeat === 'hang';
+  /* ⚠️ `hang` IS THE f = 0 CASE OF A GENERAL ANCHOR, and some pieces need a different f. It is read
+     on BOTH edge modes (`perch.anchor` / `verge.anchor`), because "where does the rim line touch
+     this model" is one question: a bow is tied at its knot, a sitting doll rests on her SEAT with
+     her legs hanging below the lip, and neither point is the top, the middle or the base. The seat
+     terms below are three points on one line: a model whose height is 2·halfH, touching the rim at
+     the fraction f of that height measured from the TOP, has its CENTRE at `halfH·(2f − 1)` — which
+     is −halfH at f=0 (hang, the top on the lip), 0 at f=0.5 (center, the mid-spine), and +halfH at
+     f=1 (base). So one expression covers all three and everything between.
+     A satin bow's contact point is the centre of its KNOT, measured off the model at f ≈ 0.10: its
+     loops occupy the top 19% (width 1.13 falling to 0.53 at the waist, then the tails splaying
+     again to 0.98 — so a width test alone finds the tails too; the loops are the TOP wide band).
+     At f = 0 the whole bow, knot included, hangs below the lip.
+     ⚠️ ONLY WHERE IT IS AUTHORED, so nothing moves: absent → `hang` keeps its exact -halfH and
+     `center`/`base` never reach this branch at all. */
+  const edgeAnchor = (isPerch || isVerge) && Number.isFinite(sticker.edgeAnchor)
+    ? Math.min(1, Math.max(0, sticker.edgeAnchor))
+    : null;
+  // Base-seated upright modes: stand, a base-seat verge, a base-seat perch, and a foldable card on a
+  // perch edge — all stand on their BODY base. A centre-seat verge / perch sit centred at the rim
+  // edge height instead.
+  const standSeat = isStand || isVergeBase || isPerchBase || (isPerch && sticker.foldable === true);
   // A photo frame on top is bounded so it (incl. its border ring) never overflows the rim/edges.
   const topFrameMax = sticker.photoMask
     ? frameTopMaxScale(shp, sticker.photoShape, (sticker.photoFill ?? 1) * (1 + (sticker.borderWidth ?? 0)))
@@ -2277,8 +2511,18 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
+    /* An authored anchor: the model touches the rim at fraction `edgeAnchor` of its height from the
+       top. A `hang` verge with none is that same line at f = 0 — its top meets the lip.
+       ⚠️ BEFORE `standSeat`, BECAUSE THE EXPLICIT NUMBER BEATS THE SHORTHAND. A named seat IS a
+       fraction (base = 1, center = 0.5, hang = 0), so a row carrying both states the same thing
+       twice — and tested the other way round, `seat: "base"` silently won and the anchor did
+       nothing. That is not a hypothetical: the doll was calibrated to `anchor: 0.5` on a row still
+       holding `seat: "base"` from an earlier attempt, and the two differ by a full half-height —
+       she would have stood on her feet on the cake after being tuned sitting on the rim. */
+    : edgeAnchor != null ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (2 * edgeAnchor - 1)
     : standSeat ? (seatHalf ?? STICKER_SIZE / 2) * effScale + FLAT_STICKER_Y_OFFSET
-    : (isPerch || isVerge) ? 0   // centre at the rim edge height — perch straddles, centre-seat verge's mid-spine on the lip
+    : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2) * effScale
+    : (isPerch || isVerge) ? 0   // centre at the rim edge height — a CENTRE-seat perch straddles, a centre-seat verge rests its mid-spine on the lip (a base-seat perch/verge took the standSeat branch above)
     : FLAT_STICKER_Y_OFFSET);
 
   /* ── How far an edge-seated piece stands OUT from the rim ─────────────────────────────────────
@@ -2298,7 +2542,35 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
    * wall path uses and the same one piping uses to sit its shells on the rim. `verge.edge_inset`
    * is the hand-cranked version of this and stays only as a seed a drag discards. */
   const edgeSeated = isPerch || isVerge;
-  const edgeProud  = edgeSeated && sticker.sideProud === true;
+  /* ⚠️ A PIECE THAT STANDS ON THE RIM HAS NOTHING TO STAND CLEAR OF. The stand-off below exists
+     because an edge piece is drawn CENTRED on the rim line, so half its depth starts inside the
+     wall — true of a bow draped over the lip, and false of anything base-seated, whose body is
+     entirely ABOVE the top surface. Pushing one of those out by half its own box moves it off the
+     cake: a fondant doll at scale 4.8 measures 0.735 deep, so she was shoved 0.368 past a 0.9 wall
+     and hung in the air. Sandeep, pointing at her selection box: *"its considering the box space.
+     it should not."*
+     ⚠️ AND `sideProud` IS NOT THE FLAG TO ASK — `zoneSeat` documents itself as *"only meaningful
+     for wall-hug; verge/stand/perch seat by their own logic and ignore it"*, yet the stand-off
+     reads it for exactly those modes, where a bare `"rim": "perch"` silently defaults to proud.
+     The seat is what actually knows whether the body crosses the rim line, so it decides. */
+  /* ⚠️ A VERGE DRAPES AGAINST THE WALL; A PERCH SITS ON THE EDGE — and only the first has anything
+     to stand clear of. The stand-off was built for a satin bow tied at the rim, whose body falls
+     down the OUTSIDE: drawn centred on the rim line, half its depth is in the icing, so pushing it
+     out by half its own depth rests its back on the wall. A perched figure's body is above the top
+     surface, and half ITS depth is 0.3447 at the doll's size — a shove that put her off the cake.
+     ⚠️ KEYED ON THE MODE, NOT ON THE ANCHOR, and the anchor version was tried first and broke the
+     bow. Suppressing it whenever a pose was calibrated looked right for the doll and silently took
+     the ribbon's clearance away with it: the bow carries an anchor too, and its 0.0696 IS the fix
+     it was reported for. The question the stand-off answers is "does this body hang against the
+     wall", which is what the mode says.
+     ⚠️ AND IT KEEPS THE PERCH CALIBRATOR HONEST. That screen draws no stand-off, so a radial
+     correction tuned there (`edge_inset`) is measured against a model sitting on the rim line;
+     with perch excluded there is nothing added afterwards, and what ships is what was calibrated. */
+  /* ⚠️ AND FREE HAND STANDS IT DOWN, because an automatic radial push fights the hand doing the
+     placing: the baker moves the piece to where they want it and the renderer quietly adds 0.07
+     somewhere else. What is set is where it goes. */
+  const edgeProud  = edgeSeated && sticker.sideProud === true && !standSeat && isVerge
+                     && !sticker.freeHand;
   /* ⚠️ AND IT STANDS CLEAR OF THE CREAM, not just of the icing. Sandeep, on a render where the
      ribbon was tucked behind the shells: *"bow should be on top of cream (sidewise). in your
      screenshot bow is backside."* A rim border's shells and a wall decoration both stand proud of
@@ -2321,10 +2593,22 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      bug — the other is a band reporting no outward reach. */
   if (import.meta.env?.DEV && typeof window !== 'undefined' && edgeSeated) {
     window.__edgeStandOff = {
-      id: sticker.id, proud: edgeProud,
+      id: sticker.id, proud: edgeProud, freeHand: sticker.freeHand ?? null, freePos: sticker.freePos ?? null,
       halfDepth: +seatHalfDepth((artBox?.d ?? 0) * effScale).toFixed(4),
       pipingClear: +sidePipingClearance({ bands: sideBands, yBottom: py - halfH, yTop: py + halfH }).toFixed(4),
       standOff: +standOff.toFixed(4),
+      /* ⚠️ THE RADIAL ANSWER, not the ingredients. "It is floating beside the cake" and "it is
+         resting on the wall" are a few pixels apart on a screenshot and worlds apart in fact, and
+         several rounds were lost to reading them off renders. `gap` is what actually matters: how
+         far the piece's INNER face sits from the wall it should be touching. 0 is resting on it,
+         positive is daylight, negative is buried. */
+      radial: (() => {
+        const r = Math.hypot(sticker.x ?? 0, sticker.z ?? 0);
+        const halfD = seatHalfDepth((artBox?.d ?? 0) * effScale);
+        return { seatR: +r.toFixed(4), standOff: +standOff.toFixed(4),
+                 centreR: +(r + standOff).toFixed(4), halfDepth: +halfD.toFixed(4),
+                 innerFace: +(r + standOff - halfD).toFixed(4) };
+      })(),
       span: [+(py - halfH).toFixed(3), +(py + halfH).toFixed(3)],
       bands: (sideBands ?? []).map(b => ({ loY: +b.loY.toFixed(3), hiY: +b.hiY.toFixed(3), out: +b.out.toFixed(4) })),
     };
@@ -2334,6 +2618,82 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const outLen = Math.hypot(sticker.x ?? 0, sticker.z ?? 0) || 1;
   const outX   = standOff ? ((sticker.x ?? 0) / outLen) * standOff : 0;
   const outZ   = standOff ? ((sticker.z ?? 0) / outLen) * standOff : 0;
+
+  /* ── A figure stands on its FEET, not on the centre of its box ───────────────────────────────
+   *
+   * ⚠️ ONLY AT AN EDGE, AND ONLY BASE-SEATED. On a top surface there is cake all round, so seating
+   * by the box costs nothing and moving it would re-place every standing GLB on every saved design.
+   * At a rim there is nothing past the edge, so the difference between the box centre and the real
+   * contact point is the difference between standing and hanging in the air. And a piece that is
+   * not base-seated has no feet on anything: a centre-seat verge straddles, a `hang` bow dangles.
+   *
+   * `artBox.footX/footZ` are measured from the model (the lowest meshes' own centre); `footSeat`
+   * on the row can override with a fraction of half-depth, or `false` to keep the box centre.
+   * Measured on the reported doll: footZ 0.4747 of a 0.547 half-depth, so at size 4.8 her feet were
+   * landing 0.316 past the rim she was standing on.
+   */
+  /* ⚠️ AN AUTHORED ANCHOR WINS OVER THE MEASURED FEET, because they answer the same question and
+     only one of them can be right. The foot seat is for a figure that STANDS; an anchor is what a
+     piece that does anything else is seated by — a bow tied at its knot, a doll sitting on the rim
+     with her legs hanging. Her lowest geometry is then resting on nothing, so measuring it would
+     pull her backwards onto the cake by the depth of a dangling foot. */
+  const footSeat = standSeat && edgeAnchor == null && !sticker.freeHand
+    && (isPerch || isVerge) && sticker.footSeat !== false
+    ? (Number.isFinite(sticker.footSeat)
+        ? { x: 0, z: sticker.footSeat * ((artBox?.d ?? 0) / 2) }
+        : { x: artBox?.footX ?? 0, z: artBox?.footZ ?? 0 })
+    : null;
+  /* The offset lives in the model's own frame, so it has to turn with the yaw before it can be
+     taken off a world position — and it is applied to the WHOLE group, so the selection box and the
+     hit plane travel with the body instead of being left behind where the box used to be. */
+  /* ⚠️ `surfaceYaw` CALLED HERE, NOT THE `yaw` BELOW. That one is declared inside the render body
+     120 lines down, so reading it from here is a temporal dead zone — the trap this codebase has
+     already paid for once (`LibraryPanel`'s `sectioned`, which built clean, passed check:bindings
+     and threw on mount, because the name IS declared, just later). The helper is pure, so calling
+     it twice costs nothing and cannot drift. */
+  /* ⚠️ THE GIZMO WRITES BACK IN THE SAME TERMS THE SEAT READS. Under free hand the stand-off and
+     the measured foot pull are both off, so this group's position IS (x, py, z) and the inverse is
+     exact: `yOffset` is whatever the handle added on top of the seat the row would otherwise give,
+     so turning free hand off later leaves the piece where the seat puts it rather than somewhere
+     arbitrary. Committed on every change, not on release: a drag that is abandoned mid-way (the
+     pointer leaving the canvas) still leaves the piece where it was let go. */
+  /* ── Free hand: the card moves it, the instance remembers where ─────────────────────────────
+   *
+   * ⚠️ ONE FIELD FOR BOTH ZONES, because one control in the card has to serve both. The rim path
+   * could express a hand-placed position as x/z/yOffset; the WALL cannot — a side decoration is
+   * derived from `theta` and `y` and is held on the cylinder by construction. So free hand stores
+   * the position itself and both paths honour it. Absent — every decoration today — nothing changes.
+   * ⚠️ SEEDED FROM WHERE IT ALREADY IS, once. Without that the first nudge would jump the piece to
+   * the origin, because the card knows the patch it wants to send and nothing about where the
+   * piece currently sits in the world. The renderer is the only thing that knows, so it says so. */
+  const freeRef = useRef(null);
+  const freeHandOn = sticker.freeHand === true;
+  const freeDrag = useRef(null);
+  const fp = sticker.freeHand === true && sticker.freePos ? sticker.freePos : null;
+  useEffect(() => {
+    if (!sticker.freeHand || sticker.freePos || !freeRef.current) return;
+    const p = freeRef.current.position;
+    if (![p.x, p.y, p.z].every(Number.isFinite)) return;
+    onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
+  }, [sticker.freeHand, sticker.freePos, sticker.id]);
+  const footYaw = footSeat ? surfaceYaw(sticker) : 0;
+  const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
+  const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
+  /* ⚠️ PUBLISHED HERE, NOT BESIDE THE STAND-OFF'S OWN TERMS 50 LINES UP — `const` is not hoisted,
+     and reading `footX` there threw "Cannot access 'footX' before initialization" on every frame.
+     The same temporal-dead-zone trap this file and LibraryPanel have both paid for; it passed
+     check:bindings again, because the name IS declared, just later. Opening the screen found it.
+     "She is still off the cake" and "the measurement came back zero" look identical on a render,
+     so the terms are published rather than inferred. */
+  if (import.meta.env?.DEV && typeof window !== 'undefined' && (isPerch || isVerge)) {
+    window.__footSeat = {
+      id: sticker.id, mode: sticker.placementMode, standSeat,
+      perchSeat: sticker.perchSeat ?? null, cfg: sticker.footSeat ?? null,
+      measured: artBox ? { x: +(artBox.footX ?? 0).toFixed(4), z: +(artBox.footZ ?? 0).toFixed(4),
+                           d: +(artBox.d ?? 0).toFixed(4) } : null,
+      applied: { x: +footX.toFixed(4), z: +footZ.toFixed(4) },
+    };
+  }
 
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
@@ -2382,7 +2742,25 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   );
 
   const onDown = e => {
+    /* ⚠️ THE PIECE'S OWN DRAG MUST STAND ASIDE FOR THE GIZMO, or the arrows look dead. Pressing a
+       handle that overlaps the decoration starts BOTH: this drag captures the pointer on the canvas
+       and writes a new x/z every move, overwriting whatever the gizmo just set. Reported as *"gizmo
+       is showing but not working"* — it was working, and being undone in the same frame. It only
+       looked fine in the harness because that drag grabbed the green arrow ABOVE the bow, where the
+       two do not overlap. Free hand means the gizmo is the mover; selection and the long-press menu
+       still work, because those are taps rather than drags. */
     e.stopPropagation();
+    /* Free hand drags on a camera-facing plane and writes `freePos`; everything below solves
+       against the top surface and writes x/z, which no longer positions this piece. */
+    if (freeHandOn) {
+      const at = sticker.freePos ?? { x: sticker.x ?? 0, y: py, z: sticker.z ?? 0 };
+      freeDrag.current = { plane: freeDragPlane(camera, at), from: { ...at }, grab: null };
+      const hit = planePoint(pointerRay(e, gl.domElement, camera), freeDrag.current.plane);
+      if (hit) freeDrag.current.grab = { x: hit.x - at.x, y: hit.y - at.y, z: hit.z - at.z };
+      pressedRef.current = true;
+      onOrbitEnable(false);
+      try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+    }
     pressedRef.current = true;
     onOrbitEnable(false);
     try { gl.domElement.setPointerCapture(e.pointerId); } catch (_) {}
@@ -2413,6 +2791,17 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
 
     const canvas = gl.domElement;
     function onMoveHandler(ev) {
+      if (freeHandOn) {
+        const fd = freeDrag.current;
+        if (!fd) return;
+        const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
+        if (!hit) return;
+        const g = fd.grab ?? { x: 0, y: 0, z: 0 };
+        onMove(sticker.id, { freePos: {
+          x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+        didDrag.current = true;
+        return;
+      }
       const dx = ev.clientX - startPos.current.x;
       const dy = ev.clientY - startPos.current.y;
       if (dx * dx + dy * dy > 25) didDrag.current = true;
@@ -2444,9 +2833,14 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           // a flat decal keeps its footprint on the cake. All derived from mode/seat + size on the
           // instance — never a config flag. (Future: faux-ball verge → edge_drag:'outward' allows
           // dragging OUT over the lip while still clamping inward to the rim; see PLACEMENT_CONFIG.md.)
-          const isEdgeMode = isPerch || (isVerge && !isVergeBase);
+          const isEdgeMode = (isPerch || (isVerge && !isVergeBase)) && !sticker.freeHand;
           const edgeMargin = (isStand || isEdgeMode) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
-          const clampPt = (x, z) => isEdgeMode ? snapToRim(shp, x, z)
+          /* ⚠️ FREE HAND MEANS NO CLAMP AT ALL. Every rule above exists to stop a piece burying
+             itself or sliding off, and each is right for a decoration the app is seating. A row
+             that asks for free hand has given up on being seated automatically — clamping it back
+             to the perimeter would be the app overruling the person it just handed control to. */
+          const clampPt = (x, z) => sticker.freeHand ? { x, z }
+            : isEdgeMode ? snapToRim(shp, x, z)
             : hole ? boardRingClamp(shp, hole, x, z, edgeMargin)
             : topClampInset(shp, x, z, edgeMargin);
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
@@ -2535,7 +2929,12 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     // (cancels when untilted; no-op for perch where seatLift = 0).
     // Base-pivot the tilt for stand-seated modes AND insert (an inserted bar leans about its buried
     // base, so the exposed part swings and the base stays put).
-    const seatLift = (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
+    /* The pivot sits `seatLift` BELOW the group origin (translate down, rotate, translate back), so
+       a base-seated piece leans about its feet. A `hang` piece leans about its TOP, which is a
+       NEGATIVE lift — the knot stays on the rim and the tails swing. */
+    const seatLift = edgeAnchor != null ? (seatHalf ?? STICKER_SIZE / 2) * (2 * edgeAnchor - 1)
+                   : isVergeHang ? -(seatHalf ?? STICKER_SIZE / 2)
+                   : (standSeat || isInsert) ? (seatHalf ?? STICKER_SIZE / 2) : 0;
     // Verge auto-orients radially OUTWARD: yaw so the element's local +Z points away from the cake
     // centre (re-derived from its x/z, so it reorients as it's dragged round the rim — round cakes
     // exactly, rect approximated as radial-from-centre), then the tilt tips its top toward that
@@ -2570,7 +2969,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       </group>
     );
     return (
-      <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
+      <group ref={freeRef}
+             position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
+             scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
             CAKE. `inner` is wrapped in yaw, then tilt and roll, then a Y-locked Billboard; drawing
@@ -2638,7 +3039,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const flatPivotZ = flatLeanX >= 0 ?  flatHalfZ : -flatHalfZ;
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
-    <group position={[sticker.x + outX, py, sticker.z + outZ]} scale={effScale}>
+    <group ref={freeRef}
+           position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
+           scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
           A flat decal has little use for one, but "little use" is not "cannot happen", and a
@@ -3542,6 +3945,13 @@ function BrushBand({ band, tier, wallColour, onClick = null }) {
 }
 
 function CakeContent({ config, scene, edit = null }) {
+  /* ⚠️ RE-RENDER WHEN THE CREAM FINISHES MEASURING ITSELF. A tier writes its shells' extents as it
+     draws them, into a module-level Map that React cannot see — so a decoration resolved one frame
+     earlier read `outerFrac: 0`, stood clear of nothing, and had no way to learn better. A satin
+     bow tied over a shell border sat behind the cream for exactly that reason. Subscribing here
+     (the component that hands `sideBands` to every rim-seated piece) is what makes the second look
+     happen. The store bumps only on a real change, so this cannot loop with the measuring. */
+  useSyncExternalStore(subscribeExtents, extentsVersionSnapshot, extentsVersionSnapshot);
   const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
