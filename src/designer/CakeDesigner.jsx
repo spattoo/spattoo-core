@@ -205,6 +205,7 @@ import { CAVITY_DEFAULTS } from './geometry/topCavity.js';
 import { SPIRAL_DEFAULTS, SPIRAL_RISE } from './geometry/topSpiral.js';
 import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
+import { SearchField } from '../shared/SearchField.jsx';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
@@ -15814,12 +15815,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
             </div>
 
-            {/* Search */}
-            <input
+            {/* Search. The text SURVIVES the panel closing on purpose — placing six of the same
+                decoration should not mean retyping the word — which is exactly why it needs a way
+                out that is not holding backspace. */}
+            <SearchField
               value={elemSearch}
-              onChange={e => setElemSearch(e.target.value)}
+              onChange={setElemSearch}
               placeholder="Search decorations…"
-              style={{ width: '100%', padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff', flexShrink: 0 }}
             />
 
             <div style={s.flyoutScroll}>
@@ -16098,11 +16100,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 nothing. A number that moves, next to the control, is the effect made visible; an
                 Apply button would only add a press to a thing that had already happened. */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-              <input
+              <SearchField
                 value={tmplSearch}
-                onChange={e => setTmplSearch(e.target.value)}
+                onChange={setTmplSearch}
                 placeholder="Search templates…"
-                style={{ flex: 1, minWidth: 0, padding: '6px 10px', border: '1.5px solid #999999', borderRadius: 8, fontSize: 12, fontFamily: "'Quicksand', sans-serif", color: '#333', outline: 'none', boxSizing: 'border-box', background: '#ffffff' }}
+                style={{ flex: 1, minWidth: 0 }}
               />
               <button
                 type="button"
