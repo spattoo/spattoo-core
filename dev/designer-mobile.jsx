@@ -1036,6 +1036,21 @@ CAT_ELEMENTS.push({
   default_color: '#C9A66B', sort_order: 43,
 });
 
+/* ⚠️ THE REAL AGE TOPPER, which this harness has never had. The "Number topper" fixture above is a
+ * flat sticker placeholder; the actual one is a PROCEDURAL row — `placement_config.procedural =
+ * 'number_topper'` — which `addAgeFromRow` turns into a `design.ages[]` entry rendered by
+ * `AgeNumber` (extruded Text3D, gold/silver, its own card with AGE and FINISH). Nothing here could
+ * reach that path, which is why its drag, its thickness and its material were all unexercised. */
+CAT_ELEMENTS.push({
+  id: 'e44', name: 'Age number', description: 'the procedural number topper (design.ages)',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: CAT_THUMB('#c9a23f'), thumbnail_url: CAT_THUMB('#c9a23f'), thumb_key: null,
+  allowed_zones: ['top_surface'],
+  allowed_actions: { move: true, delete: true, resize: true, duplicate: true },
+  placement_config: { procedural: 'number_topper', number_topper: { value: '1', size: 0.95 } },
+  default_color: '#C9A23F', sort_order: 44,
+});
+
 const STUBS = {
   // A baker with every capability, so the strip and the More sheet are both fully populated —
   // the busiest case, which is the one that used to overflow.

@@ -196,6 +196,7 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
+import { AGE_MATERIAL_KEYS } from './canvas/AgeNumber.jsx';
 import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS, cutAssembly } from './geometry/acrylicConfig.js';
 import { writingScaleFrom, writingMaxFit } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
@@ -17174,6 +17175,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <SizeDial size={selectedAge.size ?? 0.95} min={0.4} max={2} step={0.05} onChange={v => updateAge(selectedAge.id, { size: v })} />
                   <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Size</span>
+                </div>
+                {/* ⚠️ MATERIAL ABOVE FINISH, because it is the bigger question: acrylic or fondant
+                    decides what the thing IS, and the finish only colours it. It also carries the
+                    THICKNESS — a laser-cut acrylic sheet is thin with a mirror edge, hand-cut
+                    fondant is chunkier and matte — so there is no separate depth control to get
+                    out of step with the look. */}
+                <div>
+                  <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>MATERIAL</div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    {AGE_MATERIAL_KEYS.map(m => (
+                      <button key={m} onClick={() => updateAge(selectedAge.id, { material: m })}
+                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.material ?? 'acrylic') === m ? '#b8860b' : '#ddd'}`, background: (selectedAge.material ?? 'acrylic') === m ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{m}</button>
+                    ))}
+                  </div>
                 </div>
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>FINISH</div>
