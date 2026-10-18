@@ -1916,7 +1916,21 @@ function ElementStick({ stick }) {
   useEffect(() => () => geo?.dispose(), [geo]);
   if (!geo) return null;
   return (
-    <mesh geometry={geo} position={[0, stick.baseY, 0]} castShadow receiveShadow raycast={() => {}}>
+    /* ⚠️ BEHIND THE ARTWORK, NOT IN ITS PLANE. The rod sat at z = 0 — exactly where a 2D sticker's
+       artwork plane is — and "drawn first so the artwork covers it" is not what decides this: the
+       rod is OPAQUE, so it renders in the opaque pass and writes depth, while the sticker's artwork
+       is TRANSPARENT and is drawn afterwards and depth-TESTED against it. At equal z the rod wins,
+       and a pick appeared across the front of the star it was supposed to be holding up.
+       Pushed back by its own radius, so its nearest surface is tangent to the artwork plane and
+       nothing of it crosses in front. ⚠️ A SAFE NUMBER FOR A 3D ELEMENT TOO: the rod still enters
+       the model, just a radius further back — imperceptible on a ball, and the alternative (clearing
+       the model's whole depth) would hang the pick off the back of it.
+       ⚠️ THIS WORKS BECAUSE THE STICK IS INSIDE THE BILLBOARD. It rides with the artwork, so local
+       −Z is "away from the viewer" at every camera angle; outside it the offset would only be
+       behind from one direction. A vertical cylinder is symmetric about Y, so riding the Y-locked
+       billboard costs it nothing — which is exactly why the WIRE, which is not symmetric, is kept
+       outside it (see the note at the group below). */
+    <mesh geometry={geo} position={[0, stick.baseY, -stick.radius]} castShadow receiveShadow raycast={() => {}}>
       <meshStandardMaterial color="#D8BE93" roughness={0.85} metalness={0} />
     </mesh>
   );
