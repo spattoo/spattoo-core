@@ -9,6 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { AGE_MATERIALS } from './canvas/AgeNumber.jsx';
+import { glyphGeometry } from './geometry/glyphShape.js';
 
 // What AgeNumber does to turn an age into a slab depth. Kept in step with the component by the
 // assertions below rather than by a second copy of the clamp living in the app.
@@ -49,5 +50,60 @@ describe('number topper slab depth', () => {
     }
     // acrylic is a sawn sheet and must never be buildable as deep as hand-cut fondant
     expect(AGE_MATERIALS.acrylic.depthMax).toBeLessThan(AGE_MATERIALS.fondant.depthMax);
+  });
+});
+
+
+/* The SILHOUETTE, which is the other half of "fondant should not have sharp edges". The bevel
+ * rounds where the face meets the side; seen face-on the outline still came to mitred points, and
+ * every real fondant number Sandeep referenced is cut with a plunger and has no sharp corner
+ * anywhere. Asserted as the property itself — how sharply the outline turns — rather than by
+ * pinning cornerR to a number, so retuning the look does not fail the test that protects it.
+ */
+describe('number topper silhouette', () => {
+  // Largest direction change between consecutive outline edges, in degrees. A mitred corner on a
+  // `1` turns 90 degrees; a rounded one spreads that turn over several short edges.
+  const sharpestCorner = (text, cornerR) => {
+    const { outline } = glyphGeometry(text, 1, 0, cornerR);
+    let worst = 0;
+    for (const ring of outline) {
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], c = ring[(i + 2) % ring.length];
+        const v1 = { x: b.x - a.x, z: b.z - a.z }, v2 = { x: c.x - b.x, z: c.z - b.z };
+        const l1 = Math.hypot(v1.x, v1.z), l2 = Math.hypot(v2.x, v2.z);
+        if (l1 < 1e-6 || l2 < 1e-6) continue;
+        const cos = Math.min(1, Math.max(-1, (v1.x * v2.x + v1.z * v2.z) / (l1 * l2)));
+        worst = Math.max(worst, Math.acos(cos) * 180 / Math.PI);
+      }
+    }
+    return worst;
+  };
+
+  it('acrylic is sawn, so it keeps its mitred corners', () => {
+    expect(AGE_MATERIALS.acrylic.cornerR).toBe(0);
+    expect(sharpestCorner('1', AGE_MATERIALS.acrylic.cornerR)).toBeGreaterThan(80);
+  });
+
+  it('fondant softens every digit, and leaves no right-angle mitre', () => {
+    expect(AGE_MATERIALS.fondant.cornerR).toBeGreaterThan(0);
+    for (const digit of ['1', '2', '4', '7', '8']) {
+      const sawn    = sharpestCorner(digit, 0);
+      const rounded = sharpestCorner(digit, AGE_MATERIALS.fondant.cornerR);
+      expect(rounded, `digit ${digit} is rounder than the sawn cut`).toBeLessThan(sawn);
+    }
+    // `1` and `4` are the true right angles in this font; nothing that square may survive.
+    for (const digit of ['1', '4']) {
+      expect(sharpestCorner(digit, 0), `digit ${digit} starts mitred`).toBeGreaterThan(85);
+      expect(sharpestCorner(digit, AGE_MATERIALS.fondant.cornerR),
+             `digit ${digit} no longer mitred`).toBeLessThan(75);
+    }
+  });
+
+  it('rounding does not eat the counters of an 8 or a 0', () => {
+    // Chaikin shrinks as it cuts; past a point a glyph's holes close and it turns to a blob.
+    for (const digit of ['8', '0']) {
+      const { holes } = glyphGeometry(digit, 1, 0, AGE_MATERIALS.fondant.cornerR);
+      expect(holes.length, `digit ${digit} kept its counters`).toBeGreaterThan(0);
+    }
   });
 });

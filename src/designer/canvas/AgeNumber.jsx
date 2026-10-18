@@ -1,9 +1,8 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { Text3D, Center } from '@react-three/drei';
-import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 import { numberTopperPlaceAt } from '../geometry/surface.js';
+import { glyphGeometry, cleanDigits } from '../geometry/glyphShape.js';
 import { planeHit } from '../utils/raycasting.js';
 import { useDragPlacement } from '../hooks/useDragPlacement.js';
 import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantTexture.js';
@@ -76,7 +75,7 @@ export const AGE_MATERIALS = {
      ⚠️ `grain` IS THE SHARED FONDANT NORMAL MAP, the one every other fondant decoration already
      wears (`useSharedFondantTexture` → getFondantNormalMap). Without it a matte gold number is
      just unlit acrylic: *"it does not have fondant texture"*. Matte alone is not a substance. */
-  acrylic: { depth: 0.035, depthMin: 0.02, depthMax: 0.08, bevel: 0.28, bevelSegments: 3,  grain: false, edgeShade: 0.78,
+  acrylic: { depth: 0.035, depthMin: 0.02, depthMax: 0.08, cornerR: 0, bevel: 0.28, bevelSegments: 3,  grain: false, edgeShade: 0.78,
              metalness: 0.95, roughness: 0.14,
              clearcoat: 0.9, clearcoatRoughness: 0.06, emissiveIntensity: 0.28 },
   /* ⚠️ `edgeShade: 1` — THE EDGE IS THE SAME COLOUR AS THE FACE, and anything else draws a border.
@@ -86,7 +85,7 @@ export const AGE_MATERIALS = {
      darker colour became a thick outline drawn round the digit — reported as *"why there is a
      border like thing for number 2"*, and introduced by the rounding that fixed the sharp edges.
      A fondant number is cut from ONE sheet and is one colour all the way through. */
-  fondant: { depth: 0.06, depthMin: 0.035, depthMax: 0.13, bevel: 0.46, bevelSegments: 14, grain: true, edgeShade: 1,
+  fondant: { depth: 0.06, depthMin: 0.035, depthMax: 0.13, cornerR: 0.62, bevel: 0.46, bevelSegments: 14, grain: true, edgeShade: 1,
              metalness: 0.0,  roughness: 0.92,
              clearcoat: 0.0, clearcoatRoughness: 0.9, emissiveIntensity: 0.06 },
 };
@@ -165,15 +164,37 @@ export default function AgeNumber({
       slab: +depthFrac.toFixed(4), depth: +slabDepth.toFixed(4) };
   }
 
+  /* ⚠️ THE SILHOUETTE IS ROUNDED, NOT JUST THE EDGE — the other half of *"fondant should not hav
+     sharp edges"*. The bevel rounds where the face meets the side; seen face-on the OUTLINE still
+     came to mitred points, and Sandeep's reference photos of real fondant numbers have no sharp
+     corner anywhere: a plunger cutter in rolled fondant gives soft terminals on the 1's flag and
+     foot and on the 2's tail. Measured off those photos, the stroke weight and proportions were
+     already right (ref `2` stroke/height 0.273 against this font's 0.300) — the corners were the
+     whole difference.
+     ⚠️ AND THE ROUNDING ALREADY EXISTED. `glyphGeometry` has done exactly this for number-shaped
+     CAKES all along — Chaikin corner-cutting over a densified contour, bounded by radius rather
+     than edge length, plus counter-aware stroke weighting, cached per (text, height, weight,
+     cornerR). Reusing it is CLAUDE.md rule 1; writing a second rounding pass here would have been
+     a worse copy of a solved problem, and would have drifted from the number cakes it shares a
+     font with. `cornerR` is a MATERIAL property, so acrylic (0) stays sawn and crisp and there is
+     one renderer for both — not a branch on which material this is. */
+  const { shapes, worldW, worldH } = glyphGeometry(cleanDigits(value), size, 0, mat.cornerR);
+  const geom = useMemo(() => new THREE.ExtrudeGeometry(shapes, {
+    depth: slabDepth, curveSegments: 12, bevelEnabled: true,
+    bevelThickness: slabDepth * mat.bevel,
+    bevelSize: slabDepth * mat.bevel * 0.72,
+    bevelOffset: 0, bevelSegments: mat.bevelSegments,
+  }), [shapes, slabDepth, mat.bevel, mat.bevelSegments]);
+
+
   if (!value) return null;
 
   const yaw = (age.yaw ?? 0) * DEG;
   const ox  = age.offsetX ?? 0;
   const oz  = age.offsetZ ?? 0;
 
-  // Approximate footprint for the grab plane (Text3D is auto-centred by <Center>).
-  const numW = value.length * size * 0.7;
-  const numH = size * 0.72;   // cap height for helvetiker bold
+  const numW = worldW;
+  const numH = worldH;
   /* ⚠️ A FLOOR UNDER THE GRAB TARGET, because the digits ARE the target and a small one is a few
      pixels. The plane was exactly the artwork plus a hair, so at the dial's smallest size (0.4) a
      single digit gives roughly 0.4 x 0.4 world units — unhittable in practice, and reported as
@@ -198,25 +219,16 @@ export default function AgeNumber({
   // y=0, so seating the group at topY lands the digits' base on the cake top. yaw spins it.
   return (
     <group position={[ox, topY + 0.01, oz]} rotation={[0, yaw, 0]}>
-      <Center disableY>
-        <Text3D
-          ref={textRef}
-          key={`${value}-${age.finish}-${age.material ?? 'acrylic'}`}
-          font={helvetikerBold}
-          size={size}
-          height={slabDepth}
-          curveSegments={12}
-          bevelEnabled
-          bevelThickness={slabDepth * mat.bevel}
-          bevelSize={slabDepth * mat.bevel * 0.72}
-          bevelOffset={0}
-          bevelSegments={mat.bevelSegments}
-        >
-          {value}
-          <meshPhysicalMaterial attach="material-0" {...matProps(face)} />
-          <meshPhysicalMaterial attach="material-1" {...matProps(side)} />
-        </Text3D>
-      </Center>
+      {/* `glyphGeometry` centres the string on the origin in BOTH axes, so standing it on the cake
+          is an explicit lift of half its height — not <Center disableY>, which kept a FONT
+          BASELINE at y=0 and left descender-free digits floating by the baseline gap. The z shift
+          centres the slab front-to-back so turning the number does not swing it off its spot.
+          Material slot 0 is the front and back faces, slot 1 the side and bevel — the same two
+          slots Text3D exposed, because ExtrudeGeometry is what Text3D was building all along. */}
+      <mesh ref={textRef} geometry={geom} position={[0, worldH / 2, -slabDepth / 2]}>
+        <meshPhysicalMaterial attach="material-0" {...matProps(face)} />
+        <meshPhysicalMaterial attach="material-1" {...matProps(side)} />
+      </mesh>
       {/* upright grab plane just in front of the number */}
       <mesh position={[0, grabH / 2, size * 0.22]} {...grabProps}>
         <planeGeometry args={[grabW, grabH]} />
