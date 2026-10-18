@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { topContains } from './surface.js';
+import { topContains, perimeter } from './surface.js';
 import { pushStrand, STRAND_SIDES, STRAND_SEGS , finishGeometry } from './strand.js';
 import { mulberry32 } from '../utils/random.js';
 
@@ -77,6 +77,52 @@ export function buildGrassTuft(opts = {}) {
     pushStrand(pos, nor, idx, { origin, dir, bend, len, r0: o.thickness });
   }
 
+  return finishGeometry(pos, nor, idx);
+}
+
+/* ── The flat field a ring of grass encloses ─────────────────────────────────────────────────────
+ *
+ * The cricket-cake pattern, and the one every reference of it shows: a flat green circle on the
+ * cake top with piped grass ringing its edge, bat and ball and stumps sitting on the flat part.
+ * `bandInner` has always been able to make the ring — it hollows out the middle and leaves grass
+ * hugging the rim — but the hollow showed the CAKE through it, so the middle was whatever colour
+ * the tier was. The flat green is the other half of the look and it did not exist.
+ *
+ * ⚠️ IT IS THE TIER'S OWN OUTLINE, SCALED — not a circle. `bandInner` is defined as a scale of the
+ * outline rather than a radius, for the reason stated where it is used: a radius would put a round
+ * patch on a sheet cake instead of a field that follows the edge. The cap is built from the same
+ * `perimeter(shape)` every other surface in this codebase walks, so a heart tier gets a heart of
+ * flat green and a number tier gets a number, through ONE path (INVARIANTS #1).
+ *
+ * ⚠️ IT SITS SLIGHTLY PROUD OF THE TOP, because a cap exactly at `topY` z-fights the tier's own cap
+ * — two coplanar surfaces, and which one wins is down to depth precision and the camera angle, so
+ * it flickers as the cake turns. A hair above is the standard answer and the one the sticker path
+ * already uses.
+ *
+ * @param shape    the tier's footprint — anything `perimeter()` understands
+ * @param scale    how far out the flat part reaches, as a fraction of the outline (= `bandInner`)
+ * @param segments how finely the outline is sampled
+ */
+export function buildFieldCap(shape, { scale = 0.55, segments = 96 } = {}) {
+  const perim = perimeter(shape);
+  if (!perim?.length || !(scale > 0)) return null;
+  const n = Math.max(24, Math.round(segments));
+  // `finishGeometry` takes the index as { list, baseIndex } — the accumulator `pushStrand` fills —
+  // not a bare array. A plain array sets an undefined index and the mesh throws on every frame.
+  const pos = [], nor = [], idx = { list: [], baseIndex: 0 };
+  pos.push(0, 0, 0); nor.push(0, 1, 0);            // the centre of the fan
+  for (let i = 0; i < n; i++) {
+    const p = perim.at((i / n) * perim.length);
+    pos.push(p.x * scale, 0, p.z * scale);
+    nor.push(0, 1, 0);
+  }
+  /* ⚠️ WOUND SO THE GEOMETRIC NORMAL POINTS UP, and the first version had it backwards — the cap
+     was a down-facing disc that only showed because the material was left on DoubleSide while I
+     was probing something else. Two wrongs looking like a right: with front-face culling it is
+     invisible from the one angle anybody views a cake top from. The `normal` attribute says
+     (0,1,0) either way, which is exactly why that attribute cannot be the thing checked; the test
+     takes the cross product of the triangle's own edges. */
+  for (let i = 0; i < n; i++) idx.list.push(0, 1 + ((i + 1) % n), 1 + i);
   return finishGeometry(pos, nor, idx);
 }
 

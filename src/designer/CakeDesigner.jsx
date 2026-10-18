@@ -15118,17 +15118,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {/* Three modes, one at a time — a band and a clump answer different questions and mixing
               them on one surface reads as a mistake. Switching sets the other's field to null so the
               geometry never sees two coverage rules at once. */}
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {[
-              ['Whole top', { bandInner: null, patches: null }],
-              ['Rim band',  { bandInner: 0.55, patches: null }],
-              ['Clumps',    { bandInner: null, patches: [newPatch([])] }],
+              ['Whole top', { bandInner: null, patches: null, field: false }],
+              ['Rim band',  { bandInner: 0.55, patches: null, field: false }],
+              /* ⚠️ THE CRICKET CAKE, and the reason a band alone was never it. `bandInner` could
+                 always ring the rim with grass, but the hollow showed the CAKE through it — so the
+                 middle was whatever colour the tier happened to be. Every reference of this pattern
+                 has a flat green circle with the grass ringing its edge, and the bat, ball and
+                 stumps standing on the flat part. "Pitch" is that: the same band, with the middle
+                 filled. Band width sizes both, because they are one edge. */
+              ['Pitch',     { bandInner: 0.62, patches: null, field: true }],
+              ['Clumps',    { bandInner: null, patches: [newPatch([])], field: false }],
             ].map(([label, patch]) => {
-              const mode = g.patches?.length ? 'Clumps' : g.bandInner != null ? 'Rim band' : 'Whole top';
+              const mode = g.patches?.length ? 'Clumps'
+                : g.bandInner != null ? (g.field ? 'Pitch' : 'Rim band')
+                : 'Whole top';
               const on = mode === label;
               return (
                 <button key={label} onClick={() => { if (!on) updateGrass(i, patch); }}
-                  style={{ flex: 1, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
+                  style={{ flex: '1 1 70px', minWidth: 70, padding: '7px 0', borderRadius: 8, fontWeight: 700, fontSize: 11.5, cursor: 'pointer',
                     border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK }}>
                   {label}
                 </button>
@@ -15169,9 +15178,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             state a baker turns on, not a measurement. */}
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
+            /* ⚠️ THE SAME EDGE, NAMED FOR WHAT THE BAKER IS LOOKING AT. Both modes store
+               `bandInner` — there is only one edge, where the flat part stops and the grass
+               starts — but which side of it you are thinking about changes with the mode. On a rim
+               band the grass is the subject and a WIDTH is what is being set; on a pitch the green
+               circle is the subject and its SIZE is, and the two run in opposite directions. One
+               dial labelled "Band width" on a pitch would get wider as the field got smaller,
+               which is a control that fights the thing you are watching. */
             ...(g.bandInner != null ? [
-              { k: 'Band width', v: 1 - g.bandInner, min: 0.12, max: 0.9, step: 0.02,
-                fmt: v => `${Math.round(v * 100)}%`, set: v => updateGrass(i, { bandInner: +(1 - v).toFixed(2) }) },
+              g.field
+                ? { k: 'Field size', v: g.bandInner, min: 0.25, max: 0.9, step: 0.02,
+                    fmt: v => `${Math.round(v * 100)}%`, set: v => updateGrass(i, { bandInner: +v.toFixed(2) }) }
+                : { k: 'Band width', v: 1 - g.bandInner, min: 0.12, max: 0.9, step: 0.02,
+                    fmt: v => `${Math.round(v * 100)}%`, set: v => updateGrass(i, { bandInner: +(1 - v).toFixed(2) }) },
             ] : []),
             { k: 'Density', v: 0.24 - (g.spacing ?? GRASS_DEFAULTS.spacing), min: 0.04, max: 0.2, step: 0.002,
               fmt: () => `${Math.round((0.2 - (g.spacing ?? 0.075)) / 0.16 * 100)}%`,
