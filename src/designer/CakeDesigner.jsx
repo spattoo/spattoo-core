@@ -196,7 +196,7 @@ import TierShapeControls, { hasShapeControls } from './controls/TierShapeControl
 import { CREAM_FONTS, DEFAULT_CREAM_FONT } from './geometry/creamText.js';
 import { TOPPER_FACES, DEFAULT_TOPPER_FACE, faceFit } from './geometry/topperFaces.js';
 import { TOPPER_FINISHES } from './geometry/topperFinishes.js';
-import { AGE_MATERIAL_KEYS } from './canvas/AgeNumber.jsx';
+import { AGE_MATERIAL_KEYS, AGE_FINISH_COLORS } from './canvas/AgeNumber.jsx';
 import { writingFromAcrylicRow, acrylicFinishes, ACRYLIC_DEFAULTS, cutAssembly } from './geometry/acrylicConfig.js';
 import { writingScaleFrom, writingMaxFit } from './geometry/writingScale.js';
 import { NOZZLE_BY_KEY, HEAP_HEIGHT_PER_DIAMETER } from './geometry/creamPen.js';
@@ -3573,6 +3573,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // is most of why it was not obvious from production. Keep derivations next to what they derive.
   const selectedWritingId = selectedEl?.type === 'writing' ? (selectedEl.id ?? null) : null;
   const selectedAge     = design.ages.find(a => a.id === selectedAgeId) ?? null;
+  /* What colour the number IS. `finish` is only the preset last tapped; the wheel writes `color`
+     and leaves it behind, so every reader asks this and never `finish`. */
+  const ageColour       = selectedAge?.color ?? AGE_FINISH_COLORS[selectedAge?.finish ?? 'gold'];
   const selectedStickerId = selectedStickerIds.size === 1 ? [...selectedStickerIds][0] : null;
   // For a selected `hue_regions` sticker, derive its colour regions (from the image) once — the toolbar
   // feeds them into the shared "Customise colours" swatches (one per region). No-op for other elements.
@@ -17190,13 +17193,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     ))}
                   </div>
                 </div>
+                {/* ⚠️ THE WHEEL, NOT A ROW OF SWATCHES. `ColorWheel` is THE colour control a customer
+                    picks with anywhere in this app (root CLAUDE.md rule 1), and a number topper had
+                    only two hard-coded choices — fine for an acrylic order, useless for fondant,
+                    which is tinted to match the cake. Gold and Silver stay as one-tap presets
+                    beside it; both write the same `color` field, so there is no "custom" mode to
+                    fall out of step. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <ColorWheel color={ageColour} onChange={c => updateAge(selectedAge.id, { color: c })} />
+                  <span style={{ fontSize: 8.5, fontWeight: 700, color: '#b29aa2', textTransform: 'uppercase', letterSpacing: 0.5 }}>Colour</span>
+                </div>
+                {/* ⚠️ LIT BY THE COLOUR, NOT BY `finish`. Both these buttons and the wheel write the
+                    same `color`, so `finish` only records which preset was last TAPPED — it stays
+                    'gold' forever once tapped, and the row went on showing Gold selected under a
+                    teal number. The same discriminator the foil FINISH row uses: ask what the
+                    thing IS now, never what the last tap was. */}
                 <div>
                   <div style={{ fontSize: 9, fontWeight: 700, color: '#888', marginBottom: 4 }}>FINISH</div>
                   <div style={{ display: 'flex', gap: 6 }}>
-                    {['gold', 'silver'].map(f => (
-                      <button key={f} onClick={() => updateAge(selectedAge.id, { finish: f })}
-                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${(selectedAge.finish ?? 'gold') === f ? '#b8860b' : '#ddd'}`, background: (selectedAge.finish ?? 'gold') === f ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{f}</button>
-                    ))}
+                    {['gold', 'silver'].map(f => {
+                      const on = ageColour.toLowerCase() === AGE_FINISH_COLORS[f].toLowerCase();
+                      return (
+                      <button key={f} onClick={() => updateAge(selectedAge.id, { finish: f, color: AGE_FINISH_COLORS[f] })}
+                        style={{ flex: 1, padding: '6px', borderRadius: 8, border: `1.5px solid ${on ? '#b8860b' : '#ddd'}`, background: on ? '#FBF1D8' : '#fff', fontSize: 11, fontWeight: 700, color: '#444', cursor: 'pointer', textTransform: 'capitalize', fontFamily: "'Quicksand',sans-serif" }}>{f}</button>
+                      );
+                    })}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>

@@ -18,10 +18,25 @@ const DEG = Math.PI / 180;
 //
 // Material: Text3D exposes two material slots — index 0 = front/back faces, index 1 = side+bevel.
 // A satin warm-gold face + a slightly darker, shinier side/bevel reads as a metal candle number.
+/* The two quick picks. They are COLOURS, not modes — the wheel below can reach anything, and these
+   are the two a number topper is most often ordered in. */
 const FINISHES = {
-  gold:   { face: '#c9a23f', side: '#a07c2c', emissive: '#2a1c04' },
-  silver: { face: '#cdd2d8', side: '#9aa0a8', emissive: '#202428' },
+  gold:   { face: '#c9a23f' },
+  silver: { face: '#cdd2d8' },
 };
+// The presets as plain colours, for the card: the two buttons and the wheel write the same field.
+export const AGE_FINISH_COLORS = Object.fromEntries(
+  Object.entries(FINISHES).map(([k, v]) => [k, v.face]));
+
+/* Multiply a hex towards black. Used for the cut edge and the emissive floor, so BOTH follow
+   whatever colour is chosen rather than being authored per finish — a custom pink with a fixed
+   brown edge is the bug this replaces. */
+function shade(hex, k) {
+  const n = parseInt(String(hex).replace('#', ''), 16);
+  if (!Number.isFinite(n)) return hex;
+  const c = v => Math.max(0, Math.min(255, Math.round(v * k)));
+  return `#${[(n >> 16) & 255, (n >> 8) & 255, n & 255].map(v => c(v).toString(16).padStart(2, '0')).join('')}`;
+}
 
 /* ── What the number is MADE OF ──────────────────────────────────────────────────────────────────
  *
@@ -47,10 +62,17 @@ export const AGE_MATERIALS = {
      ⚠️ `grain` IS THE SHARED FONDANT NORMAL MAP, the one every other fondant decoration already
      wears (`useSharedFondantTexture` → getFondantNormalMap). Without it a matte gold number is
      just unlit acrylic: *"it does not have fondant texture"*. Matte alone is not a substance. */
-  acrylic: { depth: 0.10, bevel: 0.28, bevelSegments: 3,  grain: false,
+  acrylic: { depth: 0.10, bevel: 0.28, bevelSegments: 3,  grain: false, edgeShade: 0.78,
              metalness: 0.95, roughness: 0.14,
              clearcoat: 0.9, clearcoatRoughness: 0.06, emissiveIntensity: 0.28 },
-  fondant: { depth: 0.22, bevel: 0.46, bevelSegments: 14, grain: true,
+  /* ⚠️ `edgeShade: 1` — THE EDGE IS THE SAME COLOUR AS THE FACE, and anything else draws a border.
+     Text3D's second material slot is side AND bevel, so a darker edge colour wraps however much of
+     the front silhouette the bevel occupies. On acrylic that is a 3-segment chamfer and reads as a
+     polished cut edge; on fondant the bevel is nearly half the depth over 14 segments, so the same
+     darker colour became a thick outline drawn round the digit — reported as *"why there is a
+     border like thing for number 2"*, and introduced by the rounding that fixed the sharp edges.
+     A fondant number is cut from ONE sheet and is one colour all the way through. */
+  fondant: { depth: 0.22, bevel: 0.46, bevelSegments: 14, grain: true, edgeShade: 1,
              metalness: 0.0,  roughness: 0.92,
              clearcoat: 0.0, clearcoatRoughness: 0.9, emissiveIntensity: 0.06 },
 };
@@ -65,6 +87,11 @@ export default function AgeNumber({
   const value = String(age?.value ?? '').replace(/[^0-9]/g, '');    // digits only
   const fin   = FINISHES[age?.finish] ?? FINISHES.gold;
   const mat   = AGE_MATERIALS[age?.material] ?? AGE_MATERIALS.acrylic;
+  /* An authored colour wins over the preset, so the wheel can reach anything and Gold/Silver stay
+     one tap away. Edge and emissive are DERIVED from it — see `shade`. */
+  const face  = age?.color ?? fin.face;
+  const side  = mat.edgeShade >= 1 ? face : shade(face, mat.edgeShade);
+  const glow  = shade(face, 0.16);
 
   /* ⚠️ THE GRAIN GOES ON AFTER THE GEOMETRY EXISTS, because Text3D builds it. The same two steps
      the sticker path runs for `useSharedFondantTexture`: box-UV the extrusion (it has no UVs of its
@@ -95,7 +122,7 @@ export default function AgeNumber({
     if (import.meta.env?.DEV && typeof window !== 'undefined') {
       window.__ageGrain = { applied: mats.map(nm => !!nm.normalMap), uv: !!m.geometry.attributes.uv };
     }
-  }, [value, size, mat, age?.finish]);
+  }, [value, size, mat, age?.finish, age?.color]);
 
   // Drag on the cake-top plane → snap inside the surface footprint; shared press/drag/tap behaviour.
   const { grabProps } = useDragPlacement({
@@ -115,6 +142,7 @@ export default function AgeNumber({
       offsetX: +(age?.offsetX ?? 0).toFixed(4), offsetZ: +(age?.offsetZ ?? 0).toFixed(4),
       hasOnMove: typeof onMove === 'function',
       material: age?.material ?? 'acrylic',
+      finish: age?.finish ?? 'gold', face, side,
       depth: +(size * mat.depth).toFixed(4) };
   }
 
@@ -141,7 +169,7 @@ export default function AgeNumber({
   const matProps = (color) => ({
     color, metalness: mat.metalness, roughness: mat.roughness,
     clearcoat: mat.clearcoat, clearcoatRoughness: mat.clearcoatRoughness, envMapIntensity: 1.0,
-    emissive: fin.emissive,
+    emissive: glow,
     // Selection still lifts it, but from the material's own resting glow — a matte fondant number
     // that flared like polished acrylic when tapped would read as the wrong substance.
     emissiveIntensity: selected ? mat.emissiveIntensity + 0.17 : mat.emissiveIntensity,
@@ -166,8 +194,8 @@ export default function AgeNumber({
           bevelSegments={mat.bevelSegments}
         >
           {value}
-          <meshPhysicalMaterial attach="material-0" {...matProps(fin.face)} />
-          <meshPhysicalMaterial attach="material-1" {...matProps(fin.side)} />
+          <meshPhysicalMaterial attach="material-0" {...matProps(face)} />
+          <meshPhysicalMaterial attach="material-1" {...matProps(side)} />
         </Text3D>
       </Center>
       {/* upright grab plane just in front of the number */}
