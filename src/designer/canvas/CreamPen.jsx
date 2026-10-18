@@ -3,7 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildPipingStroke, buildPipingHeap } from '../geometry/creamPen.js';
 import { pickSeat } from '../geometry/penSeat.js';
-import { snapStroke, softenStroke, SMOOTH_DEFAULT } from '../geometry/strokeSnap.js';
+import { shapeStroke, SMOOTH_DEFAULT } from '../geometry/strokeSnap.js';
 import { translateStroke, distanceToStroke, strokePoints, isUprightNormal } from '../geometry/strokeMove.js';
 import { buildRay } from '../utils/raycasting.js';
 import { mediumOf } from '../geometry/pipingMedia.js';
@@ -227,10 +227,17 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
              With Auto-correct ON the snapper does the softening itself — it has to, because it
              judges straightness on the softened path — so it is told the amount rather than being
              handed an already-softened path to soften twice. */
-          let pts2 = pts.map(round);
+          /* ⚠️ THE DRAWN POINTS ARE KEPT, not just the tidied ones. Smoothing is destructive —
+             once a stroke is stored smoothed there is no way back to the hand that drew it, and a
+             Smooth dial could then only ever describe the NEXT stroke. Keeping `raw` is what lets
+             the dial act on a line already on the cake (INVARIANTS #11). */
+          const raw = pts.map(round);
+          const smooth = s.smooth ?? SMOOTH_DEFAULT;
+          const autoShape = !!s.autoShape;
+          const shaped = { raw, smooth, autoShape };
+          let pts2 = raw;
           if (!isTap) {
-            const opts = { normal: nrm ?? [0, 1, 0], axis: [0, 0], smooth: s.smooth ?? SMOOTH_DEFAULT };
-            pts2 = (s.autoShape ? snapStroke(pts2, opts) : softenStroke(pts2, opts)).points;
+            pts2 = shapeStroke(raw, { normal: nrm ?? [0, 1, 0], axis: [0, 0], smooth, autoShape });
           }
           if (s.stampId && s.stampUrl && (nrm || !isTap)) {
             // GLB stamp mode: tap → one stamp, drag → a row of stamps along the path.
@@ -256,11 +263,11 @@ export default function CreamPen({ piping = [], drawMode = false, moveMode = fal
                             // its ring, and the sheet has to be able to name it.
                             stampName: s.stampName ?? null };
             if (isTap) onAddStroke?.({ kind: 'stamp', ...stamp, point: round(pts[0]), normal: nrm });
-            else onAddStroke?.({ kind: 'stamprope', ...stamp, points: pts2, normal: nrm || [0, 1, 0], spacing: s.spacing ?? 0.85 });
+            else onAddStroke?.({ kind: 'stamprope', ...stamp, ...shaped, points: pts2, normal: nrm || [0, 1, 0], spacing: s.spacing ?? 0.85 });
           } else if (isTap && nrm) {
             onAddStroke?.({ kind: 'heap', ...base, heapHeight: s.heapHeight, point: round(pts[0]), normal: nrm });
           } else {
-            onAddStroke?.({ ...base, points: pts2 });
+            onAddStroke?.({ ...base, ...shaped, points: pts2, normal: nrm || [0, 1, 0] });
           }
         }
         return [];

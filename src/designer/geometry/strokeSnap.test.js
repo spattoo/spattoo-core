@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { snapStroke, softenStroke, SMOOTH_DEFAULT } from './strokeSnap.js';
+import { snapStroke, softenStroke, shapeStroke, SMOOTH_DEFAULT } from './strokeSnap.js';
 
 // ── Tidying a hand-drawn piping line ─────────────────────────────────────────────────────────────
 // The risk here is not that it fails to tidy — it is that it tidies something the customer MEANT.
@@ -353,7 +353,67 @@ describe('the Smooth dial is wired to the pen', () => {
     expect(designer).toMatch(/k: 'Smooth'[\s\S]{0,260}'off'/);
   });
 
-  it('is applied whether or not Auto-correct is on', () => {
-    expect(pen).toMatch(/s\.autoShape \? snapStroke\(pts2, opts\) : softenStroke\(pts2, opts\)/);
+  it('commits through the one shaping path, carrying the amount and the checkbox', () => {
+    expect(pen).toMatch(/pts2 = shapeStroke\(raw, \{[\s\S]{0,120}smooth,[\s\S]{0,40}autoShape/);
+  });
+
+  /* ⚠️ The drawn points must reach the stroke, or the dial on the piece card has nothing to
+     re-smooth from and is dead exactly as reported. */
+  it('keeps the drawn points on every stroke that has a path', () => {
+    expect(pen).toMatch(/const raw = pts\.map\(round\)/);
+    expect(pen).toMatch(/const shaped = \{ raw, smooth, autoShape \}/);
+    expect((pen.match(/\.\.\.shaped/g) ?? []).length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('puts a live Smooth on the piece card, not only in the pen row', () => {
+    expect(designer).toMatch(/label="Smooth"[\s\S]{0,400}shapeStroke\(pickedStroke\.raw/);
+  });
+});
+
+
+/* ── Re-smoothing a stroke already on the cake ───────────────────────────────────────────────────
+ * *"smooth has no impact. its a dead control."* It was applied once at commit and baked into the
+ * stored points, so the dial could only ever describe the NEXT stroke — and moving it while
+ * looking at a piped line did nothing. The drawn points are now kept as `raw`, and `shapeStroke`
+ * is the single path from those to what is rendered: at commit, and again on every move of the
+ * dial. One path, so a re-smoothed stroke is IDENTICAL to one drawn at that setting.
+ */
+describe('shapeStroke', () => {
+  const wobble = (i, amp) => Math.sin(i * 2.399963) * amp + Math.sin(i * 5.7) * amp * 0.6;
+  const drawn = Array.from({ length: 80 }, (_, i) => {
+    const t = i / 79, a = -0.9 + 1.8 * t;
+    return [Math.cos(a) * 1.2, 1 + Math.sin(t * Math.PI) * 0.22 + wobble(i, 0.018), Math.sin(a) * 1.2];
+  });
+  const wall = { normal: [1, 0, 0], axis: [0, 0] };
+
+  it('gives a different line at a different setting — the dial is not dead', () => {
+    const low  = shapeStroke(drawn, { ...wall, smooth: 0.1 });
+    const high = shapeStroke(drawn, { ...wall, smooth: 1 });
+    expect(low).not.toEqual(high);
+  });
+
+  it('re-smoothing from raw matches drawing at that setting exactly', () => {
+    // what the card does when the dial moves, against what the pen does at commit
+    for (const a of [0, 0.3, 0.75, 1]) {
+      expect(shapeStroke(drawn, { ...wall, smooth: a }))
+        .toEqual(softenStroke(drawn, { ...wall, smooth: a }).points);
+    }
+  });
+
+  it('honours Auto-correct when the stroke was drawn with it on', () => {
+    const straightish = Array.from({ length: 40 }, (_, i) => {
+      const t = i / 39, a = -0.8 + 1.6 * t;
+      return [Math.cos(a) * 1.2, 1 + wobble(i, 0.03), Math.sin(a) * 1.2];
+    });
+    const snapped = shapeStroke(straightish, { ...wall, smooth: 0.5, autoShape: true });
+    expect(snapped).toEqual(snapStroke(straightish, { ...wall, smooth: 0.5 }).points);
+    // and with it off the same drawing keeps its wobbleless curve without being made a bar
+    expect(shapeStroke(straightish, { ...wall, smooth: 0.5, autoShape: false }))
+      .toEqual(softenStroke(straightish, { ...wall, smooth: 0.5 }).points);
+  });
+
+  it('hands back anything too short to shape', () => {
+    expect(shapeStroke([[0, 1, 0]], wall)).toEqual([[0, 1, 0]]);
+    expect(shapeStroke(null, wall)).toBeNull();
   });
 });

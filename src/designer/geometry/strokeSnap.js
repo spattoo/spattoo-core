@@ -427,3 +427,24 @@ function snapOnWall(points, axis, smooth) {
   }
   return { points: out, shape: 'line' };
 }
+
+
+/* ── Re-deriving a stroke that is already on the cake ────────────────────────────────────────────
+ * ⚠️ THE SMOOTHING HAS TO BE RE-DOABLE, or the control that sets it is dead on arrival. It was
+ * applied once at commit and baked into the stored points, which is right for stability — a stroke
+ * must redraw identically forever — but it meant the Smooth dial could only ever describe the NEXT
+ * stroke. Sandeep moved it with a line on the cake in front of him and nothing happened:
+ * *"smooth has no impact. its a dead control."* He was right, and in the way that matters: this is
+ * INVARIANTS #11, a control and the thing it changes never on screen together.
+ * So the DRAWN points are kept on the stroke as `raw`, and this is the one function that turns
+ * them into rendered points — at commit, and again every time the dial moves. One path, so a
+ * re-smoothed stroke is identical to one drawn at that setting rather than merely similar.
+ */
+// `shapeStroke`, not `strokePoints` — `strokeMove.js` already owns that name for reading a
+// stroke's points, and two functions called the same thing in one folder is a trap for the next
+// person, not a naming preference.
+export function shapeStroke(raw, { normal = [0, 1, 0], axis = [0, 0], smooth = SMOOTH_DEFAULT, autoShape = false } = {}) {
+  if (!Array.isArray(raw) || raw.length < 2) return raw;
+  const opts = { normal, axis, smooth };
+  return (autoShape ? snapStroke(raw, opts) : softenStroke(raw, opts)).points;
+}

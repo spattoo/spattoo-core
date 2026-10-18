@@ -206,7 +206,7 @@ import { SPIRAL_DEFAULTS, SPIRAL_RISE } from './geometry/topSpiral.js';
 import Chip from '../shared/Chip.jsx';
 import { ColorWheel } from './shared/ColorWheel.jsx';
 import { SearchField } from '../shared/SearchField.jsx';
-import { SMOOTH_DEFAULT } from './geometry/strokeSnap.js';
+import { SMOOTH_DEFAULT, shapeStroke } from './geometry/strokeSnap.js';
 import { ScrollFadeRow } from './shared/ScrollFadeRow.jsx';
 import { OffsetDial } from './shared/OffsetDial.jsx';
 import { DialCell } from './shared/DialCell.jsx';   // the captioned dial every control row is built from
@@ -16982,10 +16982,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <ColorWheel color={pickedStroke.color ?? '#ffffff'} compact
             onChange={c => updateStroke(pickedStroke.id, { color: c })}
             cakeColors={[...new Set(collectElementColors(design))]} width={152} />
-          <div style={{ display: 'flex', justifyContent: 'center', marginTop: 8 }}>
+          {/* ⚠️ SMOOTH BELONGS HERE, BESIDE THE PIECE IT SMOOTHS — not only in the pen's ADJUST
+              row. There it could describe the NEXT stroke and nothing else, so moving it with a
+              line already on the cake did nothing at all: *"smooth has no impact. its a dead
+              control."* That is INVARIANTS #11, the most repeated correction in this project — a
+              control and what it changes have to be on screen together. The pen's dial still sets
+              what a new stroke starts at; this one reshapes the stroke being looked at, from the
+              points that were actually drawn.
+              ⚠️ Only for a piece that KEPT its drawn points. Strokes piped before this existed
+              have no `raw` to re-smooth from, and a dial that cannot move its piece is exactly the
+              complaint being fixed — so it is absent there rather than present and dead. */}
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10, marginTop: 8 }}>
             <DialCell label="Size" value={pickedStroke.thickness ?? 0.03}
               min={0.04} max={0.34} step={0.005} fmt={v => v.toFixed(3)}
               onChange={v => updateStroke(pickedStroke.id, { thickness: v })} />
+            {(pickedStroke.raw?.length ?? 0) > 1 && (
+              <DialCell label="Smooth" value={pickedStroke.smooth ?? SMOOTH_DEFAULT}
+                min={0} max={1} step={0.05} fmt={v => (v <= 0 ? 'off' : v.toFixed(2))}
+                onChange={v => updateStroke(pickedStroke.id, {
+                  smooth: v,
+                  points: shapeStroke(pickedStroke.raw, {
+                    normal: pickedStroke.normal ?? [0, 1, 0],
+                    axis: [0, 0],
+                    smooth: v,
+                    autoShape: pickedStroke.autoShape ?? false,
+                  }),
+                })} />
+            )}
           </div>
           {/* ── Undo and Remove, for THIS piece ────────────────────────────────────────────────
               The same pair the pen card offers, meaning the same things one scale down: Undo puts
