@@ -39,7 +39,7 @@ section below (§1–§4) is the authoritative detail for its keys.
   "scale":           { "min": 0.5, "max": 1.5, "step": 0.05 },  // size-dial bounds (optional)
   "single_per_slot": true,                            // hero: one per tier×surface (vs free scatter)
   "scatter":         false,                           // density scatter (sprinkles); excl. single_per_slot
-  "scatter_count":   12,                               // scatter: default instances seeded per surface (admin-authored; else 12, capped to fit)
+  "scatter_count":   12,                               // scatter: instances seeded per surface on drop/tick (admin-authored; ABSENT = 0, i.e. the baker fills it with the Count dial or by hand; capped to fit)
   "cluster":         { "min": 3, "max": 30, "sizes": [1.6, 1.35, 0.85, 0.5], "palette": ["#D4AF37"] },
                                                       // packed faux-ball clump; excl. scatter/single_per_slot
   "hug_fill":        0.7,                             // `hug`: fraction of wall height filled

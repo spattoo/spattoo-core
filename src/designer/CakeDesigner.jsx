@@ -3119,6 +3119,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* Newest last. Undo pops this, so it only ever removes what THIS session put down — it cannot eat
      a sprinkle from the scattered batch, or one placed before the design was opened. */
   const [handSprinkleIds, setHandSprinkleIds] = useState([]);
+  /* ── A surface that is ON and still empty ─────────────────────────────────────────
+   *
+   * ⚠️ NOTHING IN `design` CAN SAY THIS, and it had never needed to. A scatter set exists only as
+   * its instances, so "Top is ticked" was read straight off the cake — true while every drop seeded
+   * a dozen pieces. Now that a drop seeds nothing (see SCATTER_DEFAULT_COUNT), the surface the baker
+   * dropped onto, or ticked, holds no instance to be read: without this the card would have no row
+   * to put the Count dial and **Add by hand** on, and a tick would spring straight back off.
+   *
+   * ⚠️ UI STATE, NOT DESIGN STATE. It says what the open card is SHOWING, so it is never saved and
+   * never reloaded — a surface with nothing on it is not part of the cake. Keyed `elementId|group`
+   * because one card can have several surfaces going at once. */
+  const [scatterOnGroups, setScatterOnGroups] = useState([]);
+  const scatterGroupIsOn = (elementId, group) => scatterOnGroups.includes(`${elementId}|${group}`);
+  function markScatterGroup(elementId, group, on) {
+    const key = `${elementId}|${group}`;
+    setScatterOnGroups(prev => on ? (prev.includes(key) ? prev : [...prev, key]) : prev.filter(k => k !== key));
+  }
 
   const [brushDraw, setBrushDraw] = useState(null);     // { tierIndex } | null
   const brushDrawing = useRef(null);                    // { tierIndex, from, id } | null
@@ -8247,7 +8264,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // the NORMAL sticker path (so they look like the element). They're spaced so they touch but don't
   // overlap (min-centre distance ≈ one tile, STICKER_SIZE × scale). One scatter card with a density +
   // surface chooser manages the set.
-  const SCATTER_DEFAULT_COUNT = 12;
+  /* ⚠️ NOTHING IS SEEDED UNLESS AN ADMIN ASKED FOR IT. Sandeep: "by default when the sprinkles
+     element is added, there are a few sprinkles added on cake. lets not add those by default.
+     either user has to increase the number to scatter them or manually add them." It was 12, so a
+     drop threw a dozen pieces onto the cake and the baker's first act was always undoing someone
+     else's decision. `placement_config.scatter_count` still seeds that many for a row that authors
+     it (rule 3 — the default stays admin-authored); absent, the surface starts empty and the Count
+     dial or **Add by hand** fills it. */
+  const SCATTER_DEFAULT_COUNT = 0;
   /* How many scattered instances the renderer can carry before the cake stops responding. See the
      measurement beside `scatterMaxCount`, which is the only place this is used. */
   const SCATTER_RENDER_BUDGET = 1000;
@@ -8378,6 +8402,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function scatterCountFor(element, zone, tierIndex, scale) {
     const configured = element?.placement_config?.scatter_count;
     const n = Number.isFinite(configured) && configured > 0 ? Math.round(configured) : SCATTER_DEFAULT_COUNT;
+    if (n <= 0) return 0;                       // nothing seeded — see SCATTER_DEFAULT_COUNT
     return Math.min(n, scatterMaxCount(zone, tierIndex, scale));
   }
   // Deterministic scatter for the card's preview tile — a handful of the element spread on the
@@ -8466,6 +8491,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function placeScatter(element, hit, count) {
     const scale = scatterScaleFor(element);
     const n = count ?? scatterCountFor(element, hit.zone, hit.tierIndex, scale);
+    /* ⚠️ THE DROP IS WHAT TURNS THE SURFACE ON, even though `n` is normally 0 now. The baker
+       dragged the sprinkles onto THIS surface, so that is the one the card opens on: its Count dial
+       sits at 0 and **Add by hand** is right there. Without this the card would open with every
+       surface blank and no sign of where the thing had just been dropped. */
+    markScatterGroup(element.id, scatterGroupKey(hit.zone, hit.tierIndex), true);
     scatterInstances(element, hit.zone, hit.tierIndex, n, scale, []);
     setElementsOpen(false);
     focusEditor('decoration');
@@ -9022,11 +9052,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        first thing a nudge of the dial threw away. Count means "how many are SCATTERED here". */
     const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && !s.byHand && scatterGroupOf(s) === grp);
     const cur = instances.length;
-    if (target === cur || !instances.length) return;
+    if (target === cur) return;
     if (target > cur) {
       const el = elementById.get(elementId);
-      const ref = instances[0];
       if (!el) return;
+      /* ⚠️ AND IT GROWS FROM NOTHING. This returned early on an empty set, which was fine while a
+         drop always seeded a dozen — the dial only ever had to add to a set that existed. A surface
+         that starts empty makes the first turn of the dial the one that matters, and the early
+         return made it the one thing the control could not do. The zone and tier are ARGUMENTS, so
+         nothing had to be read off a first instance that isn't there; the size is the element's
+         configured one, which is what a fresh drop has always seeded at. */
+      if (!cur) {
+        scatterInstances(el, zone, tierIndex, target, scatterScaleFor(el), [],
+                         scatterSeedPaletteOf(elementId, grp), scatterIsBand(elementId, grp));
+        return;
+      }
+      const ref = instances[0];
       // ⚠️ The PALETTE, not `ref.color`. This passed the first instance's colour, so growing a
       // mixed scatter gave a correctly mixed original batch followed by a block of one colour.
       /* ⚠️ AND THE BASE SCALE, NOT `ref.scale` — the same first-instance trap as the colour above,
@@ -9068,7 +9109,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const grp = scatterGroupKey(zone, tierIndex);
     const all = design.stickers.filter(s => s.elementId === elementId && s.scatter);
     if (on) {
-      if (all.some(s => scatterGroupOf(s) === grp)) return;   // already present
+      if (all.some(s => scatterGroupOf(s) === grp)) { markScatterGroup(elementId, grp, true); return; }   // already present
       /* ⚠️ THE TIER COMES FROM THE SURFACE THAT WAS TICKED. It used to come from
          `scatterTierForZone`, which answers "side → the bottom tier" — so even once the card
          offered an upper wall, ticking it would have scattered onto the bottom one. */
@@ -9083,8 +9124,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // first instance's colour.
       // Carries the band too: ticking Side back on after setting a base band should return the band,
       // not a fresh scatter up the whole wall.
+      /* ⚠️ THE TICK IS NOT THE SEED ANY MORE. `scatterCountFor` answers 0 unless an admin authored
+         a count, so what ticking a surface does is OPEN it — the row appears with Count at 0, and
+         the baker says how many or taps them on. Reading "is it ticked" off the instances alone
+         would have made this tick undo itself the moment it seeded nothing. */
+      markScatterGroup(elementId, grp, true);
       scatterInstances(el, zone, tierIndex, scatterCountFor(el, zone, tierIndex, scale), scale, [], scatterSeedPaletteOf(elementId, grp), scatterIsBand(elementId, grp));
     } else {
+      markScatterGroup(elementId, grp, false);
       all.filter(s => scatterGroupOf(s) === grp).forEach(s => removeSticker(s.id));
     }
     setSelectedStickerIds(new Set());
@@ -10254,6 +10301,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       name: cpEl?.name ?? 'Cluster', thumb: /\.(glb|gltf)(\?|$)/i.test(cpEl?.image_url ?? '') ? (cpEl?.thumbnail_url ?? null) : (cpEl?.image_url ?? cpEl?.thumbnail_url ?? null),
     });
   }
+  /* A scatter element that is SELECTED but holds nothing yet — where a drop now lands, and where a
+     baker ends up by dialling Count back to 0. Every other card here is built FROM `design.stickers`,
+     so with no instance there is no card: the drop would look like nothing had happened and the Count
+     dial that is supposed to fill the surface could not be reached. Same shape as the cluster-place
+     card above, and it needs no cleanup — nothing was placed, so it goes when the selection does. */
+  if (selectedEl?.type === 'scatter' && !seenScatter.has(selectedEl.elementId)) {
+    const scEl = elementById.get(selectedEl.elementId);
+    if (scEl) decorationCards.unshift({
+      key: `scatter-${selectedEl.elementId}`, type: 'scatter', elementId: selectedEl.elementId,
+      name: scEl.name ?? 'Scatter',
+      thumb: /\.(glb|gltf)(\?|$)/i.test(scEl.image_url ?? '') ? (scEl.thumbnail_url ?? null) : (scEl.image_url ?? scEl.thumbnail_url ?? null),
+    });
+  }
   // Gold-leaf finish card: ONE card with the tier/colour chooser inside, shown while editing foil OR
   // whenever the cake carries any (so it reappears on reload — a finish is not a sticker).
   if (selectedEl?.type === 'foil' || design.tiers.some(t => t.foil?.flakes?.length)) {
@@ -11105,7 +11165,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // renderer.
   function renderScatterBody(card) {
     const all = design.stickers.filter(s => s.elementId === card.elementId && s.scatter);
-    if (!all.length) return null;
+    /* ⚠️ NO `if (!all.length) return null` ANY MORE. An empty set is now the state a drop lands in,
+       and that early return would have made the card a blank box at exactly the moment the baker
+       needs the Count dial and **Add by hand**. The rows below each guard their own emptiness. */
     /* ⚠️ NO SHARED `size` HERE ANY MORE. It used to read the base scale across BOTH surfaces and
        hand it to one dial; each surface row now derives its own (`suSize`), because the top and the
        side can differ. A single const would have gone on quietly showing whichever surface happened
@@ -11130,7 +11192,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       .map(slot => ({ ...slot,
         group: scatterGroupKey(slot.zone, slot.tierIndex),
         label: slotLabel(slot, design.tiers.length > 1) }));
-    const onSurfaces = surfaces.filter(su => all.some(s => scatterGroupOf(s) === su.group));
+    /* ON = holds something, OR the baker dropped onto it / ticked it and it is still empty. The
+       second half is what `scatterOnGroups` exists for; see its note. */
+    const isOn = su => all.some(s => scatterGroupOf(s) === su.group) || scatterGroupIsOn(card.elementId, su.group);
+    const onSurfaces = surfaces.filter(isOn);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>They pack together without overlapping. Tick a surface to scatter there; drag any one on the cake to nudge it.</div>
@@ -11152,7 +11217,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 have. */}
             <ScrollFadeRow style={s.previewRow} fade="255,255,255">
             {surfaces.map(su => {
-              const on = all.some(s => scatterGroupOf(s) === su.group);
+              const on = isOn(su);
               /* ⚠️ THIS SURFACE'S OWN SIZE, and the tile is why deleting the shared `size` const was
                  not merely a tidy-up. It used to read one base scale across BOTH surfaces, so once
                  the top and the side could differ, every preview would have drawn at whichever
@@ -11282,6 +11347,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           const maxCount = scatterMaxCount(su.zone, su.tierIndex, suSize,
             scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
           const inSet = c;
+          /* ⚠️ THE CONTROLS THAT CANNOT ACT ON AN EMPTY SURFACE ARE NOT SHOWN. Big ones, the band
+             and the palette all return early with nothing to work on — `setScatterBigCount` and
+             `setScatterBand` on `!instances.length`, `setScatterPalette` on an empty walk — so on a
+             surface that starts empty they would be dials and swatches that do nothing at all. Count
+             and **Add by hand** are what fill it; the rest appear once there is something to change.
+             Size is the exception: it writes to every instance including the hand-placed ones, so it
+             belongs with what is actually on the surface, not with the scattered batch. */
+          const suHeld = all.filter(x => scatterGroupOf(x) === su.group).length;
           /* `suSet`/`suSize` are declared with the ceiling above — THIS SURFACE'S OWN BASE SIZE, not
              the element's. `scatterBaseScaleOf` over the whole set would show the top's size on the
              side's dial the moment the two differ, which is the entire point of the change. The same
@@ -11291,7 +11364,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div key={`dials-${su.group}`} style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               {onSurfaces.length > 1 && <span style={s.editPanelLabel}>{su.label}</span>}
               {/* Only a wall has a base to band against. */}
-              {isSideZoneName(su.zone) && (
+              {isSideZoneName(su.zone) && inSet > 0 && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
                   <Chip label="Band at the base" isMobile={isMobile}
                         active={scatterIsBand(card.elementId, su.group)}
@@ -11311,8 +11384,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     looks from the baker's side. The ceiling now limits only what you can SET; `max`
                     opens up to the current count so a set that is already past it can still be
                     dialled DOWN rather than being stuck off the end of its own scale. */}
+                {/* ⚠️ `min` IS 0, NOT 1. A surface starts empty now, so the dial has to be able to
+                    sit at nothing and come back from it — and 0 is a real answer: it takes the
+                    scattered batch away and leaves whatever was tapped on by hand. */}
                 <DialCell label="Count"
-                  value={c} min={1} max={Math.max(c, maxCount)} step={1}
+                  value={c} min={0} max={Math.max(c, maxCount)} step={1}
                   fmt={v => String(Math.round(v))}
                   onChange={v => setScatterDensity(card.elementId, su.zone, su.tierIndex, Math.round(v))} />
                 {/* ── Big ones ──────────────────────────────────────────────────────────────────
@@ -11325,11 +11401,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
                     ⚠️ A COUNT, NOT A PROPORTION: "count is safe i believe. user would have control."
                     Adding more sprinkles does not quietly multiply the big ones. */}
-                <DialCell label="Big ones"
-                  value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
-                  min={0} max={inSet} step={1}
-                  fmt={v => String(Math.round(v))}
-                  onChange={v => setScatterBigCount(card.elementId, su.zone, su.tierIndex, Math.round(v))} />
+                {inSet > 0 && (
+                  <DialCell label="Big ones"
+                    value={Math.min(scatterBigCountOf(card.elementId, su.group), inSet)}
+                    min={0} max={inSet} step={1}
+                    fmt={v => String(Math.round(v))}
+                    onChange={v => setScatterBigCount(card.elementId, su.zone, su.tierIndex, Math.round(v))} />
+                )}
                 {/* ⚠️ THE DIAL SETS THE SMALL SIZE, and the big ones follow it. It used to flatten every
                     instance to one absolute value (`scaleStickers(all)`), which was right while a scatter
                     was uniform and would silently WIPE a mix now — one nudge and every pearl becomes a
@@ -11338,8 +11416,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
                     ⚠️ AND IT IS SCOPED TO THIS SURFACE now — the zone goes in, so dialling the side
                     leaves the top where the baker put it. */}
-                <DialCell label="Size" value={suSize} min={scR.min} max={scR.max} step={scR.step}
-                  onChange={v => setScatterSize(card.elementId, su.zone, su.tierIndex, v)} />
+                {suHeld > 0 && (
+                  <DialCell label="Size" value={suSize} min={scR.min} max={scR.max} step={scR.step}
+                    onChange={v => setScatterSize(card.elementId, su.zone, su.tierIndex, v)} />
+                )}
               </ScrollFadeRow>
               {/* ── Colours, not Colour — and PER SURFACE ──────────────────────────────────────
                   Sandeep: "i actually wanted color sprinkles only for the band. but on the top also
@@ -11410,7 +11490,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })()}
-              {canColor && (() => {
+              {canColor && inSet > 0 && (() => {
                 const palette = scatterPaletteOf(card.elementId, su.group);
                 const pal = palette.length ? palette : ['#ffffff'];
                 const isMulti = scatterIsMulti(card.elementId, su.group);
