@@ -22,6 +22,7 @@ import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/Cake
 import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
+import { registerRenderVariants } from './shared/renderVariants.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { spatulaFramePath } from '../shared/spatulaPath.js';
 // The templates panel's predicate — pure, its own module, and therefore testable.
@@ -5447,7 +5448,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     } else {
       let q = supabase
         .from('cake_elements')
-        .select('id, name, description, image_url, thumbnail_url, allowed_zones, placement_config, sort_order, element_type_id, category_id, default_color, allowed_actions')
+        .select('id, name, description, image_url, thumbnail_url, render_key, allowed_zones, placement_config, sort_order, element_type_id, category_id, default_color, allowed_actions')
         .is('parent_id', null)
         .eq('is_active', true)
         .order('sort_order');
@@ -5477,8 +5478,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
           if (pc.photo.overlay) pc.photo.overlay = resolveUrl(pc.photo.overlay);
         }
       }
-      return { ...r, image_url: resolveUrl(r.image_url), thumbnail_url: resolveUrl(r.thumbnail_url), placement_config: pc };
+      // `render_key` gets the same treatment as image_url and for the same reason: the API already
+      // expands it, the direct-Supabase path returns a bare key, and resolveUrl is a no-op on a URL.
+      return { ...r, image_url: resolveUrl(r.image_url), thumbnail_url: resolveUrl(r.thumbnail_url), render_key: resolveUrl(r.render_key), placement_config: pc };
     });
+
+    /* ⚠️ THE RENDERER CANNOT FIND THE SMALL COPY ON ITS OWN. A saved design carries a sticker's
+       MASTER url; the ≤512 copy the cake is actually textured from lives on the element row, and
+       `toCanvasConfig` is handed a design and no catalogue. So the rows are registered as they load
+       and the render seam looks them up — see shared/renderVariants.js for why this is a registry
+       and not a prop, and why printing must never read it. Additive and idempotent: a category
+       opened later adds to what is known rather than replacing it. */
+    registerRenderVariants(rows);
 
     // Which type cards to render. Unioned on a category load — the set drives the picker, so
     // replacing it would hide the type cards belonging to a category opened a moment ago.
@@ -9172,6 +9183,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Which copy of a decoration's artwork the cake is textured from. The ≤512 copies come from the
+       catalogue (`render_key`, api migration 132) and are registered as rows load, so there is no
+       way to exercise the SELECTION from a harness whose database has none. Takes the same rows
+       registerRenderVariants takes — `[{ image_url, render_key }]` — and notifies the same store, so
+       a sticker already on the cake re-textures without being replaced. */
+    window.__registerRenderVariants = rows => { registerRenderVariants(rows); return true; };
     /* Put a placed decoration where a baker would drag it, and at the size they would resize it to.
        Both are pointer gestures on a 3D surface that a script cannot aim, and both go through the
        SAME setter the gesture calls — a hook that re-implemented either would prove nothing. */

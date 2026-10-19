@@ -25,6 +25,7 @@ import Garnishes from './Garnishes.jsx';
 import Toppers from './Toppers.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import { printExposure } from '../shared/printExposure.js';
+import { useRenderVariantUrl } from '../shared/renderVariants.js';
 import SelectionBox from './SelectionBox.jsx';
 import ResizeHandles from './ResizeHandles.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
@@ -1234,7 +1235,15 @@ function frontZOf(geometry, extraLift = 0) {
   return (geometry.boundingBox?.max?.z ?? 0) + extraLift;
 }
 
-function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+  /* ⚠️ RESOLVED ONCE, HERE, AND NOWHERE ELSE IN THIS COMPONENT. The small (≤512) copy of the
+     artwork is a quarter of the decoded GPU memory the master costs, and nobody can see the
+     difference on a decoration a few hundred screen pixels wide — see shared/renderVariants.js.
+     Shadowing the prop is deliberate: three `useTexture` calls, the relief bake's cache key and the
+     solid geometry's cache key all read `imageUrl` below, and a mix of the two pictures would mean
+     two downloads, two bakes, and a silhouette cut from one resolution wrapped in the other. The
+     PRINT path never comes through here — it reads `element.image_url` (chefsdesk/a4/cutoutSource.js). */
+  const imageUrl = useRenderVariantUrl(masterUrl);
   const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors, printFinish?.saturation, textSlots, textValues);
   const reliefMaps = useReliefMaps(imageUrl, relief);
   const reliefOn = !!(relief && reliefMaps);

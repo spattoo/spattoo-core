@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { extractRegions } from './imageRecolor.js';
 import { corsUrl } from '../../utils/assetUrl.js';
+import { useRenderVariantUrl } from '../renderVariants.js';
 
 // Load a sticker image and extract its recolourable colour regions for the `hue_regions` recolour method,
 // so the designer can show one "Customise colours" swatch per detected colour. Returns [] until loaded (and
@@ -8,7 +9,14 @@ import { corsUrl } from '../../utils/assetUrl.js';
 // the SAME regions in the same order, so a swatch's index lines up with the pixels it recolours.
 const cache = new Map();   // imageUrl → regions
 
-export function useImageRegions(imageUrl, recolor) {
+export function useImageRegions(masterUrl, recolor) {
+  /* ⚠️ THE SAME COPY OF THE ARTWORK THE RENDER USES, or the swatches point at the wrong pixels.
+     StickerTexture textures the cake from the small (≤512) copy when one exists — a quarter of the
+     GPU memory, see shared/renderVariants.js — and re-clusters the hues there to repaint them. The
+     promise in the comment above ("the SAME regions in the same order") only holds if both halves
+     cluster the SAME image: resolve one and not the other and region 2's swatch recolours region
+     3's pixels, while the picture is downloaded twice to make that happen. */
+  const imageUrl = useRenderVariantUrl(masterUrl);
   const active = recolor?.method === 'hue_regions' && !!imageUrl;
   const [regions, setRegions] = useState(() => (active && cache.get(imageUrl)) || []);
   useEffect(() => {
