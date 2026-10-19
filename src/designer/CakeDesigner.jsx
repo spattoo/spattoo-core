@@ -3127,8 +3127,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (!d || d.tierIndex !== tierIndex) return;
     const t = design.tiers[tierIndex];
     if (!t) return;
+    /* ⚠️ THE TIER'S OUTLINE TRAVELS WITH THE GESTURE. Without it `wallCoordsOf` turns the two
+       world points into ANGLES, which is where you are round a circle — on a sheet the hand's
+       sweep comes out compressed on the long sides and stretched on the short ones, so a stroke
+       drawn straight down lands leaning. The renderer walks the same outline (wallPlacer), so
+       input and output now agree about where "a third of the way round" is. */
     const g = brushGestureFromDrag(d.from, point,
-      { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height });
+      { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height, shape: tierShapeAt(design.tiers, tierIndex) });
     if (!g) return;                                     // still a tap
     if (d.id === null) {
       const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;

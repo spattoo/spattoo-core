@@ -37,7 +37,7 @@ import {
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
-import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
+import { pointerRay, cylinderHit, cylinderHitPoint, wallHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
@@ -63,7 +63,8 @@ import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantText
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { useCalendarTexture } from './useCalendarTexture.js';
 import { textStyleOf } from '../textStyles.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
+import { buildOutlinePrism } from '../geometry/prism.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp, wallSamples } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
 import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from '../placement.js';
@@ -3309,9 +3310,26 @@ function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   const pressed = useRef(false);
   const last = useRef({ x: 0, y: 0 });
   const R = tier.radius + 0.04;   // hit just outside the proud band
+  /* ⚠️ THE TARGET WAS A CYLINDER, IN BOTH HALVES — the invisible mesh the pointer events fire on,
+     AND the maths that turns a click into a place on the wall. On a sheet or a heart that is a
+     circle the cake does not have: the hand draws where the pointer is not, and near a corner the
+     events fire over thin air. `wallSamples` is the tier's own outline, and `wallHitPoint` walks
+     it; both are inflated by the same 0.04 so the target still clears a proud band. */
+  const shape = useMemo(() => tierShape(tier), [tier]);
+  const round = isRoundWall(shape);
+  const samples = useMemo(() => (round ? null : wallSamples(shape)), [shape, round]);
+  /* The prism is built from the SAME samples the ray is tested against, pushed out along each
+     normal — so what the pointer can reach and what the maths answers cannot disagree. */
+  const targetGeo = useMemo(() => (
+    samples ? buildOutlinePrism(samples.pts.map(q => ({ x: q.x + q.nx * 0.04, z: q.z + q.nz * 0.04 })), tier.height) : null
+  ), [samples, tier.height]);
+  useEffect(() => () => targetGeo?.dispose(), [targetGeo]);
 
   const sample = (clientX, clientY, fn) => {
-    const p = cylinderHitPoint(buildRay(clientX, clientY, gl.domElement, camera), R);
+    const ray = buildRay(clientX, clientY, gl.domElement, camera);
+    const p = round
+      ? cylinderHitPoint(ray, R)
+      : wallHitPoint(ray, samples, { baseY: tier.baseY, wallH: tier.height, inflate: 0.04 });
     if (!p || !fn) return;
     let a = Math.atan2(p.z, p.x); if (a < 0) a += Math.PI * 2;
     const frac = Math.max(0, Math.min(1, (p.y - tier.baseY) / tier.height));
@@ -3342,7 +3360,9 @@ function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
         pressed.current = false; onUp?.();
         try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
       }}>
-      <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />
+      {targetGeo
+        ? <primitive key={targetGeo.uuid} object={targetGeo} attach="geometry" />
+        : <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />}
       <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );

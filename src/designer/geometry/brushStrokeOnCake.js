@@ -4,7 +4,7 @@ import { brushStroke } from './brushStroke.js';
 import { creamAlbedo } from './creamMaterial.js';
 // The band merges into ONE mesh — same function, and the same reasons, as a piped wall.
 import { mergePenGeometries } from './creamPen.js';
-import { perimeter, isRoundWall, topContains, snapToRim } from './surface.js';
+import { perimeter, isRoundWall, topContains, snapToRim, wallFractionAt } from './surface.js';
 
 // ── A brushstroke PAINTED ON the cake ────────────────────────────────────────────────────────────
 //
@@ -850,10 +850,18 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], shape = null, 
  */
 
 /** Where a world-space point sits on the wall, in the two numbers a stroke is authored with. */
-export function wallCoordsOf(point, { baseY = 0, wallH = 1 } = {}) {
+export function wallCoordsOf(point, { baseY = 0, wallH = 1, shape = null } = {}) {
   const x = point?.x ?? 0, y = point?.y ?? 0, z = point?.z ?? 0;
   return {
-    at:   ((Math.atan2(x, z) / (Math.PI * 2)) % 1 + 1) % 1,
+    /* ⚠️ AN ANGLE IS NOT A POSITION ON A SHAPE. `atan2(x, z) / 2π` is where you are round a
+       CIRCLE; on a sheet it compresses the long sides and stretches the short ones, so a hand
+       drawn at even spacing comes out bunched. `wallFractionAt` walks the real outline and is the
+       exact inverse of what the renderer uses to place the stroke. Round keeps the angle, to the
+       digit — `at` is stored per stroke, so a different answer here would move every stroke on
+       every saved cake. */
+    at:   shape && !isRoundWall(shape)
+            ? wallFractionAt(shape, x, z)
+            : ((Math.atan2(x, z) / (Math.PI * 2)) % 1 + 1) % 1,
     rise: wallH > 0 ? (y - baseY) / wallH : 0,
   };
 }
