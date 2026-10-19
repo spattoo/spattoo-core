@@ -3655,6 +3655,49 @@ function CakeScene({
        designer clones a GLB, may upgrade its material class, overrides roughness/metalness from
        placement_config and can attach a clipping plane — and every one of those is invisible from
        the outside. Reading the live material beats reasoning about which branch ran. */
+    /* ⚠️ WHAT THE SCENE COSTS, which is a different question from what it looks like — and the one
+       that decides whether this survives as a phone app. A relief sticker is not one texture: the
+       bake returns a normalMap AND a displacementMap at up to WORK (1024) on the long edge, so a
+       single 1024² decoration can be ~12MB of GPU memory before mipmaps. Reasoning about that from
+       the source gets the arithmetic right and the COUNT wrong, because what is actually resident
+       depends on caching, reuse and what the baker placed. This reads the live scene instead.
+       Bytes are an estimate — w × h × 4, +33% where mipmaps are on — not an allocator reading. */
+    window.__sceneMemory = () => {
+      const seen = new Set();
+      let texCount = 0, texBytes = 0, tris = 0, geos = 0;
+      const byKind = {};
+      scene.traverse((o) => {
+        if (o.geometry && !seen.has('g' + o.geometry.uuid)) {
+          seen.add('g' + o.geometry.uuid); geos++;
+          const n = o.geometry.index ? o.geometry.index.count / 3
+                  : (o.geometry.attributes?.position?.count ?? 0) / 3;
+          tris += n * (o.isInstancedMesh ? (o.count || 1) : 1);
+        }
+        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        for (const m of mats) {
+          for (const k of ['map', 'normalMap', 'displacementMap', 'roughnessMap', 'metalnessMap',
+                           'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap']) {
+            const t = m?.[k], im = t?.image;
+            if (!t || !im || seen.has('t' + t.uuid)) continue;
+            seen.add('t' + t.uuid);
+            const w = im.width || im.naturalWidth || 0, h = im.height || im.naturalHeight || 0;
+            if (!w || !h) continue;
+            texCount++;
+            const bytes = w * h * 4 * (t.generateMipmaps === false ? 1 : 1.33);
+            texBytes += bytes;
+            byKind[k] = +(((byKind[k] ?? 0) + bytes / 1048576)).toFixed(1);
+          }
+        }
+      });
+      return {
+        textures: texCount,
+        textureMB: +(texBytes / 1048576).toFixed(1),
+        byKind,
+        geometries: geos,
+        trianglesK: +(tris / 1000).toFixed(0),
+        jsHeapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null,
+      };
+    };
     window.__sceneMaterials = () => {
       const out = [];
       scene.traverse((o) => {
