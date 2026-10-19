@@ -471,6 +471,32 @@ export function frameSideMaxScale(wallHeight, fill = 1, stickerSize = STICKER_SI
 // stickers omit them and keep the full STICKER_SIZE square (their transparent margin genuinely does
 // steal clicks and must be shown — INVARIANTS #5a). The box still traces the hit plane; only the
 // plane's SIZE narrows to the art it actually intercepts.
+/* ── How big a 2D decal's clickable rectangle really needs to be ────────────────────────────────
+ *
+ * ⚠️ IT USED TO BE THE WHOLE SQUARE, and INVARIANTS #5a said so on purpose: "its transparent margin
+ * genuinely steals clicks and must be shown". That was the honest answer while the margin DID take
+ * the clicks — the border's job is to show you what is stealing them. The better answer is for the
+ * margin to stop taking them, which is this: the plane shrinks to the artwork, so the border (which
+ * traces the plane) tells the same truth about a smaller region. Sandeep, on a pitch with a wide
+ * transparent border: *"its showing original complete image size selection and its very
+ * inconvenient to select other controls in that near area."*
+ *
+ * ⚠️ SYMMETRIC ABOUT THE CANVAS CENTRE, NOT A TIGHT CROP. The box is centred where the element is,
+ * and `seatedHitBox` has no horizontal offset to give — so sizing it to the FURTHEST content keeps
+ * it correct for artwork that sits off-centre (bigger than the art on one side, never away from
+ * it) rather than tight-but-displaced, which would move the grips off the thing they resize.
+ *
+ * Returns null when nothing was measured or the image is fully transparent, so the caller falls
+ * back to the square exactly as before.
+ */
+export function contentFoot({ left = null, right = null, up = null, down = null } = {}) {
+  if ([left, right, up, down].some(v => v == null || !Number.isFinite(v))) return null;
+  const halfW = Math.max(Math.abs(left), Math.abs(right));
+  const halfH = Math.max(Math.abs(up), Math.abs(down));
+  if (!(halfW > 0) || !(halfH > 0)) return null;
+  return { halfW, halfH };
+}
+
 export function seatedHitBox({ standSeat = false, seatHalf = null, size = STICKER_SIZE, halfW = null, halfH = null } = {}) {
   const hw  = halfW == null ? size / 2 : halfW;   // footprint half-width (GLB) or square half
   const top = halfH == null ? size / 2 : halfH;   // footprint half-height (GLB) or square half

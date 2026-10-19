@@ -52,6 +52,20 @@ const LOGO_SRC = LOGO_PARAM === 'none' ? null
  * populated and non-matching, which is what these are: search "clo" and only the clothes match.
  */
 const CAT_THUMB = c => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="${c}"/></svg>`)}`;
+/* ⚠️ ART WITH A TRANSPARENT MARGIN, which every other row here lacks — they are full-bleed squares
+   (`CAT_THUMB`), so the content box IS the canvas and a selection box around the artwork looks
+   exactly like one around the square. That made the harness unable to show the thing it needed to
+   show: a decal whose box used to span its empty border. This one draws a disc on 44% of the
+   canvas, so the box should hug the disc and the full-bleed rows should not move at all.
+
+   ⚠️ AND IT CANNOT BE SEEN HERE YET — NO IMAGE STICKER RENDERS ON THE CAKE IN THIS HARNESS.
+   Placed through `__placeElementByIdZone`, the sticker appears in `__getStickers()` with its url and
+   no texture error is logged, and nothing is drawn: the pre-existing full-bleed rows (e5–e7) behave
+   exactly the same, so it is not this row. Recorded because an hour went into proving it was not the
+   new art, the id, the load order or the selection. Whoever fixes the harness can verify the box
+   here; until then a decal's selection box has to be looked at in the real designer. */
+const MARGIN_ART = `data:image/svg+xml,${encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="14" fill="#c2543f"/></svg>')}`;
+
 const CAT_TYPES = [
   { id: 'et-topper',  slug: 'topper',       name: 'Cake Topper',  sort_order: 0 },
   { id: 'et-foil',    slug: 'food_foil',    name: 'Food Foil',    sort_order: 1 },
@@ -84,9 +98,14 @@ const CAT_ELEMENTS = [
   ['e5', 'baby shorts',   'et-image',  '#7fc3d6', 'baby clothes'],
   ['e6', 'baby romper',   'et-image',  '#8fd6cf', 'baby clothes'],
   ['e7', 'fondant baby',  'et-image',  '#e8a8b8', 'baby clothes dress'],
+  // ⚠️ NOT 'e10' — that id is already an Acrylic topper further down this file, and a duplicate
+  // simply shadows: the row placed, a card opened for the OTHER element, and the disc never drew.
+  ['e-margin', 'margin disc', 'et-image', MARGIN_ART, 'a disc with a wide transparent border'],
 ].map(([id, name, typeId, colour, description], i) => ({
   id, name, description, element_type_id: typeId, category_id: 'cat-1',
-  image_url: CAT_THUMB(colour), thumbnail_url: CAT_THUMB(colour), thumb_key: null,
+  // A row may hand over finished art instead of a colour — see MARGIN_ART.
+  image_url: colour.startsWith('data:') ? colour : CAT_THUMB(colour),
+  thumbnail_url: colour.startsWith('data:') ? colour : CAT_THUMB(colour), thumb_key: null,
   allowed_zones: ['top_surface', 'side'],
   /* ⚠️ duplicate TRUE on the first row only, so the two-button FOOTER exists here at all.
    * Every stub had `duplicate: false`, so "Duplicate" never rendered and the footer could only ever

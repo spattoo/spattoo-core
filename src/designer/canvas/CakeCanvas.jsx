@@ -67,7 +67,7 @@ import { buildOutlinePrism } from '../geometry/prism.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp, wallSamples } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw, contentFoot} from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -1258,7 +1258,13 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
       onSeat?.(Math.max(v.seatHalf, MIN_SEAT));
       const w = (v.right ?? 0) - (v.left ?? 0);
       const h = (v.up ?? 0) + (v.down ?? 0);
+      /* The clickable footprint, symmetric about the centre — see `contentFoot`. The GLB path has
+         always reported one (its dense model bounds); this is the same fact for a decal, measured
+         from the artwork's own alpha instead of from a mesh. */
+      const foot = contentFoot(v);
       onVExtent?.({
+        halfW: foot?.halfW ?? null,
+        halfH: foot?.halfH ?? null,
         down: v.down, up: v.up,
         /* ⚠️ `bottom` IS NOT `cy - h/2` ONCE THE PIECE FOLDS, and a butterfly is exactly the piece
            that folds. Standing, its wings hinge up into a V from the spine, so the lowest point
@@ -2160,8 +2166,14 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // Same box rule as the top sticker, from the one helper. A wall element is never base-seated
   // (wallClampY already keeps its whole square on the wall). A GLB narrows the box to its measured
   // dense footprint (tight, non-square); a 2D decal keeps the full square (INVARIANTS #5a).
-  const glbFoot = isGlb && vext?.halfW != null;
-  const hitBox = seatedHitBox({ size: STICKER_SIZE, ...(glbFoot ? { halfW: vext.halfW, halfH: vext.up } : {}) });
+  /* ⚠️ A DECAL'S FOOTPRINT COUNTS NOW, TOO. This was `isGlb && …`, so a 2D image always claimed the
+     whole STICKER_SIZE square — and since the hit plane IS the square, its transparent margin took
+     every click that landed in it and the border drew that fact at full size. Measured on the cake,
+     the margin genuinely stole from neighbours; the box was telling the truth about a region that
+     did not need to be that big. Both now follow the artwork (INVARIANTS #5a, amended with this). */
+  const glbFoot = vext?.halfW != null;
+  const hitBox = seatedHitBox({ size: STICKER_SIZE,
+    ...(glbFoot ? { halfW: vext.halfW, halfH: isGlb ? vext.up : (vext.halfH ?? vext.up) } : {}) });
   // The border sits at the model's MID-depth, not its proud front face: a deep GLB (a bent/proud bow)
   // otherwise floats the flat border ~a full depth off the wall, so orbiting the cake slides it off
   // the decoration. Half-depth keeps the border on the body while still clearing most of it.
@@ -2412,6 +2424,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const [seatHalf, setSeatHalf] = useState(null);
   // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
   const [glbHalfW, setGlbHalfW] = useState(null);
+  // A decal's measured half-height, kept beside its half-width for the same reason.
+  const [artHalfH, setArtHalfH] = useState(null);
   /* ⚠️ `artBox`, NOT `glbBox`, AND THE OLD NAME WAS A CLAIM THAT TURNED OUT TO BE FALSE. It held
      the measured bounds of whatever the element actually is: a GLB's Box3, or — since the texture
      path started emitting one — a 2D image's opaque content. Everything that sizes itself from the
@@ -2699,8 +2713,11 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
   // being billboarded toward the camera, win the raycast against the tier behind it.
-  const glbFoot = isGlb2d && glbHalfW != null;
-  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE, ...(glbFoot ? { halfW: glbHalfW, halfH: seatHalf } : {}) });
+  // Same change as the wall: a decal's measured footprint is as real as a model's. `seatHalf` stays
+  // the GLB's height, because a model is seated on its base; a decal's half-height is its artwork's.
+  const glbFoot = glbHalfW != null;
+  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE,
+    ...(glbFoot ? { halfW: glbHalfW, halfH: isGlb2d ? seatHalf : (artHalfH ?? seatHalf) } : {}) });
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
@@ -2712,7 +2729,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           and the billboard — see the group below. A pick is short enough that leaning it with its
           decoration is defensible; a wire is not, and it was visibly broken. */}
       {wire ? null : <ElementStick stick={stick} />}
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtHalfH(v?.halfH ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a

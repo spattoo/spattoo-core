@@ -188,9 +188,21 @@ There is now ONE.
 `raycast` disabled — so it, not the visible art, is what the customer grabs and what steals a click
 from a neighbour. A heart on a square PNG intercepts clicks across its whole transparent margin. A
 border hugging the art would be prettier and would **hide the one fact the customer needs** when a
-decoration underneath won't respond: another element's invisible half is lying on top of it. For a
-**2D decal the plane is the full `STICKER_SIZE` square** — its transparent margin genuinely steals
-clicks and must be shown; don't "improve" that into an alpha‑tight box. A **GLB has no transparent
+decoration underneath won't respond: another element's invisible half is lying on top of it. ⚠️ **AMENDED 2026-10-19.** This used to read: *"For a 2D decal the plane is the full
+`STICKER_SIZE` square — its transparent margin genuinely steals clicks and must be shown; don't
+'improve' that into an alpha-tight box."* That was the right answer while the margin DID take the
+clicks: the border's job is to show what is stealing them, and hiding it would hide the one fact a
+customer needs when the decoration underneath will not respond. The better answer is for the margin
+to stop taking them. Sandeep, on a pitch with a wide transparent border: *"its showing original
+complete image size selection and its very inconvenient to select other controls in that near
+area."* So **a 2D decal's plane is now its measured artwork footprint**, exactly as a GLB's is its
+measured model footprint — the same principle (trace the clickable region) applied to a region that
+turned out to be smaller. ⚠️ **The box stays CENTRED on the element and reaches the FURTHEST
+content** (`contentFoot`), never a tight crop: `seatedHitBox` has no horizontal offset to give, so a
+tight box around off-centre artwork would put the grips somewhere other than the thing they resize.
+⚠️ **What the old rule protected is still true and still banned**: the border must keep tracing the
+plane. Shrinking the border alone — leaving a square plane that quietly eats a neighbour's clicks —
+is the thing never to do. A **GLB has no transparent
 margin**, so its plane narrows to the model's measured **per-axis footprint** (`StickerModel` reports
 `halfW`/`seatHalf`; `seatedHitBox` builds the rect): a tall‑narrow bow gets a tall‑narrow box, not a
 square. This is the SAME principle (trace the clickable region), applied to a tighter region — not the

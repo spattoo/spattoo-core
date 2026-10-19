@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -860,5 +860,34 @@ describe('edgeSeatSeed — every footprint has a front edge, not just one carryi
       expect(Number.isFinite(snapToRim(shp, 0, bad).x)).toBe(true);
       expect(Number.isFinite(topClamp(shp, bad, 0).z)).toBe(true);
     }
+  });
+});
+
+describe('contentFoot — a 2D decal\'s box stops at its artwork', () => {
+  it('sizes to the furthest content, symmetric about the centre', () => {
+    // Artwork spanning -0.3..0.4 across and -0.2..0.5 up on a 1-unit square
+    expect(contentFoot({ left: -0.3, right: 0.4, up: 0.5, down: 0.2 }))
+      .toEqual({ halfW: 0.4, halfH: 0.5 });
+  });
+
+  it('⚠️ does NOT crop tight to off-centre art — the grips must stay on the thing they resize', () => {
+    // All the content is on the right. A tight crop would put the box where the art is; the box is
+    // centred on the element, so it has to reach as far as the furthest edge instead.
+    const foot = contentFoot({ left: 0.1, right: 0.45, up: 0.2, down: 0.2 });
+    expect(foot.halfW).toBe(0.45);
+  });
+
+  it('falls back to the square when nothing was measured', () => {
+    expect(contentFoot({})).toBeNull();
+    expect(contentFoot({ left: -0.5, right: 0.5, up: null, down: 0.5 })).toBeNull();
+    // fully transparent image: the scan reports a zero span
+    expect(contentFoot({ left: 0, right: 0, up: 0, down: 0 })).toBeNull();
+  });
+
+  it('feeds seatedHitBox, which already knew how to take a footprint', () => {
+    const foot = contentFoot({ left: -0.2, right: 0.2, up: 0.35, down: 0.35 });
+    const box = seatedHitBox({ size: 1, ...foot });
+    expect(box.width).toBeCloseTo(0.4, 6);
+    expect(box.height).toBeCloseTo(0.7, 6);
   });
 });
