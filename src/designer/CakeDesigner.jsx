@@ -3103,6 +3103,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * ⚠️ A REF FOR THE DRAG IN PROGRESS, not state: it is read inside a pointer-move captured when
    * the drag began, and a re-render would hand that closure a stale value. Same reason the
    * studio's own `draw` is one. */
+  /* ── Tapping sprinkles on, one at a time ──────────────────────────────────────────
+   *
+   * Sandeep: *"we cant add sprinkles to a specific area on the cake. to solve that we need to
+   * enable add by hand. each click will add a sprinkle."*
+   *
+   * ⚠️ A MODE, because a tap is also how a baker DESELECTS — the same reason the cream pen refuses
+   * to make a stroke until the hand has travelled. A stroke can wait for that; a sprinkle cannot,
+   * so the waiting is done by the baker turning the mode on and off.
+   *
+   * `{ elementId, zone, tierIndex, color }` — the colour rides on the MODE rather than being read
+   * off the card at placement time, which is what makes *"pick red and every tap is red; pick blue
+   * and the next ones are blue"* true by construction rather than by a rule somebody has to keep. */
+  const [sprinkleHand, setSprinkleHand] = useState(null);
+  /* Newest last. Undo pops this, so it only ever removes what THIS session put down — it cannot eat
+     a sprinkle from the scattered batch, or one placed before the design was opened. */
+  const [handSprinkleIds, setHandSprinkleIds] = useState([]);
+
   const [brushDraw, setBrushDraw] = useState(null);     // { tierIndex } | null
   const brushDrawing = useRef(null);                    // { tierIndex, from, id } | null
   const [creamAutoRotate, setCreamAutoRotate] = useState(false);
@@ -3118,6 +3135,50 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * baker deselects, so the wall would fill with strokes nobody asked for. `brushGestureFromDrag`
    * returns null until the hand has actually gone somewhere, which is the same "measure what was
    * TRAVELLED" rule the pen's closed gesture needs. */
+  /* One tap, one sprinkle, seated exactly like a scattered one.
+   *
+   * ⚠️ IT GOES THROUGH `addSticker`, NOT A NEW LIST, and that is the whole reason this is small.
+   * A scattered sprinkle is already an instance of the element (see scatterInstances), so a tapped
+   * one is the same thing with a seat the baker chose instead of a random one — which means the
+   * seating rules, the instanced rendering, the card that collapses them and removal all work
+   * already. A parallel list would have been a second answer to every one of those.
+   *
+   * ⚠️ `byHand` KEEPS IT OUT OF THE BATCH CONTROLS. Count drops the NEWEST instances first, so
+   * without the flag the piece just placed would be the first thing the density dial threw away;
+   * the palette would repaint it, and Big ones could resize it.
+   *
+   * ⚠️ THE SEAT IS THE SURFACE'S OWN COORDINATES: a wall seat is `{ theta, y }` (an angle from
+   * the centre, which is how every side sticker is stored, shape or not) and a lid seat is
+   * `{ x, z }`. What rests it on top of any piping or drip already there is the renderer's
+   * `topSurfaceYAt` — "a scattered piece rests on what is there, not on the lid" — so a sprinkle
+   * tapped onto a rim border sits on the border. */
+  function handleSprinklePlace(point) {
+    const h = sprinkleHand;
+    if (!h || !point) return;
+    const el = elementById.get(h.elementId);
+    if (!el) return;
+    const side = isSideZoneName(h.zone);
+    const seat = side
+      ? { theta: Math.atan2(point.x, point.z), y: point.y }
+      : { x: point.x, z: point.z };
+    const group = scatterGroupKey(h.zone, h.tierIndex);
+    const set = design.stickers.filter(x => x.elementId === h.elementId && x.scatter && scatterGroupOf(x) === group);
+    // The size this surface is already using, so a tapped sprinkle matches the ones beside it —
+    // and moving the Size dial before tapping is how you get a bigger one.
+    const scale = set.length ? scatterBaseScaleOf(set, el) : scatterScaleFor(el);
+    const id = addSticker(el, h.zone, h.tierIndex, zoneMode(el.placement_config, h.zone, 'hug'), seat,
+                          { scale, byHand: true });
+    if (h.color) updateSticker(id, { color: h.color });
+    setHandSprinkleIds(prev => [...prev, id]);
+  }
+
+  function undoHandSprinkle() {
+    const last = handSprinkleIds[handSprinkleIds.length - 1];
+    if (last == null) return;
+    removeSticker(last);
+    setHandSprinkleIds(prev => prev.slice(0, -1));
+  }
+
   function handleBrushDrawStart(tierIndex, point) {
     brushDrawing.current = { tierIndex, from: point, id: null };
   }
@@ -6604,6 +6665,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // the other half of it.
   function handleDeselect() {
     if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
+    /* ⚠️ WHILE SPRINKLES ARE BEING TAPPED ON, A TAP MUST NOT CLOSE THE CARD. Found by driving it:
+       a tap that lands on an existing sprinkle (they sit above the tap target, so they take the
+       pointer) fell through to deselect — the card vanished mid-placing, taking the colour swatch
+       and Undo with it, and the mode was then only reachable by selecting the decoration again.
+       The pen's own line above is the same rule for the same reason: a tool that is ON is a state
+       the baker chose, and a stray tap should not end it. Leaving the mode is the chip. */
+    if (sprinkleHand) return;
     clearAllSelections();
   }
 
@@ -7740,6 +7808,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // The floor got the same treatment last release. Between them: while the pen is out, nothing on
     // the canvas changes the selection, and piping ends on "Done piping".
     if (selectedEl?.type === 'tool' && selectedEl.tool === 'pen') return;
+    /* ⚠️ AND THE SAME WHILE SPRINKLES ARE BEING TAPPED ON. A tap that MISSES the lid lands on the
+       cake body, which selects that tier and replaces the sprinkles card — taking the colour
+       swatch and Undo with it, mid-placing. Found by driving it: the card was gone after a run of
+       taps and Undo could not be reached at all, which is the only way to take a sprinkle back.
+       The cake is the canvas while placing, exactly as it is while piping. */
+    if (sprinkleHand) return;
     closeAllPopups();
     /* ⚠️ THE TIER PANEL NOW READS THE CATALOGUE, so it has to be loaded before the panel opens.
      * Its Frosting section offers "Cream layer", guarded on `creamElement` — found by scanning
@@ -8614,8 +8688,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function setScatterBigCount(elementId, zone, tierIndex, target) {
     const group = scatterGroupKey(zone, tierIndex);
     const el = elementById.get(elementId);
+    /* Hand-placed ones are left out, like the Count dial: this picks which of the SCATTERED
+       sprinkles become the big ones, and a piece somebody tapped down at a size they chose should
+       not be resized by a dial about the batch. */
     const instances = design.stickers
-      .filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === group)
+      .filter(s => s.elementId === elementId && s.scatter && !s.byHand && scatterGroupOf(s) === group)
       .sort((a, b) => a.id - b.id);
     if (!el || !instances.length) return;
     const n = Math.max(0, Math.min(Math.round(target), instances.length));
@@ -8688,7 +8765,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const el = elementById.get(elementId);
     if (!el || !isSideZoneName(zone)) return;
     const grp = scatterGroupKey(zone, tierIndex);
-    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
+    /* Not the hand-placed ones: this RE-SEATS the set into (or out of) the foot band, and a
+       sprinkle somebody tapped onto a particular spot must stay on it. */
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && !s.byHand && scatterGroupOf(s) === grp);
     if (!instances.length || scatterIsBand(elementId, grp) === !!on) return;
     const count   = instances.length;
     const scale   = scatterBaseScaleOf(instances, el);
@@ -8738,7 +8817,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      surface reads (it has no colours of its own to derive from yet). */
   function scatterPaletteOf(elementId, group = null) {
     const out = [];
-    design.stickers.filter(s => s.elementId === elementId
+    /* ⚠️ HAND-PLACED SPRINKLES ARE NOT IN THE PALETTE. It is DERIVED from the instances, so a
+       sprinkle tapped on in red would silently make red part of the batch's palette — and the next
+       nudge of any colour chip would cycle that palette across the whole set, repainting the one
+       piece somebody chose the colour of. The batch's colours and a hand-placed one's are two
+       different decisions. */
+    design.stickers.filter(s => s.elementId === elementId && !s.byHand
         && (group == null || scatterGroupOf(s) === group))
       .sort((a, b) => a.id - b.id)
       .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
@@ -8756,7 +8840,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // a 3-colour palette read as a repeating mix rather than three blocks.
   function setScatterPalette(elementId, group, palette) {
     if (!palette.length) return;
-    design.stickers.filter(s => s.elementId === elementId
+    // Same exclusion as the derivation above, and for the same reason: this REPAINTS what it walks.
+    design.stickers.filter(s => s.elementId === elementId && !s.byHand
         && (group == null || scatterGroupOf(s) === group))
       .sort((a, b) => a.id - b.id)
       .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
@@ -8798,7 +8883,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   function setScatterMulti(elementId, group, on) {
     const el = elementById.get(elementId);
-    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter
+    // Hand-placed excluded, like the palette this drives.
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && !s.byHand
         && (group == null || scatterGroupOf(s) === group))
       .sort((a, b) => a.id - b.id);
     if (!el || !instances.length || scatterIsMulti(elementId, group) === !!on) return;
@@ -8924,7 +9010,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // dragged positions survive (the decor_pattern/group "edit as a set" rule).
   function setScatterDensity(elementId, zone, tierIndex, target) {
     const grp = scatterGroupKey(zone, tierIndex);
-    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && scatterGroupOf(s) === grp);
+    /* ⚠️ HAND-PLACED SPRINKLES ARE NOT PART OF THE DENSITY SET, and leaving them in would have
+       deleted them first. This drops the NEWEST instances when Count comes down — right for a
+       scatter, where the newest are the ones the dial itself just made — and a sprinkle somebody
+       tapped on is always newer than the batch. So the one piece placed deliberately would be the
+       first thing a nudge of the dial threw away. Count means "how many are SCATTERED here". */
+    const instances = design.stickers.filter(s => s.elementId === elementId && s.scatter && !s.byHand && scatterGroupOf(s) === grp);
     const cur = instances.length;
     if (target === cur || !instances.length) return;
     if (target > cur) {
@@ -9179,6 +9270,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     };
     window.__setScatterDensity = (elementId, zone, n, tierIndex) => { setScatterDensity(elementId, zone, tierIndex ?? scatterTierForZone(zone), n); return true; };
     window.__scatterSurface    = (elementId, zone, on, tierIndex) => { toggleScatterSurface(elementId, zone, tierIndex ?? scatterTierForZone(zone), on); return true; };
+    /* Turn hand-placing on from a probe, so the TAP can be driven in a real browser. The tap itself
+       is deliberately NOT exposed: what needs proving is that a pointer landing on the cake becomes
+       a sprinkle at that spot, and a hook that skipped the canvas would prove the handler only. */
+    window.__sprinkleHand      = (elementId, zone, tierIndex = 0, color = null) => {
+      setSprinkleHand(elementId ? { elementId, zone, tierIndex, color } : null);
+      return true;
+    };
+    window.__handSprinkles     = () => (design.stickers ?? []).filter(x => x.byHand).map(x => ({ id: x.id, zone: x.zone, x: x.x, z: x.z, theta: x.theta, y: x.y, color: x.color }));
+    /* Opens a decoration's card from a probe. A scattered sprinkle is a few pixels across and sits
+       in an instanced field, so clicking one in a test is a coin toss — and the card is the half of
+       this feature a build cannot prove, since its JSX only runs when it renders. */
+    window.__openElementCard   = (elementId) => { if (!elementById.get(elementId)) return false; selectExclusive({ type: 'scatter', elementId }); return true; };
     /* The base band, through the card's own function — a Chip is clickable from a script, but the
        probe then depends on finding it by label, and the point of these hooks is to drive the real
        path without the UI in the way. */
@@ -11055,7 +11158,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  passed, and the dead reference would still have thrown a ReferenceError the moment a
                  baker opened a sprinkles card — the JSX closure is only evaluated on render. Rule 6,
                  demonstrated on my own change: a green build is not a working screen. */
-              const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+              const suSet  = all.filter(x => !x.byHand && scatterGroupOf(x) === su.group);
               const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
               /* ⚠️ THE WHOLE TILE IS THE CONTROL, and it says so. Sandeep: "looks like sprinkles
                  control does not have a pointer."
@@ -11152,7 +11255,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             COLOURS SITS IN THIS BLOCK TOO, under the surface it belongs to — see the note on it
             below. It is a swatch grid rather than a dial, so it goes under the row, not in it. */}
         {onSurfaces.map(su => {
-          const c = all.filter(x => scatterGroupOf(x) === su.group).length;
+          /* ⚠️ THE DIAL COUNTS WHAT THE DIAL CONTROLS. Hand-placed sprinkles are excluded from the
+             density set, so counting them here would make the control lie in both directions: it
+             would read 1 with nothing scattered — and `setScatterDensity` returns early on an empty
+             set, so dragging it would do nothing at all. A control that shows a number it cannot
+             change is worse than no number. */
+          const c = all.filter(x => !x.byHand && scatterGroupOf(x) === su.group).length;
           /* ⚠️ THE BAND'S OWN CEILING. A band is roughly a quarter of the wall, so a cap derived
              from the whole side would let Count run four times past what the strip can hold and
              pack the seats solid — the dial's maximum has to mean the same thing in both modes.
@@ -11164,7 +11272,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
              baker had actually set (0.1) holds 2733. The old comment justified it as stopping the
              dial "jogging" on resize; a ceiling that is wrong by a factor of twenty is the worse of
              the two, and now that the dial shows the REAL count the jog only moves the maximum. */
-          const suSet  = all.filter(x => scatterGroupOf(x) === su.group);
+          const suSet  = all.filter(x => !x.byHand && scatterGroupOf(x) === su.group);
           const suSize = suSet.length ? scatterBaseScaleOf(suSet, el) : scatterScaleFor(el);
           const maxCount = scatterMaxCount(su.zone, su.tierIndex, suSize,
             scatterIsBand(card.elementId, su.group) ? scatterBandFracFor(el) : null);
@@ -11249,6 +11357,54 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   the tier sheet: on/off, with aria-pressed, focus and the phone hit-target for free.
                   The swatches always show every colour — the mix is never hidden behind the mode —
                   and `+` still implies it, because the chip is derived from the palette. */}
+              {/* ── By hand ────────────────────────────────────────────────────────────
+                  The dials above cover a surface; this puts one where you want it.
+
+                  ⚠️ THE COLOUR LIVES HERE, NOT IN THE PALETTE ROW BELOW. That palette is derived
+                  from the scattered set and cycles across it, so using it would mean every tap
+                  repainted the batch. This swatch belongs to the next sprinkle and nothing else,
+                  which is also what makes *"pick red, every tap is red"* true.
+
+                  ⚠️ AND THE MODE SAYS HOW TO LEAVE. A tap is how a baker deselects, so while this
+                  is on the cake cannot be deselected by tapping it — a state you can enter and not
+                  find your way out of is worse than no mode at all. */}
+              {(() => {
+                const handOn = sprinkleHand?.elementId === card.elementId
+                            && sprinkleHand?.zone === su.zone
+                            && sprinkleHand?.tierIndex === su.tierIndex;
+                const handColour = sprinkleHand?.color
+                  ?? (scatterPaletteOf(card.elementId, su.group)[0] ?? '#ffffff');
+                return (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 6 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                      <Chip label={handOn ? 'Tapping on — done' : 'Add by hand'} isMobile={isMobile}
+                            active={handOn}
+                            onClick={() => setSprinkleHand(handOn
+                              ? null
+                              : { elementId: card.elementId, zone: su.zone, tierIndex: su.tierIndex, color: handColour })} />
+                      {handOn && canColor && (
+                        <input type="color" value={handColour} style={s.paletteSwatch}
+                          title="The colour of the next sprinkle"
+                          onChange={e => setSprinkleHand(h => ({ ...h, color: e.target.value }))} />
+                      )}
+                      {handOn && (
+                        <button onClick={undoHandSprinkle} disabled={!handSprinkleIds.length}
+                          style={{ ...s.smallBtn, opacity: handSprinkleIds.length ? 1 : 0.4,
+                                   cursor: handSprinkleIds.length ? 'pointer' : 'not-allowed' }}>
+                          Undo
+                        </button>
+                      )}
+                    </div>
+                    {handOn && (
+                      <div style={{ fontSize: 9, color: '#8a7a80', fontFamily: "'Quicksand',sans-serif" }}>
+                        Tap the cake to drop one — it lands on whatever is there, piping included.
+                        Change the colour and the next ones follow it. <b>Undo</b> takes the last one back,
+                        and <b>Tapping on — done</b> ends it.
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
               {canColor && (() => {
                 const palette = scatterPaletteOf(card.elementId, su.group);
                 const pal = palette.length ? palette : ['#ffffff'];
@@ -16770,6 +16926,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
               brushDraw={brushDraw}
+              sprinkleHand={sprinkleHand}
+              onSprinklePlace={handleSprinklePlace}
               onBrushDrawStart={handleBrushDrawStart}
               onBrushDrawTo={handleBrushDrawTo}
               onBrushDrawEnd={handleBrushDrawEnd}

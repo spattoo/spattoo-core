@@ -1459,6 +1459,12 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              ⚠️ ABSENT MEANS "ALL OVER", which is every side scatter placed before this existed, so
              the default is untouched and old saved cakes reload exactly as they were. */
           scatterBand:   extra.scatterBand === true,
+          /* ⚠️ PLACED BY A FINGER, NOT BY THE DENSITY DIAL — and every batch control has to know.
+             Count drops the newest instances first, the palette repaints what it walks, Big ones
+             picks who gets resized and the base band re-seats the set: each of those is right for
+             sprinkles the dial made, and wrong for the one a baker tapped onto a particular spot.
+             The flag is what lets all four skip it, and it is false everywhere else by omission. */
+          byHand:        extra.byHand === true,
           // Pattern membership: parts of one decor_pattern share a patternId, and carry the source
           // pattern element's id so the UI can present the set as ONE card (abstracting the parts)
           // with a persistent zone chooser — like a piping element. `patternDeletable` keeps the

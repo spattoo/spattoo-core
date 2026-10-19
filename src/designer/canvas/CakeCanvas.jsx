@@ -3305,6 +3305,75 @@ function FrontMarker({ frontZ }) {
  * auto-rotates under the hand, or the pointer leaves the canvas — and without it the drag never
  * ends and the next click continues the old one.
  */
+/* ── Tapping sprinkles on by hand ────────────────────────────────────────────────────
+ *
+ * A scatter answers "cover this surface"; this answers "one, there" — Sandeep: *"we cant add
+ * sprinkles to a specific area on the cake."*
+ *
+ * ⚠️ A MODE, NOT A GESTURE, and the cream pen's note says why: *"a tap is how a baker
+ * deselects, so the wall would fill with strokes nobody asked for."* A stroke can wait for travel
+ * before it commits; a sprinkle has none — the tap IS the whole gesture. So nothing here is live
+ * until the baker turns it on, and the card says how to turn it off.
+ *
+ * ⚠️ THE POINT COMES FROM THE MESH, not from a second ray-test of my own. r3f hands back the
+ * intersection it already computed, and the geometry is the tier's real outline (prism for the
+ * wall, the outline's own cap for the lid), so where the finger lands and where the sprinkle goes
+ * are the same answer by construction — which is exactly what came apart between the hand and the
+ * cream before today.
+ */
+function SprinkleTapTarget({ tier, zone, onPlace }) {
+  const shape = useMemo(() => tierShape(tier), [tier]);
+  const round = isRoundWall(shape);
+  const samples = useMemo(() => (round ? null : wallSamples(shape)), [shape, round]);
+  const side = zone !== 'top_surface';
+  const topY = tier.baseY + tier.height;
+
+  // The wall: the same inflated prism the drag target uses, so the two cannot disagree about where
+  // the cake is reachable.
+  const wallGeo = useMemo(() => (
+    side && samples
+      ? buildOutlinePrism(samples.pts.map(q => ({ x: q.x + q.nx * 0.02, z: q.z + q.nz * 0.02 })), tier.height)
+      : null
+  ), [side, samples, tier.height]);
+  /* The lid: the outline as a flat cap. A big plane would be easier and wrong — it would swallow
+     every tap that missed the cake, including the ones meant to deselect or orbit. */
+  const capGeo = useMemo(() => {
+    if (side) return null;
+    /* ⚠️ BOTH CAPS ARE BUILT THE SAME WAY, and the round one is why. A `<circleGeometry>` in the
+       JSX would have stood UPRIGHT — it is built in XY like THREE.Shape — so the round cake's lid
+       target would have been a disc standing on edge through the middle of the cake, catching taps
+       nowhere near the lid. Same construction, same single rotation, no case to get wrong. */
+    const g = samples
+      ? new THREE.ShapeGeometry(new THREE.Shape(samples.pts.map(q => new THREE.Vector2(q.x, q.z))))
+      : new THREE.CircleGeometry(tier.radius, 64);
+    g.rotateX(Math.PI / 2);          // XY → XZ: the lid lies flat
+    return g;
+  }, [side, samples, tier.radius]);
+  useEffect(() => () => { wallGeo?.dispose(); capGeo?.dispose(); }, [wallGeo, capGeo]);
+
+  const place = e => {
+    e.stopPropagation();             // a tap in this mode places; it does not deselect
+    onPlace?.({ x: e.point.x, y: e.point.y, z: e.point.z });
+  };
+
+  if (side) {
+    return (
+      <mesh position={[0, tier.baseY + tier.height / 2, 0]} onPointerDown={place}>
+        {wallGeo
+          ? <primitive key={wallGeo.uuid} object={wallGeo} attach="geometry" />
+          : <cylinderGeometry args={[tier.radius + 0.02, tier.radius + 0.02, tier.height, 64, 1, true]} />}
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+    );
+  }
+  return (
+    <mesh position={[0, topY + 0.004, 0]} onPointerDown={place}>
+      <primitive key={capGeo.uuid} object={capGeo} attach="geometry" />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   const { camera, gl } = useThree();
   const pressed = useRef(false);
@@ -3430,6 +3499,7 @@ function CakeScene({
   /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
      surface you drag ALONG, and each drag lays one stroke that follows the hand. */
   brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
+  sprinkleHand = null, onSprinklePlace,
   tierDataRef,
 }) {
   // Only what the EDITING surface itself draws (handles, catchers) is read here — everything that is
@@ -3700,6 +3770,13 @@ function CakeScene({
 
       {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
           wants the angle. One component answers both — see WallDragTarget. */}
+      {/* One tap, one sprinkle, on whichever surface the card turned on. */}
+      {sprinkleHand && tierData[sprinkleHand.tierIndex] && (
+        <SprinkleTapTarget
+          tier={tierData[sprinkleHand.tierIndex]}
+          zone={sprinkleHand.zone}
+          onPlace={p => onSprinklePlace?.(p)} />
+      )}
       {brushDraw && tierData[brushDraw.tierIndex] && (
         <WallDragTarget
           tier={tierData[brushDraw.tierIndex]}
@@ -5180,6 +5257,7 @@ export default function CakeCanvas({
   /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
      surface you drag ALONG, and each drag lays one stroke that follows the hand. */
   brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
+  sprinkleHand = null, onSprinklePlace,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -5365,6 +5443,8 @@ export default function CakeCanvas({
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
         brushDraw={brushDraw}
+        sprinkleHand={sprinkleHand}
+        onSprinklePlace={onSprinklePlace}
         onBrushDrawStart={onBrushDrawStart}
         onBrushDrawTo={onBrushDrawTo}
         onBrushDrawEnd={onBrushDrawEnd}
