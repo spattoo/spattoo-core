@@ -413,3 +413,56 @@ describe('topperStick', () => {
     expect(topperBox(withStick, fontOf)).toEqual(topperBox(without, fontOf));
   });
 });
+
+/* ── A typed phrase stays on the line it was typed on ───────────────────────────────────────────
+ *
+ * Sandeep: *"when i enter text, every space is causing a line break."* `topperShapes` defaults to
+ * `lines: 'auto'`, which stacks a phrase into rows the moment it would otherwise set too thin to
+ * cut. That is right for an acrylic word spanning a cake at a fixed width, and wrong for a card
+ * topper, which is sized by dragging its own grips — the baker can SEE how thin it got, and can
+ * now fix it. Measured before changing it: every two-word phrase came apart, "11 Not Out" and
+ * "Team India" into two rows, "Happy 1st Birthday" into three.
+ *
+ * Two lines here is two TEXT OBJECTS, which is what the "Happy Birthday" preset already is.
+ */
+describe('a card topper sets what was typed', () => {
+  // the drawn extent of a piece, which is how a stacked phrase gives itself away: stacking makes
+  // the block taller and narrower, so the aspect collapses
+  const extent = (obj) => {
+    const parts = topperContours(obj, font);
+    let lo = Infinity, hi = -Infinity, bo = Infinity, to = -Infinity;
+    for (const p of parts ?? []) for (const q of p.outer) {
+      if (q.x < lo) lo = q.x; if (q.x > hi) hi = q.x;
+      if (q.y < bo) bo = q.y; if (q.y > to) to = q.y;
+    }
+    return { w: hi - lo, h: to - bo, aspect: (hi - lo) / (to - bo) };
+  };
+
+  it('keeps a phrase with spaces on one line', () => {
+    for (const phrase of ['11 Not Out', 'Team India', 'Happy Birthday']) {
+      // one line of this font is far wider than it is tall; two rows roughly halve that
+      expect(extent(text({ text: phrase })).aspect, phrase).toBeGreaterThan(3);
+    }
+  });
+
+  it('still stacks when the text itself asks, with a newline', () => {
+    const one = extent(text({ text: 'Happy Birthday' }));
+    const two = extent(text({ text: 'Happy\nBirthday' }));
+    expect(two.aspect).toBeLessThan(one.aspect / 1.5);
+  });
+
+  it('still stacks when a row count is authored on the object', () => {
+    const one = extent(text({ text: 'Happy Birthday' }));
+    const two = extent(text({ text: 'Happy Birthday', lines: 2 }));
+    expect(two.aspect).toBeLessThan(one.aspect / 1.5);
+  });
+
+  /* ⚠️ THE PROBE AND THE LAYOUT TAKE THE SAME OPTIONS. The width is measured by one call and the
+     scale derived from it by a second; if they disagree about how many rows there are, the word is
+     fitted to a width it never had and comes out the wrong size. */
+  it('fits the word to the size it was given', () => {
+    for (const phrase of ['Ava', '11 Not Out']) {
+      expect(extent(text({ text: phrase, size: 2 })).w, phrase).toBeCloseTo(2, 1);
+    }
+  });
+});

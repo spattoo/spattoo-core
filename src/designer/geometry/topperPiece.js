@@ -35,9 +35,25 @@ export function topperContours(obj, font) {
   if (!obj) return null;
   if (obj.kind === 'text') {
     if (!font || !String(obj.text ?? '').trim()) return null;
-    const probe = topperShapes(font, obj.text, { height: 1 });
+    /* ⚠️ ONE LINE UNLESS ASKED OTHERWISE. `topperShapes` defaults to `lines: 'auto'`, which stacks
+       a phrase into rows as soon as it would otherwise set too thin to cut — right for an acrylic
+       word spanning a cake at a fixed width, and wrong here. Measured on this font, EVERY
+       two-word phrase came apart: "11 Not Out" and "Team India" into two rows, "Happy 1st
+       Birthday" into three. Reported exactly as it looks: *"every space is causing a line
+       break"*.
+       A card topper is sized by dragging its grips, so the argument that saved auto-stacking —
+       the baker cannot see how thin it got — does not hold: they can see it, and now they can
+       resize it. A composition of two lines is TWO TEXT OBJECTS here, which is what the
+       "Happy Birthday" preset already is and what the studio calls "a COMPOSITION rather than a
+       single word". `obj.lines` is still honoured for anything that wants the old behaviour, and
+       a "\n" in the text wins over both.
+       ⚠️ THE PROBE TAKES THE SAME OPTIONS AS THE LAYOUT. `width` is measured by the first call and
+       the scale derived from it by the second; let them disagree about rows and the word is
+       fitted to a width it never had. */
+    const opts = { lines: obj.lines ?? 1 };
+    const probe = topperShapes(font, obj.text, { ...opts, height: 1 });
     if (!probe.width) return null;
-    return topperShapes(font, obj.text, { height: obj.size / probe.width }).parts;
+    return topperShapes(font, obj.text, { ...opts, height: obj.size / probe.width }).parts;
   }
   /* A shape has no word to fit, so it is fitted to a box of its own size — `backingPlate` sizes
    * itself around whatever it is given, and giving it a box is how you ask for the shape alone.

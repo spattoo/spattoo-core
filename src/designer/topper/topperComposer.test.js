@@ -61,3 +61,27 @@ describe('a word is grabbed by its box', () => {
     expect(src).toMatch(/showHandles && \[\[-1, -1\], \[1, -1\], \[1, 1\], \[-1, 1\]\]/);
   });
 });
+
+
+/* ── The bin ────────────────────────────────────────────────────────────────────────────────────
+ * *"when you click on the delete button it clears the canvas. I only want the selected
+ * text/offset etc to be deleted."* It always cleared — a destructive act one tap away from a piece
+ * somebody had just selected and was looking at. A bin sitting beside a selected object has two
+ * readings, and only one of them is what a person means while a piece wears a selection box.
+ *
+ * Driven in the studio: with the word selected it removed the word and left the panel standing
+ * (letter pixels 4081 -> 0, panel pixels unchanged).
+ */
+describe('the bin', () => {
+  it('removes the selection when there is one, and only then clears', () => {
+    expect(src).toMatch(/if \(selectedIds\.length\) \{ selectedIds\.forEach\(remove\);/);
+    expect(src).toMatch(/setObjects\(\[\]\); setSelectedIds\(\[\]\);/);
+  });
+
+  /* Same glyph, two jobs — so it has to say which one, rather than leaving a baker to find out by
+     pressing it (rule 7). */
+  it('says which of the two it will do', () => {
+    expect(src).toMatch(/title=\{selectedIds\.length \? 'Remove the selected piece' : 'Clear the canvas'\}/);
+    expect(src).toMatch(/aria-label=\{selectedIds\.length \? 'Remove the selected piece' : 'Clear the canvas'\}/);
+  });
+});

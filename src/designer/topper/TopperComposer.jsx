@@ -1713,8 +1713,22 @@ export default function TopperComposer({
             never on purpose twice — and on a phone it was taking a row from the canvas. Here it is
             beside the work it clears, small, and its own colour says it removes. */}
         {objects.length > 0 && !onCake && (
-          <button type="button" onClick={() => { setObjects([]); setSelectedIds([]); setDrawer(null); }}
-            title="Clear the canvas" aria-label="Clear the canvas"
+          /* ⚠️ IT REMOVES WHAT IS SELECTED, and only clears the canvas when nothing is. It always
+             cleared, which is a destructive act one tap away from a piece somebody had just
+             selected and was looking at — *"when you click on the delete button it clears the
+             canvas. I only want the selected text/offset etc to be deleted"*. The two readings of
+             a bin beside a selected object are "delete this" and "delete everything", and only one
+             of them is what a person means while a piece wears a selection box.
+             ⚠️ AND IT SAYS WHICH IT WILL DO. Same glyph, two jobs, so the title and the label
+             change with the selection rather than leaving the baker to find out by pressing it
+             (rule 7: a control has to say what it does). */
+          <button type="button"
+            onClick={() => {
+              if (selectedIds.length) { selectedIds.forEach(remove); setDrawer(null); return; }
+              setObjects([]); setSelectedIds([]); setDrawer(null);
+            }}
+            title={selectedIds.length ? 'Remove the selected piece' : 'Clear the canvas'}
+            aria-label={selectedIds.length ? 'Remove the selected piece' : 'Clear the canvas'}
             style={{ position: 'absolute', top: 12, left: 12, zIndex: 3, width: 34, height: 34,
               display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 9,
               cursor: 'pointer', color: '#8A6320', background: 'rgba(255,255,255,0.92)',
