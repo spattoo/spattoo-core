@@ -110,9 +110,22 @@ function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur =
 }
 
 function dispTexture(H, w, h) {
-  const data = new Uint8Array(w * h * 4);
-  for (let i = 0; i < w * h; i++) { const g = Math.round(clamp(H[i], 0, 1) * 255); data[i * 4] = g; data[i * 4 + 1] = g; data[i * 4 + 2] = g; data[i * 4 + 3] = 255; }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  /* ⚠️ ONE CHANNEL, BECAUSE A HEIGHT FIELD IS ONE NUMBER. This wrote the same grey into R, G and B
+     and 255 into A — four bytes to carry one, and three of them never read: three.js samples
+     `displacementMap.x` in the vertex shader and ignores the rest. At the 1024 bake resolution that
+     is 4MB per sticker where 1MB does the identical job, measured on the catalogue's grass clump.
+     ⚠️ IT MATTERS BECAUSE OF WHERE THIS IS HEADED. A relief sticker costs ~14.6MB of texture memory
+     (albedo + normal + this), and ten of them is most of what a mid-range Android gives an app
+     before the low-memory killer takes it. Nothing about the lift changes: same values, same
+     filtering, same shader read — only the three bytes nobody looked at are gone.
+     ⚠️ `unpackAlignment = 1`. WebGL unpacks rows on a 4-byte boundary by default, which is harmless
+     for RGBA (always a multiple of 4) and SHEARS a single-channel texture whose width is not. The
+     bake is capped at 1024 on the long edge but the short edge is whatever the artwork's aspect
+     makes it, so odd widths are the normal case, not the exception. */
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) data[i] = Math.round(clamp(H[i], 0, 1) * 255);
+  const tex = new THREE.DataTexture(data, w, h, THREE.RedFormat);
+  tex.unpackAlignment = 1;
   // DataTexture defaults to NearestFilter, which stair-steps the lift across the 96x96 grid. Linear so the
   // displacement interpolates smoothly between texels.
   // NO mipmaps here, deliberately: displacement is sampled in the VERTEX shader, where there are no

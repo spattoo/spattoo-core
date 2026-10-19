@@ -3683,7 +3683,14 @@ function CakeScene({
             const w = im.width || im.naturalWidth || 0, h = im.height || im.naturalHeight || 0;
             if (!w || !h) continue;
             texCount++;
-            const bytes = w * h * 4 * (t.generateMipmaps === false ? 1 : 1.33);
+            /* ⚠️ BYTES PER PIXEL COMES FROM THE FORMAT, not from an assumption of RGBA. The
+               displacement map is single-channel (RedFormat) — counting it as 4 bytes reported no
+               saving at all from the change that made it 1, which is a measuring instrument
+               disagreeing with the thing it measures. */
+            const bpp = t.format === THREE.RedFormat ? 1
+                      : t.format === THREE.RGFormat ? 2
+                      : t.format === THREE.RGBFormat ? 3 : 4;
+            const bytes = w * h * bpp * (t.generateMipmaps === false ? 1 : 1.33);
             texBytes += bytes;
             byKind[k] = +(((byKind[k] ?? 0) + bytes / 1048576)).toFixed(1);
           }
