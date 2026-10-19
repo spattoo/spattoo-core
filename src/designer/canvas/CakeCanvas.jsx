@@ -902,9 +902,64 @@ function useSlotFontsReady(textSlots) {
   return tick;
 }
 
+/* ── Giving a sticker's artwork back when the last sticker using it goes ─────────────────────────
+ *
+ * ⚠️ REMOVING A DECORATION FREED ITS GEOMETRY AND NOT ITS TEXTURE. Measured through the renderer's
+ * own counters: placing one sticker took it from 8 textures / 17 geometries to 9 / 19, and
+ * "Remove from cake" gave back 19 → 18 and left the texture at 9 — 5.3MB of albedo still resident
+ * with nothing on the cake using it. The scene graph forgets the piece instantly, which is why
+ * `__sceneMemory` reported it as clean and why nobody had noticed: a baker who tries twenty
+ * decorations and keeps three has paid for all twenty until the page reloads.
+ *
+ * The cause is narrow. Everything DERIVED here already disposes on unmount — the recoloured canvas,
+ * the relief maps through `reliefMapsCache`. The albedo comes from drei's `useTexture`, which
+ * caches by URL and disposes nothing, ever.
+ *
+ * ⚠️ IT CANNOT SIMPLY DISPOSE ON UNMOUNT, which is the obvious fix and a worse bug. Stickers SHARE
+ * artwork — ten copies of one image cost 5.3MB once, measured — so freeing it when any one of them
+ * goes would blank the other nine. Hence the ref count: pinned while any user is mounted, released
+ * when the last one leaves. Exactly what `reliefMapsCache` already does for the maps baked FROM
+ * this texture, which is why this reuses it rather than inventing a second lifetime.
+ *
+ * ⚠️ AND IT MUST EVICT DREI'S CACHE ENTRY IN THE SAME BREATH. Dispose the GPU resource but leave
+ * `useTexture`'s entry and the next sticker to use that URL is handed a DISPOSED texture — a black
+ * or broken decoration, intermittent, and far worse than the leak it replaces. The two have to
+ * happen together or not at all.
+ *
+ * The cache's 2-minute idle grace does the rest: remove-then-undo, or re-scattering the same piece,
+ * finds the texture still there rather than re-downloading and re-decoding it.
+ */
+const stickerAlbedoCache = makeRefCountedCache({
+  dispose: ({ tex, url }) => {
+    try { tex?.dispose?.(); } catch { /* best-effort */ }
+    try { useTexture.clear(url); } catch { /* drei may have evicted it already */ }
+  },
+});
+
+/* Pin the loaded artwork for as long as this component is mounted. `useTexture` still does the
+   loading and the suspending; this only decides when the result may be let go. Both the albedo and
+   the relief bake call it on the same URL, so a relief sticker holds two refs and drops both
+   together — a sticker that loses only one of its two users must not free the image. */
+function useRetainedTexture(url, tex) {
+  /* ⚠️ FETCHED ARTWORK ONLY — never a `data:` or `blob:` url, and this guard was earned. Measured:
+     a data-URI sticker removed, disposed, and then placed again came back with NOTHING on the
+     cake. Those urls are also the one case with no sharing to protect and no download to save —
+     an upload or a generated image belongs to one instance and its bytes are already in memory —
+     so managing their lifetime buys nothing and breaks re-adding. `corsUrl` singles the same two
+     schemes out, which is the clue that they are a real shape here and not a test artefact. */
+  const managed = /^https?:|^\//i.test(url ?? '');
+  if (managed) stickerAlbedoCache.get(url, () => ({ tex, url }));
+  useEffect(() => {
+    if (!managed) return undefined;
+    stickerAlbedoCache.retain(url);
+    return () => stickerAlbedoCache.release(url);
+  }, [url, managed]);
+}
+
 function useStickerImageTexture(imageUrl, recolor, color, groupColors, saturation, textSlots, textValues) {
   const sat = printExposure({ saturation }).saturation;   // print_finish.saturation; neutral (1) by default
   const base = useTexture(corsUrl(imageUrl));
+  useRetainedTexture(corsUrl(imageUrl), base);
   const fontsTick = useSlotFontsReady(textSlots);
   base.colorSpace = THREE.SRGBColorSpace;
   // A decal is viewed at a grazing angle all round the wall, where isotropic mip filtering smears it.
@@ -1132,6 +1187,8 @@ const solidGeoCache = makeRefCountedCache({ dispose: v => v?.dispose?.() });
 function useReliefMaps(imageUrl, relief) {
   // Same qualified URL as the albedo above, so drei's cache serves ONE fetch for both.
   const base = useTexture(corsUrl(imageUrl));
+  // ...and the same ref count, so the artwork outlives whichever of the two unmounts first.
+  useRetainedTexture(corsUrl(imageUrl), base);
   // Authored flat-mask (placement_config.relief.flatMask): an inline data-URI PNG (black = flush). Decode it
   // ASYNC — a data URI needs no crossOrigin — then rebuild the maps with it. Absent → the sync path is
   // untouched. Keeping the decoded image in state (keyed on the data-URI) makes the maps re-derive on load.
