@@ -3662,6 +3662,13 @@ function CakeScene({
        the source gets the arithmetic right and the COUNT wrong, because what is actually resident
        depends on caching, reuse and what the baker placed. This reads the live scene instead.
        Bytes are an estimate — w × h × 4, +33% where mipmaps are on — not an allocator reading. */
+    /* ⚠️ WHAT THE RENDERER STILL HOLDS, which is a different question from what the scene shows.
+       `__sceneMemory` walks the scene graph, so a decoration the baker deleted vanishes from it
+       immediately — while its texture may still be resident, because drei's loaders cache by URL
+       and nothing clears that cache on unmount. These two numbers agreeing is the test for "does
+       memory come back when you remove something"; them disagreeing is the leak. */
+    window.__rendererMemory = () => ({ ...gl.info.memory, programs: gl.info.programs?.length ?? null });
+
     window.__sceneMemory = () => {
       const seen = new Set();
       let texCount = 0, texBytes = 0, tris = 0, geos = 0;
