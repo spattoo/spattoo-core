@@ -3151,7 +3151,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * the centre, which is how every side sticker is stored, shape or not) and a lid seat is
    * `{ x, z }`. What rests it on top of any piping or drip already there is the renderer's
    * `topSurfaceYAt` — "a scattered piece rests on what is there, not on the lid" — so a sprinkle
-   * tapped onto a rim border sits on the border. */
+   * tapped onto a rim border sits on the border.
+   *
+   * ⚠️ AND `byHand` IS ALSO WHAT KEEPS THE SEAT WHERE THE FINGER WAS. addSticker de-overlaps a new
+   * instance off a coincident sibling — right for the density dial, and the reason the second tap
+   * beside the first landed a whole STICKER_SIZE away instead of next to it (0.28 for a 6px move).
+   * The flag is read there too; see `seatIsExact` in useCakeDesign. */
   function handleSprinklePlace(point) {
     const h = sprinkleHand;
     if (!h || !point) return;
