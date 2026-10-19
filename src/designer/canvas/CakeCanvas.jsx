@@ -3873,9 +3873,12 @@ const NOOP = () => {};
  * it would leave a dragged stroke's cream behind at the old place.
  */
 function BrushStrokes({ strokes, tier, wallColour, onPick }) {
+  // Same outline the band walks — a stroke drawn by hand and one laid by the band are the same
+  // smear on the same wall, and two answers about where that wall is would show as a seam.
+  const handShape = useMemo(() => tierShape(tier), [tier]);
   const built = useMemo(() => {
     if (!strokes?.length) return [];
-    const bed = makeBrushBed({ R: tier.radius, wallH: tier.height });
+    const bed = makeBrushBed({ R: tier.radius, wallH: tier.height, width: perimeter(handShape).length });
     return strokes.map(st => {
       const common = {
         R: tier.radius,
@@ -3892,18 +3895,18 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
          coordinates in it, so handing it one would be asking the wrong surface how high it is. */
       const geo = (st.surface ?? 'side') === 'top'
         ? buildBrushStrokeOnFlat({
-            ...common, y: tier.baseY + tier.height,
+            ...common, y: tier.baseY + tier.height, shape: handShape,
             path: brushTopPath([st.ax ?? -0.5, st.az ?? 0], [st.bx ?? 0.5, st.bz ?? 0], { bow: st.bow ?? 0 }),
           })
         : buildBrushStrokeOnWall({
-            ...common, baseY: tier.baseY, wallH: tier.height, bed,
+            ...common, baseY: tier.baseY, wallH: tier.height, bed, shape: handShape,
             path: brushGesture({ at: st.at ?? 0, rise: st.rise ?? 0.02, climb: st.climb ?? 0.42,
                                  climbVar: st.climbVar ?? 0, sweep: st.sweep ?? 0, bow: st.bow ?? 0,
                                  seed: st.seed ?? 1 }),
           });
       return geo ? { st, geo: paintBrushColors(geo, st.color ?? '#F6DCE2', wallColour) } : null;
     }).filter(Boolean);
-  }, [strokes, tier.radius, tier.baseY, tier.height, wallColour]);
+  }, [strokes, tier.radius, tier.baseY, tier.height, wallColour, handShape]);
 
   return built.map(({ st, geo }) => (
     <mesh key={st.id} geometry={geo} castShadow receiveShadow
@@ -3917,9 +3920,14 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
 
 function BrushBand({ band, tier, wallColour, onClick = null }) {
   const { gl } = useThree();
+  /* ⚠️ THE TIER'S OWN OUTLINE, not its radius. Without this the band wraps onto a circle of that
+     radius — right on a round cake, and on a sheet or a heart a ring of cream hanging in the air
+     off the corners. `tierShape` is the same answer the piping ring and the stickers already ask
+     for, so all three now walk one outline. */
+  const wallShape = useMemo(() => tierShape(tier), [tier]);
   const parts = useMemo(() => (band ? buildBrushBand({
-    R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, ...band,
-  }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour]);
+    R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, shape: wallShape, ...band,
+  }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour, wallShape]);
   if (!parts?.length) return null;
   /* ⚠️ THE BAND TAKES THE POINTER NOW, and it used to raycast to nothing on purpose: "a treatment
      of the whole wall like dusting or foil, not a thing placed on it, so its card is reached from

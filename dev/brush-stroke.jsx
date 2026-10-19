@@ -194,10 +194,24 @@ function Band() {
    file (cakeContent.test.js); only this proves the cake comes out with cream on it. */
 const DESIGNER = P.has('designer');
 
+/* ?shape=rect|heart|oval|butterfly — THE CAKE IS NOT ALWAYS ROUND, and until 2026-10-19 the band
+   behaved as if it were: every stroke was wrapped onto a circle of the tier's radius, so on a sheet
+   it hung in the air off the corners. This is how that is looked at rather than asserted — the band
+   and the hand-drawn strokes both run through the same `tierShape` the piping ring uses. */
+const SHAPE = P.get('shape') || 'round';
+const SHAPED_TIER = {
+  round:     {},
+  rect:      { shape: 'rect', width: 2.2, depth: 1.5 },
+  heart:     { shapeFamily: 'heart',     width: 2.2, depth: 2.0 },
+  oval:      { shapeFamily: 'oval',      width: 2.4, depth: 1.6 },
+  butterfly: { shapeFamily: 'butterfly', width: 2.4, depth: 1.8 },
+}[SHAPE] ?? {};
+
 function DesignerCake() {
   const design = {
     tiers: [{
       radius: 1, height: 1.25, color: '#FBF8F3',
+      ...SHAPED_TIER,
       frostingType: 'buttercream', frostingStyle: 'smooth',
       /* ?single — the hand-drawn list instead of the band, which is the other half of the
          integration: a list of pieces, each its own mesh with its own click target and its own
