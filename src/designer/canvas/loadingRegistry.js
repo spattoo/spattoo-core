@@ -16,7 +16,15 @@ import { useEffect, useSyncExternalStore } from 'react';
 
 let inFlight = 0;
 const listeners = new Set();
-const emit = () => listeners.forEach(l => l());
+const emit = () => {
+  listeners.forEach(l => l());
+  /* ⚠️ THE COUNT IS THE ONLY THING THE SPINNER KNOWS, so it is the only thing worth watching when
+     the spinner will not go away. "Still loading" and "finished, but the count never came back
+     down" are the same picture on screen and completely different bugs — one is the network, the
+     other is a mount that never ran its cleanup. Published in DEV so a check can tell them apart
+     instead of guessing from a screenshot. */
+  if (import.meta.env?.DEV && typeof window !== 'undefined') window.__loadingInFlight = inFlight;
+};
 
 // Invisible Suspense fallback: counts one in-flight asset for its lifetime.
 export function LoadingPing() {
