@@ -3678,8 +3678,15 @@ function CakeScene({
           for (const k of ['map', 'normalMap', 'displacementMap', 'roughnessMap', 'metalnessMap',
                            'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap']) {
             const t = m?.[k], im = t?.image;
-            if (!t || !im || seen.has('t' + t.uuid)) continue;
-            seen.add('t' + t.uuid);
+            /* ⚠️ DEDUPED BY SOURCE, NOT BY TEXTURE. `Texture.clone()` copies the wrapper and SHARES
+               `source` (three's `copy()` does `this.source = source.source`), and the renderer
+               uploads per source — so a dozen clones made only to carry different `repeat` values
+               are ONE upload. Counting by `uuid` made the fondant cloud look like 1.7MB per cloud
+               when the balls share a single grain map between them; the first version of this hook
+               said exactly that, and it was the hook that was wrong, not the cloud. */
+            const id = 't' + (t?.source?.uuid ?? t?.uuid);
+            if (!t || !im || seen.has(id)) continue;
+            seen.add(id);
             const w = im.width || im.naturalWidth || 0, h = im.height || im.naturalHeight || 0;
             if (!w || !h) continue;
             texCount++;
