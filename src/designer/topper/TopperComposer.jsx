@@ -366,6 +366,28 @@ function Piece({ obj, layer, font, selected, editing, onSelect, onMove, onEdit, 
           <CardStock colour={obj.colour} finish={obj.finish} />
         </mesh>
       ))}
+      {/* ⚠️ A WORD IS GRABBED BY ITS BOX, NOT BY ITS LETTERS. Hit-testing ran on the glyph geometry,
+          which is honest and nearly unusable: the gaps between letters, the counter of an "a", the
+          space either side of an "I" all fall through to whatever is behind — normally the panel
+          the word is sitting on. So selecting the text was a hunt for a thick stroke, and a miss
+          silently selected something else. Reported as *"there is no way to select the font size"*:
+          the grips that resize a piece only appear once it is selected, so a word that cannot be
+          selected reliably is a word that cannot be resized at all.
+          ⚠️ TEXT ONLY, and asked of `kind` rather than of the look. A shape's geometry already IS
+          its area — a panel has no gaps to fall through — so giving it a box would gain nothing and
+          cost the ability to click what is layered in front of it.
+          ⚠️ IN FRONT OF ITS OWN FACE, so the word wins over the card it sits on, and INVISIBLE
+          rather than absent from the capture path: opacity 0 with no depth write draws nothing and
+          leaves no mark on the thumbnail. INVARIANTS #10 law 4 — what you can grab is what you can
+          see — and what a baker sees here is the word, not the outline of each letter. */}
+      {obj.kind === 'text' && (
+        <mesh position={[box.cx, box.cy, faceZ + CARD_THICK]}
+          onPointerDown={begin} onPointerMove={move} onPointerUp={end} onPointerCancel={end}
+          onDoubleClick={(e) => { e.stopPropagation(); onEdit(obj.id); }}>
+          <planeGeometry args={[box.w, box.h]} />
+          <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+        </mesh>
+      )}
       {/* ⚠️ EDITED WHERE IT IS. The words were also a field in the side panel, which meant typing in
           one place and watching another — and two controls for one value, either of which could be
           the one you reach for. A real <input> is laid over the object rather than keystrokes being
@@ -921,7 +943,7 @@ export default function TopperComposer({
   const applyArrival = useCallback((raw) => {
     /* ⚠️ IDS ARE MINTED HERE, BECAUSE A PRESET ARRIVES WITHOUT THEM. `topperPresets.js` says so at
      * its top — *"NO `id`s HERE. Ids are minted by the studio as the objects land, so picking the
-     * same preset twice cannot produce two objects that share an id"* — and `usePreset` had always
+     * same preset twice cannot produce two objects that share an id"* — and `applyPreset` had always
      * done that minting on its own door. The OTHER door did not, so a row whose payload was
      * authored that way opened a studio with the "10" drawn and UNTOUCHABLE: React renders by index
      * happily, every `o.id` was undefined so `selectedIds` came out empty, the properties panel
@@ -1091,7 +1113,11 @@ export default function TopperComposer({
   /* ⚠️ IDS ARE MINTED HERE, not stored on the preset — picking the same one twice would otherwise
      produce two objects sharing an id, and selecting either would move both. Cloned per object too,
      so editing what was just dropped cannot reach back into the frozen preset list. */
-  const usePreset = (pre) => {
+  /* ⚠️ `applyPreset`, NOT `usePreset`. It is a click handler — "use this preset" — and the `use`
+     prefix made `check:conditional-hooks` read it as a React hook called inside a JSX attribute,
+     which is exactly the shape that gate exists to catch. The gate was right about the shape and
+     wrong about the thing; the name was the lie. */
+  const applyPreset = (pre) => {
     /* ⚠️ THE SAME ARRIVAL AS A PRESET THAT CAME WITH THE STUDIO. This used to clear the selection
        and the editor — so tapping "10" in the preset list put a finished-looking number on the
        canvas with an empty properties panel beside it and no caret, which is the state the
@@ -1504,7 +1530,7 @@ export default function TopperComposer({
               row of the canvas. The strip shows about six and a half, so its edge says it scrolls. */}
           <div style={{ display: 'flex', gap: 7, overflowX: 'auto', paddingBottom: 2 }}>
             {TOPPER_PRESETS.map(pre => (
-              <RailButton key={pre.key} onClick={() => { setDrawer(null); usePreset(pre); }}
+              <RailButton key={pre.key} onClick={() => { setDrawer(null); applyPreset(pre); }}
                 title={pre.label}>
                 <PresetIcon objects={pre.objects} font={blockFont} size={30} />
               </RailButton>
@@ -1586,7 +1612,7 @@ export default function TopperComposer({
               canvas's width for it, which is a better trade than a preset nobody finds. */}
           <div className="tcGroup" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 6 }}>
             {TOPPER_PRESETS.map(pre => (
-              <RailButton key={pre.key} onClick={() => usePreset(pre)} title={pre.label} wide compact>
+              <RailButton key={pre.key} onClick={() => applyPreset(pre)} title={pre.label} wide compact>
                 <PresetIcon objects={pre.objects} font={blockFont} size={30} />
               </RailButton>
             ))}
