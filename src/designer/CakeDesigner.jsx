@@ -11870,7 +11870,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * ⚠️ NOT FOR A GROUPED MEMBER. A piece inside a group cannot be deleted on its own (the group card
    * owns that) — the same guard the footer button has, which is why this reads it rather than
    * assuming an image sticker is free-standing. */
-  function compactRemove(card) {
+  function compactCardActions(card) {
     if (card.type !== 'sticker') return null;
     const inst = design.stickers.find(x => x.id === card.id);
     if (inst?.groupId) return null;
@@ -11896,6 +11896,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         )}
         <button style={{ ...s.deleteBtn, minHeight: 28, padding: '0 12px', fontSize: 11.5 }}
           onClick={e => { e.stopPropagation(); handleDelete(); }}>Remove</button>
+        {/* ⚠️ THE WAY OUT SITS WHERE A WAY OUT SITS. Sandeep: "does the user know how to close this
+            popup? we have tick mark, but its below to the other buttons like remove." It was pinned
+            at the end of the CONTROL row — so it read as one more control, and it was below the
+            card-level buttons rather than beside them. Top-right of the card is where every sheet
+            this baker has ever shut puts its way out, and the three card-level actions are now one
+            group: make another, take it off, finish.
+            ⚠️ WITH A RULE AND A GAP BEFORE IT, because the thing immediately to its left is the one
+            irreversible control on the card (there is no global undo in the designer — only
+            per-card one-level undos). Reaching for "finish" must not land on "delete". */}
+        <div style={{ ...s.tbDivider, height: 24, margin: '0 2px' }} />
+        <button type="button" aria-label="Done editing this decoration" title="Done"
+          onClick={e => { e.stopPropagation(); clearAllSelections(); setExpandedPipingId(null); }}
+          style={{ ...s.doneBtn, width: 34, minWidth: 34, height: 34, minHeight: 34, padding: 0,
+                   borderRadius: '50%', fontSize: 16, flexShrink: 0 }}>✓</button>
       </div>
     );
   }
@@ -12631,35 +12645,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const cell = (key, label, kids, keepLabel = false) =>
         <ControlCell key={key} label={compact && !keepLabel ? null : label}>{kids}</ControlCell>;
       groups.push({ key: 'sc', divider: true, scroll: true,
-        /* ⚠️ PINNED, NOT SCROLLED — the one control that must never slide off. Sandeep: "done
-           button should be a fixed arrow to the right. all the other controls in the row are
-           scrollable." It lives in the row rather than the header because the header was spending a
-           whole line on it; `compactCard` keeps the header's copy from rendering at the same time. */
-        pinnedRight: compact ? (
-          /* ⚠️ A HAIRLINE AND A GAP, because the row's own scroll arrow lands right beside this one.
-             ScrollFadeRow ends in a dark round chevron when there is more to the right, and a dark
-             round arrow next to it reads as two halves of one control — "which of these ends the
-             card?" The scroller stops at the rule; everything past it is this button. (Not solved by
-             dropping the scroll arrow: a row that scrolls with nothing saying so is the fault that
-             note in the panel renderer records.) */
-          <>
-            <div key="sc-done-div" style={{ ...s.tbDivider, height: 28, margin: '0 8px' }} />
-            {/* ⚠️ A TICK, AND THE EARLIER REFUSALS ARE NOT BEING OVERRULED QUIETLY. A bare ✓ was
-                rejected twice on this app — "tick mark is not obvious here", then "'Done' word is
-                better" — and both times it was a faint grey circle floating in a header, which reads
-                as a status badge rather than a control. Sandeep asked for this one himself, in a
-                different place and a different weight: "instead of arrow, can we use a tick there?",
-                on a filled black button pinned to the end of the row it finishes. */}
-            <button key="sc-done" type="button" aria-label="Done editing this decoration"
-              title="Done" onClick={() => { clearAllSelections(); setExpandedPipingId(null); }}
-              /* ⚠️ BIGGER THAN THE ROW'S OWN SCROLL ARROW, which is also a dark circle and lands
-                 right beside it. The rule separates them; the size says which one is the action and
-                 which is a hint about the row — and it buys the one control here that ends the card
-                 a 36px target (rule 5, judged on a phone). */
-              style={{ ...s.doneBtn, width: 36, minWidth: 36, height: 36, minHeight: 36, padding: 0,
-                       borderRadius: '50%', fontSize: 17, flexShrink: 0 }}>✓</button>
-          </>
-        ) : null,
+        /* ⚠️ THE TICK IS NOT IN THIS ROW. It was pinned at the end of it, which is where Sandeep
+           first asked for it — "done button should be a fixed arrow to the right. all the other
+           controls in the row are scrollable" — and once the card was down to two lines he read it
+           back the other way: "does the user know how to close this popup? we have tick mark, but
+           its below to the other buttons like remove." Both are true of the same button: at the end
+           of a row of CONTROLS it reads as one more control, and it sat BELOW the card-level
+           buttons instead of with them. It is on the title line's right edge now, with Duplicate and
+           Remove — see `compactCardActions`. */
         controls: [
         ...(placeCtls ? [placeCtls,
           /* A hairline between WHERE it sits and HOW it looks — without it the chips read as one
@@ -13047,7 +13040,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       );
     }
     if (c.duplicate && el.type === 'sticker' && !compact) {
-      /* Compact draws this in the title line as an icon — see compactRemove. Pushing here as well
+      /* Compact draws this in the title line as an icon — see compactCardActions. Pushing here as well
          would be the same control twice, and the footer row this one used to hold up is gone. */
       const sticker = design.stickers.find(s => s.id === el.id);
       if (!sticker?.groupId) {
@@ -13120,7 +13113,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       /* ⚠️ THE COMPACT CARD'S REMOVE IS IN ITS TITLE LINE, not down here — it is the whole footer
          row on an image sticker, and that row is a line of a phone spent on one button. Sandeep:
          "you have 'blue wing' title right, move the remove from cake button to that line, right
-         side." `compactRemove` draws it beside the name; pushing here as well would be two. */
+         side." `compactCardActions` draws it beside the name; pushing here as well would be two. */
       if (!compact) actions.push(
         <button key="del" style={s.deleteBtn} onClick={handleDelete}>{label}</button>
       );
@@ -13188,8 +13181,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ display:'flex', alignItems:'center', gap:4, flex:1, minWidth: 0,
                   flexWrap: 'wrap' }}>{g.controls}</div>
               )}
-              {/* Outside the scroller on purpose — see the note on `pinnedRight` where it is built. */}
-              {g.pinnedRight}
             </div>
           ))}
         </div>
@@ -18708,7 +18699,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             the mark: that is the ▼/Done that opens or folds the row, and the control
                             row it would duplicate is not on screen. */}
                         {expanded && compactCard({ type: card.type, id: card.id })
-                          ? compactRemove(card)
+                          ? compactCardActions(card)
                           : foldMark(expanded)}
                       </div>
                       {expanded && (
