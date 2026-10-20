@@ -967,6 +967,24 @@ const STICK_GLYPH = (
   </svg>
 );
 
+/* ── vh or dvh, decided once ─────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ ON iOS SAFARI `100vh` IS THE *LARGE* VIEWPORT — the height the page would have if the browser's
+ * toolbars were hidden — so a bottom-anchored child of a 100vh column sits BEHIND the toolbar
+ * whenever it is showing. That is invisible while something else occupies the bottom strip (the
+ * Actions bar did, until it started hiding during editing), and then it swallows whatever moves
+ * into that strip. Sandeep, on an iPhone: *"i dont see any below card… then i did not see the popup
+ * card for it"* — the card was there, under Safari's toolbar, and so was the nav strip it replaces.
+ *
+ * `100dvh` is the viewport as it actually is, re-measured as the toolbars come and go.
+ *
+ * ⚠️ FEATURE-DETECTED, NOT DECLARED TWICE. The CSS fallback for this is two declarations of the
+ * same property, and a React style object HAS ONLY ONE KEY — the second simply overwrites the
+ * first, so a browser without `dvh` would receive an invalid height and lay out with none at all.
+ * `CSS.supports` answers it honestly; `typeof CSS` guards renderToStaticMarkup, which is how every
+ * component here is tested (INVARIANTS #9, and useNarrow's own note). */
+const VH = (typeof CSS !== 'undefined' && CSS.supports?.('height', '100dvh')) ? 'dvh' : 'vh';
+
 /* ── A ring on its edge: the chip glyph ──────────────────────────────────────────────────────────
  *
  * A one-tier cake's piping card used to pick its ring from two live 3D previews — a 74px scene per
@@ -19570,6 +19588,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                          have squeezed the element LIST, which is a different surface with a
                          different job. */
                       paddingTop: 0, gap: 5,
+                      /* ⚠️ THE BOTTOM INSET IS THIS SHEET'S OWN JOB NOW. The nav strip it replaces
+                         has always reserved `env(safe-area-inset-bottom)` — "on a phone with a home
+                         indicator the strip grows to sit above it" — and this sheet never did,
+                         because the Actions bar underneath it was absorbing that zone by accident.
+                         The moment that bar was hidden while a card is open, the card sat flush with
+                         the screen edge, which on an iPhone means BEHIND Safari's bottom toolbar and
+                         the home indicator: Sandeep, on a 0.1.754 phone, "i dont see any below card
+                         … then i did not see the popup card for it", with the nav gone too — both of
+                         them in the strip iOS was covering. `env()` is 0 where there is nothing to
+                         clear, so this costs a desktop-sized phone nothing. */
+                      paddingBottom: 'calc(10px + env(safe-area-inset-bottom, 0px))',
                       /* Solid enough to read against a cake of any colour. The see-through treatment
                          below is for the list, where seeing the cake through it is the point. */
                       background: 'rgba(255,255,255,0.96)',
@@ -21834,7 +21863,7 @@ const s = {
   },
 
   page: {
-    display:'flex', flexDirection:'column', height:'100vh',
+    display:'flex', flexDirection:'column', height:`100${VH}`,
     // The page shows round the canvas: the header strip joins the TOP of the frame, where the wall is,
     // and the button strip joins the BOTTOM, where the floor is. One flat colour matches only one of them
     // and leaves a band at the other, so it runs wall → floor, top to bottom.
@@ -22835,7 +22864,7 @@ const s = {
        MOBILE_BAR_H and the safe-area inset, not a fraction: the bar is flexShrink:0 in the same
        100vh column, so anything that does not subtract it either overlaps or clips. Same expression
        as the two sheets at mobileSheet/mobileMore below. */
-    height: `calc(100vh - ${MOBILE_BAR_H}px - env(safe-area-inset-bottom, 0px))`,
+    height: `calc(100${VH} - ${MOBILE_BAR_H}px - env(safe-area-inset-bottom, 0px))`,
   },
   // Tabs, not a scrolling stack. 44 minimum so the strip is not a row of targets the bar below it
   // would be criticised for.
@@ -22912,7 +22941,9 @@ const s = {
     backdropFilter: 'blur(18px)',
     WebkitBackdropFilter: 'blur(18px)',
     borderRadius: '20px 20px 0 0',
-    padding: '14px 16px 24px',
+    /* Same inset as the card sheet and the nav strip: 24px clears a plain screen edge and not a
+       home indicator. See the note on the docked card sheet. */
+    padding: '14px 16px calc(24px + env(safe-area-inset-bottom, 0px))',
     boxShadow: '0 -4px 24px rgba(107,45,66,0.14)',
     zIndex: 20,
   },
