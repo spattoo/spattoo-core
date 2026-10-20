@@ -943,13 +943,24 @@ const stickerAlbedoCache = makeRefCountedCache({
    the relief bake call it on the same URL, so a relief sticker holds two refs and drops both
    together — a sticker that loses only one of its two users must not free the image. */
 function useRetainedTexture(url, tex) {
-  /* ⚠️ FETCHED ARTWORK ONLY — never a `data:` or `blob:` url, and this guard was earned. Measured:
-     a data-URI sticker removed, disposed, and then placed again came back with NOTHING on the
-     cake. Those urls are also the one case with no sharing to protect and no download to save —
-     an upload or a generated image belongs to one instance and its bytes are already in memory —
-     so managing their lifetime buys nothing and breaks re-adding. `corsUrl` singles the same two
-     schemes out, which is the clue that they are a real shape here and not a test artefact. */
-  const managed = /^https?:|^\//i.test(url ?? '');
+  /* ⚠️ EVERYTHING BUT `blob:`, AND THE LINE IS DRAWN THERE FOR A REASON THAT IS NOT ABOUT SHARING.
+     A `blob:` url is a handle into this document, and this repo REVOKES them — six call sites do,
+     one of them on unmount. Dispose a blob-backed texture and evict drei's entry and the re-add has
+     nothing to re-read: the url is dead, and the decoration comes back blank. A `data:` uri carries
+     its own bytes and can always be read again, so it has no such problem.
+
+     ⚠️ THIS GUARD USED TO EXCLUDE `data:` TOO, on the strength of a measured blank that DOES NOT
+     REPRODUCE. Re-checked 2026-10-20 with the guard off, using the shape the old note described —
+     a 1024² data-URI sticker WITH relief, so the height and normal bakes are in play — through two
+     complete cycles of place, remove, wait out the full grace, place again. Both cycles disposed
+     cleanly (11 textures → 8) and reloaded (8 → 11), and all three renders are PIXEL-IDENTICAL:
+     0.00% of pixels differ by more than 8, worst channel delta 0. The likeliest explanation is that
+     the original blank was a `blob:`, which is still excluded above and always will be.
+
+     ⚠️ Tested with a data URI built in the harness, not one produced by the real upload path, and on
+     a software rasteriser. If an uploaded decoration ever comes back blank two minutes after it was
+     removed, this line is the first place to look. */
+  const managed = /^https?:|^\/|^data:/i.test(url ?? '');
   if (managed) stickerAlbedoCache.get(url, () => ({ tex, url }));
   useEffect(() => {
     if (!managed) return undefined;
