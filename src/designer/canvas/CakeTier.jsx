@@ -2,7 +2,7 @@ import { useMemo, useEffect, useLayoutEffect, useRef, useState, useCallback } fr
 import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
+import { useRetainedGlb } from '../shared/retainedGlb.js';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { pointerRay, planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 import { applyGradient, alternateStops, alternateColorAt } from '../shared/color/gradientMaterial.js';
@@ -814,8 +814,11 @@ function TopPipingRingImpl({
   selected = false, onClick,
   canMove = true, onMoveInstance = null, onMoveHeight = null,
 }) {
-  const { scene }          = useGLTF(glbPath);
-  const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
+  /* Both pinned while this ring is mounted (shared/retainedGlb.js). When `altGlbUrl` is absent the
+     two calls name the SAME model, which is correct and costs nothing: the ref count takes two
+     retains and gives them both back together. */
+  const { scene }          = useRetainedGlb(glbPath);
+  const { scene: sceneAlt } = useRetainedGlb(altGlbUrl || glbPath);
 
   const tr0 = topRotation?.[0] ?? 0, tr2 = topRotation?.[2] ?? 0;
   const A = useMemo(() => finish === 'element'
@@ -1024,8 +1027,11 @@ function BottomPipingRingImpl({
   selected = false, onClick,
   canMove = true, onMoveInstance = null, onMoveHeight = null,
 }) {
-  const { scene }          = useGLTF(glbPath);
-  const { scene: sceneAlt } = useGLTF(altGlbUrl || glbPath);
+  /* Both pinned while this ring is mounted (shared/retainedGlb.js). When `altGlbUrl` is absent the
+     two calls name the SAME model, which is correct and costs nothing: the ref count takes two
+     retains and gives them both back together. */
+  const { scene }          = useRetainedGlb(glbPath);
+  const { scene: sceneAlt } = useRetainedGlb(altGlbUrl || glbPath);
 
   const br0 = bottomRotation?.[0] ?? 0, br2 = bottomRotation?.[2] ?? 0;
   const A = useMemo(() => finish === 'element'

@@ -1,6 +1,7 @@
 import { Suspense, useMemo } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, useGLTF, useTexture } from '@react-three/drei';
+import { OrbitControls, useTexture } from '@react-three/drei';
+import { useRetainedGlb } from '../shared/retainedGlb.js';
 import * as THREE from 'three';
 import { rectSidePlacement } from '../geometry/surface.js';
 import { STICKER_SIZE } from '../constants.js';
@@ -23,7 +24,7 @@ const isGlbUrl = url => /\.(glb|gltf)(\?|$)/i.test(url ?? '');
 // flips it across X (matches placePattern + StickerFace), and `r` sizes it to the real part size
 // instead of the cake-filling hero scale.
 function PreviewTopper({ glbUrl, placement, mode, target, bottom, baseRotation, offset }) {
-  const { scene } = useGLTF(corsUrl(glbUrl));
+  const { scene } = useRetainedGlb(corsUrl(glbUrl));
   const { clonedScene, box } = useMemo(() => {
     const clone = scene.clone(true);
     clone.updateMatrixWorld(true);

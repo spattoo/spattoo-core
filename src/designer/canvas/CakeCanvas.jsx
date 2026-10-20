@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
+import { useRetainedGlb } from '../shared/retainedGlb.js';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
@@ -1641,7 +1642,9 @@ function cleanGlbScene(clone) {
 }
 
 function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, onSeat, onDepth, onVExtent }) {
-  const { scene } = useGLTF(imageUrl);
+  // Pinned while this piece is mounted, given back when the LAST user of this model goes — see
+  // shared/retainedGlb.js. Measured at 16.3MB for one textured topper, none of which came back.
+  const { scene } = useRetainedGlb(imageUrl);
   const clipPlane = useRef(null);
 
   const clonedScene = useMemo(() => {
@@ -3151,7 +3154,7 @@ export function preloadTopper(url) {
 
 function StyleTile({ id, label, glbPath, position, onSelect }) {
   const [px, py, pz] = position;
-  const { scene } = useGLTF(glbPath);
+  const { scene } = useRetainedGlb(glbPath);
 
   const { geo, scale } = useMemo(() => {
     let g = null;

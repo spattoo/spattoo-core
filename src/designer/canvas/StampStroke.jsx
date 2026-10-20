@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { useGLTF } from '@react-three/drei';
+import { useRetainedGlb } from '../shared/retainedGlb.js';
 import * as THREE from 'three';
 import { stampTransforms } from '../geometry/creamPen.js';
 /* ⚠️ FROM ITS REAL HOME, NOT VIA THE RENDERER. CakeTier.jsx re-exports `creamMaterialProps` for
@@ -40,7 +40,7 @@ export default function StampStroke(props) {
    does not stop a click. */
 function StampStrokeImpl({ stroke, url, color, softness, userData, onPointerDown, onPointerMove, onClick }) {
   const glbUrl = url || stroke.glbUrl;
-  const { scene } = useGLTF(glbUrl);
+  const { scene } = useRetainedGlb(glbUrl);
 
   // ── The RING's preparation, not a second one ─────────────────────────────────────────────────
   // This used to merge every mesh, centre on X/Z and seat on the raw base. Reasonable, and not what
