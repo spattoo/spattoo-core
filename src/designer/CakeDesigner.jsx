@@ -48,7 +48,7 @@ import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
 import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { StoreIcon, ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon } from '../shared/icons.jsx';
+import { StoreIcon, ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon, CopyIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -11872,10 +11872,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * assuming an image sticker is free-standing. */
   function compactRemove(card) {
     if (card.type !== 'sticker') return null;
-    if (design.stickers.find(x => x.id === card.id)?.groupId) return null;
+    const inst = design.stickers.find(x => x.id === card.id);
+    if (inst?.groupId) return null;
+    /* ⚠️ DUPLICATE COMES UP TOO, AS AN ICON. Sandeep: "we should move the duplicate button also to
+       the title bar. before remove button. instead of text, lets add a icon for duplicate." It was
+       the last thing left in the footer, so a word that fits in a 26px-tall line is what empties
+       that row — and `CopyIcon` is the mark this app already uses for "one more of this"
+       (root CLAUDE.md rule 1: the icon existed, it did not need drawing).
+       ⚠️ AND IT KEEPS THE WORD WHERE IT CANNOT BE SEEN. An icon-only button is unreadable to a
+       screen reader without one, so the label moves to `aria-label` rather than disappearing.
+       ⚠️ SAME GATE AS THE FOOTER BUTTON — the instance's own `allowedActions.duplicate`, and never
+       for a grouped member (handled above): two different answers to "may this be duplicated" is how
+       a card grows a control the rest of the app refuses. */
+    const canDup = (inst?.allowedActions ?? STICKER_CAPS).duplicate === true;
     return (
-      <button style={{ ...s.deleteBtn, minHeight: 28, padding: '0 12px', fontSize: 11.5 }}
-        onClick={e => { e.stopPropagation(); handleDelete(); }}>Remove</button>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {canDup && (
+          <button aria-label="Duplicate" title="Duplicate"
+            style={{ ...s.neutralBtn, minHeight: 28, width: 32, minWidth: 32, padding: 0, fontSize: 11.5 }}
+            onClick={e => { e.stopPropagation(); duplicateSticker(card.id); clearAllSelections(); }}>
+            <CopyIcon size={15} />
+          </button>
+        )}
+        <button style={{ ...s.deleteBtn, minHeight: 28, padding: '0 12px', fontSize: 11.5 }}
+          onClick={e => { e.stopPropagation(); handleDelete(); }}>Remove</button>
+      </div>
     );
   }
 
@@ -13025,7 +13046,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <button key="dup" style={s.neutralBtn} onClick={() => { duplicateText(el.id); setSelectedEl(null); }}>Duplicate</button>
       );
     }
-    if (c.duplicate && el.type === 'sticker') {
+    if (c.duplicate && el.type === 'sticker' && !compact) {
+      /* Compact draws this in the title line as an icon — see compactRemove. Pushing here as well
+         would be the same control twice, and the footer row this one used to hold up is gone. */
       const sticker = design.stickers.find(s => s.id === el.id);
       if (!sticker?.groupId) {
         actions.push(
