@@ -1,7 +1,7 @@
 import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
-import { useRetainedGlb } from '../shared/retainedGlb.js';
+import { useRetainedGlb, disposeGlbInstance, disposeGlbGeometries } from '../shared/retainedGlb.js';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
@@ -1759,6 +1759,14 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     }
     return clone;
   }, [scene, baseRotation, fondant, recolourable, roughness, metalness, surface]);
+  /* ⚠️ THIS PIECE'S OWN COPIES, AND ONLY THIS PIECE'S. Everything above clones: the geometry (always
+     — `cleanGlbScene` does it for every mesh), again for a facing rotation, again for fondant, and
+     the materials so two hearts can be two colours. None of it is shared, so none of it is the
+     cache's to reclaim, and nothing was reclaiming it — measured at two geometries left behind per
+     placement. The maps inside those materials are the CACHED model's and are deliberately not
+     touched; see disposeGlbInstance. Same `() => () => dispose()` shape the recoloured canvas and
+     the five derived geometries in this file already use. */
+  useEffect(() => () => disposeGlbInstance(clonedScene), [clonedScene]);
 
   // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
@@ -1858,6 +1866,9 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? seatHalfDepth(depthScaled) : 0) : null),
     [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
+  // Geometry only — the bent copy renders the UNBENT clone's materials, which it does not own and
+  // which are still in use the moment a piece stops hugging a wall. See disposeGlbGeometries.
+  useEffect(() => () => disposeGlbGeometries(bentScene), [bentScene]);
 
   // The rendered model's 3D bounds, measured in the LOCAL frame it renders in — a sibling of the
   // element, so the box inherits its position/facing/tilt/scale for free. A BENT model is measured in

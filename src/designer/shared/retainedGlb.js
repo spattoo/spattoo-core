@@ -26,12 +26,17 @@
  * leave `useGLTF`'s cache entry and the next placement is handed a disposed model — an invisible
  * or broken decoration, intermittent, and far worse than the leak it replaces.
  *
- * ── What this does NOT free ─────────────────────────────────────────────────────────────────────
- * Each placed instance makes its OWN copies: `cleanGlbScene` clones every geometry, and each
- * instance clones its materials so two hearts can be two colours. Those are per-instance, they are
- * not shared, and they are not this file's to reclaim — freeing them belongs on unmount, not after
- * a grace, and the textures inside those cloned materials still point at the cached model's. That
- * is a separate piece of work; what is here is the 16.3 MB.
+ * ── The instance's own copies are a SEPARATE rule ───────────────────────────────────────────────
+ * Each placed piece makes copies the cached model knows nothing about: `cleanGlbScene` clones every
+ * geometry, each instance clones its materials so two hearts can be two colours, and a wall-hugging
+ * piece bends a third set of geometry. Those belong to one piece, so they are freed on UNMOUNT
+ * rather than after a grace — nothing else can be waiting to re-use them.
+ *
+ * ⚠️ AND THEY MUST NEVER TOUCH THE TEXTURES. A cloned material still points at the CACHED model's
+ * maps: `material.clone()` copies the reference, it does not copy the picture. Dispose those from
+ * an instance and every other piece using that model goes black — including the ones still on the
+ * cake — while the cache sits there believing it still owns them. The two rules below look almost
+ * identical and are opposites; that is the whole reason they are named rather than inlined.
  */
 
 import { useEffect } from 'react';
@@ -100,4 +105,41 @@ export function useRetainedGlb(url) {
     return () => glbCache.release(url);
   }, [url, managed]);
   return gltf;
+}
+
+/**
+ * Free what ONE placed piece cloned for itself: its geometries and the materials it owns.
+ *
+ * ⚠️ NOT THE TEXTURES, and this is the line that matters. An instance's materials are clones of the
+ * cached model's, so every map on them is the SHARED one — `disposeGlbScene` above is what owns
+ * those, and only once the last piece has gone. Reaching one texture deeper here would blank every
+ * other copy of that decoration on the cake.
+ *
+ * On unmount, not after a grace: these belong to one piece and nothing can be waiting to re-use them.
+ */
+export function disposeGlbInstance(root) {
+  if (!root?.traverse) return;
+  const materials = new Set();
+  root.traverse(o => {
+    if (!o.isMesh && !o.isLine && !o.isPoints) return;
+    try { o.geometry?.dispose?.(); } catch { /* best-effort */ }
+    const mats = Array.isArray(o.material) ? o.material : [o.material];
+    for (const m of mats) if (m) materials.add(m);
+  });
+  for (const m of materials) { try { m.dispose?.(); } catch { /* best-effort */ } }
+}
+
+/**
+ * Free a scene that BORROWED its materials — the bent copy a wall-hugging piece renders, which
+ * bakes fresh geometry and then points each mesh at the materials the unbent clone already owns.
+ *
+ * ⚠️ GEOMETRY ONLY, for the symmetric reason: those materials are the unbent clone's, and it is
+ * still mounted. Disposing them here would strip the model the moment it stopped hugging a wall.
+ */
+export function disposeGlbGeometries(root) {
+  if (!root?.traverse) return;
+  root.traverse(o => {
+    if (!o.isMesh && !o.isLine && !o.isPoints) return;
+    try { o.geometry?.dispose?.(); } catch { /* best-effort */ }
+  });
 }

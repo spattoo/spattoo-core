@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import * as THREE from 'three';
-import { disposeGlbScene } from './retainedGlb.js';
+import { disposeGlbScene, disposeGlbInstance, disposeGlbGeometries } from './retainedGlb.js';
 
 /* A GLB's cost is its TEXTURES — 16.3 of the 16.6 MB measured on the catalogue's Cricket bat — so
    the one thing worth asserting is that the walk reaches them. Freeing geometry and leaving three
@@ -88,5 +88,47 @@ describe('disposeGlbScene — give a parsed model back', () => {
     root.add(new THREE.Mesh(geo, new THREE.MeshStandardMaterial()));
     expect(() => disposeGlbScene(root)).not.toThrow();
     expect(geo.dispose).toHaveBeenCalled();
+  });
+});
+
+/* ── The instance's copies are the OPPOSITE rule ─────────────────────────────────────────────────
+ * A placed piece clones the cached model's geometries and materials, but a cloned material still
+ * POINTS AT the cached model's maps — `material.clone()` copies the reference, not the picture. So
+ * freeing a piece must stop one level short, and the bent copy a wall-hugging piece renders must
+ * stop two: it borrows the unbent clone's materials outright.
+ *
+ * These two tests are the whole reason the functions are named rather than inlined. Get them the
+ * wrong way round and every other copy of that decoration on the cake goes black, while the cache
+ * sits there believing it still owns maps that have been disposed. */
+describe('freeing one placed piece', () => {
+  it('frees its geometries and materials but NEVER the shared maps', () => {
+    const root = new THREE.Group();
+    const sharedMap = spyOn(new THREE.Texture());          // lives on the cached model
+    const ownMaterial = spyOn(new THREE.MeshStandardMaterial({ map: sharedMap }));
+    const ownGeometry = spyOn(new THREE.BoxGeometry());
+    root.add(new THREE.Mesh(ownGeometry, ownMaterial));
+
+    disposeGlbInstance(root);
+
+    expect(ownGeometry.dispose).toHaveBeenCalled();
+    expect(ownMaterial.dispose).toHaveBeenCalled();
+    expect(sharedMap.dispose, 'the cached model\'s map must survive').not.toHaveBeenCalled();
+  });
+
+  it('a borrowed-material scene gives back geometry only', () => {
+    const root = new THREE.Group();
+    const borrowed = spyOn(new THREE.MeshStandardMaterial());   // the unbent clone still renders it
+    const bentGeometry = spyOn(new THREE.BoxGeometry());
+    root.add(new THREE.Mesh(bentGeometry, borrowed));
+
+    disposeGlbGeometries(root);
+
+    expect(bentGeometry.dispose).toHaveBeenCalled();
+    expect(borrowed.dispose, 'the unbent clone still needs it').not.toHaveBeenCalled();
+  });
+
+  it('both survive being handed nothing', () => {
+    expect(() => disposeGlbInstance(null)).not.toThrow();
+    expect(() => disposeGlbGeometries(undefined)).not.toThrow();
   });
 });
