@@ -119,7 +119,43 @@ export default function GrassPatch({
            needed back (INVARIANTS #16: every reference light is PER SURFACE). */
         <mesh geometry={cap} position={[0, topY + FLAT_STICKER_Y_OFFSET, 0]} receiveShadow
           onClick={onPick ? (e) => { e.stopPropagation(); onPick(); } : undefined}>
-          <meshStandardMaterial color={fieldColor ?? color} roughness={0.85} metalness={0} />
+          {/* ⚠️ THE CAP LOSES THE DEPTH TIE TO WHATEVER IS PLACED ON IT, and it has to be told to,
+              because sharing the sticker's lift above is what puts them in the SAME PLANE. A flat
+              sticker on the top surface sits at exactly `topY + FLAT_STICKER_Y_OFFSET` too (the
+              final branch of the seat height in CakeCanvas), so a decal laid on a pitch and this
+              cap are coplanar: neither wins, the GPU resolves it per pixel, and the decoration
+              comes out striped. Reported on a cricket cake — the pitch decal wore a radial
+              starburst, only ever with grass present, and was clean the moment it was dragged off
+              the green.
+
+              ⚠️ `polygonOffsetFactor` 0, NOT 1. Factor scales with the polygon's SLOPE, and a cap is
+              seen at a grazing angle across most of its area — at 1 the offset swamped the 0.025
+              the cap sits above the cake and the green field vanished ENTIRELY, which is worse
+              than the stripes it cured. Units alone is a flat constant: enough to break a tie
+              between two surfaces at the same height, nowhere near enough to lose 0.025. Measured
+              at one camera: bare 0.025 striped; +1/+1 lost the field; 0/+1 kept both. Lowering the
+              cap to 0.015 with no bias brought back the patchy cake-top fight the note above
+              records, which is why the lift itself is left exactly where it was.
+
+              ⚠️ AND THE MAGNITUDE IS NOT 1, which looked fixed at a glance and was not. Sandeep, on
+              the first attempt: *"in close up shot, ther are still some grass projections from the
+              pitch coming out. not completely fixed i think."* He was right — depth precision gets
+              coarser with distance, so a bias that breaks the tie near the camera leaves the FAR
+              third of the decal still fighting. Green pixels over the artwork, same crop, same
+              camera: no bias 520, units 1 → 37, units 4 → 7, units 16 → 7, units 64 → 7. It
+              saturates at 4 (the last 7 are real blades overlapping the edge), and the field is
+              still solid even at 64. 16 sits an order of magnitude above where it saturates and an
+              order below the largest value proven safe — the middle of the window, because depth
+              precision differs across GPUs and this was measured on a software rasteriser.
+
+              ⚠️ NOT A LIFT CHANGE, deliberately. Raising the sticker instead would mean a
+              decoration that knows grass exists and floats a little whenever it does. A depth bias
+              moves nothing: the cap draws exactly where it did — verified pixel-identical away
+              from the decal — and simply yields. It is the ground a decoration is placed ON, so
+              yielding is the correct outcome, and this covers every flat piece on a field rather
+              than the one element that was reported. */}
+          <meshStandardMaterial color={fieldColor ?? color} roughness={0.85} metalness={0}
+            polygonOffset polygonOffsetFactor={0} polygonOffsetUnits={16} />
         </mesh>
       )}
       {!!seats.length && (

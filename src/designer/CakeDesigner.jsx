@@ -9407,6 +9407,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        on: it moves if and only if the grab sphere was actually hit, which is what separates "the tap
        missed" from "the tap landed and something else stole the selection afterwards". */
     window.__getGrassSel = () => grassSelected;
+    /* Put grass on a tier from a script. A lawn or a pitch is several controls deep in a card that
+       only opens from a tap on the cake, so a harness cannot reach the one combination that is
+       reported broken — grass UNDER a decal — without this. Calls the same setter the card does. */
+    window.__setGrass = (tierIndex, grass) => { setTierGrass(tierIndex, grass); return true; };
     /* ⚠️ PATCHES ONLY, so `[]` means "no CLUMPS", never "no grass". Default grass is a lawn
        covering the top (GRASS_DEFAULTS carries no `patches`), and a lawn has no position — which is
        what check:movable already registers for it. A reader who takes `[]` as "grass is missing"
