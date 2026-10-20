@@ -12602,7 +12602,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          understood. Size KEEPS its caption: the dial shows a bare number (8.0), and a number with
          no noun beside a colour and four arrows is the one thing here that could be anything.
          `ControlCell` with no label still carries the 46px baseline, so the row does not jump. */
-      const cell = (key, label, kids) => <ControlCell key={key} label={compact ? null : label}>{kids}</ControlCell>;
+      /* ⚠️ A CAPTION ONLY GOES WHERE A SYMBOL TAKES OVER. Colour is a ring of colour, spin and tilt
+         are arrows, Size wears the resize mark — each says what it is. **Border** has no symbol, and
+         on a photo frame it sits next to Size as a second bare dial: two numbers, nothing to tell
+         them apart. Dropping that one would not be "expressing the control visually", it would be
+         hiding what it is, so it keeps its word. */
+      const cell = (key, label, kids, keepLabel = false) =>
+        <ControlCell key={key} label={compact && !keepLabel ? null : label}>{kids}</ControlCell>;
       groups.push({ key: 'sc', divider: true, scroll: true,
         /* ⚠️ PINNED, NOT SCROLLED — the one control that must never slide off. Sandeep: "done
            button should be a fixed arrow to the right. all the other controls in the row are
@@ -12640,7 +12646,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           <div key="sc-place-div" style={{ ...s.tbDivider, height: 28 }} />] : []),
         ...(compact && regionCtls.length ? [cell('sc-regions', 'Colour', regionCtls)] : []),
         ...(mergeIntoSizeRow && colourCtls.length ? [cell('sc-colour', 'Colour', colourCtls)] : []),
-        ...(mergeIntoSizeRow && borderCtls.length ? [cell('sc-border', 'Border', borderCtls)] : []),
+        ...(mergeIntoSizeRow && borderCtls.length ? [cell('sc-border', 'Border', borderCtls, true)] : []),
         /* The last caption on the compact row, and it goes the way the others did: the dial wears the
            resize mark instead (SizeDial's `symbol`) and shows its number while it is dragged.
            ⚠️ A PLAIN COMMENT, because this is an ARRAY of elements rather than JSX children: a
