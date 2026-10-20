@@ -954,20 +954,81 @@ const leanDeg  = (v) => `${Math.round((v ?? 0) * 180 / Math.PI)}°`;
  * Returns an ARRAY so the card can spread it into a scrolling row and TiltRow can wrap it in a
  * labelled, centred one — the two layouts differ, the controls do not.
  */
-function leanArrows(ta, ra, onChange) {
+/* ⚠️ ONE RING, SHARED BY EVERY ROUND NUDGE BUTTON. Tilt and Spin are the same gesture to a baker —
+   tap an arrow, the decoration moves a notch — so two definitions of the circle would be two
+   slightly different buttons in one row (root CLAUDE.md rule 14: an icon means the same thing
+   everywhere, and that includes its shape). */
+const ICON_RING = { width: 32, height: 32, minWidth: 32, padding: 0, borderRadius: '50%',
+                    border: `1px solid ${LINE}`, background: '#fff', lineHeight: '30px', fontSize: 15 };
+
+/* ── A decoration TIPPING, not sliding ───────────────────────────────────────────────────────────
+ *
+ * Sandeep, on the compact card: *"there are left and right arrows, can we express them correctly?
+ * like circular arrows to show what they actually do?"* He is right — ↑ ↓ ← → are the marks this
+ * app uses for MOVE, and these four do not move anything: each leans the decoration a notch about
+ * one of the two horizontal axes. A straight arrow promises the wrong gesture.
+ *
+ * ⚠️ ONE GLYPH, TURNED — an arc over the top with the arrowhead at its far end, so the stroke
+ * itself travels the way the thing tips. Four hand-drawn variants would be four chances to draw
+ * slightly different arcs (root CLAUDE.md rule 14), and the only difference between them is which
+ * way round it points.
+ *
+ * ⚠️ AND IT IS NOT THE SPIN MARK. Spin (↺ ↻) is a near-closed circle: a flat turn about the
+ * vertical axis, where the piece stays as it is and faces elsewhere. This is a shallow 135° arc
+ * with an open mouth — a pivot, not a revolution — so the two read as different operations in a row
+ * that carries both.
+ */
+/* ⚠️ THE SIZES ARE MEASURED, NOT PICKED. Rendered at 17/20/22px against stroke 1.8 and 2.4 with two
+   head weights: at 17px the head disappears into the arc and all four buttons read as plain arcs —
+   which is the fault this glyph exists to fix. 20px with the larger head and the thinner stroke is
+   the first combination where the head is unmistakable inside a 32px ring. */
+function TipArrow({ deg = 0, size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false"
+         style={{ transform: `rotate(${deg}deg)`, display: 'block' }}>
+      {/* Translated so the arc AND its head sit centred in the ring — the drawing is top-right
+          heavy on its own, and four of these in a row make any lean obvious. */}
+      <g transform="translate(1 3)">
+        {/* The arc: from the left of the pivot, over the top, down to the right. */}
+        <path d="M4.4 14.6 A8 8 0 0 1 16.4 7.2" />
+        {/* A SOLID head, not two strokes. At 17px the stroked V was a blob where the arc ended;
+            filled, it is the one part of the glyph that says which way the piece goes. */}
+        <path d="M19.2 9.6 L16.6 1.6 L11.1 6.9 Z" fill="currentColor" stroke="none" />
+      </g>
+    </svg>
+  );
+}
+
+function leanArrows(ta, ra, onChange, { round = false } = {}) {
   /* A nudge that lands back on the value it started from is a nudge with nowhere to go. Compared
      through `clampLean` on both sides, because the stored value has already been rounded by it. */
   const spent = (v, d) => leanStep(v, d) === clampLean(v);
+  /* ⚠️ ROUND MEANS "THIS IS A BUTTON", WHICH IS WHAT PAYS FOR THE MISSING CAPTION. Sandeep: "the
+     arrows for tilt should be round arrows, so that we can skip the title. idea is to express the
+     controls visually than the titles." A bare ↑ on a transparent background reads as a mark, and
+     four of them in a line read as a legend — the row needed the word "Tilt" under it to be a
+     control at all. Inside a ring with an edge and a surface it reads as pressable at rest, on a
+     phone, with no hover (root CLAUDE.md rule 7), so the caption has nothing left to do. */
+  const ring = ICON_RING;
   const arrow = (key, title, glyph, dead, apply) => (
     <button key={key} type="button" disabled={dead} onClick={apply}
+      aria-label={title}
       title={dead ? `${title} — already as far as it goes` : title}
-      style={{ ...s.tbIconBtn, ...(dead ? { color: '#cfc9c1', cursor: 'default' } : null) }}>{glyph}</button>
+      style={{ ...s.tbIconBtn, ...(round ? ring : null),
+               /* An <svg> child is not text: the ring's text line-height would push it off centre,
+                  so the round form centres its child instead of leading it. */
+               ...(round ? { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', lineHeight: 0 } : null),
+               ...(dead ? { color: '#cfc9c1', cursor: 'default', ...(round ? { borderColor: '#eae7e2' } : null) } : null) }}>{glyph}</button>
   );
+  /* The straight arrows stay on the roomy layouts, where each one has a caption and a label above
+     it saying Tilt; the tipping glyph is for the compact row, which has neither. */
+  const tip = deg => (round ? <TipArrow deg={deg} /> : null);
   return [
-    arrow('ta-up',    'Lean back',    '↑', spent(ta, -LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta, -LEAN_STEP) })),
-    arrow('ta-down',  'Lean forward', '↓', spent(ta,  LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta,  LEAN_STEP) })),
-    arrow('ta-left',  'Lean left',    '←', spent(ra, -LEAN_STEP), () => onChange({ rollAngle: leanStep(ra, -LEAN_STEP) })),
-    arrow('ta-right', 'Lean right',   '→', spent(ra,  LEAN_STEP), () => onChange({ rollAngle: leanStep(ra,  LEAN_STEP) })),
+    arrow('ta-up',    'Lean back',    tip(270) ?? '↑', spent(ta, -LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta, -LEAN_STEP) })),
+    arrow('ta-down',  'Lean forward', tip(90)  ?? '↓', spent(ta,  LEAN_STEP), () => onChange({ tiltAngle: leanStep(ta,  LEAN_STEP) })),
+    arrow('ta-left',  'Lean left',    tip(180) ?? '←', spent(ra, -LEAN_STEP), () => onChange({ rollAngle: leanStep(ra, -LEAN_STEP) })),
+    arrow('ta-right', 'Lean right',   tip(0)   ?? '→', spent(ra,  LEAN_STEP), () => onChange({ rollAngle: leanStep(ra,  LEAN_STEP) })),
     /* ⚠️ WIDE ENOUGH FOR BOTH SIGNS. `leanDeg` always prints a number, so this can never show a
        dash — yet the card read "69°/-", which is a NEGATIVE roll with its digits clipped off. At
        minWidth 46 the worst case "-70°/-70°" needs about 60px, so any lean that went negative lost
@@ -1218,7 +1279,7 @@ function BuryRow({ insertDepth, onChange }) {
  * The scatter path gated both of these on the capability from the start; this path never did. Same
  * flags, same meaning, one place fewer for them to be inert. */
 function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], locked = false,
-                            canResize = true, canTilt = true, onToggle, onUpdate }) {
+                            canResize = true, canTilt = true, compact = false, onToggle, onUpdate }) {
   const cap = { fontSize: 8.5, fontWeight: 700, color: '#b29aa2', fontFamily: "'Quicksand',sans-serif", textTransform: 'uppercase', letterSpacing: 0.5 };
   /* ⚠️ NULL UNTIL A TILE IS TAPPED, then resolved against the slots that actually exist — the same
    * shape as activePipingRing, and for the same reason: slots change as an element is placed and
@@ -1229,6 +1290,33 @@ function PlacementChooser({ previewUrl, tiers, baseRotation = null, slots = [], 
   const activeSlot = slots.find(sl => sl.key === activeSlotKey)
                   ?? slots.find(sl => sl.checked)
                   ?? slots[0];
+  /* ── On a phone, the words are enough ────────────────────────────────────────────────────────
+   *
+   * Sandeep, on the image sticker's card: *"the live preview is not needed for mobile view. only
+   * text like top-stand, top-hug, side hug are enough"* — part of one ask to stop this card
+   * covering the cake. Each tile is a 74px live 3D render of the cake with the decoration on it,
+   * and a row of them is most of a phone card; the labels those tiles carry already say the same
+   * thing in four words.
+   *
+   * ⚠️ ONE GESTURE HERE, NOT TWO. The tiles split ticking (the checkbox, which places or moves)
+   * from selecting (the tile body, which picks whose Size and Tilt are below). A chip has one tap,
+   * and it can only mean the first — which is right where this is used, because the compact layout
+   * is only reached with an `instance`, and in that mode there are no per-slot controls to select
+   * (`slot.sticker` is null) and ticking MOVES the decoration rather than adding a second one.
+   * Anywhere `slot.sticker` can exist, the tiles stay. */
+  /* ⚠️ NO SCROLLER OF ITS OWN. Sandeep: "top and side buttons also in same line pls" — the chips
+     are handed to the card's one control row, which already scrolls, and a scroller inside a
+     scroller would trap the sideways drag in whichever one the finger started on. */
+  if (compact) {
+    return (
+      <div key="place-chips" style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+        {slots.map(slot => (
+          <Chip key={slot.key} label={slot.label} isMobile active={slot.checked}
+                onClick={() => onToggle(slot)} />
+        ))}
+      </div>
+    );
+  }
   return (
     <div style={{ width: '100%' }}>
       <div style={{ fontSize: 9, fontWeight: 700, color: '#888', letterSpacing: 0.3, marginBottom: 6 }}>PLACEMENT</div>
@@ -11570,7 +11658,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   //     that single instance between surfaces (single-select). Adding the element again is a
   //     separate click in the panel (→ its own card). No add/remove here.
   // Surfaces come from placementSlots (config-driven, allowed_zones); preview via TopperPreview.
-  function elementPlacementChooser(srcEl, { instance = null } = {}) {
+  function elementPlacementChooser(srcEl, { instance = null, compact = false } = {}) {
     if (!srcEl) return null;
     const pc = srcEl.placement_config ?? {};
     const elId = srcEl.id;
@@ -11745,7 +11833,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     };
     return (
       <PlacementChooser key="place" previewUrl={srcEl.image_url} tiers={canvasConfig.tiers}
-        baseRotation={facingOffsetRadians(pc)} slots={slots} locked={false}
+        baseRotation={facingOffsetRadians(pc)} slots={slots} locked={false} compact={compact}
         // Read from the ELEMENT, so an admin change reaches decorations already on cakes — the rule
         // isStickerMovable already follows for `move`, rather than a snapshot taken at placement.
         // resize is OPT-IN (absent ⇒ off); tilt defaults ON, matching the placement path's defaults.
@@ -11760,6 +11848,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // one would drift from the first, and the old straight-to-frame input uploaded the same photo again
   // for every frame that used it — a duplicate R2 object per use, and a baker who already had his
   // customer's photo still had to re-upload it.
+
+  /* ⚠️ ONE PREDICATE FOR THE COMPACT CARD, read by buildToolbar AND by the card header — which
+     drops its Done because the control row carries one. Two readings of "is this an image sticker on
+     a phone" would eventually disagree, and the failure is either two Done buttons or none. */
+  function compactCard(el) {
+    if (!isMobile || el?.type !== 'sticker') return false;
+    const st = design.stickers.find(x => x.id === el.id);
+    return !!st && !/\.(glb|gltf)(\?|$)/i.test(st.imageUrl ?? '');
+  }
+
+  /* ── Remove, in the card's title line ───────────────────────────────────────────────────────
+   *
+   * ⚠️ IT SAYS "Remove", AND THAT REVERSES A STANDARD THIS FILE RECORDS. The rule beside the footer
+   * button is Sandeep's, twice: *"below 'Remove' to 'Remove from cake'. otherwise it might mean just
+   * remove the popup"*, then *"make this a standard pls"*. He asked for the short word here himself
+   * — and what made the long one necessary is gone in this spot: the button sits ON the title line,
+   * immediately after the decoration's own name, so "Blue Wing … Remove" names what it removes. The
+   * footer button on every other card keeps the full phrase.
+   *
+   * ⚠️ NOT FOR A GROUPED MEMBER. A piece inside a group cannot be deleted on its own (the group card
+   * owns that) — the same guard the footer button has, which is why this reads it rather than
+   * assuming an image sticker is free-standing. */
+  function compactRemove(card) {
+    if (card.type !== 'sticker') return null;
+    if (design.stickers.find(x => x.id === card.id)?.groupId) return null;
+    return (
+      <button style={{ ...s.deleteBtn, minHeight: 28, padding: '0 12px', fontSize: 11.5 }}
+        onClick={e => { e.stopPropagation(); handleDelete(); }}>Remove</button>
+    );
+  }
 
   function buildToolbar(el, layout = 'strip') {
     if (!el) return null;
@@ -11806,6 +11924,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     let finishDial = [];
     let tiltInSizeRow = false;
     let finishInSizeRow = false;
+    /* ── The compact phone card, for an IMAGE sticker only ───────────────────────────────────────
+     *
+     * Sandeep, with a screenshot of the cricket pitch's card over the cake: *"we need to reduce the
+     * space that the card popup is taking"* — the colour swatches on their own titled row, a caption
+     * under every control, and Done up in the header. Four of the five asks land in here (the fifth
+     * is the chooser's own, see PlacementChooser's `compact`).
+     *
+     * ⚠️ AND IT IS SCOPED THE WAY HE SCOPED IT: *"lets target only the image stiker popup for now.
+     * dont push the changes until we are sure."* A GLB topper's card carries Finish, Bury, Stick and
+     * Wire as well, so the same squeeze is a different judgement there — it is not a smaller version
+     * of this one. `compactCard` is the ONE predicate, and the card header reads it too so the Done
+     * in the row and the Done in the header can never both be on screen. */
+    const compact = layout === 'panel' && compactCard(el);
+    /* The per-region swatches, carried across the same gap as `colourCtls` above: built in the
+       recolor block, rendered in the control row when compact. `placeCtls` is the same thing for the
+       surface chips — built where the chooser is, rendered at the head of the control row. */
+    let regionCtls = [];
+    let placeCtls = null;
 
     /* ⚠️ THE ONE WHOLE-ELEMENT COLOUR SWATCH ON A CARD, and it has to stay the only one. There were
      * TWO: this, and a second button pushed further down by the sticker|decorEl block — so a
@@ -11922,22 +12058,36 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        "not where the parts are the colours" rule, and the decorEl re-selection. */
     if (el.type === 'sticker' || el.type === 'decorEl') {
       if (editGroups.length) {
-        groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
+        /* ⚠️ COMPACT PUTS THE SWATCHES IN THE CONTROL ROW AND DROPS THE TITLE. Sandeep: "can we make
+           the color picker also in the same line, than taking a top row. and color picker does not
+           need a title for it." A filled circle IS a colour picker — the row above it said
+           "Customise colours" and the line below it said "Tap a colour to change it", which is two
+           labels for a control nobody mistakes. The swatches themselves are unchanged (same button,
+           same wheel, same active border); only the wrapper and the two captions go.
+           ⚠️ The named-group case keeps its own labels: a GLB's "Shoes"/"Eyes" name WHICH part each
+           swatch paints, which is not a restatement of what the control is. Those cards are not
+           compact anyway (compactCard is image stickers only), and this carries the label through
+           so the row stays truthful if that ever changes. */
+        const swatches = editGroups.map(g => {
+          const cur = inst?.groupColors?.[g.key] ?? g.default ?? '#ffffff';
+          const on = colorOpen && activeGroupKey === g.key;
+          return (
+            <div key={g.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: g.label ? 54 : 'auto' }}>
+              <button
+                style={{ ...s.swatchBtn, padding: 3, border: on ? '2.5px solid #6c47ff' : '1px solid #cdccd3' }}
+                onClick={() => { const opening = !on; closeAllPopups(); if (opening) { setActiveGroupKey(g.key); setColorOpen(true); } }}>
+                <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: cur }} />
+              </button>
+              {g.label && <span style={{ fontSize: 9, fontWeight: 700, color: on ? INK : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label}</span>}
+            </div>
+          );
+        });
+        if (compact) regionCtls = swatches;
+        else groups.push({ key: 'recolor-groups', divider: true, panelLabel: 'Customise colours', controls: [
           <div key="groups" style={{ display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'flex-start' }}>
-            {editGroups.map(g => {
-              const cur = inst?.groupColors?.[g.key] ?? g.default ?? '#ffffff';
-              const on = colorOpen && activeGroupKey === g.key;
-              return (
-                <div key={g.key} style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3, width: g.label ? 54 : 'auto' }}>
-                  <button
-                    style={{ ...s.swatchBtn, padding: 3, border: on ? '2.5px solid #6c47ff' : '1px solid #cdccd3' }}
-                    onClick={() => { const opening = !on; closeAllPopups(); if (opening) { setActiveGroupKey(g.key); setColorOpen(true); } }}>
-                    <div style={{ width: '100%', height: '100%', borderRadius: '50%', background: cur }} />
-                  </button>
-                  {g.label && <span style={{ fontSize: 9, fontWeight: 700, color: on ? INK : '#8a7a80', textAlign: 'center', lineHeight: 1.1, fontFamily: "'Quicksand',sans-serif" }}>{g.label}</span>}
-                </div>
-              );
-            })}
+            {/* The SAME swatches the compact row renders — built once above, so the two layouts
+                cannot drift apart in what a swatch is or what tapping it does. */}
+            {swatches}
           </div>,
           <div key="hint" style={{ fontSize: 9, color: '#8a7a80', marginTop: 4, fontFamily: "'Quicksand',sans-serif" }}>Tap a colour to change it</div>,
         ] });
@@ -11986,8 +12136,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       // Cluster-capable elements don't use the per-surface move chooser — you drag the ball to position
       // it and use the "Cluster" toggle (drop several for multiple clusters). Skip the preview chooser.
       if (!srcEl?.placement_config?.cluster) {
-        const chooser = elementPlacementChooser(srcEl, { instance: inst });
-        if (chooser) groups.push({ key: 'place', divider: true, controls: [chooser] });
+        const chooser = elementPlacementChooser(srcEl, { instance: inst, compact });
+        /* ⚠️ COMPACT GIVES THE CHIPS TO THE CONTROL ROW rather than a row of their own — "top and
+           side buttons also in same line pls". They lead it, because where the decoration sits is
+           the coarser decision: you choose the surface, then adjust it there. */
+        if (chooser) {
+          if (compact) placeCtls = chooser;
+          else groups.push({ key: 'place', divider: true, controls: [chooser] });
+        }
       }
     }
 
@@ -12355,7 +12511,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       /* The same four arrows the chooser shows — one definition, so a fix cannot land on one surface
          and miss the other, which is how the clipped readout came to be "fixed" while the card it
          was reported on kept clipping. */
-      tiltCtls = leanArrows(ta, ra, patch => updateSticker(el.id, patch));
+      tiltCtls = leanArrows(ta, ra, patch => updateSticker(el.id, patch), { round: compact });
     }
     if (el.type === 'sticker') {
       const fSticker = design.stickers.find(stkr => stkr.id === el.id);
@@ -12408,9 +12564,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       const companionCtls =
         sticker?.zone === 'top_surface' ? (() => {
           const rot = sticker?.rotation ?? 0;
+          /* Round when the row is compact, for the reason the tilt arrows are: with no caption under
+             them a bare glyph is a mark rather than a button. Same ICON_RING, so Spin and Tilt are
+             one control shape and not two. */
+          const spin = compact ? { ...s.tbIconBtn, ...ICON_RING } : s.tbIconBtn;
           return [
-            <button key="sp-" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
-            <button key="sp+" style={s.tbIconBtn} onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
+            <button key="sp-" style={spin} aria-label="Spin left" title="Spin left"
+              onClick={() => updateSticker(el.id, { rotation: +(rot - 0.2).toFixed(3) })}>↺</button>,
+            <button key="sp+" style={spin} aria-label="Spin right" title="Spin right"
+              onClick={() => updateSticker(el.id, { rotation: +(rot + 0.2).toFixed(3) })}>↻</button>,
           ];
         })()
         : [];
@@ -12433,21 +12595,63 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          ⚠️ NO panelLabel IS SET HERE ON PURPOSE. There is no longer a "first" control to name, and
          setting one would print a label outside the scroller again.
          This is the shape `photo-fit` has used since the photo-frame card was rebuilt. */
-      groups.push({ key: 'sc', divider: true, scroll: true, controls: [
-        ...(mergeIntoSizeRow && colourCtls.length
-          ? [<ControlCell key="sc-colour" label="Colour">{colourCtls}</ControlCell>] : []),
-        ...(mergeIntoSizeRow && borderCtls.length
-          ? [<ControlCell key="sc-border" label="Border">{borderCtls}</ControlCell>] : []),
-        <ControlCell key="sc-size" label="Size">
+      /* ⚠️ COMPACT DROPS THE CAPTION OFF THE CONTROLS THAT SPEAK FOR THEMSELVES, and keeps it on
+         the one that does not. Sandeep: "idea is to express the controls visually than the titles."
+         A ring of colour, a dial with its number in the middle and an arrow in a ring each say what
+         they are; "Colour", "Spin" and "Tilt" under them are captions for someone who has already
+         understood. Size KEEPS its caption: the dial shows a bare number (8.0), and a number with
+         no noun beside a colour and four arrows is the one thing here that could be anything.
+         `ControlCell` with no label still carries the 46px baseline, so the row does not jump. */
+      const cell = (key, label, kids) => <ControlCell key={key} label={compact ? null : label}>{kids}</ControlCell>;
+      groups.push({ key: 'sc', divider: true, scroll: true,
+        /* ⚠️ PINNED, NOT SCROLLED — the one control that must never slide off. Sandeep: "done
+           button should be a fixed arrow to the right. all the other controls in the row are
+           scrollable." It lives in the row rather than the header because the header was spending a
+           whole line on it; `compactCard` keeps the header's copy from rendering at the same time. */
+        pinnedRight: compact ? (
+          /* ⚠️ A HAIRLINE AND A GAP, because the row's own scroll arrow lands right beside this one.
+             ScrollFadeRow ends in a dark round chevron when there is more to the right, and a dark
+             round arrow next to it reads as two halves of one control — "which of these ends the
+             card?" The scroller stops at the rule; everything past it is this button. (Not solved by
+             dropping the scroll arrow: a row that scrolls with nothing saying so is the fault that
+             note in the panel renderer records.) */
+          <>
+            <div key="sc-done-div" style={{ ...s.tbDivider, height: 28, margin: '0 8px' }} />
+            {/* ⚠️ A TICK, AND THE EARLIER REFUSALS ARE NOT BEING OVERRULED QUIETLY. A bare ✓ was
+                rejected twice on this app — "tick mark is not obvious here", then "'Done' word is
+                better" — and both times it was a faint grey circle floating in a header, which reads
+                as a status badge rather than a control. Sandeep asked for this one himself, in a
+                different place and a different weight: "instead of arrow, can we use a tick there?",
+                on a filled black button pinned to the end of the row it finishes. */}
+            <button key="sc-done" type="button" aria-label="Done editing this decoration"
+              title="Done" onClick={() => { clearAllSelections(); setExpandedPipingId(null); }}
+              /* ⚠️ BIGGER THAN THE ROW'S OWN SCROLL ARROW, which is also a dark circle and lands
+                 right beside it. The rule separates them; the size says which one is the action and
+                 which is a hint about the row — and it buys the one control here that ends the card
+                 a 36px target (rule 5, judged on a phone). */
+              style={{ ...s.doneBtn, width: 36, minWidth: 36, height: 36, minHeight: 36, padding: 0,
+                       borderRadius: '50%', fontSize: 17, flexShrink: 0 }}>✓</button>
+          </>
+        ) : null,
+        controls: [
+        ...(placeCtls ? [placeCtls,
+          /* A hairline between WHERE it sits and HOW it looks — without it the chips read as one
+             more control in the run, and the row has no other grouping left to lean on. */
+          <div key="sc-place-div" style={{ ...s.tbDivider, height: 28 }} />] : []),
+        ...(compact && regionCtls.length ? [cell('sc-regions', 'Colour', regionCtls)] : []),
+        ...(mergeIntoSizeRow && colourCtls.length ? [cell('sc-colour', 'Colour', colourCtls)] : []),
+        ...(mergeIntoSizeRow && borderCtls.length ? [cell('sc-border', 'Border', borderCtls)] : []),
+        /* The last caption on the compact row, and it goes the way the others did: the dial wears the
+           resize mark instead (SizeDial's `symbol`) and shows its number while it is dragged.
+           ⚠️ A PLAIN COMMENT, because this is an ARRAY of elements rather than JSX children: a
+           braced JSX comment here is an empty expression slot and the build stops on it. */
+        <ControlCell key="sc-size" label={compact ? null : 'Size'}>
           <SizeDial size={ctl?.value ?? 1} min={ctl?.min ?? 0.25} max={ctl?.max ?? 8} step={ctl?.step ?? 0.05}
-            onChange={v => resizeSticker(sticker, v)} />
+            symbol={compact} onChange={v => resizeSticker(sticker, v)} />
         </ControlCell>,
-        ...(companionCtls.length
-          ? [<ControlCell key="sc-companion" label={companionLabel}>{companionCtls}</ControlCell>] : []),
-        ...(tiltCtls.length
-          ? [<ControlCell key="sc-tilt" label="Tilt">{tiltCtls}</ControlCell>] : []),
-        ...(finishDial.length
-          ? [<ControlCell key="sc-finish" label="Finish">{finishDial}</ControlCell>] : []),
+        ...(companionCtls.length ? [cell('sc-companion', companionLabel, companionCtls)] : []),
+        ...(tiltCtls.length ? [cell('sc-tilt', 'Tilt', tiltCtls)] : []),
+        ...(finishDial.length ? [cell('sc-finish', 'Finish', finishDial)] : []),
       ] });
 
       /* ── NO HEIGHT ON THE TOP SURFACE ───────────────────────────────────────────────────────────
@@ -12884,7 +13088,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * GarnishStudio's picked shape each delete a PART INSIDE an element; "from cake" there would
        * promise something the button does not do. They keep "Remove". */
       const label = selectedStickerIds.size > 1 ? 'Remove all from cake' : 'Remove from cake';
-      actions.push(
+      /* ⚠️ THE COMPACT CARD'S REMOVE IS IN ITS TITLE LINE, not down here — it is the whole footer
+         row on an image sticker, and that row is a line of a phone spent on one button. Sandeep:
+         "you have 'blue wing' title right, move the remove from cake button to that line, right
+         side." `compactRemove` draws it beside the name; pushing here as well would be two. */
+      if (!compact) actions.push(
         <button key="del" style={s.deleteBtn} onClick={handleDelete}>{label}</button>
       );
     }
@@ -12906,8 +13114,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (layout === 'panel') {
       return (
         <div style={s.editPanelGroups}>
-          {groups.map(g => (
-            <div key={g.key} style={g.footer ? s.editPanelFooter : s.editPanelRow}>
+          {groups.map((g, gi) => (
+            /* ⚠️ THE LAST ROW DRAWS NO RULE. `editPanelRow` always carried a bottom border, which was
+               right while a footer of buttons sat under the controls: the line separated them. On the
+               compact card the Remove moved up to the title line, so the control row became the last
+               thing in the card and its border was a rule underlining nothing — a few pixels and a
+               line that promises more below. A separator after the final row separates nothing, on
+               any card. */
+            <div key={g.key} style={g.footer ? s.editPanelFooter
+              : (gi === groups.length - 1 ? { ...s.editPanelRow, borderBottom: 'none' } : s.editPanelRow)}>
               {g.panelLabel && <span style={s.editPanelLabel}>{g.panelLabel}</span>}
               {/* minWidth:0 lets wide children (e.g. a <canvas>, whose intrinsic width is
                   300px) shrink to the column instead of overflowing the popup.
@@ -12944,6 +13159,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ display:'flex', alignItems:'center', gap:4, flex:1, minWidth: 0,
                   flexWrap: 'wrap' }}>{g.controls}</div>
               )}
+              {/* Outside the scroller on purpose — see the note on `pinnedRight` where it is built. */}
+              {g.pinnedRight}
             </div>
           ))}
         </div>
@@ -18455,7 +18672,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                             : <span style={{ fontSize: 13, fontWeight: 800, color: '#bbb' }}>{card.glyph ?? card.name?.[0]?.toUpperCase() ?? '•'}</span>}
                         </div>
                         <span style={{ fontSize: 10.5, fontWeight: 700, color: INK, flex: 1, minWidth: 0, lineHeight: 1.2, fontFamily: "'Quicksand',sans-serif", whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{card.name}</span>
-                        {foldMark(expanded)}
+                        {/* ⚠️ THE OPEN COMPACT CARD CARRIES ITS OWN DONE, in the control row (see
+                            `pinnedRight`), so the header must not draw a second one. Same predicate
+                            on both sides — `compactCard` — because two of them would drift and this
+                            is a control that must appear exactly once. A COLLAPSED card still gets
+                            the mark: that is the ▼/Done that opens or folds the row, and the control
+                            row it would duplicate is not on screen. */}
+                        {expanded && compactCard({ type: card.type, id: card.id })
+                          ? compactRemove(card)
+                          : foldMark(expanded)}
                       </div>
                       {expanded && (
                         <div style={{ padding: '0 9px 9px' }}>

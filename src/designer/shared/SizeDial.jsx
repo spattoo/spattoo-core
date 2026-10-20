@@ -23,7 +23,33 @@ import { INK } from '../../shared/tokens.js';
  * A control whose number never moves is worse than the slider it replaced, which is the same
  * mistake as the dropped captions on the photo frame: it looks tidier and says less. PenSlider
  * already took a `fmt` for this reason; matching its name keeps one idea with one spelling. */
-export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange, fmt = v => v.toFixed(1) }) {
+/* ── The mark that says SIZE ─────────────────────────────────────────────────────────────────────
+ *
+ * Two arrowheads pulling apart on one diagonal: the resize handle every operating system draws in
+ * the corner of a window, which is as close to a universal symbol as this app has for "make it
+ * bigger or smaller".
+ *
+ * ⚠️ IT REPLACES THE NUMBER ONLY WHILE NOBODY IS DRAGGING. Sandeep, squeezing the phone card: "any
+ * symbolic representation for size? i somehow need to remove the titles as much as possible." At
+ * rest the question is *what is this control*, and "1.0" does not answer it — a bare multiplier is
+ * not a size a baker can picture, and the cake behind the card is already showing the real one. The
+ * moment a finger is on the dial the question changes to *how far have I moved it*, so the number
+ * comes back for as long as the gesture lasts. */
+function SizeMark() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.1"
+         strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M6.5 17.5 L17.5 6.5" />
+      <path d="M6.5 12.2 V17.5 H11.8" />
+      <path d="M17.5 11.8 V6.5 H12.2" />
+    </svg>
+  );
+}
+
+export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange, fmt = v => v.toFixed(1), symbol = false }) {
+  /* Only while the finger is down — see SizeMark. `useState` rather than a ref because the readout
+     has to re-render when it flips. */
+  const [dragging, setDragging] = React.useState(false);
   const CX = 24, CY = 24, R_IN = 12, W_MIN = 2, W_MAX = 8;
   const A_START = -140 * Math.PI / 180;   // lower-left (thin end)
   const A_SWEEP =  280 * Math.PI / 180;   // sweeps up over the top to lower-right (gap at bottom)
@@ -53,17 +79,17 @@ export function SizeDial({ size = 1, min = 0.5, max = 2, step = 0.05, onChange, 
 
   return (
     <div style={{ width: 46, height: 46, position: 'relative', flexShrink: 0, cursor: 'pointer', touchAction: 'none', userSelect: 'none' }}
-      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFromEvent(e); }}
+      onPointerDown={e => { e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); setFromEvent(e); }}
       onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); setFromEvent(e); }}
-      onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-      onPointerCancel={e => e.currentTarget.releasePointerCapture(e.pointerId)}>
+      onPointerUp={e => { e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); setDragging(false); }}
+      onPointerCancel={e => { e.currentTarget.releasePointerCapture(e.pointerId); setDragging(false); }}>
       <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
         <path d={band(0, 1)} fill="#e6e0e3" />
         {t > 0.001 && <path d={band(0, t)} fill={INK} />}
         <circle cx={knob[0]} cy={knob[1]} r={4.5} fill="#fff" stroke={INK} strokeWidth={2} />
       </svg>
       <span style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
-        {fmt(size)}
+        {symbol && !dragging ? <SizeMark /> : fmt(size)}
       </span>
     </div>
   );
