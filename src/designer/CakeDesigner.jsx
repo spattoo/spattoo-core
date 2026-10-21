@@ -985,6 +985,25 @@ const STICK_GLYPH = (
  * component here is tested (INVARIANTS #9, and useNarrow's own note). */
 const VH = (typeof CSS !== 'undefined' && CSS.supports?.('height', '100dvh')) ? 'dvh' : 'vh';
 
+/* A plain cake in profile — the mark on a tier card's doors. Not `RingGlyph`: that one always
+   carries beads, which say "a decoration goes along this edge", and these doors are about the tier
+   itself. */
+const CAKE_GLYPH = (
+  <svg width="26" height="20" viewBox="0 0 30 21" fill="none" aria-hidden focusable="false"
+       style={{ flexShrink: 0 }}>
+    <ellipse cx="15" cy="7" rx="9" ry="2.7" fill="#fff" stroke="#8a8288" strokeWidth="1.2" />
+    <path d="M6 7v8.6c0 1.5 4 2.7 9 2.7s9-1.2 9-2.7V7" stroke="#8a8288" strokeWidth="1.2" />
+  </svg>
+);
+
+/* What each door is for, in the words the sections do not carry themselves. A door with no hint is
+   a door with a name and a state, which is enough for the ones that are plainly one thing. */
+const TIER_DOOR_HINTS = {
+  frosting: 'The cream, its style and the top edge.',
+  gradient: 'Solid, ombre or stripes.',
+  shape:    'The outline of this tier.',
+};
+
 /* ── A ring on its edge: the chip glyph ──────────────────────────────────────────────────────────
  *
  * A one-tier cake's piping card used to pick its ring from two live 3D previews — a 74px scene per
@@ -3407,6 +3426,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* Which surface a sprinkles card's dials are editing — `{ elementId, group }`. The piping card's
      `activePipingRing` in every respect; see the note where it is resolved. */
   const [scatterActive, setScatterActive] = useState(null);
+  /* ── A colour chosen before there is anything to colour ──────────────────────────────────────
+   *
+   * ⚠️ THE PALETTE IS DERIVED FROM THE INSTANCES, which is right — each sprinkle carries its own
+   * `color`, so nothing new is persisted and an old design reads back as a one-swatch palette by
+   * itself. The cost appeared the day a scatter started EMPTY: with no instances there is nothing
+   * to derive from and nothing for `setScatterPalette` to repaint, so the Colours block was hidden
+   * as "a control that cannot act". Sandeep, on a surface at Count 0: *"i think you removed the
+   * color picker for sprinkles element."*
+   *
+   * He is right that the control belongs there — picking the colour and THEN scattering is the
+   * obvious order. So a palette chosen while the surface is empty is held here and used as the
+   * seed the moment sprinkles arrive, by the dial or by hand. UI state, never saved: once there is
+   * one instance the instances are the palette again, which is the one source of truth.
+   */
+  const [scatterSeedPalettes, setScatterSeedPalettes] = useState({});
   const scatterGroupIsOn = (elementId, group) => scatterOnGroups.includes(`${elementId}|${group}`);
   function markScatterGroup(elementId, group, on) {
     const key = `${elementId}|${group}`;
@@ -4022,7 +4056,20 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const caps = selectedEl
     ? (selectedEl.type === 'tier'    ? TIER_CAPS
      : selectedEl.type === 'sticker' ? (design.stickers.find(s => s.id === selectedEl.id)?.allowedActions ?? STICKER_CAPS)
-     : selectedEl.type === 'scatter' ? (design.stickers.find(s => s.elementId === selectedEl.elementId)?.allowedActions ?? STICKER_CAPS)
+     /* ⚠️ THE ELEMENT, THEN THE INSTANCE — and this was the other way round, which is how a scatter
+        card at Count 0 lost its colour picker entirely. With nothing scattered there is no instance
+        to read, so it fell to STICKER_CAPS, where `color` is false; the palette was then hidden as
+        a control the element "does not allow". Sandeep: "i think you removed the color picker for
+        sprinkles element."
+        ⚠️ AND IT IS THE RULE THIS FILE ALREADY STATES THREE TIMES. `allowedActions` on an instance
+        is a SNAPSHOT taken at placement and serialised wholesale into every saved design, so an
+        admin ticking "Color changeable" reached the next sprinkle placed and never the ones already
+        on a cake — the identical bug the calendar's own note records ("i still dont see color
+        pickers.."), and the reason `isStickerMovable` and the generic swatch both ask the catalogue.
+        The instance stays as the fallback for a decoration whose element row is gone. */
+     : selectedEl.type === 'scatter' ? (elementById.get(selectedEl.elementId)?.allowed_actions
+                                        ?? design.stickers.find(s => s.elementId === selectedEl.elementId)?.allowedActions
+                                        ?? STICKER_CAPS)
      : selectedEl.type === 'decorEl' ? (elementById.get(selectedEl.elementId)?.allowed_actions ?? null)
      : (allowedActionsBySlug[selectedEl.type] ?? null))
     : null;
@@ -9183,6 +9230,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         && (group == null || scatterGroupOf(s) === group))
       .sort((a, b) => a.id - b.id)
       .forEach(s => { if (s.color && !out.includes(s.color)) out.push(s.color); });
+    /* ⚠️ AND WHAT WAS CHOSEN WHILE THE SURFACE WAS EMPTY, so the swatch shows the colour the baker
+       just set instead of falling back to white. Instances win the moment there are any — they are
+       the one source of truth, and this is only a stand-in for the window where none exists.
+       Asked of ONE surface only: `group == null` means "across every surface of this element", and
+       a held choice belongs to the surface it was made on. */
+    if (!out.length && group != null) {
+      const held = scatterSeedPalettes[`${elementId}|${group}`];
+      if (held?.length) return [...held];
+    }
     return out;
   }
   /* The palette a NEWLY ticked surface should come up in: its own if it somehow has one, otherwise
@@ -9191,17 +9247,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      — after that they are independent. */
   function scatterSeedPaletteOf(elementId, group) {
     const own = scatterPaletteOf(elementId, group);
-    return own.length ? own : scatterPaletteOf(elementId);
+    if (own.length) return own;
+    /* What the baker picked while this surface was still empty — the whole point of holding it. */
+    const held = scatterSeedPalettes[`${elementId}|${group ?? ''}`];
+    if (held?.length) return held;
+    return scatterPaletteOf(elementId);
   }
   // Cycle the customer's palette across the instances, in placement order. `i % length` is what makes
   // a 3-colour palette read as a repeating mix rather than three blocks.
   function setScatterPalette(elementId, group, palette) {
     if (!palette.length) return;
     // Same exclusion as the derivation above, and for the same reason: this REPAINTS what it walks.
-    design.stickers.filter(s => s.elementId === elementId && !s.byHand
+    const walk = design.stickers.filter(s => s.elementId === elementId && !s.byHand
         && (group == null || scatterGroupOf(s) === group))
-      .sort((a, b) => a.id - b.id)
-      .forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
+      .sort((a, b) => a.id - b.id);
+    /* ⚠️ NOTHING TO REPAINT IS NOT NOTHING TO DO. On an empty surface this walked an empty list and
+       the choice evaporated; held instead, it is what the next sprinkles are seeded with. See
+       `scatterSeedPalettes`. */
+    if (!walk.length) {
+      setScatterSeedPalettes(prev => ({ ...prev, [`${elementId}|${group ?? ''}`]: palette }));
+      return;
+    }
+    walk.forEach((s, i) => updateSticker(s.id, { color: palette[i % palette.length] }));
   }
   /* ── One colour, or a mix ─────────────────────────────────────────────────────────────────────
    *
@@ -11956,7 +12023,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               </div>
             </AnchoredPopup>
           </>, document.body)}
-        {compact && sub && subCardCrumb(card.name ?? 'Sprinkles', sub === 'hand' ? 'Add by hand' : 'Colours')}
+        {compact && sub && subCardCrumb(card.name ?? 'Sprinkles', 'Add by hand')}
         {(compact ? [activeSu].filter(Boolean) : onSurfaces).map(su => {
           /* ⚠️ THE DIAL COUNTS WHAT THE DIAL CONTROLS. Hand-placed sprinkles are excluded from the
              density set, so counting them here would make the control lie in both directions: it
@@ -12029,6 +12096,49 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <div style={{ ...s.tbDivider, height: 30, margin: 0 }} />
                   </div>
                 )}
+                {/* ── Colour, beside Count ────────────────────────────────────────────────────────
+                    Sandeep: "can the color picker be next to the count control." It is the same
+                    palette, moved — not a second swatch added: the block that used to sit below
+                    (Colours · Multi colour · swatches · +) is gone from the card, so there is still
+                    exactly one place to set a sprinkle's colour.
+                    ⚠️ IT LEADS THE ROW, like every other card in this designer: colour, then the
+                    dials. And it is the FIRST colour of the palette — tapping it edits that one and
+                    leaves a mix intact; `+` beside it is how a mix is built. */}
+                {canColor && (() => {
+                  const palette = scatterPaletteOf(card.elementId, su.group);
+                  const pal = palette.length ? palette : ['#ffffff'];
+                  return (
+                    <ControlCell key="sc-colours" label={compact ? null : 'Colour'}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        {pal.map((col, ci) => (
+                          <span key={ci} style={{ position: 'relative', display: 'inline-flex' }}>
+                            <WheelSwatch color={col} size={compact ? 34 : 30} compact={isMobile}
+                              title={`Colour ${ci + 1}`}
+                              cakeColors={[...new Set(collectElementColors(design))].filter(x => x.toLowerCase() !== col.toLowerCase())}
+                              onChange={v => { const next = [...pal]; next[ci] = v; setScatterPalette(card.elementId, su.group, next); }} />
+                            {pal.length > 1 && (
+                              <button title="Remove colour" aria-label={`Remove colour ${ci + 1}`}
+                                onClick={() => setScatterPalette(card.elementId, su.group, pal.filter((_, j) => j !== ci))}
+                                style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px',
+                                         fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff',
+                                         color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
+                            )}
+                          </span>
+                        ))}
+                        {/* ⚠️ `+` IS THE MIX. The "Multi colour" chip that used to sit above the
+                            swatches is gone with the block: it was derived from the palette anyway
+                            ("the chip is derived from the palette… `+` still implies it"), so a
+                            second colour IS the mix and adding one is how you ask for it. */}
+                        <button title="Add colour" aria-label="Add colour"
+                          onClick={() => setScatterPalette(card.elementId, su.group, [...pal, nextPaletteColour(pal[pal.length - 1])])}
+                          style={{ width: compact ? 34 : 30, height: compact ? 34 : 30, borderRadius: '50%',
+                                   border: `1.5px dashed ${LINE}`, fontSize: 16, color: '#3D5A44',
+                                   background: '#F2F7F3', cursor: 'pointer', flexShrink: 0,
+                                   display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                      </div>
+                    </ControlCell>
+                  );
+                })()}
                 {/* Count is per ACTIVE SURFACE — a denser top than side is a real choice.
                     A count, so integer fmt and rounded on write.
 
@@ -12125,22 +12235,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 value: (sprinkleHand?.elementId === card.elementId ? 'Tapping on' : null),
                 onClick: () => setCardSub({ key: card.key, sub: 'hand' }),
               })}
-              {compact && sub === null && canColor && inSet > 0 && subCardOpener({
-                key: 'open-colours',
-                icon: (
-                  <span style={{ width: 26, height: 20, display: 'flex', alignItems: 'center', gap: 2, flexShrink: 0 }}>
-                    {scatterPaletteOf(card.elementId, su.group).slice(0, 3).map((col, i) => (
-                      <span key={i} style={{ width: 8, height: 8, borderRadius: '50%', background: col,
-                                             border: '1px solid #cdccd3' }} />
-                    ))}
-                  </span>
-                ),
-                title: 'Colours',
-                hint: 'One colour, or a mix across the set.',
-                value: (() => { const n = scatterPaletteOf(card.elementId, su.group).length;
-                                return n > 1 ? `${n} colours` : null; })(),
-                onClick: () => setCardSub({ key: card.key, sub: 'colours' }),
-              })}
+              {/* The Colours door is gone with its block: the palette rides the control row now, on
+                  the phone card as well as the desktop one. */}
               {(!compact || sub === 'hand') && (() => {
                 const handOn = sprinkleHand?.elementId === card.elementId
                             && sprinkleHand?.zone === su.zone
@@ -12182,41 +12278,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 );
               })()}
-              {(!compact || sub === 'colours') && canColor && inSet > 0 && (() => {
-                const palette = scatterPaletteOf(card.elementId, su.group);
-                const pal = palette.length ? palette : ['#ffffff'];
-                const isMulti = scatterIsMulti(card.elementId, su.group);
-                return (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginTop: 2 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                      <span style={s.editPanelLabel}>Colours</span>
-                      <Chip label="Multi colour" isMobile={isMobile}
-                            active={isMulti}
-                            onClick={() => setScatterMulti(card.elementId, su.group, !isMulti)} />
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-                      {pal.map((col, i) => (
-                        <span key={i} style={{ position: 'relative', display: 'inline-flex' }}>
-                          <WheelSwatch color={col} size={30} compact={isMobile}
-                            title={`Colour ${i + 1}`}
-                            cakeColors={[...new Set(collectElementColors(design))].filter(x => x.toLowerCase() !== col.toLowerCase())}
-                            onChange={c => { const next = [...pal]; next[i] = c; setScatterPalette(card.elementId, su.group, next); }} />
-                          {pal.length > 1 && (
-                            <button title="Remove colour" onClick={() => setScatterPalette(card.elementId, su.group, pal.filter((_, j) => j !== i))}
-                              style={{ position: 'absolute', top: -6, right: -6, width: 14, height: 14, lineHeight: '12px', fontSize: 10, borderRadius: '50%', border: '1px solid #ccc', background: '#fff', color: DANGER, cursor: 'pointer', padding: 0 }}>×</button>
-                          )}
-                        </span>
-                      ))}
-                      {/* Round, like the swatches it adds to — a square + beside a row of circles
-                          reads as a different kind of thing. */}
-                      <button title="Add colour" onClick={() => setScatterPalette(card.elementId, su.group, [...pal, nextPaletteColour(pal[pal.length - 1])])}
-                        style={{ width: 30, height: 30, borderRadius: '50%', border: `1.5px dashed ${LINE}`,
-                                 fontSize: 16, color: '#3D5A44', background: '#F2F7F3', cursor: 'pointer',
-                                 display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>+</button>
-                    </div>
-                  </div>
-                );
-              })()}
+              {/* ⚠️ THE COLOURS BLOCK THAT USED TO SIT HERE IS IN THE CONTROL ROW NOW — the
+                  swatches, the + and what the "Multi colour" chip meant. Sandeep: "can the
+                  color picker be next to the count control." Leaving a copy here as well
+                  would be two controls over one palette, which is the thing every door and
+                  dropdown in this card was built to avoid. */}
             </div>
           );
         })}
@@ -18860,6 +18926,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                Desktop renders every section stacked, exactly as before — it has the room, and a tab
                strip beside a cake is a click where there was none. */
             const sections = [];
+            /* Carried out of the colour section's own block, which is where the pool is computed —
+               the tier card's level-1 swatch needs the same list and is rendered far below it. Same
+               shape as `colourCtls` and `tiltCtls` in buildToolbar, and for the same reason. */
+            let tierCakeColours = [];
 
             if (((caps?.color || caps?.gradient) || hasActiveGroup) && (tierPanelVisible || colorOpen)) {
               // Offer same-material colors so a reused hue renders exactly: tier → other tier colors
@@ -18867,6 +18937,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               // color is dropped (no point reoffering it).
               const pool = selectedEl?.type === 'tier' ? collectTierColors(design) : collectElementColors(design);
               const cakeColors = [...new Set(pool)].filter(c => c.toLowerCase() !== currentColor.toLowerCase());
+              tierCakeColours = cakeColors;
               sections.push({ id: 'colour', label: 'Colour', node: (
                 <div ref={colourWheelRef}>
                   <ColorWheel
@@ -19155,6 +19226,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       the spacing on a control that DISAPPEARS on a square tier and when no cream
                       element exists, leaving the next thing to re-derive it — which is the reasoning
                       the column was created with. One container, one rule, three children. */}
+
+                  </div>
+
+                </>
+              ) });
+            }
+
+            /* ── Added to the tier, not properties of it ────────────────────────────────────
+             *
+             * ⚠️ A CREAM LAYER AND A WAFER SKIRT ARE THINGS YOU ADD; everything else in
+             * Frosting is how the cream itself is worked. Together they made that section
+             * 461px on a phone — the tallest thing in the designer — and the two halves are
+             * not even the same kind of question.
+             *
+             * ⚠️ THE CONTROLS ARE MOVED, NOT REWRITTEN. The Cream layer row still opens the
+             * cream card (its own level, where a band's several controls live) and the wafer
+             * chip still carries its whole block. Same nodes, one section later.
+             *
+             * ⚠️ AND IT IS A SECTION, so the tier card's doors pick it up by themselves —
+             * they are derived from `sections` precisely so a new one cannot be missed.
+             * Desktop stacks it under Frosting, which is where it already sat. */
+            if (selectedEl?.type === 'tier' && tierPanelVisible) {
+              const tier = design.tiers[selectedEl.index];
+              sections.push({ id: 'addons', label: 'Add to this tier',
+                note: [tier?.creamLayers?.length ? 'Cream layer' : null, tier?.wafer ? 'Wafer paper' : null]
+                        .filter(Boolean).join(' · ') || null,
+                node: (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {/* ── Cream layer: the doorway moves here, the card does not ──────────────────
                     *
                     * Sandeep: "cream layer is sitting in finish category. its actually a cream
@@ -19367,10 +19466,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       </div>
                     );
                   })()}
-
-                  </div>
-
-                </>
+                </div>
               ) });
             }
 
@@ -19395,7 +19491,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             // A tab that no longer exists (the selection changed under it) falls back to the first,
             // rather than showing an empty sheet.
             const active   = sections.find(x => x.id === editTab) ?? sections[0];
-            const showTabs = isMobile && sections.length > 1;
+            /* ── The tier card, on a phone: doors instead of a tab strip ─────────────────────────
+             *
+             * ⚠️ THE DOORS ARE DERIVED FROM `sections`, WHICH IS THE WHOLE SAFETY OF THIS. Sandeep,
+             * commissioning it: *"make sure we dont miss any option (like it happend for
+             * sprinkles-missing color picker)."* A hand-written list of doors is exactly how that
+             * happens — so every section that is not promoted to the row becomes a door, and a
+             * section added here in future gets one without anyone remembering to.
+             *
+             * ⚠️ WHY NOT TABS. The strip cost ~90px on EVERY tab (measured) and carried the other
+             * tabs' state in subtitles — "Solid", "Buttercream" — because there was nowhere else to
+             * say it. Its three sections are not three views of one thing: the colour of the icing,
+             * the pattern on it and how the cream is worked are three jobs, done one at a time. A
+             * door says its state in full and costs 52px.
+             *
+             * ⚠️ COLOUR IS PROMOTED, NOT COPIED. That section is exactly one `ColorWheel`, so the
+             * row's swatch opens the same wheel with the same `wheelColor`/`handleWheelChange` —
+             * `WheelSwatch` is the shared component for that, and a tier is the fourth card to use
+             * it. Everything else keeps its node untouched behind a door.
+             *
+             * Tiers only: this sheet also serves stickers, piping and text, and they keep the tabs. */
+            const tierCompact = isMobile && selectedEl?.type === 'tier';
+            const tierKey     = tierCompact ? `tier-${selectedEl.index}` : null;
+            const tierSub     = tierKey && cardSub?.key === tierKey ? cardSub.sub : null;
+            const tierColour  = tierCompact ? sections.find(x => x.id === 'colour') : null;
+            const tierDoors   = tierCompact ? sections.filter(x => x.id !== 'colour') : [];
+            const tierOpen    = tierSub ? sections.find(x => x.id === tierSub) : null;
+            const showTabs = isMobile && !tierCompact && sections.length > 1;
 
             return (
               <div ref={isMobile ? editSheetRef : null}
@@ -19508,7 +19630,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   </div>
                 )}
 
-                {isMobile
+                {tierCompact ? (
+                  tierOpen ? (
+                    /* Level 2: the section's own node, untouched, with the way back above it. */
+                    <SheetBody key={tierOpen.id}>
+                      {subCardCrumb(TIER_LABELS[selectedEl.index] ?? 'Tier', tierOpen.label)}
+                      {tierOpen.node}
+                    </SheetBody>
+                  ) : (
+                    <SheetBody key="tier-level1">
+                      {/* The row: colour, and whatever else is one control rather than a section. */}
+                      {tierColour && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '2px 0 8px',
+                                      alignSelf: 'stretch' }}>
+                          <WheelSwatch color={wheelColor} size={40} compact={isMobile}
+                            title="Tier colour" cakeColors={tierCakeColours}
+                            onChange={handleWheelChange} />
+                          <span style={{ fontSize: 11.5, fontWeight: 700, color: '#8a7a80',
+                                         fontFamily: "'Quicksand',sans-serif" }}>Colour</span>
+                        </div>
+                      )}
+                      {tierDoors.map(sec => subCardOpener({
+                        key: `tier-door-${sec.id}`,
+                        icon: CAKE_GLYPH,
+                        title: sec.label,
+                        hint: TIER_DOOR_HINTS[sec.id] ?? null,
+                        value: sec.note ?? null,
+                        onClick: () => setCardSub({ key: tierKey, sub: sec.id }),
+                      }))}
+                    </SheetBody>
+                  )
+                ) : isMobile
                   ? <SheetBody key={active.id}>{active.node}</SheetBody>
                   : sections.map(sec => <Fragment key={sec.id}>{sec.node}</Fragment>)}
               </div>
