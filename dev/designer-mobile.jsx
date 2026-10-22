@@ -1162,7 +1162,11 @@ const STUBS = {
      harness that mounts the real designer. `dev/acrylic-text.jsx` mounts the RENDERER, which is a
      different half: it cannot show a control that is missing from the card. Both halves matter, and
      the capital-letters bug lived in the seam between them. */
-  fetchElements:       async () => (PARAMS.has('writing') ? [{
+  /* Counted so a test can prove the Decorations panel's refresh actually RE-FETCHES, rather than
+     inferring it from the button having been clicked. The stub returns the same rows either way;
+     what is being asserted is that the request happened at all. */
+  fetchElements:       async () => ((window.__elementFetches = (window.__elementFetches ?? 0) + 1),
+                        PARAMS.has('writing') ? [{
     id: 'writing-el-1', name: 'Texts',
     image_url: null, thumbnail_url: null, thumb_key: null,
     element_type_id: 'et-writing', category_id: 'cat-messages',

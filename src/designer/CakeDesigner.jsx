@@ -48,7 +48,7 @@ import { Panel, PanelBlock, Z } from '../shared/Panel.jsx';
 import { PencilIcon } from '../shared/icons.jsx';
 // Shared with the storefront customiser's Share button — see shared/icons.jsx for why it is not
 // declared here any more.
-import { StoreIcon, ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon, CopyIcon } from '../shared/icons.jsx';
+import { StoreIcon, ShareIcon, CameraIcon, UploadsIcon, CalendarIcon, ChevronRightIcon, CopyIcon, RefreshIcon } from '../shared/icons.jsx';
 import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
@@ -17142,7 +17142,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         .spattoo-rail-nav::-webkit-scrollbar { display: none; }
         .spattoo-noscrollbar::-webkit-scrollbar { display: none; }
         /* A :hover cannot be expressed inline, and inline styles win — hence !important. */
-        .spattoo-rail-menu button:hover { background: rgba(255,255,255,0.11) !important; color: #fff !important; }`}</style>
+        .spattoo-rail-menu button:hover { background: rgba(255,255,255,0.11) !important; color: #fff !important; }
+        @keyframes spattooSpin { to { transform: rotate(360deg) } }`}</style>
 
       {/* ── Mobile header ── */}
       {isMobile && (
@@ -17449,7 +17450,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                    this panel has always called it that. */
                 <span style={s.flyoutTitle}>Decorations</span>
               )}
-              <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                {/* ── Re-read the library, without touching the cake ───────────────────────────
+                    A decoration added in admin does not exist for a designer that is already open:
+                    the catalogue is fetched once and held, so the only way to see a new row was to
+                    reload the page — which throws away the cake being designed. Sandeep, mid-
+                    design: *"i need some element that il add in admin. now thats not available in
+                    core designer untill a page refresh."*
+
+                    ⚠️ IT CANNOT DISTURB THE DESIGN, and that is a property of the function rather
+                    than a promise made here: `loadElementsIfNeeded` writes only catalogue state —
+                    elementById, the two type buckets, loadedCategories, allElementsLoaded and its
+                    own loading flag. It never reaches `design`. Rows are MERGED into what is held,
+                    so a decoration already standing on the cake keeps the source element its
+                    placement rules are read from.
+
+                    ⚠️ BAKERS ONLY. A customer has no admin to add a row in, so for them this is a
+                    control that can only ever do nothing visible. `orderMode`, not `role`, for the
+                    reason stated further up this file: role arrives from /me and is null until it
+                    resolves, so the button would pop in after first paint.
+
+                    No state of its own: `elementTypesLoading` is already the one answer to "is the
+                    catalogue loading", and it is what the panel's own spinner reads. */}
+                {orderMode !== 'customer' && (
+                  <button
+                    type="button"
+                    style={{ ...s.iconBtn, opacity: elementTypesLoading ? 0.45 : 1,
+                             cursor: elementTypesLoading ? 'default' : 'pointer',
+                             ...(elementTypesLoading ? { animation: 'spattooSpin 0.8s linear infinite' } : {}) }}
+                    disabled={elementTypesLoading}
+                    aria-label="Refresh decorations"
+                    title="Re-read the decorations library — your cake is not touched"
+                    onClick={() => loadElementsIfNeeded(true)}>
+                    <RefreshIcon size={15} />
+                  </button>
+                )}
+                <button style={s.iconBtn} onClick={() => setElementsOpen(false)}>✕</button>
+              </div>
             </div>
 
             {/* Search. The text SURVIVES the panel closing on purpose — placing six of the same
