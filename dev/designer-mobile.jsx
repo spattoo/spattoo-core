@@ -439,6 +439,47 @@ CAT_ELEMENTS.push({
   default_color: '#fdfdfb', sort_order: 42,
 });
 
+/* ⚠️ A DECORATION THAT STANDS ON THE BOARD AND CAN BE DUPLICATED, which no fixture carried.
+ *
+ *   Sandeep: "some elements that are duplicatable, but not getting duplicated on cake … when i clic
+ *   on duplicate, it adds a popupcard but does not add element on the cake" … "those are hiding
+ *   inside the cake."
+ *
+ * Every `board` row here was procedural (gypsophila, cloud, grass, letter blocks) or a ring
+ * (Rosette), and none of them offers Duplicate — so the one combination that broke, a plain GLB
+ * decoration seated on the board with `duplicate: true`, could not be reached from this harness at
+ * all. The copy went through `deOverlapSeat` with the board zone, fell through to the cartesian
+ * branch, and was clamped by `topClamp` against the CAKE's tier — inward, into opaque cake.
+ *
+ * Both rows below are the REAL ones, read off cake_elements: zones, actions and placement_config
+ * copied field for field, including the odd roughness/metalness the GLB studio wrote. Only the
+ * artwork is swapped for dev/'s sample GLB — seating is decided by the config, not by the mesh, and
+ * the real asset lives behind the CDN. A fixture that disagrees with the real row proves the wrong
+ * thing (see the note on Gypsophila above). */
+CAT_ELEMENTS.push({
+  id: 'e-seaweed', name: 'Twisted seaweed short', description: 'a real board row — stands on the drum, duplicatable',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#5f7d5a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier', 'board'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+  placement_config: { r: 2.5, side: 'hug', board: 'stand', scale: { min: 1, max: 4, step: 0.25 },
+                      metalness: 0.0014750784202671105, roughness: 0.4464324570866578,
+                      middle_tier: 'hug', top_surface: 'stand' },
+  default_color: '#ffffff', sort_order: 60,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e-scallop', name: 'Fluted Scallop Shell', description: 'a real board row — hugs the drum, duplicatable',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#efe6d8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier', 'board'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+  placement_config: { r: 2.5, side: 'hug', board: 'hug', scale: { min: 1, max: 4, step: 0.25 },
+                      metalness: 0.0015047892092146015, roughness: 0.3782242154294899,
+                      middle_tier: 'hug', top_surface: 'hug' },
+  default_color: '#f4f3f1', sort_order: 61,
+});
+
 CAT_ELEMENTS.push({
   id: 'e24', name: 'Fondant cloud', description: 'a cloud of pressed fondant balls',
   element_type_id: 'et-topper', category_id: 'cat-1',

@@ -238,6 +238,47 @@ export function deOverlapSeat(shape, zone, pos, siblings, step = STICKER_SIZE) {
     while (guard++ < 64 && siblings.some(near)) theta += 0.5;
     return { ...pos, theta: (((theta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) };
   }
+  /* ⚠️ THE BOARD IS A RING, SO A COPY SEPARATES BY GOING AROUND IT — NOT ACROSS IT.
+   *
+   * The cartesian branch below ends in `topClamp(shape, …, 0.88)`, and `shape` here is the CAKE's
+   * tier, not the board. A board decoration lives OUTSIDE that footprint by definition, so the
+   * clamp dragged every duplicate inward to 88% of the tier radius — i.e. inside the cake, which
+   * is opaque. Measured on a 1.0 tier under a 1.45 board: a piece at r = 1.25 came back at
+   * r = 0.880. The card appeared in the list and the decoration was nowhere on the cake, which is
+   * how it was reported (Twisted seaweed short, Fluted Scallop Shell — both offer a `board` zone).
+   * `boardRingClamp`'s own note says why this one is unrecoverable rather than merely untidy:
+   * standing proud of the board edge is something a baker can see and drag, standing inside the
+   * cake leaves nothing to grab.
+   *
+   * The ring's natural coordinate is (radius, angle), the way a wall's is (theta, y). So walk the
+   * ANGLE about the cake's centre and keep the radius the original already proved valid — which
+   * needs no board shape, and lands the copy on the ring by construction. `addSticker` never asks
+   * for the board zone (it de-overlaps top, side and rim only); `duplicateSticker` does, because it
+   * passes whatever zone the original is in. */
+  if (zone === ZONES.BOARD) {
+    const r = Math.hypot(pos.x ?? 0, pos.z ?? 0);
+    // Dead centre has no angle to turn through, and no radius to keep. Nothing better is available
+    // without the board's own footprint, and leaving the copy on the original is at least visible.
+    if (r <= 1e-6) return { ...pos };
+    /* The angle whose CHORD is one step, not the angle whose ARC is — so a copy comes apart by the
+     * same STICKER_SIZE the top-surface branch separates by, in one turn rather than two. Stepping
+     * by arc undershoots the straight-line gap the `clear` test measures (at r = 1.25 the chord of
+     * step/r is 0.279 against a step of 0.28), so every copy took two turns and landed 0.555 away —
+     * twice as far apart as the same two pieces on the lid. The 1.001 is what puts it over the line
+     * rather than exactly on it. Half a turn is the cap: on a board ring tighter than a decoration
+     * there is no angle that clears, and spinning a copy to the far side is no better than leaving
+     * it beside the original, which the guard already does. */
+    const dTheta = Math.min(Math.PI / 2, 2 * Math.asin(Math.min(1, (step * 1.001) / (2 * r))));
+    let theta = Math.atan2(pos.x ?? 0, pos.z ?? 0), guard = 0;
+    let bx = pos.x ?? 0, bz = pos.z ?? 0;
+    const clear = () => !siblings.some(s => s.x != null && Math.hypot(bx - s.x, bz - (s.z ?? 0)) < step);
+    while (guard++ < 64 && !clear()) {
+      theta += dTheta;
+      bx = Math.sin(theta) * r;
+      bz = Math.cos(theta) * r;
+    }
+    return { ...pos, x: bx, z: bz };
+  }
   // Cartesian surfaces (top_surface, rim): one push-away per colliding sibling.
   let x = pos.x ?? 0, z = pos.z ?? 0;
   for (const sib of siblings) {

@@ -863,6 +863,64 @@ describe('edgeSeatSeed — every footprint has a front edge, not just one carryi
   });
 });
 
+// ── Duplicating a decoration that stands on the BOARD ───────────────────────────────────────────
+// Regression: Duplicate added the card and put nothing on the cake. The copy went through
+// `deOverlapSeat` with the original's zone, and the board fell through to the cartesian branch,
+// whose last act is `topClamp(shape, …, 0.88)` — against the CAKE's tier, the only shape the
+// function is given. A board decoration is outside that footprint by definition, so every copy was
+// pulled in to 88% of the tier radius and buried inside opaque cake. Reported on Twisted seaweed
+// short and Fluted Scallop Shell; both carry a `board` zone in placement_config.
+describe('deOverlapSeat — a board copy separates AROUND the ring, never across it', () => {
+  const CAKE = { kind: 'round', radius: 1 };
+  const SEAT = { x: 0, z: 1.25 };               // on the ring: outside the cake, on the board
+
+  it('keeps the copy outside the cake, at the radius the original proved valid', () => {
+    const dup = deOverlapSeat(CAKE, ZONES.BOARD, { ...SEAT }, [SEAT]);
+    expect(Math.hypot(dup.x, dup.z)).toBeCloseTo(Math.hypot(SEAT.x, SEAT.z), 12);
+    expect(Math.hypot(dup.x, dup.z)).toBeGreaterThan(CAKE.radius);   // what the bug broke
+  });
+
+  // Separated by the SAME amount a pair on the lid would be: one turn of the ring whose chord is
+  // one sticker width. Stepping by arc instead undershoots the straight-line gap the clear test
+  // measures, so each copy took two turns and came apart twice as far as the top-surface branch.
+  it('comes apart by exactly one sticker width, as it would on the lid', () => {
+    const dup = deOverlapSeat(CAKE, ZONES.BOARD, { ...SEAT }, [SEAT]);
+    expect(Math.hypot(dup.x - SEAT.x, dup.z - SEAT.z)).toBeCloseTo(STICKER_SIZE, 2);
+  });
+
+  it('stays on the ring for a whole run of copies, each one width clear of the last', () => {
+    const sibs = [{ ...SEAT }];
+    for (let i = 0; i < 4; i++) {
+      const dup = deOverlapSeat(CAKE, ZONES.BOARD, { ...SEAT }, sibs);
+      expect(Math.hypot(dup.x, dup.z)).toBeCloseTo(1.25, 12);
+      const nearest = Math.min(...sibs.map(s => Math.hypot(dup.x - s.x, dup.z - s.z)));
+      expect(nearest).toBeCloseTo(STICKER_SIZE, 2);
+      sibs.push({ x: dup.x, z: dup.z });
+    }
+  });
+
+  it('a rect footprint goes round the same way (a sheet cake has a board too)', () => {
+    const sheet = { kind: 'rect', halfW: 1, halfD: 0.7 };
+    const seat = { x: 1.3, z: 0 };
+    const dup = deOverlapSeat(sheet, ZONES.BOARD, { ...seat }, [seat]);
+    expect(Math.hypot(dup.x, dup.z)).toBeCloseTo(1.3, 12);
+  });
+
+  it('dead centre has no angle to turn through, and still returns a finite seat', () => {
+    const dup = deOverlapSeat(CAKE, ZONES.BOARD, { x: 0, z: 0 }, [{ x: 0, z: 0 }]);
+    expect(Number.isFinite(dup.x)).toBe(true);
+    expect(Number.isFinite(dup.z)).toBe(true);
+  });
+
+  it('leaves the other zones exactly as they were', () => {
+    const top = deOverlapSeat(CAKE, ZONES.TOP_SURFACE, { x: 0, z: 0 }, [{ x: 0, z: 0 }]);
+    expect(top.z).toBeCloseTo(0, 12);
+    expect(top.x).toBeGreaterThan(0);                       // pushed off the sibling, as before
+    const side = deOverlapSeat(null, ZONES.SIDE, { theta: 0, y: 0.5 }, [{ theta: 0, y: 0.5 }]);
+    expect(side.theta).toBeCloseTo(0.5, 12);
+  });
+});
+
 describe('contentFoot — a 2D decal\'s box stops at its artwork', () => {
   it('sizes to the furthest content, symmetric about the centre', () => {
     // Artwork spanning -0.3..0.4 across and -0.2..0.5 up on a 1-unit square
