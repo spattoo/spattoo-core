@@ -9643,6 +9643,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * answers for everything else, and a card highlighting the right number proves only that a
      * button took a click. */
     window.__design = () => design;
+    /* Load a whole design, the way opening a template does. Switching cakes is the one gesture that
+       cannot be driven from a script — it goes through a template card in a panel — and it is where
+       a wall treatment from the PREVIOUS cake was reported surviving onto the next one. Calls the
+       same `loadDesign` the template path calls. */
+    window.__loadDesign = (d) => { loadDesign(d); return true; };
     /* ⚠️ WHAT IS SELECTED, and which tier's band a card belongs to. A band is reached by CLICKING
        THE STROKES on a 3D wall, which a script cannot aim, and two bands on two tiers look
        identical from the DOM — the strip is covered by whichever card is open, so counting names on
