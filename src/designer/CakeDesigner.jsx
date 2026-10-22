@@ -9887,6 +9887,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * reasoned about, which is how the foil fix got written twice.
      * A patch, not a replacement, so a test sets one field without restating the whole style. */
     window.__setPenStyle = (patch) => { setPenStyle(ps => ({ ...ps, ...(patch ?? {}) })); return true; };
+    /* ...and the pen's DRAW MODE has no other door either, for the same reason. `penDrawMode` is
+       `selectedEl.type === 'tool' && tool === 'pen'`, which a script can only reach by tapping a
+       card in a drawer that itself only opens off a piping card. Without this the one thing the pen
+       actually does — put cream on the cake — cannot be driven, and the stamp it puts there could
+       only ever be judged in a calibrator rather than on the cake it is piped onto. Selects exactly
+       what the card's own onClick selects. */
+    window.__openPen = () => { selectExclusive({ type: 'tool', tool: 'pen' }); return true; };
     window.__getPenStyle = () => penStyle;
     window.__placeTestPatternWith = (id) => {   // place a pattern using a chosen element id (mirrored 2nd part)
       const partEl = elementById.get(id); if (!partEl) return false;
