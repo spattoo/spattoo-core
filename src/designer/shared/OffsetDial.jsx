@@ -33,7 +33,12 @@ import { INK } from '../../shared/tokens.js';
  * A formatter must still keep the SIGN — that is the whole difference between in and out, up and
  * down, and the note below says so. */
 export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, onChange,
-                             fmt = v => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2)) }) {
+                             fmt = v => (v > 0 ? `+${v.toFixed(2)}` : v.toFixed(2)), symbol = null }) {
+  /* ⚠️ THE MARK AT REST, THE NUMBER WHILE DRAGGING — the pattern SizeDial carries, and for the same
+     reason: on a card with no captions the question at rest is *what is this control*, and "+0.00"
+     does not answer it. The signed number is still what matters mid-gesture, so it comes back for
+     as long as the finger is down. `symbol` absent leaves every existing caller untouched. */
+  const [dragging, setDragging] = React.useState(false);
   const CX = 24, CY = 24, R_IN = 12, W = 5;
   const A_START = -140 * Math.PI / 180;   // lower-left
   const A_SWEEP =  280 * Math.PI / 180;   // over the top to lower-right (gap at the bottom)
@@ -82,10 +87,10 @@ export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, o
       style={{ width: 46, height: 46, position: 'relative', flexShrink: 0,
                cursor: pinned ? 'default' : 'pointer', touchAction: 'none', userSelect: 'none',
                opacity: pinned ? 0.45 : 1 }}
-      onPointerDown={e => { if (pinned) return; e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setFromEvent(e); }}
+      onPointerDown={e => { if (pinned) return; e.stopPropagation(); e.currentTarget.setPointerCapture(e.pointerId); setDragging(true); setFromEvent(e); }}
       onPointerMove={e => { if (pinned || !e.currentTarget.hasPointerCapture(e.pointerId)) return; e.stopPropagation(); setFromEvent(e); }}
-      onPointerUp={e => { if (pinned) return; e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); }}
-      onPointerCancel={e => { if (!pinned) e.currentTarget.releasePointerCapture(e.pointerId); }}>
+      onPointerUp={e => { if (pinned) return; e.stopPropagation(); e.currentTarget.releasePointerCapture(e.pointerId); setDragging(false); }}
+      onPointerCancel={e => { if (!pinned) e.currentTarget.releasePointerCapture(e.pointerId); setDragging(false); }}>
       <svg viewBox="0 0 48 48" width={46} height={46} style={{ display: 'block', pointerEvents: 'none' }}>
         <path d={band(0, 1)} fill="#e6e0e3" />
         {/* Filled FROM zero toward the value, in whichever direction that is. */}
@@ -98,7 +103,7 @@ export function OffsetDial({ value = 0, min = -1, max = 1, step = 0.05, label, o
                      fontSize: 9, fontWeight: 700, color: INK, fontFamily: "'Quicksand',sans-serif", pointerEvents: 'none' }}>
         {/* ⚠️ The SIGN is kept. It is the whole difference between in and out, up and down —
             which is why the default `fmt` above carries it, and why a caller's own must too. */}
-        {fmt(value)}
+        {symbol && !dragging ? symbol : fmt(value)}
       </span>
     </div>
   );

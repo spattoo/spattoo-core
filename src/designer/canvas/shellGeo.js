@@ -223,11 +223,70 @@ export function wallPerimeter(shape, radius) {
 // rotation was applied to it. Three separate attempts to fix that by adjusting the ROTATION failed,
 // because the rotation was never the thing that differed. One preparation, one place.
 export function extractGeo(scene) {
-  let geo = null;
-  scene.traverse(obj => {
-    if (obj.isMesh && !geo) geo = obj.geometry.clone();
-  });
-  if (!geo) return null;
+  let mesh = null;
+  scene.traverse(obj => { if (obj.isMesh && !mesh) mesh = obj; });
+  if (!mesh) return null;
+
+  /* ⚠️ A FRESH, PLAIN, DE-NORMALISED BUFFER — NEVER `geometry.clone()`. A meshopt-compressed GLB
+     (`EXT_meshopt_compression`) delivers its attributes INTERLEAVED and NORMALISED, and this
+     function's whole job is to write through them: a +90° turn, then a translate. `clone()` on an
+     interleaved attribute shares the underlying InterleavedBuffer with the one `useGLTF` has
+     cached, so those per-vertex writes scramble the geometry — and can scramble it for every other
+     user of the same model at the same time.
+
+     That is not a theory. festoon.js's `bakeStrip` says the same thing in its own comment and
+     builds a plain buffer for exactly this reason; this function had not been told. Reported on the
+     catalogue's Rosette: hand-piping it produced the rosette with a skirt of blades hanging off it.
+     Rendered three ways side by side (dev/stamp-normal.html?compare=1) the GLB is clean, and the
+     blades appear at THIS step — the ring path shows them too, since buildShellGeo calls this.
+
+     Reading each vertex through a Vector3 de-normalises it and hands back plain floats, so how the
+     GLB chose to encode itself stops leaking downstream. Only 2 of the 64 active 3D elements are
+     meshopt today (Rosette, Draped Ribbon), which is why this went unseen.
+
+     ⚠️ LOCAL SPACE, NOT WORLD — deliberately, and this is the line to re-read if a ring ever moves.
+     `bakeStrip` applies `mesh.matrixWorld`; doing that here would be more correct in principle and
+     would re-orient every one of the 62 elements whose rings are already calibrated against the
+     local frame. For a quantized GLB the node chain carries the de-quantisation as a uniform scale
+     and a translation (this file: two opposed 90° X turns that cancel, ×0.01, ×0.84, plus an
+     offset), and the centring below plus the callers' height-normalisation cancel exactly that —
+     so for the shape that is broken, local and world agree. A meshopt file with a NON-uniform node
+     scale would still come out wrong here; none exists in the catalogue, and the honest fix for one
+     would be to bake the world matrix and re-calibrate, not to guess now. */
+  const src = mesh.geometry;
+  const pos = src.attributes.position;
+  const geo = new THREE.BufferGeometry();
+  const v = new THREE.Vector3();
+
+  const positions = new Float32Array(pos.count * 3);
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    positions[i * 3] = v.x; positions[i * 3 + 1] = v.y; positions[i * 3 + 2] = v.z;
+  }
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+
+  /* Normals come across too, de-normalised the same way. Piping renders geometry-only with the
+     shared cream material, so these are the ONLY thing shading a piped shell — recomputing them
+     instead would smooth away the creases that make cream read as cream. */
+  const nrm = src.attributes.normal;
+  if (nrm) {
+    const normals = new Float32Array(nrm.count * 3);
+    for (let i = 0; i < nrm.count; i++) {
+      v.fromBufferAttribute(nrm, i).normalize();
+      normals[i * 3] = v.x; normals[i * 3 + 1] = v.y; normals[i * 3 + 2] = v.z;
+    }
+    geo.setAttribute('normal', new THREE.BufferAttribute(normals, 3));
+  }
+  // The cream material tiles a grain normal map, which needs a UV to sit on.
+  const uv = src.attributes.uv;
+  if (uv) {
+    const uvs = new Float32Array(uv.count * 2);
+    for (let i = 0; i < uv.count; i++) { uvs[i * 2] = uv.getX(i); uvs[i * 2 + 1] = uv.getY(i); }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvs, 2));
+  }
+  // The index is a plain attribute whatever the encoding, so it travels as a clone.
+  if (src.index) geo.setIndex(src.index.clone());
+
   geo.applyMatrix4(new THREE.Matrix4().makeRotationX(Math.PI / 2));
   geo.computeBoundingBox();
   const box = geo.boundingBox;

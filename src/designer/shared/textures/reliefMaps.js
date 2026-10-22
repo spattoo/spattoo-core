@@ -109,10 +109,58 @@ function buildFields({ w, h, mask, lum }, { puff = 0.5, detail = 0.4, domeBlur =
   return { H, Hn, w, h };
 }
 
+/* ── The normal map's own resolution ─────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE BAKE GRID AND THE TEXTURE DO NOT HAVE TO BE THE SAME SIZE, and conflating them is what
+ * made the normal map the most expensive thing a sticker owns: 5.3MB at WORK, measured, against
+ * 1.3MB at half that. The FIELD has to stay at WORK — `domeBlur` (≤80) and `edgeRound` (≤48) are
+ * radii in texels at that resolution, and every element in the catalogue was authored against
+ * them, so shrinking the grid would quietly restyle all of them. Only the packed OUTPUT shrinks.
+ *
+ * ⚠️ THE SLOPE SCALES WITH THE GRID, or the relief changes depth. `heightfieldToNormalMap` takes a
+ * central difference across two texels, so at half resolution those texels span twice the distance
+ * and the same height field yields twice the gradient. Halving the grid therefore needs the gain
+ * halved to describe the SAME physical surface — the `slope 4 matches the studio at WORK` note
+ * above is the thing that would otherwise break.
+ *
+ * ⚠️ AND IT IS A BOX AVERAGE, which is what mipmap level 1 already is. A normal map this size is
+ * minified on screen almost always (the sticker covered ~300px across at 4.5x scale), so the top
+ * level was being filtered away by the GPU before anybody saw it.
+ */
+const NORMAL_MAX = 512;
+
+// Box-average a w×h float field down by an integer factor. Returns the smaller field + its size.
+function halveField(H, w, h, factor) {
+  const nw = Math.max(1, Math.floor(w / factor)), nh = Math.max(1, Math.floor(h / factor));
+  const out = new Float32Array(nw * nh);
+  for (let y = 0; y < nh; y++) for (let x = 0; x < nw; x++) {
+    let sum = 0, n = 0;
+    for (let dy = 0; dy < factor; dy++) for (let dx = 0; dx < factor; dx++) {
+      const sy = y * factor + dy, sx = x * factor + dx;
+      if (sy < h && sx < w) { sum += H[sy * w + sx]; n++; }
+    }
+    out[y * nw + x] = n ? sum / n : 0;
+  }
+  return { H: out, w: nw, h: nh };
+}
+
 function dispTexture(H, w, h) {
-  const data = new Uint8Array(w * h * 4);
-  for (let i = 0; i < w * h; i++) { const g = Math.round(clamp(H[i], 0, 1) * 255); data[i * 4] = g; data[i * 4 + 1] = g; data[i * 4 + 2] = g; data[i * 4 + 3] = 255; }
-  const tex = new THREE.DataTexture(data, w, h, THREE.RGBAFormat);
+  /* ⚠️ ONE CHANNEL, BECAUSE A HEIGHT FIELD IS ONE NUMBER. This wrote the same grey into R, G and B
+     and 255 into A — four bytes to carry one, and three of them never read: three.js samples
+     `displacementMap.x` in the vertex shader and ignores the rest. At the 1024 bake resolution that
+     is 4MB per sticker where 1MB does the identical job, measured on the catalogue's grass clump.
+     ⚠️ IT MATTERS BECAUSE OF WHERE THIS IS HEADED. A relief sticker costs ~14.6MB of texture memory
+     (albedo + normal + this), and ten of them is most of what a mid-range Android gives an app
+     before the low-memory killer takes it. Nothing about the lift changes: same values, same
+     filtering, same shader read — only the three bytes nobody looked at are gone.
+     ⚠️ `unpackAlignment = 1`. WebGL unpacks rows on a 4-byte boundary by default, which is harmless
+     for RGBA (always a multiple of 4) and SHEARS a single-channel texture whose width is not. The
+     bake is capped at 1024 on the long edge but the short edge is whatever the artwork's aspect
+     makes it, so odd widths are the normal case, not the exception. */
+  const data = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) data[i] = Math.round(clamp(H[i], 0, 1) * 255);
+  const tex = new THREE.DataTexture(data, w, h, THREE.RedFormat);
+  tex.unpackAlignment = 1;
   // DataTexture defaults to NearestFilter, which stair-steps the lift across the 96x96 grid. Linear so the
   // displacement interpolates smoothly between texels.
   // NO mipmaps here, deliberately: displacement is sampled in the VERTEX shader, where there are no
@@ -148,7 +196,13 @@ export function buildReliefMaps(img, bake = {}, flatMaskImg = null) {
   }
   const f = buildFields(fields, { ...bake, flatMask });
   return {
-    normalMap: heightfieldToNormalMap(f.Hn, f.w, f.h, 4),
+    normalMap: (() => {
+      const factor = Math.max(1, Math.floor(Math.max(f.w, f.h) / NORMAL_MAX));
+      if (factor < 2) return heightfieldToNormalMap(f.Hn, f.w, f.h, 4);
+      const small = halveField(f.Hn, f.w, f.h, factor);
+      // gain / factor — the same surface described on a coarser grid (see NORMAL_MAX)
+      return heightfieldToNormalMap(small.H, small.w, small.h, 4 / factor);
+    })(),
     displacementMap: dispTexture(f.H, f.w, f.h),
   };
 }

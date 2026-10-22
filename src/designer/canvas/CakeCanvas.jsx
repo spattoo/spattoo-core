@@ -1,6 +1,7 @@
 import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
+import { useRetainedGlb, disposeGlbInstance, disposeGlbGeometries } from '../shared/retainedGlb.js';
 import * as THREE from 'three';
 import helvetikerBold from 'three/examples/fonts/helvetiker_bold.typeface.json';
 // SEC-WEB-7 — every drei <Text> MUST pass this as `font`. Without an explicit font,
@@ -25,6 +26,7 @@ import Garnishes from './Garnishes.jsx';
 import Toppers from './Toppers.jsx';
 import FinishHandles from './FinishHandles.jsx';
 import { printExposure } from '../shared/printExposure.js';
+import { useRenderVariantUrl } from '../shared/renderVariants.js';
 import SelectionBox from './SelectionBox.jsx';
 import ResizeHandles from './ResizeHandles.jsx';
 import { Drip, TopFlowers, SideFlowers } from './Decorations';
@@ -37,7 +39,7 @@ import {
   // The board's top face. constants.js names it as "the cake board surface" and the tier stack
   // starts on it, which is why the board mesh (height 0.1, centred at 0.05) tops out exactly here.
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
-import { pointerRay, cylinderHit, cylinderHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
+import { pointerRay, cylinderHit, cylinderHitPoint, wallHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
@@ -63,10 +65,11 @@ import { getFondantNormalMap, applyBoxUVs } from '../shared/textures/fondantText
 import { drawTextSlots, loadSlotFonts } from '../shared/textures/textSlots.js';
 import { useCalendarTexture } from './useCalendarTexture.js';
 import { textStyleOf } from '../textStyles.js';
-import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp } from '../geometry/surface.js';
+import { buildOutlinePrism } from '../geometry/prism.js';
+import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp, wallSamples } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw } from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw, contentFoot} from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -901,9 +904,75 @@ function useSlotFontsReady(textSlots) {
   return tick;
 }
 
+/* ── Giving a sticker's artwork back when the last sticker using it goes ─────────────────────────
+ *
+ * ⚠️ REMOVING A DECORATION FREED ITS GEOMETRY AND NOT ITS TEXTURE. Measured through the renderer's
+ * own counters: placing one sticker took it from 8 textures / 17 geometries to 9 / 19, and
+ * "Remove from cake" gave back 19 → 18 and left the texture at 9 — 5.3MB of albedo still resident
+ * with nothing on the cake using it. The scene graph forgets the piece instantly, which is why
+ * `__sceneMemory` reported it as clean and why nobody had noticed: a baker who tries twenty
+ * decorations and keeps three has paid for all twenty until the page reloads.
+ *
+ * The cause is narrow. Everything DERIVED here already disposes on unmount — the recoloured canvas,
+ * the relief maps through `reliefMapsCache`. The albedo comes from drei's `useTexture`, which
+ * caches by URL and disposes nothing, ever.
+ *
+ * ⚠️ IT CANNOT SIMPLY DISPOSE ON UNMOUNT, which is the obvious fix and a worse bug. Stickers SHARE
+ * artwork — ten copies of one image cost 5.3MB once, measured — so freeing it when any one of them
+ * goes would blank the other nine. Hence the ref count: pinned while any user is mounted, released
+ * when the last one leaves. Exactly what `reliefMapsCache` already does for the maps baked FROM
+ * this texture, which is why this reuses it rather than inventing a second lifetime.
+ *
+ * ⚠️ AND IT MUST EVICT DREI'S CACHE ENTRY IN THE SAME BREATH. Dispose the GPU resource but leave
+ * `useTexture`'s entry and the next sticker to use that URL is handed a DISPOSED texture — a black
+ * or broken decoration, intermittent, and far worse than the leak it replaces. The two have to
+ * happen together or not at all.
+ *
+ * The cache's 2-minute idle grace does the rest: remove-then-undo, or re-scattering the same piece,
+ * finds the texture still there rather than re-downloading and re-decoding it.
+ */
+const stickerAlbedoCache = makeRefCountedCache({
+  dispose: ({ tex, url }) => {
+    try { tex?.dispose?.(); } catch { /* best-effort */ }
+    try { useTexture.clear(url); } catch { /* drei may have evicted it already */ }
+  },
+});
+
+/* Pin the loaded artwork for as long as this component is mounted. `useTexture` still does the
+   loading and the suspending; this only decides when the result may be let go. Both the albedo and
+   the relief bake call it on the same URL, so a relief sticker holds two refs and drops both
+   together — a sticker that loses only one of its two users must not free the image. */
+function useRetainedTexture(url, tex) {
+  /* ⚠️ EVERYTHING BUT `blob:`, AND THE LINE IS DRAWN THERE FOR A REASON THAT IS NOT ABOUT SHARING.
+     A `blob:` url is a handle into this document, and this repo REVOKES them — six call sites do,
+     one of them on unmount. Dispose a blob-backed texture and evict drei's entry and the re-add has
+     nothing to re-read: the url is dead, and the decoration comes back blank. A `data:` uri carries
+     its own bytes and can always be read again, so it has no such problem.
+
+     ⚠️ THIS GUARD USED TO EXCLUDE `data:` TOO, on the strength of a measured blank that DOES NOT
+     REPRODUCE. Re-checked 2026-10-20 with the guard off, using the shape the old note described —
+     a 1024² data-URI sticker WITH relief, so the height and normal bakes are in play — through two
+     complete cycles of place, remove, wait out the full grace, place again. Both cycles disposed
+     cleanly (11 textures → 8) and reloaded (8 → 11), and all three renders are PIXEL-IDENTICAL:
+     0.00% of pixels differ by more than 8, worst channel delta 0. The likeliest explanation is that
+     the original blank was a `blob:`, which is still excluded above and always will be.
+
+     ⚠️ Tested with a data URI built in the harness, not one produced by the real upload path, and on
+     a software rasteriser. If an uploaded decoration ever comes back blank two minutes after it was
+     removed, this line is the first place to look. */
+  const managed = /^https?:|^\/|^data:/i.test(url ?? '');
+  if (managed) stickerAlbedoCache.get(url, () => ({ tex, url }));
+  useEffect(() => {
+    if (!managed) return undefined;
+    stickerAlbedoCache.retain(url);
+    return () => stickerAlbedoCache.release(url);
+  }, [url, managed]);
+}
+
 function useStickerImageTexture(imageUrl, recolor, color, groupColors, saturation, textSlots, textValues) {
   const sat = printExposure({ saturation }).saturation;   // print_finish.saturation; neutral (1) by default
   const base = useTexture(corsUrl(imageUrl));
+  useRetainedTexture(corsUrl(imageUrl), base);
   const fontsTick = useSlotFontsReady(textSlots);
   base.colorSpace = THREE.SRGBColorSpace;
   // A decal is viewed at a grazing angle all round the wall, where isotropic mip filtering smears it.
@@ -1131,6 +1200,8 @@ const solidGeoCache = makeRefCountedCache({ dispose: v => v?.dispose?.() });
 function useReliefMaps(imageUrl, relief) {
   // Same qualified URL as the albedo above, so drei's cache serves ONE fetch for both.
   const base = useTexture(corsUrl(imageUrl));
+  // ...and the same ref count, so the artwork outlives whichever of the two unmounts first.
+  useRetainedTexture(corsUrl(imageUrl), base);
   // Authored flat-mask (placement_config.relief.flatMask): an inline data-URI PNG (black = flush). Decode it
   // ASYNC — a data URI needs no crossOrigin — then rebuild the maps with it. Absent → the sync path is
   // untouched. Keeping the decoded image in state (keyed on the data-URI) makes the maps re-derive on load.
@@ -1176,7 +1247,15 @@ function frontZOf(geometry, extraLift = 0) {
   return (geometry.boundingBox?.max?.z ?? 0) + extraLift;
 }
 
-function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+  /* ⚠️ RESOLVED ONCE, HERE, AND NOWHERE ELSE IN THIS COMPONENT. The small (≤512) copy of the
+     artwork is a quarter of the decoded GPU memory the master costs, and nobody can see the
+     difference on a decoration a few hundred screen pixels wide — see shared/renderVariants.js.
+     Shadowing the prop is deliberate: three `useTexture` calls, the relief bake's cache key and the
+     solid geometry's cache key all read `imageUrl` below, and a mix of the two pictures would mean
+     two downloads, two bakes, and a silhouette cut from one resolution wrapped in the other. The
+     PRINT path never comes through here — it reads `element.image_url` (chefsdesk/a4/cutoutSource.js). */
+  const imageUrl = useRenderVariantUrl(masterUrl);
   const texture = useStickerImageTexture(imageUrl, recolor, color, groupColors, printFinish?.saturation, textSlots, textValues);
   const reliefMaps = useReliefMaps(imageUrl, relief);
   const reliefOn = !!(relief && reliefMaps);
@@ -1257,7 +1336,13 @@ function StickerTexture({ imageUrl, curved, curveRadius, foldable, fold, spine, 
       onSeat?.(Math.max(v.seatHalf, MIN_SEAT));
       const w = (v.right ?? 0) - (v.left ?? 0);
       const h = (v.up ?? 0) + (v.down ?? 0);
+      /* The clickable footprint, symmetric about the centre — see `contentFoot`. The GLB path has
+         always reported one (its dense model bounds); this is the same fact for a decal, measured
+         from the artwork's own alpha instead of from a mesh. */
+      const foot = contentFoot(v);
       onVExtent?.({
+        halfW: foot?.halfW ?? null,
+        halfH: foot?.halfH ?? null,
         down: v.down, up: v.up,
         /* ⚠️ `bottom` IS NOT `cy - h/2` ONCE THE PIECE FOLDS, and a butterfly is exactly the piece
            that folds. Standing, its wings hinge up into a V from the spine, so the lowest point
@@ -1568,7 +1653,9 @@ function cleanGlbScene(clone) {
 }
 
 function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, onSeat, onDepth, onVExtent }) {
-  const { scene } = useGLTF(imageUrl);
+  // Pinned while this piece is mounted, given back when the LAST user of this model goes — see
+  // shared/retainedGlb.js. Measured at 16.3MB for one textured topper, none of which came back.
+  const { scene } = useRetainedGlb(imageUrl);
   const clipPlane = useRef(null);
 
   const clonedScene = useMemo(() => {
@@ -1683,6 +1770,14 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     }
     return clone;
   }, [scene, baseRotation, fondant, recolourable, roughness, metalness, surface]);
+  /* ⚠️ THIS PIECE'S OWN COPIES, AND ONLY THIS PIECE'S. Everything above clones: the geometry (always
+     — `cleanGlbScene` does it for every mesh), again for a facing rotation, again for fondant, and
+     the materials so two hearts can be two colours. None of it is shared, so none of it is the
+     cache's to reclaim, and nothing was reclaiming it — measured at two geometries left behind per
+     placement. The maps inside those materials are the CACHED model's and are deliberately not
+     touched; see disposeGlbInstance. Same `() => () => dispose()` shape the recoloured canvas and
+     the five derived geometries in this file already use. */
+  useEffect(() => () => disposeGlbInstance(clonedScene), [clonedScene]);
 
   // Sync clip plane: set, update constant, or clear when clipY becomes undefined.
   useEffect(() => {
@@ -1782,6 +1877,9 @@ function StickerModel({ imageUrl, color, groupColors, gradient, clipY, bendRadiu
     () => (bendRadius ? bendStickerScene(clonedScene, scale, center, bendRadius, seatProud ? seatHalfDepth(depthScaled) : 0) : null),
     [clonedScene, scale, center, bendRadius, depthScaled, seatProud],
   );
+  // Geometry only — the bent copy renders the UNBENT clone's materials, which it does not own and
+  // which are still in use the moment a piece stops hugging a wall. See disposeGlbGeometries.
+  useEffect(() => () => disposeGlbGeometries(bentScene), [bentScene]);
 
   // The rendered model's 3D bounds, measured in the LOCAL frame it renders in — a sibling of the
   // element, so the box inherits its position/facing/tilt/scale for free. A BENT model is measured in
@@ -2159,8 +2257,14 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // Same box rule as the top sticker, from the one helper. A wall element is never base-seated
   // (wallClampY already keeps its whole square on the wall). A GLB narrows the box to its measured
   // dense footprint (tight, non-square); a 2D decal keeps the full square (INVARIANTS #5a).
-  const glbFoot = isGlb && vext?.halfW != null;
-  const hitBox = seatedHitBox({ size: STICKER_SIZE, ...(glbFoot ? { halfW: vext.halfW, halfH: vext.up } : {}) });
+  /* ⚠️ A DECAL'S FOOTPRINT COUNTS NOW, TOO. This was `isGlb && …`, so a 2D image always claimed the
+     whole STICKER_SIZE square — and since the hit plane IS the square, its transparent margin took
+     every click that landed in it and the border drew that fact at full size. Measured on the cake,
+     the margin genuinely stole from neighbours; the box was telling the truth about a region that
+     did not need to be that big. Both now follow the artwork (INVARIANTS #5a, amended with this). */
+  const glbFoot = vext?.halfW != null;
+  const hitBox = seatedHitBox({ size: STICKER_SIZE,
+    ...(glbFoot ? { halfW: vext.halfW, halfH: isGlb ? vext.up : (vext.halfH ?? vext.up) } : {}) });
   // The border sits at the model's MID-depth, not its proud front face: a deep GLB (a bent/proud bow)
   // otherwise floats the flat border ~a full depth off the wall, so orbiting the cake slides it off
   // the decoration. Half-depth keeps the border on the body while still clearing most of it.
@@ -2411,6 +2515,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const [seatHalf, setSeatHalf] = useState(null);
   // A GLB also reports its dense footprint half-WIDTH so the box narrows to a non-square model.
   const [glbHalfW, setGlbHalfW] = useState(null);
+  // A decal's measured half-height, kept beside its half-width for the same reason.
+  const [artHalfH, setArtHalfH] = useState(null);
   /* ⚠️ `artBox`, NOT `glbBox`, AND THE OLD NAME WAS A CLAIM THAT TURNED OUT TO BE FALSE. It held
      the measured bounds of whatever the element actually is: a GLB's Box3, or — since the texture
      path started emitting one — a 2D image's opaque content. Everything that sizes itself from the
@@ -2698,8 +2804,11 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   // The clickable/drawn box. A base-seated element's plane stops at its seat, so the empty strip
   // below its artwork is neither drawn nor clickable — it would otherwise hang inside the cake and,
   // being billboarded toward the camera, win the raycast against the tier behind it.
-  const glbFoot = isGlb2d && glbHalfW != null;
-  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE, ...(glbFoot ? { halfW: glbHalfW, halfH: seatHalf } : {}) });
+  // Same change as the wall: a decal's measured footprint is as real as a model's. `seatHalf` stays
+  // the GLB's height, because a model is seated on its base; a decal's half-height is its artwork's.
+  const glbFoot = glbHalfW != null;
+  const hitBox = seatedHitBox({ standSeat, seatHalf, size: STICKER_SIZE,
+    ...(glbFoot ? { halfW: glbHalfW, halfH: isGlb2d ? seatHalf : (artHalfH ?? seatHalf) } : {}) });
 
   // Shared children: face + toolbar Html + invisible hit mesh
   const innerContent = (e_onDown) => (
@@ -2711,7 +2820,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           and the billboard — see the group below. A pick is short enough that leaning it with its
           decoration is defensible; a wire is not, and it was visibly broken. */}
       {wire ? null : <ElementStick stick={stick} />}
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} clipY={(isStand || isPerch || isVerge || isInsert) ? undefined : py} baseRotation={sticker.baseRotation} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} standUp={(isStand || isPerch || isVerge) && sticker.foldable === true} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={topRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onSeat={setSeatHalf} onVExtent={v => { setGlbHalfW(v?.halfW ?? null); setArtHalfH(v?.halfH ?? null); setArtBox(v?.box ?? null); }} onDepth={setDepth} />
 
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
@@ -3067,7 +3176,7 @@ export function preloadTopper(url) {
 
 function StyleTile({ id, label, glbPath, position, onSelect }) {
   const [px, py, pz] = position;
-  const { scene } = useGLTF(glbPath);
+  const { scene } = useRetainedGlb(glbPath);
 
   const { geo, scale } = useMemo(() => {
     let g = null;
@@ -3304,14 +3413,100 @@ function FrontMarker({ frontZ }) {
  * auto-rotates under the hand, or the pointer leaves the canvas — and without it the drag never
  * ends and the next click continues the old one.
  */
+/* ── Tapping sprinkles on by hand ────────────────────────────────────────────────────
+ *
+ * A scatter answers "cover this surface"; this answers "one, there" — Sandeep: *"we cant add
+ * sprinkles to a specific area on the cake."*
+ *
+ * ⚠️ A MODE, NOT A GESTURE, and the cream pen's note says why: *"a tap is how a baker
+ * deselects, so the wall would fill with strokes nobody asked for."* A stroke can wait for travel
+ * before it commits; a sprinkle has none — the tap IS the whole gesture. So nothing here is live
+ * until the baker turns it on, and the card says how to turn it off.
+ *
+ * ⚠️ THE POINT COMES FROM THE MESH, not from a second ray-test of my own. r3f hands back the
+ * intersection it already computed, and the geometry is the tier's real outline (prism for the
+ * wall, the outline's own cap for the lid), so where the finger lands and where the sprinkle goes
+ * are the same answer by construction — which is exactly what came apart between the hand and the
+ * cream before today.
+ */
+function SprinkleTapTarget({ tier, zone, onPlace }) {
+  const shape = useMemo(() => tierShape(tier), [tier]);
+  const round = isRoundWall(shape);
+  const samples = useMemo(() => (round ? null : wallSamples(shape)), [shape, round]);
+  const side = zone !== 'top_surface';
+  const topY = tier.baseY + tier.height;
+
+  // The wall: the same inflated prism the drag target uses, so the two cannot disagree about where
+  // the cake is reachable.
+  const wallGeo = useMemo(() => (
+    side && samples
+      ? buildOutlinePrism(samples.pts.map(q => ({ x: q.x + q.nx * 0.02, z: q.z + q.nz * 0.02 })), tier.height)
+      : null
+  ), [side, samples, tier.height]);
+  /* The lid: the outline as a flat cap. A big plane would be easier and wrong — it would swallow
+     every tap that missed the cake, including the ones meant to deselect or orbit. */
+  const capGeo = useMemo(() => {
+    if (side) return null;
+    /* ⚠️ BOTH CAPS ARE BUILT THE SAME WAY, and the round one is why. A `<circleGeometry>` in the
+       JSX would have stood UPRIGHT — it is built in XY like THREE.Shape — so the round cake's lid
+       target would have been a disc standing on edge through the middle of the cake, catching taps
+       nowhere near the lid. Same construction, same single rotation, no case to get wrong. */
+    const g = samples
+      ? new THREE.ShapeGeometry(new THREE.Shape(samples.pts.map(q => new THREE.Vector2(q.x, q.z))))
+      : new THREE.CircleGeometry(tier.radius, 64);
+    g.rotateX(Math.PI / 2);          // XY → XZ: the lid lies flat
+    return g;
+  }, [side, samples, tier.radius]);
+  useEffect(() => () => { wallGeo?.dispose(); capGeo?.dispose(); }, [wallGeo, capGeo]);
+
+  const place = e => {
+    e.stopPropagation();             // a tap in this mode places; it does not deselect
+    onPlace?.({ x: e.point.x, y: e.point.y, z: e.point.z });
+  };
+
+  if (side) {
+    return (
+      <mesh position={[0, tier.baseY + tier.height / 2, 0]} onPointerDown={place}>
+        {wallGeo
+          ? <primitive key={wallGeo.uuid} object={wallGeo} attach="geometry" />
+          : <cylinderGeometry args={[tier.radius + 0.02, tier.radius + 0.02, tier.height, 64, 1, true]} />}
+        <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+      </mesh>
+    );
+  }
+  return (
+    <mesh position={[0, topY + 0.004, 0]} onPointerDown={place}>
+      <primitive key={capGeo.uuid} object={capGeo} attach="geometry" />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
+    </mesh>
+  );
+}
+
 function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   const { camera, gl } = useThree();
   const pressed = useRef(false);
   const last = useRef({ x: 0, y: 0 });
   const R = tier.radius + 0.04;   // hit just outside the proud band
+  /* ⚠️ THE TARGET WAS A CYLINDER, IN BOTH HALVES — the invisible mesh the pointer events fire on,
+     AND the maths that turns a click into a place on the wall. On a sheet or a heart that is a
+     circle the cake does not have: the hand draws where the pointer is not, and near a corner the
+     events fire over thin air. `wallSamples` is the tier's own outline, and `wallHitPoint` walks
+     it; both are inflated by the same 0.04 so the target still clears a proud band. */
+  const shape = useMemo(() => tierShape(tier), [tier]);
+  const round = isRoundWall(shape);
+  const samples = useMemo(() => (round ? null : wallSamples(shape)), [shape, round]);
+  /* The prism is built from the SAME samples the ray is tested against, pushed out along each
+     normal — so what the pointer can reach and what the maths answers cannot disagree. */
+  const targetGeo = useMemo(() => (
+    samples ? buildOutlinePrism(samples.pts.map(q => ({ x: q.x + q.nx * 0.04, z: q.z + q.nz * 0.04 })), tier.height) : null
+  ), [samples, tier.height]);
+  useEffect(() => () => targetGeo?.dispose(), [targetGeo]);
 
   const sample = (clientX, clientY, fn) => {
-    const p = cylinderHitPoint(buildRay(clientX, clientY, gl.domElement, camera), R);
+    const ray = buildRay(clientX, clientY, gl.domElement, camera);
+    const p = round
+      ? cylinderHitPoint(ray, R)
+      : wallHitPoint(ray, samples, { baseY: tier.baseY, wallH: tier.height, inflate: 0.04 });
     if (!p || !fn) return;
     let a = Math.atan2(p.z, p.x); if (a < 0) a += Math.PI * 2;
     const frac = Math.max(0, Math.min(1, (p.y - tier.baseY) / tier.height));
@@ -3342,7 +3537,9 @@ function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
         pressed.current = false; onUp?.();
         try { gl.domElement.releasePointerCapture(e.pointerId); } catch (_) {}
       }}>
-      <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />
+      {targetGeo
+        ? <primitive key={targetGeo.uuid} object={targetGeo} attach="geometry" />
+        : <cylinderGeometry args={[R, R, tier.height, 64, 1, true]} />}
       <meshBasicMaterial transparent opacity={0} depthWrite={false} colorWrite={false} side={THREE.DoubleSide} />
     </mesh>
   );
@@ -3396,6 +3593,7 @@ function CakeScene({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   onGypClick,
+  onGrassClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -3409,6 +3607,7 @@ function CakeScene({
   /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
      surface you drag ALONG, and each drag lays one stroke that follows the hand. */
   brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
+  sprinkleHand = null, onSprinklePlace,
   tierDataRef,
 }) {
   // Only what the EDITING surface itself draws (handles, catchers) is read here — everything that is
@@ -3547,6 +3746,70 @@ function CakeScene({
        designer clones a GLB, may upgrade its material class, overrides roughness/metalness from
        placement_config and can attach a clipping plane — and every one of those is invisible from
        the outside. Reading the live material beats reasoning about which branch ran. */
+    /* ⚠️ WHAT THE SCENE COSTS, which is a different question from what it looks like — and the one
+       that decides whether this survives as a phone app. A relief sticker is not one texture: the
+       bake returns a normalMap AND a displacementMap at up to WORK (1024) on the long edge, so a
+       single 1024² decoration can be ~12MB of GPU memory before mipmaps. Reasoning about that from
+       the source gets the arithmetic right and the COUNT wrong, because what is actually resident
+       depends on caching, reuse and what the baker placed. This reads the live scene instead.
+       Bytes are an estimate — w × h × 4, +33% where mipmaps are on — not an allocator reading. */
+    /* ⚠️ WHAT THE RENDERER STILL HOLDS, which is a different question from what the scene shows.
+       `__sceneMemory` walks the scene graph, so a decoration the baker deleted vanishes from it
+       immediately — while its texture may still be resident, because drei's loaders cache by URL
+       and nothing clears that cache on unmount. These two numbers agreeing is the test for "does
+       memory come back when you remove something"; them disagreeing is the leak. */
+    window.__rendererMemory = () => ({ ...gl.info.memory, programs: gl.info.programs?.length ?? null });
+
+    window.__sceneMemory = () => {
+      const seen = new Set();
+      let texCount = 0, texBytes = 0, tris = 0, geos = 0;
+      const byKind = {};
+      scene.traverse((o) => {
+        if (o.geometry && !seen.has('g' + o.geometry.uuid)) {
+          seen.add('g' + o.geometry.uuid); geos++;
+          const n = o.geometry.index ? o.geometry.index.count / 3
+                  : (o.geometry.attributes?.position?.count ?? 0) / 3;
+          tris += n * (o.isInstancedMesh ? (o.count || 1) : 1);
+        }
+        const mats = Array.isArray(o.material) ? o.material : (o.material ? [o.material] : []);
+        for (const m of mats) {
+          for (const k of ['map', 'normalMap', 'displacementMap', 'roughnessMap', 'metalnessMap',
+                           'aoMap', 'emissiveMap', 'alphaMap', 'bumpMap']) {
+            const t = m?.[k], im = t?.image;
+            /* ⚠️ DEDUPED BY SOURCE, NOT BY TEXTURE. `Texture.clone()` copies the wrapper and SHARES
+               `source` (three's `copy()` does `this.source = source.source`), and the renderer
+               uploads per source — so a dozen clones made only to carry different `repeat` values
+               are ONE upload. Counting by `uuid` made the fondant cloud look like 1.7MB per cloud
+               when the balls share a single grain map between them; the first version of this hook
+               said exactly that, and it was the hook that was wrong, not the cloud. */
+            const id = 't' + (t?.source?.uuid ?? t?.uuid);
+            if (!t || !im || seen.has(id)) continue;
+            seen.add(id);
+            const w = im.width || im.naturalWidth || 0, h = im.height || im.naturalHeight || 0;
+            if (!w || !h) continue;
+            texCount++;
+            /* ⚠️ BYTES PER PIXEL COMES FROM THE FORMAT, not from an assumption of RGBA. The
+               displacement map is single-channel (RedFormat) — counting it as 4 bytes reported no
+               saving at all from the change that made it 1, which is a measuring instrument
+               disagreeing with the thing it measures. */
+            const bpp = t.format === THREE.RedFormat ? 1
+                      : t.format === THREE.RGFormat ? 2
+                      : t.format === THREE.RGBFormat ? 3 : 4;
+            const bytes = w * h * bpp * (t.generateMipmaps === false ? 1 : 1.33);
+            texBytes += bytes;
+            byKind[k] = +(((byKind[k] ?? 0) + bytes / 1048576)).toFixed(1);
+          }
+        }
+      });
+      return {
+        textures: texCount,
+        textureMB: +(texBytes / 1048576).toFixed(1),
+        byKind,
+        geometries: geos,
+        trianglesK: +(tris / 1000).toFixed(0),
+        jsHeapMB: performance.memory ? +(performance.memory.usedJSHeapSize / 1048576).toFixed(1) : null,
+      };
+    };
     window.__sceneMaterials = () => {
       const out = [];
       scene.traverse((o) => {
@@ -3671,7 +3934,7 @@ function CakeScene({
           // SHARED renderer — the one the thumbnail also uses (INVARIANTS #2) — and a selection cue
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
-          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick,
+          onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick, onGrassClick,
         }}
       />
       </group>
@@ -3679,6 +3942,13 @@ function CakeScene({
 
       {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
           wants the angle. One component answers both — see WallDragTarget. */}
+      {/* One tap, one sprinkle, on whichever surface the card turned on. */}
+      {sprinkleHand && tierData[sprinkleHand.tierIndex] && (
+        <SprinkleTapTarget
+          tier={tierData[sprinkleHand.tierIndex]}
+          zone={sprinkleHand.zone}
+          onPlace={p => onSprinklePlace?.(p)} />
+      )}
       {brushDraw && tierData[brushDraw.tierIndex] && (
         <WallDragTarget
           tier={tierData[brushDraw.tierIndex]}
@@ -3872,9 +4142,12 @@ const NOOP = () => {};
  * it would leave a dragged stroke's cream behind at the old place.
  */
 function BrushStrokes({ strokes, tier, wallColour, onPick }) {
+  // Same outline the band walks — a stroke drawn by hand and one laid by the band are the same
+  // smear on the same wall, and two answers about where that wall is would show as a seam.
+  const handShape = useMemo(() => tierShape(tier), [tier]);
   const built = useMemo(() => {
     if (!strokes?.length) return [];
-    const bed = makeBrushBed({ R: tier.radius, wallH: tier.height });
+    const bed = makeBrushBed({ R: tier.radius, wallH: tier.height, width: perimeter(handShape).length });
     return strokes.map(st => {
       const common = {
         R: tier.radius,
@@ -3891,18 +4164,18 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
          coordinates in it, so handing it one would be asking the wrong surface how high it is. */
       const geo = (st.surface ?? 'side') === 'top'
         ? buildBrushStrokeOnFlat({
-            ...common, y: tier.baseY + tier.height,
+            ...common, y: tier.baseY + tier.height, shape: handShape,
             path: brushTopPath([st.ax ?? -0.5, st.az ?? 0], [st.bx ?? 0.5, st.bz ?? 0], { bow: st.bow ?? 0 }),
           })
         : buildBrushStrokeOnWall({
-            ...common, baseY: tier.baseY, wallH: tier.height, bed,
+            ...common, baseY: tier.baseY, wallH: tier.height, bed, shape: handShape,
             path: brushGesture({ at: st.at ?? 0, rise: st.rise ?? 0.02, climb: st.climb ?? 0.42,
                                  climbVar: st.climbVar ?? 0, sweep: st.sweep ?? 0, bow: st.bow ?? 0,
                                  seed: st.seed ?? 1 }),
           });
       return geo ? { st, geo: paintBrushColors(geo, st.color ?? '#F6DCE2', wallColour) } : null;
     }).filter(Boolean);
-  }, [strokes, tier.radius, tier.baseY, tier.height, wallColour]);
+  }, [strokes, tier.radius, tier.baseY, tier.height, wallColour, handShape]);
 
   return built.map(({ st, geo }) => (
     <mesh key={st.id} geometry={geo} castShadow receiveShadow
@@ -3916,9 +4189,14 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
 
 function BrushBand({ band, tier, wallColour, onClick = null }) {
   const { gl } = useThree();
+  /* ⚠️ THE TIER'S OWN OUTLINE, not its radius. Without this the band wraps onto a circle of that
+     radius — right on a round cake, and on a sheet or a heart a ring of cream hanging in the air
+     off the corners. `tierShape` is the same answer the piping ring and the stickers already ask
+     for, so all three now walk one outline. */
+  const wallShape = useMemo(() => tierShape(tier), [tier]);
   const parts = useMemo(() => (band ? buildBrushBand({
-    R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, ...band,
-  }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour]);
+    R: tier.radius, baseY: tier.baseY, wallH: tier.height, under: wallColour, shape: wallShape, ...band,
+  }) : null), [band, tier.radius, tier.baseY, tier.height, wallColour, wallShape]);
   if (!parts?.length) return null;
   /* ⚠️ THE BAND TAKES THE POINTER NOW, and it used to raycast to nothing on purpose: "a treatment
      of the whole wall like dusting or foil, not a thing placed on it, so its card is reached from
@@ -3979,6 +4257,9 @@ function CakeContent({ config, scene, edit = null }) {
        build and a green suite. The comment two blocks up records the identical fault for
        onCloudClick, which is how I knew where to look. */
     onGypClick,
+    // Same deal, and for the same reason the note above gives: read HERE or it is undefined at
+    // runtime past a green build. Grass is drawn by the shared renderer too.
+    onGrassClick,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -4022,6 +4303,7 @@ function CakeContent({ config, scene, edit = null }) {
       {boardGrass && board && (
         <GrassPatch
           {...boardGrass}
+          onPick={onGrassClick}
           shape={board}
           topY={0.1}
           patchRadius={board.radius}
@@ -4113,6 +4395,7 @@ function CakeContent({ config, scene, edit = null }) {
               shape={tierShape(tier)}
               topY={tier.baseY + tier.height}
               patchRadius={tier.radius}
+              onPick={onGrassClick}
               {...tier.grass}
             />
           )}
@@ -5131,6 +5414,11 @@ export default function CakeCanvas({
   grassMode = false, grassSelected = null, onGrassMove, onGrassSelect,
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   onGypClick,
+  // ⚠️ FOUR PLACES, as the onGypClick note two hundred lines down records: this signature, the
+  // `edit` object it is packed into, the inner renderer that unpacks it, and the mounts. Added to
+  // one of them, the handler is simply undefined and the tap falls through to whatever is behind
+  // the grass — which deselects, so it looks like the click "does nothing".
+  onGrassClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
@@ -5141,6 +5429,7 @@ export default function CakeCanvas({
   /* Non-null while the baker is drawing their own cream strokes: { tierIndex }. The wall becomes a
      surface you drag ALONG, and each drag lays one stroke that follows the hand. */
   brushDraw = null, onBrushDrawStart, onBrushDrawTo, onBrushDrawEnd,
+  sprinkleHand = null, onSprinklePlace,
 }) {
   const pointerRef  = useRef({ x: 0, y: 0, dragged: false });
   const orbitRef    = useRef();
@@ -5326,6 +5615,8 @@ export default function CakeCanvas({
         creamPaint={creamPaint}
         onCreamPaint={onCreamPaint}
         brushDraw={brushDraw}
+        sprinkleHand={sprinkleHand}
+        onSprinklePlace={onSprinklePlace}
         onBrushDrawStart={onBrushDrawStart}
         onBrushDrawTo={onBrushDrawTo}
         onBrushDrawEnd={onBrushDrawEnd}
@@ -5334,6 +5625,7 @@ export default function CakeCanvas({
         onGypMove={onGypMove}
         onGypSelect={onGypSelect}
         onGypClick={onGypClick}
+        onGrassClick={onGrassClick}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}

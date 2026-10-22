@@ -32,12 +32,19 @@ import { ControlCell } from './ControlCell.jsx';
  * never moves is worse than the slider it replaced. Pass the caller's own formatter; the semantic
  * ones ("flat", "normal", "none", "1.40×") are the reason several of these controls are legible.
  */
-export function DialCell({ label, value, min, max, step, fmt, onChange, dial = 'size' }) {
+/* ⚠️ `symbol` DROPS THE CAPTION AND MARKS THE DIAL INSTEAD — the compact cards' rule, and it only
+   belongs on a dial whose job has a symbol everyone knows: size (the resize arrows) and radial (a
+   span across an edge). Count, Big ones, Finish and Border keep their words, because a bare number
+   with no noun beside another bare number is anybody's guess. Pass `symbol` as a node for a custom
+   mark, or `true` for the dial's own default. */
+export function DialCell({ label, value, min, max, step, fmt, onChange, dial = 'size', symbol = null }) {
   return (
-    <ControlCell label={label}>
+    <ControlCell label={symbol ? null : label}>
       {dial === 'offset'
-        ? <OffsetDial value={value} min={min} max={max} step={step} label={label} fmt={fmt} onChange={onChange} />
-        : <SizeDial size={value} min={min} max={max} step={step} fmt={fmt} onChange={onChange} />}
+        ? <OffsetDial value={value} min={min} max={max} step={step} label={label} fmt={fmt} onChange={onChange}
+                      symbol={symbol === true ? null : symbol} />
+        : <SizeDial size={value} min={min} max={max} step={step} fmt={fmt} onChange={onChange}
+                    symbol={!!symbol} />}
     </ControlCell>
   );
 }

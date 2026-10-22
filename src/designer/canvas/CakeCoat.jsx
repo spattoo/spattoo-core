@@ -1,6 +1,6 @@
 import { useMemo, useRef, useEffect } from 'react';
 import * as THREE from 'three';
-import { useGLTF } from '@react-three/drei';
+import { useRetainedGlb } from '../shared/retainedGlb.js';
 import { extractGeo } from './shellGeo.js';
 import { rosetteSeats, coatScope } from '../geometry/rosetteCoat.js';
 import { silhouette, maxTileStep } from '../geometry/tileCoverage.js';
@@ -155,7 +155,8 @@ export default function CakeCoat(props) {
 }
 
 function CakeCoatImpl({ coat, shp, tierHeight, baseY, rot, softness = 0.7, onCoatClick }) {
-  const { scene } = useGLTF(coat?.glbUrl || '');
+  // '' (no coat on this tier) is left unmanaged by useRetainedGlb — nothing to reclaim.
+  const { scene } = useRetainedGlb(coat?.glbUrl || '');
   const base = useMemo(() => (scene ? extractGeo(scene) : null), [scene]);
 
   const pieceRadius = Math.max(0.05, coat?.size ?? 0.26);

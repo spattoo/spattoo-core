@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward,
+import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward, wallPlacer,
          wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
@@ -1002,5 +1002,119 @@ describe('a stroke on the TOP surface', () => {
     let lo = Infinity;
     for (let i = 0; i < geo.userData.topCount; i++) lo = Math.min(lo, p.getY(i));
     expect(lo).toBeGreaterThan(1.0);     // on the lid, not down the side — this one never reached the rim
+  });
+});
+
+/* ── A cake is not always round ──────────────────────────────────────────────────────────────────
+ *
+ * The band wrapped every stroke onto a circle of the tier's radius. On a round cake that IS the
+ * wall; on a sheet or a heart it is an imaginary cylinder the cake does not have, so the cream hung
+ * in the air off the corners and never touched the flats. Reported from the studio on a sheet cake.
+ */
+describe('a shaped wall', () => {
+  const R = 2;
+  const RECT = { kind: 'rect', halfW: 1.8, halfD: 1.2, cornerR: 0.3 };
+
+  it('walks the real distance round, not 2πR', () => {
+    const round = wallPlacer({ R });
+    const rect  = wallPlacer({ R, shape: RECT });
+    expect(round.length).toBeCloseTo(2 * Math.PI * R, 6);
+    /* 3.6 × 2.4 with 0.3 corners: 2(w+d) − 8r + 2πr = 12 − 2.4 + 1.885 = 11.485. The circle of
+       R = 2 is 12.566 — about 9% longer, which is a band of 30 strokes closing early and leaving
+       bare wall after it. (I first wrote ~10.2 here and the test caught me: the corner arcs give
+       most of the straight length back.) */
+    expect(rect.length).toBeCloseTo(2 * (3.6 + 2.4) - 8 * 0.3 + 2 * Math.PI * 0.3, 3);
+    expect(Math.abs(rect.length - round.length)).toBeGreaterThan(1);
+  });
+
+  it('⚠️ leaves the round case bit-identical — saved cakes must not move', () => {
+    const bare  = wallPlacer({ R });
+    const round = wallPlacer({ R, shape: { kind: 'round', radius: R } });
+    for (const s of [0, 1, 3.3, 7.9, 12]) {
+      const [ax, az] = bare.at(s, 0.05);
+      const [bx, bz] = round.at(s, 0.05);
+      expect(bx).toBeCloseTo(ax, 12);
+      expect(bz).toBeCloseTo(az, 12);
+      // and it is the ORIGINAL formula, not merely self-consistent
+      expect(ax).toBeCloseTo(Math.sin(s / R) * (R + 0.05), 12);
+      expect(az).toBeCloseTo(Math.cos(s / R) * (R + 0.05), 12);
+    }
+  });
+
+  it('puts every point ON the rectangle, never on a circle of R', () => {
+    const rect = wallPlacer({ R, shape: RECT });
+    let touchedFlat = 0;
+    for (let i = 0; i < 200; i++) {
+      const [x, z] = rect.at(rect.length * (i / 200), 0);
+      // inside the rect's own footprint (plus the corner rounding), which a circle of R is not
+      expect(Math.abs(x)).toBeLessThanOrEqual(RECT.halfW + 1e-6);
+      expect(Math.abs(z)).toBeLessThanOrEqual(RECT.halfD + 1e-6);
+      // on the boundary: at least one axis is at its limit, away from the rounded corners
+      const onX = Math.abs(Math.abs(x) - RECT.halfW) < 1e-6;
+      const onZ = Math.abs(Math.abs(z) - RECT.halfD) < 1e-6;
+      if (onX || onZ) touchedFlat++;
+    }
+    expect(touchedFlat).toBeGreaterThan(100);   // most of a rounded rect is flat run
+  });
+
+  it('pushes outward along the wall it is actually on', () => {
+    const rect = wallPlacer({ R, shape: RECT });
+    // front-centre on a rounded rect: the normal there points at +z, so depth moves z and not x
+    const [x0, z0] = rect.at(0, 0);
+    const [x1, z1] = rect.at(0, 0.2);
+    expect(Math.abs(x1 - x0)).toBeLessThan(1e-6);
+    expect(z1 - z0).toBeCloseTo(0.2, 6);
+  });
+
+  it('builds a stroke that lands on a heart, not around it', () => {
+    // A diamond stands in for any outline shape (heart, letter, digit) — same code path.
+    const HEART = { outline: [[0, 1.2], [1.4, 0], [0, -1.2], [-1.4, 0]].map(([x, z]) => ({ x, z })) };
+    const geo = buildBrushStrokeOnWall({
+      R, baseY: 0, wallH: 1, shape: HEART,
+      path: [[0.1, 0.05], [0.14, 0.45]],
+    });
+    expect(geo).toBeTruthy();
+    const pos = geo.getAttribute('position');
+    let maxR = 0, onCircle = 0;
+    for (let i = 0; i < pos.count; i++) {
+      const r = Math.hypot(pos.getX(i), pos.getZ(i));
+      maxR = Math.max(maxR, r);
+      if (Math.abs(r - R) < 0.05) onCircle++;
+    }
+    // The diamond's own reach is 1.4; a stroke wrapped onto R=2 would sit a long way outside it.
+    expect(maxR).toBeLessThan(1.6);
+    expect(onCircle).toBe(0);
+  });
+});
+
+describe('a lid that is not a disc', () => {
+  const R = 2;
+  const RECT = { kind: 'rect', halfW: 1.8, halfD: 1.2, cornerR: 0.3 };
+
+  it('⚠️ keeps a corner of the lid ON the lid', () => {
+    // (1.6, 1.0) is inside a 1.8 × 1.2 sheet — and 1.887 from the centre, PAST R. The old test
+    // ("hypot <= R") called that past the rim and dropped the stroke down a wall that is not there.
+    const geo = buildBrushStrokeOnFlat({
+      R, y: 1, shape: RECT,
+      path: [[1.5 / R, 0.9 / R], [1.6 / R, 1.0 / R]],
+    });
+    expect(geo).toBeTruthy();
+    const pos = geo.getAttribute('position');
+    let lowest = Infinity;
+    for (let i = 0; i < pos.count; i++) lowest = Math.min(lowest, pos.getY(i));
+    expect(lowest).toBeGreaterThan(0.95);          // still up on the lid, not hanging below it
+  });
+
+  it('drapes past the FLAT, not past a circle', () => {
+    // Straight out the front: the rim is at z = 1.2, well inside R = 2.
+    const geo = buildBrushStrokeOnFlat({
+      R, y: 1, shape: RECT,
+      path: [[0, 1.0 / R], [0, 1.6 / R]],
+    });
+    const pos = geo.getAttribute('position');
+    let lowest = Infinity, maxZ = -Infinity;
+    for (let i = 0; i < pos.count; i++) { lowest = Math.min(lowest, pos.getY(i)); maxZ = Math.max(maxZ, pos.getZ(i)); }
+    expect(lowest).toBeLessThan(0.9);              // it fell down the front wall
+    expect(maxZ).toBeLessThan(1.35);               // and stayed against that wall, not out at R
   });
 });

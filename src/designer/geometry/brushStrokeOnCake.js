@@ -4,6 +4,7 @@ import { brushStroke } from './brushStroke.js';
 import { creamAlbedo } from './creamMaterial.js';
 // The band merges into ONE mesh — same function, and the same reasons, as a piped wall.
 import { mergePenGeometries } from './creamPen.js';
+import { perimeter, isRoundWall, topContains, snapToRim, wallFractionAt } from './surface.js';
 
 // ── A brushstroke PAINTED ON the cake ────────────────────────────────────────────────────────────
 //
@@ -671,14 +672,57 @@ export const brushMaxWidth = (len) => Math.max(1e-4, len * BRUSH_WIDTH_OF_LENGTH
  *
  * Returns a BufferGeometry in world space, or null if the gesture was too short to be one.
  */
-export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [], ...opts } = {}) {
+/* ── Where a wall stroke actually lands ──────────────────────────────────────────────────────────
+ *
+ * ⚠️ THIS FILE ASSUMED EVERY CAKE WAS ROUND. `place` wrapped the unrolled gesture onto a CIRCLE —
+ * `sin(θ)·R, cos(θ)·R` with `θ = s / R` — and the unrolled width was `2πR`. On a square or a heart
+ * that paints a band onto an imaginary cylinder: the strokes hang in the air off the corners and
+ * miss the flats entirely. Sandeep, with a sheet cake: *"it works on a round cake, but not on a
+ * different shape. it assumes the cake as round."*
+ *
+ * The cake already knows its own outline. `perimeter(shape)` (geometry/surface.js) walks ANY tier —
+ * circle, rounded rect, heart, a letter, a digit — by ARC LENGTH, and hands back the point and the
+ * outward normal there. It is what the piping ring already uses, so a band and a shell border now
+ * travel the same path round the same cake.
+ *
+ * ⚠️ THE ROUND CASE KEEPS ITS OWN ARITHMETIC, DELIBERATELY, and it is not a micro-optimisation.
+ * `circlePerimeter` starts at +x and runs the other way; this starts at +z (the FRONT) and runs the
+ * other. Both are correct parameterisations and they disagree about where `u = 0` is — so swapping
+ * the round path for the generic one would ROTATE AND MIRROR every band and every hand-drawn stroke
+ * on every saved cake, because `at` is stored per stroke as a fraction of the way round. Identical
+ * maths for round means nothing already designed moves; shaped cakes are new ground, where
+ * front-centre (what `roundedRectPerimeter` starts on) is the honest place to begin.
+ */
+export function wallPlacer({ R = 1, shape = null } = {}) {
+  if (!shape || isRoundWall(shape)) {
+    return {
+      length: 2 * Math.PI * R,
+      at: (s, h = 0) => { const th = s / R, rad = R + h; return [Math.sin(th) * rad, Math.cos(th) * rad]; },
+    };
+  }
+  const per = perimeter(shape);
+  const len = per.length;
+  return {
+    length: len,
+    /* Wrapped, because a gesture may run off the end of the outline and must come back round the
+       seam — the same thing the round path gets for free from sin/cos. */
+    at: (s, h = 0) => {
+      const q = per.at(((s % len) + len) % len);
+      return [q.x + q.nx * h, q.z + q.nz * h];
+    },
+  };
+}
+
+export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [], shape = null, ...opts } = {}) {
   const p = { ...BRUSH_ON_CAKE_DEFAULTS, ...opts };
   if (!(R > 0) || !(wallH > 0) || (path?.length ?? 0) < 2) return null;
 
   /* The gesture is solved FLAT, in the wall's own unrolled surface — arc length across, height up —
      and only then wrapped. Solving it in 3D would mean re-deriving every tear and jag against a
      curve, for a shape that is by definition the same smear wherever it is laid. */
-  const flat = densify(path.map(([u, v]) => [u * Math.PI * 2 * R, v * wallH]), p.rows);
+  const wall = wallPlacer({ R, shape });
+  // `u` is turns-round-the-cake, so it scales by the REAL distance round it — 2πR only when round.
+  const flat = densify(path.map(([u, v]) => [u * wall.length, v * wallH]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
   const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
                                      tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
@@ -697,8 +741,8 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
        the stroke's business and the wall's height is the wall's. */
     place: (sx, y, h) => {
       const yy = Math.min(wallH, Math.max(0, y));
-      const th = sx / R, rad = R + h;
-      return [Math.sin(th) * rad, baseY + yy, Math.cos(th) * rad];
+      const [x, z] = wall.at(sx, h);
+      return [x, baseY + yy, z];
     },
     bedAt: p.bed ? ((sx, y) => p.bed.heightAt(sx, y)) : null,
     bedPut: put,
@@ -740,7 +784,23 @@ export function strokeFacesOutward(geo) {
  * height added along +Y the whole way would bury the draped half inside the cake. The direction
  * rotates across a short band rather than flipping, so the lip rolls over the corner instead of
  * ending in a step. */
-function drapePoint(x, z, h, R, topY) {
+function drapePoint(x, z, h, R, topY, shape = null) {
+  /* ⚠️ THE LID HAS THE SAME ROUND ASSUMPTION THE WALL HAD, and it is quieter: "am I still on the
+     cake" was `hypot(x, z) <= R`, so on a sheet the CORNERS of the lid read as past the rim and a
+     stroke crossing one fell down an edge that is not there, while the middle of each flat — real
+     cake, further out than R on a wide tier — got the same treatment. `topContains` and `snapToRim`
+     are the shape's own answers to both questions, and the whole designer already uses them. */
+  if (shape && !isRoundWall(shape)) {
+    if (topContains(shape, x, z)) return [x, topY + h, z];
+    const rim = snapToRim(shape, x, z);
+    const over = Math.hypot(x - rim.x, z - rim.z);          // how far past the rim it travelled
+    // Outward direction is from the rim point, not from the centre: on a flat run they differ, and
+    // the centre's answer would slide a corner stroke sideways along the wall as it fell.
+    const ux = over > 1e-6 ? (x - rim.x) / over : 0;
+    const uz = over > 1e-6 ? (z - rim.z) / over : 0;
+    const turn = smoothstep(0, 0.09 * R, over);
+    return [rim.x + ux * h * turn, topY - over + h * (1 - turn), rim.z + uz * h * turn];
+  }
   const d = Math.hypot(x, z);
   if (d <= R) return [x, topY + h, z];                     // still on the lid: relief points up
   const th = Math.atan2(x, z);
@@ -755,7 +815,7 @@ function drapePoint(x, z, h, R, topY) {
  * The same stroke, laid on a flat surface — the cake top or the board. `path` is in units of R from
  * the axis, so [-1, 1] spans the tier. A gesture that reaches the rim drapes down the wall.
  */
-export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}) {
+export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], shape = null, ...opts } = {}) {
   const p = { ...BRUSH_ON_CAKE_DEFAULTS, ...opts };
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
   const flat = densify(path.map(([x, z]) => [x * R, z * R]), p.rows);
@@ -769,7 +829,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
     R,
     /* Flat on the lid — and over the rim if the gesture reached it. `drape: false` is the BOARD,
        which has no rim to fall off. */
-    place: (gx, gz, h) => (p.drape === false ? [gx, y + h, gz] : drapePoint(gx, gz, h, R, y)),
+    place: (gx, gz, h) => (p.drape === false ? [gx, y + h, gz] : drapePoint(gx, gz, h, R, y, shape)),
   });
 }
 
@@ -790,10 +850,18 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], ...opts } = {}
  */
 
 /** Where a world-space point sits on the wall, in the two numbers a stroke is authored with. */
-export function wallCoordsOf(point, { baseY = 0, wallH = 1 } = {}) {
+export function wallCoordsOf(point, { baseY = 0, wallH = 1, shape = null } = {}) {
   const x = point?.x ?? 0, y = point?.y ?? 0, z = point?.z ?? 0;
   return {
-    at:   ((Math.atan2(x, z) / (Math.PI * 2)) % 1 + 1) % 1,
+    /* ⚠️ AN ANGLE IS NOT A POSITION ON A SHAPE. `atan2(x, z) / 2π` is where you are round a
+       CIRCLE; on a sheet it compresses the long sides and stretches the short ones, so a hand
+       drawn at even spacing comes out bunched. `wallFractionAt` walks the real outline and is the
+       exact inverse of what the renderer uses to place the stroke. Round keeps the angle, to the
+       digit — `at` is stored per stroke, so a different answer here would move every stroke on
+       every saved cake. */
+    at:   shape && !isRoundWall(shape)
+            ? wallFractionAt(shape, x, z)
+            : ((Math.atan2(x, z) / (Math.PI * 2)) % 1 + 1) % 1,
     rise: wallH > 0 ? (y - baseY) / wallH : 0,
   };
 }
@@ -1011,8 +1079,12 @@ export function brushGesture(opts = {}) {
  * whatever has been painted. It is coarse on purpose — it carries where the cream IS, not its
  * texture, and the stroke's own relief is added on top of what it reads.
  */
-export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256 } = {}) {
-  const w = Math.PI * 2 * R;
+export function makeBrushBed({ R = 1, wallH = 1, cols = 512, rows = 256, width = null } = {}) {
+  /* ⚠️ THE BED WRAPS AT THE SEAM, so it has to be as wide as the wall REALLY is. Left at 2πR on a
+     sheet cake the raster repeats every circumference-of-an-imaginary-circle, so a stroke two
+     thirds of the way round rides on cream laid somewhere else entirely — and the one failure you
+     would never guess from looking, because the strokes themselves would be in the right place. */
+  const w = width ?? Math.PI * 2 * R;
   const h = new Float32Array(cols * rows);
   const wrapC = c => ((c % cols) + cols) % cols;
   const clampR = r => (r < 0 ? 0 : r > rows - 1 ? rows - 1 : r);
@@ -1166,7 +1238,7 @@ export function brushBandCount({ count, colors } = {}) {
  * The parts share ONE bed, so a stroke rides on its neighbour whatever colour that neighbour is. The
  * order they are laid in is the order round the cake, not the order of the parts.
  */
-export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff', ...opts } = {}) {
+export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff', shape = null, ...opts } = {}) {
   const p = { ...BRUSH_BAND_DEFAULTS, ...opts };
   const colors = (p.colors?.length ? p.colors : BRUSH_BAND_DEFAULTS.colors);
   const n = brushBandCount({ count: p.count, colors });
@@ -1178,12 +1250,18 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
      wall of cream, lower it and the cake shows through in stripes. `overlap` is the thing a baker
      actually means — how much each pull shares with the one before it — and the width is what that
      implies. An explicit `width` still wins, for a caller that wants gaps on purpose. */
-  const width = p.width ?? (gap * Math.PI * 2 * (1 + p.overlap));
+  /* ⚠️ AND THE WIDTH FOLLOWS THE DISTANCE ROUND, not 2π. `width` is spent downstream as `width × R`
+     — an arc length — so on a shape it has to be the real perimeter expressed in those units, or
+     the band is cut for a circle the cake does not have: on a sheet, 2πR is shorter than the way
+     round, and the strokes close into a huddle with bare wall after it. Round is unchanged,
+     because length/R IS 2π there. */
+  const wall = wallPlacer({ R, shape });
+  const width = p.width ?? (gap * (wall.length / R) * (1 + p.overlap));
 
   /* ONE bed for the whole band, so a stroke rides on its neighbour, and the last one laid rides over
      the first — which is what happens when a hand goes round a cake and arrives back where it
      started. The bed wraps round the seam already; nothing here has to know where the seam is. */
-  const bed = makeBrushBed({ R, wallH });
+  const bed = makeBrushBed({ R, wallH, width: wall.length });
   /* ⚠️ THE STROKE'S OWN LOOK TRAVELS WITH THE BAND. A band is a way of PLACING strokes, not a second
      kind of stroke, so anything `buildBrushStrokeOnWall` understands — the knife marks, the relief,
      the feather, the dissolve — passes straight through when a caller names it. Without this the
@@ -1204,7 +1282,7 @@ export function buildBrushBand({ R = 1, baseY = 0, wallH = 1, under = '#ffffff',
          closes, and a caller passing `width: null` — which is how "derive it" is spelled — would
          otherwise overwrite that with null and every stroke would come out with no width at all.
          The band's own answers win over anything forwarded. */
-      R, baseY, wallH, bed, ...look, width, weight: p.weight, seed,
+      R, baseY, wallH, bed, shape, ...look, width, weight: p.weight, seed,
       path: brushGesture({ at, seed, rise: p.rise, climb: p.climb, climbVar: p.climbVar,
                            sweep: p.sweep, bow: p.bow }),
     });

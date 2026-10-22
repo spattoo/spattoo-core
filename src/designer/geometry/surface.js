@@ -493,6 +493,52 @@ export function rectSidePlacement(shape, u, off = 0) {
 // still — a dead patch in the drag (movable contract law 2). A ray moves continuously with the angle
 // on any shape its centre can see all of, which every cake shape is. Where a ray crosses more than one
 // ring (a glyph with counters) the OUTERMOST crossing is the wall a decoration sits on.
+/* ── The wall as a ring of points, for anything that has to HIT it ─────────────────────────
+ *
+ * ⚠️ EVERY POINTER GESTURE ON A WALL WAS SOLVED AGAINST A CYLINDER. `cylinderHitPoint` takes a ray
+ * and a RADIUS — no outline anywhere — so on a sheet or a heart the hand was drawing on an
+ * imaginary circle: a stroke started where the pointer was NOT, and `wallCoordsOf` then turned that
+ * point into `atan2(x, z) / 2π`, an angle, which is not where you are round a shape either.
+ *
+ * Sampling the perimeter solves both halves at once and keeps ONE parameterisation: each sample
+ * carries the point, the outward normal AND its arc length, so a ray that hits segment i gets its
+ * `s` for free — no second, inverse function to drift from `perimeter().at()`.
+ *
+ * 256 samples is ~1.4° on a round tier and finer than a corner radius on a sheet; the error in `u`
+ * is under half a percent of the way round, well inside the width of a stroke or a sprinkle.
+ */
+const _wallSamples = new Map();
+
+export function wallSamples(shape, n = 256) {
+  if (!shape) return null;
+  const key = `${shape.kind}|${shape.radius ?? ''}|${shape.halfW ?? ''}|${shape.halfD ?? ''}|${shape.cornerR ?? ''}|${shape.outline?.length ?? 0}|${n}`;
+  const hit = _wallSamples.get(key);
+  if (hit) return hit;
+  const per = perimeter(shape);
+  const pts = [];
+  for (let i = 0; i < n; i++) {
+    const s = (per.length * i) / n;
+    const q = per.at(s);
+    pts.push({ x: q.x, z: q.z, nx: q.nx, nz: q.nz, s });
+  }
+  const out = { pts, length: per.length };
+  _wallSamples.set(key, out);
+  return out;
+}
+
+/** Where (x, z) sits round the wall, as a fraction of the way round. The inverse of `at`, via the
+ *  same samples, so the two cannot disagree about where u = 0 is. */
+export function wallFractionAt(shape, x, z) {
+  const w = wallSamples(shape);
+  if (!w) return 0;
+  let best = 0, bd = Infinity;
+  for (const q of w.pts) {
+    const d = (q.x - x) * (q.x - x) + (q.z - z) * (q.z - z);
+    if (d < bd) { bd = d; best = q.s; }
+  }
+  return w.length > 0 ? ((best / w.length) % 1 + 1) % 1 : 0;
+}
+
 export function perimeterAtAngle(shape, theta, off = 0, samples = 720) {
   const perim = perimeter(shape);
   const dx = Math.cos(theta), dz = Math.sin(theta);

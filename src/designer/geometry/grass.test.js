@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildGrassTuft, grassSeats, grassTriangleCount, nextPatchSpot, GRASS_DEFAULTS } from './grass.js';
+import { buildGrassTuft, grassSeats, grassTriangleCount, nextPatchSpot, buildFieldCap, GRASS_DEFAULTS } from './grass.js';
 
 // ── What is worth asserting about grass ─────────────────────────────────────────────────────────
 // Not that it LOOKS right — no test can tell you that, which is exactly why dev/grass.html exists
@@ -306,5 +306,121 @@ describe('nextPatchSpot', () => {
 
   it('honours the radius it is given for the surface', () => {
     expect(nextPatchSpot([], { v: 0.86, r: 0.5 })).toMatchObject({ v: 0.86, r: 0.5 });
+  });
+});
+
+
+/* ── The flat field a ring of grass encloses ─────────────────────────────────────────────────────
+ * The cricket-cake pattern: a flat green circle with grass piped round its edge, bat and ball and
+ * stumps standing on the flat part. `bandInner` could always make the RING — it hollows the middle
+ * out — but the hollow showed the cake through it, so the middle was whatever colour the tier was.
+ */
+describe('buildFieldCap', () => {
+  const round = { kind: 'round', radius: 2.2 };
+  const sheet = { kind: 'rect', halfW: 2, halfD: 1.2, cornerR: 0.3 };
+  const spanOf = (geo, axis) => {
+    const a = geo.attributes.position.array;
+    let lo = Infinity, hi = -Infinity;
+    for (let i = axis; i < a.length; i += 3) { if (a[i] < lo) lo = a[i]; if (a[i] > hi) hi = a[i]; }
+    return hi - lo;
+  };
+
+  it('fills to a fraction of the tier outline', () => {
+    const cap = buildFieldCap(round, { scale: 0.5 });
+    expect(spanOf(cap, 0)).toBeCloseTo(2.2 * 0.5 * 2, 2);
+  });
+
+  /* ⚠️ THE TIER'S OWN OUTLINE, NOT A CIRCLE — the same call `bandInner` makes, for the same
+     reason: measuring a radius from the centre would put a round patch on a sheet cake instead of
+     a field that follows the edge. A sheet tier gets a sheet of green (INVARIANTS #1). */
+  it('follows the shape of the tier rather than assuming a circle', () => {
+    const cap = buildFieldCap(sheet, { scale: 0.5 });
+    expect(spanOf(cap, 0) / spanOf(cap, 2)).toBeCloseTo(2 / 1.2, 1);
+  });
+
+  it('grows and shrinks with the size the baker sets', () => {
+    const small = spanOf(buildFieldCap(round, { scale: 0.3 }), 0);
+    const big   = spanOf(buildFieldCap(round, { scale: 0.8 }), 0);
+    expect(big).toBeGreaterThan(small * 2);
+  });
+
+  it('faces UP, or it is invisible from the one angle a cake top is seen from', () => {
+    const n = buildFieldCap(round, { scale: 0.5 }).attributes.normal.array;
+    for (let i = 0; i < n.length; i += 3) expect(n[i + 1]).toBe(1);
+    /* ⚠️ ASSERTED FROM THE WINDING ITSELF, not from a remembered rule about which way round
+       counter-clockwise looks in XZ. The first version of this test asserted the opposite sign and
+       failed against a cap the renderer plainly showed — the stored `normal` attribute can say
+       anything, so what matters is the GEOMETRIC normal the winding produces, and that is a cross
+       product with no convention in it. Every face must come out pointing up. */
+    const cap = buildFieldCap(round, { scale: 0.5 });
+    const pos = cap.attributes.position.array, idx = cap.index.array;
+    const P = i => [pos[idx[i] * 3], pos[idx[i] * 3 + 1], pos[idx[i] * 3 + 2]];
+    for (let t = 0; t < idx.length; t += 3) {
+      const [a, b, c] = [P(t), P(t + 1), P(t + 2)];
+      const u = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+      const v = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+      const ny = u[2] * v[0] - u[0] * v[2];          // the +Y component of u x v
+      expect(ny, `triangle ${t / 3} faces up`).toBeGreaterThan(0);
+    }
+  });
+
+  it('is a real indexed buffer — a bare array leaves the index undefined and throws every frame', () => {
+    const cap = buildFieldCap(round, { scale: 0.5 });
+    expect(cap.index?.count).toBeGreaterThan(0);
+    expect(cap.index.count % 3).toBe(0);
+  });
+
+  it('has nothing to build without a size', () => {
+    expect(buildFieldCap(round, { scale: 0 })).toBeNull();
+  });
+});
+
+/* ── The two faults reported after Pitch shipped ────────────────────────────────────────────────
+ * *"it does not have a pointer to popup card. when i click on the grass, it does not open the
+ * popup card"* and *"field size is only changing the grass count. actually it should reduce the
+ * green part along with surrounded grass"*.
+ *
+ * Both are wiring rather than geometry, so they are asserted the way this codebase asserts wiring —
+ * by reading the source, in the absence of a DOM in this test environment. The behaviour itself was
+ * driven in the app: four points on the ring and the field each fire the pick and select the grass,
+ * and the field's green area tracks the dial (14925 → 23553 → 29554 px across its travel).
+ */
+import { readFileSync } from 'node:fs';
+describe('the grass card can be reached by pointing at the grass', () => {
+  const canvas = readFileSync(new URL('../canvas/CakeCanvas.jsx', import.meta.url), 'utf8');
+  const patch  = readFileSync(new URL('../canvas/GrassPatch.jsx', import.meta.url), 'utf8');
+
+  /* ⚠️ FOUR PLACES, and missing one is silent. `onGypClick`'s own note in CakeCanvas records the
+     identical fault: the handler is simply undefined, the tap falls through to whatever is behind
+     the grass, and the selection CLEARS — so it reads as "clicking does nothing" rather than as a
+     missing prop. Build and suite both stay green. */
+  it('is plumbed through every layer, not just the mount', () => {
+    expect(canvas).toMatch(/^\s*onGrassClick,$/m);                 // CakeScene's signature
+    expect(canvas).toMatch(/onGypClick, onGrassClick,/);           // packed into `edit`
+    expect(canvas).toMatch(/onGrassClick=\{onGrassClick\}/);       // forwarded by CakeCanvas
+    expect((canvas.match(/onPick=\{onGrassClick\}/g) ?? []).length).toBe(2);  // tier AND board
+  });
+
+  it('puts the handler on the grass itself and on the field it encloses', () => {
+    expect((patch.match(/onClick=\{onPick \? /g) ?? []).length).toBe(2);
+  });
+});
+
+describe('a pitch ring has an outer edge of its own', () => {
+  const patch = readFileSync(new URL('../canvas/GrassPatch.jsx', import.meta.url), 'utf8');
+
+  /* ⚠️ THIS IS THE DIFFERENCE BETWEEN A PITCH AND A RIM BAND. A band runs from `bandInner` out to
+     the tier's edge, so Field size could only ever change how FAT the grass was — the green was
+     the same size and only the ring grew. Every reference shows the cake's own top OUTSIDE the
+     ring: fondant, then grass, then green. */
+  it('bounds the grass at field + ringWidth rather than at the tier edge', () => {
+    expect(patch).toMatch(/effInset\s*=\s*pitch \? Math\.min\(1, bandInner \+ ringWidth\)/);
+    expect(patch).toMatch(/inset: effInset/);
+  });
+
+  /* Nothing hangs over an edge that is not the cake's — the ring's outer edge is in the middle of
+     the top, where a leaning tuft would be drooping into thin air. */
+  it('refuses overhang on a pitch', () => {
+    expect(patch).toMatch(/effOver\s*=\s*pitch \? 0 : overhang/);
   });
 });

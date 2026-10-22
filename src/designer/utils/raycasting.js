@@ -74,3 +74,52 @@ export function planePoint(ray, plane) {
   const target = new THREE.Vector3();
   return ray.intersectPlane(plane, target) ? { x: target.x, y: target.y, z: target.z } : null;
 }
+
+/* ── The same question, on a cake that is not round ──────────────────────────────────────
+ *
+ * ⚠️ `cylinderHitPoint` IS THE ONLY ANSWER THIS FILE HAD, and a cylinder is not a heart. Every
+ * pointer gesture that lands on a wall — drawing a cream stroke, scraping the icing, and the hand
+ * sprinkles being built on top of this — was solved against a circle of the tier's radius, so on a
+ * sheet the hand drew where the pointer was not.
+ *
+ * The wall is sampled into a ring of points (geometry/surface.js `wallSamples`), each carrying its
+ * arc length, and the ray is tested against the vertical quad standing on each segment. The nearest
+ * hit in front of the camera wins — which is also what makes the BACK of the cake unclickable,
+ * exactly as the cylinder's near-root did.
+ *
+ * It returns `s` as well as the point, so the caller never has to invert the mapping afterwards.
+ */
+export function wallHitPoint(ray, samples, { baseY = 0, wallH = 1, inflate = 0 } = {}) {
+  if (!samples?.pts?.length) return null;
+  const { origin: o, direction: d } = ray;
+  const pts = samples.pts, n = pts.length;
+  let bestT = Infinity, best = null;
+
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    const ax = a.x + a.nx * inflate, az = a.z + a.nz * inflate;
+    const bx = b.x + b.nx * inflate, bz = b.z + b.nz * inflate;
+    const ex = bx - ax, ez = bz - az;
+    // Ray vs the vertical plane through this edge, in plan view: solve for where the ray's
+    // horizontal track crosses the segment.
+    const den = d.x * ez - d.z * ex;
+    if (Math.abs(den) < 1e-12) continue;                       // parallel in plan
+    const t = ((ax - o.x) * ez - (az - o.z) * ex) / den;       // along the ray
+    if (t <= 0 || t >= bestT) continue;
+    const u = Math.abs(ex) > Math.abs(ez)
+      ? (o.x + d.x * t - ax) / ex
+      : (o.z + d.z * t - az) / ez;                             // along the segment
+    if (u < 0 || u > 1) continue;
+    const y = o.y + d.y * t;
+    if (y < baseY || y > baseY + wallH) continue;              // above the rim or below the board
+    bestT = t;
+    const segLen = Math.hypot(b.x - a.x, b.z - a.z);
+    best = {
+      x: o.x + d.x * t, y, z: o.z + d.z * t,
+      // Arc length of the hit: the segment's own start plus how far along it we landed. `b.s` wraps
+      // to 0 on the last segment, so the length is measured rather than subtracted.
+      s: a.s + segLen * u,
+    };
+  }
+  return best;
+}

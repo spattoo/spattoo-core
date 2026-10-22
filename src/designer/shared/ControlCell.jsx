@@ -32,9 +32,14 @@ export function ControlCell({ label, children }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 2, minHeight: 46 }}>
         {children}
       </div>
-      <span style={{ fontSize: 9, fontWeight: 700, color: '#888', minWidth: 26, textAlign: 'center', letterSpacing: 0.3 }}>
-        {label}
-      </span>
+      {/* ⚠️ NO LABEL, NO SPAN. An empty caption still costs its line box, so a row of captionless
+          cells sat 11px taller than it needed to — and the phone card this was built for is squeezed
+          for exactly that reason. The control box keeps the 46px baseline either way. */}
+      {label ? (
+        <span style={{ fontSize: 9, fontWeight: 700, color: '#888', minWidth: 26, textAlign: 'center', letterSpacing: 0.3 }}>
+          {label}
+        </span>
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { smoothPath } from './smoothPath.js';
 
 // ── Tidying a hand-drawn piping line ─────────────────────────────────────────────────────────────
 //
@@ -29,6 +30,139 @@ const EPS = 1e-9;
 
 // Cheap total-least-squares line fit through 2D points. Returns the fitted direction and centroid
 // plus the RMS distance off it, which is what decides whether the customer meant a line at all.
+/* ── WHEN IT IS NEITHER A CIRCLE NOR A LINE ──────────────────────────────────────────────────────
+ * The fallback used to be "hand it back exactly as drawn", which made Auto-correct an all-or-
+ * nothing switch: a run round the rim became a true circle, a near-straight run became a straight
+ * one, and anything with a deliberate curve in it kept every tremor of the hand that drew it.
+ * Sandeep, piping a curved band round a tier: *"auto correction is making the curved piping to a
+ * straight line. here my expectation is a smoother curved path."* Both halves of that are this one
+ * gap — the fit was loose enough to call his curve straight, and when it did not fit there was
+ * nothing between a primitive and the raw jitter.
+ *
+ * ⚠️ RESAMPLE FIRST, THEN CUT CORNERS. Capture reads `getCoalescedEvents()`, so a stroke arrives
+ * with sub-frame samples and its wobble lives at the spacing between them. Chaikin alone cuts the
+ * corner between two samples a fraction of a millimetre apart and barely touches the tremor, while
+ * quadrupling an already dense path. Walking the polyline at an even step is what actually removes
+ * the jitter — and it bounds the point count, which a rope has to sweep.
+ * ⚠️ `smoothPath` IS THE ROUNDING, NOT A SECOND COPY OF IT. It already pins the ends of an open
+ * stroke so a line piped to a point keeps its point, and GarnishStudio already softens with it.
+ */
+/* ⚠️ HOW BENT A RUN MAY BE AND STILL BE "STRAIGHT". This was 0.035 of the path length, and that is
+ * what read Sandeep's curved band as a straight one. The arithmetic: for a path bowed by a sagitta
+ * `h` over a chord `L`, the RMS distance to the best-fit line is about 0.3h — so a 0.035 L ceiling
+ * admits a bow of nearly 0.12 L. A stroke sagging an eighth of its own length is not near-straight
+ * by any reading; it is a curve, and snapping it flattened work somebody meant.
+ * ⚠️ AND RMS ALONE CANNOT TELL A TREMOR FROM A BOW — which is why simply tightening the number was
+ * wrong, and the suite caught it. A hand wobbling 3% of the way down a straight vertical drop and a
+ * deliberate arc bowed 3% produce the SAME residual: one is high-frequency and zero-mean, the other
+ * is the shape itself. Tightening alone kept Sandeep's curve but stopped straightening the wobbly
+ * drop that auto-correct exists for.
+ * ⚠️ SO THE FIT IS MEASURED ON THE SOFTENED PATH, NOT THE RAW ONE. Soften first and the tremor is
+ * gone, so a wobbling straight run reads as straight and snaps; a bow survives softening unchanged,
+ * reads as the curve it is, and is kept — smoothed rather than flattened. The order is the whole
+ * fix. At 0.012 the admitted bow is about 0.04 L, measured on a path with no jitter left in it.
+ * One constant for both surfaces — the wall and the top had the same number written twice, and a
+ * reading of "straight" that differs by surface is not one anybody can predict.
+ */
+const STRAIGHT_RMS = 0.012;
+
+/* ⚠️ HOW SMOOTH IS A CHOICE, NOT A CONSTANT — and it is a SEPARATE choice from Auto-correct.
+ * This shipped welded to the Auto-correct checkbox at one fixed strength, and Sandeep came back
+ * with *"so its still not smooth. can we have a smooth control. so every turn is smooth?"* — two
+ * complaints in one sentence: the one setting was too weak, and there was no way to say so.
+ * `smoothPath`'s own header said this before the control existed: *"CRISP AND SOFT ARE OPPOSITE
+ * INTENTS, which is why this is a separate function and, in the UI, a separate choice rather than
+ * a second checkbox. One control cannot mean both."* Auto-correct decides whether a drawing BECOMES
+ * a circle or a line; Smooth decides how much of the hand comes through. Wanting a steady curve
+ * that is nobody's idea of a circle is an ordinary thing to want, and it used to be unreachable.
+ *
+ * ⚠️ THE SAMPLE STEP IS THE SMOOTHING, MORE THAN THE PASSES ARE. Chaikin cuts the corner between
+ * two samples; if the samples are a hair apart, so is the corner it cuts, and four passes still
+ * leave every tremor in place. Walking the path at a WIDER step is what flattens a wobble, so the
+ * dial moves both and leans on the step: 48 samples down to 14 across its travel.
+ */
+const SMOOTH_MAX_SAMPLES = 48;   // gentlest: a dense, nearly-faithful path
+const SMOOTH_MIN_SAMPLES = 14;   // smoothest: long, even steps — every turn a sweep
+export const SMOOTH_DEFAULT = 0.5;
+
+function softenParams(amount) {
+  const a = Math.max(0, Math.min(1, Number.isFinite(+amount) ? +amount : SMOOTH_DEFAULT));
+  return {
+    a,
+    samples: Math.round(SMOOTH_MAX_SAMPLES - (SMOOTH_MAX_SAMPLES - SMOOTH_MIN_SAMPLES) * a),
+    passes: 2 + Math.round(a * 2),          // 2 at the gentle end, 4 at the smoothest
+  };
+}
+
+// Walk a polyline at an even arc-length step. Ends are kept exactly: a stroke that stops somewhere
+// deliberate must still stop there.
+function resampleUniform(pts, n) {
+  if (pts.length < 3 || n < 2) return pts.slice();
+  const seg = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const d = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
+    seg.push(d); total += d;
+  }
+  if (total < EPS) return pts.slice();
+  const out = [pts[0]];
+  const step = total / (n - 1);
+  let walked = 0, i = 1, acc = 0;
+  for (let k = 1; k < n - 1; k++) {
+    const target = k * step;
+    while (i < pts.length && acc + seg[i - 1] < target) { acc += seg[i - 1]; i++; }
+    if (i >= pts.length) break;
+    const t = seg[i - 1] > EPS ? (target - acc) / seg[i - 1] : 0;
+    out.push([
+      pts[i - 1][0] + (pts[i][0] - pts[i - 1][0]) * t,
+      pts[i - 1][1] + (pts[i][1] - pts[i - 1][1]) * t,
+    ]);
+    walked = target;
+  }
+  out.push(pts[pts.length - 1]);
+  return out;
+}
+
+// A hand-drawn path with its tremor taken out and its own shape left alone.
+function soften(pts, amount) {
+  const { a, samples, passes } = softenParams(amount);
+  if (a <= 0) return pts.slice();            // 0 is OFF: every point exactly where it was drawn
+  /* ⚠️ NEVER MORE SAMPLES THAN WERE DRAWN. Resampling is here to thin a dense coalesced stroke to
+     an even step, not to invent detail: a short deliberate run of twelve points upsampled to
+     forty-eight and then cut would be hundreds of points for a rope to sweep, all of them
+     interpolated from the same twelve. Taking the smaller of the two keeps this a tidy-up and a
+     saving on long strokes, and close to a no-op in cost on short ones. */
+  const n = Math.min(samples, Math.max(8, pts.length));
+  const cut = smoothPath(resampleUniform(pts, n), { passes, closed: false });
+  /* ⚠️ THIN THE TAIL, OR THE LAST JOINT IS THE ONLY ROUGH ONE LEFT. `smoothPath` pins the ends of
+     an open stroke — rightly: a line piped to a point must keep its point — and every pass cuts
+     the final segment again, so the last points converge GEOMETRICALLY onto the end. Measured on a
+     shaky arc: 2.9e-3, 2.5e-3, 2.0e-3 … 3.7e-4, a run of hops around a hundredth of a rope's own
+     thickness. Two things go wrong there. They are below the four decimals a stroke is saved at,
+     so their DIRECTION is mostly rounding error — which is what showed up as 8-13 degrees at the
+     final joint against 3-4 across the whole interior. And a rope swept through segments that
+     short produces its own bad normals.
+     ⚠️ The spacing is judged against the PATH, not against the float grid. A fixed epsilon was
+     tried first and thinned nothing, because 3.7e-4 clears any tolerance small enough to be about
+     floating point; the question is not "are these the same point" but "is this segment short
+     enough to carry no information", and that is only answerable relative to the stroke's own
+     length. The end itself is always kept — thinning its crowd is the whole point, moving it is
+     not. */
+  let L = 0;
+  for (let i = 1; i < cut.length; i++) L += Math.hypot(cut[i][0] - cut[i - 1][0], cut[i][1] - cut[i - 1][1]);
+  const minStep = L / 400;
+  const out = [cut[0]];
+  for (let i = 1; i < cut.length - 1; i++) {
+    const k = out[out.length - 1];
+    if (Math.hypot(cut[i][0] - k[0], cut[i][1] - k[1]) > minStep) out.push(cut[i]);
+  }
+  const last = cut[cut.length - 1];
+  // the drawn end, kept exactly; anything it has swallowed goes
+  while (out.length > 1 && Math.hypot(out[out.length - 1][0] - last[0], out[out.length - 1][1] - last[1]) <= minStep) out.pop();
+  out.push(last);
+  return out;
+}
+
 function fitLine(pts) {
   const n = pts.length;
   let cx = 0, cy = 0;
@@ -102,7 +236,7 @@ function resampleArc(cx, cy, r, a0, a1, n) {
  * @param opts.axis     the cake's centre in world XZ, for snapping a rim border true
  * @returns { points, shape } — shape is 'circle' | 'line' | null (null = untouched)
  */
-export function snapStroke(points, { normal = [0, 1, 0], axis = [0, 0] } = {}) {
+export function snapStroke(points, { normal = [0, 1, 0], axis = [0, 0], smooth = SMOOTH_DEFAULT } = {}) {
   // Too few to have meant anything, or a tap.
   if (!Array.isArray(points) || points.length < 6) return { points, shape: null };
 
@@ -112,14 +246,59 @@ export function snapStroke(points, { normal = [0, 1, 0], axis = [0, 0] } = {}) {
   const upright = Math.abs(n.y) > 0.7;           // a top or a board, versus a wall
 
   return upright
-    ? snapOnFlat(points, axis)
-    : snapOnWall(points, axis);
+    ? snapOnFlat(points, axis, smooth)
+    : snapOnWall(points, axis, smooth);
+}
+
+/* ── Smoothing WITHOUT snapping ──────────────────────────────────────────────────────────────────
+ * What the Smooth dial calls when Auto-correct is off: take the tremor out, change nothing else,
+ * and never turn the drawing into a circle or a bar. Same per-surface handling as the snapper —
+ * on a wall the path is unrolled to (arc-length, height) and rolled back, so every point stays ON
+ * the cake at the radius it was drawn at instead of being smoothed through it. */
+export function softenStroke(points, { normal = [0, 1, 0], axis = [0, 0], smooth = SMOOTH_DEFAULT } = {}) {
+  const { a } = softenParams(smooth);
+  if (a <= 0 || !Array.isArray(points) || points.length < 4) return { points, shape: null };
+
+  const n = new THREE.Vector3().fromArray(normal);
+  if (n.lengthSq() < EPS) n.set(0, 1, 0);
+  n.normalize();
+
+  if (Math.abs(n.y) > 0.7) {                 // a top or a board
+    const meanY = points.reduce((t, p) => t + p[1], 0) / points.length;
+    const soft = soften(points.map(p => [p[0], p[2]]), smooth);
+    if (soft.length < 2) return { points, shape: null };
+    return { points: soft.map(([x, z]) => [+x.toFixed(4), +meanY.toFixed(4), +z.toFixed(4)]), shape: 'smooth' };
+  }
+
+  const r = points.reduce((t, p) => t + Math.hypot(p[0] - axis[0], p[2] - axis[1]), 0) / points.length;
+  if (r < EPS) return { points, shape: null };
+  const raw = points.map(p => Math.atan2(p[2] - axis[1], p[0] - axis[0]));
+  const ang = [raw[0]];
+  for (let i = 1; i < raw.length; i++) {
+    let d = raw[i] - raw[i - 1];
+    while (d > Math.PI) d -= Math.PI * 2;
+    while (d < -Math.PI) d += Math.PI * 2;
+    ang.push(ang[i - 1] + d);
+  }
+  const soft = soften(points.map((p, i) => [ang[i] * r, p[1]]), smooth);
+  if (soft.length < 2) return { points, shape: null };
+  return {
+    points: soft.map(([sArc, y]) => {
+      const t = sArc / r;
+      return [+(axis[0] + Math.cos(t) * r).toFixed(4), +y.toFixed(4), +(axis[1] + Math.sin(t) * r).toFixed(4)];
+    }),
+    shape: 'smooth',
+  };
 }
 
 // ── The cake top (or the board): an honest plane ─────────────────────────────────────────────────
-function snapOnFlat(points, axis) {
-  const flat = points.map(p => [p[0], p[2]]);            // XZ
+function snapOnFlat(points, axis, smooth) {
+  const raw = points.map(p => [p[0], p[2]]);             // XZ
   const meanY = points.reduce((s, p) => s + p[1], 0) / points.length;
+  if (polyLength(raw) < EPS) return { points, shape: null };
+
+  // Everything below asks its questions of the SOFTENED path — see the note on STRAIGHT_RMS.
+  const flat = soften(raw, smooth);
   const L = polyLength(flat);
   if (L < EPS) return { points, shape: null };
 
@@ -166,7 +345,7 @@ function snapOnFlat(points, axis) {
   }
 
   // A line, if it is convincingly one.
-  if (line.rms < L * 0.035) {
+  if (line.rms < L * STRAIGHT_RMS) {
     const proj = flat.map(([x, y]) => (x - line.cx) * line.ux + (y - line.cy) * line.uy);
     const lo = Math.min(...proj), hi = Math.max(...proj);
     const out = [];
@@ -182,14 +361,19 @@ function snapOnFlat(points, axis) {
     return { points: out, shape: 'line' };
   }
 
-  return { points, shape: null };
+  // Neither — so tidy the hand, not the shape. `flat` is already softened.
+  if (flat.length < 2) return { points, shape: null };
+  return {
+    points: flat.map(([x, z]) => [+x.toFixed(4), +meanY.toFixed(4), +z.toFixed(4)]),
+    shape: 'smooth',
+  };
 }
 
 // ── The wall: a cylinder, unrolled ───────────────────────────────────────────────────────────────
 // Straightening in world space would drive the stroke through the cake. Unrolled to
 // (arc-length round the tier, height) a level band, a vertical drop and a diagonal are all one
 // straight-line fit, and rolling back keeps every point ON the wall at the radius it was drawn at.
-function snapOnWall(points, axis) {
+function snapOnWall(points, axis, smooth) {
   const r = points.reduce((s, p) => s + Math.hypot(p[0] - axis[0], p[2] - axis[1]), 0) / points.length;
   if (r < EPS) return { points, shape: null };
 
@@ -202,12 +386,29 @@ function snapOnWall(points, axis) {
     while (d < -Math.PI) d += Math.PI * 2;
     ang.push(ang[i - 1] + d);
   }
-  const flat = points.map((p, i) => [ang[i] * r, p[1]]);   // arc-length across, height up
+  const unrolled = points.map((p, i) => [ang[i] * r, p[1]]);   // arc-length across, height up
+  if (polyLength(unrolled) < EPS) return { points, shape: null };
+  const flat = soften(unrolled, smooth);                                // judged with the tremor already gone
   const L = polyLength(flat);
   if (L < EPS) return { points, shape: null };
 
+  // Rolling a softened path back onto the cylinder keeps every point ON the wall at the radius it
+  // was drawn at, exactly as the straight fit below does — smoothing in world space would cut the
+  // curve through the cake.
+  const rollBack = (pairs) => pairs.map(([sArc, y]) => {
+    const a = sArc / r;
+    return [
+      +(axis[0] + Math.cos(a) * r).toFixed(4),
+      +y.toFixed(4),
+      +(axis[1] + Math.sin(a) * r).toFixed(4),
+    ];
+  });
+
   const line = fitLine(flat);
-  if (line.rms > L * 0.035) return { points, shape: null };
+  if (line.rms > L * STRAIGHT_RMS) {
+    if (flat.length < 2) return { points, shape: null };
+    return { points: rollBack(flat), shape: 'smooth' };   // `flat` is already softened
+  }
 
   const proj = flat.map(([x, y]) => (x - line.cx) * line.ux + (y - line.cy) * line.uy);
   const lo = Math.min(...proj), hi = Math.max(...proj);
@@ -225,4 +426,25 @@ function snapOnWall(points, axis) {
     ]);
   }
   return { points: out, shape: 'line' };
+}
+
+
+/* ── Re-deriving a stroke that is already on the cake ────────────────────────────────────────────
+ * ⚠️ THE SMOOTHING HAS TO BE RE-DOABLE, or the control that sets it is dead on arrival. It was
+ * applied once at commit and baked into the stored points, which is right for stability — a stroke
+ * must redraw identically forever — but it meant the Smooth dial could only ever describe the NEXT
+ * stroke. Sandeep moved it with a line on the cake in front of him and nothing happened:
+ * *"smooth has no impact. its a dead control."* He was right, and in the way that matters: this is
+ * INVARIANTS #11, a control and the thing it changes never on screen together.
+ * So the DRAWN points are kept on the stroke as `raw`, and this is the one function that turns
+ * them into rendered points — at commit, and again every time the dial moves. One path, so a
+ * re-smoothed stroke is identical to one drawn at that setting rather than merely similar.
+ */
+// `shapeStroke`, not `strokePoints` — `strokeMove.js` already owns that name for reading a
+// stroke's points, and two functions called the same thing in one folder is a trap for the next
+// person, not a naming preference.
+export function shapeStroke(raw, { normal = [0, 1, 0], axis = [0, 0], smooth = SMOOTH_DEFAULT, autoShape = false } = {}) {
+  if (!Array.isArray(raw) || raw.length < 2) return raw;
+  const opts = { normal, axis, smooth };
+  return (autoShape ? snapStroke(raw, opts) : softenStroke(raw, opts)).points;
 }

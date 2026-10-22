@@ -1,6 +1,15 @@
 import { describe, it, expect, vi } from 'vitest';
 import { strokeOutline, cutoutPaths, elementSources } from './cutoutSource.js';
 import { outlineMm } from '../../designer/geometry/traceOutline.js';
+import { registerRenderVariants, __resetRenderVariants } from '../../designer/shared/renderVariants.js';
+
+/* Records every url the print path reaches for. There is no image decoder here, so the load throws
+   after recording — which is enough: the question is WHICH picture an edible sheet asks for, not
+   whether node can decode it. */
+const asked = [];
+vi.mock('../../orders/framePhoto.js', () => ({
+  loadImage: async (url) => { asked.push(url); throw new Error('no decoder in this environment'); },
+}));
 
 // A recording 2D context. The drawing is the product here — a template whose lines are wrong is
 // wrong in a way no screenshot review catches — so the test asserts on what was actually issued.
@@ -124,5 +133,37 @@ describe('elementSources refuses to trace a calendar', () => {
 
   it('an ordinary element with no artwork is still just empty, not an error', async () => {
     await expect(elementSources({ id: 'x', name: 'Lion' })).resolves.toEqual([]);
+  });
+});
+
+
+/* ── A PRINT IS ALWAYS MADE FROM THE MASTER ──────────────────────────────────────────────────────
+ *
+ * The 3D cake is textured from a ≤512 copy of a decoration's artwork when one exists — a quarter of
+ * the GPU memory (designer/shared/renderVariants.js, api migration 132). The A4 sheet must not be.
+ * It exports at 300 dpi, so 1024 px is 87 mm of printed decoration; printing the small copy would
+ * halve that with no error, no warning and nothing to look at — the sheet would render, the baker
+ * would print it, and the first sign would be a soft-looking cake.
+ *
+ * It is held here rather than trusted to a comment because the two paths LOOK alike and the
+ * tempting shortcut — resolving inside `corsUrl()`, which every image load already goes through —
+ * would break exactly this and pass every other test in the repo.
+ */
+describe('the print sheet is made from the master, never the render copy', () => {
+  it('asks for image_url even when a smaller render copy is registered', async () => {
+    __resetRenderVariants();
+    asked.length = 0;
+    registerRenderVariants([{
+      image_url:  'https://cdn.test/elements/files/2D/abc.png',
+      render_key: 'https://cdn.test/elements/files/2D/abc-512.webp',
+    }]);
+
+    const el = { id: 'e1', name: 'Lion', image_url: 'https://cdn.test/elements/files/2D/abc.png' };
+    await expect(elementSources(el)).rejects.toThrow();
+
+    expect(asked).toHaveLength(1);
+    expect(asked[0]).toContain('abc.png');
+    expect(asked[0]).not.toContain('-512');
+    __resetRenderVariants();
   });
 });
