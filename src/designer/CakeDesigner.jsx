@@ -8223,6 +8223,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * ⚠️ NOT AWAITED. Selection must not wait on a network call; the row appears when the catalogue
      * lands, which is the same behaviour every other catalogue-backed control already has. */
     loadElementsIfNeeded();
+    /* ⚠️ THE TIER CARD ALWAYS OPENS AT LEVEL 1. `cardSub` is keyed `tier-<index>` and nothing was
+     * clearing it, so Pattern → Done → tap the tier again reopened INSIDE Pattern: the doors were
+     * gone and the only way back to Colour or Frosting was the crumb. Sandeep: "i click on done now.
+     * card closes and am back on full canvas. now if i click again on the tier, i expect level1 card.
+     * but it opens level2 card (pattern)." A closed card keeps no state; the level the baker left is
+     * not a preference, it is where one errand ended.
+     * The decoration stack and the piping stack each already do this on their own header — same
+     * line, same comment — because a sub-card belongs to an OPEN card. This is the tier's door. */
+    setCardSub(null);
     // Clicking the already-selected tier toggles it off; otherwise the tier becomes the sole selection.
     const isSame = selectedEl?.type === 'tier' && selectedEl.index === i;
     selectExclusive(isSame ? null : { type: 'tier', index: i });
@@ -19580,7 +19589,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <button style={isMobile ? s.doneBtn : s.iconBtn}
                           aria-label={isMobile ? 'Done editing' : 'Close'}
                           onClick={() => {
-                    if (tierPanelVisible) setSelectedEl(null);
+                    /* Done closes the card from ANY level — the crumb above is the way back to
+                       level 1, so this one is unambiguous. It drops the sub-card too: a closed
+                       card holds no sub-state. handleTierClick is what actually fixes the reopen
+                       (it is the only door in, so it is the only one that must clear); this is the
+                       same rule stated at the other edge, so the stale key never outlives the card
+                       that owns it. */
+                    if (tierPanelVisible) { setCardSub(null); setSelectedEl(null); }
                     else { setColorOpen(false); }
                   }}>{isMobile ? 'Done' : '✕'}</button>
                 </div>
