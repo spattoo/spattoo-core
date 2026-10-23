@@ -236,6 +236,16 @@ to `../spattoo-core/src/index.js` when both repos are checked out side by side, 
 live on the admin dev server immediately. Deployed admin still runs the vendored tarball, so the
 entry only reaches a browser elsewhere after `npm run release`.
 
+⚠️ **AND IT MEANS ADMIN RELOADS ON EVERY SAVE IN THIS REPO.** The alias makes vite watch core's
+working tree, so somebody editing core makes admin unusable for anybody trying to work in it —
+Sandeep: *"i am not able to work in admin as long as you are working on something."* The answer is
+**`npm run dev:frozen`** in admin: the alias is dropped, the vendored tarball resolves instead, and
+core is not watched at all. Admin then runs the last RELEASED designer and sits still. Both modes
+announce which designer they are running at startup, because a dev server quietly on a different
+designer from the one on disk is the trap this is meant to solve, not a second one.
+Measured: a touch in `src/designer/shared/` logs an hmr update on `npm run dev` and nothing at all
+on `dev:frozen`.
+
 ## Gates
 
 `npm run verify` runs them all: `bindings`, `paths`, `fonts`, `cors`, `hooks`, `movable`, `narrow`,
