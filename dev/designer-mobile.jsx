@@ -883,6 +883,52 @@ CAT_ELEMENTS.push({
  * Both rows are the LIVE catalogue rows — the same GLB through vite's /cdn proxy, and the same
  * placement_config, `r` and insert — so what happens here is what happens on a baker's cake.
  * Reachable only with ?leafrose=1 (two 800KB models is not something every run should fetch). */
+/* ⚠️ `?groups=1` — A GLB WITH RECOLOURABLE PART GROUPS, which nothing here could show.
+ *
+ * The "Customise colours" swatches (`_model.groups`, one per editable part) are the whole point of
+ * the Recompose Studio, and no fixture in this harness carried them — so the one place that mounts
+ * the real designer at phone width could not render the control at all. That is exactly how it
+ * shipped broken on mobile and right on desktop: a `decorEl` card built its swatches into
+ * `regionCtls` and then had nowhere to put them, and no harness could show the difference.
+ *
+ * ⚠️ IT IS A SINGLE-PER-SLOT TOPPER ON PURPOSE. `placement_config.top_surface.mode` + one slot is
+ * what makes `handleStickerSelect` open a `decorEl` card rather than a `sticker` one, and the bug
+ * lived ONLY on the decorEl path. A fixture that selected as a sticker would have reproduced the
+ * working case and proved nothing — the same trap `?cream=1` above records for the cream row.
+ *
+ * The model is the gingko leaf (already cached by ?leafrose) with groups bolted on: this fixture is
+ * about the CARD, not the mesh, and the swatches recolour by `userData.group` whether or not the GLB
+ * has meshes carrying those names. */
+const GROUPS_EL = PARAMS.has('groups');
+if (GROUPS_EL) {
+  CAT_ELEMENTS.push({
+    id: 'e60', name: 'Grouped topper', description: 'a GLB with three editable part groups',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/9e471701-bc50-48d0-bb8c-b4e414501205.glb',
+    thumbnail_url: CAT_THUMB('#7a2c1a'), thumb_key: null,
+    allowed_zones: ['top_surface'],
+    allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+    placement_config: {
+      r: 2, scale: { max: 8, min: 1, step: 0.25 }, ready_made: true,
+      top_surface: { mode: 'stand' },
+      /* ⚠️ THIS ONE KEY IS WHY THE FIXTURE REPRODUCES ANYTHING. `single_per_slot` is what
+         `isMultiSlotEl` reads, which is what makes a tap open a `decorEl` card instead of a
+         `sticker` one — and the missing swatches were decorEl-only. Without it the fixture selects
+         as a sticker, the swatches appear on both layouts, and the run reports a passing bug. */
+      single_per_slot: true,
+      // The shape admin's Recompose Studio writes (lib/glb.js `modelFromParts`): one entry per
+      // customer-facing control, `editable` deciding whether it becomes a swatch at all.
+      _model: { source: 'glb-read', groups: [
+        { key: 'Hair',  label: 'Hair',  editable: true,  default: '#7a2c1a' },
+        { key: 'Dress', label: 'Dress', editable: true,  default: '#5e144b' },
+        { key: 'Tail',  label: 'Tail',  editable: true,  default: '#42d8bd' },
+        { key: 'Skin',  label: 'Skin',  editable: false, default: '#f8be9f' },
+      ] },
+    },
+    default_color: null, sort_order: 60,
+  });
+}
+
 const LEAF_ROSE = PARAMS.has('leafrose');
 if (LEAF_ROSE) {
   CAT_ELEMENTS.push({
@@ -1189,7 +1235,7 @@ const STUBS = {
     ? [{ id: 'cat-messages', name: 'Messages', slug: 'messages', sort_order: 0, element_type_id: 'et-writing' }]
     : PARAMS.has('cream')
     ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
-    : (PARAMS.has('football') || PARAMS.has('catalog'))
+    : (PARAMS.has('football') || PARAMS.has('catalog') || GROUPS_EL)
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' },
        // The balloon's real home (migration 127), so the harness reaches it the way a customer does.
        { id: 'cat-party', name: 'Party & shapes', slug: 'party-shapes', sort_order: 1, element_type_id: 'et-topper' }] : []),
@@ -1232,7 +1278,7 @@ const STUBS = {
     placement_config: { second_cream: { lift: 0.04, noise: 0.05, fill_side: 'below', height: 0.5,
                                         height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
     default_color: '#D98BA6', sort_order: 0,
-  }] : PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
+  }] : (PARAMS.has('catalog') || GROUPS_EL) ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,

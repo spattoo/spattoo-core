@@ -13098,9 +13098,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          (every instance of the element shares it) rather than any one slot's — so there is no other
          row for it to sit on once the card is one line. */
       if (compact) colourInChooser = true;
+      /* ⚠️ THE PART-GROUP SWATCHES RIDE HERE TOO, AND THEY WENT MISSING FOR WANT OF THIS.
+       *
+       * Sandeep: *"when there are colorable parts in a glb, those colors pickers show up in the card
+       * popup. this is happening in desktop popup as expected, but not happening in mobile view."*
+       *
+       * `regionCtls` is built above for BOTH card types, but it was only ever consumed in the
+       * compact row of the `sticker` branch — and that branch is gated on `c.resize && el.type ===
+       * 'sticker'`, which a decorEl never satisfies: its `c` is built fresh as `{ stick }` alone.
+       * So a hero GLB with Hair/Dress/Tail computed its swatches, had nowhere to put them, and
+       * dropped them on the floor. Desktop was unaffected because the non-compact path pushes its
+       * own `recolor-groups` group, which is gated on the type and not on `c`.
+       *
+       * ⚠️ CONCATENATED, NOT CHOSEN BETWEEN, AND THEY CANNOT BOTH BE FULL. `hasColourControl`
+       * requires `!editGroups.length` — a whole-element wheel beside per-part swatches is two
+       * controls for one job, which is the duplicate the comment below already records. So exactly
+       * one of these is ever non-empty; spreading both is what keeps that true without a second
+       * place deciding which. */
       groups.push({ key: 'place', divider: true, controls: [
         elementPlacementChooser(elementById.get(elId),
-          compact ? { compact: true, leading: supportDoor, trailing: colourCtls } : {}),
+          compact ? { compact: true, leading: supportDoor, trailing: [...regionCtls, ...colourCtls] } : {}),
       ] });
       /* ⚠️ Colour, which this card simply never offered.
        *
