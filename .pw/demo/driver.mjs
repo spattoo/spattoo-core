@@ -24,6 +24,9 @@
  * to. A script written against exact text works on one width and silently misses on the other.
  */
 
+import { spatulaFramePath } from '../../src/shared/spatulaPath.js';
+import { RAIL } from '../../src/shared/rail.js';
+
 const EASE_MS = 650;      // how long the pointer takes to cross; slower reads as deliberate
 const SETTLE  = 450;      // after a click, before the next move — lets the UI land
 
@@ -129,10 +132,55 @@ export async function openDemo(page, { touch = false } = {}) {
 
     async zoomOut() { await page.evaluate(() => window.__spattooDemo.reset()); },
 
+    /* ── Scene changes, cut with the app's own spatula ──────────────────────────────────────────
+     *
+     * `wipe()` sweeps it across and leaves; `scene(fn)` covers the frame, runs `fn` behind it, and
+     * uncovers — so a jump between two unrelated parts of the app never shows the seam.
+     *
+     * ⚠️ THE OUTLINE IS IMPORTED, NEVER REDRAWN. `spatulaFramePath` and `RAIL` are the rail's own,
+     * reached through the package the same way a studio reaches them. A transition carrying its
+     * own copy of the shape is the drift INVARIANTS #15 warns about: re-tune the rail and the
+     * wipe keeps sweeping last year's spatula across the screen.
+     */
+    async wipe(opts = {})  { await page.evaluate(o => window.__spattooDemo.wipe(o), { ...spatula(), ...opts }); },
+    async scene(fn, opts = {}) {
+      await page.evaluate(o => window.__spattooDemo.cover(o), { ...spatula(), ...opts });
+      await fn();
+      await page.evaluate(o => window.__spattooDemo.uncover(o), { angle: -12, ...opts });
+      await page.waitForTimeout(520);
+    },
+
     async hold(ms) { await page.waitForTimeout(ms); },
     async showCursor(on) { await page.evaluate(v => window.__spattooDemo.show(v), on); },
   };
   return api;
+}
+
+/* The rail's silhouette, built from the rail's own measurements — see `wipe` above for why this
+   is imported rather than copied. Cached: the numbers never change within a run. */
+let _spatula = null;
+export function spatula(h = 760) {
+  if (_spatula) return _spatula;
+  /* ⚠️ THE Y GEOMETRY IS DERIVED FROM THE RAIL'S HEIGHT, NOT STORED ON `RAIL`. The rail computes
+     capTopY, bladeBotY, bladeFullY and shoulderY from the window it is drawn in — only the X
+     measurements (blade, grip, neck, nose, hole) are constants. These four lines are the same
+     arithmetic CakeDesigner does, against a nominal height, because a transition has no rail to
+     measure. The X numbers, which are the ones that were fitted to a photograph and are pinned by
+     spatulaPath.test.js, still come from the shared `RAIL`. */
+  const W = RAIL.svgW, handleHalf = 30;
+  const capTopY    = 8;
+  const bladeBotY  = h - 12;
+  const bladeFullY = bladeBotY - 194;
+  const shoulderY  = bladeFullY - 65;
+  const d = spatulaFramePath({
+    W, handleHalf, bladeHalf: RAIL.bladeHalf, capTopY,
+    lShoulderY: shoulderY, rShoulderY: shoulderY, bladeFullY, bladeBotY,
+    lCornerH: 7, lCornerW: 37, rCornerH: 90, rCornerW: 77,
+    noseHalf: RAIL.noseHalf, gripHalf: RAIL.gripHalf, gripY: RAIL.gripY, neckHalf: RAIL.neckHalf,
+    holeY: RAIL.holeY, holeRx: RAIL.holeRx, holeRy: RAIL.holeRy,
+  });
+  _spatula = { d, viewBox: `0 0 ${W} ${bladeBotY}` };
+  return _spatula;
 }
 
 /* The two shapes every product video is cut in. The phone one is already vertical, so the same

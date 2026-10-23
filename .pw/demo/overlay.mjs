@@ -106,6 +106,91 @@ export function installOverlay({ touch }) {
       return new Promise(r => setTimeout(r, 800));
     },
     show(on) { cursor.style.opacity = on && !state.touch ? '1' : '0'; },
+
+    /* ── The spatula wipe ───────────────────────────────────────────────────────────────────────
+     *
+     * A scene change made with the app's own object: the rail's silhouette sweeps across the frame
+     * like a spatula spreading icing, and the next shot is behind it.
+     *
+     * ⚠️ IT DRAWS THE SHIPPED OUTLINE, NOT A DRAWING OF IT. The `d` comes from `spatulaFramePath`
+     * with the rail's own measured numbers, handed in by the driver — the same single source the
+     * rail renders from and `dev/spatula-menu.html` tunes. CLAUDE.md states the rule for studios
+     * and it is the same rule here: carrying a copy of a shape is how the copy drifts from the
+     * thing it is supposed to be. If the rail is ever re-tuned, this transition follows it.
+     *
+     * ⚠️ `fillRule="evenodd"`, because the hang hole is a subpath of the same `d`. Without it the
+     * wipe paints straight over the hole and stops being recognisable as a spatula at all —
+     * spatulaPath.js warns about exactly this.
+     */
+    wipe({ d, viewBox, ms = 900, colour = '#141414', angle = -12 }) {
+      return new Promise(done => {
+        const host = document.createElement('div');
+        host.style.cssText = `position:fixed; inset:0; pointer-events:none; z-index:2147483646;
+                              overflow:hidden;`;
+        // Tall and wide enough that the blade covers the frame corner-to-corner while tilted.
+        const span = Math.hypot(innerWidth, innerHeight) * 1.25;
+        host.innerHTML = `<svg viewBox="${viewBox}" preserveAspectRatio="none"
+             style="position:absolute; top:50%; left:0; width:${span}px; height:${span}px;
+                    transform-origin:center; will-change:transform;">
+             <path d="${d}" fill="${colour}" fill-rule="evenodd"/></svg>`;
+        const svg = host.firstChild;
+        document.documentElement.appendChild(host);
+        const from = -span * 1.1, to = innerWidth + span * 0.15;
+        const t0 = performance.now();
+        const ease = t => 1 - Math.pow(1 - t, 3);          // easeOutCubic — a confident push
+        (function step(now) {
+          const t = Math.min(1, (now - t0) / ms), k = ease(t);
+          svg.style.transform = `translate(${from + (to - from) * k}px, -50%) rotate(${angle}deg)`;
+          if (t < 1) requestAnimationFrame(step);
+          else { host.remove(); done(); }
+        })(t0);
+      });
+    },
+
+    /* Half a wipe: sweep in and STOP, covering the frame. The driver changes the scene behind it
+       and calls `uncover()`. Two halves rather than one call with a callback, because what happens
+       between them is Playwright's work, not the page's. */
+    cover({ d, viewBox, ms = 500, colour = '#141414', angle = -12 }) {
+      return new Promise(done => {
+        const host = document.createElement('div');
+        host.id = '__demo_wipe';
+        host.style.cssText = `position:fixed; inset:0; pointer-events:none; z-index:2147483646;
+                              overflow:hidden;`;
+        const span = Math.hypot(innerWidth, innerHeight) * 1.25;
+        host.innerHTML = `<svg viewBox="${viewBox}" preserveAspectRatio="none"
+             style="position:absolute; top:50%; left:0; width:${span}px; height:${span}px;
+                    transform-origin:center; will-change:transform;">
+             <path d="${d}" fill="${colour}" fill-rule="evenodd"/></svg>`;
+        const svg = host.firstChild;
+        document.documentElement.appendChild(host);
+        // Far enough right that the BLADE — the wide end — is what covers the frame.
+        const from = -span * 1.1, to = innerWidth - span * 0.42;
+        const t0 = performance.now();
+        const ease = t => 1 - Math.pow(1 - t, 3);
+        (function step(now) {
+          const t = Math.min(1, (now - t0) / ms), k = ease(t);
+          svg.style.transform = `translate(${from + (to - from) * k}px, -50%) rotate(${angle}deg)`;
+          t < 1 ? requestAnimationFrame(step) : done();
+        })(t0);
+      });
+    },
+    uncover({ ms = 500, angle = -12 } = {}) {
+      return new Promise(done => {
+        const host = document.getElementById('__demo_wipe');
+        if (!host) return done();
+        const svg = host.firstChild;
+        const span = Math.hypot(innerWidth, innerHeight) * 1.25;
+        const from = innerWidth - span * 0.42, to = innerWidth + span * 0.15;
+        const t0 = performance.now();
+        const ease = t => t * t;                            // accelerate away, so it clears fast
+        (function step(now) {
+          const t = Math.min(1, (now - t0) / ms), k = ease(t);
+          svg.style.transform = `translate(${from + (to - from) * k}px, -50%) rotate(${angle}deg)`;
+          if (t < 1) requestAnimationFrame(step);
+          else { host.remove(); done(); }
+        })(t0);
+      });
+    },
   };
   return true;
 }
