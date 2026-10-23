@@ -37,3 +37,43 @@ describe('headerBrandParts — what the header actually draws', () => {
     }
   });
 });
+
+// ── The face the name is set in ────────────────────────────────────────────────────────────────
+// It was hardcoded to Pacifico in two places while FONT_THEMES carried a `brandFont` token that all
+// three themes set to the same value — so the token existed and the lever behind it did not.
+import { BRAND_FONTS, DEFAULT_BRAND_FONT, brandFontCss, brandFontKey, applyFontTheme, FONT_THEMES }
+  from '../storefront/storefrontKit.js';
+
+describe('brandFont — the bakery name is the baker\'s type, not ours', () => {
+  const withFont = k => ({ storefront_customizations: { brand_font: k } });
+
+  it('defaults to the face every font theme already named, so nothing published changes', () => {
+    expect(brandFontKey({})).toBe(DEFAULT_BRAND_FONT);
+    expect(brandFontCss({})).toBe(BRAND_FONTS.pacifico.css);
+    for (const t of Object.values(FONT_THEMES)) expect(t.brandFont).toBe(BRAND_FONTS.pacifico.css);
+  });
+
+  it('returns the chosen face', () => {
+    for (const f of Object.values(BRAND_FONTS)) expect(brandFontCss(withFont(f.key))).toBe(f.css);
+  });
+
+  it('falls back rather than emitting a family nothing loaded', () => {
+    expect(brandFontCss(withFont('comic-sans'))).toBe(BRAND_FONTS.pacifico.css);
+    expect(brandFontKey(withFont('comic-sans'))).toBe(DEFAULT_BRAND_FONT);
+  });
+
+  // Every face has to be one the host app self-hosts (SEC-WEB-7) — a family nobody loaded renders
+  // as a system fallback and reads as a bug rather than a choice.
+  it('offers only families the baker app loads', () => {
+    const loaded = ['Pacifico', 'Parisienne', 'Shantell Sans', 'Cormorant Garamond', 'Lora', 'Montserrat', 'Quicksand'];
+    for (const f of Object.values(BRAND_FONTS)) {
+      const family = f.css.match(/^'([^']+)'/)?.[1];
+      expect(loaded).toContain(family);
+    }
+  });
+
+  it('a baker overrides their theme, and no baker leaves every existing call alone', () => {
+    expect(applyFontTheme({}, 'montserrat').brandFont).toBe(BRAND_FONTS.pacifico.css);
+    expect(applyFontTheme({}, 'montserrat', withFont('lora')).brandFont).toBe(BRAND_FONTS.lora.css);
+  });
+});

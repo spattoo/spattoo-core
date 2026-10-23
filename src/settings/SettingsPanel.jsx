@@ -4,7 +4,7 @@ import ThemePreview from '../storefront/ThemePreview.jsx';
 import { RailSkinSection } from './RailSkinSection.jsx';
 // SEC-CORE-4 — same pure helper the storefront renders through, so the input and
 // the sink can never disagree about what a valid handle is.
-import { normalizeIgHandle } from '../storefront/storefrontKit.js';
+import { normalizeIgHandle, BRAND_FONTS, brandFontCss, brandFontKey } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { HEADER_BRAND, headerBrandMode, headerBrandParts } from '../shared/headerBrand.js';
 import Chip from '../shared/Chip.jsx';
@@ -190,6 +190,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   // disagree about what a stored choice means.
   const headerMode  = headerBrandMode(profile);
   const headerParts = headerBrandParts(profile, !!logoSrc);
+  const brandFont   = brandFontCss(profile);
+  const brandKey    = brandFontKey(profile);
   const [loading,  setLoading]  = useState(false);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
@@ -464,7 +466,7 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                            style={{ maxHeight: 40, maxWidth: 120, objectFit: 'contain', flexShrink: 0 }} />
                     )}
                     {headerParts.name && (
-                      <div style={{ fontFamily: "'Pacifico', cursive", fontWeight: 400, fontSize: 20,
+                      <div style={{ fontFamily: brandFont, fontWeight: 400, fontSize: 20,
                                     color: '#333', lineHeight: 1.2, overflowWrap: 'break-word', minWidth: 0 }}>
                         {profile?.name || 'My Bakery'}
                       </div>
@@ -490,6 +492,38 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                     </div>
                   )}
                 </Field>
+
+                {/* ── The face the name is set in ────────────────────────────────────────────────
+                    ⚠️ EACH OPTION IS SET IN THE FACE IT OFFERS, with the baker's OWN name in it —
+                    not a label reading "Fine script" in the panel's font. A type choice is made by
+                    looking, and "Parisienne" means nothing to a baker who has not seen it. Same
+                    rule as the preview above (INVARIANTS #11), applied to the control itself.
+
+                    Hidden when the name is not on screen: with "Logo only" chosen there is no
+                    wordmark for a face to apply to, and a live row of options that change nothing
+                    is the dead-control problem. */}
+                {headerParts.name && (
+                  <Field label="Name font" hint="How your bakery's name is written.">
+                    <div style={{ display: 'flex', gap: 8, marginTop: 4, flexWrap: 'wrap' }}>
+                      {Object.values(BRAND_FONTS).map(f => (
+                        <button key={f.key} type="button" title={f.label}
+                          onClick={() => setProfile(pr => ({
+                            ...pr,
+                            storefront_customizations: { ...(pr?.storefront_customizations ?? {}), brand_font: f.key },
+                          }))}
+                          style={{
+                            fontFamily: f.css, fontSize: 17, lineHeight: 1.35, color: INK,
+                            padding: '7px 13px', borderRadius: 10, cursor: 'pointer',
+                            maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                            background: brandKey === f.key ? '#EDF3EE' : '#fff',
+                            border: `1.5px solid ${brandKey === f.key ? INK : '#DDE6DF'}`,
+                          }}>
+                          {profile?.name || 'My Bakery'}
+                        </button>
+                      ))}
+                    </div>
+                  </Field>
+                )}
 
                 {/* The two brand colours on one row — they are chosen together and read as a pair. */}
                 <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', columnGap: 12 }}>

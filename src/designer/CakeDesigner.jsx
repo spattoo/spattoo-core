@@ -59,6 +59,7 @@ import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
 import { headerBrandParts } from '../shared/headerBrand.js';
+import { brandFontCss } from '../storefront/storefrontKit.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
@@ -4474,6 +4475,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // What this header draws — the mark, the name, or both. One accessor for both headers and for the
   // settings control, so they cannot disagree about what a stored choice means.
   const brandParts = headerBrandParts(bakerData, !!logoSrc);
+  // The bakery's name is the one piece of type in the app that belongs to the baker, so the face is
+  // theirs too. One reader, shared with the settings preview and the storefront.
+  const brandFont  = brandFontCss(bakerData);
 
   // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
   // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
@@ -17178,7 +17182,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               <img src={logoSrc} alt="" style={brandParts.name ? s.topLogoImgPaired : s.topLogoImg} />
             )}
             {brandParts.name && (
-              <div style={{ ...s.topLogoText, fontSize: nameFontSize(bakerData?.name ?? '') }}>
+              <div style={{ ...s.topLogoText, fontFamily: brandFont,
+                            fontSize: nameFontSize(bakerData?.name ?? '') }}>
                 {bakerData?.name ?? 'My Bakery'}
               </div>
             )}
@@ -17277,7 +17282,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  style={brandParts.name ? s.desktopLogoImgPaired : s.desktopLogoImg} />
           )}
           {brandParts.name && (
-            <div style={{ ...s.topLogoText, ...s.desktopLogoText }}>{bakerData?.name ?? 'My Bakery'}</div>
+            <div style={{ ...s.topLogoText, ...s.desktopLogoText, fontFamily: brandFont }}>
+              {bakerData?.name ?? 'My Bakery'}
+            </div>
           )}
           }
         </div>
