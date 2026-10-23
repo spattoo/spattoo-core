@@ -4,10 +4,13 @@ import { HEADER_BRAND, DEFAULT_HEADER_BRAND, headerBrandMode, headerBrandParts }
 const withMode = m => ({ storefront_customizations: { header_brand: m } });
 
 describe('headerBrandMode — seeded in code, overlaid from the DB', () => {
-  it('defaults to both, which is what an unwritten row and an older client both get', () => {
+  // The studio's default is the NAME: the logo's home is the storefront, which is logo-wins by its
+  // own design. It also avoids both failures at once — an unreadable badge, and a wordmark logo
+  // printing the bakery's name twice.
+  it('defaults to the name, which is what an unwritten row and an older client both get', () => {
     expect(headerBrandMode(undefined)).toBe(DEFAULT_HEADER_BRAND);
-    expect(headerBrandMode({})).toBe(HEADER_BRAND.BOTH);
-    expect(headerBrandMode({ storefront_customizations: {} })).toBe(HEADER_BRAND.BOTH);
+    expect(headerBrandMode({})).toBe(HEADER_BRAND.NAME);
+    expect(headerBrandMode({ storefront_customizations: {} })).toBe(HEADER_BRAND.NAME);
   });
 
   it('reads a stored choice', () => {
@@ -21,8 +24,12 @@ describe('headerBrandMode — seeded in code, overlaid from the DB', () => {
 });
 
 describe('headerBrandParts — what the header actually draws', () => {
-  it('shows the mark and the name by default', () => {
-    expect(headerBrandParts({}, true)).toEqual({ logo: true, name: true });
+  it('shows the name by default, even when a logo exists', () => {
+    expect(headerBrandParts({}, true)).toEqual({ logo: false, name: true });
+  });
+
+  it('a baker who wants their mark on their own workbench can have it', () => {
+    expect(headerBrandParts(withMode(HEADER_BRAND.BOTH), true)).toEqual({ logo: true, name: true });
   });
 
   it('honours logo-only and name-only', () => {

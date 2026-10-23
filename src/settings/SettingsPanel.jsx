@@ -454,8 +454,8 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                     ⚠️ THE PREVIEW IS THE REAL THING, NOT A DESCRIPTION OF IT (INVARIANTS #11): a
                     control and what it changes have to be on screen together, and "Logo only"
                     versus "Logo and name" is precisely a question you answer by looking. */}
-                <Field label="In the header"
-                       hint="Your logo, your bakery's name, or both — this is how they appear at the top of the app and your storefront.">
+                <Field label="At the top of the app"
+                       hint="Your bakery's name, your logo, or both. Your storefront always leads with your logo — this is just how it looks while you work.">
                   <div style={{
                     display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
                     padding: '8px 12px', marginTop: 4, borderRadius: 12,
@@ -473,9 +473,11 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
-                    {[[HEADER_BRAND.BOTH, 'Logo and name'],
-                      [HEADER_BRAND.LOGO, 'Logo only'],
-                      [HEADER_BRAND.NAME, 'Name only']].map(([value, label]) => (
+                    {/* Name first, because it is the default here — a row of options should read in
+                        the order a baker meets them, not in the order the enum was written. */}
+                    {[[HEADER_BRAND.NAME, 'Name only'],
+                      [HEADER_BRAND.BOTH, 'Logo and name'],
+                      [HEADER_BRAND.LOGO, 'Logo only']].map(([value, label]) => (
                       <Chip key={value} label={label} active={headerMode === value}
                             onClick={() => setProfile(pr => ({
                               ...pr,
