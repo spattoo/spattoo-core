@@ -20,7 +20,10 @@ export const STUBS = {
   fetchBakerProfile:  async () => ({ baker: {
     name: 'Sample Bakery', slug: 'sample', tagline: 'Baked fresh, every day',
     story: '', primary_color: '#2C4433', accent_color: '#6B8C74',
-    logo_url: null, portrait_url: null, instagram_handle: 'samplebakery',
+    /* ⚠️ A LOGO, AND A BADGE ONE. The "In the header" control exists because a round mark with the
+       name set inside it cannot be read at header size — with `logo_url: null` the control renders
+       inert ("upload a logo to use these") and the one thing it is for cannot be looked at here. */
+    logo_url: '/feelings-flavours-logo.png', portrait_url: null, instagram_handle: 'samplebakery',
     website_url: '', storefront_published: true, storefront_theme_id: 1,
     storefront_customizations: {},
   } }),

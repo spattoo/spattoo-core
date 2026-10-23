@@ -6,6 +6,8 @@ import { RailSkinSection } from './RailSkinSection.jsx';
 // the sink can never disagree about what a valid handle is.
 import { normalizeIgHandle } from '../storefront/storefrontKit.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
+import { HEADER_BRAND, headerBrandMode, headerBrandParts } from '../shared/headerBrand.js';
+import Chip from '../shared/Chip.jsx';
 import { dockedPage, dockedBleed } from '../shared/rail.js';
 import { PanelBackArrow, PanelDismiss } from '../shared/panelTopBar.jsx';
 import { CameraIcon, UploadsIcon, CopyIcon } from '../shared/icons.jsx';
@@ -184,6 +186,10 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
   // Preview the logo the way every surface actually renders it — trimmed of its transparent
   // margin. Must stay above the `if (!open) return null` below, or the hook order changes.
   const logoSrc = useTrimmedLogo(logoPreview ?? profile?.logo_url);
+  // One accessor, shared with both app headers, so the preview here and the real header cannot
+  // disagree about what a stored choice means.
+  const headerMode  = headerBrandMode(profile);
+  const headerParts = headerBrandParts(profile, !!logoSrc);
   const [loading,  setLoading]  = useState(false);
   const [saving,   setSaving]   = useState(false);
   const [error,    setError]    = useState(null);
@@ -296,6 +302,12 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
         tagline:          profile.tagline,
       };
       if (profile.storefront_theme_id != null) profilePayload.storefront_theme_id = profile.storefront_theme_id;
+      /* ⚠️ MERGED, NEVER REPLACED. storefront_customizations is one jsonb object shared with the
+         storefront customiser (its hero image lives in there too), and the API writes whatever it
+         is sent. Sending only this key would silently drop everything else the baker had set. */
+      if (profile.storefront_customizations) {
+        profilePayload.storefront_customizations = profile.storefront_customizations;
+      }
       if (logoFile && apiClient.getSignedUploadUrl) {
         const ext = logoFile.name.split('.').pop();
         const filename = `${crypto.randomUUID()}.${ext}`;
@@ -427,6 +439,55 @@ export default function SettingsPanel({ open, onClose, apiClient, primaryColor =
                   </label>
                   {logoFile && (
                     <div style={{ fontSize: 11, color: '#9BB5A2', marginTop: 6 }}>{logoFile.name}</div>
+                  )}
+                </Field>
+
+                {/* ── What the header shows ──────────────────────────────────────────────────────
+                    A logo used to REPLACE the bakery's name. That suits a wordmark and fails a
+                    BADGE — a round mark with the name set inside it, which is what most bakers
+                    upload. Measured on a real one: its name block is 43.3% of the badge, so in a
+                    56px header the two lines share 24px and neither reads. Beside real text the
+                    mark does not have to: it is an icon, and the name is type.
+
+                    ⚠️ THE PREVIEW IS THE REAL THING, NOT A DESCRIPTION OF IT (INVARIANTS #11): a
+                    control and what it changes have to be on screen together, and "Logo only"
+                    versus "Logo and name" is precisely a question you answer by looking. */}
+                <Field label="In the header"
+                       hint="Your logo, your bakery's name, or both — this is how they appear at the top of the app and your storefront.">
+                  <div style={{
+                    display: 'flex', alignItems: 'center', gap: 12, minHeight: 56,
+                    padding: '8px 12px', marginTop: 4, borderRadius: 12,
+                    background: '#F4F8F5', border: '1px solid #E3ECE5',
+                  }}>
+                    {headerParts.logo && logoSrc && (
+                      <img src={logoSrc} alt=""
+                           style={{ maxHeight: 40, maxWidth: 120, objectFit: 'contain', flexShrink: 0 }} />
+                    )}
+                    {headerParts.name && (
+                      <div style={{ fontFamily: "'Pacifico', cursive", fontWeight: 400, fontSize: 20,
+                                    color: '#333', lineHeight: 1.2, overflowWrap: 'break-word', minWidth: 0 }}>
+                        {profile?.name || 'My Bakery'}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+                    {[[HEADER_BRAND.BOTH, 'Logo and name'],
+                      [HEADER_BRAND.LOGO, 'Logo only'],
+                      [HEADER_BRAND.NAME, 'Name only']].map(([value, label]) => (
+                      <Chip key={value} label={label} active={headerMode === value}
+                            onClick={() => setProfile(pr => ({
+                              ...pr,
+                              storefront_customizations: { ...(pr?.storefront_customizations ?? {}), header_brand: value },
+                            }))} />
+                    ))}
+                  </div>
+                  {/* Says WHY the choice is inert rather than leaving a row of chips that appear to
+                      do nothing — a baker with no logo always gets their name, or the header would
+                      be empty. */}
+                  {!logoSrc && (
+                    <div style={{ fontSize: 11, color: '#9BB5A2', marginTop: 6 }}>
+                      Upload a logo to use these — until then the header shows your name.
+                    </div>
                   )}
                 </Field>
 

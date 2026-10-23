@@ -36,9 +36,16 @@ const PARAMS = new URLSearchParams(location.search);
 // exercises the overflow.
 const BAKER_NAME = PARAMS.get('name') || 'Sample Bakery';
 const LOGO_PARAM = PARAMS.get('logo');
+/* `?logo=` takes a URL as well as the two named shapes, because the header's whole question is what
+   SHAPE a logo is: a wide wordmark carries its own name and a round badge hides it at header size.
+   Both stand-ins here are local files, so a real baker's badge could not be looked at without one. */
 const LOGO_SRC = LOGO_PARAM === 'none' ? null
                : LOGO_PARAM === 'wide' ? '/sample-logo-wordmark.png'
+               : /^https?:\/\//i.test(LOGO_PARAM ?? '') ? LOGO_PARAM
                : '/feelings-flavours-logo.png';
+/* `?header=both|logo|name` seeds bakers.storefront_customizations.header_brand, so the three
+   treatments can be driven and compared without a settings round-trip. */
+const HEADER_BRAND_PARAM = PARAMS.get('header');
 
 /* ⚠️ ?catalog=1 — SEVERAL element types, which is the only way to see the picker's grouping.
  *
@@ -1134,6 +1141,7 @@ const STUBS = {
       // the text is a different size again. A harness that can only show one of the three is how a
       // branch goes unlooked-at for months.
       logo_url: LOGO_SRC, storefront_published: true,
+      storefront_customizations: HEADER_BRAND_PARAM ? { header_brand: HEADER_BRAND_PARAM } : {},
       // ⚠️ A catalogue author, so the reel recorder is REACHABLE here. It is gated on this flag, and
       // a harness that cannot reach a state hides every bug in it — this feature shipped three times
       // before anybody could see it, twice with a defect that one load of this page would have

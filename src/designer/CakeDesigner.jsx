@@ -58,6 +58,7 @@ import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITIN
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
+import { headerBrandParts } from '../shared/headerBrand.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
 import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
@@ -4470,6 +4471,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // by height — so that margin is spent out of the height budget and the mark reads small. Trimmed
   // once per URL at render, which fixes existing logos without a re-upload or a backfill.
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
+  // What this header draws — the mark, the name, or both. One accessor for both headers and for the
+  // settings control, so they cannot disagree about what a stored choice means.
+  const brandParts = headerBrandParts(bakerData, !!logoSrc);
 
   // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
   // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
@@ -17167,12 +17171,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {isMobile && (
         <div style={s.mobileHeader}>
           <div style={s.topLogo}>
-            {logoSrc
-              ? <img src={logoSrc} alt="" style={s.topLogoImg} />
-              : <div style={{ ...s.topLogoText, fontSize: nameFontSize(bakerData?.name ?? '') }}>
-                  {bakerData?.name ?? 'My Bakery'}
-                </div>
-            }
+            {/* Same rule as the desktop row, with the mark pulled in: this bar is 52 tall and shares
+                its width with the bell, the credits pill and the profile, so a full-height logo
+                beside the name would take room from controls that have nowhere to go. */}
+            {brandParts.logo && (
+              <img src={logoSrc} alt="" style={brandParts.name ? s.topLogoImgPaired : s.topLogoImg} />
+            )}
+            {brandParts.name && (
+              <div style={{ ...s.topLogoText, fontSize: nameFontSize(bakerData?.name ?? '') }}>
+                {bakerData?.name ?? 'My Bakery'}
+              </div>
+            )}
           </div>
           {/* flexShrink: 0 — these are fixed-size tap targets. Without it the cluster is what
               collapses when the name is long, and the credits pill silently squeezes to nothing. */}
@@ -17258,9 +17267,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // top is offset by the past-due bar when it is showing: this element is out of flow, so it
         // is the ONE thing in `page` that a new first child does not push down. See PAST_DUE_BAR_H.
         <div style={{ ...s.desktopLogo, top: (pastDue ? PAST_DUE_BAR_H : 0) }}>
-          {logoSrc
-            ? <img src={logoSrc} alt="" style={s.desktopLogoImg} />
-            : <div style={{ ...s.topLogoText, ...s.desktopLogoText }}>{bakerData?.name ?? 'My Bakery'}</div>
+          {/* ⚠️ THE MARK AND THE NAME ARE DIFFERENT JOBS, so the header can carry both. A badge logo
+              — a round mark with the name set inside it, which is what most bakers upload — is not
+              legible at any size a header can give it. Shown beside real text it does not have to
+              be: it is an icon, read by shape and colour, and the name is type. See
+              shared/headerBrand.js for the measurements and the default. */}
+          {brandParts.logo && (
+            <img src={logoSrc} alt=""
+                 style={brandParts.name ? s.desktopLogoImgPaired : s.desktopLogoImg} />
+          )}
+          {brandParts.name && (
+            <div style={{ ...s.topLogoText, ...s.desktopLogoText }}>{bakerData?.name ?? 'My Bakery'}</div>
+          )}
           }
         </div>
       )}
@@ -22125,7 +22143,9 @@ const s = {
   // rule. Centred, every one of them sits in the middle of the row by construction.
   desktopLogo: {
     position: 'absolute', top: 0, left: RAIL.padLeft + RAIL.width + 16, height: DESKTOP_HEADER_H, zIndex: 6,
-    display: 'flex', alignItems: 'center', pointerEvents: 'none',
+    // `gap` does the spacing when the mark and the name are both drawn, and costs nothing when only
+    // one of them is — so neither branch needs its own margin.
+    display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none',
   },
   desktopHeaderRule: {
     position: 'absolute', left: RAIL.padLeft + RAIL.width, right: 0, height: DESKTOP_HEADER_H,
@@ -22145,7 +22165,7 @@ const s = {
   // `minWidth: 0` is what lets it: a flex item will not shrink below its content width without it,
   // and the ellipsis would never appear.
   topLogo: {
-    display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+    display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 9,
     flexShrink: 1, minWidth: 0, maxWidth: '100%',
   },
   // 40 not 34: off-flow the desktop logo no longer competes with the rail for height, and
@@ -22155,6 +22175,10 @@ const s = {
   // The desktop header's logo. Separate from topLogoImg for the same reason desktopLogoText is
   // separate from topLogoText: the two rows are not the same problem. See DESKTOP_LOGO_MAX_H.
   desktopLogoImg: { maxHeight: DESKTOP_LOGO_MAX_H, maxWidth: 280, objectFit: 'contain', display: 'block' },
+  // The mark when the NAME is beside it: smaller, because the two share one row and the name is now
+  // carrying the legibility. 32 on a phone keeps the 52px bar's controls their width.
+  topLogoImgPaired: { maxHeight: 32, maxWidth: 120, objectFit: 'contain', display: 'block', flexShrink: 0 },
+  desktopLogoImgPaired: { maxHeight: 48, maxWidth: 180, objectFit: 'contain', display: 'block', flexShrink: 0 },
   // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
   // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
   // ⚠️ NEVER TRUNCATED. This is the bakery's identity, and the same name their customers meet coming
