@@ -17286,7 +17286,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               {bakerData?.name ?? 'My Bakery'}
             </div>
           )}
-          }
         </div>
       )}
 
