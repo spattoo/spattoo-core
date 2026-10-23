@@ -1196,6 +1196,19 @@ const STUBS = {
     },
     user: { firstName: 'Asha', lastName: 'Otto' },
   }),
+  /* ⚠️ `?credits=1` — THE CREDITS PILL, and without it the desktop header's right-hand cluster
+     cannot be looked at with its real contents. CreditsPill renders NOTHING unless this answers
+     with `active` and a number ("an empty pill in the header is worse than no pill"), so the Proxy's
+     empty shape means every screenshot of that row has been a row with one item in it. That is how
+     a layout question about the cluster gets answered against a picture of half of it — which
+     happened on 2026-10-23, mocking where the bakery name should sit.
+     `?credits=low` drops it under the escalation threshold, because the pill changes colour at
+     70/90/100 and the crowded case is the coloured one. */
+  fetchAiCredits:      async () => (PARAMS.has('credits')
+                        ? { active: true, unlimited: false,
+                            spendable: PARAMS.get('credits') === 'low' ? 12 : 240,
+                            usedPct:   PARAMS.get('credits') === 'low' ? 94 : 32 }
+                        : {}),
   fetchBakerSettings:  async () => ({ delivery: { home_delivery: true, radius_km: 10 }, lead_time_days: 2 }),
   /* ⚠️ The reel entitlements are BOTH switchable, because they are separate questions and each has
    * a branch nobody could otherwise look at:
