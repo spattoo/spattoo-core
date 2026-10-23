@@ -3097,11 +3097,24 @@ export function nameFontSize(name = '') {
  *  so this cannot grow without that header growing with it. */
 const HEADER_LOGO_MAX_H = 40;
 
+/** The same, on DESKTOP, where the row is not fighting a bell, a credits pill and a profile for
+ *  width — and where 40 was never a judgement about desktop at all. It was mobile's number, shared
+ *  because one style served both headers, and the note above says so.
+ *
+ *  ⚠️ IT IS A BADGE LOGO THAT EXPOSES THIS, NOT A WORDMARK. Capping by height suits a mark that is
+ *  wide and short: it spends its budget on width, of which there are 240. A round badge spends 40
+ *  of 240 and then has nowhere to put the rest of itself. Measured on a real one (Velvet & Vanilla,
+ *  640×640): its name block is 43.3% of the badge, so at 40 the two lines share 17.3px — about 8px
+ *  each, which is not reading at any size. At 56 they share 24.2px. Beside it, a baker with NO logo
+ *  gets their name set in Pacifico at 26px, so the branded header was the one that looked unfinished
+ *  — the exact inversion desktopLogoText was written to fix, reappearing from the other side. */
+const DESKTOP_LOGO_MAX_H = 56;
+
 /** The desktop header row. DERIVED from the logo cap plus even breathing room, never picked: at a
  *  hand-chosen 52 a max-height logo sat 14 from the top and ended at 54, pushing its own mark two
  *  pixels through the rule that is supposed to contain it. Tie the two together and the biggest
  *  logo a baker can upload still lands inside the row. */
-const DESKTOP_HEADER_H = HEADER_LOGO_MAX_H + 24;
+const DESKTOP_HEADER_H = DESKTOP_LOGO_MAX_H + 24;
 
 const MOBILE_BAR_H = 56;
 
@@ -17246,7 +17259,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         // is the ONE thing in `page` that a new first child does not push down. See PAST_DUE_BAR_H.
         <div style={{ ...s.desktopLogo, top: (pastDue ? PAST_DUE_BAR_H : 0) }}>
           {logoSrc
-            ? <img src={logoSrc} alt="" style={s.topLogoImg} />
+            ? <img src={logoSrc} alt="" style={s.desktopLogoImg} />
             : <div style={{ ...s.topLogoText, ...s.desktopLogoText }}>{bakerData?.name ?? 'My Bakery'}</div>
           }
         </div>
@@ -22139,6 +22152,9 @@ const s = {
   // most uploads carry transparent padding, so a chunk of this box is margin, not mark.
   // Capped at 40 rather than higher because mobileHeader shares this and is only 52 tall.
   topLogoImg: { maxHeight: HEADER_LOGO_MAX_H, maxWidth: 240, objectFit: 'contain', display: 'block' },
+  // The desktop header's logo. Separate from topLogoImg for the same reason desktopLogoText is
+  // separate from topLogoText: the two rows are not the same problem. See DESKTOP_LOGO_MAX_H.
+  desktopLogoImg: { maxHeight: DESKTOP_LOGO_MAX_H, maxWidth: 280, objectFit: 'contain', display: 'block' },
   // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
   // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
   // ⚠️ NEVER TRUNCATED. This is the bakery's identity, and the same name their customers meet coming
