@@ -200,6 +200,10 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 export { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
          ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS } from './designer/geometry/sand.js';
 export { default as SandBed } from './designer/canvas/SandBed.jsx';
+/* A chosen AREA on the surface — deliberately its own module and its own export, because the next
+   thing poured into one is cream, not sand (region.js, "THIS IS NOT A SAND FEATURE"). */
+export { REGION_KINDS, REGION_DEFAULTS, regionRing, ringBounds, ringDepth, ringInradius, shapeExtent,
+         regionSeatShape } from './designer/geometry/region.js';
 
 /* ── The pen's own stamp renderer, so a studio can calibrate the WALL ─────────────────────────────
  *

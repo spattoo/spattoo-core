@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize,
          ZONES_TOP, SAND_DEFAULTS } from '../geometry/sand.js';
+import { regionRing, regionSeatShape, ringDepth, ringInradius, shapeExtent, surfaceDepth } from '../geometry/region.js';
 import { useSeatedInstances, useSurfaceSeats, outwardBand } from './useSeatedInstances.js';
 
 /* ── A drift of sand banked around the foot of a cake ────────────────────────────────────────────
@@ -39,6 +40,11 @@ export default function SandBed({
      difference, so this component never branches on the zone beyond handing it over. */
   zone = 'board',
   size = null,
+  /* ⚠️ A REGION OVERRIDES THE ZONE'S OWN SPAN, it does not combine with it. "Sand in this triangle"
+     and "sand over 62% of the top" are two answers to the same question, and letting both apply at
+     once gives an intersection nobody asked for — a triangle mysteriously clipped to a disc. The
+     zone still decides WHICH SURFACE the sand sits on; the region decides the patch. */
+  region = null,
   colour    = SAND_DEFAULTS.colour,
   width     = SAND_DEFAULTS.width,
   spacing   = SAND_DEFAULTS.spacing,
@@ -64,25 +70,43 @@ export default function SandBed({
      `grassSeats` already makes, and the hole is the cake's own outline so it follows a heart or a
      sheet as faithfully as a circle. On the top it is a disc: scale the shape down, nothing to
      punch out. */
+  // One definition of "how big is this cake", shared with the generator — see region.js.
+  const reach = shapeExtent(shape);
+  /* ⚠️ THE CRUMBS NEEDED NO NEW CODE. `grassSeats` has sampled `{ kind:'outline' }` shapes since
+     heart and number cakes arrived, so a region is simply handed over as one. That is the whole
+     reason the region is a ring of points rather than a bespoke mask. */
+  const ring = useMemo(() => (region ? regionRing(region, reach) : null), [region, reach]);
   const seatShape = useMemo(
-    () => (onTop ? scaleShape(shape, span.outerFrac) : outwardBand(shape, amount)),
-    [onTop, shape, span.outerFrac, amount]);
-  const hole = useMemo(() => (onTop ? null : { shape, scale: 1 }), [onTop, shape]);
+    () => (ring ? regionSeatShape(ring)
+         : onTop ? scaleShape(shape, span.outerFrac) : outwardBand(shape, amount)),
+    [ring, onTop, shape, span.outerFrac, amount]);
+  // A region sits ON a surface, so nothing is punched out of it — the cake is not in its way.
+  const hole = useMemo(() => (ring || onTop ? null : { shape, scale: 1 }), [ring, onTop, shape]);
   const raw  = useSurfaceSeats({ shape: seatShape, spacing, jitter, inset: 1, seed, hole });
 
-  const reach = shape.radius ?? Math.max(shape.halfW ?? 0, shape.halfD ?? 0) ?? 1;
+  const inradius = useMemo(() => (ring ? ringInradius(ring) : 0), [ring]);
   const seats = useMemo(
-    /* On the top the crumbs thin toward the rim of the PATCH, which is where a layer breaks up —
-       the same rule as the board, measured from the patch's own edge rather than the cake's. */
+    /* The crumbs thin toward the edge of whatever holds them — the drift's lip on a board, the
+       rim of the patch on the top, the region's own boundary when there is one. One curve, asked
+       three different questions, which is why `thinOutward` takes the edge-ness rather than
+       computing a radius itself. */
+    /* ⚠️ THE CRUMBS ARE CLIPPED TO THE CAKE TOO. The bank is, through the field; these come from a
+       sampler that was handed the REGION's outline and has never heard of the tier, so a region
+       overhanging the rim scattered crumbs into mid-air beside a bank that stopped correctly. */
     () => varyGrainSize(
-      thinOutward(raw, { inner: reach * span.innerFrac, outer: reach * span.outerFrac, falloff, seed: seed + 3 }),
+      thinOutward(ring ? raw.filter(s => surfaceDepth(shape, s.x, s.z) >= 0) : raw, {
+        inner: reach * span.innerFrac, outer: reach * span.outerFrac, falloff, seed: seed + 3,
+        edgeness: ring && inradius > 0
+          ? (s) => 1 - Math.min(1, Math.max(0, ringDepth(ring, s.x, s.z).depth / inradius))
+          : null,
+      }),
       { sizeVary, seed: seed + 5 }),
-    [raw, reach, span.innerFrac, span.outerFrac, falloff, sizeVary, seed]);
+    [raw, reach, span.innerFrac, span.outerFrac, falloff, sizeVary, seed, ring, inradius, shape]);
 
   const geo   = useMemo(() => buildSandGrain({ seed: seed + 1 }), [seed]);
   const mound = useMemo(
-    () => buildSandMound(shape, { ...span, rise, moundNoise, moundGrain, edgeBreak, seed: seed + 11 }),
-    [shape, span, rise, moundNoise, moundGrain, edgeBreak, seed]);
+    () => buildSandMound(shape, { ...span, rise, moundNoise, moundGrain, edgeBreak, region, seed: seed + 11 }),
+    [shape, span, rise, moundNoise, moundGrain, edgeBreak, region, seed]);
 
   /* `size` is the grain's real radius; the spread rides on each seat's own scale (varyGrainSize),
      because the hook multiplies the two. `shadeVary` is what stops a drift reading as one flat

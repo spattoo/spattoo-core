@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import './scene.js';                       // light it the way production lights a cake
 import { createRoot } from 'react-dom/client';
 import { Canvas } from '@react-three/fiber';
@@ -6,6 +6,7 @@ import { OrbitControls } from '@react-three/drei';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import SandBed from '../src/designer/canvas/SandBed.jsx';
 import { SAND_DEFAULTS, sandTriangleCount, ZONES_TOP, ZONES_BOARD } from '../src/designer/geometry/sand.js';
+import { REGION_KINDS, REGION_DEFAULTS } from '../src/designer/geometry/region.js';
 
 /* ── Sand on the board, the tight loop ───────────────────────────────────────────────────────────
  *
@@ -62,8 +63,9 @@ function Scene({ p }) {
         <meshStandardMaterial color="#8fd3e8" roughness={0.9} metalness={0} />
       </mesh>
       {/* Both at once, as the first reference does — a board ring AND sand on the top. */}
-      {p.board && <SandBed shape={SHAPE} topY={BOARD_H} zone={ZONES_BOARD} size={p.width} {...p} />}
-      {p.top && <SandBed shape={SHAPE} topY={BOARD_H + BOTTOM_H} zone={ZONES_TOP} size={p.topSize} {...p} />}
+      {p.board && <SandBed shape={SHAPE} topY={BOARD_H} zone={ZONES_BOARD} size={p.width} {...p} region={null} />}
+      {p.top && <SandBed shape={SHAPE} topY={BOARD_H + BOTTOM_H} zone={ZONES_TOP} size={p.topSize}
+                  {...p} region={p.region} />}
       <OrbitControls target={[0, PARAMS.get('cam') === 'top' ? BOARD_H + BOTTOM_H * 0.8 : BOARD_H + 0.3, 0]} />
     </>
   );
@@ -75,18 +77,29 @@ function Scene({ p }) {
    only keys read and the rest silently fell back. A harness that cannot be addressed is a harness
    only its author can use. `board` and `top` take 0/1; everything else is a number. */
 const INITIAL = (() => {
-  const out = { ...SAND_DEFAULTS, board: true, top: true };
+  /* The region is flattened into `rg*` keys so each one is a plain number a slider and a URL can
+     both carry — `?rgKind=triangle&rgSize=0.8`. It is reassembled on the way into SandBed. */
+  const out = {
+    ...SAND_DEFAULTS, board: true, top: true, rgOn: false,
+    rgKind: REGION_DEFAULTS.kind, rgSize: REGION_DEFAULTS.size, rgAspect: REGION_DEFAULTS.aspect,
+    rgRotation: REGION_DEFAULTS.rotation, rgX: REGION_DEFAULTS.x, rgZ: REGION_DEFAULTS.z,
+  };
   for (const [k, v] of PARAMS) {
     if (k === 'shape' || k === 'cam') continue;
     if (!(k in out)) { console.warn(`sand harness: no parameter "${k}"`); continue; }
-    out[k] = k === 'board' || k === 'top' ? v !== '0' && v !== 'false'
-           : k === 'colour' ? v : Number(v);
+    out[k] = k === 'board' || k === 'top' || k === 'rgOn' ? v !== '0' && v !== 'false'
+           : k === 'colour' || k === 'rgKind' ? v : Number(v);
   }
   return out;
 })();
 
 function App() {
   const [p, setP] = useState(INITIAL);
+  // Memoised, or SandBed rebuilds the whole lattice on every render — see SandStudio for the why.
+  const region = useMemo(
+    () => (p.rgOn ? { kind: p.rgKind, size: p.rgSize, aspect: p.rgAspect,
+                      rotation: p.rgRotation, x: p.rgX, z: p.rgZ } : null),
+    [p.rgOn, p.rgKind, p.rgSize, p.rgAspect, p.rgRotation, p.rgX, p.rgZ]);
   const set = k => e => setP(q => ({ ...q, [k]: +e.target.value }));
   const sl = (k, min, max, step) => (
     <label key={k} style={{ display: 'block', fontSize: 11, color: '#555', marginBottom: 7 }}>
@@ -122,6 +135,26 @@ function App() {
         {sl('shadeVary', 0, 0.6, 0.01)}
         {sl('roughness', 0.3, 1, 0.01)}
         {sl('moundStep', 0.006, 0.04, 0.001)}
+        <div style={{ margin: '12px 0 6px', fontSize: 11.5, fontWeight: 600 }}>Area (top only)</div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+          <button onClick={() => setP(q => ({ ...q, rgOn: !q.rgOn }))} style={{
+            flex: 1, padding: '5px 0', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+            border: '1.5px solid #1a1a1a', background: p.rgOn ? '#1a1a1a' : '#fff',
+            color: p.rgOn ? '#fff' : '#1a1a1a', fontWeight: 600, fontFamily: 'inherit',
+          }}>{p.rgOn ? 'On' : 'Off'}</button>
+          {Object.keys(REGION_KINDS).map(k => (
+            <button key={k} onClick={() => setP(q => ({ ...q, rgKind: k, rgOn: true }))} style={{
+              flex: 1, padding: '5px 0', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+              border: '1.5px solid #1a1a1a', background: p.rgKind === k ? '#1a1a1a' : '#fff',
+              color: p.rgKind === k ? '#fff' : '#1a1a1a', fontWeight: 600, fontFamily: 'inherit',
+            }}>{k}</button>
+          ))}
+        </div>
+        {sl('rgSize', 0.1, 1.2, 0.01)}
+        {sl('rgAspect', 0.25, 4, 0.05)}
+        {sl('rgRotation', 0, 6.28, 0.02)}
+        {sl('rgX', -1, 1, 0.02)}
+        {sl('rgZ', -1, 1, 0.02)}
         {sl('seed', 1, 99, 1)}
         <label style={{ fontSize: 11, color: '#555' }}>
           colour <input type="color" value={p.colour}
@@ -134,7 +167,7 @@ function App() {
       <div style={{ flex: 1 }}>
         <Canvas shadows camera={{ position: CAM, fov: 42 }}>
           <color attach="background" args={['#efeae2']} />
-          <Scene p={p} />
+          <Scene p={{ ...p, region }} />
         </Canvas>
       </div>
     </div>
