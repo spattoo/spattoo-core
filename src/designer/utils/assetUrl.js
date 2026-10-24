@@ -39,3 +39,27 @@ export function assetUrl(keyOrUrl, base) {
   if (!base) return null;                                // no base configured: unresolvable, not a guess
   return `${String(base).replace(/\/$/, '')}/${keyOrUrl.replace(/^\//, '')}`;
 }
+
+/* ── Is this asset a 3D model? ────────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THIS REGEX WAS WRITTEN OUT TWELVE TIMES BEFORE IT WAS SHARED — eleven in CakeDesigner.jsx, one
+ * in TopperPreview, one in admin's CreateTemplate. Identical every time, which is exactly the shape
+ * rule 1 describes: nobody copies a predicate on purpose, they write it because they never looked.
+ * `check:dup` cannot see it either — a one-line test is far under its minLines.
+ *
+ * ⚠️ IT IS A FACT ABOUT THE FILE, NOT A GUESS ABOUT THE ELEMENT, and that is the whole reason it is
+ * allowed to be derived rather than authored. A `.glb` IS a model; nothing about the row has to be
+ * consulted or trusted. The authored field that sounds like the answer — `cake_elements.medium` —
+ * is a different axis and cannot answer this today: measured on the dev catalogue, 78% of rows have
+ * no medium at all, and `fondant` spans both a flat cut-out (17 rows) and a modelled figure (13).
+ * Medium is what a piece is MADE of; this is how it is RENDERED. If a real `dimension` column ever
+ * lands, this one function is the only place that changes.
+ */
+export function isGlbUrl(url) {
+  return /\.(glb|gltf)(\?|$)/i.test(url ?? '');
+}
+
+/** The same question asked of a catalogue row, which is how every caller actually asks it. */
+export function elementIs3D(el) {
+  return isGlbUrl(el?.image_url);
+}

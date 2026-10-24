@@ -21,7 +21,7 @@ import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
-import { corsUrl, assetUrl } from './utils/assetUrl.js';
+import { corsUrl, assetUrl, elementIs3D } from './utils/assetUrl.js';
 import { registerRenderVariants } from './shared/renderVariants.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { spatulaFramePath } from '../shared/spatulaPath.js';
@@ -1718,6 +1718,26 @@ function ElementGrid({ groups = [], onElementTap, onDragStartSticker }) {
                   padding: '0 3px', borderTopLeftRadius: 8, background: INK, color: '#fff',
                   fontSize: 10, fontWeight: 800, lineHeight: '16px', textAlign: 'center',
                 }}>→</span>
+              )}
+              {/* ⚠️ ONLY THE 3D ONES ARE MARKED. Sandeep: *"i would prefer 3D, its understood as
+                  object. and its short. we dont hav to over explain. and only 3d wil have this.
+                  others are understood as flat."* Measured on the dev catalogue when this was
+                  asked: 221 elements, 82 of them models and 139 flat — so a badge on the minority
+                  is also the quieter grid. A mark on every tile would be a mark that says nothing.
+
+                  ⚠️ THE OPPOSITE CORNER FROM THE STUDIO ARROW, deliberately. Both are corner marks
+                  on the same 64px tile and an element can in principle carry both; stacked in one
+                  corner they would overlap and the tile would start lying about one of them.
+
+                  ⚠️ NOT `aria-hidden`, unlike the arrow. The arrow repeats what the tap already
+                  does; this says something the picture cannot — a thumbnail of a model and a
+                  thumbnail of a print look alike at 64px, which is the whole reason it is here. */}
+              {elementIs3D(el) && (
+                <span title="A 3D model — it turns and catches the light" style={{
+                  position: 'absolute', left: 0, top: 0, height: 16,
+                  padding: '0 4px', borderBottomRightRadius: 8, background: INK, color: '#fff',
+                  fontSize: 9, fontWeight: 800, lineHeight: '16px', letterSpacing: 0.3,
+                }}>3D</span>
               )}
             </div>
             <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
