@@ -13356,7 +13356,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        * reads it. Gold is the whole reason this is geometry rather than paint, so acrylic it is.
        * Piped cream is a nozzle's line and a different object again. The baker can still switch
        * Look — a starting point they can leave — but it must open as the thing they asked for. */
-      if (inst?.textPath?.kind) {
+      /* ⚠️ THE ROW IS THE FALLBACK, BECAUSE AN INSTANCE PLACED BEFORE THIS SHIPPED HAS NO COPY.
+         `textPath` is copied onto the instance at add time, like the rainbow's — fine for anything
+         placed since, and silently wrong for every design saved before it. Sandeep, on a plaque he
+         had already put on a cake: *"there is no way user can enter name."* There was not: the
+         instance carried no path, so the door was gated out and nothing said why. Reading through
+         to the element row means a saved cake gains the control the day the feature ships, which
+         is what a baker expects of a decoration they already own. */
+      const instTextPath = inst?.textPath
+        ?? elementById.get(inst?.elementId)?.placement_config?.text_path
+        ?? null;
+      if (instTextPath?.kind) {
         const mine = (design.writings ?? []).filter(w => w.on?.id === inst.id);
         groups.push({
           key: 'texthost', divider: true, panelLabel: 'Message',
@@ -13370,6 +13380,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             )),
             <button key="add"
               onClick={() => {
+                /* ⚠️ HEAL THE INSTANCE ON THE WAY PAST, rather than teaching the renderer a second
+                   place to look. The canvas resolves a hosted message from `sticker.textPath` and
+                   nothing else; a plaque placed before this shipped has none, so the message would
+                   be editable in the card and invisible on the cake — the worse half of the bug.
+                   Writing the row's path onto the instance here fixes it once, at the only moment
+                   we know the baker wants a message, and leaves the render path with ONE source. */
+                if (!inst.textPath && instTextPath) updateSticker(inst.id, { textPath: instTextPath });
                 const id = addWriting({
                   style: 'acrylic', acrylicFinish: 'gold',
                   on: { kind: 'sticker', tierIndex: inst.tierIndex ?? 0, id: inst.id },

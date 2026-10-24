@@ -921,10 +921,15 @@ if (PLAQUE_EL) {
     element_type_id: 'et-topper', category_id: 'cat-1',
     image_url: '/cdn/elements/files/2D/bfca8fe2-2cd5-45c3-a7dd-f2a59dfc7477.png',
     thumbnail_url: CAT_THUMB('#F7F2E8'), thumb_key: null,
+    /* ⚠️ TOP ONLY, AND THAT IS A FINDING RATHER THAN A CHOICE. `hug` on a round wall BENDS the decal
+       around the cylinder — that is what hug means, and the side offers a 2D piece no other mode —
+       so a rigid fondant disc curved like a transfer. Sandeep, seeing one on the wall: *"its bending
+       more than needed."* The `disc` text path is face-up besides, so on the side the name would be
+       wrong as well as the shape. The real row matches. */
     allowed_zones: ['top_surface'],
     allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: true },
     placement_config: {
-      r: 1, side: 'hug', top_surface: 'hug',
+      r: 1, top_surface: 'hug',
       recolor: { sat: 0.25, method: 'hue_regions', group_defaults: { 0: '#F7F2E8' } },
       text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0 },
       acrylic: { finishes: ['gold', 'silver', 'rose', 'white'], defaultFinish: 'gold' },
