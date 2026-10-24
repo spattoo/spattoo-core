@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zonePoses, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -947,5 +947,50 @@ describe('contentFoot — a 2D decal\'s box stops at its artwork', () => {
     const box = seatedHitBox({ size: 1, ...foot });
     expect(box.width).toBeCloseTo(0.4, 6);
     expect(box.height).toBeCloseTo(0.7, 6);
+  });
+});
+
+// ── A picker must offer what the seat will honour ────────────────────────────────────────────────
+// Reported: a Fluted Scallop Shell configured to hug the board grew a BOARD HUGGING tile that could
+// not be ticked. Nothing was wrong with the toggle — `seatOnSlot` runs the chosen pose through
+// `flatPose`, a board hug becomes `stand`, so the instance came back standing, `onSlot` matched it
+// to the OTHER tile, and the tick appeared next door. The tile should never have existed.
+describe('zonePoses — the poses a zone actually honours', () => {
+  const board = modes => ({ board: { modes } });
+
+  it('collapses a board hug into standing, so two configured modes offer one tile', () => {
+    expect(zonePoses(board(['hug', 'stand']), ZONES.BOARD)).toEqual(['stand']);
+    expect(zonePoses(board(['stand', 'hug']), ZONES.BOARD)).toEqual(['stand']);
+  });
+
+  it('a board configured to hug alone still offers standing — what the renderer does', () => {
+    expect(zonePoses({ board: 'hug' }, ZONES.BOARD)).toEqual(['stand']);
+    expect(zonePoses({}, ZONES.BOARD, 'hug')).toEqual(['stand']);
+  });
+
+  // flatPose is scoped to the board on purpose: top_surface has a REAL hug (the hero pose that
+  // auto-sizes to the tier wall), so "flat" must not imply "cannot hug".
+  it('leaves every other zone alone, poses and order intact', () => {
+    expect(zonePoses({ top_surface: { modes: ['stand', 'hug'] } }, ZONES.TOP_SURFACE)).toEqual(['stand', 'hug']);
+    expect(zonePoses({ side: { modes: ['hug'] } }, ZONES.SIDE)).toEqual(['hug']);
+    expect(zonePoses({ rim: { modes: ['perch', 'verge'] } }, ZONES.RIM)).toEqual(['perch', 'verge']);
+  });
+
+  it('agrees with the seat, which is the whole point', () => {
+    for (const zone of [ZONES.BOARD, ZONES.TOP_SURFACE, ZONES.SIDE]) {
+      for (const pose of zonePoses({ [zone]: { modes: ['hug', 'stand'] } }, zone)) {
+        expect(flatPose(zone, pose)).toBe(pose);     // a pose the seat will not change
+      }
+    }
+  });
+});
+
+describe('zoneHasChoice — one honoured pose is not a choice', () => {
+  it('is false when two configured board modes collapse to one', () => {
+    expect(zoneHasChoice({ board: { modes: ['hug', 'stand'] } }, ZONES.BOARD)).toBe(false);
+  });
+
+  it('stays true where the poses are genuinely different', () => {
+    expect(zoneHasChoice({ top_surface: { modes: ['stand', 'hug'] } }, ZONES.TOP_SURFACE)).toBe(true);
   });
 });

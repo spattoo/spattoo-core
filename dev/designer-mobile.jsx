@@ -481,7 +481,11 @@ CAT_ELEMENTS.push({
   image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#efe6d8'), thumb_key: null,
   allowed_zones: ['top_surface', 'side', 'middle_tier', 'board'],
   allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
-  placement_config: { r: 2.5, side: 'hug', board: 'hug', scale: { min: 1, max: 4, step: 0.25 },
+  /* ⚠️ `board: { modes: [...] }`, THE REAL ROW. Sandeep reconfigured this one to offer both board
+     poses, which is what produced a BOARD HUGGING tile that could not be ticked — a single-mode
+     board renders one tile either way and cannot reproduce it. Two modes is the case. */
+  placement_config: { r: 2.5, side: 'hug', board: { modes: ['hug', 'stand'] },
+                      scale: { min: 1, max: 4, step: 0.25 },
                       metalness: 0.0015047892092146015, roughness: 0.3782242154294899,
                       middle_tier: 'hug', top_surface: 'hug' },
   default_color: '#f4f3f1', sort_order: 61,

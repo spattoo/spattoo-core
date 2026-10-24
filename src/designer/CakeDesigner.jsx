@@ -20,7 +20,7 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
+import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl } from './utils/assetUrl.js';
 import { registerRenderVariants } from './shared/renderVariants.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
@@ -12454,7 +12454,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // is — not by a separate control the customer has to find afterwards. Single-pose zones expand to
     // exactly one tile, which is what every element today already produces.
     const slots = placementSlots(srcEl, design.tiers.length).flatMap(slot => {
-      const poses = zoneModes(pc, slot.zone, 'hug');
+      /* ⚠️ `zonePoses`, NOT `zoneModes` — the poses the SEAT will honour, not the ones the config
+         names. Expanding the raw list grew a BOARD HUGGING tile that could not be ticked: seatOnSlot
+         puts the same pose through flatPose, a board hug becomes `stand`, and the tick appeared on
+         the standing tile instead. One question, asked by the picker and the seat alike. */
+      const poses = zonePoses(pc, slot.zone, 'hug');
       return poses.map(mode => ({ ...slot, mode, poseChoice: poses.length > 1 }));
     }).map(slot => {
       const label = slotLabel(slot, multiTier);

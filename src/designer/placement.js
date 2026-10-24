@@ -839,7 +839,9 @@ export function zoneModes(placementConfig, zone, fallback) {
 // May this zone be posed at all? The toggle and the extra chooser tile both hang off this, so an
 // element with one pose grows no controls — the ~50 that exist today are untouched.
 export function zoneHasChoice(placementConfig, zone) {
-  return zoneModes(placementConfig, zone).length > 1;
+  // Through zonePoses, not zoneModes: a zone whose two configured modes collapse to one honoured
+  // pose is not a choice, and saying it is grows a toggle with nothing on the other side of it.
+  return zonePoses(placementConfig, zone).length > 1;
 }
 
 // The placement MODE (the POSITION) for a zone ("hug" | "stand" | "perch" | "verge"), from string or
@@ -903,6 +905,37 @@ export function zoneSeat(placementConfig, zone) {
  */
 export function flatPose(zone, mode) {
   return (zone === ZONES.BOARD && (mode === 'hug' || !mode)) ? 'stand' : mode;
+}
+
+/* The poses a zone will ACTUALLY honour — `zoneModes` put through `flatPose`, in order, with
+ * duplicates dropped.
+ *
+ * ⚠️ A PICKER MUST OFFER WHAT THE SEAT WILL HONOUR, NOT WHAT THE CONFIG SAYS. The chooser expanded
+ * `zoneModes` straight into one tile per pose, so a shell configured `board: { modes: ['hug',
+ * 'stand'] }` grew a BOARD HUGGING tile — and ticking it was a no-op you could not see the cause
+ * of: `seatOnSlot` ran the same pose through `flatPose`, which turns a board hug into `stand`, so
+ * the instance came back as standing, `onSlot` matched it to the OTHER tile, and the tick appeared
+ * next door. Sandeep: *"Board hugging is not selectable. i have configured this scallop shell to
+ * hug on the board. but it not selectable from the card popup."* Nothing was broken in the toggle;
+ * the tile should never have existed.
+ *
+ * So both readers ask one question. A board that offers hug and stand offers ONE tile — it stands —
+ * and an element configured to hug the board alone is not a pose chooser at all, which is what
+ * `zoneHasChoice` should say too.
+ *
+ * ⚠️ IT DOES NOT CORRECT THE CONFIG, deliberately. `flatPose`'s note says a board hug may one day
+ * mean something real: a decoration standing on the drum and LEANING on the cake wall is a look
+ * bakers do. That is a pose to build; when it exists, `flatPose` stops coercing and this starts
+ * returning two tiles with no change here. Rewriting the admin's row would throw that intent away.
+ */
+export function zonePoses(placementConfig, zone, fallback) {
+  const seen = new Set();
+  const out = [];
+  for (const mode of zoneModes(placementConfig, zone, fallback)) {
+    const pose = flatPose(zone, mode);
+    if (pose && !seen.has(pose)) { seen.add(pose); out.push(pose); }
+  }
+  return out;
 }
 
 export function zoneSeatFields(placementConfig, zone, mode = null) {
