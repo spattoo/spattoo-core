@@ -27,6 +27,15 @@ const R = 1.2, BOTTOM_H = 1.45, BOARD_H = 0.1, BOARD_R = 1.95;
 const SHAPES = {
   round: { kind: 'round', radius: R },
   sheet: { kind: 'rect', halfW: 1.35, halfD: 0.95, cornerR: 0.18 },
+  /* Half a sheet, split corner to corner — sand one side, cream "water" the other. Sandeep's beach
+     theme, and the question it asks of the generator: can a drift fill a chosen AREA rather than a
+     ring round the cake? An outline is already a first-class shape (surface.js), so this costs
+     nothing to try. */
+  wedge: { kind: 'outline', halfW: 1.35, halfD: 0.95,
+           outline: [{ x: -1.35, z: -0.95 }, { x: 1.35, z: 0.95 }, { x: 1.35, z: -0.95 }] },
+  // An off-centre patch, to show where the radial reach stops being able to answer.
+  corner: { kind: 'outline', halfW: 1.35, halfD: 0.95,
+            outline: [{ x: 0.2, z: -0.8 }, { x: 1.3, z: -0.8 }, { x: 1.3, z: 0.1 }, { x: 0.2, z: 0.1 }] },
 };
 const PARAMS = new URLSearchParams(location.search);
 const SHAPE = SHAPES[PARAMS.get('shape')] ?? SHAPES.round;
