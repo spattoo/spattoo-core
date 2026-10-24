@@ -292,3 +292,33 @@ describe('a decoration ring is seated on its own origin, whatever its tilt', () 
     expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
   });
 });
+
+/* ── A tier's footprint is not something to spread over ──────────────────────────────────────────
+ *
+ * ⚠️ THIS SHIPPED. `<SandBed shape={tierShape(tier)} … {...tier.sand} />` — and `tier.sand.shape`
+ * is the AREA the baker chose (round/rect/triangle), not the cake's outline. The spread came last,
+ * so the renderer was handed the string 'rect' where a shape object belongs: `surfaceDepth` went
+ * NaN, nothing counted as inside the drift, and `buildSandMound` returned ZERO triangles. The card
+ * opened, every control worked, the state saved — and the cake stayed bare. Sandeep: *"nothing is
+ * getting added to the cake."*
+ *
+ * The collision was written down in two comments BEFORE it was written into the code. That is the
+ * whole argument for a test: a note explaining a trap does not stop anyone walking into it.
+ *
+ * ⚠️ SCOPED TO SAND, AND HERE IS WHAT THAT LEAVES. `GrassPatch` and `GypCloud` spread `tier.grass`
+ * and `tier.gyp` after their own `shape=` in exactly the same way — five more sites. They work
+ * today only because neither of those state objects happens to carry a `shape` key, so the landmine
+ * is there and unexploded. They are left alone deliberately: reordering a working renderer in
+ * another feature's path is a change I cannot verify by looking, and the day either object gains a
+ * `shape` this comment is the thing to come back to.
+ */
+describe('a renderer is handed the tier footprint, not sand state that shadows it', () => {
+  it('passes SandBed explicit props and never a spread', () => {
+    const el = SOURCE.match(/<SandBed\b[^>]*?\/>/s);
+    expect(el, 'CakeCanvas should render a <SandBed>').not.toBeNull();
+    expect(el[0]).toMatch(/shape=\{tierShape\(/);
+    /* Any spread at all: the sand object and SandBed share `shape`, `size`, `seed` and `colour`,
+       so there is no safe ordering to remember — only an explicit list. */
+    expect(el[0]).not.toMatch(/\{\s*\.\.\./);
+  });
+});

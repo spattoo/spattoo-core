@@ -4606,13 +4606,27 @@ function CakeContent({ config, scene, edit = null }) {
               on the region's identity, so an object literal would rebuild a 40,000-cell lattice on
               every render — once per frame while a dial is being dragged. */}
           {tier.sand && (
+            /* ⚠️ EVERY PROP NAMED, NEVER `{...tier.sand}` — and this is not tidiness, it is the bug
+               that shipped. The sand object's `shape` is the AREA (round/rect/triangle) and
+               SandBed's `shape` is the CAKE'S FOOTPRINT. Spread after the explicit prop, the area
+               kind won: SandBed was handed the string 'rect' as a tier shape, `surfaceDepth` went
+               NaN, nothing was ever inside the drift and the mesh came out with ZERO triangles.
+               Sandeep, with the card open and working: *"nothing is getting added to the cake."*
+               The collision was written down in two comments before it was written into the code,
+               so the comment is not the guard — cakeContent.test.js is. */
             <SandBed
               shape={tierShape(tier)}
               topY={tier.baseY + tier.height}
               zone={ZONES_TOP}
-              onPick={onSandClick}
-              {...tier.sand}
+              size={tier.sand.size}
+              colour={tier.sand.colour}
+              spacing={tier.sand.spacing}
+              rise={tier.sand.rise}
+              falloff={tier.sand.falloff}
+              edgeBreak={tier.sand.edgeBreak}
+              seed={tier.sand.seed}
               region={sandRegion(tier.sand)}
+              onPick={onSandClick}
             />
           )}
           {/* ── Gypsophila on this tier ──────────────────────────────────────────────────────────
