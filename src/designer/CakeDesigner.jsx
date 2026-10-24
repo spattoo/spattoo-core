@@ -13314,6 +13314,56 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         });
       }
 
+      /* ── A MESSAGE WRITTEN ON THIS PIECE ───────────────────────────────────────────────────────
+       *
+       * Gated on the instance carrying `textPath` (placement_config.text_path), never on element
+       * type or slug — exactly like the text slots above and the rainbow's own section, which this
+       * is the second caller of. Absent → nothing renders, because a control that does nothing is
+       * worse than none (INVARIANTS #11).
+       *
+       * ⚠️ IT IS A MESSAGE, NOT A TEXT SLOT, AND THE DIFFERENCE IS THE MEDIUM. A slot is painted
+       * into the decal's texture: cheap, flat, and it can never be metal, because a painted gold
+       * reflects nothing and does not move when the cake turns. A message is an ordinary `writings`
+       * entry — real extruded geometry with a real material — so `TOPPER_FINISHES.gold` is the
+       * mirror gold the Texts card already offers. A fondant name plaque wants the second one.
+       *
+       * ⚠️ SEEDED `acrylic`, AND `fondant` WOULD HAVE BEEN THE WRONG GUESS — it was my first one.
+       * The two are not "cut letters in two colours": `medium === 'fondant'` builds a LIT solid
+       * material from `color`, so it is matte icing and can only ever be a flat colour. The metals
+       * — mirror gold, silver, rose — are MATCAPS, baked, and reached only through the acrylic
+       * path (`drawTopperMatcap(finish)` in AcrylicWord). Seeding fondant gave a white matte name
+       * and no amount of `acrylicFinish` could have coloured it, because nothing on that path
+       * reads it. Gold is the whole reason this is geometry rather than paint, so acrylic it is.
+       * Piped cream is a nozzle's line and a different object again. The baker can still switch
+       * Look — a starting point they can leave — but it must open as the thing they asked for. */
+      if (inst?.textPath?.kind) {
+        const mine = (design.writings ?? []).filter(w => w.on?.id === inst.id);
+        groups.push({
+          key: 'texthost', divider: true, panelLabel: 'Message',
+          controls: [
+            ...mine.map(w => (
+              <button key={w.id}
+                onClick={() => { closeAllPopups(); selectExclusive({ type: 'writing', id: w.id }); }}
+                style={{ ...s.neutralBtn, width: '100%', marginBottom: 6, textAlign: 'left' }}>
+                {w.text?.trim() || 'Untitled message'}
+              </button>
+            )),
+            <button key="add"
+              onClick={() => {
+                const id = addWriting({
+                  style: 'acrylic', acrylicFinish: 'gold',
+                  on: { kind: 'sticker', tierIndex: inst.tierIndex ?? 0, id: inst.id },
+                });
+                focusEditor('decoration');
+                selectExclusive({ type: 'writing', id });
+              }}
+              style={{ ...s.neutralBtn, width: '100%' }}>
+              {mine.length ? 'Add another message' : 'Write a name on it'}
+            </button>,
+          ],
+        });
+      }
+
       /* A CALENDAR's DATE — the one value the customer owns on this element. Gated on the instance
        * carrying `calendar` (placement_config.calendar), never on element type or slug, exactly like
        * the text slots above: both are "the artwork is a recipe and this is the value".
@@ -14269,9 +14319,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             dropped: a card that silently loses its first control leaves a baker wondering where the
             message went, and the line also answers "why is there no Curve dial". */}
         {w.on ? (
+          /* ⚠️ THE HOST'S OWN NAME, AND WHAT IT DOES TO THE LINE. This read "ON THE RAINBOW ·
+             follows its curve" when a rainbow was the only thing a message could sit on — and the
+             day a second host shipped it was a label that lied on the new one, about a curve a
+             flat plaque does not have. The caption is derived from the host the message actually
+             carries, so adding a third shape cannot leave this stale. */
           <div style={{ fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.3,
                         padding: '7px 2px', flexShrink: 0 }}>
-            ON THE RAINBOW · follows its curve
+            {w.on.kind === 'rainbow' ? 'ON THE RAINBOW · follows its curve' : 'ON THE DECORATION'}
           </div>
         ) : (
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
@@ -14597,7 +14652,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             each name a cake surface; on a rainbow the element decides where the line sits, and a
             hint that says otherwise is a label that lies. */}
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
-          {w.on ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+          {w.on ? (w.on.kind === 'rainbow'
+                    ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+                    : 'Moves with the decoration — resize or move it and the message follows.')
             : surface === 'side' ? 'Drag the writing around and up the cake side.'
             : surface === 'board' ? 'Drag the writing around the cake board.'
             : 'Drag the writing anywhere on the cake top.'}

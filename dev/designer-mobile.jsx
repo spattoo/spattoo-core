@@ -903,6 +903,36 @@ CAT_ELEMENTS.push({
  * The model is the gingko leaf (already cached by ?leafrose) with groups bolted on: this fixture is
  * about the CARD, not the mesh, and the swatches recolour by `userData.group` whether or not the GLB
  * has meshes carrying those names. */
+/* ⚠️ `?plaque=1` — A HOST FOR A MESSAGE THAT IS NOT A RAINBOW, which nothing here could show.
+ *
+ * `placement_config.text_path` lets a message be written ON an element rather than on the cake, and
+ * until now the only element that declared one was the fondant rainbow — so the second host shape
+ * (a flat disc, lying face-up) had no fixture, and neither did the card door that offers it. The
+ * row below mirrors the real "Fondant name plaque" in the dev catalogue.
+ *
+ * ⚠️ THE POINT OF IT IS THE METAL. The name is GEOMETRY, not paint in the decal's texture, which is
+ * the only way TOPPER_FINISHES.gold can reflect the scene — a painted gold does not move when the
+ * cake turns. A 2D `text_slots` version of this exists too and is the right thing for matte piped
+ * lettering; this fixture is the other medium. */
+const PLAQUE_EL = PARAMS.has('plaque');
+if (PLAQUE_EL) {
+  CAT_ELEMENTS.push({
+    id: 'e70', name: 'Fondant name plaque', description: 'a disc that hosts a written name',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/2D/bfca8fe2-2cd5-45c3-a7dd-f2a59dfc7477.png',
+    thumbnail_url: CAT_THUMB('#F7F2E8'), thumb_key: null,
+    allowed_zones: ['top_surface'],
+    allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: {
+      r: 1, side: 'hug', top_surface: 'hug',
+      recolor: { sat: 0.25, method: 'hue_regions', group_defaults: { 0: '#F7F2E8' } },
+      text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0 },
+      acrylic: { finishes: ['gold', 'silver', 'rose', 'white'], defaultFinish: 'gold' },
+    },
+    default_color: '#F7F2E8', sort_order: 70,
+  });
+}
+
 const GROUPS_EL = PARAMS.has('groups');
 if (GROUPS_EL) {
   CAT_ELEMENTS.push({
@@ -1252,7 +1282,7 @@ const STUBS = {
     ? [{ id: 'cat-messages', name: 'Messages', slug: 'messages', sort_order: 0, element_type_id: 'et-writing' }]
     : PARAMS.has('cream')
     ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
-    : (PARAMS.has('football') || PARAMS.has('catalog') || GROUPS_EL)
+    : (PARAMS.has('football') || PARAMS.has('catalog') || GROUPS_EL || PLAQUE_EL)
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' },
        // The balloon's real home (migration 127), so the harness reaches it the way a customer does.
        { id: 'cat-party', name: 'Party & shapes', slug: 'party-shapes', sort_order: 1, element_type_id: 'et-topper' }] : []),
@@ -1295,7 +1325,7 @@ const STUBS = {
     placement_config: { second_cream: { lift: 0.04, noise: 0.05, fill_side: 'below', height: 0.5,
                                         height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
     default_color: '#D98BA6', sort_order: 0,
-  }] : (PARAMS.has('catalog') || GROUPS_EL) ? CAT_ELEMENTS : PARAMS.has('football') ? [{
+  }] : (PARAMS.has('catalog') || GROUPS_EL || PLAQUE_EL) ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,

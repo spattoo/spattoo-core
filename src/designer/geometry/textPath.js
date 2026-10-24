@@ -125,6 +125,18 @@ export function archTextPath(params, cake, cfg = {}) {
   const maxH = radius * (1 - Math.cos(half)) + capH;
   return {
     kind: 'arch',
+    /* ⚠️ `pose` AND `transform` ARE ADDITIVE — every field below stayed. A second host shape (a
+       plaque lying face-up on the cake top) needs the renderer to know WHICH WAY the host faces,
+       and the renderer had that baked in: it placed the group at `[centerX, centerY + radius, face]`
+       with no rotation, because an arch is the only host there was and an arch stands upright
+       facing the camera. Rewriting these fields into a transform would have been the tidier change
+       and a worse one — the twenty tests below pin this shape, and they are the only proof that
+       adding a second host left the rainbow alone. So the transform is new and the old fields are
+       untouched; the renderer prefers the transform, and this provider computes it from exactly the
+       numbers it already returned. */
+    pose: 'upright',
+    position: [centerX, archY + radius, standoff + thickness / 2],
+    rotation: [0, 0, 0],
     centerX, centerY: archY, standoff,
     /* ⚠️ THE FRONT OF THE ROPE, NOT THE PLANE THE ARCH IS CENTRED ON. A band is a TUBE: its
        centreline sits at `standoff`, but its surface stands a half-thickness proud of that. A
@@ -138,7 +150,71 @@ export function archTextPath(params, cake, cfg = {}) {
   };
 }
 
-const PROVIDERS = { arch: archTextPath };
+export const DISC_TEXT_DEFAULTS = Object.freeze({
+  /* Share of the disc's DIAMETER a line may use before it is scaled to fit. Not 1.0: a circle is
+     widest only across its exact middle, so letters run at the full diameter would touch the rim at
+     their ends and leave no fondant round the word. 0.72 keeps a margin that reads as deliberate. */
+  span: 0.72,
+  /* Cap height as a fraction of the diameter. A name plaque's lettering is big — it IS the object —
+     but a descender ('g', 'y') and an ascender still have to sit inside the disc. */
+  size: 0.26,
+  /* Off the disc's centre along its own face, in diameters; +ve towards the far edge. 0 = centred,
+     which is what a name plaque wants. Here so a row can seat a line low and leave room for a
+     flourish above it without authoring a position — the same relative rule the arch's `inset` is. */
+  inset: 0,
+});
+
+/* ── A flat round plaque, lying face-up ─────────────────────────────────────────────────────────
+ *
+ * The second host shape. Sandeep's reference is a white fondant disc with a name raised across it,
+ * and the whole reason it is HERE rather than painted into the disc's texture is the metal: a
+ * hosted message is real geometry with a real material, so `TOPPER_FINISHES.gold` reflects the
+ * scene. A gold painted into a decal cannot — turn the cake and it does not move.
+ *
+ * ⚠️ IT TAKES THE DISC'S OWN MEASUREMENTS, NEVER A POSITION, for the reason the arch's note gives:
+ * a plaque is placed by dragging, resized by a dial and seated by the surface it is on, so any
+ * slot authored as a coordinate goes stale the first time one of those changes — silently. The
+ * caller measures the placed instance and hands those numbers in; everything below is a fraction
+ * of them.
+ *
+ * `host` here is `{ center: [x, y, z], diameter, yaw }` — the disc's top face in world space,
+ * which only the canvas can know.
+ */
+export function discTextPath(host, cfg = {}) {
+  const d = Number(host?.diameter);
+  if (!(d > 0) || !Array.isArray(host?.center)) return null;
+  const c = {
+    span:  cfg.span  ?? DISC_TEXT_DEFAULTS.span,
+    size:  cfg.size  ?? DISC_TEXT_DEFAULTS.size,
+    inset: cfg.inset ?? DISC_TEXT_DEFAULTS.inset,
+  };
+  const capH = d * c.size;
+  const [cx, cy, cz] = host.center;
+  const yaw = Number(host.yaw) || 0;
+  return {
+    kind: 'disc',
+    /* ⚠️ `lay`, AND IT IS THE WHOLE DIFFERENCE FROM THE ARCH. The renderer lifts the letters off
+       the host along the host's OWN normal; rotating -90° about X turns the group's local +Z into
+       world +Y, so the same lift that pushes an arch's letters towards the viewer pushes a
+       plaque's straight up out of the icing. Without it a plaque's letters stand on edge. */
+    pose: 'lay',
+    position: [cx, cy, cz],
+    rotation: [-Math.PI / 2, yaw, 0],
+    /* A line across the face, shifted along it by `inset`. The box is the cap height plus room for
+       a descender — a plain `capH` box clips the tail of a 'g' and the fitter cannot know that. */
+    maxW: d * c.span,
+    maxH: capH * 1.35,
+    capH,
+    offset: d * c.inset,
+    /* ⚠️ STRAIGHT, AND NOT BECAUSE IT IS EASIER. The arch hands back a curve because the bend IS
+       the arch; a disc's face is flat, so a bend here would be decoration the host does not
+       justify — and `AcrylicWriting` cannot bend a cut word anyway (see PLACEMENT_CONFIG). The
+       card hides the Curve dial on any hosted message, which is already true. */
+    curve: 0,
+  };
+}
+
+const PROVIDERS = { arch: archTextPath, disc: (params, cake, cfg) => discTextPath(params, cfg) };
 
 /* The one reader. A host hands its own params and the cake it sits on; the row's `text_path` says
  * which shape to ask for and tunes it. Absent or unknown `kind` → null, which is "this element

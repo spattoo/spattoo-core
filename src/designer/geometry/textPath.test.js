@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { curveForArc, archTextPath, textPathFor, arcLetter, WARP_SWEEP_AT_ONE } from './textPath.js';
+import { curveForArc, archTextPath, textPathFor, arcLetter, WARP_SWEEP_AT_ONE, discTextPath, DISC_TEXT_DEFAULTS } from './textPath.js';
 import { RAINBOW_DEFAULTS, rainbowBands } from './rainbow.js';
 
 const CAKE = { radius: 1.2, topY: 1.5, boardY: 0 };
@@ -175,5 +175,66 @@ describe('the face a message is pressed onto', () => {
     const p = archTextPath(RAINBOW_DEFAULTS, CAKE);
     expect(p.face).toBeCloseTo(standoff + thickness / 2, 10);
     expect(p.face).toBeGreaterThan(p.standoff);
+  });
+});
+
+describe('discTextPath — a flat plaque, lying face-up', () => {
+  const host = { center: [0.4, 1.2, -0.3], diameter: 1.0, yaw: 0 };
+
+  it('lies flat, so the letters lift along the disc\'s own normal', () => {
+    const p = discTextPath(host);
+    expect(p.pose).toBe('lay');
+    // -90° about X turns the group's local +Z into world +Y. Without it a plaque's letters
+    // stand on edge like an arch's — the one thing that cannot be seen from the numbers alone.
+    expect(p.rotation[0]).toBeCloseTo(-Math.PI / 2, 6);
+  });
+
+  it('sits where the disc sits, never where a slot said', () => {
+    expect(discTextPath(host).position).toEqual([0.4, 1.2, -0.3]);
+  });
+
+  it('turns with the plaque', () => {
+    expect(discTextPath({ ...host, yaw: 1.1 }).rotation[1]).toBeCloseTo(1.1, 6);
+  });
+
+  it('keeps a margin of fondant round the word', () => {
+    // 1.0 across, so a full-diameter line would touch the rim at both ends and read as crammed.
+    const p = discTextPath(host);
+    expect(p.maxW).toBeLessThan(host.diameter);
+    expect(p.maxW).toBeCloseTo(0.72, 6);
+  });
+
+  it('leaves room for a descender below the cap height', () => {
+    const p = discTextPath(host);
+    expect(p.maxH).toBeGreaterThan(p.capH);   // a plain capH box clips the tail of a 'g'
+  });
+
+  it('is straight — a flat face justifies no bend, and a cut word cannot bend', () => {
+    expect(discTextPath(host).curve).toBe(0);
+  });
+
+  it('scales every measurement with the disc', () => {
+    const small = discTextPath({ ...host, diameter: 0.5 });
+    const big   = discTextPath({ ...host, diameter: 2.0 });
+    expect(big.maxW / small.maxW).toBeCloseTo(4, 6);
+    expect(big.capH / small.capH).toBeCloseTo(4, 6);
+  });
+
+  it('an explicit undefined in the row does not beat the seed', () => {
+    // The same trap ARCH_TEXT_DEFAULTS records: an admin form that writes every key.
+    const p = discTextPath(host, { span: undefined, size: undefined });
+    expect(p.maxW).toBeCloseTo(0.72, 6);
+  });
+
+  it('answers null for a disc it cannot measure, rather than a path at the origin', () => {
+    expect(discTextPath({ center: [0, 0, 0], diameter: 0 })).toBe(null);
+    expect(discTextPath({ diameter: 1 })).toBe(null);
+    expect(discTextPath(null)).toBe(null);
+  });
+
+  it('is reachable through textPathFor, which is the only reader', () => {
+    const p = textPathFor({ kind: 'disc', size: 0.3 }, host, null);
+    expect(p?.kind).toBe('disc');
+    expect(p.capH).toBeCloseTo(0.3, 6);
   });
 });

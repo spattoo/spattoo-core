@@ -1386,6 +1386,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // types. The value is composited into the texture at design time, so it is never an asset —
           // the same element serves "2", "47" and "Amara". Absent → renders as a plain decal.
           textSlots:      element.placement_config?.text_slots ?? null,
+          /* ⚠️ WHERE A MESSAGE MAY BE WRITTEN ON THIS PIECE, copied from the row at add time for the
+             same reason the rainbow copies it: the canvas resolves a hosted message mid-render and
+             must not look an element row back up to do it. Absent → no text may go on it, and the
+             card offers nothing (INVARIANTS #11). A 2D decal can host one too — a fondant name
+             plaque is a disc with a name raised across it, and the name is REAL GEOMETRY rather
+             than paint, which is the only way `TOPPER_FINISHES.gold` can reflect the scene. */
+          textPath:       element.placement_config?.text_path ?? null,
           // Seeded from each slot's authored default, then owned by the customer (like photoUrl).
           textValues:     Object.fromEntries(
                             (element.placement_config?.text_slots ?? []).map(sl => [sl.key, sl.default ?? '']),
