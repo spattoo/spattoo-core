@@ -62,3 +62,40 @@ export function headerBrandParts(baker, hasLogo) {
     name: mode !== HEADER_BRAND.LOGO,
   };
 }
+
+/* ── How big the name is set, given the room it has ──────────────────────────────────────────────
+ *
+ * Sandeep: *"why should we truncate. its the baker's identity."* — and he is right, so nothing here
+ * clips. The name is always whole; when the room runs short the TYPE gives way instead.
+ *
+ * ⚠️ IT STEPS DOWN BY AVAILABLE WIDTH, NOT BY CHARACTER COUNT. The same 27-character name has a
+ * thousand pixels at a full window and about four hundred at the 641px edge of the desktop layout —
+ * so a table keyed on length alone would either shrink names that fit or overflow ones that do not.
+ * Both numbers are known without measuring anything, which is the point: no canvas, no
+ * ResizeObserver, no measure-then-render loop.
+ *
+ * ⚠️ AND MEASURING WOULD BE WRONG HERE ANYWAY, not merely heavier. The script face is deliberately
+ * not preloaded (see desktopLogoText), so a fit computed on mount measures the QUICKSAND FALLBACK,
+ * settles on a size, and then the real face swaps in wider and overflows. A width-derived estimate
+ * has no such failure mode: it does not care what has loaded.
+ *
+ * ⚠️ `PER_CHAR_EM` IS DELIBERATELY PESSIMISTIC. Measured on the longest real bakery name in the
+ * table — "Velvet & Vanilla Bake House", 27 characters, 253px at 20px in Shantell Sans — which is
+ * 0.47em per character. This uses 0.55: faces differ (Pacifico is wider than Cormorant), and the
+ * two outcomes are not symmetric. Under-shrinking by a point is invisible; overflowing is the bug
+ * this function exists to prevent.
+ */
+const PER_CHAR_EM = 0.55;
+
+/** The desktop header's resting size, and the floor below which it will not go. */
+export const BRAND_NAME_MAX = 26;
+export const BRAND_NAME_MIN = 15;
+
+export function brandNameFontSize(name, availablePx) {
+  const chars = String(name ?? '').trim().length;
+  if (!chars || !Number.isFinite(availablePx) || availablePx <= 0) return BRAND_NAME_MAX;
+  const fits = availablePx / (chars * PER_CHAR_EM);
+  /* Whole pixels: a fractional size makes a script face render slightly differently at every window
+     width, which reads as the name shivering while you drag the window. */
+  return Math.max(BRAND_NAME_MIN, Math.min(BRAND_NAME_MAX, Math.floor(fits)));
+}

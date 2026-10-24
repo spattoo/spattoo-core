@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { HEADER_BRAND, DEFAULT_HEADER_BRAND, headerBrandMode, headerBrandParts } from './headerBrand.js';
+import { HEADER_BRAND, DEFAULT_HEADER_BRAND, headerBrandMode, headerBrandParts,
+         brandNameFontSize, BRAND_NAME_MAX, BRAND_NAME_MIN } from './headerBrand.js';
 
 const withMode = m => ({ storefront_customizations: { header_brand: m } });
 
@@ -82,5 +83,40 @@ describe('brandFont — the bakery name is the baker\'s type, not ours', () => {
   it('a baker overrides their theme, and no baker leaves every existing call alone', () => {
     expect(applyFontTheme({}, 'montserrat').brandFont).toBe(BRAND_FONTS.pacifico.css);
     expect(applyFontTheme({}, 'montserrat', withFont('lora')).brandFont).toBe(BRAND_FONTS.lora.css);
+  });
+});
+
+describe('brandNameFontSize', () => {
+  it('leaves a normal name at the resting size', () => {
+    // "Velvet & Vanilla Bake House" — the longest real bakery name — at a full-width window.
+    expect(brandNameFontSize('Velvet & Vanilla Bake House', 1038)).toBe(BRAND_NAME_MAX);
+  });
+
+  it('still fits that name at the narrow edge of the desktop layout', () => {
+    // 641px window → roughly 391px for the name. 27 × 0.55 × 26 = 386, so it holds at full size.
+    expect(brandNameFontSize('Velvet & Vanilla Bake House', 391)).toBe(BRAND_NAME_MAX);
+  });
+
+  it('shrinks rather than clips when the room runs out', () => {
+    const size = brandNameFontSize('The Extremely Long Bakery Name Of Hyderabad', 391);
+    expect(size).toBeLessThan(BRAND_NAME_MAX);
+    expect(size).toBeGreaterThanOrEqual(BRAND_NAME_MIN);
+  });
+
+  it('never goes below the floor, however absurd the name', () => {
+    expect(brandNameFontSize('x'.repeat(400), 300)).toBe(BRAND_NAME_MIN);
+  });
+
+  it('answers the resting size for an empty name or an unknown width', () => {
+    expect(brandNameFontSize('', 500)).toBe(BRAND_NAME_MAX);
+    expect(brandNameFontSize('Anything', NaN)).toBe(BRAND_NAME_MAX);
+    expect(brandNameFontSize('Anything', 0)).toBe(BRAND_NAME_MAX);
+  });
+
+  it('is monotonic — more room never means smaller type', () => {
+    const n = 'A Reasonably Long Bakery Name Here';
+    for (let w = 120; w < 1200; w += 37) {
+      expect(brandNameFontSize(n, w + 37)).toBeGreaterThanOrEqual(brandNameFontSize(n, w));
+    }
   });
 });

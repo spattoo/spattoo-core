@@ -58,7 +58,7 @@ import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITIN
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
-import { headerBrandParts } from '../shared/headerBrand.js';
+import { headerBrandParts, brandNameFontSize, BRAND_NAME_MIN } from '../shared/headerBrand.js';
 import { brandFontCss } from '../storefront/storefrontKit.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
@@ -4897,6 +4897,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // burying it at the foot of a screen you open to edit something costs a tap every time.
   const openAccount = useCallback(() => { setProfileOpen(o => !o); }, []);
   const isMobile = windowWidth <= 640;
+  /* ── How much room the bakery's name has in the header's right-hand row ─────────────────────────
+   *
+   * Derived, not measured: every term is a constant this file already owns, so there is no canvas,
+   * no ResizeObserver and no measure-then-render pass — and crucially no dependence on whether the
+   * script face has loaded yet. See brandNameFontSize in shared/headerBrand.js for why measuring
+   * would actually be WRONG here rather than merely heavier.
+   *
+   * The row runs from the rail's right edge to `creditsFloat`'s 16px margin; the bell (38) and the
+   * credits pill (~64) sit ahead of the name with the flex gap (8) between each, plus one more gap
+   * before the name itself. Both are optional, so this is the WORST case — a name that fits beside
+   * both fits beside either. */
+  const brandNameRoom = Math.max(
+    120,
+    windowWidth - (RAIL.padLeft + RAIL.width) - 16 - (38 + 64) - (8 * 3),
+  );
   /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
    * bottom edge, so the shot stays visible while it is being described.
    *
@@ -17285,26 +17300,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0) }} />
       )}
 
-      {!isMobile && (
-        // top is offset by the past-due bar when it is showing: this element is out of flow, so it
-        // is the ONE thing in `page` that a new first child does not push down. See PAST_DUE_BAR_H.
-        <div style={{ ...s.desktopLogo, top: (pastDue ? PAST_DUE_BAR_H : 0) }}>
-          {/* ⚠️ THE MARK AND THE NAME ARE DIFFERENT JOBS, so the header can carry both. A badge logo
-              — a round mark with the name set inside it, which is what most bakers upload — is not
-              legible at any size a header can give it. Shown beside real text it does not have to
-              be: it is an icon, read by shape and colour, and the name is type. See
-              shared/headerBrand.js for the measurements and the default. */}
-          {brandParts.logo && (
-            <img src={logoSrc} alt=""
-                 style={brandParts.name ? s.desktopLogoImgPaired : s.desktopLogoImg} />
-          )}
-          {brandParts.name && (
-            <div style={{ ...s.topLogoText, ...s.desktopLogoText, fontFamily: brandFont }}>
-              {bakerData?.name ?? 'My Bakery'}
-            </div>
-          )}
-        </div>
-      )}
+      {/* ⚠️ THE DESKTOP BRAND MOVED TO THE RIGHT-HAND CLUSTER — see `creditsFloat` below. It used to
+          sit here, flush left, and Sandeep read it exactly as what it looked like: "its not really
+          looking like baker's brand name. it looks like some heading of a paragraph." It was not
+          the face or the size. A large flush-left name with a full-bleed rule directly under it is
+          the SHAPE of an h1 followed by an hr, whatever is written in it. Beside the bell and the
+          credits pill the same string reads as whose workbench this is, which is what it is for,
+          and the rule goes back to being the line between chrome and canvas. */}
 
       {/* ── Main ── */}
       <div style={{ ...s.main, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
@@ -18324,7 +18326,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cover the cake on the screen with least room to spare.
               Outside the shrinking wrapper below, so opening a side panel slides the cake and
               leaves the readout where it was. */}
-          {!isMobile && (hasCap('billing:manage') || canManageStore) && (
+          {/* ⚠️ NO LONGER GATED ON THE CAPS, because the BRAND now rides in this row and a baker
+              without billing or store rights still has a name. The gate used to wrap the whole
+              cluster, which was right when it held nothing but furniture; each item keeps its own
+              gate below. */}
+          {!isMobile && (
             <div style={s.creditsFloat}>
               {/* Bell first: credits is a READOUT and belongs closest to the edge where the eye
                   rests, while the bell is a control that gets pressed. Kept in step with the header
@@ -18335,6 +18341,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <CreditsPill apiClient={apiClient}
                   onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
               )}
+              {/* ⚠️ THE BRAND IS LAST, SO IT ENDS THE ROW. Sandeep, choosing the order: *"bell
+                  should come left to the name"*, then *"credit pill should also come left to the
+                  name"*. The furniture stays together and the name signs off the row, instead of a
+                  253px name splitting a bell from its pill.
+                  ⚠️ AND IT NEEDS NO `pastDue` OFFSET. The old slot carried
+                  `top: pastDue ? PAST_DUE_BAR_H : 0` because it hung off `page`; this row hangs off
+                  the content area, which is already pushed down — one fewer thing to keep in step.
+                  The mark and the name are different jobs, so the header can carry both: a badge
+                  logo is not legible at any header size, but beside real text it does not have to
+                  be — it is an icon, read by shape and colour, and the name is type. */}
+              {brandParts.logo && (
+                <img src={logoSrc} alt=""
+                     style={brandParts.name ? s.desktopLogoImgPaired : s.desktopLogoImg} />
+              )}
+              {brandParts.name && (() => {
+                const bakerName = bakerData?.name ?? 'My Bakery';
+                const size = brandNameFontSize(bakerName, brandNameRoom);
+                return (
+                  <div style={{ ...s.topLogoText, ...s.desktopLogoText, fontFamily: brandFont,
+                                fontSize: size,
+                                /* ⚠️ SHRINK FIRST, THEN WRAP, NEVER CLIP. At the 15px floor the
+                                   type has stopped giving way, so a name long enough to exhaust
+                                   even that would keep growing LEFT — past the rail and off the
+                                   screen, since this row is `right: 16` with no left bound.
+                                   Measured: ~90 characters at a 760px window. Nothing real is
+                                   close (the longest bakery name in the table is 27), but the
+                                   failure is silent and ugly, and one line prevents it. Wrapping
+                                   only at the floor keeps every ordinary name on one line, and the
+                                   80px band holds two 15px lines with room over. */
+                                ...(size <= BRAND_NAME_MIN
+                                     ? { whiteSpace: 'normal', maxWidth: brandNameRoom, textAlign: 'right' }
+                                     : null) }}>
+                    {bakerName}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -22249,17 +22291,31 @@ const s = {
     // to serve a minority is the worse trade. Change layout.tsx if that ever stops being true.
     fontFamily: "'Pacifico', cursive",
     fontWeight: 400,
-    fontSize: 26,
-    maxWidth: 420,
-    // Desktop keeps the single line it always had. topLogoText dropped nowrap so the PHONE can wrap
-    // a long name instead of truncating it; here the slot is absolutely positioned and 64px tall, so
-    // a second line of 26px Pacifico would spill over the header rule and onto the canvas.
-    // ⚠️ Which means desktop still truncates a very long name at 420px — the same identity problem
-    // the phone just stopped having, in a place with four times the room. Left as-is deliberately
-    // rather than fixed blind; see the note in plans/, and it wants its own look.
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    /* ⚠️ THE PADDING IS LOAD-BEARING, and the equal negative margins cancel it visually.
-     * `overflow: hidden` (needed for the ellipsis above) clips at the CONTENT BOX, and Pacifico's
+    /* ⚠️ NO SIZE AND NO CAP HERE ANY MORE — BOTH COME FROM THE CALL SITE.
+     *
+     * This was `fontSize: 26` with `maxWidth: 420` and `overflow:hidden/textOverflow:ellipsis`, and
+     * the note that used to sit here admitted what that cost: "desktop still truncates a very long
+     * name at 420px — the same identity problem the phone just stopped having, in a place with four
+     * times the room. Left as-is deliberately rather than fixed blind."
+     *
+     * Sandeep, offered a smaller cap when the name moved into the header's right-hand row: *"why
+     * should we truncate. its the baker's identity."* Quite. So nothing is clipped: `fontSize` is
+     * `brandNameFontSize(name, brandNameRoom)`, which steps the type down by the width actually
+     * available and stops at 15px. A name is always whole; the type gives way instead.
+     *
+     * `nowrap` STAYS, and is now the only half of the old trio left. The shrink keeps the name on
+     * one line, and a row of header furniture is the wrong place to grow a second one — the phone
+     * header wraps because it has a column to itself, which this does not. */
+    whiteSpace: 'nowrap',
+    /* ⚠️ ITS REASON HAS GONE, AND IT IS KEPT ON PURPOSE. The clip this was compensating for left
+     * with `overflow: hidden` above, so the padding and its cancelling negative margins now net to
+     * nothing — visually identical with or without. Kept rather than deleted because the pair is
+     * only correct TOGETHER: anyone re-adding a clip here (a cap, an ellipsis, a `contain`) gets
+     * the fix already in place instead of rediscovering it, and the note below records the axis
+     * mistake that cost a day the first time. Removing them is safe; removing one is not.
+     *
+     * The original reasoning, which is what makes the pair readable:
+     * `overflow: hidden` clips at the CONTENT BOX, and Pacifico's
      * ink does not fit inside a 1.2 line-height box. The padding moves the clip edge out; the
      * negative margin puts the wordmark back exactly where it was, so nothing else in the header
      * moves. Removing either one alone re-breaks it or shifts the mark.
