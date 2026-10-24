@@ -177,29 +177,34 @@ export const DISC_TEXT_DEFAULTS = Object.freeze({
  * caller measures the placed instance and hands those numbers in; everything below is a fraction
  * of them.
  *
- * `host` here is `{ center: [x, y, z], diameter, yaw }` — the disc's top face in world space,
- * which only the canvas can know.
+ * `host` is `{ center: [x, y, z], diameter, rotation }` — the disc's FACE in world space, which
+ * only the canvas can know.
+ *
+ * ⚠️ THE ROTATION IS THE CALLER'S, NOT THIS FUNCTION'S, and the first cut had it the other way.
+ * It hardcoded `[-PI/2, yaw, 0]` — face-up — on the reasoning that a plaque lies on the cake top.
+ * It also goes on the SIDE, where the disc faces radially outward and that constant is simply
+ * wrong: the name would be laid flat in the air beside the wall. Sandeep: *"it should work on the
+ * side as well."* Which way a host faces is a fact about where it was placed, and the placement
+ * code is the only thing that knows it; this function sizes the line and passes the pose through.
  */
 export function discTextPath(host, cfg = {}) {
   const d = Number(host?.diameter);
-  if (!(d > 0) || !Array.isArray(host?.center)) return null;
+  if (!(d > 0) || !Array.isArray(host?.center) || !Array.isArray(host?.rotation)) return null;
   const c = {
     span:  cfg.span  ?? DISC_TEXT_DEFAULTS.span,
     size:  cfg.size  ?? DISC_TEXT_DEFAULTS.size,
     inset: cfg.inset ?? DISC_TEXT_DEFAULTS.inset,
   };
   const capH = d * c.size;
-  const [cx, cy, cz] = host.center;
-  const yaw = Number(host.yaw) || 0;
   return {
     kind: 'disc',
-    /* ⚠️ `lay`, AND IT IS THE WHOLE DIFFERENCE FROM THE ARCH. The renderer lifts the letters off
-       the host along the host's OWN normal; rotating -90° about X turns the group's local +Z into
-       world +Y, so the same lift that pushes an arch's letters towards the viewer pushes a
-       plaque's straight up out of the icing. Without it a plaque's letters stand on edge. */
-    pose: 'lay',
-    position: [cx, cy, cz],
-    rotation: [-Math.PI / 2, yaw, 0],
+    /* ⚠️ THE RENDERER LIFTS THE LETTERS ALONG THE GROUP'S LOCAL +Z, which this rotation points at
+       the host's face. Face-up on the cake top (`[-PI/2, yaw, 0]` turns local +Z into world +Y);
+       radially outward on the wall (`[0, yaw, 0]` leaves it pointing out of the cylinder). One
+       renderer, both zones, because the pose travels with the host rather than being guessed. */
+    pose: 'face',
+    position: [...host.center],
+    rotation: [...host.rotation],
     /* A line across the face, shifted along it by `inset`. The box is the cap height plus room for
        a descender — a plain `capH` box clips the tail of a 'g' and the fitter cannot know that. */
     maxW: d * c.span,

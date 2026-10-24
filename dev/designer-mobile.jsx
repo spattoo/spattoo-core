@@ -921,15 +921,17 @@ if (PLAQUE_EL) {
     element_type_id: 'et-topper', category_id: 'cat-1',
     image_url: '/cdn/elements/files/2D/bfca8fe2-2cd5-45c3-a7dd-f2a59dfc7477.png',
     thumbnail_url: CAT_THUMB('#F7F2E8'), thumb_key: null,
-    /* ⚠️ TOP ONLY, AND THAT IS A FINDING RATHER THAN A CHOICE. `hug` on a round wall BENDS the decal
-       around the cylinder — that is what hug means, and the side offers a 2D piece no other mode —
-       so a rigid fondant disc curved like a transfer. Sandeep, seeing one on the wall: *"its bending
-       more than needed."* The `disc` text path is face-up besides, so on the side the name would be
-       wrong as well as the shape. The real row matches. */
-    allowed_zones: ['top_surface'],
+    /* ⚠️ THE WALL IS HALF OF WHY THIS FIXTURE EXISTS. A bakery puts a name plaque on the SIDE of a
+       cake at least as often as on the top, and the first cut of this row said `['top_surface']` —
+       which made the harness agree with a bug instead of exposing it. Sandeep: *"but why removing
+       and adding on the top? it should work on the side as well."*
+       Both zones, so the message door and the disc's pose are exercised in both. The real row
+       matches. (The remaining question on the wall is the BEND, which `hug` owns — a 2D decal wraps
+       the cylinder by design. Noted, not papered over here.) */
+    allowed_zones: ['top_surface', 'side'],
     allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: true },
     placement_config: {
-      r: 1, top_surface: 'hug',
+      r: 1, top_surface: 'hug', side: 'hug',
       recolor: { sat: 0.25, method: 'hue_regions', group_defaults: { 0: '#F7F2E8' } },
       text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0 },
       acrylic: { finishes: ['gold', 'silver', 'rose', 'white'], defaultFinish: 'gold' },

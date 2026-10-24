@@ -178,23 +178,49 @@ describe('the face a message is pressed onto', () => {
   });
 });
 
-describe('discTextPath — a flat plaque, lying face-up', () => {
-  const host = { center: [0.4, 1.2, -0.3], diameter: 1.0, yaw: 0 };
+describe('discTextPath — a flat plaque, wherever its face points', () => {
+  /* ⚠️ THE TWO POSES ARE THE WHOLE POINT OF THE SIGNATURE, and the first cut only had one. It
+     hardcoded face-up, because a plaque lies on the cake top — and the same element also goes on
+     the SIDE, where the disc faces radially outward. Sandeep: *"it should work on the side as
+     well."* Banning the side was the easy answer, not the correct one. */
+  const LAY  = [-Math.PI / 2, 0, 0];      // on the top: the disc's face points at the sky
+  const WALL = [0, 0, 0];                 // on the wall: its face points out of the cylinder
+  const host = { center: [0.4, 1.2, -0.3], diameter: 1.0, rotation: LAY };
 
-  it('lies flat, so the letters lift along the disc\'s own normal', () => {
-    const p = discTextPath(host);
-    expect(p.pose).toBe('lay');
-    // -90° about X turns the group's local +Z into world +Y. Without it a plaque's letters
-    // stand on edge like an arch's — the one thing that cannot be seen from the numbers alone.
-    expect(p.rotation[0]).toBeCloseTo(-Math.PI / 2, 6);
+  it('passes the host\'s own facing through, because only the placement knows it', () => {
+    // The renderer lifts the letters along the group's LOCAL +Z, which this rotation aims at the
+    // face. Compute it here and a plaque on the wall gets a name laid flat in the air beside it.
+    expect(discTextPath(host).rotation).toEqual(LAY);
+    expect(discTextPath({ ...host, rotation: WALL }).rotation).toEqual(WALL);
   });
 
   it('sits where the disc sits, never where a slot said', () => {
     expect(discTextPath(host).position).toEqual([0.4, 1.2, -0.3]);
   });
 
-  it('turns with the plaque', () => {
-    expect(discTextPath({ ...host, yaw: 1.1 }).rotation[1]).toBeCloseTo(1.1, 6);
+  it('turns with the plaque, in either pose', () => {
+    expect(discTextPath({ ...host, rotation: [-Math.PI / 2, 1.1, 0] }).rotation[1]).toBeCloseTo(1.1, 6);
+    expect(discTextPath({ ...host, rotation: [0, 1.1, 0] }).rotation[1]).toBeCloseTo(1.1, 6);
+  });
+
+  /* ⚠️ SIZING IS THE PROVIDER'S JOB, ORIENTATION IS THE CALLER'S — so moving a plaque from the top
+     to the wall must not change how much name fits on it. If these ever diverge, somebody has put
+     a zone branch back inside the measurement. */
+  it('measures a disc the same whichever way it faces', () => {
+    const top  = discTextPath(host);
+    const wall = discTextPath({ ...host, rotation: WALL });
+    expect(wall.maxW).toBeCloseTo(top.maxW, 12);
+    expect(wall.capH).toBeCloseTo(top.capH, 12);
+    expect(wall.maxH).toBeCloseTo(top.maxH, 12);
+  });
+
+  it('copies the pose rather than aliasing the caller\'s array', () => {
+    // The canvas rebuilds this every frame from live sticker state; handing back its own array
+    // lets a later mutation there silently re-point an already-rendered name.
+    const rot = [-Math.PI / 2, 0.5, 0];
+    const p = discTextPath({ ...host, rotation: rot });
+    rot[1] = 99;
+    expect(p.rotation[1]).toBeCloseTo(0.5, 6);
   });
 
   it('keeps a margin of fondant round the word', () => {
@@ -227,9 +253,11 @@ describe('discTextPath — a flat plaque, lying face-up', () => {
   });
 
   it('answers null for a disc it cannot measure, rather than a path at the origin', () => {
-    expect(discTextPath({ center: [0, 0, 0], diameter: 0 })).toBe(null);
-    expect(discTextPath({ diameter: 1 })).toBe(null);
+    expect(discTextPath({ center: [0, 0, 0], diameter: 0, rotation: LAY })).toBe(null);
+    expect(discTextPath({ diameter: 1, rotation: LAY })).toBe(null);
     expect(discTextPath(null)).toBe(null);
+    // and a host that forgot to say which way it faces, rather than guessing face-up for it
+    expect(discTextPath({ center: [0, 0, 0], diameter: 1 })).toBe(null);
   });
 
   it('is reachable through textPathFor, which is the only reader', () => {

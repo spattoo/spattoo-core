@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState, useSyncExternalStore, Suspense } from 'react';
+import { useRef, useMemo, useEffect, useState, useCallback, useSyncExternalStore, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import { useRetainedGlb, disposeGlbInstance, disposeGlbGeometries } from '../shared/retainedGlb.js';
@@ -2114,6 +2114,13 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
  *
  * ⚠️ KEEP `isStickerHitPlane`. Orbit-blocking reads it off the raycast (see the hover handler that
  * re-enables OrbitControls), and ResizeHandles relies on it being a real, raycastable mesh. */
+/* ⚠️ ONE ANSWER TO "IS THIS PIECE ON A WALL", asked by the renderer that places it AND by the
+   writings loop that has to put a name on its face. Said twice, the two disagree the first time a
+   zone is added, and a hosted message silently resolves down the wrong branch. */
+export function isSideZone(sticker) {
+  return sticker?.zone === 'side' || sticker?.zone === 'middle_tier';
+}
+
 function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown, onClick }) {
   return (
     <mesh userData={{ isStickerHitPlane: true }} position={volume.position}
@@ -2136,7 +2143,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2291,6 +2298,45 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     if (![p.x, p.y, p.z].every(Number.isFinite)) return;
     onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
   }, [sticker.freeHand, sticker.freePos, sticker.id]);
+
+  /* ── Where this piece's face ended up, for anything written ON it ──────────────────────────────
+   *
+   * ⚠️ THE WALL HAS TO REPORT, BECAUSE NOTHING OUTSIDE THIS COMPONENT CAN WORK IT OUT. A message on
+   * a plaque (`placement_config.text_path`) is a separate `writings` entry drawn by a SIBLING loop,
+   * and it has to land on the disc's face to the millimetre or it floats off the icing.
+   *
+   * On the cake TOP that loop derives the seat itself, and legitimately: it is `topSurfaceYAt(bands,
+   * r, topY)`, a pure function of data the canvas already holds, so both callers ask the SAME
+   * function rather than keeping two copies of it (INVARIANTS #15).
+   *
+   * On the WALL there is no such function to share. The radial seat folds in `vext` — measured off
+   * the loaded art or GLB — plus the live relief under this footprint, the wire standoff, the piping
+   * clearance and `effScale`'s frame clamp. Every one of those is state that lives in here. A copy
+   * of that arithmetic out in the writings loop is how the name and the disc it is written on come
+   * to sit at two different radii, and it would go stale on the next thing that moves the wall.
+   *
+   * So this is the same shape as `onSeat` / `onVExtent` / `onDepth` above: the child measures, the
+   * parent holds it, one place says where the thing is (INVARIANTS #10 law 1). It reports the
+   * DIAMETER too, because the side clamps scale to the tier (`effScale`, not `sticker.scale`) — a
+   * plaque that was shrunk to fit the wall must size its name to the disc it actually became.
+   *
+   * Only a host reports. The other ~220 elements never enter this effect. */
+  const faceKey = sticker.textPath
+    ? [...(fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]), yaw, STICKER_SIZE * effScale].join(',')
+    : null;
+  useEffect(() => {
+    if (!faceKey) return;
+    const [x, y, z, ry, d] = faceKey.split(',').map(Number);
+    /* `[0, yaw, 0]` — the group's rotation, verbatim. Its local +Z is the wall's outward normal,
+       which is the direction the letters must lift along; see discTextPath, which refuses to guess
+       this. A joined string rather than an array so the effect compares by VALUE: rebuilt every
+       frame, a fresh array would re-report on every one of them. */
+    onFacePose?.(sticker.id, { center: [x, y, z], rotation: [0, ry, 0], diameter: d });
+  }, [faceKey, sticker.id, onFacePose]);
+  /* ⚠️ AND IT WITHDRAWS ON THE WAY OUT, which is load-bearing rather than tidy. Drag a plaque from
+     the wall to the top and this component unmounts; a face left behind in the parent would keep
+     answering for a piece that is no longer on a wall, pinning its name to the old spot. */
+  useEffect(() => () => onFacePose?.(sticker.id, null), [sticker.id, onFacePose]);
 
   return (
     <group
@@ -4243,6 +4289,30 @@ function CakeContent({ config, scene, edit = null }) {
      (the component that hands `sideBands` to every rim-seated piece) is what makes the second look
      happen. The store bumps only on a real change, so this cannot loop with the measuring. */
   useSyncExternalStore(subscribeExtents, extentsVersionSnapshot, extentsVersionSnapshot);
+  /* ── Where each wall-mounted host's face is, as reported by the piece itself ────────────────────
+   *
+   * The writings loop below has to put a name on a plaque's face, and on the wall only the piece
+   * that placed it knows where that face ended up — see DraggableSideSticker's `onFacePose` for why
+   * it cannot be derived out here. This is the component both loops hang off, so this is where the
+   * answer lives: keyed by sticker id, written by the wall, read by the message.
+   *
+   * ⚠️ IT ONLY STORES A CHANGE, and that is not an optimisation. The pose is rebuilt every frame
+   * from live drag state; setting state unconditionally would re-render, which re-reports, which
+   * sets state — a loop that renders fine and pins the frame rate to zero. */
+  const [hostFaces, setHostFaces] = useState({});
+  const reportFacePose = useCallback((id, pose) => {
+    setHostFaces(prev => {
+      if (!pose) {
+        if (!(id in prev)) return prev;
+        const next = { ...prev }; delete next[id]; return next;
+      }
+      const p = prev[id];
+      if (p && p.diameter === pose.diameter
+          && p.center.every((v, i) => v === pose.center[i])
+          && p.rotation.every((v, i) => v === pose.rotation[i])) return prev;
+      return { ...prev, [id]: pose };
+    });
+  }, []);
   const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
@@ -4737,6 +4807,19 @@ function CakeContent({ config, scene, edit = null }) {
           if (w.on.kind === 'sticker') {
             const st = (stickers ?? []).find(x => x.id === w.on.id);
             if (!st?.textPath) return null;
+            /* ⚠️ THE WALL IS NOT THE TOP WITH A DIFFERENT ANGLE, which was the first assumption and
+               the reason this only ever worked on the icing. Sandeep: *"but why removing and adding
+               on the top? it should work on the side as well."* Banning the side was the easy
+               answer, not the correct one.
+               A wall-mounted plaque's face is REPORTED by the piece that placed it, because the
+               radial seat folds in measurements that only exist inside that component (see
+               `onFacePose`). Absent for one frame while it mounts — nothing to draw yet, and the
+               next frame has it. The top keeps deriving, because there the seat IS a shared pure
+               function and asking it is better than storing an answer. */
+            if (isSideZone(st)) {
+              const face = hostFaces[st.id];
+              return face ? textPathFor(st.textPath, face, null) : null;
+            }
             const tier = ht ?? bottomTier;
             if (!tier) return null;
             /* ⚠️ THE SEAT COMES FROM `topSurfaceYAt`, NOT FROM A COPY OF IT. A plaque rests on what
@@ -4755,8 +4838,12 @@ function CakeContent({ config, scene, edit = null }) {
             return textPathFor(st.textPath, {
               center:   [st.x ?? 0, faceY, st.z ?? 0],
               diameter: STICKER_SIZE * (st.scale ?? 1),
-              /* The plaque's own spin, so a turned disc turns its name with it. */
-              yaw:      -(st.rotation ?? 0),
+              /* Face-up: -90° about X turns the group's local +Z — the direction the renderer lifts
+                 the letters along — into world +Y, up out of the icing. The spin is NEGATED because
+                 that quarter turn flips the handedness of the yaw axis; unnegated, a disc turned
+                 clockwise takes its name anticlockwise. The wall needs no such correction, which is
+                 exactly why discTextPath takes the pose instead of computing one. */
+              rotation: [-Math.PI / 2, -(st.rotation ?? 0), 0],
             }, null);
           }
           const host = (ht?.rainbows ?? []).find(r => r.id === w.on.id);
@@ -4876,7 +4963,7 @@ function CakeContent({ config, scene, edit = null }) {
 
       {bottomTier && stickers.map(sticker => {
         const tier = tierData[sticker.tierIndex] ?? bottomTier;
-        const isSide = sticker.zone === 'side' || sticker.zone === 'middle_tier';
+        const isSide = isSideZone(sticker);
         const orbitEnable = orbitEnableFor(sticker.id);
 
         const isSelected = selectedStickerIds?.has(sticker.id) ?? false;
@@ -4911,6 +4998,7 @@ function CakeContent({ config, scene, edit = null }) {
               moveSet={moveSet}
               allStickers={stickers}
               onOrbitEnable={orbitEnable}
+              onFacePose={reportFacePose}
               toolbar={isSelected ? stickerToolbar : null}
               resize={stickerResize}
               canMove={isStickerMovable(sticker)}
