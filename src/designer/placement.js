@@ -192,6 +192,27 @@ function closestOnSegments(A, B) {
   return { p, q };
 }
 
+/* How far a footprint reaches from its own centre along a surface direction — the EDGE's version of
+ * the question `separationPush` answers for two pieces.
+ *
+ * ⚠️ THE EDGE CLAMP USED THE PIECE'S LONGEST HALF-EXTENT IN EVERY DIRECTION, and that is the same
+ * fault the Gingko fix removed from sibling collision, left behind at the rim. `CakeTier` normalises
+ * every GLB so its LONGEST axis is STICKER_SIZE, so `(STICKER_SIZE / 2) * scale` is exactly that
+ * longest half-extent — correct for a near-square piece and badly wrong for a thin one. Measured on
+ * the catalogue: Twisted seaweed is 0.016 half-thick and was held 0.140 from the edge, nearly nine
+ * times its own width; a Fluted Scallop Shell is 0.102 on its short axis and was held at 0.140.
+ * Sandeep, with a shell stopped short of clear icing: *"the shell is not freely moving though it
+ * has space."*
+ *
+ * A capsule's reach along `dir` is its axis projection plus its radius, which is exact rather than
+ * conservative, and degenerates to the circle for anything round — two near-spherical pieces keep
+ * the behaviour they have today.
+ */
+export function footprintReach(fp, dir) {
+  const cap = footprintCapsule(fp, 0, 0);
+  return Math.abs(cap.halfLen * (cap.ax * dir.x + cap.az * dir.z)) + cap.r;
+}
+
 /* How far `self` must move so it rests against `sib` instead of through it — {dx, dz}, zero when
  * they are already clear. The direction is between the CLOSEST POINTS, not between the centres, so
  * a leaf pushed off a rose slides along the rose rather than being flung down the line of middles.

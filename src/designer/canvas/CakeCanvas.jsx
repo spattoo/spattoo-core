@@ -69,7 +69,7 @@ import { buildOutlinePrism } from '../geometry/prism.js';
 import { tierShape, topClamp, topClampInset, topContains, boxHit, nearestU, rectSidePlacement, perimeter, snapToRim, boundingRadius, isRoundWall, boardRingClamp, wallSamples } from '../geometry/surface.js';
 import { manualSeat } from '../geometry/spherePacking.js';
 import { fitDistance, fitDistanceTight, sitFromSlack, framedHeight, cakeAimTarget } from '../geometry/framing.js';
-import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintCapsule, separationPush, surfaceYaw, contentFoot} from '../placement.js';
+import { hugScale, isDynamicHug, wallClampY, frameTopMaxScale, frameSideMaxScale, sideSeatOffset, DEFAULT_HUG_FILL, DEFAULT_FOLD_DEG, DEFAULT_SPINE, DEFAULT_INSERT_DEPTH, occludedTopFrac, seatedHitBox, hitVolume, occupantRadius, surfaceOccupants, occupantFootprint, footprintReach, footprintCapsule, separationPush, surfaceYaw, contentFoot} from '../placement.js';
 import { recolorImageData, extractRegions, recolorRegions, dominantColorOfImage } from '../shared/color/imageRecolor.js';
 import { buildReliefMaps } from '../shared/textures/reliefMaps.js';
 import { buildSolidReliefGeometry } from '../geometry/solidRelief.js';
@@ -2943,15 +2943,29 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
           // instance — never a config flag. (Future: faux-ball verge → edge_drag:'outward' allows
           // dragging OUT over the lip while still clamping inward to the rim; see PLACEMENT_CONFIG.md.)
           const isEdgeMode = (isPerch || (isVerge && !isVergeBase)) && !sticker.freeHand;
-          const edgeMargin = (isStand || isEdgeMode) ? 0 : (STICKER_SIZE / 2) * (sticker.scale ?? 1);
+          /* ⚠️ HOW FAR THIS PIECE REACHES THE WAY IT IS GOING, not its longest half-extent in every
+             direction. `(STICKER_SIZE / 2) * scale` WAS that longest half-extent — CakeTier
+             normalises a GLB so its longest axis is STICKER_SIZE — so a thin piece was held off the
+             rim by its width. Measured on this cake: Twisted seaweed is 0.016 half-thick and was
+             stopped 0.140 short, nearly nine times its own size; a scallop shell is 0.102 on its
+             short axis and was stopped at 0.140. Sandeep: "the shell is not freely moving though it
+             has space." Same fault the Gingko fix removed from sibling collision, left at the edge.
+             Per POINT, because the outward direction changes as the piece travels round the rim. */
+          const dragFp = occupantFootprint(sticker, glbHalfCache[sticker.imageUrl]);
+          const marginAt = (x, z) => {
+            if (isStand || isEdgeMode) return 0;
+            const r = Math.hypot(x, z);
+            const dir = r > 1e-6 ? { x: x / r, z: z / r } : { x: 0, z: 1 };
+            return footprintReach(dragFp, dir);
+          };
           /* ⚠️ FREE HAND MEANS NO CLAMP AT ALL. Every rule above exists to stop a piece burying
              itself or sliding off, and each is right for a decoration the app is seating. A row
              that asks for free hand has given up on being seated automatically — clamping it back
              to the perimeter would be the app overruling the person it just handed control to. */
           const clampPt = (x, z) => sticker.freeHand ? { x, z }
             : isEdgeMode ? snapToRim(shp, x, z)
-            : hole ? boardRingClamp(shp, hole, x, z, edgeMargin)
-            : topClampInset(shp, x, z, edgeMargin);
+            : hole ? boardRingClamp(shp, hole, x, z, marginAt(x, z))
+            : topClampInset(shp, x, z, marginAt(x, z));
           ({ x: newX, z: newZ } = clampPt(newX, newZ));
           const siblings = allStickers.filter(s => s.id !== sticker.id && s.zone === sticker.zone && s.tierIndex === sticker.tierIndex);
           /* ⚠️ ONE RULE, NOT THREE COPIES. This was written out inline here and twice more below,
@@ -2987,10 +3001,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
                arithmetic said they touched. Caught by looking: "is ginko penetrating into rose?"
                footprintCapsule / separationPush, placement.js. An unmeasured element (every 2D
                sticker) is still exactly the circle it was. */
-            const selfFp = occupantFootprint(sticker, glbHalfCache[sticker.imageUrl]);
             for (const sib of siblings) {
               const { dx: pushX, dz: pushZ } = separationPush(
-                footprintCapsule(selfFp, newX, newZ),
+                footprintCapsule(dragFp, newX, newZ),
                 footprintCapsule(occupantFootprint(sib, glbHalfCache[sib.imageUrl]), sib.x, sib.z));
               if (pushX || pushZ) {
                 newX += pushX;
@@ -4715,6 +4728,37 @@ function CakeContent({ config, scene, edit = null }) {
         const hostPath = (() => {
           if (!w.on) return null;
           const ht = tierData?.[w.on.tierIndex];
+          /* ⚠️ TWO KINDS OF HOST NOW, AND THE KIND IS ON THE MESSAGE. `w.on.kind` has always been
+             written ('rainbow'); nothing read it, because a rainbow was the only thing a message
+             could sit on. A plaque is a STICKER, which lives in a different collection with a
+             different placement model, so the lookup has to branch here — and only here: both
+             arms hand `textPathFor` a host and its context, and the renderer never learns which
+             it got. Same split the rainbow note below already states. */
+          if (w.on.kind === 'sticker') {
+            const st = (stickers ?? []).find(x => x.id === w.on.id);
+            if (!st?.textPath) return null;
+            const tier = ht ?? bottomTier;
+            if (!tier) return null;
+            /* ⚠️ THE SEAT COMES FROM `topSurfaceYAt`, NOT FROM A COPY OF IT. A plaque rests on what
+               is actually there — a rim border raises it — and that is the same question the
+               scattered-sprinkle path asks, answered by the same pure function. Re-deriving the
+               lift here is how the message and the disc it is written on come to sit at two
+               different heights (INVARIANTS #15). */
+            const topY = tier.baseY + tier.height;
+            const bands = resolveSidePipingBands({
+              topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
+              bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
+              topY, yBase: tier.baseY, height: tier.height, radius: tier.radius,
+            })?.top ?? [];
+            const r = Math.hypot(st.x ?? 0, st.z ?? 0);
+            const faceY = topSurfaceYAt(bands, r, topY);
+            return textPathFor(st.textPath, {
+              center:   [st.x ?? 0, faceY, st.z ?? 0],
+              diameter: STICKER_SIZE * (st.scale ?? 1),
+              /* The plaque's own spin, so a turned disc turns its name with it. */
+              yaw:      -(st.rotation ?? 0),
+            }, null);
+          }
           const host = (ht?.rainbows ?? []).find(r => r.id === w.on.id);
           if (!host) return null;
           return textPathFor(host.textPath, host,

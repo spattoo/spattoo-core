@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zonePoses, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { occupantFootprint, footprintReach } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -992,5 +993,54 @@ describe('zoneHasChoice — one honoured pose is not a choice', () => {
 
   it('stays true where the poses are genuinely different', () => {
     expect(zoneHasChoice({ top_surface: { modes: ['stand', 'hug'] } }, ZONES.TOP_SURFACE)).toBe(true);
+  });
+});
+
+// ── How far a piece reaches toward the edge ──────────────────────────────────────────────────────
+// Reported: a scallop shell on the top surface would not travel into clear icing. The edge clamp
+// used (STICKER_SIZE / 2) * scale — which, because CakeTier normalises every GLB so its LONGEST
+// axis is STICKER_SIZE, is that longest half-extent applied in every direction. Measured on the
+// catalogue: Twisted seaweed is 0.016 half-thick and was held 0.140 off the rim.
+describe('footprintReach — the edge asks the shape, as collision already does', () => {
+  const at = (hx, hy, yaw = 0, scale = 1) =>
+    occupantFootprint({ scale, rotation: yaw, placementMode: 'hug' }, { hx, hy, hz: 0.03 });
+  const X = { x: 1, z: 0 }, Z = { x: 0, z: 1 };
+
+  it('gives a thin piece its thin reach, not its long one (Twisted seaweed)', () => {
+    const fp = at(0.016, 0.140);
+    expect(footprintReach(fp, X)).toBeCloseTo(0.016, 3);   // was 0.140 — nearly 9x too much
+    expect(footprintReach(fp, Z)).toBeCloseTo(0.140, 3);
+  });
+
+  it('turns with the piece (Fluted Scallop Shell, the reported one)', () => {
+    expect(footprintReach(at(0.140, 0.102), X)).toBeCloseTo(0.140, 3);
+    expect(footprintReach(at(0.140, 0.102), Z)).toBeCloseTo(0.102, 3);
+    // rotated a quarter turn, the long axis now points along z
+    expect(footprintReach(at(0.140, 0.102, Math.PI / 2), X)).toBeCloseTo(0.102, 3);
+  });
+
+  it('never exceeds the old margin, so nothing can newly overhang the rim', () => {
+    for (const [hx, hy] of [[0.016, 0.140], [0.140, 0.102], [0.140, 0.134], [0.14, 0.14]]) {
+      for (const yaw of [0, 0.4, 1.1, Math.PI / 2, 2.6]) {
+        for (const dir of [X, Z, { x: 0.707, z: 0.707 }]) {
+          expect(footprintReach(at(hx, hy, yaw), dir)).toBeLessThanOrEqual(0.140 + 1e-9);
+        }
+      }
+    }
+  });
+
+  it('is a circle for anything round — two near-spherical pieces are unchanged', () => {
+    const ball = at(0.14, 0.14);
+    for (const dir of [X, Z, { x: 0.6, z: 0.8 }]) expect(footprintReach(ball, dir)).toBeCloseTo(0.14, 3);
+  });
+
+  it('scales with the instance, the way the old margin did', () => {
+    expect(footprintReach(at(0.140, 0.102, 0, 2), X)).toBeCloseTo(0.280, 3);
+  });
+
+  // An unmeasured 2D sticker has no GLB box; it must keep exactly the circle it always had.
+  it('leaves an unmeasured sticker as the circle it was', () => {
+    const fp = occupantFootprint({ scale: 1 }, null);
+    for (const dir of [X, Z]) expect(footprintReach(fp, dir)).toBeCloseTo(STICKER_SIZE / 4, 4);
   });
 });
