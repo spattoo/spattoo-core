@@ -19931,10 +19931,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ) });
             }
 
-            // Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the canvas
-            // resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range that
-            // ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3).
-            if (caps?.resize && selectedEl?.type === 'sticker') {
+            /* Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the canvas
+             * resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range that
+             * ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3).
+             *
+             * ⚠️ BUT NOT WHEN THE CARD THAT OPENED THIS PANEL IS THE ONE HOLDING THE SIZE DIAL.
+             * Sandeep, after the sheets stopped stacking: *"when i click on color picker here, why
+             * is size coming in level2 popup. size is already there on level1."* It is the same
+             * control — literally, both built from `sizeControlOf` — so a baker who tapped a colour
+             * swatch was handed a tab for something they already had one line up, and the tab strip
+             * existed only to offer it.
+             *
+             * ⚠️ IT IS THE SAME FACT AS THE STACKING FIX, NOT A SECOND ONE. While the two sheets
+             * overlapped, the duplicate was merely redundant; once level 2 REPLACES level 1 it is
+             * worse than that, because the dial it duplicates is now off screen and the tab looks
+             * like the only way to the size. Hiding the card is what makes this worth removing.
+             *
+             * With Colour alone left, `showTabs` (sections.length > 1) drops the strip too, so the
+             * sheet is a colour wheel and nothing else — which is what tapping a colour asked for.
+             * Unscoped paths are untouched: a tier never reaches this branch, and where no card is
+             * showing the dial (desktop, or the panel opened some other way) Size stays. */
+            if (caps?.resize && selectedEl?.type === 'sticker' && !cardBehindSubPanel) {
               const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
               const ctl = sizeControlOf(sticker);
               if (sticker && ctl) {
