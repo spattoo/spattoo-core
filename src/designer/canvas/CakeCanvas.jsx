@@ -2121,6 +2121,64 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
  *
  * ⚠️ KEEP `isStickerHitPlane`. Orbit-blocking reads it off the raycast (see the hover handler that
  * re-enables OrbitControls), and ResizeHandles relies on it being a real, raycastable mesh. */
+/* ── Where a host's face actually ended up, asked of the scene graph ─────────────────────────────
+ *
+ * A message written on a decoration (`placement_config.text_path`) is a separate `writings` entry
+ * drawn by a SIBLING loop, and it has to land on that decoration's face to the millimetre.
+ *
+ * ⚠️ IT READS THE WORLD MATRIX RATHER THAN REBUILDING THE POSE, and the first two attempts did the
+ * opposite — each re-derived the seat from the same locals the renderer had just used. Both were
+ * wrong, in different ways, and the way they were wrong is the argument for this:
+ *
+ *   · On the WALL the radial seat folds in the piece's measured extent, the live relief under its
+ *     footprint, the wire standoff, the piping clearance and the tier's frame clamp on scale.
+ *   · On the TOP it folds in the stick (`stickLift`), the wire, `yOffset`, the seat fraction and
+ *     the lean — and the spin sits on a DIFFERENT AXIS there (local Z, after the -90° that lays the
+ *     artwork flat) than it does on the wall. A plaque on a pick rode up its stick and left its name
+ *     lying on the icing, run through by the rod. Sandeep asked whether a stick needed testing; it
+ *     did, and this is what it found.
+ *
+ * Every one of those is a transform the renderer has ALREADY applied. Asking the object where it is
+ * cannot disagree with where it was drawn — one place says where the thing is (INVARIANTS #10
+ * law 1) — and anything added above it later (a new lean, a new modifier) is carried for free.
+ *
+ * Attach the ref to the group whose local +Z is the FACE NORMAL: on the wall that is the outward
+ * group, on the top the one holding `[-PI/2, 0, rotation]` (which sends +Z to world +Y). That is
+ * the direction the renderer lifts the letters along, so the pose and the lift agree by
+ * construction. Scale comes from the same decompose, because the side clamps a piece to its tier —
+ * a plaque shrunk to fit the wall must size its name to the disc it actually became.
+ *
+ * Only a host runs this. The other ~220 elements take the early return and never decompose. */
+const _fpM = new THREE.Matrix4(), _fpP = new THREE.Vector3();
+const _fpQ = new THREE.Quaternion(), _fpS = new THREE.Vector3(), _fpE = new THREE.Euler();
+const FACE_EPS = 1e-5;
+
+function useFacePoseReport(enabled, id, onFacePose) {
+  const ref = useRef(null);
+  const last = useRef(null);
+  useFrame(() => {
+    if (!enabled || !onFacePose || !ref.current) return;
+    const o = ref.current;
+    o.updateWorldMatrix(true, false);
+    _fpM.copy(o.matrixWorld).decompose(_fpP, _fpQ, _fpS);
+    _fpE.setFromQuaternion(_fpQ, 'XYZ');
+    const next = [_fpP.x, _fpP.y, _fpP.z, _fpE.x, _fpE.y, _fpE.z, STICKER_SIZE * _fpS.x];
+    /* ⚠️ ONLY ON A CHANGE, AND THAT IS NOT AN OPTIMISATION. This runs every frame; reporting
+       unconditionally would set state, which re-renders, which re-reports — a loop that looks
+       correct and pins the frame rate to zero. The epsilon is there because a decompose of a matrix
+       rebuilt each frame is not bit-stable. */
+    const prev = last.current;
+    if (prev && next.every((v, i) => Math.abs(v - prev[i]) < FACE_EPS)) return;
+    last.current = next;
+    onFacePose(id, { center: next.slice(0, 3), rotation: next.slice(3, 6), diameter: next[6] });
+  });
+  /* ⚠️ IT WITHDRAWS ON THE WAY OUT, which is load-bearing rather than tidy: drag a plaque from the
+     wall to the top and this component unmounts, and a face left behind in the parent would keep
+     answering for a piece that is no longer there. */
+  useEffect(() => () => onFacePose?.(id, null), [id, onFacePose]);
+  return ref;
+}
+
 /* ⚠️ ONE ANSWER TO "IS THIS PIECE ON A WALL", asked by the renderer that places it AND by the
    writings loop that has to put a name on its face. Said twice, the two disagree the first time a
    zone is added, and a hosted message silently resolves down the wrong branch. */
@@ -2315,48 +2373,13 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
   }, [sticker.freeHand, sticker.freePos, sticker.id]);
 
-  /* ── Where this piece's face ended up, for anything written ON it ──────────────────────────────
-   *
-   * ⚠️ THE WALL HAS TO REPORT, BECAUSE NOTHING OUTSIDE THIS COMPONENT CAN WORK IT OUT. A message on
-   * a plaque (`placement_config.text_path`) is a separate `writings` entry drawn by a SIBLING loop,
-   * and it has to land on the disc's face to the millimetre or it floats off the icing.
-   *
-   * On the cake TOP that loop derives the seat itself, and legitimately: it is `topSurfaceYAt(bands,
-   * r, topY)`, a pure function of data the canvas already holds, so both callers ask the SAME
-   * function rather than keeping two copies of it (INVARIANTS #15).
-   *
-   * On the WALL there is no such function to share. The radial seat folds in `vext` — measured off
-   * the loaded art or GLB — plus the live relief under this footprint, the wire standoff, the piping
-   * clearance and `effScale`'s frame clamp. Every one of those is state that lives in here. A copy
-   * of that arithmetic out in the writings loop is how the name and the disc it is written on come
-   * to sit at two different radii, and it would go stale on the next thing that moves the wall.
-   *
-   * So this is the same shape as `onSeat` / `onVExtent` / `onDepth` above: the child measures, the
-   * parent holds it, one place says where the thing is (INVARIANTS #10 law 1). It reports the
-   * DIAMETER too, because the side clamps scale to the tier (`effScale`, not `sticker.scale`) — a
-   * plaque that was shrunk to fit the wall must size its name to the disc it actually became.
-   *
-   * Only a host reports. The other ~220 elements never enter this effect. */
-  const faceKey = sticker.textPath
-    ? [...(fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]), yaw, STICKER_SIZE * effScale].join(',')
-    : null;
-  useEffect(() => {
-    if (!faceKey) return;
-    const [x, y, z, ry, d] = faceKey.split(',').map(Number);
-    /* `[0, yaw, 0]` — the group's rotation, verbatim. Its local +Z is the wall's outward normal,
-       which is the direction the letters must lift along; see discTextPath, which refuses to guess
-       this. A joined string rather than an array so the effect compares by VALUE: rebuilt every
-       frame, a fresh array would re-report on every one of them. */
-    onFacePose?.(sticker.id, { center: [x, y, z], rotation: [0, ry, 0], diameter: d });
-  }, [faceKey, sticker.id, onFacePose]);
-  /* ⚠️ AND IT WITHDRAWS ON THE WAY OUT, which is load-bearing rather than tidy. Drag a plaque from
-     the wall to the top and this component unmounts; a face left behind in the parent would keep
-     answering for a piece that is no longer on a wall, pinning its name to the old spot. */
-  useEffect(() => () => onFacePose?.(sticker.id, null), [sticker.id, onFacePose]);
+  /* The wall's outward group IS the face: its local +Z points out of the cylinder. See
+     useFacePoseReport — the pose is read off the object rather than rebuilt from these locals. */
+  const faceRef = useFacePoseReport(!!sticker.textPath, sticker.id, onFacePose);
 
   return (
     <group
-      ref={freeRef}
+      ref={node => { freeRef.current = node; faceRef.current = node; }}
       position={fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
@@ -2541,7 +2564,7 @@ function freeDragPlane(camera, at) {
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2648,6 +2671,9 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   /* No row here, and none needed: the authored depth is baked onto the instance when the element is
      placed (useCakeDesign), so what reaches the canvas already carries the number. The renderer's
      own fallback covers a design saved before this existed. */
+  /* The flat-lay group below is this piece's face; the hook reads its world matrix, so everything
+     between here and there — stick, wire, yOffset, seat, lean — is carried without being restated. */
+  const faceRef = useFacePoseReport(!!sticker.textPath, sticker.id, onFacePose);
   const stick = stickFor(artBox, sticker.stick, null);
   /* ⚠️ A WIRE AND A PICK ARE ALTERNATIVES, NOT A PAIR. Both answer "what holds this piece off the
      icing", so an element carrying both would be drawn on two supports at once. The wire wins when
@@ -3235,7 +3261,13 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
       <group position={[flatPivotX, 0, flatPivotZ]}>
         <group rotation={[flatLeanX, 0, flatLeanZ]}>
           <group position={[-flatPivotX, 0, -flatPivotZ]}>
-            <group rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
+            {/* ⚠️ THE FACE IS REPORTED FROM *INSIDE* THE LEAN AND THE STICK, not from the seat
+                these groups started at. This -90° is what lays the artwork flat, so this group's
+                local +Z is the plaque's face normal, and its world matrix already carries the
+                stick's lift, the wire, `yOffset`, the seat fraction and the lean above it. The
+                spin is on Z here and on Y on the wall; reading the matrix means neither caller
+                has to know that. See useFacePoseReport. */}
+            <group ref={faceRef} rotation={[-Math.PI / 2, 0, sticker.rotation ?? 0]}>
               {innerContent(onDown)}
             </group>
           </group>
@@ -4823,44 +4855,17 @@ function CakeContent({ config, scene, edit = null }) {
           if (w.on.kind === 'sticker') {
             const st = (stickers ?? []).find(x => x.id === w.on.id);
             if (!st?.textPath) return null;
-            /* ⚠️ THE WALL IS NOT THE TOP WITH A DIFFERENT ANGLE, which was the first assumption and
-               the reason this only ever worked on the icing. Sandeep: *"but why removing and adding
-               on the top? it should work on the side as well."* Banning the side was the easy
-               answer, not the correct one.
-               A wall-mounted plaque's face is REPORTED by the piece that placed it, because the
-               radial seat folds in measurements that only exist inside that component (see
-               `onFacePose`). Absent for one frame while it mounts — nothing to draw yet, and the
-               next frame has it. The top keeps deriving, because there the seat IS a shared pure
-               function and asking it is better than storing an answer. */
-            if (isSideZone(st)) {
-              const face = hostFaces[st.id];
-              return face ? textPathFor(st.textPath, face, null) : null;
-            }
-            const tier = ht ?? bottomTier;
-            if (!tier) return null;
-            /* ⚠️ THE SEAT COMES FROM `topSurfaceYAt`, NOT FROM A COPY OF IT. A plaque rests on what
-               is actually there — a rim border raises it — and that is the same question the
-               scattered-sprinkle path asks, answered by the same pure function. Re-deriving the
-               lift here is how the message and the disc it is written on come to sit at two
-               different heights (INVARIANTS #15). */
-            const topY = tier.baseY + tier.height;
-            const bands = resolveSidePipingBands({
-              topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
-              bottomPipings: tier.bottomPipings ?? (tier.bottomPiping ? [tier.bottomPiping] : []),
-              topY, yBase: tier.baseY, height: tier.height, radius: tier.radius,
-            })?.top ?? [];
-            const r = Math.hypot(st.x ?? 0, st.z ?? 0);
-            const faceY = topSurfaceYAt(bands, r, topY);
-            return textPathFor(st.textPath, {
-              center:   [st.x ?? 0, faceY, st.z ?? 0],
-              diameter: STICKER_SIZE * (st.scale ?? 1),
-              /* Face-up: -90° about X turns the group's local +Z — the direction the renderer lifts
-                 the letters along — into world +Y, up out of the icing. The spin is NEGATED because
-                 that quarter turn flips the handedness of the yaw axis; unnegated, a disc turned
-                 clockwise takes its name anticlockwise. The wall needs no such correction, which is
-                 exactly why discTextPath takes the pose instead of computing one. */
-              rotation: [-Math.PI / 2, -(st.rotation ?? 0), 0],
-            }, null);
+            /* ⚠️ ONE SOURCE, BOTH ZONES, AND NOTHING DERIVED HERE. This branch used to work the top
+               seat out for itself — `topSurfaceYAt(bands, r, topY)` — which read as principled
+               (a shared pure function, not a copy) and was still wrong twice over: a hand-placed
+               piece seats on `topY` rather than on the piping under it, and the expression knew
+               nothing of the STICK. A plaque on a pick rode up its rod and left its name on the
+               icing, run through by the stick. Sandeep asked whether that needed testing; it did.
+               The piece reports where it actually drew itself (`onFacePose`), so a transform added
+               above it — a lean, a wire, a modifier not invented yet — moves the name with it.
+               Absent for one frame while it mounts: nothing to draw yet, and the next frame has it. */
+            const face = hostFaces[st.id];
+            return face ? textPathFor(st.textPath, face, null) : null;
           }
           const host = (ht?.rainbows ?? []).find(r => r.id === w.on.id);
           if (!host) return null;
@@ -5060,6 +5065,7 @@ function CakeContent({ config, scene, edit = null }) {
             moveSet={moveSet}
             allStickers={stickers}
             onOrbitEnable={orbitEnable}
+            onFacePose={reportFacePose}
             toolbar={isSelected ? stickerToolbar : null}
             resize={stickerResize}
             canMove={isStickerMovable(sticker)}
