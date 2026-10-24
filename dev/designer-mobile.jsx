@@ -931,7 +931,12 @@ if (PLAQUE_EL) {
     allowed_zones: ['top_surface', 'side'],
     allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: true },
     placement_config: {
-      r: 1, top_surface: 'hug', side: 'hug',
+      r: 1, top_surface: 'hug',
+      /* ⚠️ THE OBJECT FORM, FOR `bend`. On a round wall `hug` wraps a decal around the cylinder by
+         definition, and the wrap grows with size — 12° at scale 1, 49° at scale 4 — which is right
+         for a printed transfer and wrong for a stiff fondant disc. *"its bending more than needed."*
+         A FRACTION of whatever curve the wall has, so one value holds across the whole scale range. */
+      side: { mode: 'hug', bend: 0.4 },
       recolor: { sat: 0.25, method: 'hue_regions', group_defaults: { 0: '#F7F2E8' } },
       text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0 },
       acrylic: { finishes: ['gold', 'silver', 'rose', 'white'], defaultFinish: 'gold' },

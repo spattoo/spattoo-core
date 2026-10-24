@@ -1247,7 +1247,7 @@ function frontZOf(geometry, extraLift = 0) {
   return (geometry.boundingBox?.max?.z ?? 0) + extraLift;
 }
 
-function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
+function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, bend = 1, foldable, fold, spine, standUp, recolor, color, groupColors, relief = null, stickerScale = 1, reliefRadius = null, roughness = null, metalness = null, printFinish = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, onSeat, onDepth, onVExtent }) {
   /* ⚠️ RESOLVED ONCE, HERE, AND NOWHERE ELSE IN THIS COMPONENT. The small (≤512) copy of the
      artwork is a quarter of the decoded GPU memory the master costs, and nobody can see the
      difference on a decoration a few hundred screen pixels wide — see shared/renderVariants.js.
@@ -1283,7 +1283,7 @@ function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, foldable, fo
   const solidImg = base?.image;
   const solidReady = solidOn && solidImg && (solidImg.naturalWidth || solidImg.width);
   const solidKey = solidReady
-    ? `${imageUrl}|${reliefLift}|${(curved && curveRadius) ? curveRadius : 'flat'}|${stickerScale}|${relief.solidEdge ?? 0}`
+    ? `${imageUrl}|${reliefLift}|${(curved && curveRadius && bend > 0) ? `${curveRadius}@${bend}` : 'flat'}|${stickerScale}|${relief.solidEdge ?? 0}`
     : null;
   const solidGeo = useMemo(() => (
     solidKey ? solidGeoCache.get(solidKey, () => {
@@ -1293,7 +1293,7 @@ function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, foldable, fo
           // The solid's raised height is the SAME lift→world value the displaced path feeds
           // displacementScale, so it matches the old shell on any cake size / sticker scale (#8).
           thickness: reliefLift,
-          curveRadius: (curved && curveRadius) ? curveRadius : null,   // null → flat slab (top surface / sheet wall)
+          curveRadius: (curved && curveRadius && bend > 0) ? curveRadius / bend : null,   // null → flat slab (top surface / sheet wall)
           scale: stickerScale,
           edgeRadius: relief.solidEdge ?? 0,   // 0..1 of depth → rounded fondant rim (0 = sharp edge)
         });
@@ -1382,10 +1382,17 @@ function StickerTexture({ imageUrl: masterUrl, curved, curveRadius, foldable, fo
     // flatter arc than the wall and its edges bowed off it at the silhouette tangent — worse the bigger
     // the element. That is a BASE-geometry bug, not a relief one; relief only made it easy to see.
     // Relief needs a DENSE grid so the displacement map can sculpt real lift; flat stickers stay low-poly.
-    return (curved && curveRadius)
-      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, curveRadius / (stickerScale || 1), reliefOn ? RELIEF_SEGMENTS : 16, reliefOn ? RELIEF_SEGMENTS : 1)
+    /* ⚠️ `bend` DIVIDES THE RADIUS, which is the whole of the feature. Building the strip at
+       `R / bend` makes it sweep `bend × halfAngle` over the same arc length, so 0.4 is four tenths
+       of the wall's curve and 1 is the wall exactly — see `zoneBend` for why it is a fraction and
+       not a radius. At 0 the radius is infinite, which this geometry cannot express (every vertex
+       collapses to the centre), so it falls through to the flat slab the top surface already uses.
+       And nothing is offset: a stiffer piece on a convex wall touches at its CENTRE and lifts at
+       its edges, so the contact point does not move. */
+    return (curved && curveRadius && bend > 0)
+      ? createCurvedPlane(STICKER_SIZE, STICKER_SIZE, curveRadius / ((stickerScale || 1) * bend), reliefOn ? RELIEF_SEGMENTS : 16, reliefOn ? RELIEF_SEGMENTS : 1)
       : new THREE.PlaneGeometry(STICKER_SIZE, STICKER_SIZE, reliefOn ? RELIEF_SEGMENTS : 1, reliefOn ? RELIEF_SEGMENTS : 1);
-  }, [foldable, fold, spine, standUp, curved, curveRadius, stickerScale, reliefOn]);
+  }, [foldable, fold, spine, standUp, curved, curveRadius, bend, stickerScale, reliefOn]);
   // How far this element stands proud of its hit plane, so the selection border clears it. A flat
   // decal is flush (0); a solid slab carries its thickness in the geometry; a displaced relief adds
   // its lift in the vertex shader, after the bounding box was computed.
@@ -2069,7 +2076,7 @@ function ElementWire({ wire }) {
   );
 }
 
-function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, calendarLayout = null, onSeat, onDepth, onVExtent }) {
+function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bend = 1, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, calendarLayout = null, onSeat, onDepth, onVExtent }) {
   // ⚠️ BEFORE the imageUrl guard, which is the whole reason this branch exists here rather than
   // deeper down: a calendar element carries no image_url, so the guard below would render nothing at
   // all and the decoration would vanish the moment it was placed. Config-gated on
@@ -2088,7 +2095,7 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
     <SafeGlb screen="CakeCanvas">
       {isGlb
         ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} recolourable={recolourable} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
-        : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
+        : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} bend={bend} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
       }
     </SafeGlb>
   );
@@ -2256,8 +2263,17 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   // Round cakes: bend a GLB sticker around the tier wall so it hugs the curve.
   // Local radius = surfaceR / group scale, so after the group's scale it wraps at
   // the true wall radius (bigger stickers span more arc → curve more).
-  const bendRadius = (isGlb && !facetWall && curveRadius)
-    ? curveRadius / (effScale || 1)
+  /* ⚠️ ONE KEY, ONE MEANING — it reaches the GLB path as well as the decal's. `bend` is "how much
+     of the wall's curve this piece takes", and a flag that quietly only worked on 2D art would be
+     a second rule wearing the first one's name. Absent → 1 → nothing on a cake today moves. */
+  /* Anything unreadable falls back to 1, NOT to 0 — a malformed saved design must render as it
+     always did, not turn every decal on the cake rigid. ⚠️ `null` is absent, and `Number(null)` is
+     0, so it has to be ruled out BEFORE the conversion; see zoneBend, which caught this. */
+  const bendRaw = sticker.sideBend;
+  const bendNum = (bendRaw == null || bendRaw === '') ? 1 : Number(bendRaw);
+  const bend = Number.isFinite(bendNum) ? Math.min(1, Math.max(0, bendNum)) : 1;
+  const bendRadius = (isGlb && !facetWall && curveRadius && bend > 0)
+    ? curveRadius / ((effScale || 1) * bend)
     : undefined;
 
 
@@ -2355,7 +2371,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
           the piece was put. */}
       {wire && <ElementWire wire={wire} />}
       <group rotation={[sticker.tiltAngle ?? 0, 0, sticker.rollAngle ?? 0]}>
-      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onDepth={setDepth} onVExtent={setVext} />
+      <StickerFace imageUrl={sticker.imageUrl} color={sticker.color} groupColors={sticker.groupColors} gradient={sticker.gradient} curved={!isGlb && !facetWall} curveRadius={curveRadius} bend={bend} bendRadius={bendRadius} baseRotation={sticker.baseRotation} seatProud={sticker.sideProud === true} fondant={sticker.useSharedFondantTexture} recolourable={sticker.allowedActions?.color === true} roughness={sticker.roughness} metalness={sticker.metalness} surface={sticker.surface} printFinish={sticker.printFinish} flipX={sticker.flipX} foldable={sticker.foldable} fold={sticker.fold} spine={sticker.spine} recolor={sticker.recolor} relief={sticker.relief} stickerScale={effScale} reliefRadius={curveRadius} photoUrl={sticker.photoUrl} photoMask={sticker.photoMask} photoTransform={sticker.photoTransform} photoOverlay={sticker.photoOverlay} borderWidth={sticker.borderWidth} textSlots={sticker.textSlots} textValues={sticker.textValues} calendar={sticker.calendar} calendarValues={sticker.calendarValues} calendarLayout={sticker.calendarLayout} onDepth={setDepth} onVExtent={setVext} />
       {/* Selection cue: a border tracing this element's HIT PLANE (the square below) — the region
           that actually intercepts pointer events, transparent margin included. That is what tells a
           customer why the decoration underneath won't respond. Corner grips resize it, through the

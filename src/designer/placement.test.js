@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zonePoses, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zonePoses, zoneSeat, zoneBend, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
 import { occupantFootprint, footprintReach } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
@@ -529,7 +529,7 @@ describe('zoneSeat', () => {
 // into placementMode).
 describe('zoneSeatFields — placementMode + sideProud, config-driven, from either config form', () => {
   it('derives mode via zoneMode (never the raw object) and proud from the default', () => {
-    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true, sideBend: 1 });
   });
   it('reads the OBJECT form without leaking the object into placementMode', () => {
     const f = zoneSeatFields({ side: { mode: 'hug', seat: 'proud' } }, 'side');
@@ -541,7 +541,45 @@ describe('zoneSeatFields — placementMode + sideProud, config-driven, from eith
     expect(zoneSeatFields({ scatter: true, side: 'hug' }, 'side').sideProud).toBe(false);
   });
   it('falls back to hug when the zone is unconfigured', () => {
-    expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+    expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true, sideBend: 1 });
+  });
+});
+
+describe('zoneBend — how much of the wall\'s curve a flat piece takes', () => {
+  /* ⚠️ A FRACTION, NOT A RADIUS, and that is the reason this function exists rather than a number on
+     the row. `hug` wraps a decal around the cylinder by definition and the wrap grows with SIZE —
+     the same plaque sweeps 12° at scale 1 and 49° at scale 4 — so an authored radius would be wrong
+     at every size but one. Reported as *"its bending more than needed."* */
+  it('bends with the wall unless the row says otherwise — nothing on a cake today moves', () => {
+    expect(zoneBend({ side: 'hug' }, 'side')).toBe(1);
+    expect(zoneBend({}, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug' } }, 'side')).toBe(1);
+  });
+
+  it('reads the fraction off either config form', () => {
+    expect(zoneBend({ side: { mode: 'hug', bend: 0.4 } }, 'side')).toBe(0.4);
+    expect(zoneBend({ side: { mode: 'hug', bend: 0 } }, 'side')).toBe(0);     // rigid: a flat plaque
+  });
+
+  it('is per ZONE, so a piece moved off the wall is not still half-bent', () => {
+    const pc = { side: { mode: 'hug', bend: 0.4 }, top_surface: 'hug' };
+    expect(zoneBend(pc, 'side')).toBe(0.4);
+    expect(zoneBend(pc, 'top_surface')).toBe(1);
+  });
+
+  /* ⚠️ A JUNK VALUE MEANS "UNCHANGED", NEVER "RIGID". Clamping to 0 would let one mistyped row — or
+     one older saved design — render every decal on a cake flat, which is the loudest possible way
+     for an optional tuning key to fail. */
+  it('falls back to a full bend on anything it cannot read, and clamps the rest', () => {
+    expect(zoneBend({ side: { mode: 'hug', bend: 'quite a lot' } }, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug', bend: null } }, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug', bend: 7 } }, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug', bend: -3 } }, 'side')).toBe(0);
+  });
+
+  it('is carried onto the instance by zoneSeatFields, so a re-seat re-derives it', () => {
+    expect(zoneSeatFields({ side: { mode: 'hug', bend: 0.4 } }, 'side').sideBend).toBe(0.4);
+    expect(zoneSeatFields({ side: { mode: 'hug', bend: 0.4 } }, 'top_surface').sideBend).toBe(1);
   });
 });
 
@@ -625,7 +663,7 @@ describe('zoneSeatFields — an explicitly picked pose', () => {
   });
 
   it('with no pose asked for, answers exactly as before', () => {
-    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true, sideBend: 1 });
   });
 });
 

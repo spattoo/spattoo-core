@@ -894,6 +894,33 @@ export function zoneSeat(placementConfig, zone) {
   return placementConfig?.scatter === true ? 'flush' : 'proud';
 }
 
+// HOW MUCH of the wall's curve a flat piece takes, 0–1, default 1 (follow it exactly).
+//
+// ⚠️ A FRACTION, NOT A RADIUS — so it cannot go stale. `hug` on a round wall wraps a 2D decal around
+// the cylinder by definition, and the wrap is proportional to SIZE: on a normal tier the same
+// plaque sweeps 12° at scale 1 and 49° at scale 4. That is right for a printed transfer and wrong
+// for a stiff one. Sandeep, on a fondant name plaque: *"its bending more than needed."*
+//
+// A number here would have to be re-authored for every size and every tier radius. A fraction is
+// read against whatever curve the wall actually has, so one value holds across the whole scale
+// range: `0.4` means "takes four tenths of the bend the wall asks for", at any size.
+//
+// ⚠️ AND IT NEEDS NO STANDOFF, which is the thing worth knowing before using it. A stiffer piece on
+// a CONVEX wall touches at its CENTRE and lifts at its edges — the cylinder bulges towards it, so
+// the nearest point is the middle. Pushing it out to "clear" the wall would float the whole piece.
+// Nothing is offset; only the radius the strip is built at changes.
+//
+// Absent → 1 → every decal that exists today bends exactly as it did. 0 is a rigid flat piece.
+export function zoneBend(placementConfig, zone) {
+  const raw = zoneCfg(placementConfig, zone).bend;
+  /* ⚠️ `null` AND `''` ARE ABSENT, NOT ZERO — and `Number()` disagrees, which is how the first cut
+     of this made an admin form that writes every key render the whole catalogue rigid. Only a
+     number means a number. */
+  if (raw == null || raw === '') return 1;
+  const v = Number(raw);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
+}
+
 // The config-driven, ZONE-DEPENDENT instance fields — the ONE place both the add path
 // (`addSticker`) and the chooser's zone-switch path derive them, so a placed instance and a
 // re-seated (moved) instance seat identically (INVARIANTS #1/#3). `placementMode` and the side
@@ -965,5 +992,8 @@ export function zoneSeatFields(placementConfig, zone, mode = null) {
   return {
     placementMode: flatPose(zone, picked),
     sideProud:     zoneSeat(placementConfig, zone) === 'proud',
+    /* Baked on here with the other two for the same reason: it is ZONE-dependent, so a piece moved
+       off the wall and back must re-derive it rather than carry a stale one. */
+    sideBend:      zoneBend(placementConfig, zone),
   };
 }
