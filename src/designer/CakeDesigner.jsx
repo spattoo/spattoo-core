@@ -11072,6 +11072,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // what asks for the list, and it still does.
   const stackSingleCard = isMobile && !stackOut && stackHasExpandedCard;
 
+  /* ⚠️ LEVEL 2 REPLACES LEVEL 1 — IT DOES NOT SIT ON TOP OF IT.
+   *
+   * Tapping a part swatch on a decoration's card opens the colour panel, and both are bottom
+   * sheets, so the cake ended up with two of them stacked: the colour panel over the card it was
+   * opened from, each cut off by the other. Sandeep, on a dolphin with a colourable Body: *"when i
+   * click on the color picker, it opens a level2 popup, but the level1 still there. level2 should
+   * replace level1 and on clicking ok on level2, you should go to level1."*
+   *
+   * ⚠️ THIS WAS ACCOMMODATED, NOT OVERLOOKED, which is why it survived — `bottomSheetH` below takes
+   * the TALLER of the two sheets precisely because they could both be up, and that note has to
+   * change with this one or the cake is inset for a sheet that is no longer drawn.
+   *
+   * Only the card is withheld; the selection, the card's state and the stack are untouched, so the
+   * panel's Done (which already only clears `colorOpen` on this path) brings level 1 straight back.
+   * `stackSingleCard` carries `isMobile`, so desktop — where the two are side-by-side columns with
+   * room for both — is not affected. And it is the SINGLE CARD only: opened by the handle, the
+   * stack is a LIST on the right rather than a sheet under this one. */
+  const cardBehindSubPanel = stackSingleCard && showRightPanel;
+
   /* ⚠️ THE FOLD MARK IS HIDDEN WHENEVER "Done" IS ON SCREEN. Sandeep: "there is down arrow button
    * and 'Done' button. both doing the samething. shall we remove the downarrow?"
    *
@@ -11144,22 +11163,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * the observer sees ~54px instead of ~368px and the inset follows without a second mechanism. */
   useLayoutEffect(() => {
     const el = pipingPopupRef.current;
-    if (!el || !isMobile || !stackSingleCard) { setStackSheetH(0); return undefined; }
+    if (!el || !isMobile || !stackSingleCard || cardBehindSubPanel) { setStackSheetH(0); return undefined; }
     const read = () => setStackSheetH(Math.round(el.getBoundingClientRect().height));
     read();
     const ro = new ResizeObserver(read);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isMobile, stackSingleCard, stackDragH, cakeFocus, elementStackOpen, stackShown]);
+  }, [isMobile, stackSingleCard, cardBehindSubPanel, stackDragH, cakeFocus, elementStackOpen, stackShown]);
 
   /* ⚠️ THE TALLER OF THE TWO, NOT WHICHEVER BRANCH IS WRITTEN LAST. Both are bottom sheets and both
      can be up at once: showRightPanel includes `colorOpen`, and a decoration card's own colour
      button opens it while that card is the single docked card — so stackSingleCard and
      showRightPanel are true together. Insetting by one would put the cake straight back behind the
-     other, in exactly the case where two sheets are stacked. */
+     other, in exactly the case where two sheets are stacked.
+     ⚠️ AND THAT CASE IS NOW THE ONE THE CARD STEPS ASIDE FOR (`cardBehindSubPanel`), so the max is
+     between a real sheet and a zero rather than between two real ones. The max stays because the
+     OTHER pairing it was written for — a tier's panel over the docked stack — is untouched, and
+     because a measured height outlives the frame in which its sheet stopped being drawn. */
   const bottomSheetH = Math.max(
     isMobile && showRightPanel ? editSheetH : 0,
-    isMobile && stackSingleCard ? stackSheetH : 0,
+    isMobile && stackSingleCard && !cardBehindSubPanel ? stackSheetH : 0,
   );
 
   const foldMark = (expanded) => (stackSingleCard ? (
@@ -20151,7 +20174,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           )}
 
-          {elementStackOpen && stackShown && (
+          {/* ⚠️ WITHHELD WHILE ITS OWN SUB-PANEL IS UP — see `cardBehindSubPanel`. The colour panel
+              is opened FROM this card and is a bottom sheet too, so drawing both stacked them. */}
+          {elementStackOpen && stackShown && !cardBehindSubPanel && (
             <div ref={pipingPopupRef} className="piping-popup-scroll"
               style={isMobile
                 /* ⚠️ THE LIST AND AN EDITOR ARE DIFFERENT SHAPES, and `stackSingleCard` already

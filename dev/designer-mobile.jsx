@@ -951,6 +951,35 @@ if (PLAQUE_EL) {
   });
 }
 
+/* ⚠️ `?dolphin=1` — A GLB WITH A COLOURABLE PART, COPIED FROM THE REAL ROW.
+ *
+ * `?groups=1` already claims to be "a GLB with three editable part groups" and is not: its
+ * `_model.groups` name Hair/Dress/Tail and the GLB it points at is a ginkgo leaf, so `editGroups`
+ * comes out EMPTY and the card shows no swatches at all. A fixture that disagrees with the asset
+ * proves the wrong thing — it reported a card with no colour controls as if that were the design.
+ *
+ * So this one is transcribed from `cake_elements` id 52d3189b (Dolphin) on dev: its GLB, its one
+ * editable group `Body`, its zones, its pose and its scale range. The point of it is the SECOND
+ * LEVEL — tapping the Body swatch opens the colour panel, and that is the thing under test. */
+const DOLPHIN_EL = PARAMS.has('dolphin');
+if (DOLPHIN_EL) {
+  CAT_ELEMENTS.push({
+    id: 'e80', name: 'Dolphin', description: 'a GLB with one colourable part',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/9dda0554-3f7a-4434-82c5-0d106de48b19.glb',
+    thumbnail_url: CAT_THUMB('#4cbfed'), thumb_key: null,
+    allowed_zones: ['top_surface', 'board'],
+    allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: {
+      r: 2.5, scale: { min: 2, max: 7 }, top_surface: 'stand',
+      _model: { source: 'glb-read', groups: [
+        { key: 'Body', label: 'Body', editable: true, default: '#4cbfed' },
+      ] },
+    },
+    default_color: null, sort_order: 80,
+  });
+}
+
 const GROUPS_EL = PARAMS.has('groups');
 if (GROUPS_EL) {
   CAT_ELEMENTS.push({
@@ -968,6 +997,14 @@ if (GROUPS_EL) {
          `sticker` one — and the missing swatches were decorEl-only. Without it the fixture selects
          as a sticker, the swatches appear on both layouts, and the run reports a passing bug. */
       single_per_slot: true,
+      /* ⚠️ THESE KEYS DO NOT MATCH THIS GLB, so this fixture shows NO swatches — measured
+         2026-10-24 by driving it: the card comes up with Remove, Spin and Lean and nothing else.
+         The asset at the url above is a ginkgo leaf; `editGroups` reads the instance's `groups`
+         (seeded from here, filtered to `editable`) and the renderer finds no meshes called Hair,
+         Dress or Tail, so the swatch row is empty. It still reproduces what it was BUILT for — the
+         decorEl-vs-sticker split that `single_per_slot` decides — but it cannot show a colourable
+         part. Use `?dolphin=1` for that: it is transcribed from a real row whose GLB agrees with it.
+         Left as it is rather than guessed at: the right fix is this element's real mesh names. */
       // The shape admin's Recompose Studio writes (lib/glb.js `modelFromParts`): one entry per
       // customer-facing control, `editable` deciding whether it becomes a swatch at all.
       _model: { source: 'glb-read', groups: [
@@ -1343,7 +1380,7 @@ const STUBS = {
     placement_config: { second_cream: { lift: 0.04, noise: 0.05, fill_side: 'below', height: 0.5,
                                         height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
     default_color: '#D98BA6', sort_order: 0,
-  }] : (PARAMS.has('catalog') || GROUPS_EL || PLAQUE_EL) ? CAT_ELEMENTS : PARAMS.has('football') ? [{
+  }] : (PARAMS.has('catalog') || GROUPS_EL || PLAQUE_EL || DOLPHIN_EL) ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,
