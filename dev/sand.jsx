@@ -5,7 +5,7 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import SandBed from '../src/designer/canvas/SandBed.jsx';
-import { SAND_DEFAULTS, sandTriangleCount } from '../src/designer/geometry/sand.js';
+import { SAND_DEFAULTS, sandTriangleCount, ZONES_TOP, ZONES_BOARD } from '../src/designer/geometry/sand.js';
 
 /* ── Sand on the board, the tight loop ───────────────────────────────────────────────────────────
  *
@@ -30,6 +30,10 @@ const SHAPES = {
 };
 const PARAMS = new URLSearchParams(location.search);
 const SHAPE = SHAPES[PARAMS.get('shape')] ?? SHAPES.round;
+/* `?cam=top` looks down on the cake, which is the only way to judge a drift on the TOP. Dragging
+   to get there is not repeatable — two shots of the same sand from two angles cannot be compared,
+   and orbiting by synthetic pointer moves tilts the opposite way to the intuition every time. */
+const CAM = PARAMS.get('cam') === 'top' ? [0, 3.5, 3.0] : [0, 1.9, 4.4];
 
 function Scene({ p }) {
   const s = SHAPES.sheet;
@@ -48,14 +52,16 @@ function Scene({ p }) {
           : <boxGeometry args={[s.halfW * 2, BOTTOM_H, s.halfD * 2]} />}
         <meshStandardMaterial color="#8fd3e8" roughness={0.9} metalness={0} />
       </mesh>
-      <SandBed shape={SHAPE} topY={BOARD_H} {...p} />
-      <OrbitControls target={[0, BOARD_H + 0.3, 0]} />
+      {/* Both at once, as the first reference does — a board ring AND sand on the top. */}
+      {p.board && <SandBed shape={SHAPE} topY={BOARD_H} zone={ZONES_BOARD} size={p.width} {...p} />}
+      {p.top && <SandBed shape={SHAPE} topY={BOARD_H + BOTTOM_H} zone={ZONES_TOP} size={p.topSize} {...p} />}
+      <OrbitControls target={[0, PARAMS.get('cam') === 'top' ? BOARD_H + BOTTOM_H * 0.8 : BOARD_H + 0.3, 0]} />
     </>
   );
 }
 
 function App() {
-  const [p, setP] = useState({ ...SAND_DEFAULTS });
+  const [p, setP] = useState({ ...SAND_DEFAULTS, board: true, top: true });
   const set = k => e => setP(q => ({ ...q, [k]: +e.target.value }));
   const sl = (k, min, max, step) => (
     <label key={k} style={{ display: 'block', fontSize: 11, color: '#555', marginBottom: 7 }}>
@@ -69,12 +75,24 @@ function App() {
     <div style={{ display: 'flex', height: '100%' }}>
       <div style={{ width: 250, padding: 16, overflowY: 'auto', borderRight: '1px solid #eee' }}>
         <h3 style={{ margin: '0 0 10px', fontSize: 15 }}>Sand</h3>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          {['board', 'top'].map(k => (
+            <button key={k} onClick={() => setP(q => ({ ...q, [k]: !q[k] }))} style={{
+              flex: 1, padding: '5px 0', fontSize: 11.5, borderRadius: 6, cursor: 'pointer',
+              border: '1.5px solid #1a1a1a', background: p[k] ? '#1a1a1a' : '#fff',
+              color: p[k] ? '#fff' : '#1a1a1a', fontWeight: 600, fontFamily: 'inherit',
+            }}>{k === 'board' ? 'Board' : 'Top'}</button>
+          ))}
+        </div>
         {sl('width', 0.08, 0.9, 0.01)}
+        {sl('topSize', 0.15, 1, 0.01)}
         {sl('spacing', 0.018, 0.08, 0.001)}
         {sl('grainSize', 0.008, 0.055, 0.001)}
         {sl('sizeVary', 0, 1.2, 0.01)}
         {sl('rise', 0, 0.14, 0.002)}
         {sl('moundNoise', 0, 1, 0.01)}
+        {sl('moundGrain', 0, 1.5, 0.01)}
+        {sl('edgeBreak', 0, 1, 0.01)}
         {sl('falloff', 0, 1, 0.01)}
         {sl('shadeVary', 0, 0.6, 0.01)}
         {sl('roughness', 0.3, 1, 0.01)}
@@ -88,7 +106,7 @@ function App() {
         </p>
       </div>
       <div style={{ flex: 1 }}>
-        <Canvas shadows camera={{ position: [0, 1.9, 4.4], fov: 42 }}>
+        <Canvas shadows camera={{ position: CAM, fov: 42 }}>
           <color attach="background" args={['#efeae2']} />
           <Scene p={p} />
         </Canvas>

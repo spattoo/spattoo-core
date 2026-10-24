@@ -197,7 +197,8 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 // Sand on the board — the beach drift. Exported for the admin studio the same way grass is: the
 // studio tunes the generator the designer renders from, never a copy of it (CLAUDE.md, "THE STUDIO
 // IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT").
-export { buildSandGrain, thinOutward, varyGrainSize, sandTriangleCount, SAND_DEFAULTS } from './designer/geometry/sand.js';
+export { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
+         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS } from './designer/geometry/sand.js';
 export { default as SandBed } from './designer/canvas/SandBed.jsx';
 
 /* ── The pen's own stamp renderer, so a studio can calibrate the WALL ─────────────────────────────

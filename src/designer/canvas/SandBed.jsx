@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { buildSandGrain, buildSandMound, thinOutward, varyGrainSize, SAND_DEFAULTS } from '../geometry/sand.js';
+import { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize,
+         ZONES_TOP, SAND_DEFAULTS } from '../geometry/sand.js';
 import { useSeatedInstances, useSurfaceSeats, outwardBand } from './useSeatedInstances.js';
 
 /* ── A drift of sand banked around the foot of a cake ────────────────────────────────────────────
@@ -22,8 +23,22 @@ import { useSeatedInstances, useSurfaceSeats, outwardBand } from './useSeatedIns
  * sparse enough to show the board between them. This one is the sand: banked at the wall,
  * feathering to nothing, uneven, and flat-shaded so its own facets do the speckling.
  */
+/* A shape scaled about its own centre — the patch a top drift covers. Kept here beside its one
+   caller rather than added to surface.js, which answers questions about the CAKE's own outline. */
+function scaleShape(shape, k) {
+  if (shape.kind === 'rect') return { ...shape, halfW: shape.halfW * k, halfD: shape.halfD * k, cornerR: (shape.cornerR ?? 0) * k };
+  if (shape.outline) return { ...shape, scale: (shape.scale ?? 1) * k };
+  return { ...shape, radius: (shape.radius ?? 1) * k };
+}
+
 export default function SandBed({
   shape, topY,
+  /* ⚠️ `zone` AND `size` ARE ONE QUESTION ASKED TWICE, which is why size means the same thing in
+     both: how much sand there is. On the board that is how far past the cake the drift reaches; on
+     the top, how much of the surface it covers. `sandSpan` is the only place that knows the
+     difference, so this component never branches on the zone beyond handing it over. */
+  zone = 'board',
+  size = null,
   colour    = SAND_DEFAULTS.colour,
   width     = SAND_DEFAULTS.width,
   spacing   = SAND_DEFAULTS.spacing,
@@ -40,23 +55,34 @@ export default function SandBed({
   seed      = SAND_DEFAULTS.seed,
   onPick    = null,
 }) {
-  const band = useMemo(() => outwardBand(shape, width), [shape, width]);
-  // `hole` is the cake's own outline, so the drift starts at the wall on a heart or a sheet as
-  // faithfully as on a circle — the same argument grassSeats makes for its board ring.
-  const hole = useMemo(() => ({ shape, scale: 1 }), [shape]);
-  const raw  = useSurfaceSeats({ shape: band, spacing, jitter, inset: 1, seed, hole });
+  const onTop = zone === ZONES_TOP;
+  const amount = size ?? (onTop ? SAND_DEFAULTS.topSize : width);
+  const span = useMemo(() => sandSpan(zone, amount), [zone, amount]);
 
-  const inner = shape.radius ?? Math.max(shape.halfW ?? 0, shape.halfD ?? 0) ?? 1;
+  /* The crumbs ride the SAME span as the bank. On the board that is a ring outside the cake, so the
+     seats come from a grown shape with the cake punched out as a `hole` — the board-ring argument
+     `grassSeats` already makes, and the hole is the cake's own outline so it follows a heart or a
+     sheet as faithfully as a circle. On the top it is a disc: scale the shape down, nothing to
+     punch out. */
+  const seatShape = useMemo(
+    () => (onTop ? scaleShape(shape, span.outerFrac) : outwardBand(shape, amount)),
+    [onTop, shape, span.outerFrac, amount]);
+  const hole = useMemo(() => (onTop ? null : { shape, scale: 1 }), [onTop, shape]);
+  const raw  = useSurfaceSeats({ shape: seatShape, spacing, jitter, inset: 1, seed, hole });
+
+  const reach = shape.radius ?? Math.max(shape.halfW ?? 0, shape.halfD ?? 0) ?? 1;
   const seats = useMemo(
+    /* On the top the crumbs thin toward the rim of the PATCH, which is where a layer breaks up —
+       the same rule as the board, measured from the patch's own edge rather than the cake's. */
     () => varyGrainSize(
-      thinOutward(raw, { inner, outer: inner * (1 + width), falloff, seed: seed + 3 }),
+      thinOutward(raw, { inner: reach * span.innerFrac, outer: reach * span.outerFrac, falloff, seed: seed + 3 }),
       { sizeVary, seed: seed + 5 }),
-    [raw, inner, width, falloff, sizeVary, seed]);
+    [raw, reach, span.innerFrac, span.outerFrac, falloff, sizeVary, seed]);
 
   const geo   = useMemo(() => buildSandGrain({ seed: seed + 1 }), [seed]);
   const mound = useMemo(
-    () => buildSandMound(shape, { width, rise, moundNoise, moundGrain, edgeBreak, seed: seed + 11 }),
-    [shape, width, rise, moundNoise, moundGrain, edgeBreak, seed]);
+    () => buildSandMound(shape, { ...span, rise, moundNoise, moundGrain, edgeBreak, seed: seed + 11 }),
+    [shape, span, rise, moundNoise, moundGrain, edgeBreak, seed]);
 
   /* `size` is the grain's real radius; the spread rides on each seat's own scale (varyGrainSize),
      because the hook multiplies the two. `shadeVary` is what stops a drift reading as one flat

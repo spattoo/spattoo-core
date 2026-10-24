@@ -37,6 +37,9 @@ export const SAND_DEFAULTS = Object.freeze({
      0.034/0.026 gravel, 0.024/0.017 coarse, 0.019/0.013 reads as sand. The grain is SMALL and the
      pitch is TIGHT; neither works without the other, since fine grains spaced wide are a dusting. */
   rise:        0.055,   // how high the bank stands at the wall, in cake units
+  feather:     1,       // what fraction of the span tapers; 1 is a bank, less is a layer with a rim
+  topFeather:  0.35,    // a patch on the top is a LAYER — even across its middle, feathered at its rim
+  topSize:     0.62,    // how much of the top a patch covers, as a fraction of the tier
   moundNoise:  0.55,    // how uneven its surface is (0 = a smooth ramp)
   /* ⚠️ FINE ENOUGH THAT A FACET IS GRAIN-SIZED. At 16x200 the facets were large, neighbours shared
      a normal and the bank shaded as one smooth surface — a beige ring. Resolution and `moundGrain`
@@ -149,7 +152,8 @@ export function thinOutward(seats, { inner, outer, falloff = SAND_DEFAULTS.fallo
  * of exactly zero. A translation layer between a defaults table and the function it configures is
  * a trap with no upside. */
 export function buildSandMound(shape, {
-  width = SAND_DEFAULTS.width, rise = SAND_DEFAULTS.rise,
+  innerFrac = 1, outerFrac = 1 + SAND_DEFAULTS.width,
+  rise = SAND_DEFAULTS.rise, feather = SAND_DEFAULTS.feather,
   moundNoise = SAND_DEFAULTS.moundNoise, moundGrain = SAND_DEFAULTS.moundGrain,
   edgeBreak = SAND_DEFAULTS.edgeBreak,
   moundRings = SAND_DEFAULTS.moundRings, moundSegments = SAND_DEFAULTS.moundSegments, seed = 17,
@@ -158,33 +162,76 @@ export function buildSandMound(shape, {
   const n = valueNoise(seed), m = valueNoise(seed + 101);
   const pos = [], idx = [];
   for (let i = 0; i <= rings; i++) {
-    const t = i / rings;                       // 0 at the cake wall, 1 at the lip
+    const t = i / rings;                       // 0 at the inner edge of the span, 1 at the outer
     for (let j = 0; j <= segments; j++) {
       const a = (j / segments) * Math.PI * 2;
       const dir = { x: Math.sin(a), z: Math.cos(a) };
-      const inner = shapeReach(shape, dir);
+      const reach = shapeReach(shape, dir);
       /* ⚠️ THE OUTER EDGE IS NOT A CIRCLE. A bank that ends on a perfect ring reads as a printed
          band however good its surface is — the eye finds the arc instantly. The limit wanders with
-         a slow noise, so the drift runs further out in some places than others. */
-      const lip = inner * width * (1 - edgeBreak + edgeBreak * (0.4 + 1.2 * n(Math.cos(a) * 2.5 + 40, Math.sin(a) * 2.5 + 40)));
-      const r = inner + lip * t;
-      const profile = Math.pow(1 - t, 1.6);    // banked at the wall, running out to nothing
-      // Macro: a slow swell around the ring, so the pile is not the same depth all the way round.
+         a slow noise, so the drift runs further in some places than others. */
+      /* ⚠️ THE WANDER ONLY EVER PULLS IN, NEVER PUSHES OUT. Allowed to do both it made the limit
+         prettier on the board and spilled sand off the RIM on the top: at size 1.0 the outer edge
+         reached 1.40 on a 1.2 tier. Sand hanging in the air past the cake's edge is not a look, and
+         clamping at the call site would be two rules for one limit. */
+      /* ⚠️ TWO OCTAVES, or the limit comes out as a STAR. One slow octave gives four or five big
+         lobes, which the eye reads as a flower rather than a drift — obvious once a top patch was
+         taken to full size. A finer octave on top of it breaks those lobes into a coastline. */
+      const lobe = n(Math.cos(a) * 2.5 + 40, Math.sin(a) * 2.5 + 40);
+      const fine = n(Math.cos(a) * 9 + 70, Math.sin(a) * 9 + 70);
+      const wander = 1 - edgeBreak * Math.min(1, Math.max(0, 0.62 * lobe + 0.38 * fine));
+      /* ⚠️ THE WANDER SCALES THE SPAN, NOT THE RADIUS. Multiplying the whole radius collapsed the
+         board ring: with the inner edge at 1.0 and the outer at 1.34, a 0.45 wander put the outer
+         edge at 0.60 — INSIDE the inner one — so the bank inverted and rendered as a few stray
+         clumps. The span is what the limit is allowed to vary; its start is where the cake is. */
+      const r0 = reach * innerFrac;
+      const r1 = r0 + reach * (outerFrac - innerFrac) * wander;
+      /* ⚠️ ON A DISC THE RINGS CROWD TOWARD THE CENTRE, or the facets there are SLIVERS. A facet is
+         `r·Δθ` wide and `Δr` tall: with the segment count fixed, its width shrinks with radius
+         while a linear `Δr` does not, so near the middle every facet is long and thin, shades
+         uniformly along its length, and the whole patch reads as spokes radiating from the centre.
+         Visible on a full-size top drift, and NOT fixed by removing the degenerate centre quads —
+         those were a separate defect with the same symptom. `t^1.8` keeps Δr roughly proportional
+         to r, which is the condition for a square-ish facet. A board ring starts away from the
+         centre and needs none of this. */
+      const u = innerFrac === 0 ? Math.pow(t, 1.8) : t;
+      const r = r0 + (r1 - r0) * u;
+      /* ⚠️ `feather` IS WHAT MAKES ONE GENERATOR SERVE BOTH PLACEMENTS. A board ring is banked
+         against the wall and runs out over its whole width (feather 1, so the profile tapers from
+         the first ring). A patch on the TOP is a LAYER — even across its middle and feathered only
+         at its rim — which is feather ~0.35. Same mesh, same noise, one number apart; a second
+         generator for "sand but on top" would be the copy check:dup exists to catch. */
+      const f = Math.min(1, Math.max(0.02, feather));
+      const taper = u <= 1 - f ? 1 : 1 - (u - (1 - f)) / f;
+      const profile = Math.pow(Math.max(0, taper), 1.6);
       const swell = 0.65 + 0.7 * n(Math.cos(a) * 3 + 8, Math.sin(a) * 3 + 8);
-      /* ⚠️ MICRO IS WHAT MAKES IT SAND, and leaving it out is why the first bank read as a smooth
-         beige ring. Flat shading only speckles if ADJACENT FACETS DIFFER — at low frequency every
-         neighbour shares a normal and the whole thing shades as one surface. This is noise at the
-         scale of a facet, so each one catches the light on its own. */
+      /* ⚠️ MICRO IS WHAT MAKES IT SAND. Flat shading only speckles if ADJACENT FACETS DIFFER — at
+         low frequency every neighbour shares a normal and the whole thing shades as one surface,
+         which is the smooth beige ring the first version rendered. */
       const px = dir.x * r, pz = dir.z * r;
       const micro = m(px * 90, pz * 90) - 0.5;
       const h = rise * profile * (1 - noise + noise * swell) + rise * grain * micro * Math.min(1, profile * 3);
-      // A little wander in the plane too: a perfectly radial grid shows as spokes under raking light.
-      const wob = 0.25 * grain * rise;
+      /* ⚠️ THE IN-PLANE WOBBLE FADES TO NOTHING AT THE OUTER RING. It exists so a perfectly radial
+         grid does not show as spokes under raking light, but applied at the lip it pushed vertices
+         PAST the limit — 1.2064 on a 1.2 tier, sand hanging in the air past the cake's edge. The
+         outermost ring IS the boundary, so it is the one place that must not wander. */
+      const wob = 0.25 * grain * rise * (1 - u);
       pos.push(px + (m(pz * 60, px * 60) - 0.5) * wob, Math.max(0, h), pz + (n(px * 60, pz * 60) - 0.5) * wob);
     }
   }
   const row = segments + 1;
-  for (let i = 0; i < rings; i++) {
+  /* ⚠️ A DISC NEEDS A FAN AT ITS CENTRE, NOT A RING OF ZERO RADIUS. With innerFrac 0 every vertex
+     of ring 0 sits on the origin, so the first band of quads is degenerate — two coincident
+     corners each — and they render as slivers radiating from the middle. On a full-size top drift
+     that was plainly visible as spokes converging at the centre of the cake. Ring 0 is one vertex
+     and ring 1 is fanned to it; the rest is unchanged. */
+  const fanned = innerFrac === 0;
+  const first = fanned ? 1 : 0;
+  if (fanned) {
+    // Every vertex of ring 0 is the origin, so any of them serves as the single centre.
+    for (let j = 0; j < segments; j++) idx.push(0, row + j, row + j + 1);
+  }
+  for (let i = first; i < rings; i++) {
     for (let j = 0; j < segments; j++) {
       const a = i * row + j, b = a + 1, c = a + row, d = c + 1;
       idx.push(a, c, b, b, c, d);
@@ -193,12 +240,32 @@ export function buildSandMound(shape, {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
   geo.setIndex(idx);
-  // Flat facets ARE the grain: a smoothed bank is a dune, and a dune is not what sits on a board.
   const flat = geo.toNonIndexed();
   geo.dispose();
   flat.computeVertexNormals();
   flat.computeBoundingSphere();
   return flat;
+}
+
+export const ZONES_TOP = 'top';
+export const ZONES_BOARD = 'board';
+
+/* ── Where a drift sits, as the span and the taper it needs ──────────────────────────────────────
+ *
+ * Sandeep, with three references — a patch in the middle of a top, a near-full cover, and a board
+ * ring with sand on the top as well: *"sand not only placed on the board, but can also go on the
+ * top. size should be adjustable."*
+ *
+ * Both placements are the same mesh over a different radial span, so this is the ONE place that
+ * knows which is which, and `SandBed` and the studio both read it rather than branching themselves.
+ * `size` means the same thing in both — how much sand there is — which is what makes one slider
+ * honest: on the board it is how far past the cake the drift reaches, on the top how much of the
+ * surface it covers.
+ */
+export function sandSpan(zone, size = SAND_DEFAULTS.width) {
+  return zone === ZONES_TOP
+    ? { innerFrac: 0, outerFrac: Math.max(0.05, size), feather: SAND_DEFAULTS.topFeather }
+    : { innerFrac: 1, outerFrac: 1 + Math.max(0.02, size), feather: 1 };
 }
 
 /* Smooth value noise on a wrapped grid — deterministic from `seed`, so a bank does not reshuffle

@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { buildSandGrain, buildSandMound, thinOutward, varyGrainSize, sandTriangleCount, SAND_DEFAULTS } from './sand.js';
+import { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
+         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS } from './sand.js';
 
 // A seat ring at a given radius, as grassSeats would hand one over.
 const ringAt = (r, n = 400) => Array.from({ length: n }, (_, i) => {
@@ -182,24 +183,36 @@ describe('buildSandMound — the mass, not the crumbs', () => {
     return d;
   };
 
-  it('displaces the surface, and does it at FACET scale', () => {
-    const d = grainDelta(0.85);
-    const spread = Math.max(...d) - Math.min(...d);
-    expect(spread).toBeGreaterThan(0.004);
-    /* High frequency is the point: a slow swell barely changes between neighbours, flat shading
-       then gives every facet the same normal, and the result is the beige ring this replaced.
-       ⚠️ MEASURED AS CORRELATION, not as a fraction of the spread — a magnitude threshold is a
-       number picked to pass. Neighbouring samples of facet-scale noise are near-independent
-       (correlation ~0); a slow swell would sit near 1. */
+  const corr = (d) => {
     const mean = d.reduce((a, v) => a + v, 0) / d.length;
     let cov = 0, varr = 0;
     for (let i = 1; i < d.length; i++) cov += (d[i] - mean) * (d[i - 1] - mean);
     for (const v of d) varr += (v - mean) ** 2;
-    expect(Math.abs(cov / varr)).toBeLessThan(0.4);
+    return Math.abs(cov / varr);
+  };
+  const deltaOf = (a, b) => {
+    const A = buildSandMound(round, { ...a, seed: 17 }).attributes.position;
+    const B = buildSandMound(round, { ...b, seed: 17 }).attributes.position;
+    const d = [];
+    for (let i = 0; i < A.count; i++) d.push(A.getY(i) - B.getY(i));
+    return d;
+  };
+
+  /* ⚠️ COMPARED AGAINST THE SWELL, NOT AGAINST A CHOSEN NUMBER. The grain has to be high-frequency
+     or flat shading gives every facet the same normal — the beige ring this replaced. A bare
+     threshold on the correlation is a number picked to pass, and the first one (0.4) had to be
+     argued with the moment the profile changed. `moundNoise` is the deliberately SLOW swell in the
+     same mesh, so it is the honest control: whatever the absolute figures, the grain must be far
+     less correlated between neighbours than the swell is. */
+  it('displaces the surface at FACET scale — unlike the swell, which is slow by design', () => {
+    const grain = deltaOf({ moundGrain: 0.85, moundNoise: 0 }, { moundGrain: 0, moundNoise: 0 });
+    const swell = deltaOf({ moundGrain: 0, moundNoise: 0.55 }, { moundGrain: 0, moundNoise: 0 });
+    expect(Math.max(...grain) - Math.min(...grain)).toBeGreaterThan(0.004);
+    expect(corr(grain)).toBeLessThan(corr(swell) * 0.6);
   });
 
   it('flattens out when the grain is taken off', () => {
-    expect(Math.max(...grainDelta(0).map(Math.abs))).toBe(0);
+    expect(Math.max(...deltaOf({ moundGrain: 0 }, { moundGrain: 0 }).map(Math.abs))).toBe(0);
   });
 
   it('follows a shape that is not round, via shapeReach', () => {
@@ -213,5 +226,92 @@ describe('buildSandMound — the mass, not the crumbs', () => {
     const a = Array.from(buildSandMound(round, { seed: 4 }).attributes.position.array);
     const b = Array.from(buildSandMound(round, { seed: 4 }).attributes.position.array);
     expect(a).toEqual(b);
+  });
+});
+
+// ── Where a drift sits ──────────────────────────────────────────────────────────────────────────
+// Sandeep: "sand not only placed on the board, but can also go on the top. size should be
+// adjustable." Both are the same mesh over a different radial span.
+describe('sandSpan — one generator, two placements', () => {
+  it('banks outside the cake on the board, and covers inside it on the top', () => {
+    const b = sandSpan(ZONES_BOARD, 0.34);
+    expect(b.innerFrac).toBe(1);               // starts at the wall
+    expect(b.outerFrac).toBeCloseTo(1.34, 6);
+    expect(b.feather).toBe(1);                 // tapers across its whole width — a bank
+
+    const t = sandSpan(ZONES_TOP, 0.62);
+    expect(t.innerFrac).toBe(0);               // starts at the middle
+    expect(t.outerFrac).toBeCloseTo(0.62, 6);
+    expect(t.feather).toBeLessThan(0.5);       // even across the middle, feathered at the rim — a layer
+  });
+
+  it('size means the same thing in both: how much sand there is', () => {
+    expect(sandSpan(ZONES_BOARD, 0.5).outerFrac).toBeGreaterThan(sandSpan(ZONES_BOARD, 0.2).outerFrac);
+    expect(sandSpan(ZONES_TOP, 0.9).outerFrac).toBeGreaterThan(sandSpan(ZONES_TOP, 0.3).outerFrac);
+  });
+});
+
+describe('buildSandMound — the span is honoured, whichever placement', () => {
+  const round = { kind: 'round', radius: 1.2 };
+  const radiiOf = (g) => {
+    const p = g.attributes.position, out = [];
+    for (let i = 0; i < p.count; i++) out.push(Math.hypot(p.getX(i), p.getZ(i)));
+    return out;
+  };
+
+  /* ⚠️ THE EDGE WANDER SCALES THE SPAN, NOT THE RADIUS, and getting that wrong inverted the ring:
+     inner at 1.0, outer at 1.34, a 0.45 wander put the outer edge at 0.60 — inside the inner one —
+     and the bank rendered as a few stray clumps on an empty board. */
+  it('never lets the outer edge fall inside the inner one', () => {
+    for (const eb of [0, 0.3, 0.55, 1]) {
+      const r = radiiOf(buildSandMound(round, { ...sandSpan(ZONES_BOARD, 0.34), edgeBreak: eb }));
+      expect(Math.min(...r)).toBeGreaterThan(1.2 - 0.02);
+    }
+  });
+
+  /* ⚠️ SAND MAY NOT HANG IN THE AIR PAST THE RIM. On the top the wander must only ever pull IN —
+     allowed to push out it reached 1.40 on a 1.2 tier at size 1.0. */
+  it('keeps a top drift on the cake, even at full size and full edge break', () => {
+    for (const eb of [0, 0.55, 1]) {
+      const r = radiiOf(buildSandMound(round, { ...sandSpan(ZONES_TOP, 1), edgeBreak: eb }));
+      expect(Math.max(...r)).toBeLessThanOrEqual(1.2 + 1e-6);
+    }
+  });
+
+  it('a top layer is level across its middle, where a bank is not', () => {
+    const peak = (g, within) => {
+      const p = g.attributes.position;
+      let h = 0;
+      for (let i = 0; i < p.count; i++) if (Math.hypot(p.getX(i), p.getZ(i)) < within) h = Math.max(h, p.getY(i));
+      return h;
+    };
+    const top = buildSandMound(round, sandSpan(ZONES_TOP, 0.62));
+    const board = buildSandMound(round, sandSpan(ZONES_BOARD, 0.34));
+    expect(peak(top, 0.25)).toBeGreaterThan(0.02);     // sand in the middle of the patch
+    expect(peak(board, 1.15)).toBe(0);                 // nothing inside the cake's own footprint
+  });
+});
+
+describe('buildSandMound — a disc has a centre, not a ring of zero radius', () => {
+  const round = { kind: 'round', radius: 1.2 };
+  const degenerates = (g) => {
+    const p = g.attributes.position;
+    const d = (a, b) => Math.hypot(p.getX(a) - p.getX(b), p.getY(a) - p.getY(b), p.getZ(a) - p.getZ(b));
+    let n = 0;
+    for (let i = 0; i < p.count; i += 3) if (d(i, i + 1) < 1e-6 || d(i + 1, i + 2) < 1e-6 || d(i, i + 2) < 1e-6) n++;
+    return n;
+  };
+
+  /* ⚠️ Every vertex of ring 0 sits on the origin when the span starts at zero, so the first band of
+     quads has two coincident corners each. They render as slivers radiating from the middle — on a
+     full-size top drift, plainly visible as spokes converging at the centre of the cake. */
+  it('emits no degenerate triangles at the centre of a top drift', () => {
+    for (const size of [0.3, 0.62, 1]) {
+      expect(degenerates(buildSandMound(round, sandSpan(ZONES_TOP, size)))).toBe(0);
+    }
+  });
+
+  it('a board ring has no centre to fan, and is unaffected', () => {
+    expect(degenerates(buildSandMound(round, sandSpan(ZONES_BOARD, 0.34)))).toBe(0);
   });
 });
