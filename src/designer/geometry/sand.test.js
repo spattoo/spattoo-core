@@ -135,14 +135,15 @@ describe('buildSandMound — the mass, not the crumbs', () => {
   });
 
   it('never dips below the board', () => {
-    expect(Math.min(...ys(buildSandMound(round)))).toBeGreaterThanOrEqual(0);
+    expect(ys(buildSandMound(round)).reduce((a, b) => Math.min(a, b), Infinity)).toBeGreaterThanOrEqual(0);
   });
 
   // A bank that ends on a perfect ring reads as a printed band however good its surface is — the
   // eye finds the arc instantly.
   it('does not end on a circle', () => {
     const r = radii(buildSandMound(round, { edgeBreak: 0.55 })).filter(v => v > 1.28);
-    expect(Math.max(...r) - Math.min(...r)).toBeGreaterThan(0.15);
+    const lo = r.reduce((a, b) => Math.min(a, b), Infinity), hi = r.reduce((a, b) => Math.max(a, b), 0);
+    expect(hi - lo).toBeGreaterThan(0.15);
   });
 
   /* ⚠️ MEASURED PER ANGULAR SECTOR, because a plain radius filter catches several RINGS at once and
@@ -253,10 +254,18 @@ describe('sandSpan — one generator, two placements', () => {
 
 describe('buildSandMound — the span is honoured, whichever placement', () => {
   const round = { kind: 'round', radius: 1.2 };
+  /* ⚠️ REDUCED AS WE GO, NEVER SPREAD. `Math.max(...radii)` threw "Maximum call stack size
+     exceeded" on a full-size top drift — a lattice of 69k vertices is past the argument limit, and
+     the failure reads exactly like a geometry fault until you look at the message. */
   const radiiOf = (g) => {
-    const p = g.attributes.position, out = [];
-    for (let i = 0; i < p.count; i++) out.push(Math.hypot(p.getX(i), p.getZ(i)));
-    return out;
+    const p = g.attributes.position;
+    let min = Infinity, max = 0;
+    for (let i = 0; i < p.count; i++) {
+      const r = Math.hypot(p.getX(i), p.getZ(i));
+      if (r < min) min = r;
+      if (r > max) max = r;
+    }
+    return { min, max };
   };
 
   /* ⚠️ THE EDGE WANDER SCALES THE SPAN, NOT THE RADIUS, and getting that wrong inverted the ring:
@@ -264,8 +273,63 @@ describe('buildSandMound — the span is honoured, whichever placement', () => {
      and the bank rendered as a few stray clumps on an empty board. */
   it('never lets the outer edge fall inside the inner one', () => {
     for (const eb of [0, 0.3, 0.55, 1]) {
-      const r = radiiOf(buildSandMound(round, { ...sandSpan(ZONES_BOARD, 0.34), edgeBreak: eb }));
-      expect(Math.min(...r)).toBeGreaterThan(1.2 - 0.02);
+      expect(radiiOf(buildSandMound(round, { ...sandSpan(ZONES_BOARD, 0.34), edgeBreak: eb })).min)
+        .toBeGreaterThan(1.2 - 0.02);
+    }
+  });
+
+  /* ⚠️ NO POLE, AND THIS IS THE ACTUAL BUG THE LATTICE EXISTS TO FIX — not a style preference.
+     A full-cover top drift rendered with spokes radiating from the middle of the cake. Sandeep,
+     after two partial fixes: *"this one little out of sand look. too close spokes i think."* The
+     cause is structural: a polar grid ran all 360 of its segments into ONE vertex, so every facet
+     near the middle was a radially-aligned sliver and flat shading drew them as wedges. Removing
+     the degenerate quads helped, crowding the rings inward helped, and neither cured it, because
+     the convergence is the mesh.
+
+     So the regression test is the convergence itself, measured two ways, and both numbers are the
+     ones a polar grid fails by two orders of magnitude: how many facets meet at a single point
+     (360 at a pole, at most 6 on this lattice) and how stretched the facets near the middle are
+     (a sliver's long edge was hundreds of times its short one). */
+  it('has no pole for spokes to radiate from', () => {
+    const g = buildSandMound(round, { ...sandSpan(ZONES_TOP, 1) });
+    const p = g.attributes.position;
+    const at = new Map();
+    for (let i = 0; i < p.count; i++) {
+      const k = `${p.getX(i).toFixed(4)},${p.getZ(i).toFixed(4)}`;
+      at.set(k, (at.get(k) ?? 0) + 1);
+    }
+    // One entry per triangle CORNER, so a vertex shared by six facets counts six.
+    const busiest = [...at.values()].reduce((a, b) => Math.max(a, b), 0);
+    expect(busiest).toBeLessThanOrEqual(8);
+  });
+
+  it('keeps its facets compact near the middle, where slivers used to converge', () => {
+    const g = buildSandMound(round, { ...sandSpan(ZONES_TOP, 1) });
+    const p = g.attributes.position;
+    let worst = 0;
+    for (let t = 0; t < p.count; t += 3) {
+      const r = Math.hypot(p.getX(t), p.getZ(t));
+      if (r > 0.3) continue;                   // the inner third — where the pole was
+      const e = [0, 1, 2].map(i => {
+        const a = t + i, b = t + ((i + 1) % 3);
+        return Math.hypot(p.getX(a) - p.getX(b), p.getZ(a) - p.getZ(b));
+      });
+      const lo = Math.min(...e);
+      if (lo > 1e-9) worst = Math.max(worst, Math.max(...e) / lo);
+    }
+    expect(worst).toBeLessThan(4);
+  });
+
+  /* ⚠️ EVERY FACE POINTS UP. Snapping a lattice corner onto the drift's edge can move it past its
+     neighbours, which reverses the face's winding — and a reversed face's normal points DOWN, so it
+     is backface-culled and leaves a hole you can see the board through. 255 of 24,772 came out that
+     way before the winding was derived from the in-plane area instead of the loop order. */
+  it('never leaves a face pointing down, whichever placement', () => {
+    for (const span of [sandSpan(ZONES_BOARD, 0.34), sandSpan(ZONES_TOP, 0.62), sandSpan(ZONES_TOP, 1)]) {
+      const n = buildSandMound(round, span).attributes.normal;
+      let down = 0;
+      for (let i = 0; i < n.count; i += 3) if (n.getY(i) < 0) down++;
+      expect(down).toBe(0);
     }
   });
 
@@ -273,8 +337,8 @@ describe('buildSandMound — the span is honoured, whichever placement', () => {
      allowed to push out it reached 1.40 on a 1.2 tier at size 1.0. */
   it('keeps a top drift on the cake, even at full size and full edge break', () => {
     for (const eb of [0, 0.55, 1]) {
-      const r = radiiOf(buildSandMound(round, { ...sandSpan(ZONES_TOP, 1), edgeBreak: eb }));
-      expect(Math.max(...r)).toBeLessThanOrEqual(1.2 + 1e-6);
+      expect(radiiOf(buildSandMound(round, { ...sandSpan(ZONES_TOP, 1), edgeBreak: eb })).max)
+        .toBeLessThanOrEqual(1.2 + 1e-6);
     }
   });
 

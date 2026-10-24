@@ -60,8 +60,24 @@ function Scene({ p }) {
   );
 }
 
+/* ⚠️ EVERY PARAMETER IS OVERRIDABLE FROM THE URL, so a shot is repeatable and two shots are
+   comparable. Without this the only state a script could reach was the defaults: three renders went
+   out labelled `topSize=1` that were all the default 0.62, because `?shape=` and `?cam=` were the
+   only keys read and the rest silently fell back. A harness that cannot be addressed is a harness
+   only its author can use. `board` and `top` take 0/1; everything else is a number. */
+const INITIAL = (() => {
+  const out = { ...SAND_DEFAULTS, board: true, top: true };
+  for (const [k, v] of PARAMS) {
+    if (k === 'shape' || k === 'cam') continue;
+    if (!(k in out)) { console.warn(`sand harness: no parameter "${k}"`); continue; }
+    out[k] = k === 'board' || k === 'top' ? v !== '0' && v !== 'false'
+           : k === 'colour' ? v : Number(v);
+  }
+  return out;
+})();
+
 function App() {
-  const [p, setP] = useState({ ...SAND_DEFAULTS, board: true, top: true });
+  const [p, setP] = useState(INITIAL);
   const set = k => e => setP(q => ({ ...q, [k]: +e.target.value }));
   const sl = (k, min, max, step) => (
     <label key={k} style={{ display: 'block', fontSize: 11, color: '#555', marginBottom: 7 }}>
@@ -96,6 +112,7 @@ function App() {
         {sl('falloff', 0, 1, 0.01)}
         {sl('shadeVary', 0, 0.6, 0.01)}
         {sl('roughness', 0.3, 1, 0.01)}
+        {sl('moundStep', 0.006, 0.04, 0.001)}
         {sl('seed', 1, 99, 1)}
         <label style={{ fontSize: 11, color: '#555' }}>
           colour <input type="color" value={p.colour}
