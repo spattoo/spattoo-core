@@ -38,7 +38,7 @@ describe('one renderer for the cake (INVARIANTS #2)', () => {
 
   it('the capture has no element renderers of its own to fall behind with', () => {
     const capture = bodyOf('CakeThumbnailScene');
-    for (const own of ['<CakeTier', '<StickerFace', '<GrassPatch', '<NameBlocks', '<CreamWriting', '<AgeNumber']) {
+    for (const own of ['<CakeTier', '<StickerFace', '<GrassPatch', '<SandBed', '<NameBlocks', '<CreamWriting', '<AgeNumber']) {
       expect(capture, `${own} belongs in CakeContent, not in a second copy of the scene`).not.toContain(own);
     }
   });

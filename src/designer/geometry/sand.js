@@ -37,6 +37,19 @@ const ROW_PITCH = Math.sqrt(3) / 2;
 /* How far the drift's edge may wander, as a fraction of the cake's reach, at `edgeBreak` 1. */
 const EDGE_WANDER = 0.3;
 
+/* ⚠️ A SHORT NAMED PALETTE, NOT A COLOUR WHEEL. Sandeep: *"color options should be selective
+   colors only. not a complete color picker."* Sand is a narrow band of real colours — biscuit,
+   digestive, a pale shell sand — and a free picker invites a blue beach. Named rather than a bare
+   list of hexes because the names are what a baker reads, and because an admin overlays this
+   through `placement_config.colors` the way gold leaf's two do (CLAUDE.md rule 3). */
+export const SAND_COLORS = Object.freeze({
+  sand:     '#d9b584',
+  pale:     '#e8d4ae',
+  golden:   '#d2a862',
+  biscuit:  '#c89a63',
+  shell:    '#efe0c6',
+});
+
 export const SAND_DEFAULTS = Object.freeze({
   width:     0.34,      // how far the drift reaches past the cake, as a fraction of the tier
   /* ⚠️ THESE THREE WERE TUNED BY LOOKING, AND THE FIRST GUESS WAS GRAVEL. Started at spacing 0.034

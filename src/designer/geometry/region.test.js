@@ -56,7 +56,7 @@ describe('a region is placed in fractions of the cake, never in world units', ()
   });
 
   it('offers kinds as data, so a new one is a row and not a branch', () => {
-    expect(Object.keys(REGION_KINDS).sort()).toEqual(['rect', 'triangle']);
+    expect(Object.keys(REGION_KINDS).sort()).toEqual(['rect', 'round', 'triangle']);
     expect(REGION_DEFAULTS.kind in REGION_KINDS).toBe(true);
     for (const pts of Object.values(REGION_KINDS)) {
       expect(pts.length).toBeGreaterThanOrEqual(3);

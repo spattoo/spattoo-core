@@ -182,6 +182,7 @@ export function toCanvasConfig(design) {
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
+        sand:         t.sand ?? null,           // a drift of crushed-biscuit sand on the top surface
         /* ⚠️ A TIER IS REBUILT FROM THIS LIST, so a field missing here simply never reaches the
            canvas — the state is right, the card is right, and nothing draws. The coat lost a day to
            it and the gypsophila rim ring lost an hour: the board ring rendered (it is a design-level
@@ -755,6 +756,32 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({
       ...prev,
       tiers: prev.tiers.map((t, i) => i === index ? { ...t, grass } : t),
+    }));
+  }
+
+  // ── A drift of sand on a tier's top ─────────────────────────────────────────
+  // The same shape as grass above, and for the same reason: one small object the canvas instances,
+  // never thousands of individually selectable rows. Absent/null = no sand, so every existing
+  // design is unchanged and the field costs nothing until a baker asks for it.
+  //
+  // ⚠️ THE AREA LIVES HERE, NOT BESIDE IT. `shape` and `size` say which patch of the top the sand
+  // covers; `region.js` turns the pair into a ring. Keeping them on the sand object means a saved
+  // design carries the area it was drawn with, rather than depending on a default that may move.
+  function setTierSand(index, sand) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, sand } : t),
+    }));
+  }
+
+  // `changes` may be a function of the current object — the contract the grass setters use, so two
+  // quick presses do not both read the value this component last rendered.
+  function updateSand(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.sand)
+        ? { ...t, sand: { ...t.sand, ...(typeof changes === 'function' ? changes(t.sand) : changes) } }
+        : t),
     }));
   }
 
@@ -1945,6 +1972,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setTierSand, updateSand,
     setTierGyp, updateGyp, setBoardGyp, updateBoardGyp,
     setTierRainbows, updateTierRainbows, updateTierClouds,
     updateTierBalloons,

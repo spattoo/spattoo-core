@@ -62,10 +62,17 @@ import { headerBrandParts, brandNameFontSize, BRAND_NAME_MIN } from '../shared/h
 import { brandFontCss } from '../storefront/storefrontKit.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
+/* Density and spacing are the same number read from opposite ends: density = SUM − spacing. The SUM
+   is what makes the dial's own range (0.018…0.08) land on a sensible spacing, and it lives here
+   rather than inline so the control and its inverse cannot drift apart. */
+const SAND_DENSITY_SUM = 0.098;
+import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { STICK_LENGTH_RANGE } from './geometry/topperPiece.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
+import { writingSeedFor } from './geometry/textPath.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
 import CreamPatternStudio from './pattern/CreamPatternStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
@@ -3365,7 +3372,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -7127,6 +7134,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // topmost one — on a stack, a lower tier's top is mostly hidden under the tier above it. The card
   // lets it be moved to another tier afterwards; this is just where it lands.
   function grassTierIndex() { return Math.max(0, design.tiers.length - 1); }
+  /* Sand lands on the TOP tier, grass's rule: a filler dresses a surface, and the only top fully in
+     view is the topmost one. The card's tier buttons move it afterwards. */
+  function sandTierIndex() { return Math.max(0, design.tiers.length - 1); }
+  function sandTier() { return design.tiers.findIndex(t => t.sand); }
 
   // `el` is the catalogue row when grass is picked from the Decorations grid, and absent when it is
   // picked from the Tools shortcut. The row carries the TUNED parameters an admin authored in the
@@ -7145,6 +7156,33 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         elementId: el?.id ?? undefined });
     }
     selectExclusive({ type: 'grass' });
+  }
+
+  /* ── A drift of sand on a tier's top ────────────────────────────────────────
+   * Placed the moment it is tapped and edited from the card, exactly like grass: there is nothing
+   * to compose first, so "has sand" and "should show a card" are the same condition.
+   *
+   * `el` is the catalogue row when picked from Decorations and absent from a Tools shortcut — the
+   * optional-row contract addGrass has had since it was written. Defaults first, so a row that
+   * authors only a colour still gets a sensible drift.
+   */
+  function addSand(el) {
+    const i = sandTierIndex();
+    const tuned = el?.placement_config?.sand ?? {};
+    if (!design.tiers[i]?.sand) {
+      setTierSand(i, {
+        shape: REGION_DEFAULTS.kind, size: REGION_DEFAULTS.size,
+        spacing: SAND_DEFAULTS.spacing, rise: SAND_DEFAULTS.rise,
+        falloff: SAND_DEFAULTS.falloff, edgeBreak: SAND_DEFAULTS.edgeBreak,
+        seed: SAND_DEFAULTS.seed,
+        colour: el?.default_color ?? SAND_COLORS.sand,
+        ...tuned,
+        // The row's id travels with the design — the card cannot ask what the element ALLOWS
+        // without it, and a template bundle finds its elements by scanning for matching uuids.
+        elementId: el?.id ?? undefined,
+      });
+    }
+    selectExclusive({ type: 'sand' });
   }
 
   // ── Gypsophila ──────────────────────────────────────────────────────────────
@@ -7976,6 +8014,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
+    /* A filler like grass: it dresses a surface, so it places on tap and is edited from the card.
+       Not a studio — nothing opens. */
+    sand: addSand,
     /* A filler, not an object: it dresses a surface the way grass does, so it places the moment it
        is tapped and is edited from the card. */
     gypsophila: addGypsophila,
@@ -8231,6 +8272,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function setGrassColor(color) {
     if (grassTier >= 0) updateGrass(grassTier, { color });
     if (design.boardGrass) updateBoardGrass({ color });
+  }
+
+  function removeSand(tierIndex) {
+    setTierSand(tierIndex, null);
+    selectExclusive(null);
+  }
+
+  function moveSandToTier(next) {
+    const cur = sandTier();
+    if (cur === next || next == null || cur < 0) return;
+    const sd = design.tiers[cur]?.sand;
+    if (!sd) return;
+    setTierSand(cur, null);
+    setTierSand(next, sd);
   }
 
   function moveGrassToTier(next) {
@@ -10848,6 +10903,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.tiers.some(t => t.grass) || design.boardGrass) {
     decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
   }
+  // Sand, on grass's condition and for grass's reason: applied the moment it is picked, so "has
+  // sand" and "should show a card" are the same question.
+  if (design.tiers.some(t => t.sand)) {
+    /* ⚠️ IT CARRIES ITS TIER, unlike the grass card beside it. Grass predates `check:element-delete`
+       and is out of that gate's scope because its body takes no `card`; sand is in scope, and the
+       gate is right to want it there — a remove button that cannot name what it removes is how the
+       balloon card shipped without one at all. */
+    decorationCards.unshift({
+      key: 'sand', type: 'sand', name: 'Sand', thumb: null,
+      tierIndex: design.tiers.findIndex(t => t.sand),
+    });
+  }
   // ONE CARD PER RAINBOW, like the writing cards and for the same reason: each carries its own
   // arrangement and its own place on the cake, so a single shared card could only ever edit one of
   // them and would silently be the wrong one. Numbered only when there is more than one, because
@@ -10926,6 +10993,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
          : card.type === 'grass' ? true
+         : card.type === 'sand' ? true
          : card.type === 'gyp' ? true
          : card.type === 'blocks' ? true
          : card.type === 'cream' ? true
@@ -11152,6 +11220,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'topper'        ? { type: 'topper', id: card.id }
       : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
+      : card.type === 'sand'          ? { type: 'sand' }
       : card.type === 'gyp'           ? { type: 'gyp' }
       : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
@@ -13387,8 +13456,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                    Writing the row's path onto the instance here fixes it once, at the only moment
                    we know the baker wants a message, and leaves the render path with ONE source. */
                 if (!inst.textPath && instTextPath) updateSticker(inst.id, { textPath: instTextPath });
+                /* ⚠️ THE LOOK COMES FROM THE ROW, NOT FROM HERE. This said `acrylic` + `gold`,
+                   which put an ELEMENT DEFAULT in the one place an admin cannot reach (rule 3) —
+                   and it read as perspex on a fondant disc: *"it looks more like acrylic, can we
+                   have the fondant texture for the letters."* A whitelist, so a row can choose the
+                   material but never which host a message binds to. A row that authors nothing
+                   falls through to DEFAULT_WRITING, which is how the rainbow has always behaved. */
                 const id = addWriting({
-                  style: 'acrylic', acrylicFinish: 'gold',
+                  ...writingSeedFor(instTextPath),
                   on: { kind: 'sticker', tierIndex: inst.tierIndex ?? 0, id: inst.id },
                 });
                 focusEditor('decoration');
@@ -16756,6 +16831,111 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  /* ── The sand card ───────────────────────────────────────────────────────────────────────────
+   * A drift of crushed-biscuit sand over an AREA of a tier's top. What a baker decides, in the
+   * order they decide it (INVARIANTS #12): which patch, what colour, then how it is made.
+   *
+   * ⚠️ THE COLOURS ARE A SHORT NAMED LIST, NOT A WHEEL. Sandeep: *"color options should be
+   * selective colors only. not a complete color picker."* Sand is a narrow band of real colours and
+   * a free picker invites a blue beach — so this is the ONE decoration card that does not reach for
+   * `ColorWheel`, and the exception is the ask, not an oversight. Overlaid from the element row the
+   * way gold leaf's two are (rule 3), so an admin can retune the palette without a deploy.
+   *
+   * ⚠️ `shape` HERE IS THE AREA, NOT THE CAKE'S. Round/Rectangle/Triangle is the patch the sand
+   * covers; the tier keeps whatever footprint it has, and the sand is clipped to it.
+   */
+  function renderSandBody(card) {
+    // The routing always hands the card over, and the card recomputes its tier every render — so
+    // this is fresh even just after the sand was moved to another tier.
+    const i = card.tierIndex;
+    const sd = i >= 0 ? design.tiers[i]?.sand : null;
+    if (!sd) return null;
+    const el = sd.elementId ? elementById.get(sd.elementId) : null;
+    const colors = el?.placement_config?.colors ?? SAND_COLORS;
+    /* Whether this can be taken off the cake is the ADMIN's call, read off the row — never
+       hardcoded true. The cloud and the rainbow both shipped ignoring it. */
+    const act = instanceActions(sd.elementId);
+    const pct = v => `${Math.round(v * 100)}%`;
+    const modeBtn = (on) => ({ flex: '1 1 70px', minWidth: 70, padding: '7px 0', borderRadius: 8,
+      fontWeight: 700, fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit',
+      border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK });
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          Biscuit crushed to a powder and banked over part of the top.
+        </div>
+
+        {design.tiers.length > 1 && (
+          <FinishTierPicker tiers={design.tiers} tier={i} onPick={moveSandToTier} />
+        )}
+
+        <div>
+          <div style={s.editPanelLabel}>Area</div>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Object.keys(REGION_KINDS).map(k => (
+              <button key={k} onClick={() => { if (sd.shape !== k) updateSand(i, { shape: k }); }}
+                style={modeBtn((sd.shape ?? REGION_DEFAULTS.kind) === k)}>
+                {k === 'rect' ? 'Rectangle' : k === 'round' ? 'Round' : 'Triangle'}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={s.editPanelLabel}>Colour</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Object.entries(colors).map(([name, hex]) => (
+              <button key={name} onClick={() => updateSand(i, { colour: hex })} title={name}
+                style={{ padding: '5px 12px', borderRadius: 14, fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit',
+                  border: (sd.colour ?? '').toLowerCase() === hex.toLowerCase() ? `2px solid ${INK}` : '1.5px solid #ddd',
+                  background: hex, color: '#4a3a24' }}>{name}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* ⚠️ DENSITY IS INVERTED AND DERIVED, carried across from the grass card exactly: the value
+            is `SAND_DENSITY_SUM − spacing`, the setter writes `spacing` back, and the formatter
+            reads the STORED spacing rather than its own argument. Density is what a person adjusts;
+            spacing is what the geometry wants. At step 0.002 it needs `fmt`, or the dial reads a
+            flat "0.0" across its whole travel. */}
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+          {[
+            { k: 'Size', v: sd.size ?? REGION_DEFAULTS.size, min: 0.15, max: 1.2, step: 0.01,
+              fmt: pct, set: v => updateSand(i, { size: v }) },
+            { k: 'Density', v: SAND_DENSITY_SUM - (sd.spacing ?? SAND_DEFAULTS.spacing),
+              min: 0.018, max: 0.08, step: 0.002,
+              fmt: () => pct((0.08 - (sd.spacing ?? SAND_DEFAULTS.spacing)) / 0.062),
+              set: v => updateSand(i, { spacing: +(SAND_DENSITY_SUM - v).toFixed(3) }) },
+            { k: 'Bank height', v: sd.rise ?? SAND_DEFAULTS.rise, min: 0, max: 0.14, step: 0.005,
+              fmt: v => v.toFixed(2), set: v => updateSand(i, { rise: v }) },
+            { k: 'Thins outward', v: sd.falloff ?? SAND_DEFAULTS.falloff, min: 0, max: 1, step: 0.05,
+              fmt: pct, set: v => updateSand(i, { falloff: v }) },
+            { k: 'Edge wander', v: sd.edgeBreak ?? SAND_DEFAULTS.edgeBreak, min: 0, max: 1, step: 0.05,
+              fmt: v => (v < 0.02 ? 'crisp' : pct(v)), set: v => updateSand(i, { edgeBreak: v }) },
+            /* Seed is not a quantity — nothing is more or less "seeded" — but it is the one control
+               that says "give me a different drift of the same sand", and a baker who does not like
+               where a lobe fell needs it. Shown as a plain number for that reason. */
+            { k: 'Seed', v: sd.seed ?? SAND_DEFAULTS.seed, min: 1, max: 99, step: 1,
+              fmt: v => String(Math.round(v)), set: v => updateSand(i, { seed: Math.round(v) }) },
+          ].map(d => (
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
+                      fmt={d.fmt} onChange={d.set} />
+          ))}
+        </ScrollFadeRow>
+
+        {act.delete && (
+          <button onClick={() => removeSand(card.tierIndex)}
+            style={{ alignSelf: 'flex-start', padding: '6px 14px', borderRadius: 8, fontSize: 11.5,
+              fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              border: `1.5px solid ${LINE}`, background: SURFACE, color: INK }}>
+            Remove sand
+          </button>
+        )}
+      </div>
+    );
+  }
+
   function renderGrassBody() {
     const i = grassTier;
     const g = design.tiers[i]?.grass;
@@ -18680,6 +18860,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 focusEditor('decoration');
                 selectExclusive({ type: 'grass' });
               }}
+              onSandClick={() => {
+                setElementsOpen(false);
+                setToolsOpen(false);
+                focusEditor('decoration');
+                selectExclusive({ type: 'sand' });
+              }}
               onGypClick={() => {
                 setElementsOpen(false);
                 setToolsOpen(false);
@@ -20157,6 +20343,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'gyp' ? renderGypBody()
                            : card.type === 'grass' ? renderGrassBody()
+                           : card.type === 'sand' ? renderSandBody(card)
                            : card.type === 'blocks' ? renderBlocksBody()
                            : card.type === 'topper'  ? renderTopperBody(card.topper)
                            : card.type === 'garnish' ? renderGarnishBody(card.garnish)

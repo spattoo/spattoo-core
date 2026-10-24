@@ -167,6 +167,16 @@ describe('a saved design comes back as the same cake', () => {
     expect(lost).toEqual([]);
   });
 
+  /* ⚠️ NAMED HERE BECAUSE IT WAS NEARLY LOST THE SAME WAY GLAZE, GRASS AND creamLayers WERE —
+     added to the cake and never added to the carried list. The whole-config check above caught it
+     the moment the field was created, which is the point of that check; this one says WHICH. */
+  it('carries a drift of sand, area and all', () => {
+    const sand = { shape: 'triangle', size: 0.8, spacing: 0.04, rise: 0.055,
+                   falloff: 0.5, edgeBreak: 0.55, seed: 11, colour: '#d9b584' };
+    const snap = buildDesignSnapshot({ ...FULL, tiers: [{ ...FULL.tiers[0], sand }] });
+    expect(snap.tiers[0].sand).toEqual(sand);
+  });
+
   // Named individually as well as in the whole-config check above, so a failure says WHICH element
   // type was lost rather than printing two large objects and leaving you to diff them.
   for (const key of ['grass', 'creamLayers', 'dusting', 'foil', 'gradient', 'glaze', 'styleParams', 'rainbows', 'clouds', 'topCavity', 'topSpiral', 'brushBand', 'brushStrokes']) {

@@ -34,15 +34,31 @@ import { snapToRim, topContains } from './surface.js';
    no consumer changes (rule 2: config-driven, never type-driven). `rotation` and `aspect` between
    them cover the variations that would otherwise be tempting to add as separate kinds: a corner
    wedge is the triangle turned, a band is the rectangle squashed. */
+/* ⚠️ A CIRCLE IS A POLYGON HERE, NOT A SPECIAL CASE. Giving `round` a closed-form depth would be
+   faster — but it would also be the one kind that does not go through `ringDepth`, so every later
+   change to how a region is measured would have to be made twice and tested twice. The cost is
+   bounded and was measured, not assumed: see the build-time note in sand.js. 44 segments puts the
+   flat-to-arc error at 0.26% of the radius, under half a lattice step on a 6" cake — invisible
+   against an edge that is deliberately ragged anyway. */
+const circle = (n) => Object.freeze(Array.from({ length: n }, (_, i) => {
+  const a = (i / n) * Math.PI * 2;
+  return Object.freeze({ x: Math.sin(a), z: Math.cos(a) });
+}));
+
 export const REGION_KINDS = Object.freeze({
+  round: circle(44),
   rect: Object.freeze([{ x: -1, z: -1 }, { x: 1, z: -1 }, { x: 1, z: 1 }, { x: -1, z: 1 }]),
   // Apex toward -z, base along +z, so an unrotated triangle points "up" on a top-down view.
   triangle: Object.freeze([{ x: 0, z: -1 }, { x: 1, z: 1 }, { x: -1, z: 1 }]),
 });
 
 export const REGION_DEFAULTS = Object.freeze({
-  kind: 'rect',
-  size: 0.55,       // half-extent, as a fraction of the cake's reach
+  kind: 'round',
+  /* ⚠️ GENEROUS ON PURPOSE. At 0.55 the first tap put a small blob in the middle of the top, which
+     reads as a mistake rather than as a decoration — and the thing a baker just asked for should
+     look like it arrived. 0.8 covers most of the surface and leaves a rim of bare cake, which is
+     what "sand on top" usually means. Shrinking is as easy as growing; the dial is right there. */
+  size: 0.8,        // half-extent, as a fraction of the cake's reach
   aspect: 1,        // >1 wider than deep, <1 deeper than wide
   rotation: 0,      // radians, clockwise on a top-down view
   x: 0, z: 0,       // centre, as a fraction of the cake's reach

@@ -41,6 +41,31 @@ import {
   BOTTOM_BASE, DESIGNER_WALL, DESIGNER_HORIZON, BOARD_TOP_Y, ZONES } from '../constants.js';
 import { pointerRay, cylinderHit, cylinderHitPoint, wallHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
+import SandBed from './SandBed.jsx';
+import { ZONES_TOP } from '../geometry/sand.js';
+import { REGION_DEFAULTS } from '../geometry/region.js';
+
+/* The area a tier's sand covers, as the ring `SandBed` wants.
+ *
+ * ⚠️ A WEAKMAP, NOT A `useMemo` — this is read inside the tier loop, and a hook there would be
+ * conditional on how many tiers a cake has (`check:conditional-hooks`). It cannot be a plain
+ * function either: `SandBed` keys its own memo on the region's IDENTITY, so a fresh literal every
+ * render rebuilds a 40,000-cell lattice once a frame while a dial is dragged. The sand object is
+ * replaced whenever it is edited, so keying on it is exact and the cache evicts itself.
+ *
+ * ⚠️ `shape` HERE IS THE AREA, NOT THE CAKE'S FOOTPRINT. The tier's own outline is `tierShape`;
+ * this is round/rect/triangle as chosen on the card. Two different questions about the same word,
+ * which is why the sand object spells it `shape` and the region calls it `kind`. */
+const sandRegions = new WeakMap();
+function sandRegion(sand) {
+  if (!sand) return null;
+  let r = sandRegions.get(sand);
+  if (!r) {
+    r = { kind: sand.shape ?? REGION_DEFAULTS.kind, size: sand.size ?? REGION_DEFAULTS.size };
+    sandRegions.set(sand, r);
+  }
+  return r;
+}
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
 import { textPathFor } from '../geometry/textPath.js';
@@ -3701,6 +3726,7 @@ function CakeScene({
   gypMode = false, gypSelected = null, onGypMove, onGypSelect,
   onGypClick,
   onGrassClick,
+  onSandClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -4042,6 +4068,7 @@ function CakeScene({
           // must never reach a captured picture. `edit` is null on that path, so it cannot.
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
           onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick, onGrassClick,
+          onSandClick,
         }}
       />
       </group>
@@ -4391,6 +4418,8 @@ function CakeContent({ config, scene, edit = null }) {
     // Same deal, and for the same reason the note above gives: read HERE or it is undefined at
     // runtime past a green build. Grass is drawn by the shared renderer too.
     onGrassClick,
+    // Sand is drawn by the shared renderer too, for the same reason.
+    onSandClick,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -4528,6 +4557,22 @@ function CakeContent({ config, scene, edit = null }) {
               patchRadius={tier.radius}
               onPick={onGrassClick}
               {...tier.grass}
+            />
+          )}
+          {/* A drift of sand on this tier's top, confined to the area the baker chose. Outside
+              CakeTier for grass's reason: a treatment laid ON the finished top, not part of the
+              cake's body.
+              ⚠️ THE REGION IS BUILT HERE, MEMOISED ON ITS NUMBERS. `SandBed` keys its own `useMemo`
+              on the region's identity, so an object literal would rebuild a 40,000-cell lattice on
+              every render — once per frame while a dial is being dragged. */}
+          {tier.sand && (
+            <SandBed
+              shape={tierShape(tier)}
+              topY={tier.baseY + tier.height}
+              zone={ZONES_TOP}
+              onPick={onSandClick}
+              {...tier.sand}
+              region={sandRegion(tier.sand)}
             />
           )}
           {/* ── Gypsophila on this tier ──────────────────────────────────────────────────────────
