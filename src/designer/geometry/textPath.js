@@ -219,6 +219,36 @@ export function discTextPath(host, cfg = {}) {
   };
 }
 
+/* ── What a message written on THIS element is made of ───────────────────────────────────────────
+ *
+ * ⚠️ THE MATERIAL IS THE ELEMENT'S, SO THE ROW SAYS IT — not a constant in the card. The plaque's
+ * door seeded `style: 'acrylic', acrylicFinish: 'gold'` in core, which put an ELEMENT DEFAULT in the
+ * one place an admin cannot reach (root CLAUDE.md rule 3), and it was also wrong: a mirror-gold
+ * sheet on a fondant disc reads as perspex. Sandeep: *"it looks more like acrylic, can we have the
+ * fondant texture for the letters."* Fondant was already there — `medium: 'fondant'` builds the
+ * SAME surface a relief cut-out's walls use — so nothing needed inventing; what was missing was a
+ * way for the row to ask for it.
+ *
+ * ⚠️ A WHITELIST, NOT A SPREAD, AND THAT IS THE WHOLE OF THE SAFETY HERE. `on` is what binds a
+ * message to its host; a row able to set it could point a plaque's message at a different
+ * decoration, and `id` would collide two messages onto one record. Those are the canvas's to decide,
+ * never an admin form's. Everything else a message HAS is already a customer control on the card, so
+ * this only moves where it STARTS — a baker can still switch Look, colour and font afterwards
+ * (presets are allowed, never forced).
+ *
+ * Absent → `{}` → `addWriting` falls through to DEFAULT_WRITING, which is cream. That is what the
+ * fondant rainbow has always done, so it does not move.
+ */
+export const WRITING_SEED_KEYS = Object.freeze(['style', 'color', 'acrylicFinish', 'font', 'topPose']);
+
+export function writingSeedFor(textPathCfg) {
+  const w = textPathCfg?.writing;
+  if (!w || typeof w !== 'object' || Array.isArray(w)) return {};
+  const out = {};
+  for (const k of WRITING_SEED_KEYS) if (w[k] != null) out[k] = w[k];
+  return out;
+}
+
 const PROVIDERS = { arch: archTextPath, disc: (params, cake, cfg) => discTextPath(params, cfg) };
 
 /* The one reader. A host hands its own params and the cake it sits on; the row's `text_path` says

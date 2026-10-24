@@ -938,7 +938,13 @@ if (PLAQUE_EL) {
          A FRACTION of whatever curve the wall has, so one value holds across the whole scale range. */
       side: { mode: 'hug', bend: 0.4 },
       recolor: { sat: 0.25, method: 'hue_regions', group_defaults: { 0: '#F7F2E8' } },
-      text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0 },
+      /* ⚠️ `writing` IS THE ROW SAYING WHAT A MESSAGE ON THIS IS MADE OF. It seeded acrylic+gold
+         from inside the card, which read as perspex sitting on fondant — *"it looks more like
+         acrylic, can we have the fondant texture for the letters."* `fondant` is the SAME surface
+         a relief cut-out's walls use, so a fondant letter and a fondant bow match by construction.
+         A starting point, not a lock: Look, colour and font all stay on the card. */
+      text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0,
+                   writing: { style: 'fondant', color: '#C79A3B' } },
       acrylic: { finishes: ['gold', 'silver', 'rose', 'white'], defaultFinish: 'gold' },
     },
     default_color: '#F7F2E8', sort_order: 70,
