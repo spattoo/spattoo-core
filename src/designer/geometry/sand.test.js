@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
+        sandHeightAt, sandMoundOpts, SAND_MOUND_SEED,
          ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS } from './sand.js';
 
 // A seat ring at a given radius, as grassSeats would hand one over.
@@ -377,5 +378,70 @@ describe('buildSandMound — a disc has a centre, not a ring of zero radius', ()
 
   it('a board ring has no centre to fan, and is unaffected', () => {
     expect(degenerates(buildSandMound(round, sandSpan(ZONES_BOARD, 0.34)))).toBe(0);
+  });
+});
+
+/* ── What has to SIT on the sand ─────────────────────────────────────────────────────────────────
+ * Sandeep: *"when another element like shell, or other sea elements can be placed on the sand."*
+ * A shell is seated by asking how high the drift stands under it, so that number has to describe
+ * THE MESH — not a second opinion about it (INVARIANTS #15: a preview and the thing previewed ask
+ * one function). These tests are the guard on that agreement.
+ */
+describe('sandHeightAt — the number a shell is seated on', () => {
+  const shape = { kind: 'round', radius: 1.2 };
+  const opts = { ...sandSpan(ZONES_TOP, 1), region: { kind: 'round', size: 0.8 } };
+
+  it('agrees with the mesh it describes', () => {
+    const at = sandHeightAt(shape, opts);
+    const p = buildSandMound(shape, opts).attributes.position;
+    /* ⚠️ A TOLERANCE OF THE GRAIN, NOT OF ZERO, and the reason is not slack. A mesh vertex is
+       stored where the in-plane wobble left it, while its HEIGHT was taken before that nudge — so
+       querying the sampler at the stored position lands a few thousandths away in a noise field
+       that is deliberately fine. The bank is what must match; the speckle is allowed to differ by
+       its own amplitude. */
+    const grain = SAND_DEFAULTS.rise * SAND_DEFAULTS.moundGrain;
+    let worst = 0;
+    for (let i = 0; i < p.count; i += 29) {
+      worst = Math.max(worst, Math.abs(at(p.getX(i), p.getZ(i)) - p.getY(i)));
+    }
+    expect(worst).toBeLessThan(grain);
+  });
+
+  it('stands a shell up in the drift and leaves one outside it on the cake', () => {
+    const at = sandHeightAt(shape, opts);
+    expect(at(0, 0)).toBeGreaterThan(SAND_DEFAULTS.rise * 0.5);
+    // Past the region's own edge there is no sand, so nothing is lifted.
+    expect(at(1.15, 0)).toBe(0);
+  });
+
+  /* ⚠️ THE EXACT CENTRE OF A ROUND TIER IS A REAL EDGE CASE, not a theoretical one. `snapToRim`
+     normalises (x, z) to get a bearing, and at the origin that is 0/0 — it returned the origin
+     itself, so the middle of the cake measured as though it were ON the rim and a shell placed dead
+     centre sat at zero height while the sand around it stood proud. */
+  it('does not drop a shell through the sand at the exact middle of the cake', () => {
+    const at = sandHeightAt(shape, opts);
+    expect(at(0, 0)).toBeGreaterThan(at(0.0001, 0.0001) * 0.8);
+  });
+
+  /* ⚠️ THE SEED OFFSET IS THE TRAP. `SandBed` renders the mound with `seed + SAND_MOUND_SEED` so
+     the bank and the crumbs do not share a noise field. A caller that built the sampler from the
+     bare seed would get the right shape with the wrong lumps — and shells would float over one
+     dune and sink into another, with nothing to point at. */
+  it('describes the drift SandBed actually renders, seed offset and all', () => {
+    const made = sandMoundOpts({ span: sandSpan(ZONES_TOP, 1), rise: SAND_DEFAULTS.rise,
+      moundNoise: SAND_DEFAULTS.moundNoise, moundGrain: SAND_DEFAULTS.moundGrain,
+      edgeBreak: SAND_DEFAULTS.edgeBreak, region: { kind: 'round', size: 0.8 }, seed: 11 });
+    expect(made.seed).toBe(11 + SAND_MOUND_SEED);
+    const grain = SAND_DEFAULTS.rise * SAND_DEFAULTS.moundGrain;
+    const p = buildSandMound(shape, made).attributes.position;
+    const right = sandHeightAt(shape, made);
+    const wrong = sandHeightAt(shape, { ...made, seed: 11 });
+    let worstRight = 0, worstWrong = 0;
+    for (let i = 0; i < p.count; i += 29) {
+      worstRight = Math.max(worstRight, Math.abs(right(p.getX(i), p.getZ(i)) - p.getY(i)));
+      worstWrong = Math.max(worstWrong, Math.abs(wrong(p.getX(i), p.getZ(i)) - p.getY(i)));
+    }
+    expect(worstRight).toBeLessThan(grain);
+    expect(worstWrong).toBeGreaterThan(worstRight);
   });
 });

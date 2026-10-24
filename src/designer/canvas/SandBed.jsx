@@ -1,5 +1,5 @@
 import { useMemo } from 'react';
-import { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize,
+import { buildSandGrain, buildSandMound, sandMoundOpts, sandSpan, thinOutward, varyGrainSize,
          ZONES_TOP, SAND_DEFAULTS } from '../geometry/sand.js';
 import { regionRing, regionSeatShape, ringDepth, ringInradius, shapeExtent, surfaceDepth } from '../geometry/region.js';
 import { useSeatedInstances, useSurfaceSeats, outwardBand } from './useSeatedInstances.js';
@@ -104,8 +104,10 @@ export default function SandBed({
     [raw, reach, span.innerFrac, span.outerFrac, falloff, sizeVary, seed, ring, inradius, shape]);
 
   const geo   = useMemo(() => buildSandGrain({ seed: seed + 1 }), [seed]);
+  /* Built through `sandMoundOpts` rather than spelled out here, so that whatever has to SIT on this
+     sand asks for the identical drift — seed offset and all. See its note in sand.js. */
   const mound = useMemo(
-    () => buildSandMound(shape, { ...span, rise, moundNoise, moundGrain, edgeBreak, region, seed: seed + 11 }),
+    () => buildSandMound(shape, sandMoundOpts({ span, rise, moundNoise, moundGrain, edgeBreak, region, seed })),
     [shape, span, rise, moundNoise, moundGrain, edgeBreak, region, seed]);
 
   /* `size` is the grain's real radius; the spread rides on each seat's own scale (varyGrainSize),

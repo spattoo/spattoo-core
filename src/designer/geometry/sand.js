@@ -433,6 +433,15 @@ function latticeMound(field, { rise, moundNoise, moundGrain, moundStep, n, m }) 
  * rectangle or triangle placed on the surface, instead of a ring or disc about the cake's centre.
  * When it is null nothing about the old behaviour changes.
  */
+function sandField(shape, { innerFrac, outerFrac, feather, edgeBreak, region, n }) {
+  /* `shapeExtent`, NOT `shapeMaxReach` — a region's size is a fraction of the cake's long side, not
+     of its diagonal. See region.js; on a sheet the two differ by 20%. */
+  const extent = shapeExtent(shape);
+  return region
+    ? regionField(regionRing(region, extent), extent, shape, { feather, edgeBreak, n })
+    : radialField(shape, { innerFrac, outerFrac, feather, edgeBreak, n });
+}
+
 export function buildSandMound(shape, {
   innerFrac = 1, outerFrac = 1 + SAND_DEFAULTS.width,
   rise = SAND_DEFAULTS.rise, feather = SAND_DEFAULTS.feather,
@@ -441,13 +450,53 @@ export function buildSandMound(shape, {
   region = null,
 } = {}) {
   const n = valueNoise(seed), m = valueNoise(seed + 101);
-  /* `shapeExtent`, NOT `shapeMaxReach` — a region's size is a fraction of the cake's long side, not
-     of its diagonal. See region.js; on a sheet the two differ by 20%. */
-  const extent = shapeExtent(shape);
-  const field = region
-    ? regionField(regionRing(region, extent), extent, shape, { feather, edgeBreak, n })
-    : radialField(shape, { innerFrac, outerFrac, feather, edgeBreak, n });
+  const field = sandField(shape, { innerFrac, outerFrac, feather, edgeBreak, region, n });
   return latticeMound(field, { rise, moundNoise, moundGrain, moundStep, n, m });
+}
+
+/**
+ * How high the drift stands at a point — the function a shell needs to sit ON the sand rather than
+ * through it. Zero everywhere the sand is not.
+ *
+ * ⚠️ THE SAME FIELD THE MESH IS BUILT FROM, deliberately, and this is INVARIANTS #15's rule in a
+ * different costume: a preview and the thing previewed ask ONE function. A second "about how high
+ * is the sand here" estimate — a profile curve re-derived from the same numbers — would agree today
+ * and drift the first time the mound's taper changed, and the symptom would be shells floating a
+ * millimetre above sand or sunk a millimetre into it, which nobody would connect to a taper.
+ *
+ * ⚠️ IT ANSWERS THE BANK, NOT THE CRUMBS. The grains scattered on top are a separate instanced
+ * mesh and a shell resting among them is right; a shell lifted to clear the tallest crumb would
+ * hover. The grain noise is in here (it is part of the surface) but the loose pieces are not.
+ */
+/* ⚠️ ONE STATEMENT OF WHAT THE BANK IS MADE FROM — INVARIANTS #15 in a different costume. The
+   mesh and anything that has to SIT on the mesh must ask the same question with the same numbers,
+   and the easiest way to get that wrong is this seed offset: `SandBed` renders the mound with
+   `seed + 11` so the bank and the crumbs scattered over it do not share a noise field. A caller
+   that built the sampler with the bare seed would get a drift of the right shape and the wrong
+   lumps, and a shell would float over one dune while sinking into another. */
+export const SAND_MOUND_SEED = 11;
+
+export function sandMoundOpts({ span, rise, moundNoise, moundGrain, edgeBreak, region, seed }) {
+  return { ...span, rise, moundNoise, moundGrain, edgeBreak, region, seed: seed + SAND_MOUND_SEED };
+}
+
+export function sandHeightAt(shape, {
+  innerFrac = 1, outerFrac = 1 + SAND_DEFAULTS.width,
+  rise = SAND_DEFAULTS.rise, feather = SAND_DEFAULTS.feather,
+  moundNoise = SAND_DEFAULTS.moundNoise, moundGrain = SAND_DEFAULTS.moundGrain,
+  edgeBreak = SAND_DEFAULTS.edgeBreak, seed = 17, region = null,
+} = {}) {
+  const n = valueNoise(seed), m = valueNoise(seed + 101);
+  const field = sandField(shape, { innerFrac, outerFrac, feather, edgeBreak, region, n });
+  return (x, z) => {
+    const p = field.probe(x, z);
+    if (!p.inside) return 0;
+    const profile = Math.pow(Math.min(1, Math.max(0, p.depth / p.featherDist)), 1.6);
+    if (profile <= 0) return 0;
+    const micro = m(x * 90, z * 90) - 0.5;
+    return Math.max(0, rise * profile * (1 - moundNoise + moundNoise * field.swell(x, z))
+         + rise * moundGrain * micro * Math.min(1, profile * 3));
+  };
 }
 
 export const ZONES_TOP = 'top';

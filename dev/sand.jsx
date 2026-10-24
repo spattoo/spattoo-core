@@ -5,7 +5,8 @@ import { Canvas } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import { SceneEnv, SceneLights } from '../src/designer/canvas/CakeCanvas.jsx';
 import SandBed from '../src/designer/canvas/SandBed.jsx';
-import { SAND_DEFAULTS, sandTriangleCount, ZONES_TOP, ZONES_BOARD } from '../src/designer/geometry/sand.js';
+import { SAND_DEFAULTS, sandTriangleCount, sandHeightAt, sandMoundOpts, sandSpan,
+         ZONES_TOP, ZONES_BOARD } from '../src/designer/geometry/sand.js';
 import { REGION_KINDS, REGION_DEFAULTS } from '../src/designer/geometry/region.js';
 
 /* ── Sand on the board, the tight loop ───────────────────────────────────────────────────────────
@@ -66,6 +67,22 @@ function Scene({ p }) {
       {p.board && <SandBed shape={SHAPE} topY={BOARD_H} zone={ZONES_BOARD} size={p.width} {...p} region={null} />}
       {p.top && <SandBed shape={SHAPE} topY={BOARD_H + BOTTOM_H} zone={ZONES_TOP} size={p.topSize}
                   {...p} region={p.region} />}
+      {/* ⚠️ PEBBLES SEATED THROUGH `sandHeightAt`, which is the only way to SEE whether the number a
+          shell is seated on describes the sand it is seated in. A test can say the sampler agrees
+          with the mesh to within the grain; only a picture says whether that reads as resting on it.
+          `?pebbles=1`. */}
+      {p.top && p.pebbles && (() => {
+        const at = sandHeightAt(SHAPE, sandMoundOpts({
+          span: sandSpan(ZONES_TOP, p.topSize), rise: p.rise, moundNoise: p.moundNoise,
+          moundGrain: p.moundGrain, edgeBreak: p.edgeBreak, region: p.region, seed: p.seed }));
+        const R = 0.075;
+        return [[0, 0], [0.5, 0.25], [-0.45, 0.4], [0.25, -0.55], [-0.6, -0.3], [0.85, 0.1]].map(([x, z], k) => (
+          <mesh key={k} position={[x, BOARD_H + BOTTOM_H + at(x, z) + R * 0.45, z]} castShadow receiveShadow>
+            <sphereGeometry args={[R, 20, 14]} />
+            <meshStandardMaterial color="#8d7f72" roughness={0.65} metalness={0} />
+          </mesh>
+        ));
+      })()}
       <OrbitControls target={[0, PARAMS.get('cam') === 'top' ? BOARD_H + BOTTOM_H * 0.8 : BOARD_H + 0.3, 0]} />
     </>
   );
@@ -80,14 +97,14 @@ const INITIAL = (() => {
   /* The region is flattened into `rg*` keys so each one is a plain number a slider and a URL can
      both carry — `?rgKind=triangle&rgSize=0.8`. It is reassembled on the way into SandBed. */
   const out = {
-    ...SAND_DEFAULTS, board: true, top: true, rgOn: false,
+    ...SAND_DEFAULTS, board: true, top: true, rgOn: false, pebbles: false,
     rgKind: REGION_DEFAULTS.kind, rgSize: REGION_DEFAULTS.size, rgAspect: REGION_DEFAULTS.aspect,
     rgRotation: REGION_DEFAULTS.rotation, rgX: REGION_DEFAULTS.x, rgZ: REGION_DEFAULTS.z,
   };
   for (const [k, v] of PARAMS) {
     if (k === 'shape' || k === 'cam') continue;
     if (!(k in out)) { console.warn(`sand harness: no parameter "${k}"`); continue; }
-    out[k] = k === 'board' || k === 'top' || k === 'rgOn' ? v !== '0' && v !== 'false'
+    out[k] = k === 'board' || k === 'top' || k === 'rgOn' || k === 'pebbles' ? v !== '0' && v !== 'false'
            : k === 'colour' || k === 'rgKind' ? v : Number(v);
   }
   return out;

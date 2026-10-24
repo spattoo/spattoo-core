@@ -183,9 +183,18 @@ export function ringInradius(ring, samples = 48) {
  * `snapToRim` already walks through `perimeter`.
  */
 export function surfaceDepth(shape, x, z) {
+  const inside = topContains(shape, x, z);
   const p = snapToRim(shape, x, z);
-  const d = Math.hypot(x - p.x, z - p.z);
-  return topContains(shape, x, z) ? d : -d;
+  let d = Math.hypot(x - p.x, z - p.z);
+  /* ⚠️ THE EXACT CENTRE OF A ROUND TIER HAS NO DIRECTION TO SNAP ALONG. `snapToRim` normalises
+     (x, z) to find the bearing, and at the origin that is 0/0 — it guards with `|| 1` and hands
+     back the origin itself, so the rim reads as being 0 away and the middle of the cake measures as
+     if it were ON the edge. Harmless for the mesh, whose lattice almost never lands exactly there;
+     not harmless for a point query, and the symptom was a shell placed dead centre sitting at zero
+     height while the sand around it stood proud. Asking again a hair off the origin restores the
+     bearing, and anywhere else this branch never runs. */
+  if (inside && d < 1e-9) d = Math.hypot(x - snapToRim(shape, x + 1e-6, z).x, z - snapToRim(shape, x + 1e-6, z).z);
+  return inside ? d : -d;
 }
 
 /**

@@ -198,7 +198,8 @@ export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
 // studio tunes the generator the designer renders from, never a copy of it (CLAUDE.md, "THE STUDIO
 // IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT").
 export { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
-         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS } from './designer/geometry/sand.js';
+         sandHeightAt, sandMoundOpts, SAND_MOUND_SEED,
+         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS, SAND_COLORS } from './designer/geometry/sand.js';
 export { default as SandBed } from './designer/canvas/SandBed.jsx';
 /* A chosen AREA on the surface — deliberately its own module and its own export, because the next
    thing poured into one is cream, not sand (region.js, "THIS IS NOT A SAND FEATURE"). */

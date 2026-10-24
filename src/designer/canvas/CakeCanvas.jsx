@@ -42,7 +42,7 @@ import {
 import { pointerRay, cylinderHit, cylinderHitPoint, wallHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import SandBed from './SandBed.jsx';
-import { ZONES_TOP } from '../geometry/sand.js';
+import { ZONES_TOP, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from '../geometry/sand.js';
 import { REGION_DEFAULTS } from '../geometry/region.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
@@ -56,6 +56,38 @@ import { REGION_DEFAULTS } from '../geometry/region.js';
  * ⚠️ `shape` HERE IS THE AREA, NOT THE CAKE'S FOOTPRINT. The tier's own outline is `tierShape`;
  * this is round/rect/triangle as chosen on the card. Two different questions about the same word,
  * which is why the sand object spells it `shape` and the region calls it `kind`. */
+/* How high the drift stands under a point, for anything that has to SIT on the sand.
+ *
+ * ⚠️ BUILT THROUGH `sandMoundOpts`, NOT SPELLED OUT, so the lift describes the very drift that was
+ * meshed — seed offset included. A sampler built from the bare seed gives a drift of the right
+ * shape with the wrong lumps, and a shell then floats over one dune while sinking into another.
+ *
+ * ⚠️ KEYED ON THE SAND OBJECT *AND* THE TIER'S FOOTPRINT. The sand object is replaced whenever it
+ * is edited, but resizing the TIER leaves it untouched while moving the surface it is clipped to —
+ * so a cache on the sand alone goes stale the moment somebody drags the cake wider.
+ */
+const sandLifts = new WeakMap();
+function sandLiftFor(tier) {
+  const sand = tier?.sand;
+  if (!sand) return null;
+  const shp = tierShape(tier);
+  const key = `${shp.kind}|${shp.radius ?? ''}|${shp.halfW ?? ''}|${shp.halfD ?? ''}|${shp.cornerR ?? ''}`;
+  let e = sandLifts.get(sand);
+  if (!e || e.key !== key) {
+    e = { key, at: sandHeightAt(shp, sandMoundOpts({
+      span: sandSpan(ZONES_TOP, sand.size ?? SAND_DEFAULTS.topSize),
+      rise: sand.rise ?? SAND_DEFAULTS.rise,
+      moundNoise: sand.moundNoise ?? SAND_DEFAULTS.moundNoise,
+      moundGrain: sand.moundGrain ?? SAND_DEFAULTS.moundGrain,
+      edgeBreak: sand.edgeBreak ?? SAND_DEFAULTS.edgeBreak,
+      region: sandRegion(sand),
+      seed: sand.seed ?? SAND_DEFAULTS.seed,
+    })) };
+    sandLifts.set(sand, e);
+  }
+  return e.at;
+}
+
 const sandRegions = new WeakMap();
 function sandRegion(sand) {
   if (!sand) return null;
@@ -2589,7 +2621,7 @@ function freeDragPlane(camera, at) {
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2723,9 +2755,17 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
      placed, so it is the one that should follow the surface.
      ⚠️ AND THE DRAG PLANE STAYS ON THE LID. `plane` is what a pointer drag solves against, in x/z;
      moving it with the piping would make the grab jump as a sprinkle crossed the ring's inner edge. */
-  const seatY = sticker.scatter
+  /* ⚠️ SAND LIFTS EVERY TOP DECORATION, NOT ONLY SCATTER — a deliberate departure from the rule
+     stated just above, and worth saying why. The rim-band rule is scatter-only because piping sits
+     at a RADIUS a hand-placed topper may overlap by accident, and raising it would move a piece the
+     baker put down. Sand is not an accident of radius: it is an area the baker drew and then stood
+     things in. Sandeep asked for exactly this — *"when another element like shell, or other sea
+     elements can be placed on the sand"* — and a shell half-swallowed by the drift it was put on is
+     the bug, not the lift. Zero everywhere the sand is not, so a cake without sand is untouched. */
+  const sandY = surfaceLift ? surfaceLift(sticker.x ?? 0, sticker.z ?? 0) : 0;
+  const seatY = (sticker.scatter
     ? topSurfaceYAt(topBands, Math.hypot(sticker.x ?? 0, sticker.z ?? 0), topY)
-    : topY;
+    : topY) + sandY;
   const py = seatY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
@@ -5092,6 +5132,9 @@ function CakeContent({ config, scene, edit = null }) {
             key={sticker.id}
             sticker={sticker}
             topY={topY}
+            /* What the sand under this piece stands it on. Null on the board — a drift is a top
+               treatment, and the board has its own. */
+            surfaceLift={isBoard ? null : sandLiftFor(tier)}
             /* A board decoration stands on the drum, which no rim ring reaches. */
             topBands={isBoard ? EMPTY_TOP_BANDS : tierTopBands(tier)}
             /* What is on the WALL, for a piece seated on the rim with its body over the edge.
