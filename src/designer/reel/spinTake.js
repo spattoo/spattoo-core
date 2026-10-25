@@ -1,9 +1,9 @@
 /* ── The hero spin, as a camera move ─────────────────────────────────────────────────────────────
  *
  * A cake turning on a turntable, then lifting to a plan view, holding, and settling back. Four
- * phases, each with its own duration, because Sandeep wants to tune them against a narration whose
- * length he already knows: *"6 seconds horizontally and next 4 seconds, 3 seconds top, 1 second
- * bring it back to normal"*.
+ * phases, each with its own duration, because the take has to fit a narration whose length is
+ * already known — Sandeep's shot is *"total 10 seconds - 6 turning, 3 over the cake, 1 get back to
+ * normal"*, and the first attempt at it was 14." 
  *
  *   turn   the cake revolves once, level              — the establishing shot
  *   rise   the camera lifts toward straight down       — reveals the TOP, which is where the
@@ -23,9 +23,17 @@
  * worth more than the slightly nicer drifting top-down.
  */
 
-/* Defaults are Sandeep's numbers. They are a starting point a baker tunes, never a fixed shape —
-   the panel writes all four, and `spinPose` reads whatever it is given. */
-export const SPIN_DEFAULTS = Object.freeze({ turn: 6, rise: 4, top: 3, back: 1 });
+/* Sandeep's shot: *"its total 10 seconds - 6 turning, 3 over the cake, 1 get back to normal"*.
+ *
+ * ⚠️ THAT IS THREE SEGMENTS AND THIS IS FOUR, because getting over the cake is a MOVE and a move
+ * takes time out of the three seconds — it cannot arrive for free. So the 3 is split: one second
+ * lifting, two actually looking down. The alternative readings are a slower, more cinematic lift
+ * (rise 1.5 / top 1.5) or a near-cut (rise 0.5 / top 2.5), and the panel is there precisely so that
+ * is a slider and not an argument. The total is 10 either way.
+ *
+ * A starting point a baker tunes, never a fixed shape — the panel writes all four and `spinPose`
+ * reads whatever it is given. */
+export const SPIN_DEFAULTS = Object.freeze({ turn: 6, rise: 1, top: 2, back: 1 });
 
 /* How far "top" is. ⚠️ NOT ZERO, deliberately: straight down is the pole, where the camera's up
    vector has nothing to disambiguate it and the view can flip as it arrives. A few degrees short
