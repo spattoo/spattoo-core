@@ -69,6 +69,21 @@ import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
    rather than inline so the control and its inverse cannot drift apart. */
 const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
+import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
+/* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
+   module load, so a phase added to the take without a label here fails loudly at import rather than
+   rendering a slider short — the take and the panel cannot drift apart silently. */
+const SPIN_PHASE_COPY = {
+  turn: { label: 'Turn',   hint: 'One full revolution, level.',            max: 20 },
+  rise: { label: 'Rise',   hint: 'Lifts to look down on the top.',         max: 10 },
+  top:  { label: 'Top',    hint: 'Holds there.',                           max: 10 },
+  back: { label: 'Settle', hint: 'Returns to where it started.',           max: 10 },
+};
+const SPIN_PHASE_LABELS = SPIN_PHASES.map((key) => {
+  const copy = SPIN_PHASE_COPY[key];
+  if (!copy) throw new Error(`spin phase "${key}" has no label — add one to SPIN_PHASE_COPY`);
+  return { key, ...copy };
+});
 import { AreaShapeIcon, areaLabel, hasAreaGlyph } from './shared/AreaShapeIcon.jsx';
 import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
@@ -4735,6 +4750,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * controls, different owner and different lifetime — folding them together would mean closing the
    * cream panel stopped the film shot, or filming left the paint wheel on. */
   const [filmSpin, setFilmSpin] = useState(false);
+  /* The four phase durations. Tuned against a narration whose length is already known, which is why
+     they are adjustable at all rather than four constants: the take has to fit the words. */
+  const [spinPlan, setSpinPlan] = useState({ ...SPIN_DEFAULTS });
+  /* The settings popover. ⚠️ It opens from the menu and closes the moment the take starts — it is
+     on screen only while nobody is filming, which is the same rule the menu item itself follows. */
+  const [spinSetupOpen, setSpinSetupOpen] = useState(false);
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
@@ -18938,7 +18959,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
                  customer set (size, standing or lying) survives being moved. */
               onGarnishMove={(id, patch) => updateGarnish(id, patch)}
-              autoRotate={creamAutoRotate || filmSpin}
+              autoRotate={creamAutoRotate}
+              /* ⚠️ NOT `autoRotate`. A turntable spins on one axis forever; this take lifts to a
+                 plan view and settles back, so a director drives it. Left on autoRotate as well,
+                 the two would both write the azimuth every frame. */
+              spin={filmSpin ? spinPlan : null}
+              onSpinDone={() => setFilmSpin(false)}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
               brushDraw={brushDraw}
@@ -21622,7 +21648,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       `is_catalog_author` says who writes the public catalogue. */}
                   {isCatalogAuthor && (
                     <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                            onClick={() => { setCaptureMenuOpen(false); startFilmSpin(); }}>
+                            onClick={() => { setCaptureMenuOpen(false); setSpinSetupOpen(true); }}>
                       <RefreshIcon size={16} />
                       Spin the cake
                       {/* ⚠️ THE LABEL IS NOT A TOGGLE, AND IT CANNOT BE. It was written as
@@ -21634,7 +21660,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                           The hint is safe HERE and nowhere else: this menu is shut while anyone is
                           filming, so it is the one place in the designer that can explain the way
                           out without the explanation ending up in the video. */}
-                      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>Esc to stop</span>
+                      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{spinTotal(spinPlan)}s</span>
                     </button>
                   )}
                 </ActionSheet>
@@ -22261,6 +22287,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         primaryColor={primaryColor}
         accentColor={accentColor}
       />
+
+      {/* ── Setting up the hero spin ──────────────────────────────────────────────────────────────
+          Four durations, tuned against a narration whose length is already known — the take has to
+          fit the words, which is the whole reason these are adjustable rather than four constants.
+
+          ⚠️ IT CLOSES BEFORE THE TAKE RUNS. Everything on screen is filmed, so this panel exists
+          only while nobody is recording: open it, set the phases, press Start, and it is gone
+          before the camera moves. Same rule as the menu item it opens from.
+
+          ⚠️ `Slider`, not four number boxes — it is THE bounded number in this codebase, and it
+          carries the label, the live value and the units that make "4" read as four seconds. */}
+      {spinSetupOpen && (
+        <Panel title="Spin the cake" onClose={() => setSpinSetupOpen(false)} maxWidth={360}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 2px 10px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+              The cake turns once, lifts to look down on the top, holds, then settles back where it
+              started. Press Start and this closes — Esc stops it early.
+            </p>
+            {SPIN_PHASE_LABELS.map(({ key, label, hint, max }) => (
+              <div key={key}>
+                <Slider label={label} value={spinPlan[key]} min={0} max={max} step={0.5}
+                        fmt={v => `${v}s`}
+                        onChange={v => setSpinPlan(p => ({ ...p, [key]: v }))} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>{hint}</div>
+              </div>
+            ))}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}
+                style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
+                         fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', border: 'none' }}>
+                Start
+              </button>
+              <span style={{ fontSize: 12, color: '#888' }}>{spinTotal(spinPlan)} seconds in all</span>
+            </div>
+          </div>
+        </Panel>
+      )}
 
       {/* Reel options — catalogue authors only. Not mounted at all otherwise, so the panel is not
           a thing every other baker's designer carries around unrendered. */}

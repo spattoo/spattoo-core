@@ -44,6 +44,7 @@ import GrassPatch from './GrassPatch.jsx';
 import SandBed from './SandBed.jsx';
 import { ZONES_TOP, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from '../geometry/sand.js';
 import { REGION_DEFAULTS } from '../geometry/region.js';
+import { spinPose } from '../reel/spinTake.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -5386,6 +5387,41 @@ const FIT_DEADBAND = 0.06;      // world units of change worth re-framing for
  * faster glide read as a correction; at this length it reads as the view opening out, which is the
  * one moment in the editor where the whole cake comes back into frame and is worth seeing. */
 const FIT_EASE_S = 1.2;
+/* ── Driving the hero spin ───────────────────────────────────────────────────────────────────────
+ *
+ * The arithmetic is `spinTake.js`; this is the dozen lines that apply it. Mounted only while a take
+ * is running, so the designer carries nothing extra the rest of the time.
+ *
+ * ⚠️ THE START POSE IS READ ONCE, ON MOUNT. `spinPose` returns how far round from the start we are,
+ * not an absolute bearing — so the revolution is a revolution from wherever the baker had the cake,
+ * and the take ends facing exactly where it began. Re-reading the angle each frame would make the
+ * camera chase its own output and never move.
+ *
+ * ⚠️ IT SETS THE ANGLES, NOT THE POSITION. OrbitControls owns the distance and `FitCakeToView` owns
+ * the target; writing `camera.position` here would fight both, and the history in FitCakeToView's
+ * note is what that fight looks like. Setting the two spherical angles leaves every other decision
+ * where it already lives.
+ */
+function SpinDirector({ orbitRef, plan, onDone }) {
+  const t0 = useRef(null);
+  const start = useRef(null);
+  useFrame(() => {
+    const controls = orbitRef?.current;
+    if (!controls) return;
+    const now = performance.now();
+    if (t0.current == null) {
+      t0.current = now;
+      start.current = { az: controls.getAzimuthalAngle(), polar: controls.getPolarAngle() };
+    }
+    const { azimuth, polar, done } = spinPose((now - t0.current) / 1000, plan, start.current.polar);
+    controls.setAzimuthalAngle(start.current.az + azimuth);
+    controls.setPolarAngle(polar);
+    controls.update();
+    if (done) onDone?.();
+  });
+  return null;
+}
+
 function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
@@ -5709,6 +5745,9 @@ export default function CakeCanvas({
   selectedGarnishId = null, onGarnishSelect = null, onGarnishMove = null,
   selectedTopperId = null, onTopperSelect = null, onTopperMove = null,
   autoRotate = false,
+  /* A hero spin in progress: the four phase durations, or null. See spinTake.js. */
+  spin = null,
+  onSpinDone = null,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
@@ -5983,6 +6022,8 @@ export default function CakeCanvas({
         onFoilSelect={onFoilSelect}
         tierDataRef={tierDataRef}
       />
+      {/* Only while a take runs — see SpinDirector. */}
+      {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
       <OrbitControls
         makeDefault
         ref={orbitRef}

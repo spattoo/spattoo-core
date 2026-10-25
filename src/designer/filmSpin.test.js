@@ -91,15 +91,40 @@ describe('the hero spin stays out of the frame', () => {
   it('does not pretend to be a toggle it cannot be', () => {
     expect(code).not.toMatch(/Stop spinning/);
     expect(item[0]).toMatch(/Spin the cake/);
-    // And it teaches the way out, which is safe only because this menu is shut while filming.
-    expect(item[0]).toMatch(/Esc to stop/);
+  });
+
+  /* ⚠️ THE SETUP PANEL MUST CLOSE BEFORE THE TAKE RUNS. It is the one piece of chrome this feature
+     draws, and everything on screen is filmed — so Start has to shut it in the same handler that
+     begins the move, not leave it to a later render or an onClose. */
+  it('closes its setup panel in the same breath as starting', () => {
+    expect(code).toMatch(/setSpinSetupOpen\(false\);\s*startFilmSpin\(\)/);
+  });
+
+  /* The way out is still Esc, and the panel is the only place that can say so — it is on screen
+     exactly when nobody is recording. */
+  it('teaches the way out where it is safe to say it', () => {
+    const panel = code.match(/spinSetupOpen && \([\s\S]{0,2600}?<\/Panel>/);
+    expect(panel, 'the setup panel should exist').not.toBeNull();
+    expect(panel[0]).toMatch(/Esc stops it early/);
   });
 
   /* ⚠️ NOT FOLDED INTO `creamAutoRotate`, which spins the cake for spin-painting. Same effect on
      the controls, different owner and different lifetime: shared, closing the cream panel would
      stop the film shot and filming would leave the paint wheel on. */
-  it('is its own flag, beside the cream wheel rather than inside it', () => {
-    expect(code).toMatch(/autoRotate=\{creamAutoRotate \|\| filmSpin\}/);
+  /* ⚠️ TWO THINGS MUST NOT BOTH WRITE THE AZIMUTH. The first version drove the spin through
+     `autoRotate`, which turns on one axis forever; the take lifts to a plan view and settles back,
+     so a director drives it instead. Left on autoRotate as well, both would write the camera every
+     frame and the lift would fight the turntable. */
+  it('is driven by the director, not by autoRotate', () => {
+    expect(code).toMatch(/autoRotate=\{creamAutoRotate\}/);
+    expect(code).not.toMatch(/autoRotate=\{creamAutoRotate \|\| filmSpin\}/);
+    expect(code).toMatch(/spin=\{filmSpin \? spinPlan : null\}/);
+    // The cream wheel still owns autoRotate, and is untouched by any of this.
     expect(code).toMatch(/const \[creamAutoRotate, setCreamAutoRotate\]/);
+  });
+
+  /* The take ends itself, so a baker who set 14 seconds gets 14 seconds and no stray state. */
+  it('clears the flag when the take finishes', () => {
+    expect(code).toMatch(/onSpinDone=\{\(\) => setFilmSpin\(false\)\}/);
   });
 });
