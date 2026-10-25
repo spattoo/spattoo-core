@@ -4720,6 +4720,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
+  /* ── Spinning the cake for the camera ─────────────────────────────────────────────────────────
+   * A hero shot: the cake turning slowly on its own while somebody films the screen. Sandeep wants
+   * the demo video to open on the mermaid doll cake rotating.
+   *
+   * ⚠️ NO NEW CHROME, AND THAT IS THE REQUIREMENT, NOT A PREFERENCE. *"that button should not
+   * appear in video"* — and a screen recorder captures the screen, not the canvas, so anything
+   * drawn here lands in the file. It lives inside the Capture ⋯ menu, which is SHUT except in the
+   * second it is being used, so by construction there is nothing on screen to film. The reel's own
+   * messages can sit over the designer precisely because the reel captures the canvas; this cannot
+   * borrow that reasoning.
+   *
+   * ⚠️ SEPARATE FROM `creamAutoRotate`, which spins the cake for spin-painting. Same effect on the
+   * controls, different owner and different lifetime — folding them together would mean closing the
+   * cream panel stopped the film shot, or filming left the paint wheel on. */
+  const [filmSpin, setFilmSpin] = useState(false);
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
@@ -4742,6 +4757,42 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // primary_color/accent_color directly and never went through here.
   const primaryColor = INK;
   const accentColor  = '#333333';
+
+  /* Start or stop the hero spin.
+   *
+   * ⚠️ TURNING IT ON CLEARS THE SELECTION, for two reasons that happen to agree. The canvas only
+   * honours `autoRotate` when nothing is selected — so with a tier selected the menu item would
+   * appear to do nothing at all, which is the worst kind of control. And a selection draws a box
+   * and handles ON the cake, which is the one thing a hero shot of that cake must not have in it.
+   *
+   * ⚠️ IT IS NOT PART OF THE DESIGN. This is how the cake is being LOOKED at, not what it is, so it
+   * lives in component state and is never written to `design` — a saved cake that spins when you
+   * reopen it would be a bug somebody chases through the snapshot for an afternoon. */
+  function toggleFilmSpin() {
+    setFilmSpin(on => {
+      // `handleDeselect`, the same call openReelPanel makes and for the same stated reason:
+      // "handles, grips and the piping toolbar are editing furniture that renders IN the scene".
+      if (!on) handleDeselect();
+      return !on;
+    });
+  }
+
+  /* Esc stops it, and so does taking hold of the cake.
+   *
+   * ⚠️ THE STOP CANNOT BE A BUTTON. Everything on screen is filmed, so the way out has to be
+   * invisible — Esc is the one key every person already tries, and grabbing a spinning cake plainly
+   * means "I want to drive now". The listener only exists while the cake is spinning, so nothing
+   * here is a key handler the rest of the designer has to reason about. */
+  useEffect(() => {
+    if (!filmSpin) return undefined;
+    const stop = (e) => { if (!e.key || e.key === 'Escape') setFilmSpin(false); };
+    window.addEventListener('keydown', stop);
+    window.addEventListener('pointerdown', stop);
+    return () => {
+      window.removeEventListener('keydown', stop);
+      window.removeEventListener('pointerdown', stop);
+    };
+  }, [filmSpin]);
 
   // ── Reel recording — catalogue authors only ───────────────────────────────────────────────────
   // A per-BAKER flag (bakers.is_catalog_author, migration 070), not a per-user capability: hasCap
@@ -4825,6 +4876,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }
 
   function openReelPanel() {
+    // The reel drives the camera itself, so a hero spin left running would fight it for the orbit.
+    setFilmSpin(false);
     // Drop any selection first. Handles, grips and the piping toolbar are editing furniture that
     // renders IN the scene, so whatever was selected when the baker hit Record would have been
     // filmed along with the cake.
@@ -4841,6 +4894,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * reason — handles and grips render in the scene and would be photographed along with the cake —
    * and everything else it sets is the framing the reel already knows how to draw. */
   function openPhotoPanel() {
+    // Same as the reel: a photo aims the camera, and a turning cake would not hold still for it.
+    setFilmSpin(false);
     handleDeselect();
     setPhotoOptsOpen(true);
     setFraming(true);
@@ -18881,7 +18936,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* The patch is only the keys the drag changed, so updateGarnish MERGES — anything the
                  customer set (size, standing or lying) survives being moved. */
               onGarnishMove={(id, patch) => updateGarnish(id, patch)}
-              autoRotate={creamAutoRotate}
+              autoRotate={creamAutoRotate || filmSpin}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
               brushDraw={brushDraw}
@@ -21558,6 +21613,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     <ReelIcon size={17} />
                     Record a reel
                   </button>
+                  {/* ⚠️ `isCatalogAuthor`, NOT `canRecordReel`. The menu around this opens for either,
+                      because a baker on a plan with reel capture films their own cakes — but this is
+                      for filming the PRODUCT, and Sandeep asked for template authors only. The two
+                      questions are different: `reel_branding` says whose name is on a video,
+                      `is_catalog_author` says who writes the public catalogue. */}
+                  {isCatalogAuthor && (
+                    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                            onClick={() => { setCaptureMenuOpen(false); toggleFilmSpin(); }}>
+                      <RefreshIcon size={16} />
+                      {filmSpin ? 'Stop spinning' : 'Spin the cake'}
+                    </button>
+                  )}
                 </ActionSheet>
               </div>
             )}
