@@ -37,7 +37,18 @@ import { perimeter, isRoundWall, topContains, snapToRim, wallFractionAt } from '
 
 export const BRUSH_ON_CAKE_DEFAULTS = {
   width:  0.30,   // × R: how broad the stroke is at its widest
-  weight: 0.6,    // 0 … 1: dry stain → loaded impasto
+  /* 0 … 1: dry stain → loaded impasto. This is what a freshly drawn stroke STARTS at; after the
+     first, each one copies the stroke before it, which is what a hand does (see the seeding in
+     CakeDesigner, and the *"its not keeping the same thickness, its resetting"* complaint that put
+     it there).
+     ⚠️ 0.06 IS SANDEEP'S NUMBER, AND IT IS A LONG WAY BELOW WHAT THIS WAS. It stood at 0.6 from the
+     first commit; asked for *"0.6"* and then corrected to *"start the thinkness at 0.06"*, which is
+     a tenth of it. Rendered 0.06 / 0.10 / 0.30 / 0.60 side by side on six strokes at cake distance:
+     0.06 and 0.10 read as colour painted on, with almost no ridge or shadow, while the reference
+     photographs show cream with real body. Set as asked and recorded here rather than argued with —
+     a baker drags the dial from wherever it starts, and the complaint that produced this was about
+     where it starts, not about what the cream can do. */
+  weight: 0.06,
   /* ⚠️ SET BY LOOKING, AND THE FIRST NUMBER WAS HALF WHAT IT NEEDED TO BE. At 0.055 a full-weight
      stroke rendered as a flat coloured decal with a soft edge — the relief was there in the mesh and
      invisible on the cake, which is the worst of both. At this value the ridge catches a highlight,
@@ -144,8 +155,18 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      it when the hand lifted — and the bottom runs out to a point. */
   /* ⚠️ AND THE RANGE STARTS HIGH, because a palette knife does not taper to a point. Beside the
      photograph the pulls keep nearly their full width all the way up and then simply STOP on a
-     ragged edge; at 0.30 ours narrowed as they climbed and read as leaves. 0.60 to 1.00. */
-  tipMin: 0.60,
+     ragged edge; at 0.30 ours narrowed as they climbed and read as leaves. 0.60 to 1.00.
+     ⚠️ AND 0.60 WAS STILL LOW ENOUGH TO READ AS A TONGUE. Sandeep, with five photographs of real
+     brushed cakes: *"strokes are mostly rectangular in nature. usually it varies."* Both halves of
+     that sentence matter — the shape is a RANGE, so this stays a range, but its floor was letting
+     the unluckier seeds narrow to 60% and come out as petals beside their square neighbours.
+     Rendered six seeds at 0.60 / 0.82 / 0.92 against the references: at 0.60 the blue one visibly
+     narrows toward its end, at 0.92 every one is a rectangle and the variation the line above
+     exists for is gone. 0.82 keeps the spread and puts the middle of it where the photographs are.
+     ⚠️ THIS IS SEED-DERIVED, NOT STORED (`tipFor`), so it reshapes strokes on cakes already saved.
+     That is the point — it is the look being corrected, not a new option — but it is worth knowing
+     before the number is moved again. */
+  tipMin: 0.82,
   tipMax: 1.00,
   /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
      the knife marks are four or five lanes across the same band, and three samples per lane turns
