@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward, wallPlacer,
-         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -1116,5 +1116,72 @@ describe('a lid that is not a disc', () => {
     for (let i = 0; i < pos.count; i++) { lowest = Math.min(lowest, pos.getY(i)); maxZ = Math.max(maxZ, pos.getZ(i)); }
     expect(lowest).toBeLessThan(0.9);              // it fell down the front wall
     expect(maxZ).toBeLessThan(1.35);               // and stayed against that wall, not out at R
+  });
+});
+
+describe('variedWidth — no two marks a hand makes are the same breadth', () => {
+  const BASE = 0.30;
+  const spread = (n = 24) => Array.from({ length: n }, (_, i) => variedWidth(BASE, 101 + i * 37));
+
+  it('gives a different breadth per seed, so a row is not one rectangle repeated', () => {
+    const w = spread();
+    expect(new Set(w).size).toBeGreaterThan(w.length * 0.8);
+  });
+
+  /* ⚠️ AROUND THE CARRIED WIDTH, NOT AROUND A CONSTANT — the test that stops this quietly undoing
+     the carry-over. Width follows the previous stroke on purpose (*"its not keeping the same
+     thickness, its resetting"*); drawing from a fixed range would hand the house default back the
+     moment a baker set a broad knife and drew again. */
+  it('scales what was carried in, so a broad knife stays broad', () => {
+    for (const seed of [7, 99, 1234]) {
+      expect(variedWidth(0.70, seed)).toBeGreaterThan(0.70 * (1 - BRUSH_WIDTH_VARY) - 1e-9);
+      expect(variedWidth(0.12, seed)).toBeLessThan(0.12 * (1 + BRUSH_WIDTH_VARY) + 1e-9);
+    }
+  });
+
+  it('stays inside ± the authored spread', () => {
+    for (const w of spread(60)) {
+      expect(w).toBeGreaterThanOrEqual(BASE * (1 - BRUSH_WIDTH_VARY) - 1e-9);
+      expect(w).toBeLessThanOrEqual(BASE * (1 + BRUSH_WIDTH_VARY) + 1e-9);
+    }
+  });
+
+  /* ⚠️ SYMMETRIC ABOUT 1, so a long run does not drift broader or narrower. Each stroke is measured
+     from the width carried IN, never from the one before it compounding. */
+  it('does not drift — the average lands on what was asked for', () => {
+    const w = spread(400);
+    const mean = w.reduce((a, b) => a + b, 0) / w.length;
+    expect(Math.abs(mean - BASE)).toBeLessThan(BASE * 0.04);
+  });
+
+  /* ⚠️ THE TRAP THIS SHIPPED WITH ONCE: feeding the VARIED width back in compounds into a
+     multiplicative random walk, which wanders off the knife the baker chose and can sit against a
+     clamp. Driven in the real app it came back 0.22, 0.27, 0.20, 0.20, 0.20, 0.20. The caller keeps
+     `baseWidth` (the knife) apart from `width` (this mark) and always measures from the base; this
+     holds the difference between the two, so the fix cannot be quietly undone. */
+  it('walks away if its own output is fed back in, which is why the caller keeps a base', () => {
+    let walked = BASE, stable = [];
+    for (let i = 0; i < 40; i++) {
+      walked = variedWidth(walked, 101 + i * 37);              // wrong: compounds
+      stable.push(variedWidth(BASE, 101 + i * 37));            // right: always from the knife
+    }
+    const spreadOf = a => Math.max(...a) - Math.min(...a);
+    expect(spreadOf(stable)).toBeLessThanOrEqual(2 * BASE * BRUSH_WIDTH_VARY + 1e-9);
+    expect(Math.abs(walked - BASE)).toBeGreaterThan(BASE * BRUSH_WIDTH_VARY);
+  });
+
+  it('is the same answer for the same seed, so a cake reopens as the cake that was made', () => {
+    expect(variedWidth(BASE, 4242)).toBe(variedWidth(BASE, 4242));
+  });
+
+  it('never leaves the range the dial offers', () => {
+    expect(variedWidth(BRUSH_WIDTH_RANGE.max, 5)).toBeLessThanOrEqual(BRUSH_WIDTH_RANGE.max);
+    expect(variedWidth(BRUSH_WIDTH_RANGE.min, 5)).toBeGreaterThanOrEqual(BRUSH_WIDTH_RANGE.min);
+  });
+
+  it('falls back to the authored width on anything it cannot read', () => {
+    for (const bad of [null, undefined, 0, -1, NaN, 'wide']) {
+      expect(variedWidth(bad, 3)).toBe(0.30);
+    }
   });
 });

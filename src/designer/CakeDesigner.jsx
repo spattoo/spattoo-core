@@ -6,7 +6,7 @@ import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
 import { BUILD } from './buildId.js';
 import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
-         brushGestureFromDrag, brushTopFromDrag } from './geometry/brushStrokeOnCake.js';
+         brushGestureFromDrag, brushTopFromDrag, variedWidth, BRUSH_WIDTH_RANGE } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -3595,13 +3595,26 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       const prev = (t.brushStrokes ?? []).at(-1);
       const band = { ...BRUSH_BAND_DEFAULTS, ...(t.brushBand ?? {}) };
       const palette = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
+      /* ⚠️ DECLARED BEFORE THE RECORD, BECAUSE THE WIDTH IS DERIVED FROM IT. The seed used to be
+         written inline; the breadth of the stroke now comes out of it too, so the two have to agree
+         or a reopened cake would be a different set of marks from the one that was drawn. */
+      const seed = 1 + Math.floor(Math.random() * 9999);
+      const baseWidth = prev?.baseWidth ?? prev?.width ?? BRUSH_ON_CAKE_DEFAULTS.width;
       updateTierBrushStrokes(tierIndex, list => [...list, {
         id,
         surface: d.surface ?? 'side',
         color:  prev?.color  ?? palette[0] ?? '#F6DCE2',
-        width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
+        /* ⚠️ VARIED, AND VARIED AROUND WHAT WAS CARRIED IN. No two marks a hand makes are the same
+           breadth — a row of ours came out as one rectangle repeated — but width also carries over
+           from the previous stroke on purpose (*"its not keeping the same thickness, its
+           resetting"*). Scaling the carried value keeps the baker's knife and still makes each mark
+           its own; see `variedWidth`. */
+        width:  variedWidth(baseWidth, seed),
+        /* The knife, kept apart from the mark it left. Varying from the previous stroke's VARIED
+           width compounds into a walk that drifts off the baker's choice — see `variedWidth`. */
+        baseWidth,
         weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
-        seed:   1 + Math.floor(Math.random() * 9999),
+        seed,
         ...g,
       }]);
       /* ⚠️ AND ITS CARD OPENS WITH IT. Sandeep: *"a separate sub popup should be opened (like we do
@@ -19177,9 +19190,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 they are one gesture repeated; a stroke somebody DREW is its own gesture, and a wide
                 sweep beside a narrow one is most of what makes a hand-painted wall read as
                 hand-painted. */}
+            {/* The bounds come from the geometry, which is also what `variedWidth` clamps to — two
+                copies of "how broad may a stroke be" is how a seeded width lands outside its dial. */}
             <DialCell label="Width" value={pickedBrushStroke.width ?? BRUSH_ON_CAKE_DEFAULTS.width}
-              min={0.08} max={0.9} step={0.02} fmt={v => v.toFixed(2)}
-              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v })} />
+              min={BRUSH_WIDTH_RANGE.min} max={BRUSH_WIDTH_RANGE.max} step={0.02} fmt={v => v.toFixed(2)}
+              /* Both, because dragging this is a baker choosing a new knife — the next stroke
+                 varies around it rather than around the mark this one happened to leave. */
+              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v, baseWidth: v })} />
           </div>
           {/* ⚠️ THE PATTERN IS A SEED, NOT A DIAL. Sandeep asked for *"color and thickness, pattern
               at stroke level"*. A stroke's pattern is where it tore, where the knife ran dry and

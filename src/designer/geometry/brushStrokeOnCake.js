@@ -682,6 +682,50 @@ function pathLength(flat) {
  * mark; it does not leave a wide one. 0.95 rather than 1 so the widest case still reads as a pull
  * rather than as a square.
  */
+/* ── How broad a freshly drawn stroke is ─────────────────────────────────────────────────────────
+ *
+ * ⚠️ NO TWO MARKS A HAND MAKES ARE THE SAME BREADTH, and ours were all exactly `width` until now. A
+ * row of six came out as identical rectangles differing only in their torn top, where every
+ * reference photograph of a brushed cake shows broad slabs beside narrow ones. Sandeep, having
+ * asked for the silhouette first: *"yes pls do the width variation too."*
+ *
+ * ⚠️ IT VARIES AROUND WHAT THE BAKER LAST SET, NOT AROUND A CONSTANT, and that is the whole care in
+ * this function. Width carries over from the previous stroke on purpose — the complaint that put it
+ * there was *"its not keeping the same thickness, its resetting"* — so drawing a fresh width out of
+ * a fixed range would quietly undo that: set a broad knife, draw again, and get the house default
+ * back. Scaling the CARRIED width keeps the baker's choice and still makes the next mark its own.
+ *
+ * ⚠️ AND THE THING IT SCALES IS THE *BASE*, NOT THE LAST MARK. A stroke carries both: `baseWidth` is
+ * the knife, `width` is the breadth that knife happened to leave this time. Feeding the varied
+ * width back in compounds into a random walk — measured, it drifted and stuck: 0.22, 0.27, 0.20,
+ * 0.20, 0.20, 0.20. Dragging the Width dial sets both, because that is a baker choosing a new knife.
+ *
+ * ⚠️ AND IT IS SEEDED, NOT RANDOM. The stroke's own seed decides, so the same cake reopens as the
+ * cake that was made — the rule every other varying thing here follows (`tipFor`, the tear, the
+ * striations). Re-rolling Shuffle gives a new seed and therefore a new breadth, which is the
+ * behaviour a baker expects of that button.
+ */
+export const BRUSH_WIDTH_RANGE = Object.freeze({ min: 0.08, max: 0.9 });
+
+/* ± this fraction of the carried width. Chosen by rendering six seeds beside the references: at
+   0.15 the row still reads as one repeated rectangle, and at 0.45 the narrow ones stop looking like
+   the same knife. 0.3 gives slabs and strips that plainly came from one hand. */
+export const BRUSH_WIDTH_VARY = 0.3;
+
+export function variedWidth(base, seed, { vary = BRUSH_WIDTH_VARY, range = BRUSH_WIDTH_RANGE } = {}) {
+  const w = Number(base);
+  if (!Number.isFinite(w) || w <= 0) return BRUSH_ON_CAKE_DEFAULTS.width;
+  /* ⚠️ SYMMETRIC ABOUT 1, WHICH IS ONLY HALF OF NOT DRIFTING — and the first cut shipped the other
+     half wrong. Varying the PREVIOUS STROKE'S VARIED width compounds: w₂ = w₁·k₁, w₃ = w₂·k₂, a
+     multiplicative random walk that wanders away from the knife the baker chose and can sit against
+     a clamp. Driving six strokes by hand came back 0.22, 0.27, 0.20, 0.20, 0.20, 0.20 — it varied
+     twice and then collapsed. The caller keeps the BASE width on the stroke (`baseWidth`, the knife)
+     separately from `width` (this mark's breadth) and always measures from the base, so this stays
+     a spread about one value instead of a walk. */
+  const k = 1 + (seedFrac(seed, 7) * 2 - 1) * vary;
+  return Math.min(range.max, Math.max(range.min, +(w * k).toFixed(3)));
+}
+
 export const BRUSH_WIDTH_OF_LENGTH = 0.95;
 export const brushMaxWidth = (len) => Math.max(1e-4, len * BRUSH_WIDTH_OF_LENGTH);
 
