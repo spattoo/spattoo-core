@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { spinPose, spinTotal, SPIN_DEFAULTS, SPIN_PHASES, TOP_POLAR } from './spinTake.js';
+import { spinPose, spinTotal, SPIN_DEFAULTS, SPIN_PHASES, TOP_POLAR, TURN_RATE } from './spinTake.js';
 
 const START = Math.PI / 3;          // a plausible resting angle for the designer's camera
 const D = SPIN_DEFAULTS;
@@ -25,14 +25,51 @@ describe('the hero spin runs the four phases it is given', () => {
     }
   });
 
-  /* ⚠️ ONE REVOLUTION, NOT A FRACTION OF ONE — this is what makes "back to normal" true. The other
-     three phases hold the azimuth, so if the turn did not come out at exactly 2π the take would end
-     facing somewhere nobody chose, and the 1-second return would have to lurch to catch up. */
-  it('completes exactly one revolution and then holds it', () => {
+  /* ⚠️ THE TURNTABLE'S OWN PACE, NOT A TIDY REVOLUTION. The first version turned exactly once over
+     `turn` seconds — neat arithmetic, and twelve and a half times too fast: OrbitControls at
+     `autoRotateSpeed={0.8}` takes SEVENTY FIVE seconds for one lap, so six seconds is about 29°.
+     Sandeep: *"you increased the speed. earlier speed was good."* The rate is read off the
+     controls' own formula, so a three upgrade that changes it shows up here. */
+  it('turns at the speed the turntable always did', () => {
+    expect(Math.abs(Math.PI * 2 / TURN_RATE)).toBeCloseTo(75, 6);   // seconds per revolution
     expect(spinPose(0, SPIN_DEFAULTS, START).azimuth).toBeCloseTo(0, 9);
-    expect(spinPose(AT.turnEnd / 2, SPIN_DEFAULTS, START).azimuth).toBeCloseTo(Math.PI, 9);
-    for (const t of [AT.turnEnd, AT.riseEnd, AT.topEnd, AT.end, AT.end + 6]) {
-      expect(spinPose(t, SPIN_DEFAULTS, START).azimuth).toBeCloseTo(Math.PI * 2, 9);
+    for (const t of [1, 3, AT.turnEnd]) {
+      expect(spinPose(t, SPIN_DEFAULTS, START).azimuth).toBeCloseTo(TURN_RATE * t, 9);
+    }
+  });
+
+  /* ⚠️ THE SAME WAY ROUND AS autoRotate. `_rotateLeft` SUBTRACTS from theta, so the turntable
+     decreases it; the first version added, and the cake turned the other way. Sandeep: *"your
+     turning the opposite direction now. it should move from left to right."* */
+  it('turns the same way the turntable does', () => {
+    expect(TURN_RATE).toBeLessThan(0);
+    const a1 = spinPose(1, SPIN_DEFAULTS, START).azimuth;
+    const a2 = spinPose(2, SPIN_DEFAULTS, START).azimuth;
+    expect(a2).toBeLessThan(a1);
+  });
+
+  it('holds the azimuth through the rise and the hold, then unwinds it', () => {
+    const turned = TURN_RATE * SPIN_DEFAULTS.turn;
+    for (const t of [AT.turnEnd, AT.riseEnd, AT.topEnd - 0.01]) {
+      expect(spinPose(t, SPIN_DEFAULTS, START).azimuth).toBeCloseTo(turned, 9);
+    }
+    // ...and it is genuinely on its way back during the settle, not snapping at the end.
+    const mid = spinPose(AT.topEnd + SPIN_DEFAULTS.back / 2, SPIN_DEFAULTS, START).azimuth;
+    expect(mid).toBeGreaterThan(turned);
+    expect(mid).toBeLessThan(0);
+  });
+
+  /* ⚠️ IT UNWINDS TO THE NEAREST WHOLE REVOLUTION, NOT TO ZERO. At six seconds that is the same
+     thing — 29° out, 29° back. On a turn long enough to lap, unwinding to zero would spool the cake
+     backwards through every revolution it had just made. */
+  it('settles to a whole revolution, however long the turn ran', () => {
+    for (const turn of [6, 40, 75, 120]) {
+      const plan = { ...SPIN_DEFAULTS, turn };
+      const { azimuth } = spinPose(spinTotal(plan), plan, START);
+      const laps = azimuth / (Math.PI * 2);
+      expect(Math.abs(laps - Math.round(laps)), `turn ${turn}s ended mid-revolution`).toBeLessThan(1e-9);
+      // Never more than half a turn of unwinding to do.
+      expect(Math.abs(azimuth - TURN_RATE * turn)).toBeLessThanOrEqual(Math.PI + 1e-9);
     }
   });
 

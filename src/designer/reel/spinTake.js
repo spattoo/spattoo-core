@@ -16,11 +16,17 @@
  * decided here is testable in plain node; the half that touches three.js is a dozen lines in the
  * canvas that do nothing but apply these two numbers.
  *
- * ⚠️ AZIMUTH MOVES ONLY DURING `turn`, AND THAT IS WHAT MAKES "BACK TO NORMAL" TRUE. The turn is
- * exactly one revolution, so it ENDS where it began; the other three phases move the polar angle
- * alone. Let the azimuth drift through all four and the final pose is wherever the arithmetic
- * happened to land, and the 1-second return becomes a 180° lurch to catch up. Predictability is
- * worth more than the slightly nicer drifting top-down.
+ * ⚠️ AZIMUTH MOVES ONLY DURING `turn`, and `back` unwinds whatever fraction of a revolution is
+ * left over — that is what makes "back to normal" true. Let it drift through all four phases and
+ * the final pose is wherever the arithmetic happened to land.
+ *
+ * ⚠️ IT TURNS AT THE SPEED THE TURNTABLE ALWAYS DID, AND THE SAME WAY ROUND. The first version made
+ * the turn "exactly one revolution over `turn` seconds", which is tidy arithmetic and was twelve
+ * and a half times too fast — the canvas's `autoRotateSpeed={0.8}` is one revolution per SEVENTY
+ * FIVE seconds, not per six. It also ran backwards: `_rotateLeft` decrements theta, so autoRotate
+ * turns one way and adding to theta turns the other. Sandeep: *"you increased the speed. earlier
+ * speed was good. and your turning the opposite direction now."* Both numbers are read off
+ * OrbitControls' own formula below rather than chosen.
  */
 
 /* Sandeep's shot: *"its total 10 seconds - 6 turning, 3 over the cake, 1 get back to normal"*.
@@ -34,6 +40,18 @@
  * A starting point a baker tunes, never a fixed shape — the panel writes all four and `spinPose`
  * reads whatever it is given. */
 export const SPIN_DEFAULTS = Object.freeze({ turn: 6, rise: 1, top: 2, back: 1 });
+
+/* The turntable's own pace, so a take looks like the spin the designer has always done.
+ *
+ * ⚠️ BOTH NUMBERS COME FROM OrbitControls, NOT FROM TASTE. Its `_getAutoRotationAngle` returns
+ * `(2π / 60 * autoRotateSpeed) * deltaTime` radians per second, and the canvas has always set
+ * `autoRotateSpeed={0.8}` — so the pace is 2π/60 × 0.8 ≈ 0.084 rad/s, one revolution every 75
+ * seconds. Six seconds of it is about 29°: a drift, not a lap. That is the shot that was liked.
+ *
+ * ⚠️ NEGATIVE BECAUSE `_rotateLeft` SUBTRACTS. autoRotate calls it with a positive angle, so theta
+ * DECREASES; adding to theta turns the cake the other way, which is what shipped. */
+const TURN_SPEED = 0.8;                                  // the canvas's autoRotateSpeed
+export const TURN_RATE = -(Math.PI * 2 / 60) * TURN_SPEED;   // radians per second, signed
 
 /* How far "top" is. ⚠️ NOT ZERO, deliberately: straight down is the pole, where the camera's up
    vector has nothing to disambiguate it and the view can flip as it arrives. A few degrees short
@@ -73,16 +91,22 @@ export function spinPose(t, plan = SPIN_DEFAULTS, startPolar = Math.PI / 3) {
   const time = Math.max(0, Number(t) || 0);
   const topPolar = Math.min(startPolar, TOP_POLAR);
 
-  if (time >= total) return { azimuth: d.turn > 0 ? Math.PI * 2 : 0, polar: startPolar, done: true };
+  /* How far round the turn gets, and where `back` unwinds to: the nearest WHOLE revolution, so the
+     cake finishes facing the way it started. At the default 6 seconds that is 29° out and 29° back;
+     a turn long enough to lap simply has less to undo. Unwinding to zero instead would make a long
+     take spool backwards through every revolution it had just made. */
+  const turned = TURN_RATE * d.turn;
+  const settled = Math.round(turned / (Math.PI * 2)) * Math.PI * 2;
 
-  // ── turn: one full revolution, level ──────────────────────────────────────────────────────────
+  if (time >= total) return { azimuth: settled, polar: startPolar, done: true };
+
+  // ── turn: a steady drift at the turntable's own pace ──────────────────────────────────────────
   if (time < d.turn) {
-    /* Linear, not eased. A turntable runs at a constant speed, and easing the revolution makes the
-       cake appear to hesitate at the front — which reads as a stutter in the recording, not style. */
-    return { azimuth: (time / d.turn) * Math.PI * 2, polar: startPolar, done: false };
+    /* Linear, not eased. A turntable runs at a constant speed, and easing it makes the cake appear
+       to hesitate — which reads as a stutter in the recording, not as style. */
+    return { azimuth: TURN_RATE * time, polar: startPolar, done: false };
   }
-  // Everything after the turn sits at a whole revolution: back where it started, facing front.
-  const az = d.turn > 0 ? Math.PI * 2 : 0;
+  const az = turned;
 
   // ── rise: lift toward the plan view ───────────────────────────────────────────────────────────
   const afterTurn = time - d.turn;
@@ -95,8 +119,12 @@ export function spinPose(t, plan = SPIN_DEFAULTS, startPolar = Math.PI / 3) {
   const afterRise = afterTurn - d.rise;
   if (afterRise < d.top) return { azimuth: az, polar: topPolar, done: false };
 
-  // ── back: settle to where it started ──────────────────────────────────────────────────────────
+  // ── back: settle to where it started, in both angles ──────────────────────────────────────────
   const afterTop = afterRise - d.top;
   const k = d.back > 0 ? ease(afterTop / d.back) : 1;
-  return { azimuth: az, polar: topPolar + (startPolar - topPolar) * k, done: false };
+  return {
+    azimuth: az + (settled - az) * k,
+    polar: topPolar + (startPolar - topPolar) * k,
+    done: false,
+  };
 }
