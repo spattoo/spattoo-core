@@ -181,6 +181,18 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      than a silhouette, and `across` rises with the count or the streaks cannot be sampled. */
   tipFingers: 15,
   tipTaper:   0.3,
+  /* ⚠️ HOW FAR A STROKE'S RELEASE MAY WANDER FROM THAT, per stroke, so the ends are not all one
+     shape. `tipTaper` alone made every release the same ragged horizontal — the noise differed and
+     the LINE never did. Added to the authored value (signed), so `tipTaper` stays the middle of the
+     family and an admin moving it still moves them all: at 0.3 ± 0.55 a stroke can come out square
+     (≈0.3), plainly ROUNDED (≈0.85, the middle fingers outrunning the corners), or scooped
+     (≈−0.25, the corners running on instead). Sandeep: *"they can be little rounded also (few)."*
+     "Few" is `endForm`'s doing, not this number's — it biases its draws toward zero. */
+  tipTaperVary: 0.55,
+  /* ⚠️ AND SOME ARE CUT ON THE SLANT. A knife lifted while still travelling sideways leaves a
+     diagonal end, which no amount of per-finger noise can produce — that only ever roughens a line
+     square to the travel. ± this much ramp across the blade. */
+  tipTiltMax: 0.8,
   /* ⚠️ SHORT EXCURSIONS, OR THE RELEASE IS A COMB. At 0.5 of the width the longest finger runs
      further than the dissolve is deep, so each one stays solid for most of its length and reads as a
      needle — Sandeep, ringing the band of them: *"these spikes look too harsh."* A release is a
@@ -373,6 +385,34 @@ function densify(path, want) {
   return out;
 }
 
+/* ── What SHAPE an end is, for this one stroke ───────────────────────────────────────────────────
+ *
+ * ⚠️ THE FINE NOISE VARIED AND THE END'S CHARACTER DID NOT, which is why a row of them still read as
+ * one object repeated. Every landing was a ragged horizontal and every release a ragged horizontal:
+ * the raggedness differed, the LINE never did. Sandeep: *"everything is ending like same. starting
+ * and ending does not need to be like a horizontal lines. there can be few like that, but not all.
+ * need to be bit more random… they can be little rounded also (few)."*
+ *
+ * Two terms, both across the blade, both seeded per stroke and per END (so a stroke's start and its
+ * finish are not the same gesture mirrored):
+ *
+ *   tilt   linear  — one corner runs on, the other stops short: a diagonal cut
+ *   bulge  parabolic — the middle runs on (rounded) or holds back (scooped)
+ *
+ * ⚠️ AND "A FEW", NOT "ALL" — the shape he asked for is a MIX. Both terms are centred on zero and
+ * most draws land near it, so the common stroke is still square-ish and the interesting ones are
+ * occasional. Cubing a signed unit value does that without needing a branch or a table: it keeps
+ * the sign, leaves ±1 reachable, and pushes the bulk of the distribution toward the middle.
+ */
+function signedBias(seed, salt) {
+  const u = seedFrac(seed, salt) * 2 - 1;      // -1 … 1, flat
+  return u * u * u;                            // -1 … 1, most of it near 0
+}
+
+export function endForm(seed, salt = 0) {
+  return { tilt: signedBias(seed * 13 + salt, 41), bulge: signedBias(seed * 13 + salt, 43) };
+}
+
 /** How wide this particular stroke is where it was lifted — the same seed always gives the same
  *  answer, so a cake reopens as the cake that was made. */
 export function tipFor({ seed = 1, tipMin, tipMax } = {}) {
@@ -479,10 +519,22 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5, h
   const toHeel = grid.map(row => row.map(() => Infinity));
   if (heel > 0 && stroke.width > 0) {
     const reach = heel * stroke.width;
+    /* ⚠️ THE LINE THE LANDING SITS ON IS THIS STROKE'S OWN — see `endForm`. Without it every start
+       was a ragged HORIZONTAL: the noise differed, the line never did, and a row of strokes read as
+       one object repeated. Salt 1 so the landing and the release are not the same gesture mirrored. */
+    const { tilt, bulge } = endForm(seed, 1);
     for (let j = 0; j < m; j++) {
+      const u = (m > 1 ? j / (m - 1) : 0.5) - 0.5;        // −0.5 … +0.5 across the blade
+      /* ⚠️ THE FORM IS ADDED TO THE NOISE, NOT MIXED WITH IT, and the first cut got that wrong:
+         blending them as `0.62·form + 0.38·noise` with `form` centred on 0.5 squeezed the
+         per-column noise into a third of its span, so the landing came out LESS ragged than before
+         the end shapes existed. Caught by the test that asks whether `heel: 0` is measurably
+         flatter than the default. Both terms get their own full swing instead. */
+      const shape = Math.max(-1, Math.min(1, tilt * u * 2 + bulge * (0.25 - u * u) * 4));
       const slow = seedFrac(seed * 7 + Math.floor(j / Math.max(2, Math.round(m / 7))), 23);
       const fast = seedFrac(seed * 7 + j, 11);
-      const hj = reach * (0.65 * slow + 0.35 * fast);
+      const grit = 0.65 * slow + 0.35 * fast;            // 0 … 1, this blade's own unevenness
+      const hj = reach * clamp01(0.5 + 0.5 * shape + (grit - 0.5) * 0.9);
       let d = 0;
       for (let i = 0; i < grid.length; i++) {
         if (i > 0) d += Math.hypot(grid[i][j][0] - grid[i - 1][j][0], grid[i][j][1] - grid[i - 1][j][1]);
@@ -836,8 +888,17 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   // `u` is turns-round-the-cake, so it scales by the REAL distance round it — 2πR only when round.
   const flat = densify(path.map(([u, v]) => [u * wall.length, v * wallH]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
+  /* ⚠️ THE RELEASE GETS THIS STROKE'S OWN SHAPE TOO, not just its own noise. `tipTaper` decides how
+     much the middle fingers outrun the corners — so a bulging draw is a ROUNDED end and a negative
+     one is scooped — and `tipTilt` cuts it on the diagonal. Both come from `endForm` (salt 0, the
+     landing takes salt 1), so the two ends of one stroke differ. The authored values stay the
+     centre of the range: a row that tunes `tip_taper` still moves the whole family. */
+  const form = endForm(p.seed, 0);
   const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
-                                     tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
+                                     tipFingers: p.tipFingers,
+                                     tipTaper: p.tipTaper + form.bulge * p.tipTaperVary,
+                                     tipReach: p.tipReach * (1 + form.bulge * 0.35),
+                                     tipTilt: form.tilt * p.tipTiltMax,
                                      tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
@@ -932,8 +993,17 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], shape = null, 
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
   const flat = densify(path.map(([x, z]) => [x * R, z * R]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
+  /* ⚠️ THE RELEASE GETS THIS STROKE'S OWN SHAPE TOO, not just its own noise. `tipTaper` decides how
+     much the middle fingers outrun the corners — so a bulging draw is a ROUNDED end and a negative
+     one is scooped — and `tipTilt` cuts it on the diagonal. Both come from `endForm` (salt 0, the
+     landing takes salt 1), so the two ends of one stroke differ. The authored values stay the
+     centre of the range: a row that tunes `tip_taper` still moves the whole family. */
+  const form = endForm(p.seed, 0);
   const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
-                                     tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
+                                     tipFingers: p.tipFingers,
+                                     tipTaper: p.tipTaper + form.bulge * p.tipTaperVary,
+                                     tipReach: p.tipReach * (1 + form.bulge * 0.35),
+                                     tipTilt: form.tilt * p.tipTiltMax,
                                      tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 

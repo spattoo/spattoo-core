@@ -34,7 +34,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
  * new number. `rnd()` is walked once per finger here and again by `ridgesAlong` below; changing the
  * count for everyone would shift every draw after it and silently reshape every saved chocolate
  * garnish. Defaulted, nothing moves. */
-function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42, jitter = 0, seed = 1) {
+function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42, jitter = 0, seed = 1, tilt = 0) {
   const n = Math.max(3, Math.round(fingers));
   /* ⚠️ THE FINGERS ARE NOT EVENLY SPACED EITHER, and only varying their LENGTH leaves a saw: equal
      pitch reads as a machined edge however random the heights are, which is the same corduroy trap
@@ -56,7 +56,12 @@ function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42,
   for (let i = 1; i < n; i++) {
     const t = Math.min(0.995, Math.max(0.005, pitch(i)));
     const mid = 1 - Math.abs(t - 0.5) * taper;        // longest near the middle, if asked
-    const grab = Math.max(0, mid) * lerp(0.25, 1, rnd()) * reach;
+    /* ⚠️ AND A RELEASE IS NOT ALWAYS SQUARE TO THE TRAVEL. A knife lifted while still moving sideways
+       leaves an end cut on the diagonal; `tilt` ramps the reach from one side of the blade to the
+       other, so one corner runs on and the other stops short. 0 is the old square release, which is
+       what every caller that does not ask for this still gets. */
+    const lean = 1 + tilt * (t - 0.5) * 2;
+    const grab = Math.max(0, mid) * Math.max(0, lean) * lerp(0.25, 1, rnd()) * reach;
     out.push([lerp(l[0], r[0], t) + ux * grab, lerp(l[1], r[1], t) + uy * grab]);
   }
   return out;
@@ -77,7 +82,7 @@ function noise(seed) {
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
 export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false,
-                                    tipWidth, tipFingers, tipTaper, tipReach, tipJitter } = {}) {
+                                    tipWidth, tipFingers, tipTaper, tipReach, tipJitter, tipTilt } = {}) {
   let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
 
@@ -161,7 +166,7 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
    * by varying amounts, deepest near the middle where the chocolate holds on longest. It is the same
    * seeded noise as the torn edge, so the same drawing comes back the same. */
   const tip = closed ? [] : tipJag(pts, left[left.length - 1], right[right.length - 1], width, rnd,
-                                   tipFingers, tipTaper, tipReach, tipJitter, seed);
+                                   tipFingers, tipTaper, tipReach, tipJitter, seed, tipTilt);
 
   const outline = [...left, ...tip, ...right.slice().reverse()];
   outline.push([...outline[0]]);

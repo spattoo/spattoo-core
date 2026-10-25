@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward, wallPlacer,
-         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY, endForm,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -1124,6 +1124,50 @@ describe('a lid that is not a disc', () => {
     for (let i = 0; i < pos.count; i++) { lowest = Math.min(lowest, pos.getY(i)); maxZ = Math.max(maxZ, pos.getZ(i)); }
     expect(lowest).toBeLessThan(0.9);              // it fell down the front wall
     expect(maxZ).toBeLessThan(1.35);               // and stayed against that wall, not out at R
+  });
+});
+
+describe('endForm — a few are slanted, a few rounded, most are square', () => {
+  /* ⚠️ THE FINE NOISE VARIED AND THE END'S CHARACTER DID NOT. Every landing was a ragged horizontal
+     and every release a ragged horizontal: the raggedness differed, the LINE never did. Sandeep:
+     *"everything is ending like same… there can be few like that, but not all… they can be little
+     rounded also (few)."* */
+  const sample = (salt, n = 400) =>
+    Array.from({ length: n }, (_, i) => endForm(101 + i * 37, salt));
+
+  it('gives every stroke its own slant and its own bulge', () => {
+    const f = sample(0);
+    expect(new Set(f.map(x => x.tilt.toFixed(4))).size).toBeGreaterThan(f.length * 0.9);
+    expect(new Set(f.map(x => x.bulge.toFixed(4))).size).toBeGreaterThan(f.length * 0.9);
+  });
+
+  /* ⚠️ "A FEW", NOT "ALL" — the ask was for a MIX, so most strokes must stay near square and the
+     shaped ones be occasional. A flat distribution would make every stroke odd, which is just a
+     different uniform. */
+  it('keeps most of them near square, so the shaped ones read as exceptions', () => {
+    const t = sample(0).map(x => Math.abs(x.tilt));
+    const mild = t.filter(v => v < 0.25).length / t.length;
+    const strong = t.filter(v => v > 0.6).length / t.length;
+    expect(mild).toBeGreaterThan(0.55);          // the common stroke is still a square end
+    expect(strong).toBeGreaterThan(0.03);        // and a few are plainly cut on the slant
+  });
+
+  it('reaches both ways, so ends round out as well as scoop in', () => {
+    const b = sample(0).map(x => x.bulge);
+    expect(Math.max(...b)).toBeGreaterThan(0.6);
+    expect(Math.min(...b)).toBeLessThan(-0.6);
+  });
+
+  /* ⚠️ THE TWO ENDS OF ONE STROKE ARE NOT ONE GESTURE MIRRORED — the landing takes a different salt
+     from the release, or a stroke slanted at the top would be slanted identically at the bottom. */
+  it('shapes a stroke\'s start and its finish independently', () => {
+    const start = sample(1), end = sample(0);
+    const same = start.filter((x, i) => Math.abs(x.tilt - end[i].tilt) < 1e-6).length;
+    expect(same).toBeLessThan(start.length * 0.02);
+  });
+
+  it('is the same answer for the same seed, so a cake reopens as the cake that was made', () => {
+    expect(endForm(77, 0)).toEqual(endForm(77, 0));
   });
 });
 
