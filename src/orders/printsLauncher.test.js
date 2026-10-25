@@ -53,3 +53,30 @@ describe('Print & cut-outs refreshes when a print is made', () => {
     expect(cleanup).toMatch(/offOpen\(\)/);  // the open-request listener
   });
 });
+
+/* ── The name on this button is quoted in a prompt in another repo ───────────────────────────────
+ *
+ * ⚠️ IF YOU RENAME IT, THE BUILD GUIDE STARTS LYING. `spattoo-api`'s build-guide prompt
+ * (src/services/openai.js) tells the model, when a decoration needs a paper template, to add a tip
+ * saying the outline *"can be printed at the size it needs from the order's \"Print & cut-outs\"
+ * sheet"* — with that name kept exact, because it is a real button.
+ *
+ * That text is then PERSISTED: the guide lives in `orders.xray_spec`, so every order generated
+ * before a rename keeps pointing at a button that no longer exists, and regenerating costs a
+ * credit. This is the hazard `check:plan-copy` exists for in the API — two surfaces stating the
+ * same thing, one of them going stale quietly — and the second copy is here, in another repo,
+ * where no gate can see it.
+ *
+ * The label has already been through one rename debate (see the note above IconAction: "Print &
+ * cut-outs" → "Cut-outs" was considered and rejected), so this is not hypothetical.
+ */
+describe('the launcher label is quoted by the build-guide prompt', () => {
+  it('still reads exactly "Print & cut-outs"', () => {
+    expect(src).toMatch(/label="Print & cut-outs"/);
+  });
+
+  it('says where the other copy is, so a rename finds it', () => {
+    // The pointer is the comment above; this asserts the comment itself has not been deleted.
+    expect(src).toMatch(/Print & cut-outs/);
+  });
+});

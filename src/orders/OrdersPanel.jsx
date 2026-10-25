@@ -238,6 +238,11 @@ function CutoutLauncher({ order, apiClient, variant }) {
   if (!ids.length && !prints.length) return null;
   return (
     <>
+      {/* ⚠️ THIS NAME IS QUOTED IN A PROMPT IN ANOTHER REPO. spattoo-api's build-guide prompt tells
+          the model to add a tip saying a decoration's outline "can be printed at the size it needs
+          from the order's 'Print & cut-outs' sheet", name kept exact — and that text is PERSISTED
+          into orders.xray_spec, so a rename leaves every existing order pointing at a button that
+          is gone, and regenerating costs a credit. printsLauncher.test.js pins the string. */}
       <IconAction glyph={<CutoutGlyph />} label="Print & cut-outs"
                   /* Two lines on the phone, not a different word — see IconAction. The break is
                      after the "&" because "Print &" and "cut-outs" are the two halves of what this
