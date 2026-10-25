@@ -4384,6 +4384,7 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
           tipWidth: sweepCfg.tipWidth, tipReach: sweepCfg.tipReach, skirt: sweepCfg.skirt,
           endSlantMax: sweepCfg.endSlantMax, heel: sweepCfg.heel,
           breathe: sweepCfg.breathe, tear: sweepCfg.tear, grain: sweepCfg.grain,
+          lanes: sweepCfg.lanes,
           priors: priors[sfc].slice(), wall: wallColour, blend: sweepCfg.blend,
         } : {}),
       };

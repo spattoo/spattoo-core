@@ -428,11 +428,26 @@ export const SWEEP_DEFAULTS = Object.freeze({
      the sweeps came out as three enormous wobbly petals. */
   breathe: 0.1,
   tear: 0.05,
-  /* Fine marks, not combing: in the photograph the swept bands carry a faint grain following the
-     pass, nothing like the ribbing a loaded knife leaves on a mark. */
-  grain: 0.03,
-  /* Flatter: a sweep is spread, not piled. The reference bands are a thin even film. */
-  weight: 0.3,
+  /* ⚠️ THE TEXTURE IS WHAT MAKES IT CREAM, AND THE FIRST CUT KILLED IT. Reasoning that a sweep is
+     "a thin even film", `weight` went to 0.3 and `grain` to 0.03 — which renders as flat colour.
+     Sandeep: *"it does not look like cream at all… it looks like color filling, not cream."* He is
+     right and the photograph says so plainly: the blue band is full of streaks the knife left, and
+     the paler two carry their own fainter ones. A spread film is still cream — it holds every mark
+     of the blade that spread it.
+     ⚠️ SIX TIMES A MARK'S `grain`, WHICH LOOKS WRONG WRITTEN DOWN AND IS NOT. A mark is a small
+     pile of cream and its marks read at a glance; a sweep is a thin film over a wide area, and at a
+     mark's value its streaks disappear into the shading. Swept 0.14 / 0.30 / 0.50 against the
+     photograph: at 0.14 it is still paint, at 0.50 the seams start to shred, at 0.30 the ridges
+     catch a highlight and cast the small shadows that say buttercream. */
+  grain: 0.3,
+  /* ⚠️ AND THE LANES HAVE TO SCALE WITH THE WIDTH, which is the part no amount of `grain` fixes. A
+     sweep is 3.7× a mark's width; at the shared 9 lanes its streaks are 3.7× coarser, so they read
+     as wide soft bands rather than as knife marks. Measured: a mark's lane pitch is 0.033R, this
+     keeps a sweep's at about the same. */
+  lanes: 34,
+  /* Spread rather than piled — a sweep is thinner than a mark — but it still has BODY: at 0.3 the
+     relief was too shallow to catch a highlight and the band read as paint. */
+  weight: 0.55,
   /* ⚠️ HOW WIDE THE SEAM IS, as a fraction of the earlier sweep's half-width. 0 would butt two flat
      colours against each other, which is the "separate piece" complaint in a new form. */
   blend: 0.55,

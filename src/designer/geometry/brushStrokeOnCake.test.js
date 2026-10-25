@@ -1397,6 +1397,26 @@ describe('a sweep: cream dragged across the surface, mixing with what is there',
   /* ⚠️ A SWEEP IS A PASS, NOT A MARK, and the defaults have to say so or it is just a wide stroke:
      no taper (it runs off the rim rather than being lifted), no slanted cut, a definite side edge —
      a feathered one puts a WHITE GAP at every seam, which the first cut of this did. */
+  /* ⚠️ A SWEEP IS STILL CREAM, AND THE FIRST CUT MADE IT PAINT. Reasoning "a thin even film", its
+     `weight` went to 0.3 and its `grain` to 0.03 and it rendered as flat colour: *"it does not look
+     like cream at all… it looks like color filling, not cream."* A spread film holds every mark of
+     the blade that spread it. Two things have to hold — real relief, and streaks that are not
+     washed out by the width. */
+  it('keeps the body and the knife marks that say cream', () => {
+    expect(SWEEP_DEFAULTS.weight).toBeGreaterThan(0.4);
+    expect(SWEEP_DEFAULTS.grain).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.grain * 3);
+  });
+
+  /* ⚠️ AND THE LANE PITCH IS WHAT `grain` ALONE CANNOT FIX. A sweep is far wider than a mark, so at
+     the shared lane count its streaks come out proportionally coarser and read as soft bands
+     instead of knife marks. The two pitches are held within a factor of two of each other. */
+  it('scales its lanes with its width, so the streaks stay knife-sized', () => {
+    const markPitch  = BRUSH_ON_CAKE_DEFAULTS.width / BRUSH_ON_CAKE_DEFAULTS.lanes;
+    const sweepPitch = SWEEP_DEFAULTS.width / SWEEP_DEFAULTS.lanes;
+    expect(sweepPitch).toBeLessThan(markPitch * 2);
+    expect(sweepPitch).toBeGreaterThan(markPitch * 0.5);
+  });
+
   it('is authored as a pass: broad, untapered, and not feather-edged', () => {
     expect(SWEEP_DEFAULTS.width).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.width * 2);
     expect(SWEEP_DEFAULTS.tipWidth).toBe(1);
