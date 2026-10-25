@@ -106,7 +106,7 @@ import { outwardBand, rimBand } from './useSeatedInstances.js';
 import { hoverCursorProps } from './pointerCursor.js';
 import { buildBrushBand, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushGesture,
          brushTopPath, paintBrushColors, makeBrushBed,
-         BRUSH_ON_CAKE_DEFAULTS, brushBandRings } from '../geometry/brushStrokeOnCake.js';
+         BRUSH_ON_CAKE_DEFAULTS, SWEEP_DEFAULTS, brushBandRings } from '../geometry/brushStrokeOnCake.js';
 import { creamMaterialProps, BRUSH_CREAM_SOFTNESS } from '../geometry/creamMaterial.js';
 import RainbowArch from './RainbowArch.jsx';
 import { rainbowHandleAt, rainbowDragTo, rainbowPlacedPoints }
@@ -4362,12 +4362,30 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
   const built = useMemo(() => {
     if (!strokes?.length) return [];
     const bed = makeBrushBed({ R: tier.radius, wallH: tier.height, width: perimeter(handShape).length });
+    /* ⚠️ A SWEEP MIXES WITH THE SWEEPS BEFORE IT, SO IT HAS TO BE TOLD WHO THEY WERE. Strokes are
+       independent — each is built from its own record and nothing else — and a sweep is the first
+       thing here that is not: *"when its done with multiple colors, overlapping areas merge
+       colors."* The priors are gathered in the SAME flat space the sweep is built in, which is why
+       they are kept per surface: a lid path is x/z in units of R and a wall path is arc length and
+       height, and mixing the two would have a lid sweep blending with a wall one it never touches.
+       Only sweeps are priors. A stroke laid over a sweep still LAYERS, because a mark sitting on
+       dried cream is a different thing from a pass dragged through wet. */
+    const priors = { side: [], top: [] };
     return strokes.map(st => {
+      const sfc = (st.surface ?? 'side') === 'top' ? 'top' : 'side';
+      const isSweep = st.sweep === true;
+      const sweepCfg = isSweep ? SWEEP_DEFAULTS : null;
       const common = {
         R: tier.radius,
-        width: st.width ?? BRUSH_ON_CAKE_DEFAULTS.width,
-        weight: st.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
+        width: st.width ?? sweepCfg?.width ?? BRUSH_ON_CAKE_DEFAULTS.width,
+        weight: st.weight ?? sweepCfg?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
         seed: st.seed ?? 1,
+        ...(sweepCfg ? {
+          tipWidth: sweepCfg.tipWidth, tipReach: sweepCfg.tipReach, skirt: sweepCfg.skirt,
+          endSlantMax: sweepCfg.endSlantMax, heel: sweepCfg.heel,
+          breathe: sweepCfg.breathe, tear: sweepCfg.tear, grain: sweepCfg.grain,
+          priors: priors[sfc].slice(), wall: wallColour, blend: sweepCfg.blend,
+        } : {}),
       };
       /* ⚠️ A LID IS NOT A WALL. The wall's gesture is authored in turns and a fraction of the
          height, because a wall is a cylinder; the lid's is a list of x/z points in units of R,
@@ -4387,6 +4405,12 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
                                  climbVar: st.climbVar ?? 0, sweep: st.sweep ?? 0, bow: st.bow ?? 0,
                                  seed: st.seed ?? 1 }),
           });
+      /* Recorded AFTER its own build, never before — a sweep that counted itself as a prior would
+         wash toward its own colour at its edges and never blend with anything. */
+      if (geo && isSweep) {
+        priors[sfc].push({ path: geo.userData.flatPath, halfWidth: geo.userData.flatHalfWidth,
+                           color: st.color ?? '#F6DCE2' });
+      }
       return geo ? { st, geo: paintBrushColors(geo, st.color ?? '#F6DCE2', wallColour) } : null;
     }).filter(Boolean);
   }, [strokes, tier.radius, tier.baseY, tier.height, wallColour, handShape]);

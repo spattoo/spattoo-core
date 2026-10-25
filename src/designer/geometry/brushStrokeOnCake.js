@@ -379,6 +379,128 @@ export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge,
  * rope's own swell note warns about. Fades out along the stroke: the deepest marks are where the
  * cream was thickest.
  */
+/* ── A SWEEP: cream dragged across the surface, mixing with what is already there ────────────────
+ *
+ * A stroke is a MARK; a sweep is a PASS. Sandeep, with a cake whose lid is three broad bands of
+ * colour meeting at two soft seams: *"sweep is done using palette knife… instead of stroke, its a
+ * sweep. when its done with multiple colors, overlapping areas merge colors."*
+ *
+ * ⚠️ THE MERGE IS THE WHOLE FEATURE, AND IT IS THE ONE THING THIS ELEMENT HAS NEVER DONE. Strokes
+ * LAYER: `makeBrushBed` tracks the cream already laid so a later stroke rides ON an earlier one and
+ * clears it by a seam, because *"it looked like a separate piece than an overlap."* That is right
+ * for marks sitting side by side and wrong for a sweep, where the knife drags one colour THROUGH
+ * another and the boundary becomes a blend of the two.
+ *
+ * ⚠️ COMPUTED FROM THE SWEEPS THEMSELVES, NOT FROM A RASTER, and that is what lets this work on the
+ * lid at all. The bed is a grid in the WALL's unrolled space — its own comment says a lid stroke has
+ * no coordinates in it — so a colour bed would have needed a second raster for the top and a third
+ * for anything after it. But a sweep already knows the sweeps laid before it, and the mesh builder
+ * already has each vertex's position in the surface's own flat space, so "what colour is under this
+ * point" is a distance to each earlier centreline. One expression, both surfaces, nothing to keep
+ * in step.
+ *
+ * ⚠️ AND IT BLENDS ON THE SOFT EDGE, NOT OVER THE WHOLE OVERLAP. Averaging wherever two sweeps meet
+ * turns the middle of the later one muddy; in the photograph each band keeps its own colour across
+ * its body and the two mix only in a narrow seam. The weight is the EARLIER sweep's own coverage at
+ * that point — full inside its body, falling off across its edge — so the later colour wins where
+ * the earlier one was thin and the two share the seam where they cross.
+ */
+export const SWEEP_DEFAULTS = Object.freeze({
+  /* × R, and far broader than a mark: a sweep is a pass of the whole blade. */
+  width: 1.1,
+  /* ⚠️ NO TAPER AND NO TORN RELEASE. A sweep is not lifted off the cake — it runs off the EDGE, and
+     the rim is what ends it. A tapering wisp would be a mark again. */
+  tipWidth: 1,
+  tipReach: 0.04,
+  endSlantMax: 0,
+  heel: 0.12,
+  /* ⚠️ A DEFINITE SIDE EDGE, AND THE FIRST CUT HAD THIS BACKWARDS. Reasoning that "the soft edge IS
+     the seam the colours mix in", I set this to 0.16 — three times a mark's. What that produces is a
+     WHITE GAP wherever two sweeps meet: at a seam both of them are at their thin edges, so both give
+     up their colour to the cake and the bare lid shows through between the bands. The reference
+     covers edge to edge with no cake showing anywhere. A palette-knife pass lays an even film with a
+     fairly definite edge; the blend at a seam comes from the knife DRAGGING one colour through
+     another, which is what `blend` does to the COLOUR, not from making both films transparent. */
+  skirt: 0.04,
+  /* ⚠️ AND THE SIDES ARE CALMER THAN A MARK'S. A stroke's edges swell, pinch and tear because that
+     is what a single pull looks like; a sweep is the blade laid flat and pushed, so its edges are
+     long and even and the interest is in the SEAM rather than the outline. Left at a mark's values
+     the sweeps came out as three enormous wobbly petals. */
+  breathe: 0.1,
+  tear: 0.05,
+  /* Fine marks, not combing: in the photograph the swept bands carry a faint grain following the
+     pass, nothing like the ribbing a loaded knife leaves on a mark. */
+  grain: 0.03,
+  /* Flatter: a sweep is spread, not piled. The reference bands are a thin even film. */
+  weight: 0.3,
+  /* ⚠️ HOW WIDE THE SEAM IS, as a fraction of the earlier sweep's half-width. 0 would butt two flat
+     colours against each other, which is the "separate piece" complaint in a new form. */
+  blend: 0.55,
+});
+
+/** The colour already laid at a point in the surface's own flat space, given the sweeps before it.
+ *
+ * `priors` are `{ path, halfWidth, color }` in that same flat space, earliest first. Returns the hex
+ * of whatever is beneath — the wall where nothing has been swept, otherwise the latest sweep that
+ * covers the point, weighted by how solidly it covers it.
+ */
+export function sweptUnder(x, y, priors, wallColor, blend = SWEEP_DEFAULTS.blend) {
+  if (!priors?.length) return wallColor;
+  let r = null, g = null, b = null;
+  for (const pr of priors) {
+    const cov = pathCoverage(x, y, pr.path, pr.halfWidth, blend);
+    if (cov <= 0) continue;
+    const c = hexToRgb(pr.color);
+    if (r == null) { const w = hexToRgb(wallColor); r = w.r; g = w.g; b = w.b; }
+    r += (c.r - r) * cov; g += (c.g - g) * cov; b += (c.b - b) * cov;
+  }
+  if (r == null) return wallColor;
+  return rgbToHex(r, g, b);
+}
+
+/** 0 … 1: how solidly a sweep of this half-width covers a point — 1 well inside, falling off across
+ *  `blend` of the half-width at its edge, 0 outside. */
+export function pathCoverage(x, y, path, halfWidth, blend = SWEEP_DEFAULTS.blend) {
+  if (!(halfWidth > 0) || !Array.isArray(path) || path.length < 2) return 0;
+  let best = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    const d = distToSegment(x, y, path[i - 1], path[i]);
+    if (d < best) best = d;
+    if (best === 0) break;
+  }
+  const soft = Math.max(1e-6, halfWidth * clamp01(blend));
+  return 1 - smoothstep(halfWidth - soft, halfWidth, best);
+}
+
+function distToSegment(x, y, a, b) {
+  const vx = b[0] - a[0], vy = b[1] - a[1];
+  const wx = x - a[0], wy = y - a[1];
+  const len2 = vx * vx + vy * vy;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+  const px = a[0] + vx * t, py = a[1] + vy * t;
+  return Math.hypot(x - px, y - py);
+}
+
+/** The per-vertex `underAt` a sweep needs, or null for an ordinary stroke.
+ *
+ * ⚠️ ALBEDO, NOT THE HEX, AND THE SINGLE-COLOUR PATH ALREADY LEARNED THIS THE HARD WAY — see the
+ * note on `paintBrushColors`: this scene's light is about 3.25×, so a colour handed over raw renders
+ * three times too bright. Corrected here so the per-vertex answer and the single-colour one are on
+ * the same footing; corrected on one side only, a sweep would wash toward a surface three times
+ * brighter than the sweep it is actually crossing.
+ */
+export function sweepUnderAt(priors, wallColor, blend) {
+  if (!priors?.length) return null;
+  const c = new THREE.Color();
+  return (x, y) => {
+    c.set(creamAlbedo(sweptUnder(x, y, priors, wallColor, blend)));
+    return { r: c.r, g: c.g, b: c.b };
+  };
+}
+
+const hexToRgb = (hex) => { const c = new THREE.Color(hex ?? '#ffffff'); return { r: c.r, g: c.g, b: c.b }; };
+const rgbToHex = (r, g, b) => `#${new THREE.Color(r, g, b).getHexString()}`;
+
 /** How combed THIS stroke is — most nearly smooth, a few carrying clear drag lines.
  *
  * ⚠️ A SINGLE `grain` MAKES EVERY STROKE EQUALLY RIBBED, which is not what a blade does and not
@@ -623,7 +745,7 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5, h
  * `place(x, y, h)` is the whole difference: on a wall it wraps round the cylinder, on a lid it lies
  * flat and folds over the rim.
  */
-function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
+function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null, underAt = null }) {
   const m = Math.max(3, p.across | 0);
   const { grid, toTip, toHeel } = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe,
                                                           tear: p.tear, tipRows: p.tipRows,
@@ -632,6 +754,11 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const merge = p.merge * R;        // how deep the dissolve reaches back from each finger's end
   const heelMerge = Math.max(1e-6, merge * p.heelMerge);   // the landing's own, shorter fade
   const pos = [], idx = [], thick = [];
+  /* ⚠️ WHAT IS UNDER EACH VERTEX, for a sweep that has to MIX rather than cover. A stroke washes to
+     one colour — the wall — so a single `under` was enough; a sweep crossing another must wash to
+     whatever is actually beneath that point, which differs vertex by vertex. Collected here because
+     this is the only place that knows a vertex's position in the surface's own flat space. */
+  const under = underAt ? [] : null;
   /* What lies under each vertex, kept so the rim can be dropped onto it — see the skirt below. */
   const floor = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
@@ -758,6 +885,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
       /* ⚠️ THE NEARER END WINS. A stroke short enough for its landing and its release to meet should
          fade from both, not be claimed by whichever line is written second — `min` is what makes a
          stubby mark read as a dab rather than as a rectangle with one soft end. */
+      if (under) { const c = underAt(gx, gy); under.push(c.r, c.g, c.b); }
       const dissolve = Math.min(smoothstep(0, merge, toTip[i][j]),
                                 smoothstep(0, heelMerge, toHeel[i][j]));
       const cover = side * (dissolve + (1 - dissolve) * onCream);
@@ -819,6 +947,16 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
      SURFACE (its relief, its colour, its silhouette) wants this bound; the rim is a side wall and
      answers none of those questions. */
   geo.userData.topCount = n * m;
+  /* Carried on the geometry rather than returned beside it, because `paintBrushColors` is handed the
+     geometry alone — by the band, by the lid path and by the wall path, three callers that would
+     otherwise each need a new argument for a thing only a sweep uses. */
+  if (under) geo.userData.under = new Float32Array(under);
+  /* ⚠️ THE CENTRELINE AND HALF-WIDTH, IN THE SURFACE'S OWN FLAT SPACE, so the sweep AFTER this one
+     can ask what it crosses. Taken from the band rather than from the caller's path: the band is
+     what was actually built — already densified, already clamped where a turn was too tight — so a
+     later sweep blends against the shape on the cake rather than the gesture that asked for it. */
+  geo.userData.flatPath = stroke.band.map(([l, r]) => [(l[0] + r[0]) / 2, (l[1] + r[1]) / 2]);
+  geo.userData.flatHalfWidth = stroke.width / 2;
   return geo;
 }
 
@@ -977,6 +1115,7 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
 
   const put = p.bed ? [] : null;
   const geo = buildStrokeMesh(stroke, p, {
+    underAt: sweepUnderAt(p.priors, p.wall, p.blend),
     R,
     // Round the cake and up it: arc length becomes an angle, relief pushes outward.
     /* ⚠️ NOTHING ON A WALL GOES ABOVE THE WALL. `brushGesture` clamps the PATH to 0.97 of the tier,
@@ -1087,6 +1226,7 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], shape = null, 
   if (!stroke || !stroke.band?.length) return null;
 
   return buildStrokeMesh(stroke, p, {
+    underAt: sweepUnderAt(p.priors, p.wall, p.blend),
     R,
     /* Flat on the lid — and over the rim if the gesture reached it. `drape: false` is the BOARD,
        which has no rim to fall off. */
@@ -1259,9 +1399,19 @@ export function paintBrushColors(geo, color, under, { floor = 0, bite = 0.6 } = 
      the same light. Corrected on one end only, a thin stroke would wash toward a surface three times
      brighter than the one it is actually lying on. */
   const a = new THREE.Color(creamAlbedo(color)), b = new THREE.Color(creamAlbedo(under ?? '#ffffff'));
+  /* ⚠️ A SWEEP WASHES TO WHAT IS UNDER IT, WHICH IS NOT ONE COLOUR. A stroke thins toward the wall,
+     so one `under` covers it; a sweep crossing another thins toward THAT sweep where it crosses and
+     toward the wall where it does not. `geo.userData.under` is the per-vertex answer, laid down by
+     the mesh builder which is the only thing that knows where each vertex is on the surface. Absent
+     — every stroke ever drawn — and this is the single colour it has always been. */
+  const perVertex = geo.userData?.under;
+  const bv = new THREE.Color();
   const mix = new THREE.Color();
   const out = new Float32Array(t.count * 3);
   for (let v = 0; v < t.count; v++) {
+    const bHere = perVertex && perVertex.length >= (v + 1) * 3
+      ? bv.setRGB(perVertex[v * 3], perVertex[v * 3 + 1], perVertex[v * 3 + 2])
+      : b;
     /* Even the thinnest film carries some pigment — `floor` is how much, so a dry edge reads as a
        wash rather than as a hole in the stroke. `bite` below 1 because pigment stacks FAST: the
        first scrape of cream hides most of what is under it and the tenth adds almost nothing, so a
@@ -1274,7 +1424,7 @@ export function paintBrushColors(geo, color, under, { floor = 0, bite = 0.6 } = 
        all of its colour over its top third. At 0.9 the tip holds. Not 1: a knife really does run
        out, and the last film of cream really does let a little of the wall through. */
     const k = floor + (1 - floor) * Math.pow(clamp01(t.getX(v)), bite);
-    mix.copy(b).lerp(a, k);
+    mix.copy(bHere).lerp(a, k);
     out[v * 3] = mix.r; out[v * 3 + 1] = mix.g; out[v * 3 + 2] = mix.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(out, 3));

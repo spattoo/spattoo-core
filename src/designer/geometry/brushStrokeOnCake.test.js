@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward, wallPlacer,
-         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY, endForm, grainFor,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY, endForm, grainFor, pathCoverage, sweptUnder, SWEEP_DEFAULTS,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -1337,5 +1337,70 @@ describe('variedWidth — no two marks a hand makes are the same breadth', () =>
     for (const bad of [null, undefined, 0, -1, NaN, 'wide']) {
       expect(variedWidth(bad, 3)).toBe(0.30);
     }
+  });
+});
+
+describe('a sweep: cream dragged across the surface, mixing with what is there', () => {
+  /* ⚠️ THE MERGE IS THE WHOLE FEATURE, and it is the one thing this element has never done. Strokes
+     LAYER — the bed tracks laid cream so a later one rides ON an earlier one and clears it by a
+     seam, because *"it looked like a separate piece than an overlap."* Sandeep, with a lid of three
+     broad bands: *"when its done with multiple colors, overlapping areas merge colors."* */
+  const BAND = [[-1, 0], [1, 0]];
+  const HW = 0.5;
+
+  it('covers solidly through its body and falls off across its edge', () => {
+    expect(pathCoverage(0, 0, BAND, HW)).toBe(1);
+    expect(pathCoverage(0, HW * 0.5, BAND, HW)).toBeGreaterThan(0.5);
+    expect(pathCoverage(0, HW, BAND, HW)).toBe(0);
+    expect(pathCoverage(0, HW * 2, BAND, HW)).toBe(0);
+  });
+
+  /* ⚠️ MEASURED TO THE CENTRELINE, NOT TO THE END POINTS — a sweep is a band along its whole path,
+     so a point beside the middle of a long pass is as covered as one beside its start. */
+  it('covers along the whole pass, not just near its ends', () => {
+    for (const x of [-0.9, -0.3, 0, 0.4, 0.9]) expect(pathCoverage(x, 0, BAND, HW)).toBe(1);
+    expect(pathCoverage(1.8, 0, BAND, HW)).toBe(0);          // past the end is past the sweep
+  });
+
+  it('leaves the wall alone where nothing has been swept', () => {
+    expect(sweptUnder(0, 0, [], '#102030')).toBe('#102030');
+    expect(sweptUnder(0, 5, [{ path: BAND, halfWidth: HW, color: '#ff0000' }], '#102030')).toBe('#102030');
+  });
+
+  /* ⚠️ EACH BAND KEEPS ITS OWN COLOUR ACROSS ITS BODY, and only the seam mixes. Averaging wherever
+     two sweeps meet turns the later one muddy through its middle; in the photograph the bands are
+     their own colour and share a narrow boundary. */
+  it('hands back the earlier colour under its body, and a mixture at its edge', () => {
+    const prior = [{ path: BAND, halfWidth: HW, color: '#ff0000' }];
+    expect(sweptUnder(0, 0, prior, '#ffffff')).toBe('#ff0000');          // solidly inside
+    const seam = sweptUnder(0, HW * 0.8, prior, '#ffffff');
+    expect(seam).not.toBe('#ff0000');
+    expect(seam).not.toBe('#ffffff');
+  });
+
+  /* ⚠️ THE LATEST SWEEP WINS WHERE IT IS SOLID. Laid in order, a third pass over two earlier ones
+     reads as the third colour in its middle — not as an average of all three. */
+  it('resolves a stack in the order it was laid', () => {
+    const priors = [
+      { path: BAND, halfWidth: HW, color: '#ff0000' },
+      { path: BAND, halfWidth: HW, color: '#0000ff' },
+    ];
+    expect(sweptUnder(0, 0, priors, '#ffffff')).toBe('#0000ff');
+  });
+
+  it('refuses a sweep it cannot measure rather than covering everything', () => {
+    expect(pathCoverage(0, 0, BAND, 0)).toBe(0);
+    expect(pathCoverage(0, 0, [[0, 0]], HW)).toBe(0);
+    expect(pathCoverage(0, 0, null, HW)).toBe(0);
+  });
+
+  /* ⚠️ A SWEEP IS A PASS, NOT A MARK, and the defaults have to say so or it is just a wide stroke:
+     no taper (it runs off the rim rather than being lifted), no slanted cut, a definite side edge —
+     a feathered one puts a WHITE GAP at every seam, which the first cut of this did. */
+  it('is authored as a pass: broad, untapered, and not feather-edged', () => {
+    expect(SWEEP_DEFAULTS.width).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.width * 2);
+    expect(SWEEP_DEFAULTS.tipWidth).toBe(1);
+    expect(SWEEP_DEFAULTS.endSlantMax).toBe(0);
+    expect(SWEEP_DEFAULTS.skirt).toBeLessThanOrEqual(BRUSH_ON_CAKE_DEFAULTS.skirt);
   });
 });
