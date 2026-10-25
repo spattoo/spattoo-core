@@ -5405,6 +5405,9 @@ const FIT_EASE_S = 1.2;
 function SpinDirector({ orbitRef, plan, onDone }) {
   const t0 = useRef(null);
   const start = useRef(null);
+  // Allocated once. A Spherical and a Vector3 per frame is garbage on a 60fps loop.
+  const sph = useRef(new THREE.Spherical());
+  const off = useRef(new THREE.Vector3());
   useFrame(() => {
     const controls = orbitRef?.current;
     if (!controls) return;
@@ -5414,8 +5417,17 @@ function SpinDirector({ orbitRef, plan, onDone }) {
       start.current = { az: controls.getAzimuthalAngle(), polar: controls.getPolarAngle() };
     }
     const { azimuth, polar, done } = spinPose((now - t0.current) / 1000, plan, start.current.polar);
-    controls.setAzimuthalAngle(start.current.az + azimuth);
-    controls.setPolarAngle(polar);
+    /* ⚠️ THE CAMERA IS PLACED, BECAUSE THIS OrbitControls HAS NO SETTERS. The first version called
+       `controls.setAzimuthalAngle` / `setPolarAngle` — which read beautifully and are `undefined`
+       in the three we ship: it exposes the GETTERS and no matching setters, so every frame threw
+       and the take did nothing at all. It shipped in 0.1.767.
+       Spherical coordinates about the controls' own target, at the controls' own distance, is what
+       those setters would have done — and it leaves the two things somebody else owns alone:
+       `FitCakeToView` keeps the target, OrbitControls keeps the distance. */
+    sph.current.set(controls.getDistance(), polar, start.current.az + azimuth);
+    off.current.setFromSpherical(sph.current);
+    controls.object.position.copy(controls.target).add(off.current);
+    controls.object.lookAt(controls.target);
     controls.update();
     if (done) onDone?.();
   });
