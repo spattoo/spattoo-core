@@ -252,7 +252,22 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      hairline marks across one pull, barely cutting — a blade's nicks, not a comb's teeth. 9 at 0.2,
      with `across` raised to keep six samples a lane. */
   lanes:  9,      // how many drag lines across the width
-  grain:  0.2,    // 0 … 1: how deep the lines cut, × the local relief
+  /* 0 … 1: how deep the lines cut, × the local relief.
+     ⚠️ 0.2 → 0.05, AND THIS WAS THE THING WRONG WITH THE WHOLE LOOK. Put beside the reference
+     photograph our strokes were ribbed end to end — a 20% height swing over nine narrow lanes
+     shades hard, so every mark read as corduroy, or as ribbed fondant, rather than as cream. The
+     photograph is mostly SMOOTH: flat matte patches whose form is carried by soft shading and torn
+     edges, with drag lines showing on about one patch in four and faintly even there. Swept
+     0.2 / 0.09 / 0.04 beside it; this is where the surface stops being fabric. Sandeep, having
+     twice said the shapes were not right and then simply: *"no. see this."* It was never the
+     silhouette — three changes had gone into the outline while the texture was the error. */
+  grain:  0.05,
+  /* ⚠️ AND NOT EVERY STROKE IS COMBED, which is the half a single number cannot express. In the
+     photograph some patches carry clear drag lines and most carry none — a blade picks up marks
+     when it is loaded and leaves none when it is not. Per stroke, seeded, biased LOW (`f²`, so most
+     land near the floor and a few go well past the authored value): the same "a few, not all" shape
+     `endForm` uses, and the same reason. */
+  grainVary: 2.4,
   seed:   1,
 };
 
@@ -335,6 +350,19 @@ export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge,
  * rope's own swell note warns about. Fades out along the stroke: the deepest marks are where the
  * cream was thickest.
  */
+/** How combed THIS stroke is — most nearly smooth, a few carrying clear drag lines.
+ *
+ * ⚠️ A SINGLE `grain` MAKES EVERY STROKE EQUALLY RIBBED, which is not what a blade does and not
+ * what the photograph shows. Biased low on purpose: `f²` puts the bulk of the draws near the floor,
+ * so the common stroke is a smooth smear and a combed one reads as the exception.
+ */
+export function grainFor(seed, grain = BRUSH_ON_CAKE_DEFAULTS.grain, vary = BRUSH_ON_CAKE_DEFAULTS.grainVary) {
+  const g = Number(grain);
+  if (!Number.isFinite(g) || g <= 0) return 0;
+  const f = seedFrac(seed, 59);
+  return g * (0.15 + Math.max(0, vary) * f * f);
+}
+
 export function brushStriation(u, along, { seed = 1, lanes, grain } = {}) {
   const n = lanes ?? BRUSH_ON_CAKE_DEFAULTS.lanes;
   const g = grain ?? BRUSH_ON_CAKE_DEFAULTS.grain;
@@ -595,7 +623,8 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          where there is no cream to clear. */
       /* The stroke's own profile, as if it had been laid on bare wall. */
       const own = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt: p.skirt })
-                  * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
+                  * brushStriation(u, along, { seed: p.seed, lanes: p.lanes,
+                                               grain: grainFor(p.seed, p.grain, p.grainVary) });
       /* Just clearing the cream already here, and nothing more. */
       const over = bedH + onCream * Math.max(seamMin, bedH * p.seam);
       /* ⚠️ A BLADE LEVELS, IT DOES NOT STACK — the HIGHER of the two, not their sum. Adding the

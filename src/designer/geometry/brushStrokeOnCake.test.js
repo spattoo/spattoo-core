@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward, wallPlacer,
-         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY, endForm,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY, endForm, grainFor,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -1124,6 +1124,40 @@ describe('a lid that is not a disc', () => {
     for (let i = 0; i < pos.count; i++) { lowest = Math.min(lowest, pos.getY(i)); maxZ = Math.max(maxZ, pos.getZ(i)); }
     expect(lowest).toBeLessThan(0.9);              // it fell down the front wall
     expect(maxZ).toBeLessThan(1.35);               // and stayed against that wall, not out at R
+  });
+});
+
+describe('grainFor — most strokes are a smooth smear, a few are combed', () => {
+  /* ⚠️ THE TEXTURE WAS THE ERROR, NOT THE SILHOUETTE. Beside the reference photograph our strokes
+     were ribbed end to end — every one equally — and read as corduroy rather than cream, while the
+     photograph is mostly smooth patches with drag lines on about one in four. Three changes had
+     gone into the outline before Sandeep simply said *"no. see this."* */
+  const G = BRUSH_ON_CAKE_DEFAULTS.grain;
+  const sample = (n = 400) => Array.from({ length: n }, (_, i) => grainFor(101 + i * 37));
+
+  it('leaves most of them nearly smooth', () => {
+    const g = sample();
+    expect(g.filter(v => v < G).length / g.length).toBeGreaterThan(0.55);
+  });
+
+  it('and combs a few plainly, so the marks read as an exception rather than a finish', () => {
+    const g = sample();
+    expect(g.filter(v => v > G * 1.5).length / g.length).toBeGreaterThan(0.05);
+    expect(Math.max(...g)).toBeGreaterThan(G * 2);
+  });
+
+  it('never goes negative, whatever the row authored', () => {
+    for (const v of sample()) expect(v).toBeGreaterThanOrEqual(0);
+    expect(grainFor(5, 0)).toBe(0);
+    expect(grainFor(5, -1)).toBe(0);
+    expect(grainFor(5, 'smooth')).toBe(0);
+  });
+
+  /* ⚠️ A ROW THAT TURNS THE LINES OFF GETS THEM OFF — the variation multiplies the authored value,
+     it does not substitute for it, so an admin setting 0 is not quietly overruled. */
+  it('is the same answer for the same seed, and scales with what was authored', () => {
+    expect(grainFor(77)).toBe(grainFor(77));
+    expect(grainFor(77, G * 2)).toBeCloseTo(grainFor(77, G) * 2, 12);
   });
 });
 
