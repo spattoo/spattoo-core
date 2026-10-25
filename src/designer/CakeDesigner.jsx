@@ -6,7 +6,7 @@ import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
 import { BUILD } from './buildId.js';
 import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
-         brushGestureFromDrag } from './geometry/brushStrokeOnCake.js';
+         brushGestureFromDrag, brushTopFromDrag } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -68,6 +68,7 @@ import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
    rather than inline so the control and its inverse cannot drift apart. */
 const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
+import { AreaShapeIcon, areaLabel, hasAreaGlyph } from './shared/AreaShapeIcon.jsx';
 import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { STICK_LENGTH_RANGE } from './geometry/topperPiece.js';
@@ -3553,8 +3554,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setHandSprinkleIds(prev => prev.slice(0, -1));
   }
 
-  function handleBrushDrawStart(tierIndex, point) {
-    brushDrawing.current = { tierIndex, from: point, id: null };
+  /* ⚠️ THE SURFACE COMES FROM THE TARGET THAT CAUGHT THE PRESS, not from a control. Both the wall
+     and the lid are live while drawing, so whichever one the hand landed on is the surface the
+     whole stroke belongs to — captured on the way DOWN and held for the drag, so a gesture that
+     starts on the lid and runs off the rim stays a lid stroke (and drapes) instead of changing its
+     mind halfway. */
+  function handleBrushDrawStart(tierIndex, point, surface = 'side') {
+    brushDrawing.current = { tierIndex, from: point, id: null, surface };
   }
 
   function handleBrushDrawTo(tierIndex, point) {
@@ -3567,8 +3573,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
        sweep comes out compressed on the long sides and stretched on the short ones, so a stroke
        drawn straight down lands leaning. The renderer walks the same outline (wallPlacer), so
        input and output now agree about where "a third of the way round" is. */
-    const g = brushGestureFromDrag(d.from, point,
-      { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height, shape: tierShapeAt(design.tiers, tierIndex) });
+    /* ⚠️ TWO GESTURES, BECAUSE A LID IS NOT A WALL — the same split the renderer already makes.
+       A wall is a cylinder, so its gesture is a turn and a fraction of the height; a lid is a disc
+       with no "round" and no "up", so its gesture is two points in units of R. Both are RELATIVE,
+       so neither goes stale when the tier is resized. */
+    const onTop = d.surface === 'top';
+    const g = onTop
+      ? brushTopFromDrag(d.from, point, { R: t.radius })
+      : brushGestureFromDrag(d.from, point,
+          { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height, shape: tierShapeAt(design.tiers, tierIndex) });
     if (!g) return;                                     // still a tap
     if (d.id === null) {
       const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
@@ -3584,7 +3597,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       const palette = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
       updateTierBrushStrokes(tierIndex, list => [...list, {
         id,
-        surface: 'side',
+        surface: d.surface ?? 'side',
         color:  prev?.color  ?? palette[0] ?? '#F6DCE2',
         width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
         weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
@@ -16894,11 +16907,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
         <div>
           <div style={s.editPanelLabel}>Area</div>
+          {/* ⚠️ MARKS, NOT WORDS — and the button keeps its name for anyone who cannot see the mark.
+              A circle, a rectangle and a triangle are not metaphors for the choice, they ARE it, so
+              the word beside one adds nothing a baker needs. The same reasoning DialCell applies to
+              `symbol`: a symbol replaces its caption only where the symbol is the thing. `title`
+              and `aria-label` carry the word, so a screen reader still announces "Triangle" and a
+              kind the geometry gains without a mark falls back to its word rather than to a blank
+              button nobody can tell apart. */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {Object.keys(REGION_KINDS).map(k => (
               <button key={k} onClick={() => { if (sd.shape !== k) updateSand(i, { shape: k }); }}
-                style={modeBtn((sd.shape ?? REGION_DEFAULTS.kind) === k)}>
-                {k === 'rect' ? 'Rectangle' : k === 'round' ? 'Round' : 'Triangle'}
+                title={areaLabel(k)} aria-label={areaLabel(k)}
+                aria-pressed={(sd.shape ?? REGION_DEFAULTS.kind) === k}
+                style={{ ...modeBtn((sd.shape ?? REGION_DEFAULTS.kind) === k),
+                         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
+                {hasAreaGlyph(k) ? <AreaShapeIcon kind={k} /> : areaLabel(k)}
               </button>
             ))}
           </div>
