@@ -1175,15 +1175,19 @@ describe('endForm — a few are slanted, a few rounded, most are square', () => 
     expect(new Set(f.map(x => x.bulge.toFixed(4))).size).toBeGreaterThan(f.length * 0.9);
   });
 
-  /* ⚠️ "A FEW", NOT "ALL" — the ask was for a MIX, so most strokes must stay near square and the
-     shaped ones be occasional. A flat distribution would make every stroke odd, which is just a
-     different uniform. */
-  it('keeps most of them near square, so the shaped ones read as exceptions', () => {
+  /* ⚠️ MOST ARE SLANTED, A FEW ARE SQUARE — AND THIS TEST ONCE ASSERTED THE OPPOSITE AND PASSED.
+     Sandeep: *"starting and ending does not need to be like a horizontal lines. there can be few
+     like that, but not all."* Few HORIZONTAL. The first implementation cubed the draw, crowding it
+     toward zero, and the test written beside it said "keeps most of them near square" — so the code
+     and its test agreed with each other and both disagreed with the instruction. That is the whole
+     reason this one is phrased around the SLANTED majority: a test that restates the mistake is
+     worse than no test. */
+  it('slants most of them, leaving square ends the occasional one', () => {
     const t = sample(0).map(x => Math.abs(x.tilt));
-    const mild = t.filter(v => v < 0.25).length / t.length;
-    const strong = t.filter(v => v > 0.6).length / t.length;
-    expect(mild).toBeGreaterThan(0.55);          // the common stroke is still a square end
-    expect(strong).toBeGreaterThan(0.03);        // and a few are plainly cut on the slant
+    const square = t.filter(v => v < 0.25).length / t.length;
+    const slanted = t.filter(v => v > 0.5).length / t.length;
+    expect(slanted).toBeGreaterThan(0.6);        // the common stroke is cut on the diagonal
+    expect(square).toBeGreaterThan(0.02);        // and a few still come out square
   });
 
   it('reaches both ways, so ends round out as well as scoop in', () => {
@@ -1210,8 +1214,13 @@ describe('the landing is torn, not a guillotine cut', () => {
      fingers of different lengths — while the start was the first cross-section, a dead straight line
      across the full width of every stroke on the cake. Sandeep, on a row of them: *"with brush,
      always rectangle is impossible. starting point does not need to be a horizontal line."* */
-  const landingSpread = (heel) => {
+  /* ⚠️ `endSlantMax: 0` BY DEFAULT HERE, AND IT HAS TO BE — the end is now CUT on a diagonal as well
+     as faded, and a diagonal cut spreads the landing all by itself. Measuring both at once makes
+     this test say "something made the start uneven", which is not the question; `heel` is the
+     per-column fade specifically. The slant has its own test below. */
+  const landingSpread = (heel, endSlantMax = 0) => {
     const g = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, weight: 0.6, seed: 11, heel,
+      endSlantMax,
       path: brushGesture({ at: 0, seed: 11, climb: 0.6, climbVar: 0, sweep: 0.012 }) });
     const m = BRUSH_ON_CAKE_DEFAULTS.across;
     const t = g.attributes.aThickness, pos = g.attributes.position;
@@ -1241,6 +1250,16 @@ describe('the landing is torn, not a guillotine cut', () => {
   it('scales with the stroke, so a broad knife lands over a broader patch', () => {
     expect(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel * 2))
       .toBeGreaterThan(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel));
+  });
+
+  /* ⚠️ THE SLANT IS A DIFFERENT THING FROM THE TEAR, AND THREE ROUNDS WENT BY WITHOUT IT. Torn
+     fingers and a per-column fade both roughen a line that is still SQUARE to the travel; forced to
+     their extremes the ends still rendered horizontal. Cutting the cross-section on a diagonal is
+     what actually slants an end, so this holds that the knob does something no amount of `heel`
+     can: with the fade off entirely, the end still comes out uneven. */
+  it('cuts the end on a diagonal, which no amount of tearing can do', () => {
+    expect(landingSpread(0, BRUSH_ON_CAKE_DEFAULTS.endSlantMax))
+      .toBeGreaterThan(landingSpread(0, 0) * 2);
   });
 });
 

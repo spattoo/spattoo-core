@@ -193,6 +193,12 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      diagonal end, which no amount of per-finger noise can produce — that only ever roughens a line
      square to the travel. ± this much ramp across the blade. */
   tipTiltMax: 0.8,
+  /* ⚠️ HOW FAR AN END MAY BE CUT ON THE DIAGONAL, as a fraction of the width that one corner runs
+     on past the other. This is the knob the three earlier attempts were missing: they roughened a
+     line that stayed square to the travel, so even at their extremes the ends rendered horizontal.
+     0.5 means the two corners of the end sit half a width apart along the stroke — plainly slanted
+     without reading as a torn-off corner. */
+  endSlantMax: 0.5,
   /* ⚠️ SHORT EXCURSIONS, OR THE RELEASE IS A COMB. At 0.5 of the width the longest finger runs
      further than the dissolve is deep, so each one stays solid for most of its length and reads as a
      needle — Sandeep, ringing the band of them: *"these spikes look too harsh."* A release is a
@@ -432,9 +438,17 @@ function densify(path, want) {
  * occasional. Cubing a signed unit value does that without needing a branch or a table: it keeps
  * the sign, leaves ±1 reachable, and pushes the bulk of the distribution toward the middle.
  */
+/* ⚠️ MOST ARE SLANTED, A FEW ARE SQUARE — AND THE FIRST CUT HAD IT EXACTLY BACKWARDS. It cubed a
+   signed unit value, which crowds the draws toward ZERO, so most strokes came out square-ended and
+   a few were shaped. Sandeep had said *"there can be few like that, but not all"* — few HORIZONTAL
+   — and the test written beside it asserted the opposite ("keeps most of them near square") and
+   duly passed. Reading a distribution the wrong way round is not a tuning error; it inverts the
+   instruction.
+   The square root pushes the bulk of the draws AWAY from zero: a definite slant is the common case,
+   a square end the occasional one. `|u|` keeps the sign, so both directions stay reachable. */
 function signedBias(seed, salt) {
   const u = seedFrac(seed, salt) * 2 - 1;      // -1 … 1, flat
-  return u * u * u;                            // -1 … 1, most of it near 0
+  return Math.sign(u) * Math.sqrt(Math.abs(u));
 }
 
 export function endForm(seed, salt = 0) {
@@ -928,6 +942,12 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
                                      tipTaper: p.tipTaper + form.bulge * p.tipTaperVary,
                                      tipReach: p.tipReach * (1 + form.bulge * 0.35),
                                      tipTilt: form.tilt * p.tipTiltMax,
+                                     /* ⚠️ THE CUT ITSELF, which is what actually makes an end read
+                                        as diagonal — `tipTilt` only leans the torn fingers, and a
+                                        fifth of a width of fingers cannot slant a line. The landing
+                                        takes its own draw (salt 1) so the two ends disagree. */
+                                     startSlant: endForm(p.seed, 1).tilt * p.endSlantMax,
+                                     endSlant: form.tilt * p.endSlantMax,
                                      tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
@@ -1033,6 +1053,12 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], shape = null, 
                                      tipTaper: p.tipTaper + form.bulge * p.tipTaperVary,
                                      tipReach: p.tipReach * (1 + form.bulge * 0.35),
                                      tipTilt: form.tilt * p.tipTiltMax,
+                                     /* ⚠️ THE CUT ITSELF, which is what actually makes an end read
+                                        as diagonal — `tipTilt` only leans the torn fingers, and a
+                                        fifth of a width of fingers cannot slant a line. The landing
+                                        takes its own draw (salt 1) so the two ends disagree. */
+                                     startSlant: endForm(p.seed, 1).tilt * p.endSlantMax,
+                                     endSlant: form.tilt * p.endSlantMax,
                                      tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
