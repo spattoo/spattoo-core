@@ -2,6 +2,11 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 
 const src = readFileSync(new URL('./CakeDesigner.jsx', import.meta.url), 'utf8');
+/* ⚠️ COMMENTS STRIPPED FOR ANYTHING THAT ASSERTS AN ABSENCE. The notes in this feature quote the
+   mistakes they exist to prevent — including the dead "Stop spinning" label — so a bare search of
+   the source finds the explanation and calls it the bug. The same trap check:image-model fell into:
+   its first draft matched the string quoted in the comment ABOVE the fix and was satisfied. */
+const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
 
 /* ── Spinning the cake for the camera ────────────────────────────────────────────────────────────
  *
@@ -21,7 +26,7 @@ const src = readFileSync(new URL('./CakeDesigner.jsx', import.meta.url), 'utf8')
  * WebGL context to prove where one menu item lives.
  */
 describe('the hero spin stays out of the frame', () => {
-  const item = src.match(/\{isCatalogAuthor && \([\s\S]{0,400}?Spin the cake[\s\S]{0,200}?\)\}/);
+  const item = code.match(/\{isCatalogAuthor && \([\s\S]{0,600}?Spin the cake[\s\S]{0,400}?\)\}/);
 
   it('lives behind the Capture menu, which is shut unless it is being used', () => {
     expect(item, 'the spin item should be inside an isCatalogAuthor guard').not.toBeNull();
@@ -33,14 +38,14 @@ describe('the hero spin stays out of the frame', () => {
      baker on a plan with reel capture films their own cakes. This films the PRODUCT. */
   it('is for catalogue authors, not for anyone who can record a reel', () => {
     expect(item[0]).not.toMatch(/canRecordReel/);
-    expect(src).toMatch(/const isCatalogAuthor = !!bakerData\?\.is_catalog_author/);
+    expect(code).toMatch(/const isCatalogAuthor = !!bakerData\?\.is_catalog_author/);
   });
 
   /* ⚠️ THE WAY OUT HAS TO BE INVISIBLE TOO. A "Stop" button on screen is a button in the video, so
      stopping is Esc or taking hold of the cake. If this ever becomes a rendered control, the first
      assertion above still passes and the feature is quietly broken for its only purpose. */
   it('is stopped by Escape and by grabbing the cake, not by a visible control', () => {
-    const effect = src.match(/if \(!filmSpin\) return undefined;[\s\S]{0,700}?\}, \[filmSpin\]\);/);
+    const effect = code.match(/if \(!filmSpin\) return undefined;[\s\S]{0,700}?\}, \[filmSpin\]\);/);
     expect(effect, 'a listener should exist only while spinning').not.toBeNull();
     expect(effect[0]).toMatch(/'Escape'/);
     expect(effect[0]).toMatch(/addEventListener\('pointerdown'/);
@@ -52,8 +57,8 @@ describe('the hero spin stays out of the frame', () => {
   /* ⚠️ IT IS HOW THE CAKE IS LOOKED AT, NOT WHAT IT IS. Written into the design it would be saved,
      and a cake that spins when you reopen it is a bug somebody chases through the snapshot. */
   it('never reaches the design', () => {
-    expect(src).not.toMatch(/setDesign\([^)]*filmSpin/);
-    expect(src).not.toMatch(/filmSpin:\s/);
+    expect(code).not.toMatch(/setDesign\([^)]*filmSpin/);
+    expect(code).not.toMatch(/filmSpin:\s/);
   });
 
   /* Turning it on drops the selection — both because the canvas refuses to auto-rotate while
@@ -62,28 +67,39 @@ describe('the hero spin stays out of the frame', () => {
      ⚠️ Through `handleDeselect`, the same call openReelPanel makes for the same stated reason, not
      a lighter one that happens to clear the tier and leaves the piping toolbar in frame. */
   it('drops the selection on the way in, the way the reel does', () => {
-    const at = src.indexOf('function toggleFilmSpin() {');
+    const at = code.indexOf('function startFilmSpin() {');
     expect(at).toBeGreaterThan(-1);
-    expect(src.slice(at, at + 500)).toMatch(/handleDeselect\(\)/);
+    expect(code.slice(at, at + 300)).toMatch(/handleDeselect\(\)/);
   });
 
   /* The photo and reel panels both aim the camera themselves. A spin left running fights them for
      the orbit, and the symptom — a reel that drifts — would look like a bug in the recorder. */
   it('stands down when the photo or reel panel takes the camera', () => {
     for (const fn of ['openReelPanel', 'openPhotoPanel']) {
-      const at = src.indexOf(`function ${fn}() {`);
+      const at = code.indexOf(`function ${fn}() {`);
       expect(at, `${fn} should exist`).toBeGreaterThan(-1);
       /* The opening of the function, not its whole body: standing the spin down is the FIRST thing
          either does, before it deselects or opens anything, so a narrow window is the assertion. */
-      expect(src.slice(at, at + 400), `${fn} should stop the spin first`).toMatch(/setFilmSpin\(false\)/);
+      expect(code.slice(at, at + 300), `${fn} should stop the spin first`).toMatch(/setFilmSpin\(false\)/);
     }
+  });
+
+  /* ⚠️ THE LABEL MUST NOT BE A TOGGLE. It was first written as
+     `filmSpin ? 'Stop spinning' : 'Spin the cake'` — unreachable, because the spin stops on ANY
+     pointerdown and opening this menu IS a pointerdown, so the item always rendered "Spin the
+     cake". A ternary whose other branch can never show is a lie about what the control does. */
+  it('does not pretend to be a toggle it cannot be', () => {
+    expect(code).not.toMatch(/Stop spinning/);
+    expect(item[0]).toMatch(/Spin the cake/);
+    // And it teaches the way out, which is safe only because this menu is shut while filming.
+    expect(item[0]).toMatch(/Esc to stop/);
   });
 
   /* ⚠️ NOT FOLDED INTO `creamAutoRotate`, which spins the cake for spin-painting. Same effect on
      the controls, different owner and different lifetime: shared, closing the cream panel would
      stop the film shot and filming would leave the paint wheel on. */
   it('is its own flag, beside the cream wheel rather than inside it', () => {
-    expect(src).toMatch(/autoRotate=\{creamAutoRotate \|\| filmSpin\}/);
-    expect(src).toMatch(/const \[creamAutoRotate, setCreamAutoRotate\]/);
+    expect(code).toMatch(/autoRotate=\{creamAutoRotate \|\| filmSpin\}/);
+    expect(code).toMatch(/const \[creamAutoRotate, setCreamAutoRotate\]/);
   });
 });

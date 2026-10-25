@@ -4768,13 +4768,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * ⚠️ IT IS NOT PART OF THE DESIGN. This is how the cake is being LOOKED at, not what it is, so it
    * lives in component state and is never written to `design` — a saved cake that spins when you
    * reopen it would be a bug somebody chases through the snapshot for an afternoon. */
-  function toggleFilmSpin() {
-    setFilmSpin(on => {
-      // `handleDeselect`, the same call openReelPanel makes and for the same stated reason:
-      // "handles, grips and the piping toolbar are editing furniture that renders IN the scene".
-      if (!on) handleDeselect();
-      return !on;
-    });
+  function startFilmSpin() {
+    /* ⚠️ START, NOT TOGGLE. Stopping is Esc or a pointer — and since ANY pointerdown stops it, the
+       click that opens this menu has already stopped any spin in progress. A toggle here could only
+       ever be in the "off" state when pressed, so calling it one invited a label that can never be
+       true. */
+    // `handleDeselect`, the same call openReelPanel makes and for the same stated reason:
+    // "handles, grips and the piping toolbar are editing furniture that renders IN the scene".
+    handleDeselect();
+    setFilmSpin(true);
   }
 
   /* Esc stops it, and so does taking hold of the cake.
@@ -21620,9 +21622,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       `is_catalog_author` says who writes the public catalogue. */}
                   {isCatalogAuthor && (
                     <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                            onClick={() => { setCaptureMenuOpen(false); toggleFilmSpin(); }}>
+                            onClick={() => { setCaptureMenuOpen(false); startFilmSpin(); }}>
                       <RefreshIcon size={16} />
-                      {filmSpin ? 'Stop spinning' : 'Spin the cake'}
+                      Spin the cake
+                      {/* ⚠️ THE LABEL IS NOT A TOGGLE, AND IT CANNOT BE. It was written as
+                          `filmSpin ? 'Stop spinning' : 'Spin the cake'`, which is unreachable: the
+                          spin stops on ANY pointerdown, and opening this menu is a pointerdown — so
+                          by the time the item renders, the spin is already off and it always read
+                          "Spin the cake". A ternary whose other branch can never show is a lie
+                          about the control.
+                          The hint is safe HERE and nowhere else: this menu is shut while anyone is
+                          filming, so it is the one place in the designer that can explain the way
+                          out without the explanation ending up in the video. */}
+                      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>Esc to stop</span>
                     </button>
                   )}
                 </ActionSheet>
