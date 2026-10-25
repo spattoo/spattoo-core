@@ -166,8 +166,16 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      ⚠️ THIS IS SEED-DERIVED, NOT STORED (`tipFor`), so it reshapes strokes on cakes already saved.
      That is the point — it is the look being corrected, not a new option — but it is worth knowing
      before the number is moved again. */
-  tipMin: 0.82,
-  tipMax: 1.00,
+  /* ⚠️ AND 0.82 WENT TOO FAR THE OTHER WAY — IT MADE RECTANGLES. It was raised from 0.60 on the
+     reading that strokes are *"mostly rectangular in nature"*, and against one photograph of squared
+     blocks that was true. Four more references settled it the other way: a green ombré, a
+     green-and-blue watercolour, a black-and-gold stripe and a pink one, and in every single stroke
+     on all four the mark is BROAD where the knife lands and tapers to a narrow feathered wisp where
+     it lifts. Sandeep: *"starting and ending are nearly same width. leave these rectangles pls.
+     think of random strokes."* 0.25 to 0.95 — most strokes now taper plainly, and the few that draw
+     near the top still come out parallel-sided, which is the squared-block cake. */
+  tipMin: 0.25,
+  tipMax: 0.95,
   /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
      the knife marks are four or five lanes across the same band, and three samples per lane turns
      them into a stepped zigzag. Six per lane is where they go round, and there is a test holding
@@ -207,13 +215,28 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   tipReach:   0.2,
   tipJitter:  0.8,    // 0 … 1: how unevenly the streaks are spaced — equal pitch reads as a saw
   tipRows:    5,      // cross-sections through the release, so the dissolve has room to happen
-  merge:      0.075,  // × R: how deep the dissolve reaches back from each finger's own end
+  /* × R: how deep the dissolve reaches back from each finger's own end.
+     ⚠️ 0.075 → 0.2, AND IT IS WHAT THE "WHITE" WAS. Sandeep: *"why there is white color near the
+     starting? i understand the intent with the white color, but that should look like merged with
+     the cake color. should not look like white color is added explicitly."* The blend itself was
+     never wrong — rendered on a DARK wall the thin end washes to the wall's colour and not to
+     white, which is one render and settles it. What showed was the RAMP: fading full height to
+     nothing over 0.075R is a slope of about 36°, and a slope catches light. The bright band was a
+     highlight, not pigment. Over 0.2R the ramp lies almost flat, takes no highlight, and the stroke
+     feathers into the cake the way the references do — the green ombré and the pink one both
+     dissolve over a third of their length. */
+  merge:      0.2,
+  /* ⚠️ BUT THE LANDING STAYS CRISPER THAN THE RELEASE, because a knife is loaded when it touches
+     down and empty when it lifts. In every reference the bottom of a stroke meets the board as a
+     definite edge while the top wisps away into nothing; one depth for both would either harden the
+     release or wash the landing out. A fraction of `merge`, so tuning the feather still moves both. */
+  heelMerge:  0.10,
   /* ⚠️ HOW UNEVENLY THE KNIFE LANDS, × the stroke's own width. The release has torn since early on
      and the landing never did — it was the first cross-section, a dead straight line across the
      full width of every stroke on the cake. *"starting point does not need to be a horizontal
      line."* A fraction of the WIDTH rather than a length, so a broad knife lands over a broader
      patch and a narrow one does not get a landing longer than the mark itself. */
-  heel:       0.55,
+  heel:       0.35,
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -607,6 +630,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
                                                           heel: p.heel });
   const n = grid.length;
   const merge = p.merge * R;        // how deep the dissolve reaches back from each finger's end
+  const heelMerge = Math.max(1e-6, merge * p.heelMerge);   // the landing's own, shorter fade
   const pos = [], idx = [], thick = [];
   /* What lies under each vertex, kept so the rim can be dropped onto it — see the skirt below. */
   const floor = [];
@@ -735,7 +759,7 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          fade from both, not be claimed by whichever line is written second — `min` is what makes a
          stubby mark read as a dab rather than as a rectangle with one soft end. */
       const dissolve = Math.min(smoothstep(0, merge, toTip[i][j]),
-                                smoothstep(0, merge, toHeel[i][j]));
+                                smoothstep(0, heelMerge, toHeel[i][j]));
       const cover = side * (dissolve + (1 - dissolve) * onCream);
       thick.push(clamp01(cover));
     }
