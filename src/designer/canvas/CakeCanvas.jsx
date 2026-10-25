@@ -4381,7 +4381,8 @@ function BrushStrokes({ strokes, tier, wallColour, onPick }) {
         weight: st.weight ?? sweepCfg?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
         seed: st.seed ?? 1,
         ...(sweepCfg ? {
-          tipWidth: sweepCfg.tipWidth, tipReach: sweepCfg.tipReach, skirt: sweepCfg.skirt,
+          tipMin: sweepCfg.tipMin, tipMax: sweepCfg.tipMax,
+          tipReach: sweepCfg.tipReach, skirt: sweepCfg.skirt,
           endSlantMax: sweepCfg.endSlantMax, heel: sweepCfg.heel,
           breathe: sweepCfg.breathe, tear: sweepCfg.tear, grain: sweepCfg.grain,
           lanes: sweepCfg.lanes,

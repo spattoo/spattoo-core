@@ -1419,7 +1419,11 @@ describe('a sweep: cream dragged across the surface, mixing with what is there',
 
   it('is authored as a pass: broad, untapered, and not feather-edged', () => {
     expect(SWEEP_DEFAULTS.width).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.width * 2);
-    expect(SWEEP_DEFAULTS.tipWidth).toBe(1);
+    /* ⚠️ THE RANGE, NOT `tipWidth` — `tipFor` reads tipMin/tipMax and a `tipWidth` set here is
+       dropped silently. The first cut set the wrong key and every sweep rendered as a wedge; this
+       asserts the key the builder actually consults. */
+    expect(SWEEP_DEFAULTS.tipMin).toBe(1);
+    expect(SWEEP_DEFAULTS.tipMax).toBe(1);
     expect(SWEEP_DEFAULTS.endSlantMax).toBe(0);
     expect(SWEEP_DEFAULTS.skirt).toBeLessThanOrEqual(BRUSH_ON_CAKE_DEFAULTS.skirt);
   });

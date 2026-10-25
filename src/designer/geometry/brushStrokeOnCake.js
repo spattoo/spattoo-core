@@ -409,8 +409,14 @@ export const SWEEP_DEFAULTS = Object.freeze({
   /* × R, and far broader than a mark: a sweep is a pass of the whole blade. */
   width: 1.1,
   /* ⚠️ NO TAPER AND NO TORN RELEASE. A sweep is not lifted off the cake — it runs off the EDGE, and
-     the rim is what ends it. A tapering wisp would be a mark again. */
-  tipWidth: 1,
+     the rim is what ends it. A tapering wisp would be a mark again.
+     ⚠️ AND IT IS `tipMin`/`tipMax` THAT SAY SO, NOT `tipWidth`. The builder calls
+     `brushStroke(..., { tipWidth: tipFor(p) })` — `tipFor` reads the RANGE, so a `tipWidth` handed
+     in here is simply dropped on the floor. The first cut set it and nothing happened: every sweep
+     still came out a wedge, which is the one shape this feature exists not to be. Caught by driving
+     the card and looking at what landed, not by reading the defaults back. */
+  tipMin: 1,
+  tipMax: 1,
   tipReach: 0.04,
   endSlantMax: 0,
   heel: 0.12,
@@ -1025,6 +1031,12 @@ function pathLength(flat) {
  * behaviour a baker expects of that button.
  */
 export const BRUSH_WIDTH_RANGE = Object.freeze({ min: 0.08, max: 0.9 });
+
+/* ⚠️ A SWEEP NEEDS ITS OWN RANGE, OR IT CANNOT BE ITSELF. A pass is 1.1 × R and a mark's dial stops
+   at 0.9, so a sweep seeded or dialled through the mark's bounds is clamped to narrower than its
+   own default the moment it is created — the one place a shared constant would quietly undo the
+   feature rather than merely annoy. */
+export const SWEEP_WIDTH_RANGE = Object.freeze({ min: 0.35, max: 2.0 });
 
 /* ± this fraction of the carried width. Chosen by rendering six seeds beside the references: at
    0.15 the row still reads as one repeated rectangle, and at 0.45 the narrow ones stop looking like

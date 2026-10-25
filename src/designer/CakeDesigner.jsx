@@ -6,7 +6,8 @@ import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
 import { BUILD } from './buildId.js';
 import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
-         brushGestureFromDrag, brushTopFromDrag, variedWidth, BRUSH_WIDTH_RANGE } from './geometry/brushStrokeOnCake.js';
+         brushGestureFromDrag, brushTopFromDrag, variedWidth, BRUSH_WIDTH_RANGE,
+         SWEEP_DEFAULTS, SWEEP_WIDTH_RANGE } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -3560,7 +3561,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      starts on the lid and runs off the rim stays a lid stroke (and drapes) instead of changing its
      mind halfway. */
   function handleBrushDrawStart(tierIndex, point, surface = 'side') {
-    brushDrawing.current = { tierIndex, from: point, id: null, surface };
+    /* ⚠️ THE KIND IS CAPTURED ON THE WAY DOWN, with the surface and for the same reason: one drag
+       lays one thing, and a baker who switches the card mid-gesture should not end up with half a
+       sweep. */
+    brushDrawing.current = { tierIndex, from: point, id: null, surface,
+                             sweep: brushDraw?.kind === 'sweep' };
   }
 
   function handleBrushDrawTo(tierIndex, point) {
@@ -3599,21 +3604,30 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
          written inline; the breadth of the stroke now comes out of it too, so the two have to agree
          or a reopened cake would be a different set of marks from the one that was drawn. */
       const seed = 1 + Math.floor(Math.random() * 9999);
-      const baseWidth = prev?.baseWidth ?? prev?.width ?? BRUSH_ON_CAKE_DEFAULTS.width;
+      /* ⚠️ A SWEEP CARRIES OVER FROM THE LAST SWEEP, A MARK FROM THE LAST MARK. Carrying a sweep's
+         1.1 into the next mark would make it a slab, and a mark's 0.3 into the next sweep would
+         make it a stripe — the two are different tools and a baker alternating between them should
+         find each as they left it. */
+      const isSweep = d.sweep === true;
+      const prevKind = (t.brushStrokes ?? []).filter(x => (x.sweep === true) === isSweep).at(-1);
+      const baseWidth = prevKind?.baseWidth ?? prevKind?.width
+        ?? (isSweep ? SWEEP_DEFAULTS.width : BRUSH_ON_CAKE_DEFAULTS.width);
       updateTierBrushStrokes(tierIndex, list => [...list, {
         id,
         surface: d.surface ?? 'side',
-        color:  prev?.color  ?? palette[0] ?? '#F6DCE2',
+        color:  prev?.color  ?? palette[0] ?? '#F6DCE2',   // the colour carries across BOTH, as a palette does
         /* ⚠️ VARIED, AND VARIED AROUND WHAT WAS CARRIED IN. No two marks a hand makes are the same
            breadth — a row of ours came out as one rectangle repeated — but width also carries over
            from the previous stroke on purpose (*"its not keeping the same thickness, its
            resetting"*). Scaling the carried value keeps the baker's knife and still makes each mark
            its own; see `variedWidth`. */
-        width:  variedWidth(baseWidth, seed),
+        width:  variedWidth(baseWidth, seed,
+                            isSweep ? { range: SWEEP_WIDTH_RANGE } : undefined),
         /* The knife, kept apart from the mark it left. Varying from the previous stroke's VARIED
            width compounds into a walk that drifts off the baker's choice — see `variedWidth`. */
         baseWidth,
-        weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
+        weight: prevKind?.weight ?? (isSweep ? SWEEP_DEFAULTS.weight : BRUSH_ON_CAKE_DEFAULTS.weight),
+        ...(isSweep ? { sweep: true } : {}),
         seed,
         ...g,
       }]);
@@ -15654,7 +15668,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * one is chosen there is nothing on the cake and no third "neither" state to show as selected.
      * Two full-width offers, each saying what it does, and the wall stays bare behind them. */
     if (mode === 'ask') {
-      const choose = (m, extra) => () => { set({ mode: m, ...extra }); setBrushDraw(m === 'draw' ? { tierIndex: i } : null); };
+      /* ⚠️ `kind` TRAVELS WITH THE DRAWING STATE, not with the band's `mode`. `mode` means only
+         "does a ring go round the cake" — that vocabulary was settled once already, when drawing
+         was wrongly folded into it — and both drawing and sweeping leave it meaning "no ring".
+         What a drag LAYS is a property of the hand, so it rides on `brushDraw`. */
+      const choose = (m, extra) => () => {
+        set({ mode: m === 'sweep' ? 'draw' : m, ...extra });
+        setBrushDraw(m === 'draw' || m === 'sweep' ? { tierIndex: i, kind: m === 'sweep' ? 'sweep' : 'stroke' } : null);
+      };
       return (
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
@@ -15671,6 +15692,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <span style={{ fontWeight: 800 }}>Draw them myself</span>
             <span style={{ fontSize: 10, color: '#b29aa2' }}>Drag on the cake. Each stroke gets its own card.</span>
           </button>
+          {/* ⚠️ A SWEEP IS A THIRD OFFER, NOT A SETTING ON DRAWING. It is a different gesture with a
+              different result — a mark sits ON the cake, a pass COVERS it and mixes with the passes
+              before it — so a baker chooses it the way they choose the other two, before anything
+              is on the cake. Sandeep: *"just like hand draw option, another option for sweep."* */}
+          <button onClick={choose('sweep')} style={{ ...s.neutralBtn, width: '100%', marginTop: 8,
+                                                     minHeight: 46, flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 800 }}>Sweep it on</span>
+            <span style={{ fontSize: 10, color: '#b29aa2' }}>Broad passes of the knife. Where two cross, the colours mix.</span>
+          </button>
           <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
             style={{ ...s.deleteBtn, width: '100%', marginTop: 10 }}>
             Remove from cake
@@ -15685,13 +15715,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * per-stroke card is for. */
     if (mode === 'draw') {
       const drawn = design.tiers[i]?.brushStrokes ?? [];
+      /* Which gesture a drag lays. Held on `brushDraw` rather than on the band, because it is a
+         property of the hand and not of the cake — see the note on `choose`. */
+      const sweeping = brushDraw?.tierIndex === i && brushDraw?.kind === 'sweep';
       return (
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
-            Drag down the side of the cake for an upright stroke, or across it for one that sweeps
-            round. Drag across the top for a stroke on the lid. Each stroke opens its own card —
-            colour, thickness, width and pattern are set there, and apply to that stroke alone.
+            {sweeping
+              ? <>Drag the knife across the cake for a broad pass — down the side, round it, or
+                  across the top. Where two passes cross, their colours <b>mix</b>. Each one opens
+                  its own card.</>
+              : <>Drag down the side of the cake for an upright stroke, or across it for one that
+                  sweeps round. Drag across the top for a stroke on the lid. Each stroke opens its
+                  own card — colour, thickness, width and pattern are set there, and apply to that
+                  stroke alone.</>}
           </div>
+          {/* ⚠️ THE WAY BACK TO THE OTHER GESTURE, because the fork is only shown while the cake is
+              bare. Without this a baker who swept once could never lay a mark again without
+              removing the element — the same cul-de-sac the band/draw fork had before it gained
+              "Ring the cake too". Whatever is already on the cake stays: the two compose. */}
+          <button onClick={() => setBrushDraw({ tierIndex: i, kind: sweeping ? 'stroke' : 'sweep' })}
+            style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+            {sweeping ? 'Draw single strokes instead' : 'Sweep it on instead'}
+          </button>
           <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
             {drawn.length ? `${drawn.length} drawn. Tap one to change it.` : 'Nothing drawn yet.'}
           </div>
@@ -19192,8 +19238,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 hand-painted. */}
             {/* The bounds come from the geometry, which is also what `variedWidth` clamps to — two
                 copies of "how broad may a stroke be" is how a seeded width lands outside its dial. */}
+            {/* ⚠️ AND A SWEEP'S BOUNDS ARE ITS OWN. A pass is 1.1 × R where a mark's dial stops at
+                0.9, so sharing the range would clamp a sweep narrower than its own default the
+                moment it was touched — the dial would silently turn a pass back into a mark. */}
             <DialCell label="Width" value={pickedBrushStroke.width ?? BRUSH_ON_CAKE_DEFAULTS.width}
-              min={BRUSH_WIDTH_RANGE.min} max={BRUSH_WIDTH_RANGE.max} step={0.02} fmt={v => v.toFixed(2)}
+              min={(pickedBrushStroke.sweep ? SWEEP_WIDTH_RANGE : BRUSH_WIDTH_RANGE).min}
+              max={(pickedBrushStroke.sweep ? SWEEP_WIDTH_RANGE : BRUSH_WIDTH_RANGE).max}
+              step={0.02} fmt={v => v.toFixed(2)}
               /* Both, because dragging this is a baker choosing a new knife — the next stroke
                  varies around it rather than around the mark this one happened to leave. */
               onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v, baseWidth: v })} />
