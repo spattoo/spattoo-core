@@ -190,6 +190,12 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   tipJitter:  0.8,    // 0 … 1: how unevenly the streaks are spaced — equal pitch reads as a saw
   tipRows:    5,      // cross-sections through the release, so the dissolve has room to happen
   merge:      0.075,  // × R: how deep the dissolve reaches back from each finger's own end
+  /* ⚠️ HOW UNEVENLY THE KNIFE LANDS, × the stroke's own width. The release has torn since early on
+     and the landing never did — it was the first cross-section, a dead straight line across the
+     full width of every stroke on the cake. *"starting point does not need to be a horizontal
+     line."* A fraction of the WIDTH rather than a length, so a broad knife lands over a broader
+     patch and a narrow one does not get a landing longer than the mark itself. */
+  heel:       0.55,
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -207,7 +213,13 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   /* ⚠️ A LITTLE, NOT A LOT — a loaded knife wanders, it does not ripple. At 0.22 every stroke had a
      wavy outline and the band read as seaweed; the reference is straight-sided pads with angular
      corners, and the swell is just enough that no two edges are parallel. */
-  breathe: 0.08,  // 0 … 1: how much the width swells and pinches along the stroke
+  /* 0 … 1: how much the width swells and pinches along the stroke.
+     ⚠️ RAISED FROM 0.08, WHICH WAS BARELY THERE. At that value the two long edges were straight to
+     the eye and the whole mark read as a cut rectangle: *"same with the rest of it."* Cream does
+     not leave a ruled line — the blade loads and unloads as it travels, so the band widens and
+     narrows along its length. Swept against the reference photographs; see the note on `tipMin`
+     for the shape this works with. */
+  breathe: 0.35,
   /* ⚠️ THE TEAR IS COHERENT, NOT PER-ROW. brushStroke jitters each point independently, which is
      right at a dozen hand-placed points and becomes WHITE NOISE at forty: adjacent rows alternate
      and the edge comes out as pinking shears — the "row of identical notches… a decorative zigzag,
@@ -388,7 +400,7 @@ function tearBite(along, seed) {
   return -(run * 0.9 + Math.max(0, v - 0.55) * 0.7); // and a sharper nick inside the run
 }
 
-function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } = {}) {
+function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5, heel = 0 } = {}) {
   const n = stroke.band.length;
   const grid = stroke.band.map(([l, r], i) => {
     const along = n > 1 ? i / (n - 1) : 0;
@@ -448,7 +460,37 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } 
       }
     }
   }
-  return { grid, toTip };
+  /* ── Where the cream actually BEGINS, column by column ────────────────────────────────────────
+   *
+   * ⚠️ THE LANDING WAS A GUILLOTINE CUT, and it is the loudest thing left in the silhouette. The
+   * release already tears — `tip` is seven fingers of different lengths — but the other end was the
+   * first cross-section, a dead straight line across the full width, on every stroke on the cake.
+   * Sandeep, looking at a row of them: *"with brush, always rectangle is impossible. starting point
+   * does not need to be a horizontal line, same with ending, same with the rest of it."*
+   *
+   * ⚠️ SAME MACHINERY AS THE RELEASE, DELIBERATELY. `toTip` is a per-vertex distance that the mesh
+   * turns into a fade; this is the same field measured from the other end, so the landing dissolves
+   * into the cake over the same authored depth (`merge`) rather than needing a second idea of what
+   * a soft edge is. A knife touches down unevenly and the cream catches in patches — that IS a fade
+   * from nothing, not a differently-shaped hard edge.
+   *
+   * ⚠️ TWO SCALES, because one hash per column is white noise and reads as a comb. A slow term says
+   * which part of the blade was carrying cream when it landed, a fast one picks at that edge. */
+  const toHeel = grid.map(row => row.map(() => Infinity));
+  if (heel > 0 && stroke.width > 0) {
+    const reach = heel * stroke.width;
+    for (let j = 0; j < m; j++) {
+      const slow = seedFrac(seed * 7 + Math.floor(j / Math.max(2, Math.round(m / 7))), 23);
+      const fast = seedFrac(seed * 7 + j, 11);
+      const hj = reach * (0.65 * slow + 0.35 * fast);
+      let d = 0;
+      for (let i = 0; i < grid.length; i++) {
+        if (i > 0) d += Math.hypot(grid[i][j][0] - grid[i - 1][j][0], grid[i][j][1] - grid[i - 1][j][1]);
+        toHeel[i][j] = d - hj;
+      }
+    }
+  }
+  return { grid, toTip, toHeel };
 }
 
 
@@ -466,8 +508,9 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } 
  */
 function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
   const m = Math.max(3, p.across | 0);
-  const { grid, toTip } = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear,
-                                                 tipRows: p.tipRows });
+  const { grid, toTip, toHeel } = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe,
+                                                          tear: p.tear, tipRows: p.tipRows,
+                                                          heel: p.heel });
   const n = grid.length;
   const merge = p.merge * R;        // how deep the dissolve reaches back from each finger's end
   const pos = [], idx = [], thick = [];
@@ -593,7 +636,11 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          for each stroke."* Measured on that band: 16.5% of the mesh's vertices were under 0.4
          saturation, so it was the pigment and not the lighting however much it looked like a shadow.
          Where there is cream beneath, the layer thins into the SAME cream and nothing shows. */
-      const dissolve = smoothstep(0, merge, toTip[i][j]);
+      /* ⚠️ THE NEARER END WINS. A stroke short enough for its landing and its release to meet should
+         fade from both, not be claimed by whichever line is written second — `min` is what makes a
+         stubby mark read as a dab rather than as a rectangle with one soft end. */
+      const dissolve = Math.min(smoothstep(0, merge, toTip[i][j]),
+                                smoothstep(0, merge, toHeel[i][j]));
       const cover = side * (dissolve + (1 - dissolve) * onCream);
       thick.push(clamp01(cover));
     }

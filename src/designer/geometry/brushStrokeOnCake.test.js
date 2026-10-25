@@ -421,9 +421,17 @@ describe('coverage', () => {
          of this test did exactly that and failed a working change. */
       const m = BRUSH_ON_CAKE_DEFAULTS.across;
       const t = g.attributes.aThickness, p = g.attributes.position;
-      let lo = Infinity, hi = -Infinity;
+      /* ⚠️ THE RELEASE END ONLY, BECAUSE THE LANDING DISSOLVES NOW TOO. `heel` gives the start its
+         own torn, fading edge — which is the point of it — so a sweep of the whole centre column
+         measures BOTH ends and reports a band three times the release. The first version of this
+         test did that and failed a working change; the one before it swept every column and made
+         the same mistake with the two sides. The stroke climbs, so the release is the top: measure
+         down from the highest vertex the dissolve touches. */
+      let lo = Infinity, hi = -Infinity, top = -Infinity;
+      for (let v = (m / 2) | 0; v < g.userData.topCount; v += m) top = Math.max(top, p.getY(v));
       for (let v = (m / 2) | 0; v < g.userData.topCount; v += m) {
         if (t.getX(v) > 0.98) continue;                // untouched by the dissolve
+        if (p.getY(v) < top - climb * 0.5) continue;   // the landing's own fade, not this one
         lo = Math.min(lo, p.getY(v)); hi = Math.max(hi, p.getY(v));
       }
       return { span: hi - lo, len: climb };
@@ -1116,6 +1124,45 @@ describe('a lid that is not a disc', () => {
     for (let i = 0; i < pos.count; i++) { lowest = Math.min(lowest, pos.getY(i)); maxZ = Math.max(maxZ, pos.getZ(i)); }
     expect(lowest).toBeLessThan(0.9);              // it fell down the front wall
     expect(maxZ).toBeLessThan(1.35);               // and stayed against that wall, not out at R
+  });
+});
+
+describe('the landing is torn, not a guillotine cut', () => {
+  /* ⚠️ THE OTHER END HAD NEVER BEEN LOOKED AT. The release has torn since early on — `tip` is seven
+     fingers of different lengths — while the start was the first cross-section, a dead straight line
+     across the full width of every stroke on the cake. Sandeep, on a row of them: *"with brush,
+     always rectangle is impossible. starting point does not need to be a horizontal line."* */
+  const landingSpread = (heel) => {
+    const g = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, weight: 0.6, seed: 11, heel,
+      path: brushGesture({ at: 0, seed: 11, climb: 0.6, climbVar: 0, sweep: 0.012 }) });
+    const m = BRUSH_ON_CAKE_DEFAULTS.across;
+    const t = g.attributes.aThickness, pos = g.attributes.position;
+    /* Per column, the height at which the cream first reaches full thickness — i.e. where this part
+       of the blade actually started laying down. A straight landing puts every column at one height. */
+    const starts = [];
+    for (let j = 0; j < m; j++) {
+      let y = null;
+      for (let v = j; v < g.userData.topCount; v += m) {
+        if (t.getX(v) > 0.9) { y = pos.getY(v); break; }
+      }
+      if (y != null) starts.push(y);
+    }
+    return Math.max(...starts) - Math.min(...starts);
+  };
+
+  it('starts at a different height across the blade, so the edge is not a ruled line', () => {
+    expect(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel)).toBeGreaterThan(0.02);
+  });
+
+  /* ⚠️ AND THE KNOB IS WHAT DOES IT. Without this the test above passes on the stroke's own
+     curvature and would keep passing if `heel` stopped being read at all. */
+  it('is a ruled line again when the row asks for none', () => {
+    expect(landingSpread(0)).toBeLessThan(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel) * 0.4);
+  });
+
+  it('scales with the stroke, so a broad knife lands over a broader patch', () => {
+    expect(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel * 2))
+      .toBeGreaterThan(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel));
   });
 });
 
