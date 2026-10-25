@@ -15676,8 +15676,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
             Drag down the side of the cake for an upright stroke, or across it for one that sweeps
-            round. Each stroke opens its own card — colour, thickness, width and pattern are set
-            there, and apply to that stroke alone.
+            round. Drag across the top for a stroke on the lid. Each stroke opens its own card —
+            colour, thickness, width and pattern are set there, and apply to that stroke alone.
           </div>
           <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
             {drawn.length ? `${drawn.length} drawn. Tap one to change it.` : 'Nothing drawn yet.'}
@@ -15789,8 +15789,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {drawing ? (
             <>
               <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.5 }}>
-                Drag down the side for an upright stroke, or across it for one that sweeps round.
-                Each one opens its own card.
+                Drag down the side for an upright stroke, across it for one that sweeps round, or
+                across the top for one on the lid. Each one opens its own card.
               </div>
               <button onClick={() => setBrushDraw(null)}
                 style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>

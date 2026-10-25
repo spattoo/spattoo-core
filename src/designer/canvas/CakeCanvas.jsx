@@ -3601,6 +3601,22 @@ function FrontMarker({ frontZ }) {
  * are the same answer by construction — which is exactly what came apart between the hand and the
  * cream before today.
  */
+/* The lid as a flat cap, built from the tier's own outline.
+ *
+ * ⚠️ A BIG PLANE WOULD BE EASIER AND WRONG — it would swallow every tap that missed the cake,
+ * including the ones meant to deselect or orbit. ⚠️ AND BOTH SHAPES ARE BUILT THE SAME WAY, which
+ * is the point of having one of these: a `<circleGeometry>` in JSX stands UPRIGHT (it is built in
+ * XY, like THREE.Shape), so a round cake's lid target would be a disc on edge through the middle of
+ * the cake, catching taps nowhere near the lid. Same construction, same single rotation, no case to
+ * get wrong — and now no second copy to get wrong either, since the drag target needs this too. */
+function buildLidCap(tier, samples) {
+  const g = samples
+    ? new THREE.ShapeGeometry(new THREE.Shape(samples.pts.map(q => new THREE.Vector2(q.x, q.z))))
+    : new THREE.CircleGeometry(tier.radius, 64);
+  g.rotateX(Math.PI / 2);            // XY → XZ: the lid lies flat
+  return g;
+}
+
 function SprinkleTapTarget({ tier, zone, onPlace }) {
   const shape = useMemo(() => tierShape(tier), [tier]);
   const round = isRoundWall(shape);
@@ -3617,18 +3633,7 @@ function SprinkleTapTarget({ tier, zone, onPlace }) {
   ), [side, samples, tier.height]);
   /* The lid: the outline as a flat cap. A big plane would be easier and wrong — it would swallow
      every tap that missed the cake, including the ones meant to deselect or orbit. */
-  const capGeo = useMemo(() => {
-    if (side) return null;
-    /* ⚠️ BOTH CAPS ARE BUILT THE SAME WAY, and the round one is why. A `<circleGeometry>` in the
-       JSX would have stood UPRIGHT — it is built in XY like THREE.Shape — so the round cake's lid
-       target would have been a disc standing on edge through the middle of the cake, catching taps
-       nowhere near the lid. Same construction, same single rotation, no case to get wrong. */
-    const g = samples
-      ? new THREE.ShapeGeometry(new THREE.Shape(samples.pts.map(q => new THREE.Vector2(q.x, q.z))))
-      : new THREE.CircleGeometry(tier.radius, 64);
-    g.rotateX(Math.PI / 2);          // XY → XZ: the lid lies flat
-    return g;
-  }, [side, samples, tier.radius]);
+  const capGeo = useMemo(() => (side ? null : buildLidCap(tier, samples)), [side, samples, tier.radius]);
   useEffect(() => () => { wallGeo?.dispose(); capGeo?.dispose(); }, [wallGeo, capGeo]);
 
   const place = e => {
@@ -3654,10 +3659,25 @@ function SprinkleTapTarget({ tier, zone, onPlace }) {
   );
 }
 
-function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
+/* ⚠️ THE WALL IS NOT THE ONLY SURFACE A HAND DRAWS ON, and for a long time this said it was — the
+ * name was `WallDragTarget` and the lid had no target at all. Sandeep: *"cream strokes element- i
+ * cannot draw strokes on the top of the cake. it only allows on the side."*
+ *
+ * ⚠️ AND WHICH SURFACE IS NOT A SETTING. This feature already decided that once: *"vertical or
+ * horizontal is the DRAG, not a setting"* — `brushGestureFromDrag` reads the lean out of the
+ * gesture rather than offering two buttons. The same answer applies here, so BOTH targets mount
+ * while drawing and the surface is simply whichever one the hand landed on. A Top/Side toggle would
+ * be a second, worse way of saying where your finger already is.
+ *
+ * The two halves differ in what a point MEANS, which is why each gets its own sampling: a wall is a
+ * cylinder, so it answers in turns and a fraction of the height (the cream scrape wants exactly
+ * that); a lid is a disc with no "round" and no "up", so it answers a plain 3-D point. */
+function SurfaceDragTarget({ tier, surface = 'side', onDown = null, onDrag = null, onUp = null }) {
   const { camera, gl } = useThree();
   const pressed = useRef(false);
   const last = useRef({ x: 0, y: 0 });
+  const onTop = surface === 'top';
+  const topY = tier.baseY + tier.height;
   const R = tier.radius + 0.04;   // hit just outside the proud band
   /* ⚠️ THE TARGET WAS A CYLINDER, IN BOTH HALVES — the invisible mesh the pointer events fire on,
      AND the maths that turns a click into a place on the wall. On a sheet or a heart that is a
@@ -3670,15 +3690,26 @@ function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   /* The prism is built from the SAME samples the ray is tested against, pushed out along each
      normal — so what the pointer can reach and what the maths answers cannot disagree. */
   const targetGeo = useMemo(() => (
-    samples ? buildOutlinePrism(samples.pts.map(q => ({ x: q.x + q.nx * 0.04, z: q.z + q.nz * 0.04 })), tier.height) : null
-  ), [samples, tier.height]);
+    onTop
+      ? buildLidCap(tier, samples)
+      : samples ? buildOutlinePrism(samples.pts.map(q => ({ x: q.x + q.nx * 0.04, z: q.z + q.nz * 0.04 })), tier.height) : null
+  ), [onTop, samples, tier.height, tier.radius]);
   useEffect(() => () => targetGeo?.dispose(), [targetGeo]);
+
+  /* ⚠️ THE RAY IS CAST AGAINST AN INFINITE PLANE, NOT AGAINST THE CAP, and that is deliberate: a
+     stroke drawn off the edge of the lid is meant to DRAPE down the side — `buildBrushStrokeOnFlat`
+     does exactly that, because it is what cream does when a knife runs off the rim. Clamping the
+     drag to the cap would take that away. The cap still decides where a drag may BEGIN, so a press
+     beside the cake still deselects or orbits rather than painting. */
+  const lidPlane = useMemo(() => new THREE.Plane(new THREE.Vector3(0, 1, 0), -topY), [topY]);
 
   const sample = (clientX, clientY, fn) => {
     const ray = buildRay(clientX, clientY, gl.domElement, camera);
-    const p = round
-      ? cylinderHitPoint(ray, R)
-      : wallHitPoint(ray, samples, { baseY: tier.baseY, wallH: tier.height, inflate: 0.04 });
+    const p = onTop
+      ? planePoint(ray, lidPlane)
+      : round
+        ? cylinderHitPoint(ray, R)
+        : wallHitPoint(ray, samples, { baseY: tier.baseY, wallH: tier.height, inflate: 0.04 });
     if (!p || !fn) return;
     let a = Math.atan2(p.z, p.x); if (a < 0) a += Math.PI * 2;
     const frac = Math.max(0, Math.min(1, (p.y - tier.baseY) / tier.height));
@@ -3697,7 +3728,7 @@ function WallDragTarget({ tier, onDown = null, onDrag = null, onUp = null }) {
   }, [onUp]);
 
   return (
-    <mesh position={[0, tier.baseY + tier.height / 2, 0]} userData={{ isCreamPaint: true }}
+    <mesh position={[0, onTop ? topY : tier.baseY + tier.height / 2, 0]} userData={{ isCreamPaint: true }}
       onPointerDown={e => {
         e.stopPropagation();
         pressed.current = true; last.current = { x: e.clientX, y: e.clientY };
@@ -4115,7 +4146,7 @@ function CakeScene({
       <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight} />
 
       {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
-          wants the angle. One component answers both — see WallDragTarget. */}
+          wants the angle. One component answers both — see SurfaceDragTarget. */}
       {/* One tap, one sprinkle, on whichever surface the card turned on. */}
       {sprinkleHand && tierData[sprinkleHand.tierIndex] && (
         <SprinkleTapTarget
@@ -4123,15 +4154,24 @@ function CakeScene({
           zone={sprinkleHand.zone}
           onPlace={p => onSprinklePlace?.(p)} />
       )}
-      {brushDraw && tierData[brushDraw.tierIndex] && (
-        <WallDragTarget
+      {/* ⚠️ BOTH SURFACES, AND THE HAND PICKS. The lid had no target at all, so a drag across the
+          top of the cake met nothing and drew nothing — *"i cannot draw strokes on the top of the
+          cake. it only allows on the side."* Mounting both and letting the gesture say which is the
+          same rule this feature already follows for up-or-across: where your finger is IS the
+          answer, so there is nothing to choose first. The surface travels with the gesture, because
+          a wall point and a lid point mean different things and only the target knows which it
+          handed over. */}
+      {brushDraw && tierData[brushDraw.tierIndex] && ['side', 'top'].map(sfc => (
+        <SurfaceDragTarget
+          key={sfc}
           tier={tierData[brushDraw.tierIndex]}
-          onDown={({ point }) => onBrushDrawStart?.(brushDraw.tierIndex, point)}
+          surface={sfc}
+          onDown={({ point }) => onBrushDrawStart?.(brushDraw.tierIndex, point, sfc)}
           onDrag={({ point }) => onBrushDrawTo?.(brushDraw.tierIndex, point)}
           onUp={() => onBrushDrawEnd?.(brushDraw.tierIndex)} />
-      )}
+      ))}
       {creamPaint && tierData[creamPaint.tierIndex] && (
-        <WallDragTarget
+        <SurfaceDragTarget
           tier={tierData[creamPaint.tierIndex]}
           onDrag={({ theta01, frac }) => onCreamPaint?.(creamPaint.tierIndex, creamPaint.layerId, theta01, frac)}
         />
