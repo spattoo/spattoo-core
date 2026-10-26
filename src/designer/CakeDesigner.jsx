@@ -22922,18 +22922,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 </div>
               </>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
-              <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
-                style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
-                         fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', border: 'none' }}>
-                Start
-              </button>
             {/* ⚠️ THE SHAPE IS ASKED, NOT ASSUMED. The first version always wrote 9:16 — *"record and
                 save is always downloading a vertical video. i have not asked like that. let the
                 user choose at least."* Vertical is the right shape for posting and the wrong thing
                 to decide for somebody. "As on screen" is the default because it is what the button
                 did before, and because it is the one answer that surprises nobody. */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+            {/* ⚠️ ITS OWN ROW, ABOVE THE BUTTONS — it was dropped INSIDE the action row, between
+                Start and Record & save. Four pills then wrapped into three lines inside a single
+                flex item and shouldered the two buttons apart to different heights. Sandeep:
+                *"align the buttons."* It is a SETTING, like the grid chips above it, and it is
+                chosen before either button is pressed — narrating text goes before the thing it
+                narrates, never beside the action (INVARIANTS #11). Same spacing as that chip row,
+                so the panel's settings all read as one column. */}
+            <div style={{ margin: '2px 0 4px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
               <span style={s.editPanelLabel}>Video shape</span>
               <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
                 {[['As on screen', null], ['Vertical', 9 / 16], ['Square', 1], ['Wide', 16 / 9]].map(([label, v]) => (
@@ -22942,6 +22943,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ))}
               </div>
             </div>
+            {/* ⚠️ IT ONLY GOVERNS THE FILE, and sitting between the two buttons implied it governed
+                both. Every other setting in this panel carries its line; this one has to, because
+                the question it raises — does picking Vertical change what Start plays? — has no
+                answer on screen otherwise. */}
+            <div style={{ fontSize: 11, color: '#999', margin: '0 0 10px' }}>
+              The shape of the saved file. Start plays the build on screen as it is.
+            </div>
+            {/* ⚠️ WRAPS, because a phone is 375px and this row carries two buttons and a count. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+              {/* ⚠️ A TRANSPARENT BORDER, NOT `none`. Record & save carries a 1px edge and this one
+                  did not, so the two buttons came out 34px and 36px against `alignItems: center`
+                  and sat a pixel out of true — visible, and the other half of *"align the buttons."*
+                  Matching the BOX rather than nudging a margin keeps them level whatever either
+                  one's padding becomes later. */}
+              <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
+                style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
+                         fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+                         border: '1px solid transparent' }}>
+                Start
+              </button>
 
               {/* ⚠️ A SECOND BUTTON, NOT A MODE. Playing the build and keeping a file are two
                   different intentions — one is "show me", the other is "give me the video" — and a
