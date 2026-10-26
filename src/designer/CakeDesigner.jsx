@@ -74,6 +74,7 @@ import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, M
 import { secondsLeft, clampDelay, DELAY_MAX, DELAY_DEFAULT } from './reel/takeDelay.js';
 import { recordCanvas, pickMimeType, extensionFor, downloadBlob } from './reel/recordReel.js';
 import { STRENGTH_DEFAULT, STRENGTH_MIN } from './reel/takeGrid.js';
+import { LENS_GLIDE_S } from './reel/cinematicLens.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
@@ -724,6 +725,20 @@ function PenSlider({ label, value, min, max, step, onChange, onCommit, fmt = v =
 // tier at a time, so tapping a number switches which. Hidden on single-tier cakes. Config-free —
 // the SAME picker for any finish (no slug/type branch). Lives in ONE place so the two finish cards
 // don't each carry a copy (the jscpd duplication gate).
+/* The small black-when-chosen pill the take panels and the sand card both use for "which one".
+   ⚠️ ONE DEFINITION. It was written twice within an hour — once for the sand card's surface picker
+   and once for the build video's shape — and two copies of a button style is how two rows on one
+   screen end up disagreeing, which is the complaint FinishTierPicker's own note below records. */
+function pillStyle(active) {
+  return {
+    minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+    cursor: 'pointer', fontFamily: 'inherit',
+    border: `1.5px solid ${active ? INK : LINE}`,
+    background: active ? INK : SURFACE,
+    color: active ? SURFACE : INK,
+  };
+}
+
 function FinishTierPicker({ tiers, tier, onPick }) {
   if (tiers.length <= 1) return null;
   /* ⚠️ BLACK, like the cards it sits in. Sandeep: "buttons in black". This picker renders directly
@@ -4883,6 +4898,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* How strongly the grid is drawn. A control rather than a constant because the constant
      was too faint to see — see takeGrid.js. */
   const [takeGridStrength, setTakeGridStrength] = useState(STRENGTH_DEFAULT);
+  /* ── The shape of a saved build video ──────────────────────────────────────────────────────────
+   * ⚠️ `null` IS "AS ON SCREEN", AND IT IS THE DEFAULT. The first version always wrote 9:16 without
+   * asking — Sandeep: *"record and save is always downloading a vertical video. i have not asked
+   * like that. let the user choose at least."* Vertical is the right shape for posting and the
+   * wrong thing to assume, so it is one tap away and nothing is forced. */
+  const [buildShape, setBuildShape] = useState(null);
+  /* True while the camera is being moved into position for a recording, BEFORE a frame is captured.
+     See saveBuildVideo for why the move must not be in the file. */
+  const [takePreRoll, setTakePreRoll] = useState(false);
   /* Recording the build to a file. `takeFrame` holds the capture stream's frame request while a
      recording runs; `buildEnded` is resolved when the last piece lands, which is what tells the
      recorder to stop. Both null the rest of the time, so nothing is mounted for them. */
@@ -4908,7 +4932,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * start disagreeing. Everything that must disappear while filming asks this.
    */
   const filmingTake = filmSpin || build != null;
-  const takeWindow = filmingTake || lensReturning;
+  const takeWindow = filmingTake || lensReturning || takePreRoll;
 
   const buildTimings = buildPlan;
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
@@ -5014,6 +5038,31 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * one: the stream is opened at 0 fps and driven a frame at a time (see TakeFramePump), which is
    * the bargain that stopped the reel stuttering.
    */
+  /* ── The build, straight to a file ─────────────────────────────────────────────────────────────
+   *
+   * *"can we have the option to download this build video."* Until this existed the only way to keep
+   * one was to point a screen recorder at the designer, which carries whatever else is on screen.
+   *
+   * ⚠️ THE CAMERA IS PUT IN POSITION BEFORE A SINGLE FRAME IS CAPTURED, and that is the fix for
+   * *"build video is flickering at beginning and ending (zoom)."* Measured on a recorded take: the
+   * board went 158px wide, SHRANK to 144 over the first 0.3s, then grew to 186 by 1.0s. Two camera
+   * moves were fighting — the reframe easing toward the chosen shape while the lens narrowed the
+   * other way — and both were inside the recording. FitCakeToView's own note warns about exactly
+   * this pair: "one eased, the other jumped, and they were not synchronised."
+   *
+   * So the shape and the lens are applied, the camera is given time to come to rest, and only then
+   * does the recorder open. **The file contains the build and nothing else** — no zoom in, no zoom
+   * out — which is what you want in something you are going to post. The on-screen Start still
+   * plays the eased move, because there it IS the experience.
+   *
+   * ⚠️ NO HEAD START HERE. `startAfter` buys time to reach a recorder in another window; recording
+   * from inside the page has nothing to reach, so honouring it would put seconds of a motionless
+   * cake at the front of the file.
+   *
+   * ⚠️ IT RECORDS THE CANVAS, so no rail, header or buttons are in it — the three faults a screen
+   * recording has. Reuses recordReel.js rather than a second recorder, including its 0 fps stream
+   * driven one frame at a time (see TakeFramePump).
+   */
   async function saveBuildVideo() {
     if (buildSaving) return;
     const canvasEl = frameRef.current?.querySelector('canvas');
@@ -5024,45 +5073,43 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     handleDeselect();
     setBuildSaveError(null);
     setBuildSaving(true);
-    /* ── Vertical, like the reel ───────────────────────────────────────────────────────────────
-     *
-     * *"i actually want to test the build video from mobile. it should be a vertical video."*
-     *
-     * ⚠️ THE SAME `framing` THE REEL ALREADY USES, not a second mechanism. R3F sizes the canvas from
-     * its container, so constraining that container to 9:16 makes the drawing buffer and
-     * `camera.aspect` follow by themselves — what is on screen IS what records. A separate
-     * off-screen renderer would be a second answer to a question this file has already answered.
-     *
-     * ⚠️ AND THE FIT HAS TO SEE IT. The aspect change is what re-frames the cake for the taller
-     * window; `FitCakeToView` treats aspect as a reason to re-fit, so the one frame of settling
-     * below is the camera arriving before the recorder opens. Without the wait the first frames are
-     * the old framing, mid-glide. */
-    setFraming(true);
-    /* ⚠️ WAIT FOR THE CANVAS TO STOP RESIZING, not for a fixed number of frames. The container
-       changes shape over a 180ms eased transition, so R3F resizes the drawing buffer on EVERY frame
-       of it — and a MediaRecorder whose source changes resolution mid-recording produces a file the
-       browser itself warns about: "the codec description is not supposed to change during the
-       entire recording". Two rAF was not enough; the resulting mp4 would not even seek. So poll the
-       buffer until it holds still, with a ceiling so a stuck transition cannot hang the button. */
-    await new Promise((resolve) => {
-      let last = `${canvasEl.width}x${canvasEl.height}`;
-      let still = 0;
-      const deadline = Date.now() + 1500;
-      const tick = () => {
-        const now = `${canvasEl.width}x${canvasEl.height}`;
-        still = now === last ? still + 1 : 0;
-        last = now;
-        if (still >= 6 || Date.now() > deadline) { resolve(); return; }
-        requestAnimationFrame(tick);
-      };
-      requestAnimationFrame(tick);
-    });
+
+    /* A shape constrains the canvas, and R3F sizes the drawing buffer from its container — so what
+       is on screen IS what records, with no gl.setSize. `null` leaves the canvas as it is. */
+    const shaped = buildShape != null;
+    if (shaped) { setFrameAspect(buildShape); setFraming(true); }
+    // Engage the take's lens now, so its move happens off-camera.
+    setLensReturning(true);
+    setTakePreRoll(true);
+
     try {
+      /* ⚠️ WAIT FOR THE CANVAS TO STOP RESIZING, not for a fixed number of frames. The container
+         changes shape over an eased transition, so R3F resizes the drawing buffer on EVERY frame of
+         it — and a MediaRecorder whose source changes resolution mid-recording produces a file the
+         browser itself warns about: "the codec description is not supposed to change during the
+         entire recording". */
+      await new Promise((resolve) => {
+        let last = `${canvasEl.width}x${canvasEl.height}`;
+        let still = 0;
+        const deadline = Date.now() + 1500;
+        const tick = () => {
+          const now = `${canvasEl.width}x${canvasEl.height}`;
+          still = now === last ? still + 1 : 0;
+          last = now;
+          if (still >= 6 || Date.now() > deadline) { resolve(); return; }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      /* ⚠️ AND THEN FOR THE CAMERA. The buffer settling is not the camera settling: the lens glides
+         for LENS_GLIDE_S and the fit eases to the new shape over its own FIT_EASE_S (1.2s, in
+         CakeCanvas). Recording before both are done is what put the shrink-then-grow in the file. */
+      await new Promise(r => setTimeout(r, LENS_GLIDE_S * 1000 + 1200 + 200));
+
       const blob = await recordCanvas(canvasEl, async (requestFrame) => {
         takeFrame.current = requestFrame;
         await new Promise((resolve) => {
           buildEnded.current = resolve;
-          setLensReturning(true);
           setBuild(0);
         });
       }, { mimeType });
@@ -5071,14 +5118,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     } catch (err) {
       setBuildSaveError(err?.message ?? 'The recording failed.');
     } finally {
-      /* ⚠️ IN `finally`, LIKE THE RECORDER'S OWN TEARDOWN. A half-cleared pump leaves the next take
-         feeding frames into a stream that has already stopped. */
+      /* ⚠️ IN `finally`, like the recorder's own teardown and like closeReelPanel's. A take that
+         THREW must not leave the designer in a letterbox with no way back — the baker's only escape
+         would be guessing that opening and closing the reel panel clears it. Dropping the pre-roll
+         is what sends the lens home, off-camera, after the file is written. */
       takeFrame.current = null;
       buildEnded.current = null;
-      /* ⚠️ IN `finally`, like the recorder's own teardown and like closeReelPanel's. A take that
-         THREW must not leave the designer stuck in a 9:16 letterbox with no way back — the baker's
-         only escape would be guessing that opening and closing the reel panel clears it. */
-      setFraming(false);
+      setTakePreRoll(false);
+      if (shaped) setFraming(false);
       setBuildSaving(false);
     }
   }
@@ -17378,10 +17425,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
        recursion on the first tap of any slider, on the tier path, which is the path that already
        worked. It builds and reads almost right, which is the whole danger of it. */
     const editSand = (changes) => (onBoard ? updateBoardSand(changes) : updateSand(i, changes));
-    const surfaceBtn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11,
-      fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
-      border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE,
-      color: active ? SURFACE : INK });
+    const surfaceBtn = pillStyle;
     const el = sd.elementId ? elementById.get(sd.elementId) : null;
     const colors = el?.placement_config?.colors ?? SAND_COLORS;
     /* Whether this can be taken off the cake is the ADMIN's call, read off the row — never
@@ -19399,7 +19443,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               takeGridWall={takeWindow && takeGridWall}
               takeGridStrength={takeGridStrength}
               onTakeFrame={buildSaving ? (() => takeFrame.current?.()) : null}
-              takeLensActive={filmingTake}
+              takeLensActive={filmingTake || takePreRoll}
               onTakeLensReturned={() => setLensReturning(false)}
               assembly={build == null ? null : { time: build, plan: buildTimings }}
               onAssemblyTick={setBuild}
@@ -22851,6 +22895,21 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                          fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', border: 'none' }}>
                 Start
               </button>
+            {/* ⚠️ THE SHAPE IS ASKED, NOT ASSUMED. The first version always wrote 9:16 — *"record and
+                save is always downloading a vertical video. i have not asked like that. let the
+                user choose at least."* Vertical is the right shape for posting and the wrong thing
+                to decide for somebody. "As on screen" is the default because it is what the button
+                did before, and because it is the one answer that surprises nobody. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 2 }}>
+              <span style={s.editPanelLabel}>Video shape</span>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {[['As on screen', null], ['Vertical', 9 / 16], ['Square', 1], ['Wide', 16 / 9]].map(([label, v]) => (
+                  <button key={label} onClick={() => setBuildShape(v)}
+                          style={pillStyle(buildShape === v)}>{label}</button>
+                ))}
+              </div>
+            </div>
+
               {/* ⚠️ A SECOND BUTTON, NOT A MODE. Playing the build and keeping a file are two
                   different intentions — one is "show me", the other is "give me the video" — and a
                   checkbox beside Start would make the baker set a switch to find out which one

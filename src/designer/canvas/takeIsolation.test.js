@@ -30,9 +30,18 @@ describe('filming is isolated from designing', () => {
        shot. Unmounting TakeLens the moment the build ended is what made the return a jump. Pinned
        by their DEFINITIONS, so widening either one has to be deliberate. */
     expect(designer).toMatch(/const filmingTake = filmSpin \|\| build != null;/);
-    expect(designer).toMatch(/const takeWindow = filmingTake \|\| lensReturning;/);
+    /* ⚠️ `takePreRoll` IS THE THIRD STATE, and it is why a recorded build no longer flickers. The
+       camera is moved into position — the shape, then the lens — BEFORE the recorder opens, so the
+       move happens off-camera. Measured on a recorded take before this: the board went 158px wide,
+       shrank to 144 over 0.3s, then grew to 186. After: 454px from the first frame to the last,
+       with no jump and no reversal. It belongs in BOTH predicates — the lens has to be mounted
+       (takeWindow) and pointed at the take's own focal length (active) while nothing is filming. */
+    expect(designer).toMatch(/const takeWindow = filmingTake \|\| lensReturning \|\| takePreRoll;/);
     expect(designer).toMatch(/takeLens=\{takeWindow \? takeLens : null\}/);
-    expect(designer).toMatch(/takeLensActive=\{filmingTake\}/);
+    expect(designer).toMatch(/takeLensActive=\{filmingTake \|\| takePreRoll\}/);
+    // ⚠️ AND THE PRE-ROLL IS DROPPED IN `finally`, or a failed recording strands the lens.
+    const save = designer.slice(designer.indexOf('async function saveBuildVideo('));
+    expect(save.slice(0, save.indexOf('\n  }\n'))).toMatch(/finally \{[\s\S]*?setTakePreRoll\(false\);/);
     expect(designer).toMatch(/onTakeLensReturned=\{\(\) => setLensReturning\(false\)\}/);
   });
 
