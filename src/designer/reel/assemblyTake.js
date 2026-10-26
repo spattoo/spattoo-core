@@ -36,6 +36,20 @@
  * down at 10.1s, and no single second carries more than 14% of the drop. The piece still lands
  * gently — it just stops pretending to be finished for the second half of the shot.
  *
+ * ⚠️ AND THEY DO NOT ALL ARRIVE THE SAME WAY. Sandeep: *"many elements starting from same point.
+ * can it be random? and why all have to come from top?"* With one height and one swing for the whole
+ * cake, the decorations are a rigid copy of the finished arrangement floating above it — they move
+ * together, so the eye reads one object, not many pieces. `scatter` gives each piece its own start
+ * height, its own amount of swing, its own DIRECTION of swing, and a horizontal reach: how far out
+ * it begins, and on which bearing. A piece with a small height and a large reach flies in sideways
+ * across the board; one with the reverse drops in from overhead. Everything still lands exactly on
+ * its seat.
+ *
+ * ⚠️ RANDOM PER PIECE, IDENTICAL EVERY RUN. The variety is a HASH OF THE INDEX, not `Math.random`.
+ * This module's whole claim is that the take is "exact, repeatable, and true of the template it is
+ * showing" — a shot you cannot film twice is not a shot, and a baker who re-records after a tweak
+ * should get the same choreography back.
+ *
  * ⚠️ THEY COME FROM FURTHER, AND THEY MAY CIRCLE. Sandeep: *"the elements are coming from very near.
  * they can come from bit far, if needed they can turn around the cake before getting added on
  * cake."* `rise` is the height, `swing` is how far around the cake axis a piece travels on the way
@@ -66,6 +80,10 @@ export const ASSEMBLY_DEFAULTS = Object.freeze({
   /* How far around the cake a piece swings on its way in, in TURNS. 0.25 is a quarter circle, 1 is
      a full lap. The piece's seat is what rotates, so it arrives facing exactly as designed. */
   swing: 0.3,
+  /* How differently each piece arrives, 0…1. At 0 every decoration starts at the same height and
+     sweeps the same way — one rigid cake floating above the cake. Higher gives each its own height,
+     its own swing (including which way round), and its own bearing to come in on. */
+  scatter: 0.55,
 });
 
 /* ⚠️ A CEILING ON `spread`, because at 1 every piece would have ZERO time to fall: the starts would
@@ -96,8 +114,42 @@ const spreadOf = (plan) => Math.min(MAX_SPREAD, Math.max(0, num(plan?.spread, 0)
 const totalOf  = (plan) => Math.max(0, num(plan?.total, 0));
 const riseOf   = (plan) => Math.min(MAX_RISE, Math.max(0, num(plan?.rise, 0)));
 const swingOf  = (plan) => Math.min(MAX_SWING, Math.max(-MAX_SWING, num(plan?.swing, 0)));
+const scatterOf = (plan) => Math.min(1, Math.max(0, num(plan?.scatter, 0)));
 
 const TAU = Math.PI * 2;
+
+/* A stable number in [0, 1) for piece `i` on channel `salt`.
+   ⚠️ NOT `Math.random`. See the header: the same cake must film the same way every time. */
+function hash01(i, salt) {
+  let h = Math.imul((i | 0) + 1, 0x9E3779B1) ^ Math.imul((salt | 0) + 1, 0x85EBCA77);
+  h = Math.imul(h ^ (h >>> 15), 0x2C1B3C6D);
+  h ^= h >>> 12;
+  h = Math.imul(h, 0x297A2D39);
+  h ^= h >>> 15;
+  return (h >>> 0) / 4294967296;
+}
+
+/**
+ * How THIS piece differs from the plan's single set of numbers, at full extension.
+ *
+ * ⚠️ AT `scatter` 0 THIS IS THE IDENTITY — multipliers of 1 and no reach — so a plan that asks for
+ * no variety gets exactly the old, uniform choreography and nothing here can perturb it.
+ */
+function pieceJitter(index, plan) {
+  const sc = scatterOf(plan);
+  if (sc <= 0) return { riseMul: 1, swingMul: 1, reach: 0, bearing: 0 };
+  const i = Math.max(0, Math.floor(num(index, 0)));
+  return {
+    // Heights spread either side of the set one. Near the bottom of the range a piece barely rises,
+    // so its reach does the work and it arrives from the side — the answer to "why all from top".
+    riseMul: 1 + (hash01(i, 1) * 2 - 1) * sc * 0.9,
+    // Magnitude AND direction: half the pieces sweep in the other way round the cake.
+    swingMul: (hash01(i, 2) < 0.5 ? -1 : 1) * (1 + (hash01(i, 3) * 2 - 1) * sc * 0.6),
+    // How far out it starts, as a fraction of the cake's reach, and on what bearing.
+    reach: sc * (0.35 + hash01(i, 4) * 1.15),
+    bearing: hash01(i, 5) * TAU,
+  };
+}
 
 /** Seconds the whole build runs for. ⚠️ Independent of the piece count — that is the point. */
 export function assemblyTotal(plan = ASSEMBLY_DEFAULTS) {
@@ -144,22 +196,36 @@ export function pieceStart(index, count, plan = ASSEMBLY_DEFAULTS) {
  *            it has landed, so a finished build is the design exactly as saved.
  *   swing    RADIANS still to travel around the cake's axis before it is over its seat. Also 0 on
  *            landing, and for the same reason: the take has to end on the design, not near it.
+ *   offX,offZ  how far from over its seat it currently sits, ACROSS the board, as fractions of the
+ *            cake's reach. This is the half that lets a piece arrive from the side instead of from
+ *            overhead. 0 on landing, like everything else.
  *
- * ⚠️ BOTH UNWIND ON ONE EASED PROGRESS, so height and angle are locked together and the piece flies
- * a single spiral. Easing them separately is how an arrival ends up drifting sideways after it has
- * already touched down.
+ * ⚠️ ALL OF THEM UNWIND ON ONE EASED PROGRESS, so height, angle and ground distance are locked
+ * together and the piece flies a single path. Easing them separately is how an arrival ends up
+ * drifting sideways after it has already touched down.
  */
 export function assemblyPose(index, count, t, plan = ASSEMBLY_DEFAULTS) {
-  const high = riseOf(plan);
-  const turn = swingOf(plan) * TAU;
+  const j = pieceJitter(index, plan);
+  const high = riseOf(plan) * j.riseMul;
+  const turn = swingOf(plan) * TAU * j.swingMul;
+  const offX = j.reach * Math.cos(j.bearing);
+  const offZ = j.reach * Math.sin(j.bearing);
   const time = Math.max(0, num(t, 0));
   const start = pieceStart(index, count, plan);
   const flight = pieceFlight(plan, count);
 
-  if (time < start) return { visible: false, rise: high, swing: turn };
-  if (flight <= 0 || time >= start + flight) return { visible: true, rise: 0, swing: 0 };
+  if (time < start) return { visible: false, rise: high, swing: turn, offX, offZ };
+  if (flight <= 0 || time >= start + flight) {
+    return { visible: true, rise: 0, swing: 0, offX: 0, offZ: 0 };
+  }
   const left = 1 - settle((time - start) / flight);
-  return { visible: true, rise: high * left, swing: turn * left };
+  return {
+    visible: true,
+    rise: high * left,
+    swing: turn * left,
+    offX: offX * left,
+    offZ: offZ * left,
+  };
 }
 
 /** Has every piece landed? */

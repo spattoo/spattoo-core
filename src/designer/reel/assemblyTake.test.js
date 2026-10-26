@@ -4,7 +4,12 @@ import {
   ASSEMBLY_DEFAULTS, MAX_SPREAD, MAX_RISE, MAX_SWING,
 } from './assemblyTake.js';
 
-const P = ASSEMBLY_DEFAULTS;
+/* ⚠️ `scatter: 0` IS DELIBERATE IN THE BASELINE PLAN. Everything below this line is about the
+   mechanics every piece shares — timing, the curve, the landing — and those are only observable
+   when the pieces are NOT each given their own height and bearing. Scatter has its own block at the
+   bottom, which is where the per-piece variety is asserted. A test that wants both answers at once
+   gets neither. */
+const P = { ...ASSEMBLY_DEFAULTS, scatter: 0 };
 /* Real sticker counts, read off the live templates rather than imagined: a cricket cake holds 3
    and a space theme holds 181. Sixty-fold is the range the timing has to survive. */
 const COUNTS = [1, 3, 8, 13, 52, 137, 181];
@@ -223,7 +228,81 @@ describe('the cake assembles itself in a fixed time', () => {
   });
 
   it('defaults to the graceful shot', () => {
-    expect(P.spread).toBe(0);
-    expect(P.total).toBeGreaterThan(0);
+    expect(ASSEMBLY_DEFAULTS.spread).toBe(0);
+    expect(ASSEMBLY_DEFAULTS.total).toBeGreaterThan(0);
+  });
+
+  /* ── Each piece arrives its own way ────────────────────────────────────────────────────────────
+   *
+   * "many elements starting from same point. can it be random? and why all have to come from top?"
+   * With one height and one swing for every piece the decorations move as a rigid block — the eye
+   * reads one object floating above the cake rather than many pieces coming together.
+   */
+  describe('scatter', () => {
+    const S = { ...ASSEMBLY_DEFAULTS, total: 6 };
+
+    it('gives every piece a different height, sweep and bearing', () => {
+      const at0 = [...Array(6).keys()].map(i => assemblyPose(i, 6, 0, S));
+      for (const field of ['rise', 'swing', 'offX', 'offZ']) {
+        const vals = at0.map(p => p[field].toFixed(4));
+        expect(new Set(vals).size, `every piece should have its own ${field}`).toBeGreaterThan(4);
+      }
+    });
+
+    /* ⚠️ NOT ALL FROM OVERHEAD. A piece with a low start and a long bearing crosses the board on
+       its way in, which is the half of the answer that `rise` alone cannot give. */
+    it('starts some pieces out across the board, not above their seats', () => {
+      const away = [...Array(12).keys()]
+        .map(i => assemblyPose(i, 12, 0, S))
+        .filter(p => Math.hypot(p.offX, p.offZ) > 0.3);
+      expect(away.length, 'several pieces should begin well off their seats').toBeGreaterThan(3);
+    });
+
+    it('sweeps some pieces in one way round and some the other', () => {
+      const signs = new Set([...Array(10).keys()].map(i => Math.sign(assemblyPose(i, 10, 0, S).swing)));
+      expect(signs.has(1) && signs.has(-1), 'both directions should occur').toBe(true);
+    });
+
+    /* ⚠️ THE SAME CAKE FILMS THE SAME WAY EVERY TIME. The variety is a hash of the index, never
+       Math.random — a shot you cannot repeat is not a shot, and a baker re-recording after a tweak
+       must get the same choreography back. */
+    it('is random per piece but identical every run', () => {
+      for (const i of [0, 3, 17]) {
+        const a = assemblyPose(i, 20, 1.5, S);
+        const b = assemblyPose(i, 20, 1.5, S);
+        expect(a).toEqual(b);
+      }
+    });
+
+    /* ⚠️ AND IT STILL LANDS EXACTLY. Variety that leaves a piece an inch from its seat would make
+       the take end on something other than the design. */
+    it('brings every scattered piece exactly home', () => {
+      for (let i = 0; i < 12; i++) {
+        const p = assemblyPose(i, 12, S.total, S);
+        expect([p.rise, p.swing, p.offX, p.offZ]).toEqual([0, 0, 0, 0]);
+      }
+    });
+
+    it('is the identity at 0, so a plan can ask for no variety', () => {
+      const flat = { ...S, scatter: 0 };
+      const rises = [...Array(5).keys()].map(i => assemblyPose(i, 5, 0, flat).rise);
+      expect(new Set(rises).size).toBe(1);
+      for (let i = 0; i < 5; i++) {
+        const p = assemblyPose(i, 5, 0, flat);
+        expect(p.offX).toBe(0);
+        expect(p.offZ).toBe(0);
+      }
+    });
+
+    it('never produces NaN, whatever the plan says', () => {
+      for (const bad of [{ scatter: NaN }, { scatter: 'x' }, { scatter: 99 }, { scatter: -4 }]) {
+        for (let i = 0; i < 4; i++) {
+          const p = assemblyPose(i, 4, 1, { ...S, ...bad });
+          for (const f of ['rise', 'swing', 'offX', 'offZ']) {
+            expect(Number.isFinite(p[f]), `${f} with ${JSON.stringify(bad)}`).toBe(true);
+          }
+        }
+      }
+    });
   });
 });

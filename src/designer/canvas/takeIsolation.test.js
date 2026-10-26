@@ -25,13 +25,19 @@ describe('filming is isolated from designing', () => {
   it('hands the canvas nothing unless a take is running', () => {
     expect(designer).toMatch(/spin=\{filmSpin \? spinPlan : null\}/);
     expect(designer).toMatch(/assembly=\{build == null \? null : \{ time: build, plan: buildTimings \}\}/);
-    expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \? takeLens : null\}/);
+    /* ⚠️ THE LENS OUTLIVES THE TAKE, ON PURPOSE. `lensReturning` keeps TakeLens mounted after the
+       build finishes so it can GLIDE back; unmounting it the moment the take ended is what made the
+       return a jump. `takeLensActive` is the honest "is a take running" — the two are separate
+       questions and conflating them is the bug. */
+    expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \|\| lensReturning \? takeLens : null\}/);
+    expect(designer).toMatch(/takeLensActive=\{filmSpin \|\| build != null\}/);
+    expect(designer).toMatch(/onTakeLensReturned=\{\(\) => setLensReturning\(false\)\}/);
   });
 
   it('mounts no take machinery when it is handed nothing', () => {
     expect(canvas).toMatch(/\{spin && <SpinDirector/);
     expect(canvas).toMatch(/\{assembly && <AssemblyDirector/);
-    expect(canvas).toMatch(/\{takeLens != null && <TakeLens/);
+    expect(canvas).toMatch(/\{takeLens != null && \(\s*\n?\s*<TakeLens/);
   });
 
   /* The build's per-piece offset collapses to nothing with no build running: no piece is hidden and
@@ -48,9 +54,14 @@ describe('filming is isolated from designing', () => {
   it('puts the lens back when the take ends', () => {
     const at = canvas.indexOf('function TakeLens(');
     expect(at, 'TakeLens should exist').toBeGreaterThan(-1);
-    const body = canvas.slice(at, at + 700);
-    expect(body).toMatch(/const was = camera\.fov;/);
-    expect(body).toMatch(/return \(\) => \{[\s\S]*?camera\.fov = was;[\s\S]*?\};/);
+    const body = canvas.slice(at, at + 2200);
+    // The eased return is what a baker sees…
+    expect(body).toMatch(/camera\.fov = lensAt\(/);
+    expect(body).toMatch(/const to = active \? clampLens\(fov\) : was\.current;/);
+    // …and the hard restore stays as the safety net for a teardown mid-glide. The lens a baker
+    // designs on is a contract, so it is put back even when nobody watches it move.
+    expect(body).toMatch(/was\.current = camera\.fov;/);
+    expect(body).toMatch(/return \(\) => \{[\s\S]*?camera\.fov = was\.current;[\s\S]*?\};/);
     expect(body).toMatch(/updateProjectionMatrix\(\)/);
   });
 
@@ -161,8 +172,8 @@ describe('filming is isolated from designing', () => {
 
     it('exists and both takes go through it', () => {
       expect(at, 'armTake should exist').toBeGreaterThan(-1);
-      expect(designer).toMatch(/armTake\(\(\) => setBuild\(0\)\)/);
-      expect(designer).toMatch(/armTake\(\(\) => setFilmSpin\(true\)\)/);
+      expect(designer).toMatch(/armTake\(\(\) => \{ setLensReturning\(true\); setBuild\(0\); \}\)/);
+      expect(designer).toMatch(/armTake\(\(\) => \{ setLensReturning\(true\); setFilmSpin\(true\); \}\)/);
       // ⚠️ AND NEITHER STARTS DIRECTLY ANY MORE, or the delay is simply skipped on that take.
       expect(designer).not.toMatch(/handleDeselect\(\);\s*\n\s*setBuild\(0\);/);
       expect(designer).not.toMatch(/handleDeselect\(\);\s*\n\s*setFilmSpin\(true\);/);
@@ -194,9 +205,14 @@ describe('filming is isolated from designing', () => {
     /* A take that is merely armed is not running, so nothing may be mounted for it yet — the lens
        included. Otherwise the recording opens on a lens that moved before the take did. */
     it('changes nothing in the scene while it counts', () => {
-      expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \? takeLens : null\}/);
+      /* ⚠️ `lensReturning` IS ARMED AT `begin`, NOT AT ARM TIME — so during the count it is still
+         false, every take input is null, and the lens has not started moving. A countdown that
+         began the zoom would put the move in the recording before the take. */
+      expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \|\| lensReturning \? takeLens : null\}/);
       expect(designer).toMatch(/spin=\{filmSpin \? spinPlan : null\}/);
       expect(designer).not.toMatch(/takeLens=\{[^}]*countdown/);
+      const arm = designer.slice(designer.indexOf('function armTake('), designer.indexOf('function cancelArmedTake('));
+      expect(arm, 'the lens must not be armed by the countdown itself').not.toMatch(/setLensReturning/);
     });
 
     it('is drawn over the canvas without swallowing a click', () => {

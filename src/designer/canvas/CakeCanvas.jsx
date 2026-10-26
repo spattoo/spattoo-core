@@ -46,7 +46,7 @@ import { ZONES_TOP, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from 
 import { REGION_DEFAULTS } from '../geometry/region.js';
 import { spinPose } from '../reel/spinTake.js';
 import { assemblyPose, assemblyDone } from '../reel/assemblyTake.js';
-import { clampLens } from '../reel/cinematicLens.js';
+import { clampLens, lensAt, LENS_GLIDE_S } from '../reel/cinematicLens.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -2268,7 +2268,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, buildRise = 0, buildSwing = 0 }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, buildRise = 0, buildSwing = 0, buildOffX = 0, buildOffZ = 0 }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2452,7 +2452,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       ref={node => { freeRef.current = node; faceRef.current = node; }}
       /* `buildRise` lifts a piece that has not landed yet — see assemblyTake.js. Zero whenever no
          build is running, so this is the ordinary position the rest of the time. */
-      position={fp ? [fp.x, fp.y + buildRise, fp.z] : [cx, posY + wireUp + buildRise, cz]}
+      position={fp
+        ? [fp.x + buildOffX, fp.y + buildRise, fp.z + buildOffZ]
+        : [cx + buildOffX, posY + wireUp + buildRise, cz + buildOffZ]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
@@ -2637,7 +2639,7 @@ function freeDragPlane(camera, at) {
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null, buildRise = 0, buildSwing = 0 }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null, buildRise = 0, buildSwing = 0, buildOffX = 0, buildOffZ = 0 }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2975,9 +2977,13 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
    */
   const swingCos = Math.cos(buildSwing);
   const swingSin = Math.sin(buildSwing);
-  const orbited = (x, y, z) => (buildSwing === 0
-    ? [x, y, z]
-    : [x * swingCos + z * swingSin, y, -x * swingSin + z * swingCos]);
+  const orbited = (x, y, z) => {
+    const rx = buildSwing === 0 ? x : x * swingCos + z * swingSin;
+    const rz = buildSwing === 0 ? z : -x * swingSin + z * swingCos;
+    /* The ground offset rides OUTSIDE the rotation: it is a bearing of its own, chosen per piece,
+       not a point swept round with the seat. Both are zero when no build is running. */
+    return [rx + buildOffX, y, rz + buildOffZ];
+  };
 
   /* ⚠️ PUBLISHED HERE, NOT BESIDE THE STAND-OFF'S OWN TERMS 50 LINES UP — `const` is not hoisted,
      and reading `footX` there threw "Cannot access 'footX' before initialization" on every frame.
@@ -3841,6 +3847,8 @@ function CakeScene({
   onGypClick,
   onGrassClick,
   onSandClick,
+  /* True while a take holds the framing still — see FitCakeToView above. */
+  framingHeld = false,
   /* A build in progress: `{ time, plan }`, or null. Travels the same road as the click handlers
      above and for the same reason — the loop that applies it is in the SHARED renderer, and `edit`
      is null on the capture path, so a thumbnail can never catch a half-built cake.
@@ -4200,7 +4208,18 @@ function CakeScene({
         }}
       />
       </group>
-      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight} />
+      {/* ⚠️ THE FIT IS HELD FOR THE LENGTH OF A TAKE, and this is the lurch Sandeep saw: *"the cake
+          is zooming in, but its very harsh."* The fit re-frames whenever the cake's BOUNDING BOX
+          moves — and a build fills the air above the cake with decorations, so the box balloons and
+          the fit chases it. Worse, a box change SNAPS (only an aspect change glides), so the camera
+          teleported mid-shot. Measured: the board grew from 310px to 452px over 600ms and then
+          jumped back to 324px in one step.
+
+          Holding it means the take owns the camera outright — the eased lens is the only move, and
+          the frame the baker lines up is the frame that records. Released when the lens has finished
+          coming back, by which point the fov is what it was and the fit has nothing to correct. */}
+      <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight}
+                     enabled={!framingHeld} />
 
       {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
           wants the angle. One component answers both — see SurfaceDragTarget. */}
@@ -5222,6 +5241,11 @@ function CakeContent({ config, scene, edit = null }) {
         /* Radians still to travel around the cake's axis. Already 0 whenever no build is running,
            so the wrapper group below is an identity transform the rest of the time. */
         const buildSwing = build ? build.swing : 0;
+        /* How far ACROSS the board the piece still is from over its seat — the half that lets a
+           decoration arrive from the side rather than from directly overhead. A fraction of the
+           cake's reach, turned into world units here (INVARIANTS #8). Zero with no build running. */
+        const buildOffX = build ? build.offX * (bottomTier.radius ?? 1) : 0;
+        const buildOffZ = build ? build.offZ * (bottomTier.radius ?? 1) : 0;
         const tier = tierData[sticker.tierIndex] ?? bottomTier;
         const isSide = isSideZone(sticker);
         const orbitEnable = orbitEnableFor(sticker.id);
@@ -5239,6 +5263,10 @@ function CakeContent({ config, scene, edit = null }) {
             <DraggableSideSticker
               buildRise={buildRise}
               buildSwing={buildSwing}
+            buildOffX={buildOffX}
+            buildOffZ={buildOffZ}
+              buildOffX={buildOffX}
+              buildOffZ={buildOffZ}
               key={sticker.id}
               sticker={sticker}
               radius={tier.radius}
@@ -5499,18 +5527,45 @@ const FIT_EASE_S = 1.2;
  * somebody filmed a take once. Same bargain `sceneSnapshot` makes for the reel: whatever recording
  * changes, recording restores.
  */
-function TakeLens({ fov }) {
+function TakeLens({ fov, active = true, onReturned }) {
   const camera = useThree(s => s.camera);
+  const was = useRef(null);
+  const move = useRef(null);
+  const told = useRef(false);
+
+  /* ⚠️ THE HARD RESTORE STAYS, as a safety net rather than as the mechanism. The eased return below
+     is what a baker sees; this is what happens if the component is torn down mid-glide — Esc, a
+     navigation, an unmount we did not think of. The lens a baker designs on is a contract, so it
+     gets put back even when nobody is watching it move. */
   useEffect(() => {
     if (!camera) return undefined;
-    const was = camera.fov;
-    camera.fov = clampLens(fov);
-    camera.updateProjectionMatrix();
+    if (was.current == null) was.current = camera.fov;
     return () => {
-      camera.fov = was;
+      if (was.current == null) return;
+      camera.fov = was.current;
       camera.updateProjectionMatrix();
     };
-  }, [camera, fov]);
+  }, [camera]);
+
+  /* ⚠️ GLIDES BOTH WAYS, and `active` is what points it. Assigning the fov outright is a cut: the
+     shot snapped onto the long lens and snapped off it again. See lensAt in cinematicLens.js. */
+  useFrame((_, delta) => {
+    if (!camera || was.current == null) return;
+    const to = active ? clampLens(fov) : was.current;
+    const m = move.current;
+    // A new destination — including the baker dragging the Lens slider mid-take — starts a fresh
+    // glide from wherever the camera is now, so the move is continuous rather than restarted.
+    if (!m || m.to !== to) { move.current = { from: camera.fov, to, t: 0 }; return; }
+    if (m.t >= LENS_GLIDE_S) return;
+    m.t += delta;
+    camera.fov = lensAt(m.from, m.to, m.t);
+    camera.updateProjectionMatrix();
+    if (m.t >= LENS_GLIDE_S && !active && !told.current) {
+      // Back where it started. Only now may the designer stop mounting this.
+      told.current = true;
+      onReturned?.();
+    }
+  });
   return null;
 }
 
@@ -5908,6 +5963,12 @@ export default function CakeCanvas({
   onAssemblyDone = null,
   /* The lens to film this take on, or null to leave the designer's own alone. */
   takeLens = null,
+  /* ⚠️ `takeLens` SAYS MOUNTED, `takeLensActive` SAYS WHICH WAY IT IS GOING. They separate because
+     the lens has to stay mounted AFTER the take ends, long enough to glide back — unmounting at the
+     end is what made the return a jump. The designer drops `takeLens` to null only once
+     `onTakeLensReturned` fires. */
+  takeLensActive = true,
+  onTakeLensReturned = null,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
@@ -6195,11 +6256,14 @@ export default function CakeCanvas({
         /* The build, for the sticker loop inside. The AssemblyDirector just below owns the CLOCK;
            this is the pose it ticks. Both halves need it and they are not the same hop. */
         assembly={assembly}
+        framingHeld={takeLens != null}
       />
       {/* Only while a take runs — see SpinDirector. */}
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
       {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
-      {takeLens != null && <TakeLens fov={takeLens} />}
+      {takeLens != null && (
+        <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />
+      )}
       <OrbitControls
         makeDefault
         ref={orbitRef}

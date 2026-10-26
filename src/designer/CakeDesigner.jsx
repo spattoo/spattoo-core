@@ -4803,6 +4803,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * this is useful in case of screen recording" — time to cross to a screen recorder and press
    * record. One setting for both, because it describes how you are RECORDING, not what you film.
    * `startAfter` is the chosen seconds; `countdown` is what is on screen, or null for nothing. */
+  /* ⚠️ TRUE FROM THE MOMENT A TAKE STARTS UNTIL THE LENS IS BACK, which is LATER than the take.
+     Unmounting TakeLens the instant the build finished is what made the return a jump — the glide
+     needs a component to run in. The canvas tells us when it has arrived. */
+  const [lensReturning, setLensReturning] = useState(false);
   const [startAfter, setStartAfter] = useState(DELAY_DEFAULT);
   const [countdown, setCountdown] = useState(null);
   const delayTimer = useRef(null);
@@ -4895,7 +4899,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // Same reasons as the spin: a selection box on the cake would be filmed, and the canvas is
     // calmer with nothing selected while every piece is moving.
     handleDeselect();
-    armTake(() => setBuild(0));
+    armTake(() => { setLensReturning(true); setBuild(0); });
   }
 
   function startFilmSpin() {
@@ -4906,7 +4910,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // `handleDeselect`, the same call openReelPanel makes and for the same stated reason:
     // "handles, grips and the piping toolbar are editing furniture that renders IN the scene".
     handleDeselect();
-    armTake(() => setFilmSpin(true));
+    armTake(() => { setLensReturning(true); setFilmSpin(true); });
   }
 
   /* Esc stops it, and so does taking hold of the cake.
@@ -19106,7 +19110,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  the two would both write the azimuth every frame. */
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
-              takeLens={filmSpin || build != null ? takeLens : null}
+              takeLens={filmSpin || build != null || lensReturning ? takeLens : null}
+              takeLensActive={filmSpin || build != null}
+              onTakeLensReturned={() => setLensReturning(false)}
               assembly={build == null ? null : { time: build, plan: buildTimings }}
               onAssemblyTick={setBuild}
               /* Returns true when the last piece has landed, which stops the director's clock.
@@ -22495,6 +22501,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onChange={v => setBuildPlan(p => ({ ...p, rise: v }))} />
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               How high above its place each decoration starts. Higher means it flies in from further.
+            </div>
+            {/* ⚠️ WITHOUT THIS EVERY PIECE ARRIVES IDENTICALLY — same height, same sweep — so the
+                decorations read as one rigid cake floating above the cake rather than as many
+                pieces. Sandeep: "many elements starting from same point. can it be random? and why
+                all have to come from top?" Each piece gets its own height, its own swing and which
+                way round, and its own bearing to fly in on; a low piece with a long bearing comes
+                in across the board instead of from overhead. Hashed from the piece's index, never
+                Math.random, so the same cake films the same way every time. */}
+            <Slider label="Vary how they arrive" value={buildPlan.scatter} min={0} max={1} step={0.05}
+                    fmt={v => (v === 0 ? 'all alike' : `${Math.round(v * 100)}%`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, scatter: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              At nothing, every decoration starts at the same height and sweeps the same way.
             </div>
             {/* The other half of "from further": a piece can come round the cake rather than
                 straight down. Its SEAT is what turns, so it arrives facing exactly as designed. */}
