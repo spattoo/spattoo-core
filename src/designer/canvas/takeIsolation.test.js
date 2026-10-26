@@ -144,6 +144,67 @@ describe('filming is isolated from designing', () => {
     expect(body).not.toMatch(/onDone[\s\S]{0,40}t0\.current = null/);
   });
 
+  /* ── The head start never reaches the recording ────────────────────────────────────────────────
+   *
+   * The delay exists so a baker can cross to a screen recorder: *"so the actual assembling video or
+   * the spin video starts after selected number of seconds, this is useful in case of screen
+   * recording."* Which means the count is the one piece of UI that is GUARANTEED to be on screen
+   * while a recorder is rolling — and burned into the file if it survives into the take.
+   *
+   * ⚠️ IT IS CLEARED AND THE TAKE STARTED IN ONE COMMIT. React batches the two setStates, so the
+   * render that first shows the take is the render that has already dropped the number. Asserted on
+   * the source because the thing being protected is the ORDER of two statements.
+   */
+  describe('the head start', () => {
+    const at = designer.indexOf('function armTake(');
+    const body = designer.slice(at, at + 1400);
+
+    it('exists and both takes go through it', () => {
+      expect(at, 'armTake should exist').toBeGreaterThan(-1);
+      expect(designer).toMatch(/armTake\(\(\) => setBuild\(0\)\)/);
+      expect(designer).toMatch(/armTake\(\(\) => setFilmSpin\(true\)\)/);
+      // ⚠️ AND NEITHER STARTS DIRECTLY ANY MORE, or the delay is simply skipped on that take.
+      expect(designer).not.toMatch(/handleDeselect\(\);\s*\n\s*setBuild\(0\);/);
+      expect(designer).not.toMatch(/handleDeselect\(\);\s*\n\s*setFilmSpin\(true\);/);
+    });
+
+    it('drops the count before it starts the take, not after', () => {
+      /* The DELAYED start, not the no-delay early return above it — that one never shows a
+         count at all, and matching it instead is how this test passed a wrong ordering. */
+      const tick = body.indexOf('setInterval(');
+      expect(tick, 'the delayed path should run on an interval').toBeGreaterThan(-1);
+      const inTick = body.slice(tick);
+      const cleared = inTick.indexOf('setCountdown(null)');
+      const began = inTick.indexOf('begin();');
+      expect(cleared, 'the count must be cleared on the final tick').toBeGreaterThan(-1);
+      expect(began, 'the take must begin on the final tick').toBeGreaterThan(-1);
+      expect(cleared, 'clear the count BEFORE beginning the take').toBeLessThan(began);
+    });
+
+    /* ⚠️ ASSERTED WITHOUT QUOTING THE COMPARISON. Writing the source line out verbatim put a bare
+       `name <= 0` in this file, and `check:bindings` reads that shape as a read of an undeclared
+       name — which is exactly what it is for, since such a comparison is silently false rather than
+       loud. The gate is right to be crude there; the test can ask the same question differently. */
+    it('starts immediately when no delay is asked for', () => {
+      const early = body.slice(0, body.indexOf('setInterval('));
+      expect(early).toContain('clampDelay');
+      expect(early, 'the no-delay path must start the take and return').toMatch(/begin\(\);\s*return;/);
+    });
+
+    /* A take that is merely armed is not running, so nothing may be mounted for it yet — the lens
+       included. Otherwise the recording opens on a lens that moved before the take did. */
+    it('changes nothing in the scene while it counts', () => {
+      expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \? takeLens : null\}/);
+      expect(designer).toMatch(/spin=\{filmSpin \? spinPlan : null\}/);
+      expect(designer).not.toMatch(/takeLens=\{[^}]*countdown/);
+    });
+
+    it('is drawn over the canvas without swallowing a click', () => {
+      const overlay = designer.slice(designer.indexOf('{countdown != null && ('), designer.indexOf('{countdown != null && (') + 700);
+      expect(overlay).toMatch(/pointerEvents: 'none'/);
+    });
+  });
+
   /* The cream wheel owns autoRotate and must keep owning it — the spin briefly shared it, which is
      two things writing the camera every frame. */
   it('leaves the cream spin wheel alone', () => {
