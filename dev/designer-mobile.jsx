@@ -1548,6 +1548,104 @@ CAT_ELEMENTS.push({
   default_color: null, sort_order: 10,
 });
 
+/* ── ?library=1 — A STOCKED SHELF, because both template screens are empty here ──────────────────
+ *
+ * Templates ▸ Library and Templates ▸ Catalogue are the two halves of one rule, and this harness
+ * could show neither: the Proxy below answers every unknown method with `{ templates: [] }`, so
+ * Library drew "Nothing in your library yet" and the Catalogue flyout drew nothing at all. A screen
+ * whose only reachable state is empty hides every behaviour it has — the ninth such state this file
+ * has had to be taught, after the catalogue, the GLB, the edge seat, the two-button footer, the
+ * number topper, the cream layer, the texts card and the shell border.
+ *
+ * ⚠️ THE PROPORTIONS ARE THE DEV CATALOGUE'S, read out of `cake_templates` on 2026-10-26: 79 active
+ * rows, 61 of them Spattoo's and 18 the baker's own, 78 `basic` and ONE `photo`, every row
+ * `offering: 'standard'` — so there is no Premium tile to be found anywhere, and a fixture that
+ * invented one would teach the wrong thing about the chip. The repeated names are real too
+ * (`Football` x6, `Dino` x3, `love` x3) and they are the whole argument for a picture-led grid, so
+ * dropping them would make this shelf easier to read than any real one.
+ *
+ * ⚠️ ONE SET, TWO SCREENS. `fetchBakerCatalogue` is everything with an `offered` flag (Library) and
+ * `fetchTemplates` is the offered subset (the Catalogue flyout). They are derived from the same
+ * array on purpose: the rule under test is "a template is in one or the other, never both", and two
+ * independent stubs could satisfy each screen while breaking exactly that.
+ */
+const LIBRARY = PARAMS.has('library');
+/* ⚠️ `daysAgo` IS MIXED ACROSS SOURCES ON PURPOSE. Library splits the shelf into Recent (the last
+   7 days) and Previous, which is a split by DATE and has nothing to do with who made the cake. The
+   first cut of this fixture walked the dates down the list, so all three of the baker's own
+   unchosen designs landed in Previous together — and since only a baker's OWN tile carries a bin,
+   the screenshot showed a Previous row full of bins and a Recent row with none. A fixture that
+   teaches "Previous means mine" is worse than an empty screen. Both kinds now straddle the
+   boundary. */
+const LIB_SEED = [
+  // name                source     offered tiers daysAgo colour      tags
+  ['Football',          'spattoo', true,  1,    2,  '#cfe3d4', ['birthday']],
+  ['Football',          'spattoo', false, 2,    11, '#e8dcc8', ['birthday', 'graduation']],
+  ['Dino',              'spattoo', true,  1,    1,  '#d8e6c0', ['birthday', 'first-birthday']],
+  ['Dino',              'spattoo', false, 1,    19, '#c8dcc0', ['birthday']],
+  ['love',              'spattoo', false, 1,    3,  '#f2d3d8', ['anniversary', 'valentines']],
+  ['love',              'spattoo', false, 2,    26, '#edc9d2', ['wedding', 'anniversary']],
+  ['Floral',            'spattoo', true,  1,    5,  '#f6e4ea', ['floral', 'wedding', 'elegant', 'pink']],
+  ['Mermaid cake',      'spattoo', false, 1,    4,  '#cfe0ea', ['mermaid', 'beach', 'birthday']],
+  ['Jungle theme cake', 'spattoo', false, 1,    33, '#d2e2c4', ['nature', 'fondant', 'whimsical']],
+  ['Rainbow',           'spattoo', false, 2,    41, '#f0e0c8', ['birthday', 'anyone']],
+  ['Animal theme',      'mine',    true,  2,    6,  '#e4d8c4', ['birthday']],
+  ['Dolphin',           'mine',    false, 1,    1,  '#cfe3ea', ['mermaid', 'beach', 'buttercream']],
+  ['Mermaid theme cake','mine',    false, 1,    2,  '#dfd0e4', ['mermaid', 'first-birthday']],
+  /* ⚠️ The `photo` row, and the only one. It is an uploaded picture of finished work, so it has no
+     design and no tier count — `tier_count: null` is what the real `isomalt` row carries — and the
+     grid has to say so before the tap, because tapping a basic template loads it onto the canvas
+     and this one cannot be loaded at all. */
+  ['isomalt',           'mine',    false, null, 15, '#e9e2d6', ['sugar', 'elegant', 'modern']],
+];
+const LIB_ROWS = LIB_SEED.map(([name, source, offered, tiers, daysAgo, colour, tags], i) => ({
+  id: `tpl-${i + 1}`, name, source, offered,
+  tier_count: tiers, offering: 'standard',
+  type: name === 'isomalt' ? 'photo' : 'basic',
+  thumbnail_url: CAT_THUMB(colour), thumbnail_key: null,
+  tag_slugs: tags, search_slugs: tags, attrs: null,
+  /* Recent is a SECTION on the Library shelf, so the dates have to straddle its window rather than
+     all being today — otherwise every tile lands in Recent and the split never draws. */
+  created_at: new Date(Date.now() - daysAgo * 864e5).toISOString(),
+}));
+if (LIBRARY) Object.assign(STUBS, {
+  fetchBakerCatalogue: async () => LIB_ROWS.map(t => ({ ...t })),
+  /* ⚠️ WITHOUT THIS, EVERY TILE IS DEAD AND LOOKS LIKE A BUG. A list row deliberately carries no
+     `design` (lib/templateList.js stopped selecting it so browsing does not ship N designs for the
+     one you open), so `startFromTemplate` fetches it by id — and CakeDesigner says in its own
+     comment that a null here "is what clicking a template does nothing looked like before
+     fetchTemplate was stubbed". Measured here first: tapping a tile did nothing at all until this
+     existed. A `photo` row has no design by definition and keeps returning null, which is the
+     product's behaviour and not a gap in the fixture. */
+  fetchTemplate: async (id) => {
+    const t = LIB_ROWS.find(r => r.id === id);
+    if (!t || t.type === 'photo') return null;
+    return { ...t, design: {
+      tiers: Array.from({ length: t.tier_count ?? 1 }, () => ({
+        color: t.thumbnail_url.includes('cfe3d4') ? '#CFE3D4' : '#F1EEDC',
+        shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
+      })),
+    } };
+  },
+  fetchTemplates:      async () => LIB_ROWS.filter(t => t.offered).map(t => ({ ...t })),
+  /* The route REPLACES the set rather than taking a delta (see bakers.js), so the stub does too —
+     anything missing from `ids` is out of the catalogue, which is exactly how "move to library"
+     works from the flyout side. */
+  updateBakerCatalogue: async (ids) => {
+    const set = new Set(ids ?? []);
+    for (const t of LIB_ROWS) t.offered = set.has(t.id);
+    console.log('[harness] catalogue is now', LIB_ROWS.filter(t => t.offered).map(t => t.name));
+  },
+  /* Only the baker's OWN designs can be deleted — "baker can never delete spattoo templates" — and
+     the stub refuses a Spattoo row rather than quietly succeeding, so the guard is exercised here
+     and not only in the route. */
+  deleteBakerTemplate: async (id) => {
+    const i = LIB_ROWS.findIndex(t => t.id === id);
+    if (i < 0 || LIB_ROWS[i].source !== 'mine') throw new Error('Not your template.');
+    LIB_ROWS.splice(i, 1);
+  },
+});
+
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),
 });
