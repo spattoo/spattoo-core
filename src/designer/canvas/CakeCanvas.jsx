@@ -5158,7 +5158,7 @@ function CakeContent({ config, scene, edit = null }) {
            mesh. `rise` is a fraction of the cake's reach, turned into world units below, so the
            shot looks the same on a 6" round and on a sheet (INVARIANTS #8). */
         const build = assembly
-          ? assemblyPose(pieceIndex, assembly.time, assembly.plan)
+          ? assemblyPose(pieceIndex, stickers.length, assembly.time, assembly.plan)
           : null;
         if (build && !build.visible) return null;
         const buildRise = build ? build.rise * (bottomTier.radius ?? 1) : 0;

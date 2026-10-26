@@ -70,7 +70,7 @@ import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
 const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
-import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, atSpeed } from './reel/assemblyTake.js';
+import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD } from './reel/assemblyTake.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
@@ -4780,14 +4780,16 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * clip in post resamples frames that were already captured; stretching these renders every frame
    * for real at the slower pace. See atSpeed in assemblyTake.js. */
   const [build, setBuild] = useState(null);
-  const [buildPlan, setBuildPlan] = useState({ ...ASSEMBLY_DEFAULTS, speed: 0.5 });
+  const [buildPlan, setBuildPlan] = useState({ ...ASSEMBLY_DEFAULTS });
   const [buildSetupOpen, setBuildSetupOpen] = useState(false);
   /* One lens for both takes. ⚠️ It is applied only WHILE filming and put back after — the view a
      baker approves is what their customer gets, so the designer's own lens must not move because
      somebody filmed once. Set it to 42 to film exactly what the editor shows. */
   const [takeLens, setTakeLens] = useState(CINEMATIC_FOV);
-  // One statement of the plan the canvas and the panel both read, so they cannot disagree.
-  const buildTimings = useMemo(() => atSpeed(buildPlan, buildPlan.speed), [buildPlan]);
+  /* ⚠️ THE TAKE IS A FIXED LENGTH WHATEVER THE CAKE HOLDS. The first version set a gap between
+     pieces, which gave a 1.6s build on a 3-piece cricket cake and 65.7s on a 181-piece space theme.
+     `total` is the control now and everything else derives from it. */
+  const buildTimings = buildPlan;
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
@@ -19014,7 +19016,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               /* Returns true when the last piece has landed, which stops the director's clock.
                  The count is the decorations the canvas is actually drawing. */
               onAssemblyDone={(t) => {
-                if (!assemblyDone(canvasConfig.stickers?.length ?? 0, t, buildTimings)) return false;
+                if (!assemblyDone(t, buildTimings)) return false;
                 setBuild(null);
                 return true;
               }}
@@ -21705,7 +21707,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       <LayersIcon size={16} />
                       Build the cake
                       <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>
-                        {assemblyTotal(canvasConfig.stickers?.length ?? 0, buildTimings).toFixed(1)}s
+                        {assemblyTotal(buildTimings).toFixed(1)}s
                       </span>
                     </button>
                   )}
@@ -22362,23 +22364,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               The decorations land one at a time, in the order they were placed. Press Start and
               this closes — Esc stops it early.
             </p>
-            {/* ⚠️ SLOW MOTION IS RENDERED, NOT POST-PROCESSED. Slowing the clip in an editor
-                resamples frames that were already captured and judders; this stretches the
-                durations so every frame is drawn for real at the slower pace. */}
-            <Slider label="Slow motion" value={buildPlan.speed} min={0.2} max={1.5} step={0.05}
-                    fmt={v => (v === 1 ? 'normal' : `${v.toFixed(2)}×`)}
-                    onChange={v => setBuildPlan(p => ({ ...p, speed: v }))} />
+            {/* ⚠️ A TOTAL, NOT A GAP PER PIECE. Real templates hold between 3 and 181 decorations,
+                so a fixed gap made the same setting a 1.6-second build on one cake and a
+                65.7-second one on another. This is also where slow motion lives: a longer total
+                renders every frame for real at the slower pace, where slowing the clip in an editor
+                would resample frames already captured and judder. */}
+            <Slider label="Length" value={buildPlan.total} min={1.5} max={15} step={0.5}
+                    fmt={v => `${v.toFixed(1)}s`}
+                    onChange={v => setBuildPlan(p => ({ ...p, total: v }))} />
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
-              Below 1× is slower. Every frame is drawn at this pace, so it stays sharp.
+              The whole build, however many decorations the cake has. Longer is slower, and stays sharp.
             </div>
-            <Slider label="Each piece" value={buildPlan.perPiece} min={0.1} max={1.5} step={0.05}
-                    fmt={v => `${v.toFixed(2)}s`}
-                    onChange={v => setBuildPlan(p => ({ ...p, perPiece: v }))} />
-            <Slider label="Gap between pieces" value={buildPlan.stagger} min={0} max={1} step={0.02}
-                    fmt={v => `${v.toFixed(2)}s`}
-                    onChange={v => setBuildPlan(p => ({ ...p, stagger: v }))} />
+            <Slider label="Together or in turn" value={buildPlan.spread} min={0} max={MAX_SPREAD} step={0.05}
+                    fmt={v => (v === 0 ? 'all at once' : `${Math.round(v * 100)}% dealt out`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, spread: v }))} />
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
-              Shorter than a piece&rsquo;s own time, so they overlap in the air.
+              At nothing, every piece falls together and lands together — the graceful one.
             </div>
             <Slider label="Drop height" value={buildPlan.rise} min={0.1} max={1.5} step={0.05}
                     fmt={v => `${Math.round(v * 100)}%`}
@@ -22401,8 +22402,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 Start
               </button>
               <span style={{ fontSize: 12, color: '#888' }}>
-                {(canvasConfig.stickers?.length ?? 0)} pieces ·{' '}
-                {assemblyTotal(canvasConfig.stickers?.length ?? 0, buildTimings).toFixed(1)}s
+                {(canvasConfig.stickers?.length ?? 0)} decorations ·{' '}
+                {assemblyTotal(buildTimings).toFixed(1)}s
               </span>
             </div>
           </div>
