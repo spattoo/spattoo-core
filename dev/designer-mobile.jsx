@@ -335,13 +335,28 @@ CAT_ELEMENTS.push({
 });
 
 CAT_ELEMENTS.push({
+  /* ⚠️ THE REAL `Chocolate Drip` ROW, read out of cake_elements on 2026-10-26. The hand-made
+     version this replaces said `color: true` and carried `{ top_drip: true, r: 1 }`; the real row
+     says `color: false` and carries a full `top_drip_config`. That one key is the difference
+     between a card that offers a colour and a card that does not, and the help article written
+     from the old fixture would have told bakers to recolour a drip they cannot recolour. Found by
+     checking the fixture against the row before writing, which is the only reason it did not ship.
+     `move: true` and `duplicate: true` come from the row as well. */
   id: 'e14', name: 'Chocolate drip', description: 'a rim drip with optional flooded top',
   element_type_id: 'et-drip', category_id: 'cat-1',
   image_url: CAT_THUMB('#6b4b34'), thumbnail_url: CAT_THUMB('#6b4b34'), thumb_key: null,
   allowed_zones: ['rim'],
-  allowed_actions: { move: false, color: true, delete: true, resize: true },
-  placement_config: { top_drip: true, r: 1 },
-  default_color: '#4a2c17', sort_order: 14,
+  allowed_actions: { move: true, color: false, delete: true, resize: true, duplicate: true },
+  placement_config: {
+    top_drip: true, top_drip_gloss: 0.71, top_drip_length: 1,
+    top_arrangements_allowed: ['ring'],
+    top_drip_config: {
+      flat: 0.4, seed: 1, count: 27, width: 0.035, length: 0.61, meander: 0,
+      protrude: 0.008, webDepth: 0.16, widthVar: 0.15, lengthVar: 0.6,
+      lipRadius: 0.05, archHeight: 0.1,
+    },
+  },
+  default_color: '#3a2117', sort_order: 14,
 });
 
 // Multi-zone piping: rim AND board → two candidates, so the tile row must survive on a phone.
@@ -1828,6 +1843,46 @@ const standingDesign = PARAMS.has('standing') ? {
   })),
 } : null;
 
+/* ── `?piping` — a cake whose decoration is PIPING, not stickers ─────────────────────────────────
+ *
+ * ⚠️ NO FIXTURE HAD A PIPING RING, which is how the build take shipped animating stickers and
+ * nothing else for four releases. Sandeep, filming a rose-ring cake: *"piping elements are not
+ * flying. also, few other things like roses in this image are not flying."* The roses in that
+ * picture ARE a piping ring on an element finish — so the gap and the complaint are the same thing,
+ * and no seeded cake here could have shown it.
+ *
+ * A top ring and a bottom ring, plus two rosettes, so one run shows piping and stickers flying
+ * together and in the same order they were placed. */
+const pipingDesign = PARAMS.has('piping') ? {
+  tiers: [{
+    color: '#F6E7EA', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
+    /* ⚠️ A `glbUrl` IS WHAT MAKES A RING RENDER. Without one the layer is accepted and draws
+       nothing, which is how the first cut of this fixture "passed" while showing a bare cake.
+       A ring of rosettes is also the exact case reported — the roses on that cake are piping. */
+    topPipings:    [{ layerId: 'tp1', glbUrl: '/sample-rosette.glb', color: '#D81E2C', size: 1 }],
+    bottomPipings: [{ layerId: 'bp1', glbUrl: '/sample-rosette.glb', color: '#E8C8D2', size: 1 }],
+  }],
+  stickers: [0, 1].map(k => ({
+    id: `pr${k}`, elementId: 'e9', name: 'Rosette', imageUrl: '/sample-rosette.glb',
+    zone: 'top_surface', tierIndex: 0,
+    x: (k ? 0.5 : -0.5), z: 0, y: 0, scale: 3.2,
+    size: 1, rotation: 0, color: '#c41c1c',
+    allowedActions: { move: true, color: true, delete: true, resize: true },
+  })),
+} : null;
+
+/* ── `?boardsand` — a drift on the BOARD, around the cake ────────────────────────────────────────
+ *
+ * The surface core could not reach until now. `SandBed` has always defaulted to the board zone and
+ * the element row allows it; only the designer's wiring was missing, so no fixture here could show
+ * it either. Deliberately WITHOUT a region: the round/rectangle/triangle patches are a top-surface
+ * question, and on the board the drift IS the ring. */
+const boardSandDesign = PARAMS.has('boardsand') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  boardSand: { size: 0.55, colour: '#D8C49A', spacing: 0.055, rise: 0.09, falloff: 0.6,
+               edgeBreak: 0.25, seed: 7 },
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -1933,5 +1988,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );
