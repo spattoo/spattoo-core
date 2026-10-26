@@ -487,11 +487,63 @@ export default function TakeDirector({ takeRef, orbitRef, onAngleChange = null }
      * It is now a prop — `filmGround` on CakeCanvas — so the floor and the sky take the same colour
      * from the same value, and the preview and the take cannot disagree about it because there is
      * only one of it. React owns the scene; this file owns the camera. */
-    takeRef.current = { record, capture, setAngle, beginPreview, endPreview };
+    /* ── Recording the live canvas at a decent size ───────────────────────────────────────────────
+     *
+     * ⚠️ THE BUILD RECORDER CAPTURES THE LIVE CANVAS, so the file is only as big as the drawing
+     * buffer — and the buffer is sized from the CSS box. A delivered build video came back at
+     * **748x420**, against the reel's 1080x1920: *"downloaded video is of very poor quality."* The
+     * reel escapes this because `TakeDirector` renders into a composite at a size it chooses; the
+     * build cannot, because it is driven by React state rather than an imperative loop.
+     *
+     * So the buffer itself is enlarged for the length of the recording. `gl.setSize(w, h, false)` —
+     * the same call `sceneSnapshot` makes — with `updateStyle: false`, so the CSS box and the page
+     * layout do not move and only the pixels behind them multiply. The ASPECT is unchanged, so
+     * `camera.aspect` and the fit have nothing to recompute and the framing cannot shift.
+     *
+     * ⚠️ IT MUST BE DONE BEFORE THE RECORDER OPENS. Changing a canvas's size mid-recording changes
+     * the stream's resolution, and the browser warns that "the codec description is not supposed to
+     * change during the entire recording" — the same fault the settle-wait already exists for.
+     */
+    const bufferWas = { current: null };
+    const readSize = () => {
+      // ⚠️ getSize() CALLS target.set(w, h) — it wants a Vector2, not a bare object. A plain {}
+      // throws, every time; sceneSnapshot.js records the same trap.
+      const v = new THREE.Vector2();
+      gl.getSize(v);
+      return { x: v.x, y: v.y };
+    };
+    /* ⚠️ THE SCALE CEILING WAS 3, AND THE PREVIEW BOX IS SMALLER THAN THAT ALLOWS FOR. With a shape
+       chosen, `framing` sizes the canvas as a PREVIEW that sits beside the panel — probed at
+       189x106 — so tripling it reached 567x319 and a recording came back at that. A long-edge
+       target is the real bound; the multiplier only matters when the source is tiny, and raising
+       the buffer is not upscaling a picture, it is RENDERING at more pixels, so it is genuinely
+       sharper rather than merely bigger. */
+    const growBuffer = (longEdge = 1920, maxScale = 12) => {
+      if (bufferWas.current) return readSize();
+      const was = readSize();
+      if (!(was.x > 0 && was.y > 0)) return was;
+      /* Capped for the device's sake as much as the file's: a loaded cake on an older phone already
+         struggles to hold 60fps, and a take that drops frames is worse than one that is slightly
+         soft. `takePlan.js` exists for that reason. */
+      const want = Math.min(maxScale, Math.max(1, longEdge / Math.max(was.x, was.y)));
+      if (want <= 1.01) return was;
+      bufferWas.current = was;
+      gl.setSize(Math.round(was.x * want), Math.round(was.y * want), false);
+      return readSize();
+    };
+    const restoreBuffer = () => {
+      if (!bufferWas.current) return;
+      gl.setSize(bufferWas.current.x, bufferWas.current.y, false);
+      bufferWas.current = null;
+    };
+
+    takeRef.current = { record, capture, setAngle, beginPreview, endPreview, growBuffer, restoreBuffer };
     return () => {
       // Leaving the designer mid-preview must not strand it on a recording ground.
       previewSnap.current?.restore();
       previewSnap.current = null;
+      // A recording torn down mid-flight must not leave the canvas on a buffer nobody asked for.
+      restoreBuffer();
       if (takeRef) takeRef.current = null;
     };
   }, [takeRef, orbitRef, camera, gl, scene]);

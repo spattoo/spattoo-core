@@ -5089,14 +5089,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
          browser itself warns about: "the codec description is not supposed to change during the
          entire recording". */
       await new Promise((resolve) => {
+        /* ⚠️ SIX FRAMES AND 1.5s WAS NOT ENOUGH, AND IT FAILED IN THE WORST WAY — by settling on an
+           INTERMEDIATE size. Probed frame by frame: the buffer goes 996x740 → **189x106** at 929ms
+           → 567x319 at 3804ms. Two animations overlap here, the setup panel closing and the
+           letterbox arriving, and between them the canvas passes through a tiny plateau that sits
+           still long enough to look settled. The old wait grew the buffer against 189x106 and R3F
+           then resized over the top of it, which is why a recording came out 567x319.
+           So: a much longer stability window, and a deadline past the real settle. */
         let last = `${canvasEl.width}x${canvasEl.height}`;
         let still = 0;
-        const deadline = Date.now() + 1500;
+        const deadline = Date.now() + 6000;
         const tick = () => {
           const now = `${canvasEl.width}x${canvasEl.height}`;
           still = now === last ? still + 1 : 0;
           last = now;
-          if (still >= 6 || Date.now() > deadline) { resolve(); return; }
+          if (still >= 24 || Date.now() > deadline) { resolve(); return; }
           requestAnimationFrame(tick);
         };
         requestAnimationFrame(tick);
@@ -5105,6 +5112,31 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
          for LENS_GLIDE_S and the fit eases to the new shape over its own FIT_EASE_S (1.2s, in
          CakeCanvas). Recording before both are done is what put the shrink-then-grow in the file. */
       await new Promise(r => setTimeout(r, LENS_GLIDE_S * 1000 + 1200 + 200));
+
+      /* ⚠️ LAST, AND BEFORE THE RECORDER OPENS. The file is only as big as the drawing buffer, and
+         the buffer is sized from the CSS box — a delivered video came back at 748x420 against the
+         reel's 1080x1920. This multiplies the pixels without touching the layout or the aspect, so
+         nothing on screen moves and the framing cannot shift. Changing it once the recorder is open
+         would change the stream's resolution mid-file, which is the fault the settle-wait above
+         already exists for. */
+      /* ⚠️ GROW UNTIL IT STICKS, because waiting for "settled" cannot work here. Probed frame by
+         frame, the buffer goes 996x740 → 189x106 at ~1s → 567x319 at ~4.5s: the panel closing and
+         the letterbox arriving overlap, and the tiny intermediate size HOLDS FOR THREE AND A HALF
+         SECONDS. Any stability test settles on it, the buffer is grown against the wrong number,
+         and R3F's own resize then lands on top — which is exactly how a recording came out 567x319
+         after the grow was supposedly applied.
+         So the grow is re-applied whenever R3F overrides it, and only when it has held for a while
+         does the recorder open. A loop, because the number of late resizes is not knowable. */
+      for (let attempt = 0; attempt < 12; attempt++) {
+        takeRef.current?.growBuffer?.();
+        let held = 0;
+        const want = `${canvasEl.width}x${canvasEl.height}`;
+        for (let f = 0; f < 20; f++) {
+          await new Promise(r => requestAnimationFrame(r));
+          if (`${canvasEl.width}x${canvasEl.height}` === want) held++; else break;
+        }
+        if (held >= 20) break;
+      }
 
       const blob = await recordCanvas(canvasEl, async (requestFrame) => {
         takeFrame.current = requestFrame;
@@ -5124,6 +5156,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
          is what sends the lens home, off-camera, after the file is written. */
       takeFrame.current = null;
       buildEnded.current = null;
+      takeRef.current?.restoreBuffer?.();
       setTakePreRoll(false);
       if (shaped) setFraming(false);
       setBuildSaving(false);
