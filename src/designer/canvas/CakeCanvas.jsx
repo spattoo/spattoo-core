@@ -2268,7 +2268,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, buildRise = 0 }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, buildRise = 0, buildSwing = 0 }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2438,7 +2438,17 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const faceRef = useFacePoseReport(!!sticker.textPath, sticker.id, onFacePose);
 
   return (
-    <group
+    <group rotation={[0, buildSwing, 0]}>
+      {/* ── The flight path's horizontal half ────────────────────────────────────────────────
+          A build rotates the piece's SEAT about the cake's axis, so it sweeps in around the cake
+          and arrives facing exactly as designed. Wrapping it is the whole implementation: rotating
+          a parent turns position and orientation together, where rotating the x/z by hand would
+          move the piece and leave it pointing the wrong way for the whole flight.
+
+          ⚠️ ALWAYS MOUNTED, AT IDENTITY WHEN NOTHING IS BUILDING. Mounting it only during a take
+          would change the tree shape at the moment the take starts and remount every GLB mid-shot.
+          `useFacePoseReport` reads `matrixWorld`, so this is transparent to it. */}
+      <group
       ref={node => { freeRef.current = node; faceRef.current = node; }}
       /* `buildRise` lifts a piece that has not landed yet — see assemblyTake.js. Zero whenever no
          build is running, so this is the ordinary position the rest of the time. */
@@ -2584,6 +2594,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
       />
       </group>
     </group>
+    </group>
   );
 }
 
@@ -2626,7 +2637,7 @@ function freeDragPlane(camera, at) {
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null, buildRise = 0 }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null, buildRise = 0, buildSwing = 0 }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -3250,7 +3261,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     );
     return (
       <group ref={freeRef}
-             position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
+             position={fp ? orbited(fp.x, fp.y, fp.z) : orbited(sticker.x + outX - footX, py, sticker.z + outZ - footZ)}
+             rotation={[0, buildSwing, 0]}
              scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
@@ -3312,6 +3324,24 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
    * Both arrows therefore raise it: one brings the far edge up (the face turns toward you), the
    * other the near edge (it tips over toward you). That is what lifting a flat decoration off a cake
    * with a palette knife actually does. */
+  /* ── The build's horizontal half, for both return paths below ────────────────────────────────
+   *
+   * A piece sweeps in AROUND the cake before it lands — `swing` radians still to travel, from
+   * assemblyTake.js. Orbiting means two things at once: the seat moves round the cake's axis, and
+   * the piece turns with it so it arrives facing exactly as designed. Rotating only the position
+   * would fly it in sideways and snap it straight at the end.
+   *
+   * ⚠️ THE SAME TRANSFORM A PARENT GROUP WOULD APPLY, written out because this component has TWO
+   * returns (upright and flat) and a wrapper would have to be threaded through both. Y-rotation by
+   * θ sends (x, z) to (x·cosθ + z·sinθ, −x·sinθ + z·cosθ); setting the group's own rotation to the
+   * same θ supplies the turn. At swing 0 it is the identity and the position is untouched.
+   */
+  const swingCos = Math.cos(buildSwing);
+  const swingSin = Math.sin(buildSwing);
+  const orbited = (x, y, z) => (buildSwing === 0
+    ? [x, y, z]
+    : [x * swingCos + z * swingSin, y, -x * swingSin + z * swingCos]);
+
   const flatHalfZ = seatHalf ?? STICKER_SIZE / 2;
   const flatHalfX = glbHalfW ?? seatHalf ?? STICKER_SIZE / 2;
   const flatLeanX = sticker.tiltAngle ?? 0;
@@ -3320,7 +3350,8 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
     <group ref={freeRef}
-           position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
+           position={fp ? orbited(fp.x, fp.y, fp.z) : orbited(sticker.x + outX - footX, py, sticker.z + outZ - footZ)}
+           rotation={[0, buildSwing, 0]}
            scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
@@ -5181,6 +5212,9 @@ function CakeContent({ config, scene, edit = null }) {
           : null;
         if (build && !build.visible) return null;
         const buildRise = build ? build.rise * (bottomTier.radius ?? 1) : 0;
+        /* Radians still to travel around the cake's axis. Already 0 whenever no build is running,
+           so the wrapper group below is an identity transform the rest of the time. */
+        const buildSwing = build ? build.swing : 0;
         const tier = tierData[sticker.tierIndex] ?? bottomTier;
         const isSide = isSideZone(sticker);
         const orbitEnable = orbitEnableFor(sticker.id);
@@ -5197,6 +5231,7 @@ function CakeContent({ config, scene, edit = null }) {
           return (
             <DraggableSideSticker
               buildRise={buildRise}
+              buildSwing={buildSwing}
               key={sticker.id}
               sticker={sticker}
               radius={tier.radius}
@@ -5244,6 +5279,7 @@ function CakeContent({ config, scene, edit = null }) {
         return (
           <DraggableTopSticker
             buildRise={buildRise}
+            buildSwing={buildSwing}
             key={sticker.id}
             sticker={sticker}
             topY={topY}
@@ -5473,12 +5509,24 @@ function TakeLens({ fov }) {
 
 function AssemblyDirector({ onTick, onDone }) {
   const t0 = useRef(null);
+  /* ⚠️ A LATCH, NOT A CLOCK RESET — and this shipped as a take that played forever. The last line
+     used to be `if (onDone?.(t)) t0.current = null;`, meaning to stop. It does the opposite: `onDone`
+     sets the build back to null, which unmounts this component, but React does not unmount it
+     *within the frame*. The next frame finds `t0` null, treats that as "not started", restarts the
+     clock at zero and calls `onTick(0)` — which puts a build back on the canvas and keeps this
+     component alive to do it again. Sandeep, on an 11s take: *"it finished faster and then started
+     over again."* Reproduced at 18s on that take with the pieces airborne for a second time.
+
+     Latching is the whole fix: once the take is done this reports nothing further, so the unmount
+     that is already on its way is the last word. */
+  const done = useRef(false);
   useFrame(() => {
+    if (done.current) return;
     const now = performance.now();
     if (t0.current == null) t0.current = now;
     const t = (now - t0.current) / 1000;
     onTick(t);
-    if (onDone?.(t)) t0.current = null;
+    if (onDone?.(t)) done.current = true;
   });
   return null;
 }

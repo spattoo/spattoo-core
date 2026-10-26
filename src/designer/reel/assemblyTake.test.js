@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import {
   assemblyPose, assemblyTotal, assemblyDone, pieceStart, pieceFlight,
-  ASSEMBLY_DEFAULTS, MAX_SPREAD,
+  ASSEMBLY_DEFAULTS, MAX_SPREAD, MAX_RISE, MAX_SWING,
 } from './assemblyTake.js';
 
 const P = ASSEMBLY_DEFAULTS;
@@ -94,12 +94,83 @@ describe('the cake assembles itself in a fixed time', () => {
     expect(assemblyPose(i, n, 999, plan).rise).toBe(0);
   });
 
-  /* ⚠️ EASED OUT ONLY — a piece placed by hand slows as it arrives. Asserted as a property so the
-     curve can be replaced without rewriting the test. */
-  it('falls fast and lands gently', () => {
-    const f = pieceFlight(P, 5);
-    const r = (k) => assemblyPose(0, 5, f * k, P).rise;
-    expect(r(0) - r(0.25)).toBeGreaterThan((r(0.75) - r(1)) * 2);
+  /* ⚠️ THE CURVE HAS TO SPEND THE WHOLE TAKE, and this test replaces one that demanded the
+     opposite. It used to assert the drop was FRONT-LOADED — "falls fast and lands gently", an
+     ease-out — which is a fine instinct and made `total` meaningless: on an 11s take the piece was
+     half way down at 2.3s and 90% down at 5.9s, so the last five seconds were invisible motion.
+     Sandeep set 11 seconds and got *"it finished faster … it did not really slow it down."*
+
+     So the property is now about PACING, not about which end is faster: no quarter of the take may
+     be dead, and no single moment may carry the shot. An ease-out fails the first clause, a linear
+     ramp passes everything here, and a curve that teleports fails the second. */
+  it('uses the whole take, with no dead stretch and no lurch', () => {
+    for (const total of [2, 5, 11, 15]) {
+      const plan = { ...P, total };
+      const f = pieceFlight(plan, 5);
+      const at = (k) => assemblyPose(0, 5, f * k, plan).rise / plan.rise;
+      for (const [a, b] of [[0, 0.25], [0.25, 0.5], [0.5, 0.75], [0.75, 1]]) {
+        const moved = at(a) - at(b);
+        expect(moved, `${total}s: the quarter from ${a} to ${b} must not be dead`).toBeGreaterThan(0.04);
+        expect(moved, `${total}s: the quarter from ${a} to ${b} must not carry the whole shot`).toBeLessThan(0.6);
+      }
+      // Half the distance at half the time, near enough that the length is legible.
+      expect(at(0.5), `${total}s midpoint`).toBeGreaterThan(0.35);
+      expect(at(0.5), `${total}s midpoint`).toBeLessThan(0.65);
+    }
+  });
+
+  /* ⚠️ LONGER REALLY IS SLOWER. The complaint behind the curve change was that it was not, so the
+     claim is asserted directly rather than left to the shape of the easing. */
+  it('actually slows down when the take is made longer', () => {
+    const near = (total) => {
+      const plan = { ...P, total };
+      for (let t = 0; t <= total; t += 0.05) if (assemblyPose(0, 5, t, plan).rise / plan.rise <= 0.1) return t;
+      return total;
+    };
+    expect(near(11)).toBeGreaterThan(near(5) * 1.8);
+    expect(near(5)).toBeGreaterThan(near(2) * 1.8);
+  });
+
+  /* ── Coming in from further, and around ─────────────────────────────────────────────────────── */
+  it('starts high enough to be off the cake', () => {
+    // "the elements are coming from very near" — the old default was 0.55 of the cake's reach.
+    expect(P.rise).toBeGreaterThan(1);
+    expect(MAX_RISE).toBeGreaterThanOrEqual(4);
+  });
+
+  it('sweeps around the cake and arrives square on its seat', () => {
+    const plan = { ...P, swing: 0.5, total: 6 };
+    const f = pieceFlight(plan, 5);
+    const sw = (t) => assemblyPose(0, 5, t, plan).swing;
+    expect(sw(0)).toBeCloseTo(Math.PI, 6);          // half a turn out, in radians
+    expect(Math.abs(sw(f / 2))).toBeLessThan(Math.abs(sw(0)));
+    // ⚠️ EXACTLY ZERO ON LANDING. A take that ends a degree off is a take that ends on the wrong cake.
+    expect(sw(f)).toBe(0);
+    expect(sw(999)).toBe(0);
+  });
+
+  /* ⚠️ HEIGHT AND ANGLE UNWIND TOGETHER, or a piece finishes its descent and then slides sideways
+     into place. Asserted as a ratio so either curve can change as long as they stay locked. */
+  it('flies one spiral rather than a drop plus a turn', () => {
+    const plan = { ...P, swing: 0.75, rise: 2, total: 8 };
+    const f = pieceFlight(plan, 5);
+    for (const k of [0.2, 0.4, 0.6, 0.8]) {
+      const { rise, swing } = assemblyPose(0, 5, f * k, plan);
+      expect(swing / (plan.swing * Math.PI * 2)).toBeCloseTo(rise / plan.rise, 9);
+    }
+  });
+
+  it('keeps swing inside its ceiling and survives rubbish', () => {
+    expect(assemblyPose(0, 5, 0, { ...P, swing: 99 }).swing).toBeCloseTo(MAX_SWING * Math.PI * 2, 9);
+    expect(assemblyPose(0, 5, 0, { ...P, swing: -99 }).swing).toBeCloseTo(-MAX_SWING * Math.PI * 2, 9);
+    for (const bad of [{ swing: NaN }, { swing: 'x' }, {}]) {
+      expect(Number.isFinite(assemblyPose(0, 5, 1, { ...P, ...bad }).swing)).toBe(true);
+    }
+  });
+
+  it('is straight down when the swing is nothing', () => {
+    const plan = { ...P, swing: 0 };
+    for (const t of [0, 1, 2.5, 5]) expect(assemblyPose(0, 5, t, plan).swing).toBe(0);
   });
 
   it('never puts a piece below its seat', () => {

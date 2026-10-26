@@ -122,6 +122,28 @@ describe('filming is isolated from designing', () => {
     });
   });
 
+  /* ── The take ends ─────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THIS SHIPPED TOO. AssemblyDirector finished with `if (onDone?.(t)) t0.current = null;`,
+   * intending to stop the clock. Nulling the start time does not stop a clock, it REARMS one: the
+   * next frame reads null as "not started", begins again at zero and calls `onTick(0)`, which puts
+   * a build back on the canvas and keeps the director mounted to do it again. Sandeep, on an 11s
+   * take: *"it finished faster and then started over again."* Reproduced at 18 seconds.
+   *
+   * A director must latch when it is done, not reset. Asserted on the source because the failure is
+   * a race between a ref write and an unmount, which a render test does not see.
+   */
+  it('latches when a take is done instead of rewinding', () => {
+    const at = canvas.indexOf('function AssemblyDirector(');
+    expect(at, 'AssemblyDirector should exist').toBeGreaterThan(-1);
+    const body = canvas.slice(at, at + 700);
+    expect(body).toMatch(/const done = useRef\(false\);/);
+    expect(body).toMatch(/if \(done\.current\) return;/);
+    expect(body).toMatch(/if \(onDone\?\.\(t\)\) done\.current = true;/);
+    // ⚠️ THE EXACT LINE THAT LOOPED, named so nobody writes it back.
+    expect(body).not.toMatch(/onDone[\s\S]{0,40}t0\.current = null/);
+  });
+
   /* The cream wheel owns autoRotate and must keep owning it — the spin briefly shared it, which is
      two things writing the camera every frame. */
   it('leaves the cream spin wheel alone', () => {

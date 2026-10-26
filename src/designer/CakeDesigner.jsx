@@ -70,7 +70,7 @@ import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
 const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
-import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD } from './reel/assemblyTake.js';
+import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, MAX_SWING } from './reel/assemblyTake.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
@@ -22381,9 +22381,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               At nothing, every piece falls together and lands together — the graceful one.
             </div>
-            <Slider label="Drop height" value={buildPlan.rise} min={0.1} max={1.5} step={0.05}
-                    fmt={v => `${Math.round(v * 100)}%`}
+            {/* ⚠️ THE CEILING WAS 1.5 AND THE DEFAULT 0.55, WHICH IS BARELY OFF THE CAKE — Sandeep:
+                "the elements are coming from very near. they can come from bit far". It is a
+                fraction of the cake's own reach, never a world distance, so the shot reads the same
+                on a 6" round and on a sheet (INVARIANTS #8). */}
+            <Slider label="Drop height" value={buildPlan.rise} min={0.1} max={MAX_RISE} step={0.05}
+                    fmt={v => `${v.toFixed(2)}× the cake`}
                     onChange={v => setBuildPlan(p => ({ ...p, rise: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              How high above its place each decoration starts. Higher means it flies in from further.
+            </div>
+            {/* The other half of "from further": a piece can come round the cake rather than
+                straight down. Its SEAT is what turns, so it arrives facing exactly as designed. */}
+            <Slider label="Fly in around the cake" value={buildPlan.swing} min={0} max={MAX_SWING} step={0.05}
+                    fmt={v => (v === 0 ? 'straight down' : `${Math.round(v * 360)}°`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, swing: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              How far each decoration travels around the cake on its way in. 360° is a full circle.
+            </div>
             {/* ⚠️ THE LENS IS MOST OF WHAT "CINEMATIC" MEANS before anyone reaches for a grade. The
                 designer works at 42° — a portrait lens, flattering for a thumbnail, and it splays
                 the cake's near bottom edge so it reads as bulging. A longer lens compresses that
