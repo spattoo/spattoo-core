@@ -45,6 +45,7 @@ import SandBed from './SandBed.jsx';
 import { ZONES_TOP, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from '../geometry/sand.js';
 import { REGION_DEFAULTS } from '../geometry/region.js';
 import { spinPose } from '../reel/spinTake.js';
+import { assemblyPose, assemblyDone } from '../reel/assemblyTake.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -2266,7 +2267,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, buildRise = 0 }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2438,7 +2439,9 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   return (
     <group
       ref={node => { freeRef.current = node; faceRef.current = node; }}
-      position={fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]}
+      /* `buildRise` lifts a piece that has not landed yet — see assemblyTake.js. Zero whenever no
+         build is running, so this is the ordinary position the rest of the time. */
+      position={fp ? [fp.x, fp.y + buildRise, fp.z] : [cx, posY + wireUp + buildRise, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
@@ -2622,7 +2625,7 @@ function freeDragPlane(camera, at) {
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null, buildRise = 0 }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2767,7 +2770,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const seatY = (sticker.scatter
     ? topSurfaceYAt(topBands, Math.hypot(sticker.x ?? 0, sticker.z ?? 0), topY)
     : topY) + sandY;
-  const py = seatY + (sticker.yOffset ?? 0) + lift + (
+  const py = buildRise + seatY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
@@ -5148,7 +5151,16 @@ function CakeContent({ config, scene, edit = null }) {
         />
       ))}
 
-      {bottomTier && stickers.map(sticker => {
+      {bottomTier && stickers.map((sticker, pieceIndex) => {
+        /* ⚠️ THE BUILD HIDES A PIECE RATHER THAN FADING IT. A GLB brings its own materials, so
+           fading means reaching into every one of them; not drawing it is exact and works for any
+           mesh. `rise` is a fraction of the cake's reach, turned into world units below, so the
+           shot looks the same on a 6" round and on a sheet (INVARIANTS #8). */
+        const build = assembly
+          ? assemblyPose(pieceIndex, assembly.time, assembly.plan)
+          : null;
+        if (build && !build.visible) return null;
+        const buildRise = build ? build.rise * (bottomTier.radius ?? 1) : 0;
         const tier = tierData[sticker.tierIndex] ?? bottomTier;
         const isSide = isSideZone(sticker);
         const orbitEnable = orbitEnableFor(sticker.id);
@@ -5164,6 +5176,7 @@ function CakeContent({ config, scene, edit = null }) {
         if (isSide) {
           return (
             <DraggableSideSticker
+              buildRise={buildRise}
               key={sticker.id}
               sticker={sticker}
               radius={tier.radius}
@@ -5210,6 +5223,7 @@ function CakeContent({ config, scene, edit = null }) {
         const topY = isBoard ? BOTTOM_BASE : tier.baseY + tier.height;
         return (
           <DraggableTopSticker
+            buildRise={buildRise}
             key={sticker.id}
             sticker={sticker}
             topY={topY}
@@ -5402,6 +5416,28 @@ const FIT_EASE_S = 1.2;
  * note is what that fight looks like. Setting the two spherical angles leaves every other decision
  * where it already lives.
  */
+/* ── Driving the build ───────────────────────────────────────────────────────────────────────────
+ *
+ * The arithmetic is `assemblyTake.js`; this only owns the clock. It reports elapsed seconds upward
+ * so the sticker loop can ask where each piece is — the loop is outside the Canvas's frame hook,
+ * so it cannot read the time itself.
+ *
+ * ⚠️ IT SETS STATE EVERY FRAME, which is normally a smell. It is right here: the whole cake's
+ * decorations move together, so there is one re-render per frame either way, and the alternative —
+ * a ref the loop reads — would not re-render at all and the pieces would never move.
+ */
+function AssemblyDirector({ onTick, onDone }) {
+  const t0 = useRef(null);
+  useFrame(() => {
+    const now = performance.now();
+    if (t0.current == null) t0.current = now;
+    const t = (now - t0.current) / 1000;
+    onTick(t);
+    if (onDone?.(t)) t0.current = null;
+  });
+  return null;
+}
+
 function SpinDirector({ orbitRef, plan, onDone }) {
   const t0 = useRef(null);
   const start = useRef(null);
@@ -5760,6 +5796,10 @@ export default function CakeCanvas({
   /* A hero spin in progress: the four phase durations, or null. See spinTake.js. */
   spin = null,
   onSpinDone = null,
+  /* A build in progress: `{ time, plan }`, or null. See assemblyTake.js. */
+  assembly = null,
+  onAssemblyTick = null,
+  onAssemblyDone = null,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
@@ -6036,6 +6076,7 @@ export default function CakeCanvas({
       />
       {/* Only while a take runs — see SpinDirector. */}
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
+      {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
       <OrbitControls
         makeDefault
         ref={orbitRef}

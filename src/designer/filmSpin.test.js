@@ -45,13 +45,18 @@ describe('the hero spin stays out of the frame', () => {
      stopping is Esc or taking hold of the cake. If this ever becomes a rendered control, the first
      assertion above still passes and the feature is quietly broken for its only purpose. */
   it('is stopped by Escape and by grabbing the cake, not by a visible control', () => {
-    const effect = code.match(/if \(!filmSpin\) return undefined;[\s\S]{0,700}?\}, \[filmSpin\]\);/);
-    expect(effect, 'a listener should exist only while spinning').not.toBeNull();
+    const effect = code.match(/if \(!filmSpin && build == null\) return undefined;[\s\S]{0,800}?\}, \[filmSpin, build\]\);/);
+    expect(effect, 'a listener should exist only while a take is running').not.toBeNull();
     expect(effect[0]).toMatch(/'Escape'/);
     expect(effect[0]).toMatch(/addEventListener\('pointerdown'/);
-    // And it must clean itself up, or every spin leaves another listener behind.
+    // And it must clean itself up, or every take leaves another listener behind.
     expect(effect[0]).toMatch(/removeEventListener\('keydown'/);
     expect(effect[0]).toMatch(/removeEventListener\('pointerdown'/);
+    /* ⚠️ ONE ESCAPE FOR BOTH TAKES. The spin and the build are separate flags, and a stop that
+       cleared only one would leave the other running with its listener already torn down —
+       unstoppable except by reloading, in the middle of a recording. */
+    expect(effect[0]).toMatch(/setFilmSpin\(false\)/);
+    expect(effect[0]).toMatch(/setBuild\(null\)/);
   });
 
   /* ⚠️ IT IS HOW THE CAKE IS LOOKED AT, NOT WHAT IT IS. Written into the design it would be saved,

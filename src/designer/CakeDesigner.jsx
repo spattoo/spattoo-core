@@ -70,6 +70,7 @@ import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
 const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
+import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, atSpeed } from './reel/assemblyTake.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
    rendering a slider short — the take and the panel cannot drift apart silently. */
@@ -1971,6 +1972,20 @@ function MoreIcon({ size = 20 }) {
 
 /* The two takes. Same 24-grid, same 1.8 stroke, currentColor — so each takes the colour of whatever
  * it sits in, whether that is a dark button or a white menu row. */
+
+/* Pieces coming down onto a base — the build take's mark. Local to this screen, like ReelIcon:
+   src/shared/icons.jsx is for glyphs more than one surface draws. */
+function LayersIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* the base it all lands on */}
+      <path d="M3 17.5l9 4 9-4" />
+      {/* two pieces still on their way down */}
+      <path d="M3 12.5l9 4 9-4" />
+      <path d="M12 2.5l9 4-9 4-9-4 9-4z" />
+    </svg>
+  );
+}
 
 function ReelIcon({ size = 18 }) {
   return (
@@ -4756,6 +4771,18 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The settings popover. ⚠️ It opens from the menu and closes the moment the take starts — it is
      on screen only while nobody is filming, which is the same rule the menu item itself follows. */
   const [spinSetupOpen, setSpinSetupOpen] = useState(false);
+  /* ── The cake building itself ──────────────────────────────────────────────────────────────────
+   * `build` is the elapsed seconds of a run, or null when none. It lives here rather than in the
+   * canvas because the canvas is the thing being told, not the thing deciding.
+   *
+   * ⚠️ SLOW MOTION IS A DIVISOR ON THE DURATIONS, never a speed change in the editor. Slowing a
+   * clip in post resamples frames that were already captured; stretching these renders every frame
+   * for real at the slower pace. See atSpeed in assemblyTake.js. */
+  const [build, setBuild] = useState(null);
+  const [buildPlan, setBuildPlan] = useState({ ...ASSEMBLY_DEFAULTS, speed: 0.5 });
+  const [buildSetupOpen, setBuildSetupOpen] = useState(false);
+  // One statement of the plan the canvas and the panel both read, so they cannot disagree.
+  const buildTimings = useMemo(() => atSpeed(buildPlan, buildPlan.speed), [buildPlan]);
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
@@ -4789,6 +4816,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * ⚠️ IT IS NOT PART OF THE DESIGN. This is how the cake is being LOOKED at, not what it is, so it
    * lives in component state and is never written to `design` — a saved cake that spins when you
    * reopen it would be a bug somebody chases through the snapshot for an afternoon. */
+  function startBuild() {
+    // Same reasons as the spin: a selection box on the cake would be filmed, and the canvas is
+    // calmer with nothing selected while every piece is moving.
+    handleDeselect();
+    setBuild(0);
+  }
+
   function startFilmSpin() {
     /* ⚠️ START, NOT TOGGLE. Stopping is Esc or a pointer — and since ANY pointerdown stops it, the
        click that opens this menu has already stopped any spin in progress. A toggle here could only
@@ -4807,15 +4841,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * means "I want to drive now". The listener only exists while the cake is spinning, so nothing
    * here is a key handler the rest of the designer has to reason about. */
   useEffect(() => {
-    if (!filmSpin) return undefined;
-    const stop = (e) => { if (!e.key || e.key === 'Escape') setFilmSpin(false); };
+    if (!filmSpin && build == null) return undefined;
+    const stop = (e) => {
+      if (e.key && e.key !== 'Escape') return;
+      setFilmSpin(false);
+      setBuild(null);
+    };
     window.addEventListener('keydown', stop);
     window.addEventListener('pointerdown', stop);
     return () => {
       window.removeEventListener('keydown', stop);
       window.removeEventListener('pointerdown', stop);
     };
-  }, [filmSpin]);
+  }, [filmSpin, build]);
 
   // ── Reel recording — catalogue authors only ───────────────────────────────────────────────────
   // A per-BAKER flag (bakers.is_catalog_author, migration 070), not a per-user capability: hasCap
@@ -18965,6 +19003,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  the two would both write the azimuth every frame. */
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
+              assembly={build == null ? null : { time: build, plan: buildTimings }}
+              onAssemblyTick={setBuild}
+              /* Returns true when the last piece has landed, which stops the director's clock.
+                 The count is the decorations the canvas is actually drawing. */
+              onAssemblyDone={(t) => {
+                if (!assemblyDone(canvasConfig.stickers?.length ?? 0, t, buildTimings)) return false;
+                setBuild(null);
+                return true;
+              }}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
               brushDraw={brushDraw}
@@ -21648,6 +21695,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                       `is_catalog_author` says who writes the public catalogue. */}
                   {isCatalogAuthor && (
                     <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                            onClick={() => { setCaptureMenuOpen(false); setBuildSetupOpen(true); }}>
+                      <LayersIcon size={16} />
+                      Build the cake
+                      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>
+                        {assemblyTotal(canvasConfig.stickers?.length ?? 0, buildTimings).toFixed(1)}s
+                      </span>
+                    </button>
+                  )}
+                  {isCatalogAuthor && (
+                    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
                             onClick={() => { setCaptureMenuOpen(false); setSpinSetupOpen(true); }}>
                       <RefreshIcon size={16} />
                       Spin the cake
@@ -22287,6 +22344,53 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         primaryColor={primaryColor}
         accentColor={accentColor}
       />
+
+      {/* ── Setting up the build ──────────────────────────────────────────────────────────────────
+          Every decoration lands in turn, in the order it was placed — so the shot replays how the
+          cake was really made. Same rules as the spin's panel: it closes before the take runs,
+          because everything on screen is filmed. */}
+      {buildSetupOpen && (
+        <Panel title="Build the cake" onClose={() => setBuildSetupOpen(false)} maxWidth={360}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 2px 10px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+              The decorations land one at a time, in the order they were placed. Press Start and
+              this closes — Esc stops it early.
+            </p>
+            {/* ⚠️ SLOW MOTION IS RENDERED, NOT POST-PROCESSED. Slowing the clip in an editor
+                resamples frames that were already captured and judders; this stretches the
+                durations so every frame is drawn for real at the slower pace. */}
+            <Slider label="Slow motion" value={buildPlan.speed} min={0.2} max={1.5} step={0.05}
+                    fmt={v => (v === 1 ? 'normal' : `${v.toFixed(2)}×`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, speed: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Below 1× is slower. Every frame is drawn at this pace, so it stays sharp.
+            </div>
+            <Slider label="Each piece" value={buildPlan.perPiece} min={0.1} max={1.5} step={0.05}
+                    fmt={v => `${v.toFixed(2)}s`}
+                    onChange={v => setBuildPlan(p => ({ ...p, perPiece: v }))} />
+            <Slider label="Gap between pieces" value={buildPlan.stagger} min={0} max={1} step={0.02}
+                    fmt={v => `${v.toFixed(2)}s`}
+                    onChange={v => setBuildPlan(p => ({ ...p, stagger: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Shorter than a piece&rsquo;s own time, so they overlap in the air.
+            </div>
+            <Slider label="Drop height" value={buildPlan.rise} min={0.1} max={1.5} step={0.05}
+                    fmt={v => `${Math.round(v * 100)}%`}
+                    onChange={v => setBuildPlan(p => ({ ...p, rise: v }))} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
+                style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
+                         fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', border: 'none' }}>
+                Start
+              </button>
+              <span style={{ fontSize: 12, color: '#888' }}>
+                {(canvasConfig.stickers?.length ?? 0)} pieces ·{' '}
+                {assemblyTotal(canvasConfig.stickers?.length ?? 0, buildTimings).toFixed(1)}s
+              </span>
+            </div>
+          </div>
+        </Panel>
+      )}
 
       {/* ── Setting up the hero spin ──────────────────────────────────────────────────────────────
           Four durations, tuned against a narration whose length is already known — the take has to
