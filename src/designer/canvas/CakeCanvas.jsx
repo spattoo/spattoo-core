@@ -5263,8 +5263,6 @@ function CakeContent({ config, scene, edit = null }) {
             <DraggableSideSticker
               buildRise={buildRise}
               buildSwing={buildSwing}
-            buildOffX={buildOffX}
-            buildOffZ={buildOffZ}
               buildOffX={buildOffX}
               buildOffZ={buildOffZ}
               key={sticker.id}
@@ -5315,6 +5313,8 @@ function CakeContent({ config, scene, edit = null }) {
           <DraggableTopSticker
             buildRise={buildRise}
             buildSwing={buildSwing}
+            buildOffX={buildOffX}
+            buildOffZ={buildOffZ}
             key={sticker.id}
             sticker={sticker}
             topY={topY}
