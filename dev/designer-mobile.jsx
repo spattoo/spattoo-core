@@ -1728,6 +1728,47 @@ if (PARAMS.has('themes')) Object.assign(STUBS, {
   ] }),
 });
 
+/* ⚠️ SAND AND SPRINKLES — two real catalogue rows this harness had no fixture for, which is why
+ * two help articles had to declare them unchecked rather than describe them. Both copied out of
+ * `cake_elements` on 2026-10-26, config and allowed_actions included.
+ *
+ * ⚠️ `Sand` IS `move: false` AND `duplicate: false` ON THE REAL ROW. It is a bed over an area, not
+ * a thing you place and slide, so a fixture that allowed either would put controls on the card
+ * that the catalogue does not give it — the same way the hand-made drip fixture offered a colour
+ * the real drip forbids (see the Chocolate drip row above).
+ *
+ * ⚠️ `Sprinkles` IS A GLB and `scatter: true` / `ready_made: true`. `top_surface: 'stand'` rather
+ * than 'hug' is the real row's value and is what makes them sit ON the lid rather than wrap it.
+ * The image_url is the real key through vite's /cdn proxy, so the mesh is the shipped one.
+ */
+CAT_ELEMENTS.push({
+  id: 'e-sand', name: 'Sand', description: 'a bed of fine, even crumb',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: null, thumbnail_url: CAT_THUMB('#d9b584'), thumb_key: null,
+  allowed_zones: ['top_surface', 'board'],
+  allowed_actions: { move: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: {
+    procedural: 'sand', board: 'hug', top_surface: 'stand',
+    sand: { rise: 0.055, seed: 11, size: 0.8, shape: 'round', falloff: 0.5, spacing: 0.04, edgeBreak: 0.55 },
+    colors: { pale: '#e8d4ae', sand: '#d9b584', shell: '#efe0c6', golden: '#d2a862', biscuit: '#c89a63' },
+  },
+  default_color: '#d9b584', sort_order: 61,
+});
+CAT_ELEMENTS.push({
+  id: 'e-sprinkles', name: 'Sprinkles', description: 'a scatter over a surface',
+  element_type_id: 'et-glb', category_id: 'cat-1',
+  image_url: '/cdn/elements/files/3D/32c7503e-386b-4a45-85a2-95aeb9473e53.glb',
+  thumbnail_url: CAT_THUMB('#b8933d'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: {
+    r: 0.1, side: 'hug', middle_tier: 'hug', top_surface: 'stand',
+    scatter: true, ready_made: true,
+    scale: { max: 0.3, min: 0.1, step: 0.05 },
+  },
+  default_color: '#b8933d', sort_order: 0,
+});
+
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),
 });
