@@ -3803,6 +3803,17 @@ function CakeScene({
   onGypClick,
   onGrassClick,
   onSandClick,
+  /* A build in progress: `{ time, plan }`, or null. Travels the same road as the click handlers
+     above and for the same reason — the loop that applies it is in the SHARED renderer, and `edit`
+     is null on the capture path, so a thumbnail can never catch a half-built cake.
+
+     ⚠️ THIS LINE IS THE ONE THAT WAS MISSING, and it shipped as "ReferenceError: assembly is not
+     defined" in 0.1.770. It was declared on CakeCanvas and read off `edit` in CakeContent — both
+     ends right, the middle hop never written, exactly the balloon and card-topper failure recorded
+     at the call site below. The difference is that those arrived `undefined` and did nothing quietly
+     while this one is in an `edit` literal, so the scene threw on render and the designer went
+     black. A missing hop is a crash or a silent no-op depending only on where the name is read. */
+  assembly = null,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   // Handed straight into `edit` below, for the shared renderer to use. Declared here because a
@@ -4145,6 +4156,9 @@ function CakeScene({
           selectedGenerated, onCloudClick, onRainbowClick, onCloudMove, onRainbowMove,
           onBalloonClick, onBalloonMove, onBrushStrokeClick, onBrushBandClick, onGypClick, onGrassClick,
           onSandClick,
+          // A build in progress. Here for the same reason as the selection cue above: the loop that
+          // applies it is in the shared renderer, and a capture must never catch a half-built cake.
+          assembly,
         }}
       />
       </group>
@@ -4531,6 +4545,11 @@ function CakeContent({ config, scene, edit = null }) {
     onGrassClick,
     // Sand is drawn by the shared renderer too, for the same reason.
     onSandClick,
+    /* ⚠️ AND THE BUILD — this is the one that actually shipped broken. It was declared as a prop of
+       CakeCanvas and used in this component's sticker loop: green through every gate, and undefined
+       at runtime. `check:bindings` asks whether a NAME is declared anywhere in the FILE, not whether
+       the function using it can see it. Read HERE, or it is undefined past a green build. */
+    assembly,
   } = edit ?? {};
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
@@ -5823,6 +5842,12 @@ export default function CakeCanvas({
   spin = null,
   onSpinDone = null,
   /* A build in progress: `{ time, plan }`, or null. See assemblyTake.js. */
+  /* ⚠️ A BUILD IN PROGRESS, FORWARDED INTO `edit` BELOW — never read here. The sticker loop that
+     applies it lives in CakeContent, the SHARED renderer (INVARIANTS #2), which takes only
+     `config`, `scene` and `edit`. Declared as a prop of this component it is 650 lines out of scope
+     at the place it is used, which shipped as "ReferenceError: assembly is not defined". `edit` is
+     the right channel anyway, for the reason given at its own call site: it is null on the capture
+     path, so a thumbnail can never catch a half-built cake. */
   assembly = null,
   onAssemblyTick = null,
   onAssemblyDone = null,
@@ -5860,6 +5885,9 @@ export default function CakeCanvas({
   // one of them, the handler is simply undefined and the tap falls through to whatever is behind
   // the grass — which deselects, so it looks like the click "does nothing".
   onGrassClick,
+  /* And the sand's — the FIFTH place, because CakeScene sits between this and the renderer. It was
+     missing from two of them, which is why tapping a drift did nothing. */
+  onSandClick,
   blocksMode = false, blocksSelected = null, onBlockMove, onBlockSelect,
   selectedGenerated = null,   // { kind: 'cloud'|'rainbow', id } — which one wears the selection box
   onCloudClick, onRainbowClick, onCloudMove, onRainbowMove, onBalloonClick, onBalloonMove, onBrushStrokeClick,
@@ -6067,6 +6095,14 @@ export default function CakeCanvas({
         onGypSelect={onGypSelect}
         onGypClick={onGypClick}
         onGrassClick={onGrassClick}
+        /* ⚠️ THE SAND'S WAS MISSING TOO, found while fixing the build's. CakeDesigner passed
+           `onSandClick`, CakeScene declared it and put it in `edit`, CakeContent read it out and
+           handed it to the drift as `onPick` — and this line was never written, so tapping the sand
+           on the cake selected nothing. Silent for the same reason the balloon was: the call site is
+           `onPick={onSandClick}` and the drift optional-calls it, so `undefined` is a tap that does
+           nothing rather than a throw. `check:forwarded-props` missed it because it only audits the
+           handlers CakeContent defaults to NOOP, and this one has no default. */
+        onSandClick={onSandClick}
         grassMode={grassMode}
         grassSelected={grassSelected}
         onGrassMove={onGrassMove}
@@ -6101,6 +6137,9 @@ export default function CakeCanvas({
         onFoilMove={onFoilMove}
         onFoilSelect={onFoilSelect}
         tierDataRef={tierDataRef}
+        /* The build, for the sticker loop inside. The AssemblyDirector just below owns the CLOCK;
+           this is the pose it ticks. Both halves need it and they are not the same hop. */
+        assembly={assembly}
       />
       {/* Only while a take runs — see SpinDirector. */}
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}

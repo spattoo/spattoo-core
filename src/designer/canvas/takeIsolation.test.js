@@ -72,6 +72,56 @@ describe('filming is isolated from designing', () => {
     }
   });
 
+  /* ── The scope trap ────────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THIS SHIPPED, IN 0.1.770. `assembly` was declared as a prop of CakeCanvas and used in the
+   * sticker loop — which lives in CakeContent, a DIFFERENT component 650 lines earlier that takes
+   * only `config`, `scene` and `edit`. Every gate passed and the designer threw
+   * "ReferenceError: assembly is not defined" on load, with a black screen and Try again.
+   *
+   * ⚠️ `check:bindings` CANNOT CATCH IT. It asks whether a NAME is declared anywhere in the file,
+   * and `assembly` was — just not where it was used. That is the same shape as the OrbitControls
+   * setters: a gate answering a slightly different question than the one that matters.
+   *
+   * ⚠️ WHAT DID CATCH IT IS `cakeContent.test.js` — "is GIVEN everything it passes", which walks the
+   * whole CakeCanvas → CakeScene → CakeContent chain and is the real gate for a missing hop. Read it
+   * before adding anything here. This suite only guards the part that is specific to a TAKE: that
+   * the build travels in `edit` rather than as a prop, because that is what keeps it off the capture
+   * path. The chain itself is that file's job, not this one's.
+   */
+  describe('the shared renderer can see what it uses', () => {
+    const at = canvas.indexOf('function CakeContent(');
+    const end = canvas.indexOf('export default function CakeCanvas');
+    const body = canvas.slice(at, end);
+
+    it('is a different component from CakeCanvas, with only three props', () => {
+      expect(at).toBeGreaterThan(-1);
+      expect(end).toBeGreaterThan(at);
+      expect(canvas).toMatch(/function CakeContent\(\{ config, scene, edit = null \}\)/);
+    });
+
+    it('destructures everything its sticker loop uses', () => {
+      // The loop really is in here, or this suite is guarding the wrong body.
+      expect(body).toMatch(/stickers\.map\(\(sticker, pieceIndex\)/);
+      for (const name of ['assembly', 'onSandClick', 'onGrassClick']) {
+        const declared = new RegExp(`\\n\\s*${name},`).test(body.slice(0, body.indexOf('} = edit ?? {};')));
+        expect(declared, `${name} must be read out of edit inside CakeContent`).toBe(true);
+      }
+    });
+
+    /* ⚠️ AND IT MUST TRAVEL IN `edit`, not as a prop of CakeCanvas — `edit` is null on the capture
+       path, which is what stops a thumbnail catching a half-built cake. Asserted on the `edit`
+       literal CakeCanvas hands down, so moving it back out to a prop fails here. */
+    it('sends the build through edit, so a capture never sees one', () => {
+      const open = canvas.indexOf('edit={{');
+      expect(open, 'CakeCanvas should hand CakeContent an edit literal').toBeGreaterThan(-1);
+      const literal = canvas.slice(open, canvas.indexOf('}}', open));
+      expect(literal).toMatch(/\n\s*assembly,/);
+      // And NOT as a prop of CakeContent, which is the arrangement that crashed.
+      expect(canvas).not.toMatch(/<CakeContent[\s\S]{0,400}?\n\s*assembly=/);
+    });
+  });
+
   /* The cream wheel owns autoRotate and must keep owning it — the spin briefly shared it, which is
      two things writing the camera every frame. */
   it('leaves the cream spin wheel alone', () => {
