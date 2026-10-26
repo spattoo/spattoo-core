@@ -19,6 +19,13 @@ dist
 .claude/worktrees/
 .claude/settings.local.json
 
+# Throwaway probe scripts — `col.tmp.mjs`, `shot.tmp.mjs`. Same reasoning as `worktrees/` above:
+# this repo is one working tree shared by concurrent sessions, so somebody else's half-written
+# Playwright probe appears in YOUR `git status` and `npm run release` refuses to build from a dirty
+# tree. Found exactly that way, twice. Ignoring the pattern is the fix; deleting the file is not,
+# because it belongs to whoever is still using it.
+*.tmp.mjs
+
 
 # A reference cake photo for dev/edible-prints.html. A real one is a CUSTOMER'S, and a fixture is
 # not a reason to commit one — drop any photo here to see the crop previews.
