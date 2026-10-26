@@ -1709,6 +1709,25 @@ if (LIBRARY) Object.assign(STUBS, {
   },
 });
 
+/* ⚠️ `?themes=1` — THE STOREFRONT THEMES, because the section hides itself without them.
+ * SettingsPanel renders its "Storefront Theme" section only when `themes.length > 0`, and the
+ * Proxy below answers `fetchStorefrontThemes` with `{ templates: [] }` — no `themes` key at all —
+ * so the section, the Preview & customise button and the whole storefront customiser behind it
+ * were unreachable here. That customiser is where a baker turns sections on and off, reorders
+ * them, sets their story photo and picks a hero cake, so four help articles had no door.
+ *
+ * The four rows are the real `storefront_themes` table, read on 2026-10-26: Spotlight, Patisserie,
+ * Aurora and Ink, in that sort order, none premium.
+ */
+if (PARAMS.has('themes')) Object.assign(STUBS, {
+  fetchStorefrontThemes: async () => ({ themes: [
+    { id: 1, key: 'spotlight',  name: 'Spotlight',  sort_order: 1, is_active: true, is_premium: false },
+    { id: 2, key: 'patisserie', name: 'Patisserie', sort_order: 2, is_active: true, is_premium: false },
+    { id: 3, key: 'aurora',     name: 'Aurora',     sort_order: 3, is_active: true, is_premium: false },
+    { id: 4, key: 'ink',        name: 'Ink',        sort_order: 4, is_active: true, is_premium: false },
+  ] }),
+});
+
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),
 });
