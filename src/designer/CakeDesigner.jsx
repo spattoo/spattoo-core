@@ -21345,6 +21345,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            side and blue the other: *"we should allow multi color drip."* Reusing the
                            stop list rather than inventing a second one is what makes the control,
                            the storage and the save path already exist. */
+                        /* ⚠️ A COAT TAKES OVER THIS POPUP. When the tier carries one from this
+                           card there is no ring to colour — the stops belong to the coat, and the
+                           same GradientControls below edits them. Scatter is deliberately absent;
+                           see writeCoatColors.
+
+                           ⚠️ DECLARED ABOVE `gradEligible`, WHICH READS IT. It used to sit sixteen
+                           lines lower, which is a `Cannot access 'coatHere' before initialization`
+                           every time this popup drew its gradient section — `const` is not hoisted.
+                           Found by check:tdz on the day that same mistake, under the name `orbited`,
+                           took the live designer down. */
+                        const coatHere = design.tiers[tierIndex]?.coat?.cardId === card.cardId
+                          ? design.tiers[tierIndex].coat : null;
                         const gradEligible = !!coatHere || isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
                         /* ⚠️ ALTERNATING IS OFFERED ONLY WHERE THERE ARE PIECES TO ALTERNATE, and
                            the test is which RENDER PATH this layer takes, not which zone it is in.
@@ -21357,12 +21369,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            path that can honour it, and these are the three things that bypass it. */
                         const altCapable = !isDrip && !p.wrap && !p.bend
                                         && (p.finish ?? 'cream') !== 'element';
-                        /* ⚠️ A COAT TAKES OVER THIS POPUP. When the tier carries one from this
-                           card there is no ring to colour — the stops belong to the coat, and the
-                           same GradientControls below edits them. Scatter is deliberately absent;
-                           see writeCoatColors. */
-                        const coatHere = design.tiers[tierIndex]?.coat?.cardId === card.cardId
-                          ? design.tiers[tierIndex].coat : null;
                         const gStops  = coatHere
                           ? (coatHere.colors?.length ? coatHere.colors : [color])
                           : (p.gradient?.colors?.length ? p.gradient.colors : [color]);

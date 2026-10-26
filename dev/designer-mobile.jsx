@@ -1640,6 +1640,27 @@ const rimRosesDesign = PARAMS.has('rimroses') ? {
   }),
 } : null;
 
+/* ── `?standing` — a decoration on the top surface in STAND mode ────────────────────────────────
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE OTHER RETURN WENT UNTESTED. `DraggableTopSticker` has two of them:
+ * upright (`isStand || isPerch || isVerge || isInsert`) and flat. Every fixture here seeded a flat
+ * sticker — `?rimroses` is a scatter — so a change that broke only the upright path shipped green
+ * and took every cake with a standing decoration to a black screen with "Cannot access 'e_' before
+ * initialization" (0.1.773). One fixture per RETURN, not one per component.
+ *
+ * Same rosette and the same real size as `?rimroses`, so the two differ in exactly one thing: the
+ * placement mode, and therefore which branch renders. */
+const standingDesign = PARAMS.has('standing') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: [0, 1, 2].map(k => ({
+    id: `st${k}`, elementId: 'e9', name: 'Rosette', imageUrl: '/sample-rosette.glb',
+    zone: 'top_surface', tierIndex: 0, placementMode: 'stand',
+    x: (k - 1) * 0.9, z: 0, y: 0, scale: 3.2,
+    size: 1, rotation: 0, color: '#c41c1c',
+    allowedActions: { move: true, color: true, delete: true, resize: true },
+  })),
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -1745,5 +1766,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

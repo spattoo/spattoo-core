@@ -2954,6 +2954,31 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const footYaw = footSeat ? surfaceYaw(sticker) : 0;
   const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
   const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
+  /* ── The build's horizontal half, for both return paths below ────────────────────────────────
+   *
+   * A piece sweeps in AROUND the cake before it lands — `swing` radians still to travel, from
+   * assemblyTake.js. Orbiting means two things at once: the seat moves round the cake's axis, and
+   * the piece turns with it so it arrives facing exactly as designed. Rotating only the position
+   * would fly it in sideways and snap it straight at the end.
+   *
+   * ⚠️ THE SAME TRANSFORM A PARENT GROUP WOULD APPLY, written out because this component has TWO
+   * returns (upright and flat) and a wrapper would have to be threaded through both. Y-rotation by
+   * θ sends (x, z) to (x·cosθ + z·sinθ, −x·sinθ + z·cosθ); setting the group's own rotation to the
+   * same θ supplies the turn. At swing 0 it is the identity and the position is untouched.
+   *
+   * ⚠️ AND IT IS DECLARED HERE, ABOVE BOTH RETURNS, BECAUSE IT SHIPPED THE OTHER WAY — in 0.1.773,
+   * next to the `flat*` terms 80 lines down, which is AFTER the upright return that calls it. Every
+   * cake with a standing decoration went black with "Cannot access 'e_' before initialization", the
+   * minified form of exactly the trap the note immediately below this one records. `check:bindings`
+   * passed, again, because the name IS declared — just later. And the harness missed it because a
+   * rosette takes the FLAT return: one of the two paths was exercised and the other never ran.
+   */
+  const swingCos = Math.cos(buildSwing);
+  const swingSin = Math.sin(buildSwing);
+  const orbited = (x, y, z) => (buildSwing === 0
+    ? [x, y, z]
+    : [x * swingCos + z * swingSin, y, -x * swingSin + z * swingCos]);
+
   /* ⚠️ PUBLISHED HERE, NOT BESIDE THE STAND-OFF'S OWN TERMS 50 LINES UP — `const` is not hoisted,
      and reading `footX` there threw "Cannot access 'footX' before initialization" on every frame.
      The same temporal-dead-zone trap this file and LibraryPanel have both paid for; it passed
@@ -3324,24 +3349,6 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
    * Both arrows therefore raise it: one brings the far edge up (the face turns toward you), the
    * other the near edge (it tips over toward you). That is what lifting a flat decoration off a cake
    * with a palette knife actually does. */
-  /* ── The build's horizontal half, for both return paths below ────────────────────────────────
-   *
-   * A piece sweeps in AROUND the cake before it lands — `swing` radians still to travel, from
-   * assemblyTake.js. Orbiting means two things at once: the seat moves round the cake's axis, and
-   * the piece turns with it so it arrives facing exactly as designed. Rotating only the position
-   * would fly it in sideways and snap it straight at the end.
-   *
-   * ⚠️ THE SAME TRANSFORM A PARENT GROUP WOULD APPLY, written out because this component has TWO
-   * returns (upright and flat) and a wrapper would have to be threaded through both. Y-rotation by
-   * θ sends (x, z) to (x·cosθ + z·sinθ, −x·sinθ + z·cosθ); setting the group's own rotation to the
-   * same θ supplies the turn. At swing 0 it is the identity and the position is untouched.
-   */
-  const swingCos = Math.cos(buildSwing);
-  const swingSin = Math.sin(buildSwing);
-  const orbited = (x, y, z) => (buildSwing === 0
-    ? [x, y, z]
-    : [x * swingCos + z * swingSin, y, -x * swingSin + z * swingCos]);
-
   const flatHalfZ = seatHalf ?? STICKER_SIZE / 2;
   const flatHalfX = glbHalfW ?? seatHalf ?? STICKER_SIZE / 2;
   const flatLeanX = sticker.tiltAngle ?? 0;
