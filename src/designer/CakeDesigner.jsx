@@ -63,7 +63,8 @@ import { headerBrandParts, brandNameFontSize, BRAND_NAME_MIN } from '../shared/h
 import { brandFontCss } from '../storefront/storefrontKit.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
-import { SAND_DEFAULTS, SAND_COLORS } from './geometry/sand.js';
+import { SAND_DEFAULTS, SAND_COLORS, sandPlacement, sandMoveTarget,
+         ZONES_TOP, ZONES_BOARD } from './geometry/sand.js';
 /* Density and spacing are the same number read from opposite ends: density = SUM − spacing. The SUM
    is what makes the dial's own range (0.018…0.08) land on a sensible spacing, and it lives here
    rather than inline so the control and its inverse cannot drift apart. */
@@ -7686,8 +7687,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         spacing: SAND_DEFAULTS.spacing, rise: SAND_DEFAULTS.rise,
         falloff: SAND_DEFAULTS.falloff, edgeBreak: SAND_DEFAULTS.edgeBreak,
         seed: SAND_DEFAULTS.seed,
-        colour: el?.default_color ?? SAND_COLORS.sand,
+        /* ⚠️ BISCUIT, AND THE ROW STILL WINS. Sandeep: *"set default colour is Biscuit."* The
+           authored answer is `default_color` on the element row — this is only the seed a row with
+           nothing authored falls back to, and the two are set together so they cannot disagree
+           (migration 139). */
+        colour: el?.default_color ?? SAND_COLORS.biscuit,
         ...tuned,
+        /* The top's own span, last, for the reason moveSandToTier applies the board's: `size`
+           means something different on each surface and the surface is what answers it. */
+        ...sandPlacement(ZONES_TOP, el?.placement_config),
         // The row's id travels with the design — the card cannot ask what the element ALLOWS
         // without it, and a template bundle finds its elements by scanning for matching uuids.
         elementId: el?.id ?? undefined,
@@ -8825,11 +8833,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      baker ends up with two drifts after one tap on "Board". */
   function moveSandToTier(next) {
     const cur = sandSurface();
-    if (cur === next || next == null || cur === -1) return;
     const sd = sandOn(cur);
-    if (!sd) return;
+    /* ⚠️ THE EMPTINESS TEST IS THE DRIFT, NOT THE INDEX — see sandMoveTarget. `BOARD_TIER` is -1
+       and so is "no tier has sand", and the old guard `cur === -1` could not tell them apart, so
+       Board → Top was unreachable while Top → Board worked. */
+    if (sandMoveTarget(cur, next, !!sd) == null) return;
+    /* ⚠️ AND THE SPAN IS THE DESTINATION'S ANSWER, not a number carried across. `size` means the
+       patch's reach on a top and the ring's reach BEYOND the cake on a board (sandSpan), so moving
+       it untouched took the top's 0.8 onto the board as a vast collar. Applied last, exactly as the
+       gypsophila Where pills apply `gypPlacement` — everything the baker tuned that is not the
+       surface's own business comes through `...sd` and survives. */
+    const row = sd.elementId ? elementById.get(sd.elementId) : null;
+    const zone = next === BOARD_TIER ? ZONES_BOARD : ZONES_TOP;
     putSand(cur, null);
-    putSand(next, sd);
+    putSand(next, { ...sd, ...sandPlacement(zone, row?.placement_config) });
   }
 
   function moveGrassToTier(next) {

@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest';
 import { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
         sandHeightAt, sandMoundOpts, SAND_MOUND_SEED,
-         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS } from './sand.js';
+         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS,
+  SAND_PLACEMENTS, sandPlacement, sandMoveTarget, SAND_COLORS,
+} from './sand.js';
 
 // A seat ring at a given radius, as grassSeats would hand one over.
 const ringAt = (r, n = 400) => Array.from({ length: n }, (_, i) => {
@@ -443,5 +445,94 @@ describe('sandHeightAt — the number a shell is seated on', () => {
     }
     expect(worstRight).toBeLessThan(grain);
     expect(worstWrong).toBeGreaterThan(worstRight);
+  });
+});
+
+/* ── Which surface, and how far it reaches there ─────────────────────────────────────────────────
+ *
+ * Two faults reported together on one card: *"default zone is TOP. i switched to BOARD, then i
+ * tried to switch back to TOP. not able to do"*, and *"can you set the default size around 30%."*
+ */
+describe('moving a drift between the top and the board', () => {
+  /* ⚠️ THE BUG, PINNED. BOARD_TIER is -1 and so is findIndex's "no tier has sand", and a guard
+     written as `cur === -1` to mean the second also caught the first. Top → Board worked because
+     only the reverse move STARTS from the sentinel, which is why it read as half-built rather than
+     as broken. */
+  it('lets a drift come back off the board, which -1 as a sentinel made impossible', () => {
+    const BOARD = -1;
+    expect(sandMoveTarget(BOARD, 0, true)).toBe(0);     // board → top: the reported fault
+    expect(sandMoveTarget(0, BOARD, true)).toBe(BOARD); // top → board: always worked
+    expect(sandMoveTarget(BOARD, 2, true)).toBe(2);     // and to any tier, not just the first
+  });
+
+  it('still refuses a move that means nothing', () => {
+    expect(sandMoveTarget(0, 0, true)).toBe(null);        // already there
+    expect(sandMoveTarget(-1, -1, true)).toBe(null);
+    expect(sandMoveTarget(0, null, true)).toBe(null);     // no destination
+    expect(sandMoveTarget(0, undefined, true)).toBe(null);
+  });
+
+  /* The emptiness question is answered by LOOKING for the drift. That is the whole repair: the
+     index never has to carry a second meaning, so -1 can be a surface like any other. */
+  it('refuses when there is no drift, wherever the index says it is', () => {
+    expect(sandMoveTarget(-1, 0, false)).toBe(null);
+    expect(sandMoveTarget(0, -1, false)).toBe(null);
+  });
+});
+
+describe('how far a drift reaches on each surface', () => {
+  /* ⚠️ THE TWO NUMBERS ARE NOT COMPARABLE, which is why one default could not serve both. On a top
+     `outerFrac` IS the size; on a board the ring starts at the cake's edge and reaches `size`
+     BEYOND it. Carrying the top's 0.8 onto the board is a collar nearly as wide as the cake. */
+  it('reads size differently on each, so each needs its own default', () => {
+    const top = sandSpan(ZONES_TOP, SAND_PLACEMENTS[ZONES_TOP].size);
+    const board = sandSpan(ZONES_BOARD, SAND_PLACEMENTS[ZONES_BOARD].size);
+    expect(top.outerFrac).toBeCloseTo(0.8, 9);        // most of the top, a rim of bare cake left
+    expect(top.innerFrac).toBe(0);
+    expect(board.innerFrac).toBe(1);                   // starts at the cake's edge
+    expect(board.outerFrac).toBeCloseTo(1.3, 9);       // and reaches 30% of the radius past it
+    // The fault in one line: the top's default on the board would be a far wider band.
+    expect(sandSpan(ZONES_BOARD, SAND_PLACEMENTS[ZONES_TOP].size).outerFrac)
+      .toBeGreaterThan(board.outerFrac);
+  });
+
+  it('asks around 30% on the board, which is what was asked for', () => {
+    expect(SAND_PLACEMENTS[ZONES_BOARD].size).toBeGreaterThanOrEqual(0.25);
+    expect(SAND_PLACEMENTS[ZONES_BOARD].size).toBeLessThanOrEqual(0.35);
+  });
+
+  /* ⚠️ RULE 3: seeded in code, overlaid from the row. An admin retunes either surface in Manage
+     Elements without a deploy — the same bargain gypPlacement makes. */
+  it('lets the element row override either surface, and neither leaks into the other', () => {
+    const pc = { sand: { zones: { [ZONES_BOARD]: { size: 0.44 } } } };
+    expect(sandPlacement(ZONES_BOARD, pc).size).toBe(0.44);
+    expect(sandPlacement(ZONES_TOP, pc).size).toBe(SAND_PLACEMENTS[ZONES_TOP].size);
+  });
+
+  it('falls back to the seed when the row authors nothing', () => {
+    for (const pc of [null, undefined, {}, { sand: {} }, { sand: { zones: {} } }]) {
+      expect(sandPlacement(ZONES_TOP, pc).size).toBe(SAND_PLACEMENTS[ZONES_TOP].size);
+      expect(sandPlacement(ZONES_BOARD, pc).size).toBe(SAND_PLACEMENTS[ZONES_BOARD].size);
+    }
+    // An unknown zone is an empty overlay rather than a throw — a caller's typo must not white-screen.
+    expect(sandPlacement('nowhere')).toEqual({});
+  });
+
+  /* ⚠️ IT CARRIES ONLY WHAT THE SURFACE OWNS. Colour, grain, bank height, taper, wander and seed
+     are the baker's and must survive a move — only the span is the surface's answer. */
+  it('speaks for the span and nothing else', () => {
+    for (const zone of [ZONES_TOP, ZONES_BOARD]) {
+      expect(Object.keys(SAND_PLACEMENTS[zone])).toEqual(['size']);
+    }
+  });
+});
+
+/* ⚠️ THE SEED AND THE ROW HAVE TO AGREE. *"set default colour is Biscuit."* The authored answer is
+   `default_color` on the element row (migration 139); this is the fallback core uses when no row
+   says otherwise, and the two are the same hex on purpose — a fallback that disagrees with the row
+   is a decoration that changes colour depending on where it was added from. */
+describe('the colour a new drift starts on', () => {
+  it('has Biscuit, at the hex migration 139 writes to the row', () => {
+    expect(SAND_COLORS.biscuit).toBe('#c89a63');
   });
 });

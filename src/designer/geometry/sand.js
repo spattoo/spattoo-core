@@ -520,6 +520,61 @@ export function sandSpan(zone, size = SAND_DEFAULTS.width) {
     : { innerFrac: 1, outerFrac: 1 + Math.max(0.02, size), feather: 1 };
 }
 
+/* ── `size` MEANS A DIFFERENT THING ON EACH SURFACE, so each owns its own default ────────────────
+ *
+ * Read `sandSpan` directly above and the two are not comparable numbers:
+ *
+ *   top    outerFrac = size          — the patch reaches `size` of the cake's own reach, so 0.8
+ *                                      covers most of the top and leaves a rim of bare cake.
+ *   board  outerFrac = 1 + size      — the ring starts AT the cake's edge and extends `size`
+ *                                      BEYOND it, so 0.8 is a band nearly as wide as the cake.
+ *
+ * ⚠️ WHICH IS WHY ONE DEFAULT CANNOT SERVE BOTH, and carrying the top's across was the bug.
+ * `moveSandToTier` moved the drift untouched, so a tap on Board took the top's 0.8 with it and
+ * produced a vast collar; Sandeep then shrank it by hand and asked for *"the default size around
+ * 30%"* — which is right for the board and would be wrong for the top, where 0.3 is the small
+ * centred blob REGION_DEFAULTS' own note records as reading like a mistake.
+ *
+ * ⚠️ SEEDED HERE, OVERLAID FROM THE ROW — rule 3. This is the fallback an element with nothing
+ * authored gets; an admin retunes either surface in Manage Elements without a deploy. Same shape
+ * as `gypPlacement`, deliberately: a filler that sits on four surfaces solved this first, and a
+ * second spelling of one idea is how the two drift apart.
+ *
+ * ⚠️ AND IT CARRIES ONLY WHAT THE SURFACE OWNS. Colour, grain spacing, bank height, taper, edge
+ * wander and seed are the BAKER's and survive a move; just the span is the surface's answer.
+ */
+export const SAND_PLACEMENTS = Object.freeze({
+  [ZONES_TOP]:   Object.freeze({ size: 0.8 }),
+  [ZONES_BOARD]: Object.freeze({ size: 0.3 }),
+});
+
+/** The span a drift takes on `zone`, with whatever the element row authors laid over the top. */
+export function sandPlacement(zone, placementConfig = null) {
+  return {
+    ...(SAND_PLACEMENTS[zone] ?? {}),
+    ...(placementConfig?.sand?.zones?.[zone] ?? {}),
+  };
+}
+
+/* ── Which surface a tap moves the drift to, or null when the tap means nothing ──────────────────
+ *
+ * ⚠️ `-1` MEANT TWO THINGS AND THE GUARD READ THE WRONG ONE. `BOARD_TIER` is -1, and so is the
+ * `findIndex` result for "no tier has sand" — so `if (cur === -1) return;`, written to mean "there
+ * is no sand to move", also matched "the sand is on the board". Board → Top was impossible, while
+ * Top → Board worked, because only one of them starts from the sentinel. Sandeep: *"i switched to
+ * BOARD, then i tried to switch back to TOP. not able to do."*
+ *
+ * The emptiness question is answered by LOOKING for the drift, which is unambiguous, so the index
+ * never has to carry that second meaning. Pure and exported so the collision is pinned by a test
+ * rather than by whoever next reads the guard.
+ */
+export function sandMoveTarget(cur, next, hasSand) {
+  if (next == null) return null;
+  if (!hasSand) return null;
+  if (cur === next) return null;
+  return next;
+}
+
 /* Smooth value noise on a wrapped grid — deterministic from `seed`, so a bank does not reshuffle
  * itself between renders. Small and local rather than imported: the one other noise in the codebase
  * is a canvas fleck stamper, which answers a different question. */
