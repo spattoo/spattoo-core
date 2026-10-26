@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { gridPositions, gridLineCount, wallPositions, GRID, WALL, GRID_COLOR } from './takeGrid.js';
+import {
+  gridPositions, gridLineCount, wallPositions, floorOpacity, wallOpacity,
+  GRID, WALL, GRID_COLOR, STRENGTH_DEFAULT, STRENGTH_MIN, WALL_RELATIVE,
+} from './takeGrid.js';
 
 describe('the grid floor a take is filmed on', () => {
   it('draws every line across the full extent, both ways', () => {
@@ -40,10 +43,13 @@ describe('the grid floor a take is filmed on', () => {
     expect(GRID.y).toBeLessThan(0.02);
   });
 
-  /* ⚠️ QUIET. It is a floor, not a subject. */
-  it('is faint enough to be scenery', () => {
-    expect(GRID.opacity).toBeGreaterThan(0);
-    expect(GRID.opacity).toBeLessThan(0.5);
+  /* ⚠️ VISIBLE BY DEFAULT, which the first value was not. Measured on a delivered 2732x1542 video,
+     a line above the cake differed from its ground by 25 of 255 — about a tenth. "grid lines are
+     hardly visible." The strength is the baker's now; this is only where the slider starts. */
+  it('starts strong enough to be seen', () => {
+    expect(STRENGTH_DEFAULT).toBe(GRID.opacity);
+    expect(STRENGTH_DEFAULT).toBeGreaterThan(0.45);
+    expect(STRENGTH_DEFAULT).toBeLessThanOrEqual(1);
   });
 
   it('keeps the marketing site\'s own line colour', () => {
@@ -99,11 +105,37 @@ describe('the backdrop behind the cake', () => {
     expect(WALL.distance).toBe(GRID.extent / 2);
   });
 
-  /* It is further away and there is more of it, so matching the floor's weight would make the
-     backdrop louder than the cake standing on it. */
-  it('is fainter than the floor', () => {
+  /* ⚠️ THE BACKDROP STAYS FAINTER AT EVERY SETTING, not just at the default. One knob drives both
+     so the depth cue cannot be lost by a baker turning one of two sliders up. */
+  it('keeps the backdrop fainter than the floor at every strength', () => {
     expect(WALL.opacity).toBeLessThan(GRID.opacity);
-    expect(WALL.opacity).toBeGreaterThan(0);
+    for (const s of [STRENGTH_MIN, 0.2, 0.5, 0.75, 1]) {
+      expect(wallOpacity(s), `strength ${s}`).toBeLessThan(floorOpacity(s));
+      expect(wallOpacity(s)).toBeCloseTo(floorOpacity(s) * WALL_RELATIVE, 9);
+    }
+  });
+
+  it('clamps the strength and never goes invisible or over', () => {
+    expect(floorOpacity(0)).toBe(STRENGTH_MIN);
+    expect(floorOpacity(-5)).toBe(STRENGTH_MIN);
+    expect(floorOpacity(9)).toBe(1);
+    expect(floorOpacity(0.4)).toBeCloseTo(0.4, 9);
+    // ⚠️ Rubbish falls back to the default rather than to 0 — an invisible grid looks like a bug,
+    // and the chips are what turn it off.
+    for (const bad of [NaN, undefined, 'x', null]) {
+      if (bad === undefined) { expect(floorOpacity()).toBe(STRENGTH_DEFAULT); continue; }
+      expect(Number.isFinite(floorOpacity(bad))).toBe(true);
+      expect(floorOpacity(bad)).toBeGreaterThanOrEqual(STRENGTH_MIN);
+    }
+  });
+
+  it('rises monotonically with the slider', () => {
+    let prev = -1;
+    for (let v = 0; v <= 1.0001; v += 0.05) {
+      const o = floorOpacity(v);
+      expect(o).toBeGreaterThanOrEqual(prev);
+      prev = o;
+    }
   });
 
   it('survives rubbish rather than emitting NaN into a buffer', () => {

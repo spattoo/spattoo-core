@@ -11,18 +11,27 @@
  * Filming is the same question as judging a shape. A long lens compresses perspective, stops the
  * near rim splaying, and is most of what "cinematic" means before anyone reaches for a grade.
  *
- * ⚠️ THIS PARAGRAPH USED TO SAY THE FIT WOULD COMPENSATE. It said `FitCakeToView` "recomputes its
- * distance from `camera.fov` every frame and GLIDES there, so the cake stays the same size in
- * frame". That was never true and I never checked it: the fit re-frames when the cake's BOUNDING
- * BOX or the window's ASPECT changes, and it does not look at the focal length at all. What it did
- * instead was chase the decorations flying ABOVE the cake — a build balloons the box — and a box
- * change SNAPS where only an aspect change glides. Measured during a take: the board grew from
- * 310px to 452px over 600ms and then jumped back to 324px in a single step. That jump was the
- * "harsh" Sandeep reported, and easing this lens alone did not touch it.
+ * ⚠️ THE FIT AND THE LENS HAVE TO AGREE, AND THE WAY THEY DO HAS BEEN WRONG TWICE.
  *
- * So the take HOLDS the fit (`framingHeld` in CakeCanvas) and the lens is the only thing moving.
- * Narrowing the focal length with the camera standing still is a true zoom: the cake grows, the
- * perspective flattens, and nothing fights it.
+ * This paragraph first claimed `FitCakeToView` "recomputes its distance from `camera.fov` every
+ * frame and GLIDES there, so the cake stays the same size in frame" — written without checking,
+ * and false: the fit re-frames when the cake's BOUNDING BOX or the window's ASPECT changes, and a
+ * fov change on its own never reached it. During a build it chased the decorations flying ABOVE the
+ * cake instead — a build balloons the box — and a box change SNAPS where only an aspect change
+ * glides. Measured: the board grew from 310px to 452px over 600ms, then jumped back to 324px in one
+ * step. That was the "harsh".
+ *
+ * The correction over-corrected: it said the fit "does not look at the focal length at all". It
+ * does — `fitDistance(halfW, halfH, elevation, camera.fov, aspect)`. What it never did was RE-RUN
+ * because the fov had changed. Switching the fit off for the length of a take fixed the chasing and
+ * caused the opposite fault: 42° to 28° is a 1.54x magnification with nothing moving the camera to
+ * match, so the cake grew until the board left the frame. Measured on a mermaid cake: the board
+ * reached the bottom row of the picture and the decorations on it were gone.
+ *
+ * What is true now: during a take the fit HOLDS THE BOUNDS it measured while the cake was still and
+ * RE-FITS WHEN THE LENS MOVES. The camera dollies back as the focal length narrows, the framing
+ * holds, and what the take gains is the COMPRESSION rather than a magnification — which is what a
+ * long lens is for.
  *
  * ⚠️ AND IT IS A TAKE-ONLY CHANGE, RESTORED AFTERWARDS. The baker's own view is a contract — what
  * they approve is what the customer gets — so the lens the designer renders a cake on must not

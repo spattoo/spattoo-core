@@ -42,12 +42,13 @@ import {
 import { pointerRay, cylinderHit, cylinderHitPoint, wallHitPoint, planeHit, planePoint, buildRay } from '../utils/raycasting.js';
 import GrassPatch from './GrassPatch.jsx';
 import SandBed from './SandBed.jsx';
-import { ZONES_TOP, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from '../geometry/sand.js';
+import { ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from '../geometry/sand.js';
 import { REGION_DEFAULTS } from '../geometry/region.js';
 import { spinPose } from '../reel/spinTake.js';
-import { assemblyPose, assemblyDone } from '../reel/assemblyTake.js';
+import { assemblyDone } from '../reel/assemblyTake.js';
+import { BuildPiece, buildLookup } from './BuildPiece.jsx';
 import { clampLens, lensAt, LENS_GLIDE_S } from '../reel/cinematicLens.js';
-import { gridPositions, wallPositions, GRID, WALL, GRID_COLOR } from '../reel/takeGrid.js';
+import { gridPositions, wallPositions, floorOpacity, wallOpacity, GRID, WALL, GRID_COLOR } from '../reel/takeGrid.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -88,6 +89,35 @@ function sandLiftFor(tier) {
       seed: sand.seed ?? SAND_DEFAULTS.seed,
     })) };
     sandLifts.set(sand, e);
+  }
+  return e.at;
+}
+
+/* ── And the same, for a drift on the BOARD ──────────────────────────────────────────────────────
+ *
+ * ⚠️ A BOARD DECORATION HAS TO STAND ON THE SAND TOO. The note at the call site used to say "null
+ * on the board — a drift is a top treatment", which was true only because core could not put sand
+ * there. Now that it can, a shell dropped on the board next to the cake would sink through the
+ * drift it is sitting in.
+ *
+ * The board zone's span is its own (`sandSpan(ZONES_BOARD, …)`) and there is no region — the drift
+ * is the ring, so the field is measured from the cake's own footprint outward, exactly as the
+ * SandBed that drew it was. */
+const boardSandLifts = new WeakMap();
+function boardSandLiftFor(sand, shp) {
+  if (!sand || !shp) return null;
+  const key = `${shp.kind}|${shp.radius ?? ''}|${shp.halfW ?? ''}|${shp.halfD ?? ''}|${shp.cornerR ?? ''}`;
+  let e = boardSandLifts.get(sand);
+  if (!e || e.key !== key) {
+    e = { key, at: sandHeightAt(shp, sandMoundOpts({
+      span: sandSpan(ZONES_BOARD, sand.size ?? SAND_DEFAULTS.width),
+      rise: sand.rise ?? SAND_DEFAULTS.rise,
+      moundNoise: sand.moundNoise ?? SAND_DEFAULTS.moundNoise,
+      moundGrain: sand.moundGrain ?? SAND_DEFAULTS.moundGrain,
+      edgeBreak: sand.edgeBreak ?? SAND_DEFAULTS.edgeBreak,
+      seed: sand.seed ?? SAND_DEFAULTS.seed,
+    })) };
+    boardSandLifts.set(sand, e);
   }
   return e.at;
 }
@@ -2269,7 +2299,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, buildRise = 0, buildSwing = 0, buildOffX = 0, buildOffZ = 0 }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2439,23 +2469,14 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
   const faceRef = useFacePoseReport(!!sticker.textPath, sticker.id, onFacePose);
 
   return (
-    <group rotation={[0, buildSwing, 0]}>
-      {/* ── The flight path's horizontal half ────────────────────────────────────────────────
-          A build rotates the piece's SEAT about the cake's axis, so it sweeps in around the cake
-          and arrives facing exactly as designed. Wrapping it is the whole implementation: rotating
-          a parent turns position and orientation together, where rotating the x/z by hand would
-          move the piece and leave it pointing the wrong way for the whole flight.
-
-          ⚠️ ALWAYS MOUNTED, AT IDENTITY WHEN NOTHING IS BUILDING. Mounting it only during a take
-          would change the tree shape at the moment the take starts and remount every GLB mid-shot.
-          `useFacePoseReport` reads `matrixWorld`, so this is transparent to it. */}
+    <group>
+      {/* ⚠️ THE BUILD'S POSE IS NO LONGER APPLIED HERE. It used to arrive as four props and be
+          folded into this position; it is now a `BuildPiece` wrapper the caller puts round this
+          whole component, shared with every other thing on the cake. A renderer should not have to
+          know the take exists. */}
       <group
       ref={node => { freeRef.current = node; faceRef.current = node; }}
-      /* `buildRise` lifts a piece that has not landed yet — see assemblyTake.js. Zero whenever no
-         build is running, so this is the ordinary position the rest of the time. */
-      position={fp
-        ? [fp.x + buildOffX, fp.y + buildRise, fp.z + buildOffZ]
-        : [cx + buildOffX, posY + wireUp + buildRise, cz + buildOffZ]}
+      position={fp ? [fp.x, fp.y, fp.z] : [cx, posY + wireUp, cz]}
       rotation={[0, yaw, 0]}
       scale={effScale}
     >
@@ -2640,7 +2661,7 @@ function freeDragPlane(camera, at) {
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null, buildRise = 0, buildSwing = 0, buildOffX = 0, buildOffZ = 0 }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2785,7 +2806,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const seatY = (sticker.scatter
     ? topSurfaceYAt(topBands, Math.hypot(sticker.x ?? 0, sticker.z ?? 0), topY)
     : topY) + sandY;
-  const py = buildRise + seatY + (sticker.yOffset ?? 0) + lift + (
+  const py = seatY + (sticker.yOffset ?? 0) + lift + (
     // Insert: base seated BELOW the top by `depth` of its length (2·depth·half-height), so the buried
     // part sits inside the (opaque) cake and the rest stands out. depth 0 == rest on top like stand.
     isInsert ? (seatHalf ?? STICKER_SIZE / 2) * effScale * (1 - 2 * insertDepthFrac) + FLAT_STICKER_Y_OFFSET
@@ -2957,35 +2978,6 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const footYaw = footSeat ? surfaceYaw(sticker) : 0;
   const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
   const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
-  /* ── The build's horizontal half, for both return paths below ────────────────────────────────
-   *
-   * A piece sweeps in AROUND the cake before it lands — `swing` radians still to travel, from
-   * assemblyTake.js. Orbiting means two things at once: the seat moves round the cake's axis, and
-   * the piece turns with it so it arrives facing exactly as designed. Rotating only the position
-   * would fly it in sideways and snap it straight at the end.
-   *
-   * ⚠️ THE SAME TRANSFORM A PARENT GROUP WOULD APPLY, written out because this component has TWO
-   * returns (upright and flat) and a wrapper would have to be threaded through both. Y-rotation by
-   * θ sends (x, z) to (x·cosθ + z·sinθ, −x·sinθ + z·cosθ); setting the group's own rotation to the
-   * same θ supplies the turn. At swing 0 it is the identity and the position is untouched.
-   *
-   * ⚠️ AND IT IS DECLARED HERE, ABOVE BOTH RETURNS, BECAUSE IT SHIPPED THE OTHER WAY — in 0.1.773,
-   * next to the `flat*` terms 80 lines down, which is AFTER the upright return that calls it. Every
-   * cake with a standing decoration went black with "Cannot access 'e_' before initialization", the
-   * minified form of exactly the trap the note immediately below this one records. `check:bindings`
-   * passed, again, because the name IS declared — just later. And the harness missed it because a
-   * rosette takes the FLAT return: one of the two paths was exercised and the other never ran.
-   */
-  const swingCos = Math.cos(buildSwing);
-  const swingSin = Math.sin(buildSwing);
-  const orbited = (x, y, z) => {
-    const rx = buildSwing === 0 ? x : x * swingCos + z * swingSin;
-    const rz = buildSwing === 0 ? z : -x * swingSin + z * swingCos;
-    /* The ground offset rides OUTSIDE the rotation: it is a bearing of its own, chosen per piece,
-       not a point swept round with the seat. Both are zero when no build is running. */
-    return [rx + buildOffX, y, rz + buildOffZ];
-  };
-
   /* ⚠️ PUBLISHED HERE, NOT BESIDE THE STAND-OFF'S OWN TERMS 50 LINES UP — `const` is not hoisted,
      and reading `footX` there threw "Cannot access 'footX' before initialization" on every frame.
      The same temporal-dead-zone trap this file and LibraryPanel have both paid for; it passed
@@ -3293,8 +3285,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     );
     return (
       <group ref={freeRef}
-             position={fp ? orbited(fp.x, fp.y, fp.z) : orbited(sticker.x + outX - footX, py, sticker.z + outZ - footZ)}
-             rotation={[0, buildSwing, 0]}
+             position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
              scale={effScale}>
         {/* ── The wire, OUTSIDE every rotation this element carries ──────────────────────────────
             ⚠️ IT USED TO RIDE INSIDE THEM, AND A LEANING BUTTERFLY TORE ITS OWN WIRE OUT OF THE
@@ -3364,8 +3355,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
   const flatPivotX = flatLeanZ >= 0 ? -flatHalfX :  flatHalfX;
   return (
     <group ref={freeRef}
-           position={fp ? orbited(fp.x, fp.y, fp.z) : orbited(sticker.x + outX - footX, py, sticker.z + outZ - footZ)}
-           rotation={[0, buildSwing, 0]}
+           position={fp ? [fp.x, fp.y, fp.z] : [sticker.x + outX - footX, py, sticker.z + outZ - footZ]}
            scale={effScale}>
       {/* Same reasoning as the upright path: the stem stands in the icing, so it cannot ride inside
           the -90° that lays the artwork flat — in there a wire would point sideways out of the cake.
@@ -4220,7 +4210,7 @@ function CakeScene({
           the frame the baker lines up is the frame that records. Released when the lens has finished
           coming back, by which point the fov is what it was and the fit has nothing to correct. */}
       <FitCakeToView groupRef={cakeGroupRef} orbitRef={orbitRef} reserveTop={!filmTight}
-                     enabled={!framingHeld} />
+                     holdBounds={framingHeld} />
 
       {/* ⚠️ THE SAME TARGET, A DIFFERENT GESTURE. Drawing wants the 3-D point; the scrape below
           wants the angle. One component answers both — see SurfaceDragTarget. */}
@@ -4571,7 +4561,7 @@ function CakeContent({ config, scene, edit = null }) {
       return { ...prev, [id]: pose };
     });
   }, []);
-  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, nameBlocks = null } = config;
+  const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, boardSand = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
   const {
     orbitRef = null, gestureOnStickerRef = null,
@@ -4609,6 +4599,42 @@ function CakeContent({ config, scene, edit = null }) {
        the function using it can see it. Read HERE, or it is undefined past a green build. */
     assembly,
   } = edit ?? {};
+
+  /* ── Everything the build can fly in ───────────────────────────────────────────────────────────
+   *
+   * ⚠️ IT USED TO BE THE STICKER LIST AND NOTHING ELSE, because the sticker loop is where the build
+   * was first written. Everything else a baker puts on a cake sat still while the stickers flew:
+   * *"piping elements are not flying. also, few other things like roses in this image are not
+   * flying."* The roses in that picture ARE a piping ring — an element finish — so "piping" and
+   * "roses" were one omission wearing two names.
+   *
+   * ⚠️ ONE ORDER ACROSS ALL THE LISTS. A cake's pieces live in a dozen arrays, so "index 3" means
+   * nothing by itself; each piece names itself and its index falls out of this order. Piping first
+   * because it is what a baker pipes first, then the things that stand on it — `spread` deals them
+   * out in exactly this order, which replays how the cake was really built. */
+  const buildIds = useMemo(() => {
+    const ids = [];
+    (config.tiers ?? []).forEach((t, ti) => {
+      for (const p of (t.topPipings ?? (t.topPiping ? [t.topPiping] : []))) ids.push(`top:${ti}:${p.layerId ?? ''}`);
+      for (const p of (t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []))) ids.push(`bot:${ti}:${p.layerId ?? ''}`);
+      if (t.grass) ids.push(`grass:${ti}`);
+      if (t.gyp) ids.push(`gyp:${ti}`);
+      if (t.sand) ids.push(`sand:${ti}`);
+    });
+    if (boardGrass) ids.push('grass:board');
+    if (boardGyp) ids.push('gyp:board');
+    if (boardSand) ids.push('sand:board');
+    for (const g of garnishes) ids.push(`garnish:${g.id}`);
+    for (const t of toppers) ids.push(`topper:${t.id}`);
+    for (const a of ages) ids.push(`age:${a.id}`);
+    for (const w of writings) ids.push(`writing:${w.id}`);
+    for (const t of texts) ids.push(`text:${t.id}`);
+    for (const st of stickers) ids.push(`sticker:${st.id}`);
+    if (nameBlocks) ids.push('nameblocks');
+    return ids;
+  }, [config.tiers, boardGrass, boardGyp, boardSand, garnishes, toppers, ages, writings, texts, stickers, nameBlocks]);
+
+  const { poseFor } = buildLookup(buildIds, assembly);
 
   // Orbit stands down while ANY single element is under the pointer or being dragged, so the set is
   // what makes "any". With no orbitRef (a capture, a still preview) there is no orbit to stand down
@@ -4665,6 +4691,40 @@ function CakeContent({ config, scene, edit = null }) {
           outward (`outwardBand`), not the board's — seating it against the board fills everything
           between the two, which floods it and reads as flowers standing in card. A board is hard;
           you cannot push a stem into it, so the ring is laid at the join. */}
+      {/* ── A sand drift on the BOARD ────────────────────────────────────────────────────────────
+          ⚠️ `ZONES_BOARD`, WHICH IS WHAT `SandBed` DEFAULTS TO AND CORE NEVER ASKED FOR. The
+          generator has always known a board drift from a top one — `sandSpan` is the only place
+          that difference lives, and on the board `size` means how far past the cake the sand
+          reaches. The element row has both zones; only the designer's wiring was missing.
+
+          The shape is the BOARD's own footprint and the cake is a hole in it, exactly as the board
+          gypsophila below is built — sand belongs around the cake, not under it. */}
+      {boardSand && bottomShp && (
+        <SandBed
+          /* ⚠️ THE CAKE'S FOOTPRINT, NOT THE BOARD'S. On the board zone SandBed grows the ring
+             itself (`outwardBand(shape, amount)`) and punches the cake out as a hole, so `shape` is
+             what the sand goes AROUND. Handing it the board's own disc instead would describe a
+             ring around the board's edge, with the cake sitting in the middle of nothing — the same
+             argument board grass and board gypsophila already make. */
+          shape={bottomShp}
+          topY={0.105}
+          zone={ZONES_BOARD}
+          size={boardSand.size}
+          colour={boardSand.colour}
+          spacing={boardSand.spacing}
+          rise={boardSand.rise}
+          falloff={boardSand.falloff}
+          edgeBreak={boardSand.edgeBreak}
+          seed={boardSand.seed}
+          /* ⚠️ NO `region` ON THE BOARD, deliberately. The round/rectangle/triangle patches are a
+             TOP-surface question — on the board the drift IS the ring around the cake, which
+             `sandSpan` sizes and `SandBed` punches the cake out of. A region would OVERRIDE that
+             span (it does not combine with it) and leave a patch floating somewhere on the board.
+             The card hides the Area control there for the same reason. */
+          onPick={onSandClick}
+        />
+      )}
+
       {boardGyp && bottomShp && (
         <GypCloud
           {...boardGyp}
@@ -4683,6 +4743,9 @@ function CakeContent({ config, scene, edit = null }) {
       {tierData.map((tier, i) => (
         <group key={i}>
           <CakeTier
+            buildPose={poseFor}
+            buildTime={assembly ? assembly.time : null}
+            tierIndex={i}
             radius={tier.radius}
             height={tier.height}
             color={tier.color}
@@ -5171,6 +5234,7 @@ function CakeContent({ config, scene, edit = null }) {
       {/* Chocolate garnishes: pieces piped in the studio and placed here. Always drawn — they are
           part of the cake, not a mode. */}
       <Garnishes
+        buildPose={poseFor} buildReach={(bottomTier?.radius ?? 1)}
         garnishes={garnishes}
         tierData={tierData}
         selectedId={selectedGarnishId}
@@ -5182,6 +5246,7 @@ function CakeContent({ config, scene, edit = null }) {
       {/* Card toppers: compositions from the topper composer, stood on the cake. Placed by the same
           `garnishPlacement` a garnish uses — see Toppers.jsx. */}
       <Toppers
+        buildPose={poseFor} buildReach={(bottomTier?.radius ?? 1)}
         toppers={toppers}
         tierData={tierData}
         selectedId={selectedTopperId}
@@ -5194,8 +5259,8 @@ function CakeContent({ config, scene, edit = null }) {
         const hostTier = tierData.find(td => t.y >= td.baseY && t.y < td.baseY + td.height)
           ?? bottomTier;
         return (
+          <BuildPiece key={t.id} pose={poseFor(`text:${t.id}`)} reach={(bottomTier?.radius ?? 1)}>
           <DraggableText
-            key={t.id}
             textEl={t}
             radius={hostTier.radius}
             shp={tierShape(hostTier)}
@@ -5209,12 +5274,13 @@ function CakeContent({ config, scene, edit = null }) {
             toolbar={selectedTextId === t.id ? textToolbar : null}
             onOrbitEnable={orbitEnableFor(t.id)}
           />
+          </BuildPiece>
         );
       })}
 
       {topTier && ages.map(a => (
+        <BuildPiece key={a.id} pose={poseFor(`age:${a.id}`)} reach={(bottomTier?.radius ?? 1)}>
         <AgeNumber
-          key={a.id}
           age={a}
           topY={stackY}
           topRadius={topTier.radius}
@@ -5227,6 +5293,7 @@ function CakeContent({ config, scene, edit = null }) {
           onMove={pos => onAgeMove?.(a.id, pos)}
           onOrbitEnable={orbitEnableFor(a.id)}
         />
+        </BuildPiece>
       ))}
 
       {bottomTier && stickers.map((sticker, pieceIndex) => {
@@ -5234,19 +5301,13 @@ function CakeContent({ config, scene, edit = null }) {
            fading means reaching into every one of them; not drawing it is exact and works for any
            mesh. `rise` is a fraction of the cake's reach, turned into world units below, so the
            shot looks the same on a 6" round and on a sheet (INVARIANTS #8). */
-        const build = assembly
-          ? assemblyPose(pieceIndex, stickers.length, assembly.time, assembly.plan)
-          : null;
-        if (build && !build.visible) return null;
-        const buildRise = build ? build.rise * (bottomTier.radius ?? 1) : 0;
-        /* Radians still to travel around the cake's axis. Already 0 whenever no build is running,
-           so the wrapper group below is an identity transform the rest of the time. */
-        const buildSwing = build ? build.swing : 0;
-        /* How far ACROSS the board the piece still is from over its seat — the half that lets a
-           decoration arrive from the side rather than from directly overhead. A fraction of the
-           cake's reach, turned into world units here (INVARIANTS #8). Zero with no build running. */
-        const buildOffX = build ? build.offX * (bottomTier.radius ?? 1) : 0;
-        const buildOffZ = build ? build.offZ * (bottomTier.radius ?? 1) : 0;
+        /* ⚠️ ONE MECHANISM, NOT TWO. The pose used to be threaded into both sticker components as
+           four props — rise, swing and a ground offset — and each applied it in its own way, which
+           is why nothing ELSE on the cake could fly: every new family would have needed the same
+           four props and its own copy of the maths. `BuildPiece` is the wrapper they all share. */
+        const pose = poseFor(`sticker:${sticker.id}`);
+        if (pose && !pose.visible) return null;
+        const reach = bottomTier.radius ?? 1;
         const tier = tierData[sticker.tierIndex] ?? bottomTier;
         const isSide = isSideZone(sticker);
         const orbitEnable = orbitEnableFor(sticker.id);
@@ -5261,12 +5322,8 @@ function CakeContent({ config, scene, edit = null }) {
           ? [...selectedStickerIds] : null;
         if (isSide) {
           return (
+            <BuildPiece key={sticker.id} pose={pose} reach={reach}>
             <DraggableSideSticker
-              buildRise={buildRise}
-              buildSwing={buildSwing}
-              buildOffX={buildOffX}
-              buildOffZ={buildOffZ}
-              key={sticker.id}
               sticker={sticker}
               radius={tier.radius}
               baseY={tier.baseY}
@@ -5292,6 +5349,7 @@ function CakeContent({ config, scene, edit = null }) {
               resize={stickerResize}
               canMove={isStickerMovable(sticker)}
             />
+            </BuildPiece>
           );
         }
         /* BOARD — the same flat-surface renderer on a different plane.
@@ -5311,17 +5369,14 @@ function CakeContent({ config, scene, edit = null }) {
         // top_surface (and board)
         const topY = isBoard ? BOTTOM_BASE : tier.baseY + tier.height;
         return (
+          <BuildPiece key={sticker.id} pose={pose} reach={reach}>
           <DraggableTopSticker
-            buildRise={buildRise}
-            buildSwing={buildSwing}
-            buildOffX={buildOffX}
-            buildOffZ={buildOffZ}
-            key={sticker.id}
             sticker={sticker}
             topY={topY}
-            /* What the sand under this piece stands it on. Null on the board — a drift is a top
-               treatment, and the board has its own. */
-            surfaceLift={isBoard ? null : sandLiftFor(tier)}
+            /* What the sand under this piece stands it on — the tier's drift, or the board's. It
+               used to be null on the board because core could not put sand there; now that it can,
+               a decoration beside the cake would otherwise sink through the drift it stands in. */
+            surfaceLift={isBoard ? boardSandLiftFor(boardSand, bottomShp) : sandLiftFor(tier)}
             /* A board decoration stands on the drum, which no rim ring reaches. */
             topBands={isBoard ? EMPTY_TOP_BANDS : tierTopBands(tier)}
             /* What is on the WALL, for a piece seated on the rim with its body over the edge.
@@ -5345,6 +5400,7 @@ function CakeContent({ config, scene, edit = null }) {
             resize={stickerResize}
             canMove={isStickerMovable(sticker)}
           />
+          </BuildPiece>
         );
       })}
     </>
@@ -5533,7 +5589,7 @@ const FIT_EASE_S = 1.2;
  * See takeGrid.js for what it is and why it is filming-only. Unlit lines, so it cannot light the
  * cake, shadow it, or bounce a colour onto it — the take's one hard rule is kept by construction.
  */
-function TakeGrid() {
+function TakeGrid({ strength }) {
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(gridPositions(), 3));
@@ -5546,7 +5602,7 @@ function TakeGrid() {
       {/* ⚠️ `depthWrite` OFF, like the painted floor above it. The floor writes no depth so that it
           cannot swallow the FRONT marker or a board edge; a grid that DID write depth would
           reintroduce exactly that, one scene element later. */}
-      <lineBasicMaterial color={GRID_COLOR} transparent opacity={GRID.opacity} depthWrite={false} />
+      <lineBasicMaterial color={GRID_COLOR} transparent opacity={floorOpacity(strength)} depthWrite={false} />
     </lineSegments>
   );
 }
@@ -5561,7 +5617,7 @@ function TakeGrid() {
  * cake halfway through the shot. Taking the camera's horizontal bearing and putting the wall on the
  * opposite side makes it a backdrop by construction, at every angle, with no special cases.
  */
-function TakeGridWall() {
+function TakeGridWall({ strength }) {
   const camera = useThree(s => s.camera);
   const group = useRef(null);
   const geometry = useMemo(() => {
@@ -5585,7 +5641,7 @@ function TakeGridWall() {
   return (
     <group ref={group}>
       <lineSegments geometry={geometry} renderOrder={-1}>
-        <lineBasicMaterial color={GRID_COLOR} transparent opacity={WALL.opacity} depthWrite={false} />
+        <lineBasicMaterial color={GRID_COLOR} transparent opacity={wallOpacity(strength)} depthWrite={false} />
       </lineSegments>
     </group>
   );
@@ -5709,7 +5765,10 @@ function SpinDirector({ orbitRef, plan, onDone }) {
   return null;
 }
 
-function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }) {
+/* `holdBounds` — a take is running, so the cake's bounding box is meaningless: the decorations are
+   in the air and the box balloons. Keep the bounds last measured while the cake was still, and go
+   on following the LENS. See the note at the measurement below. */
+function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true, holdBounds = false }) {
   const { camera, size } = useThree();
   // From the store rather than the ref: OrbitControls has `makeDefault`, and the store is populated
   // when the controls are actually ready. The ref alone is a timing bug — on the frames before it is
@@ -5767,18 +5826,41 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
     const liveAspect = size.width / Math.max(size.height, 1);
     const frameChanged = applied.current && Math.abs(applied.current.aspect - liveAspect) >= 0.01;
     if (!frameChanged && ++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
+    if (!(controls ?? orbitRef?.current)) return;
+
+    /* ── Held for a take ───────────────────────────────────────────────────────────────────────
+     *
+     * ⚠️ THE BOUNDS ARE FROZEN, THE LENS IS NOT, and getting that distinction wrong has now cost two
+     * bugs in opposite directions. Letting the fit run during a take made it chase the decorations
+     * flying ABOVE the cake, and a box change snaps: the camera lurched mid-shot. Switching it off
+     * entirely fixed that and caused this — the take narrows the lens from 42° to 28°, which is a
+     * 1.54x magnification, and with nothing recomputing the distance the cake simply grew until the
+     * board left the frame. Sandeep, on a downloaded film of a mermaid cake: *"its cut the board
+     * from front. some board elements are not visible."*
+     *
+     * `camera.fov` was always an input to `fitDistance`; what never happened was the fit RE-RUNNING
+     * because the fov changed. So: reuse the bounds measured while the cake was still — which is
+     * the landed design, the thing the shot is actually of — and re-fit when the lens moves. The
+     * camera dollies back as the lens narrows, the framing holds, and what the take gains is the
+     * compression rather than a magnification. */
+    const heldBounds = holdBounds ? applied.current : null;
+    if (holdBounds && !heldBounds) return;   // nothing measured yet: a take cannot invent a framing
+
     const g = groupRef.current;
     // Nothing recorded until the controls exist, so the first real fit is not swallowed by the
     // deadband as "already applied".
-    if (!g || !(controls ?? orbitRef?.current)) return;
-    _fitBox.setFromObject(g);
-    if (_fitBox.isEmpty()) return;
+    if (!heldBounds) {
+      if (!g) return;
+      _fitBox.setFromObject(g);
+      if (_fitBox.isEmpty()) return;
+    }
 
     // A CYLINDER, not a sphere: the widest reach across the board, and the height. The box's own X/Z
     // extents rotate with the cake, so the width is taken as the larger half-extent — which for a
     // round cake IS the radius, and for a sheet is its longest side, i.e. what could ever swing into
     // frame as it turns.
-    const halfW = Math.max(_fitBox.max.x - _fitBox.min.x, _fitBox.max.z - _fitBox.min.z) / 2;
+    const halfW = heldBounds ? heldBounds.halfW
+      : Math.max(_fitBox.max.x - _fitBox.min.x, _fitBox.max.z - _fitBox.min.z) / 2;
     // Height INCLUDING the headroom a topper will want, so a bare cake is framed like a finished one
     // and standing the first topper on it does not lurch the camera (see framedHeight).
     /* ⚠️ The reserve is right for the EDITOR and wrong for a photograph.
@@ -5791,7 +5873,9 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
      * Photo only. The reel dollies in to 0.78 of its starting distance, and the fit's 25% margin is
      * most of what keeps the cake inside the frame at the closest point — taking the reserve away
      * there would tighten the whole take, which is a look to judge by eye rather than a bug to fix. */
-    const { halfH, centerY: cy } = framedHeight(_fitBox.min.y, _fitBox.max.y, reserveTop ? undefined : 0);
+    const { halfH, centerY: cy } = heldBounds
+      ? { halfH: heldBounds.halfH, centerY: heldBounds.cy }
+      : framedHeight(_fitBox.min.y, _fitBox.max.y, reserveTop ? undefined : 0);
     const aspect = size.width / Math.max(size.height, 1);
     const prev = applied.current;
     // Aspect is in the deadband because a resized window changes the answer as surely as a new tier:
@@ -5800,14 +5884,20 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true }
                            || Math.abs(prev.halfH - halfH) >= FIT_DEADBAND
                            || Math.abs(prev.cy - cy) >= FIT_DEADBAND;
     const aspectMoved = !!prev && Math.abs(prev.aspect - aspect) >= 0.01;
-    if (!cakeMoved && !aspectMoved) return;
+    /* ⚠️ THE LENS IS A REASON TO RE-FIT, and its absence here is what cropped the board. The
+       distance depends on the fov — `fitDistance` takes it — but a fov change on its own never
+       reached this line, so a take narrowed the lens and nothing moved the camera to match. */
+    const fovMoved = !!prev && Math.abs((prev.fov ?? camera.fov) - camera.fov) >= 0.02;
+    if (!cakeMoved && !aspectMoved && !fovMoved) return;
     /* ⚠️ A RESIZE GLIDES; AN EDIT SNAPS. These are different events wearing the same numbers.
        The cake CHANGING — a tier added, a topper stood up — should land immediately: the view is
        catching up with something the baker just did, and easing it would read as lag. The FRAME
        changing (a sheet opening, the card closing, a rotation) is not an edit at all; the cake has
        not moved, only the window onto it, and teleporting there is the flicker being fixed. */
-    const glide = aspectMoved && !cakeMoved;
-    applied.current = { halfW, halfH, cy, aspect };
+    /* A lens move is already eased by TakeLens, so gliding on top of it would lag a second behind
+       its own cause — the distance follows the fov frame by frame instead. */
+    const glide = aspectMoved && !cakeMoved && !fovMoved;
+    applied.current = { halfW, halfH, cy, aspect, fov: camera.fov };
 
     const ctl = controls ?? orbitRef?.current;
     const target = ctl?.target;
@@ -6055,6 +6145,9 @@ export default function CakeCanvas({
   takeGrid = false,
   /* The vertical half — a backdrop that follows the camera round. Off on every non-take path. */
   takeGridWall = false,
+  /* How strongly the grid lines are drawn, 0…1. One knob for both surfaces — see
+     takeGrid.js for why the backdrop is not given its own. */
+  takeGridStrength = GRID.opacity,
   /* Set only while a take is being recorded to a file — see startBuild. Null otherwise, so the
      ordinary designer mounts nothing for it. */
   onTakeFrame = null,
@@ -6353,8 +6446,8 @@ export default function CakeCanvas({
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
       {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
       {/* Scenery for the take only — null on every other path, including a capture. */}
-      {takeGrid && <TakeGrid />}
-      {takeGridWall && <TakeGridWall />}
+      {takeGrid && <TakeGrid strength={takeGridStrength} />}
+      {takeGridWall && <TakeGridWall strength={takeGridStrength} />}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />

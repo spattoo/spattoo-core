@@ -121,6 +121,7 @@ export function buildDesignSnapshot(design) {
     // name spelled in fondant cubes both stand on it, not on any one tier.
     boardGrass: design.boardGrass ?? null,
     boardGyp: design.boardGyp ?? null,
+    boardSand: design.boardSand ?? null,
     nameBlocks: design.nameBlocks ?? null,
   };
 }

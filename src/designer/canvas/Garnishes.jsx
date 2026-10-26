@@ -1,4 +1,5 @@
 import { useMemo, useEffect } from 'react';
+import { BuildPiece } from './BuildPiece.jsx';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildGarnishGeometry } from '../geometry/garnishPiece.js';
@@ -24,6 +25,9 @@ import { planeHit, cylinderHitPoint } from '../utils/raycasting.js';
 // the offset belongs in the placement instead.
 
 export default function Garnishes({
+  /* The build's pose-lookup and the cake's reach, null/1 unless a take is filming. */
+  buildPose = null, buildReach = 1,
+ 
   garnishes = [], tierData = [], onSelect, onMove, onOrbitEnable, selectedId = null,
 }) {
   const top = tierData[tierData.length - 1];
@@ -62,10 +66,14 @@ export default function Garnishes({
 
   return (
     <>
+      {/* The build flies each garnish in on its own path — see BuildPiece.jsx. `buildPose` is
+          null on every path that is not filming, and the wrapper is then an identity group. */}
       {garnishes.map(g => (
-        <Garnish key={g.id} g={g} onSelect={onSelect} onMove={onMove}
-          cake={surfaceFor(g)}
-          onOrbitEnable={onOrbitEnable} selected={selectedId === g.id} />
+        <BuildPiece key={g.id} pose={buildPose?.(`garnish:${g.id}`)} reach={buildReach}>
+          <Garnish g={g} onSelect={onSelect} onMove={onMove}
+            cake={surfaceFor(g)}
+            onOrbitEnable={onOrbitEnable} selected={selectedId === g.id} />
+        </BuildPiece>
       ))}
     </>
   );

@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from 'react';
+import { BuildPiece } from './BuildPiece.jsx';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { FontLoader } from 'three/examples/jsm/loaders/FontLoader.js';
@@ -73,6 +74,9 @@ function useFaces(toppers) {
 }
 
 export default function Toppers({
+  /* The build's pose-lookup and the cake's reach, null/1 unless a take is filming. */
+  buildPose = null, buildReach = 1,
+ 
   toppers = [], tierData = [], onSelect, onMove, onOrbitEnable, selectedId = null,
 }) {
   const fonts = useFaces(toppers);
@@ -93,9 +97,11 @@ export default function Toppers({
   return (
     <>
       {toppers.map(t => (
-        <Topper key={t.id} t={t} cake={surfaceFor(t)} fonts={fonts}
-          onSelect={onSelect} onMove={onMove} onOrbitEnable={onOrbitEnable}
-          selected={selectedId === t.id} />
+        <BuildPiece key={t.id} pose={buildPose?.(`topper:${t.id}`)} reach={buildReach}>
+          <Topper t={t} cake={surfaceFor(t)} fonts={fonts}
+            onSelect={onSelect} onMove={onMove} onOrbitEnable={onOrbitEnable}
+            selected={selectedId === t.id} />
+        </BuildPiece>
       ))}
     </>
   );

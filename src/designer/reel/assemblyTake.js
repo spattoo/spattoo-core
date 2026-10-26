@@ -238,8 +238,14 @@ export function pieceStart(index, count, plan = ASSEMBLY_DEFAULTS) {
  * together and the piece flies a single path. Easing them separately is how an arrival ends up
  * drifting sideways after it has already touched down.
  */
-export function assemblyPose(index, count, t, plan = ASSEMBLY_DEFAULTS) {
-  const j = pieceJitter(index, plan);
+export function assemblyPose(index, count, t, plan = ASSEMBLY_DEFAULTS, seed = index) {
+  /* ⚠️ `seed` SEPARATES "WHEN" FROM "WHICH WAY", and that is what lets a ring FORM in the air
+     rather than arrive already assembled. A piping border is ONE piece as far as the take's timing
+     is concerned — it sets off and lands with the others — but its hundred shells should each come
+     in on their own bearing and converge. So the timing is taken from `index`, the ring's own slot,
+     and the direction from `seed`, the shell's. Passing neither is the ordinary case and they are
+     the same number. */
+  const j = pieceJitter(seed, plan);
   /* `rise` is now "how far away it starts", resolved along the piece's own direction. Straight up
      when the elevation is 90°, which is what scatter 0 gives every piece. */
   const dist = riseOf(plan) * j.distMul;

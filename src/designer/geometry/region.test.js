@@ -182,7 +182,16 @@ describe('a region drives the sand generator', () => {
      boundary has nothing to do with the tier's, so a triangle at size 0.85 put its base corners at
      radius 1.44 on a 1.2 round — floating. The radial drift has had this guarantee since the top
      placement landed; a region needs it by a different route. */
-  it('never lets a region carry sand off the edge of the cake', () => {
+  /* ⚠️ A LONG TIMEOUT BECAUSE THE GENERATOR IS SLOW, NOT BECAUSE THE TEST IS LOOSE. Measured on an
+     idle machine, the four cases below cost 24ms, 68ms, 4289ms and 1086ms to BUILD — the two SHEET
+     cakes are roughly 170x slower per vertex than the round ones, because `surfaceDepth` on a
+     rounded rectangle resolves its wall through a 256-sample scan for every one of a hundred
+     thousand lattice points. Idle that is ~7s; inside a loaded suite it passed 20s and the run
+     failed with "Test timed out", intermittently, on a test whose ANSWER was never wrong.
+     ⚠️ THE TIMEOUT IS THE SYMPTOM. The real fault is that placing a sand region on a sheet cake
+     takes four seconds of a baker's phone, and this note should be deleted the day that is fixed —
+     not quietly raised again. */
+  it('never lets a region carry sand off the edge of the cake', { timeout: 60_000 }, () => {
     for (const [cake, region] of [
       [round, { kind: 'triangle', size: 0.85 }],
       [round, { kind: 'rect', size: 1.2, rotation: 0.7 }],

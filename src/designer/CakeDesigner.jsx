@@ -73,6 +73,7 @@ import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
 import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, MAX_SWING } from './reel/assemblyTake.js';
 import { secondsLeft, clampDelay, DELAY_MAX, DELAY_DEFAULT } from './reel/takeDelay.js';
 import { recordCanvas, pickMimeType, extensionFor, downloadBlob } from './reel/recordReel.js';
+import { STRENGTH_DEFAULT, STRENGTH_MIN } from './reel/takeGrid.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
@@ -2013,6 +2014,66 @@ function ReelIcon({ size = 18 }) {
 // One shared upward popover for the mobile baker action bar (so the item styling / overlay live in ONE
 // place). align 'left' | 'right' | 'center' positions it against its anchor and keeps it on-screen.
 const SHEET_ITEM = { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px', fontSize: 14, color: INK, cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap' };
+/* ── What the Capture menu holds ─────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ ONE COPY, TWO PLACES. The desktop row has a Capture button and the phone reaches the same
+ * things through its Actions sheet — and until this was extracted the phone simply did not have
+ * them: a baker on a phone could take a photo and record a reel, and the two TAKES existed only on
+ * a desktop. Sandeep: *"in mobile view, i dont see this build video option. i dont see spin option
+ * as well … pls make sure all the options available in desktop are available in mobile as well."*
+ *
+ * Written as one component rather than copied into both sheets, because a menu that exists twice is
+ * a menu that will be added to once — which is exactly how the phone fell behind in the first place.
+ */
+function CaptureMenuItems({
+  onClose, onPhoto, onReel, onBuild, onSpin, canFilmBuild, canSpin, buildSeconds, spinSeconds,
+}) {
+  return (<>
+    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+            onClick={() => { onClose(); onPhoto(); }}>
+      <CameraIcon size={17} />
+      Take a photo
+    </button>
+    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+            onClick={() => { onClose(); onReel(); }}>
+      <ReelIcon size={17} />
+      Record a reel
+    </button>
+    {/* ⚠️ `isCatalogAuthor`, NOT `canRecordReel`. The menu around this opens for either,
+        because a baker on a plan with reel capture films their own cakes — but this is
+        for filming the PRODUCT, and Sandeep asked for template authors only. The two
+        questions are different: `reel_branding` says whose name is on a video,
+        `is_catalog_author` says who writes the public catalogue. */}
+    {canFilmBuild && (
+      <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+              onClick={() => { onClose(); onBuild(); }}>
+        <LayersIcon size={16} />
+        Build the cake
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>
+          {buildSeconds}s
+        </span>
+      </button>
+    )}
+    {canSpin && (
+      <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+              onClick={() => { onClose(); onSpin(); }}>
+        <RefreshIcon size={16} />
+        Spin the cake
+        {/* ⚠️ THE LABEL IS NOT A TOGGLE, AND IT CANNOT BE. It was written as
+            `filmSpin ? 'Stop spinning' : 'Spin the cake'`, which is unreachable: the
+            spin stops on ANY pointerdown, and opening this menu is a pointerdown — so
+            by the time the item renders, the spin is already off and it always read
+            "Spin the cake". A ternary whose other branch can never show is a lie
+            about the control.
+            The hint is safe HERE and nowhere else: this menu is shut while anyone is
+            filming, so it is the one place in the designer that can explain the way
+            out without the explanation ending up in the video. */}
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{spinSeconds}s</span>
+      </button>
+    )}
+  </>);
+}
+
 function ActionSheet({ open, onClose, align = 'left', children }) {
   if (!open) return null;
   const pos = align === 'center' ? { left: '50%', transform: 'translateX(-50%)' } : { [align]: 0 };
@@ -3418,7 +3479,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setBoardSand, updateBoardSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -4425,6 +4486,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Reels. Two entitlements, because "may record" and "whose name is on it" are different questions
   // — see spattoo-docs/plans/reel-for-bakers.md §2e.
   const [reelCapture,  setReelCapture]  = useState(false);   // may record at all
+  /* Filming the cake assemble itself, and saving it. Blaze and above (migration 135).
+     ⚠️ A DIFFERENT BARGAIN FROM `reelCapture`, deliberately. A reel is on every paid tier because a
+     watermarked one markets us whenever it is posted; this one has no watermark rung — Sandeep:
+     *"we have watermark optio for reel capture. but this one strictly for blaze."* */
+  const [buildFilm,    setBuildFilm]    = useState(false);
   const [reelBranding, setReelBranding] = useState(false);   // their own name, vs "made with Spattoo"
   /* Whether this take carries their name at all — the record panel's tick, held HERE because the
    * 9:16 preview overlay and the recorder both read the composed caption. Reset per panel open would
@@ -4814,6 +4880,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [takeGrid, setTakeGrid] = useState(true);
   /* The vertical half, asked for alongside it. Same window, same isolation. */
   const [takeGridWall, setTakeGridWall] = useState(true);
+  /* How strongly the grid is drawn. A control rather than a constant because the constant
+     was too faint to see — see takeGrid.js. */
+  const [takeGridStrength, setTakeGridStrength] = useState(STRENGTH_DEFAULT);
   /* Recording the build to a file. `takeFrame` holds the capture stream's frame request while a
      recording runs; `buildEnded` is resolved when the last piece lands, which is what tells the
      recorder to stop. Both null the rest of the time, so nothing is mounted for them. */
@@ -4955,6 +5024,39 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     handleDeselect();
     setBuildSaveError(null);
     setBuildSaving(true);
+    /* ── Vertical, like the reel ───────────────────────────────────────────────────────────────
+     *
+     * *"i actually want to test the build video from mobile. it should be a vertical video."*
+     *
+     * ⚠️ THE SAME `framing` THE REEL ALREADY USES, not a second mechanism. R3F sizes the canvas from
+     * its container, so constraining that container to 9:16 makes the drawing buffer and
+     * `camera.aspect` follow by themselves — what is on screen IS what records. A separate
+     * off-screen renderer would be a second answer to a question this file has already answered.
+     *
+     * ⚠️ AND THE FIT HAS TO SEE IT. The aspect change is what re-frames the cake for the taller
+     * window; `FitCakeToView` treats aspect as a reason to re-fit, so the one frame of settling
+     * below is the camera arriving before the recorder opens. Without the wait the first frames are
+     * the old framing, mid-glide. */
+    setFraming(true);
+    /* ⚠️ WAIT FOR THE CANVAS TO STOP RESIZING, not for a fixed number of frames. The container
+       changes shape over a 180ms eased transition, so R3F resizes the drawing buffer on EVERY frame
+       of it — and a MediaRecorder whose source changes resolution mid-recording produces a file the
+       browser itself warns about: "the codec description is not supposed to change during the
+       entire recording". Two rAF was not enough; the resulting mp4 would not even seek. So poll the
+       buffer until it holds still, with a ceiling so a stuck transition cannot hang the button. */
+    await new Promise((resolve) => {
+      let last = `${canvasEl.width}x${canvasEl.height}`;
+      let still = 0;
+      const deadline = Date.now() + 1500;
+      const tick = () => {
+        const now = `${canvasEl.width}x${canvasEl.height}`;
+        still = now === last ? still + 1 : 0;
+        last = now;
+        if (still >= 6 || Date.now() > deadline) { resolve(); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     try {
       const blob = await recordCanvas(canvasEl, async (requestFrame) => {
         takeFrame.current = requestFrame;
@@ -4973,6 +5075,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
          feeding frames into a stream that has already stopped. */
       takeFrame.current = null;
       buildEnded.current = null;
+      /* ⚠️ IN `finally`, like the recorder's own teardown and like closeReelPanel's. A take that
+         THREW must not leave the designer stuck in a 9:16 letterbox with no way back — the baker's
+         only escape would be guessing that opening and closing the reel panel clears it. */
+      setFraming(false);
       setBuildSaving(false);
     }
   }
@@ -5014,9 +5120,23 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // answers "may this person do X" and this asks "is this bakery one of ours". The same bakeries
   // publish catalogue templates and film them. See spattoo-docs/features/reel-capture.md.
   const isCatalogAuthor = !!bakerData?.is_catalog_author;
+  /* ⚠️ CATALOGUE AUTHORS KEEP IT regardless of plan, the way they keep the reel recorder: they need
+     it to announce catalogue templates, which is a different question from what a subscription
+     buys. For everybody else it is the Blaze entitlement and nothing else. */
+  const canFilmBuild = isCatalogAuthor || buildFilm;
   // Catalogue authors get the recorder regardless of plan — they need it to announce catalogue
   // templates, which is a different question from what a subscription buys.
   const canRecordReel = reelCapture || isCatalogAuthor;
+  /* ⚠️ THE MENU OPENS FOR EITHER REASON. It used to ask only `canRecordReel`, so a baker entitled to
+     film a build but not to record a reel found no Capture button at all — the feature hung off an
+     unrelated flag. True of nobody today, because reel_capture is on for every paid tier and Blaze
+     is one, and that is exactly the kind of coincidence that stops being true when a plan is
+     re-priced. The menu is the door to both things, so it asks about both.
+
+     ⚠️ DECLARED HERE, BELOW `canRecordReel`, BECAUSE IT READS IT. Put above, it threw "Cannot
+     access 'canRecordReel' before initialization" and the designer went black — the same trap
+     check:tdz was written for two releases ago, which is what caught it this time. */
+  const canOpenCapture = canRecordReel || canFilmBuild;
 
   /* The one line burned into every frame. DERIVED, never stored: the preview overlay and the
    * recorder both read this, so they cannot disagree about what the baker is about to publish.
@@ -5401,6 +5521,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         setPrintStudioEnabled(res?.ent?.edible_print_studio === true);
         setReelCapture(res?.ent?.reel_capture === true);
         setReelBranding(res?.ent?.reel_branding === true);
+        setBuildFilm(res?.ent?.build_film === true);
       })
       .catch(() => {});   // a failed lookup leaves the tool hidden, which is the safe way round
     return () => { alive = false; };
@@ -8584,18 +8705,51 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     if (design.boardGrass) updateBoardGrass({ color });
   }
 
-  function removeSand(tierIndex) {
-    setTierSand(tierIndex, null);
+  /* ── Which surface is the drift on? ───────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE BOARD IS NOT A TIER, which is what `BOARD_TIER` exists to say. Sand lands on the board
+   * the way grass and gypsophila already do — its own field on the design — so `sandSurface()`
+   * answers "where is it" with a tier index OR the board sentinel, and everything downstream asks
+   * this rather than scanning the tier list and concluding there is no sand. */
+  /* ⚠️ THE ADMIN'S ANSWER, READ OFF THE ROW. Which surfaces an element may sit on is
+     `allowed_zones` in Manage Elements — the sand row already says top AND board, which is why
+     this was reported as missing rather than as unbuilt. Defaulting to TRUE when there is no row
+     would be the usual mistake in the other direction; defaulting to false hides a surface an
+     admin enabled, so the row is asked and only a row that exists can say no. */
+  function sandAllowsBoard(sd) {
+    const row = sd?.elementId ? elementById.get(sd.elementId) : null;
+    if (!row) return true;
+    const zones = row.allowed_zones ?? [];
+    return zones.length === 0 || zones.includes('board');
+  }
+
+  function sandSurface() {
+    if (design.boardSand) return BOARD_TIER;
+    return sandTier();
+  }
+  function sandOn(surface) {
+    return surface === BOARD_TIER ? design.boardSand : design.tiers[surface]?.sand;
+  }
+  function putSand(surface, sd) {
+    if (surface === BOARD_TIER) setBoardSand(sd);
+    else setTierSand(surface, sd);
+  }
+
+  function removeSand(surface) {
+    putSand(surface, null);
     selectExclusive(null);
   }
 
+  /* ⚠️ IT MOVES THE DRIFT, IT DOES NOT COPY IT — and with the board in the picture that means
+     clearing whichever surface it was on, not just a tier. Leaving the old one behind is how a
+     baker ends up with two drifts after one tap on "Board". */
   function moveSandToTier(next) {
-    const cur = sandTier();
-    if (cur === next || next == null || cur < 0) return;
-    const sd = design.tiers[cur]?.sand;
+    const cur = sandSurface();
+    if (cur === next || next == null || cur === -1) return;
+    const sd = sandOn(cur);
     if (!sd) return;
-    setTierSand(cur, null);
-    setTierSand(next, sd);
+    putSand(cur, null);
+    putSand(next, sd);
   }
 
   function moveGrassToTier(next) {
@@ -11215,14 +11369,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   }
   // Sand, on grass's condition and for grass's reason: applied the moment it is picked, so "has
   // sand" and "should show a card" are the same question.
-  if (design.tiers.some(t => t.sand)) {
+  if (design.tiers.some(t => t.sand) || design.boardSand) {
     /* ⚠️ IT CARRIES ITS TIER, unlike the grass card beside it. Grass predates `check:element-delete`
        and is out of that gate's scope because its body takes no `card`; sand is in scope, and the
        gate is right to want it there — a remove button that cannot name what it removes is how the
        balloon card shipped without one at all. */
     decorationCards.unshift({
       key: 'sand', type: 'sand', name: 'Sand', thumb: null,
-      tierIndex: design.tiers.findIndex(t => t.sand),
+      /* BOARD_TIER when the drift is on the board — the card's every control asks this, so it is
+         the one place that needs to know the board is not a tier. */
+      tierIndex: design.boardSand ? BOARD_TIER : design.tiers.findIndex(t => t.sand),
     });
   }
   // ONE CARD PER RAINBOW, like the writing cards and for the same reason: each carries its own
@@ -17213,8 +17369,19 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // The routing always hands the card over, and the card recomputes its tier every render — so
     // this is fresh even just after the sand was moved to another tier.
     const i = card.tierIndex;
-    const sd = i >= 0 ? design.tiers[i]?.sand : null;
+    const onBoard = i === BOARD_TIER;
+    const sd = sandOn(i);
     if (!sd) return null;
+    /* Every control writes through here, so none of them has to know which surface it is on. */
+    /* ⚠️ IT CALLS `updateSand`, NOT ITSELF. A blind search-and-replace of `updateSand(i, ` across
+       this card rewrote the body of its own definition into `editSand(changes)` — infinite
+       recursion on the first tap of any slider, on the tier path, which is the path that already
+       worked. It builds and reads almost right, which is the whole danger of it. */
+    const editSand = (changes) => (onBoard ? updateBoardSand(changes) : updateSand(i, changes));
+    const surfaceBtn = (active) => ({ minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11,
+      fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+      border: `1.5px solid ${active ? INK : LINE}`, background: active ? INK : SURFACE,
+      color: active ? SURFACE : INK });
     const el = sd.elementId ? elementById.get(sd.elementId) : null;
     const colors = el?.placement_config?.colors ?? SAND_COLORS;
     /* Whether this can be taken off the cake is the ADMIN's call, read off the row — never
@@ -17226,14 +17393,48 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK });
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* ⚠️ THE SENTENCE HAS TO FOLLOW THE SURFACE. It read "banked over part of the top" on
+            every card, including a drift sitting on the board — where there is no part of the top
+            involved and no area to choose. A description that describes the other case is worse
+            than none, because a baker reads it as instructions. */}
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
-          Biscuit crushed to a powder and banked over part of the top.
+          {onBoard
+            ? 'Biscuit crushed to a powder, banked around the foot of the cake.'
+            : 'Biscuit crushed to a powder and banked over part of the top.'}
         </div>
 
-        {design.tiers.length > 1 && (
-          <FinishTierPicker tiers={design.tiers} tier={i} onPick={moveSandToTier} />
+        {/* ⚠️ THE BOARD IS A SURFACE, NOT A TIER, so it cannot be a FinishTierPicker button — that
+            component is a tier list and foil, cream and dust all share it. It also hides itself on
+            a one-tier cake, which would have made the board unreachable on exactly the cakes most
+            likely to want it.
+
+            ⚠️ AND IT IS OFFERED ONLY WHERE THE ROW ALLOWS IT. Which surfaces an element may sit on
+            is the ADMIN's answer, read off `allowed_zones` — the same row that already says both,
+            and the reason this was reported as missing at all. */}
+        {(design.tiers.length > 1 || sandAllowsBoard(sd)) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={s.editPanelLabel}>On</span>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {design.tiers.map((_, n) => (
+                <button key={n} style={surfaceBtn(i === n)} onClick={() => moveSandToTier(n)}>
+                  {design.tiers.length > 1 ? `Tier ${n + 1}` : 'Top'}
+                </button>
+              ))}
+              {sandAllowsBoard(sd) && (
+                <button style={surfaceBtn(onBoard)} onClick={() => moveSandToTier(BOARD_TIER)}>
+                  Board
+                </button>
+              )}
+            </div>
+          </div>
         )}
 
+        {/* ⚠️ AREA IS A TOP-SURFACE QUESTION ONLY. Sandeep: *"for sand the shapes circle, rectangle
+            and triangle are only applicable for TOP zone. for board, only around the cake."* A
+            board drift IS the ring round the cake — `sandSpan` gives the board zone its own span
+            and `SandBed` punches the cake out as a hole — so there is no patch to shape, and
+            offering three that do nothing would be three buttons that lie. */}
+        {!onBoard && (
         <div>
           <div style={s.editPanelLabel}>Area</div>
           {/* ⚠️ MARKS, NOT WORDS — and the button keeps its name for anyone who cannot see the mark.
@@ -17245,7 +17446,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               button nobody can tell apart. */}
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {Object.keys(REGION_KINDS).map(k => (
-              <button key={k} onClick={() => { if (sd.shape !== k) updateSand(i, { shape: k }); }}
+              <button key={k} onClick={() => { if (sd.shape !== k) editSand({ shape: k }); }}
                 title={areaLabel(k)} aria-label={areaLabel(k)}
                 aria-pressed={(sd.shape ?? REGION_DEFAULTS.kind) === k}
                 style={{ ...modeBtn((sd.shape ?? REGION_DEFAULTS.kind) === k),
@@ -17255,12 +17456,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             ))}
           </div>
         </div>
+        )}
 
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <span style={s.editPanelLabel}>Colour</span>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {Object.entries(colors).map(([name, hex]) => (
-              <button key={name} onClick={() => updateSand(i, { colour: hex })} title={name}
+              <button key={name} onClick={() => editSand({ colour: hex })} title={name}
                 style={{ padding: '5px 12px', borderRadius: 14, fontSize: 11, fontWeight: 700,
                   cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit',
                   border: (sd.colour ?? '').toLowerCase() === hex.toLowerCase() ? `2px solid ${INK}` : '1.5px solid #ddd',
@@ -17277,22 +17479,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         <ScrollFadeRow style={s.previewRow} fade="255,255,255">
           {[
             { k: 'Size', v: sd.size ?? REGION_DEFAULTS.size, min: 0.15, max: 1.2, step: 0.01,
-              fmt: pct, set: v => updateSand(i, { size: v }) },
+              fmt: pct, set: v => editSand({ size: v }) },
             { k: 'Density', v: SAND_DENSITY_SUM - (sd.spacing ?? SAND_DEFAULTS.spacing),
               min: 0.018, max: 0.08, step: 0.002,
               fmt: () => pct((0.08 - (sd.spacing ?? SAND_DEFAULTS.spacing)) / 0.062),
-              set: v => updateSand(i, { spacing: +(SAND_DENSITY_SUM - v).toFixed(3) }) },
+              set: v => editSand({ spacing: +(SAND_DENSITY_SUM - v).toFixed(3) }) },
             { k: 'Bank height', v: sd.rise ?? SAND_DEFAULTS.rise, min: 0, max: 0.14, step: 0.005,
-              fmt: v => v.toFixed(2), set: v => updateSand(i, { rise: v }) },
+              fmt: v => v.toFixed(2), set: v => editSand({ rise: v }) },
             { k: 'Thins outward', v: sd.falloff ?? SAND_DEFAULTS.falloff, min: 0, max: 1, step: 0.05,
-              fmt: pct, set: v => updateSand(i, { falloff: v }) },
+              fmt: pct, set: v => editSand({ falloff: v }) },
             { k: 'Edge wander', v: sd.edgeBreak ?? SAND_DEFAULTS.edgeBreak, min: 0, max: 1, step: 0.05,
-              fmt: v => (v < 0.02 ? 'crisp' : pct(v)), set: v => updateSand(i, { edgeBreak: v }) },
+              fmt: v => (v < 0.02 ? 'crisp' : pct(v)), set: v => editSand({ edgeBreak: v }) },
             /* Seed is not a quantity — nothing is more or less "seeded" — but it is the one control
                that says "give me a different drift of the same sand", and a baker who does not like
                where a lobe fell needs it. Shown as a plain number for that reason. */
             { k: 'Seed', v: sd.seed ?? SAND_DEFAULTS.seed, min: 1, max: 99, step: 1,
-              fmt: v => String(Math.round(v)), set: v => updateSand(i, { seed: Math.round(v) }) },
+              fmt: v => String(Math.round(v)), set: v => editSand({ seed: Math.round(v) }) },
           ].map(d => (
             <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
                       fmt={d.fmt} onChange={d.set} />
@@ -19195,6 +19397,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               takeLens={takeWindow ? takeLens : null}
               takeGrid={takeWindow && takeGrid}
               takeGridWall={takeWindow && takeGridWall}
+              takeGridStrength={takeGridStrength}
               onTakeFrame={buildSaving ? (() => takeFrame.current?.()) : null}
               takeLensActive={filmingTake}
               onTakeLensReturned={() => setLensReturning(false)}
@@ -21819,20 +22022,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {/* Beside the other things you do to a FINISHED cake, not in a tools or settings
                     menu — those hold things you configure or things that help you make a cake, and
                     this is neither. See spattoo-docs/plans/reel-for-bakers.md §1b. */}
-                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                        onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
-                  <ReelIcon size={17} />
-                  Record a reel
-                </button>}
-                {/* Above the reel, not below it, and gated the same way. A photo is the thing most
-                    bakers actually need most days — a reply to "can I see it?" on WhatsApp — where a
-                    reel is what they make when they are posting deliberately. Same panel shape, same
-                    framing, same name-on-the-frame rule. */}
-                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                        onClick={() => { setActionsMenuOpen(false); openPhotoPanel(); }}>
+                {/* ── ONE "Capture" ON THE PHONE TOO ───────────────────────────────────────────
+                    The reel and the photo used to sit here as two flat items, and the two TAKES
+                    were not here at all — a baker on a phone could film neither. *"in mobile view,
+                    i dont see this build video option. i dont see spin option as well … pls make
+                    sure all the options available in desktop are available in mobile as well."*
+
+                    Same collapse the desktop row already made, and for the same reason: these are
+                    one KIND of act at several lengths, so they take one slot in the sheet and the
+                    choice moves a tap in. The items themselves are CaptureMenuItems — the one copy
+                    both surfaces draw, because a menu that exists twice is a menu that gets added
+                    to once. */}
+                {canOpenCapture && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                        onClick={() => { setActionsMenuOpen(false); setCaptureMenuOpen(true); }}>
                   <CameraIcon size={17} />
-                  Take a photo
+                  Capture
+                  {/* The shared chevron, not a "›": a literal takes whatever font is loaded, so the
+                      same mark changes shape between screens. check:one-chevron caught it. */}
+                  <span aria-hidden style={{ marginLeft: 'auto', opacity: 0.5, display: 'inline-flex' }}>
+                    <ChevronRightIcon size={16} />
+                  </span>
                 </button>}
+              </ActionSheet>
+              {/* The capture menu itself, anchored to the same button the Actions sheet uses — so on
+                  a phone it opens upward from the bottom row exactly as the Actions sheet does. */}
+              <ActionSheet open={captureMenuOpen} onClose={() => setCaptureMenuOpen(false)} align="right">
+                <CaptureMenuItems
+                  onClose={() => setCaptureMenuOpen(false)}
+                  onPhoto={openPhotoPanel} onReel={openReelPanel}
+                  onBuild={() => setBuildSetupOpen(true)} onSpin={() => setSpinSetupOpen(true)}
+                  canFilmBuild={canFilmBuild} canSpin={isCatalogAuthor}
+                  buildSeconds={assemblyTotal(buildTimings).toFixed(1)} spinSeconds={spinTotal(spinPlan)} />
               </ActionSheet>
             </div>
           </div>
@@ -21871,7 +22091,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 its click-away overlay live in one place, and a second desktop-only dropdown would be
                 the same widget written twice. It opens UPWARD, which is right: this row sits at the
                 bottom of the window. */}
-            {canRecordReel && (
+            {canOpenCapture && (
               <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
                 <button
                   style={{ ...s.orderBtn, ...brandBtn, width: '100%', whiteSpace: 'nowrap', opacity: 0.6,
@@ -21886,48 +22106,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <span aria-hidden style={{ letterSpacing: 1, opacity: 0.75, fontSize: 15, lineHeight: 1 }}>⋯</span>
                 </button>
                 <ActionSheet open={captureMenuOpen} onClose={() => setCaptureMenuOpen(false)} align="center">
-                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                          onClick={() => { setCaptureMenuOpen(false); openPhotoPanel(); }}>
-                    <CameraIcon size={17} />
-                    Take a photo
-                  </button>
-                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                          onClick={() => { setCaptureMenuOpen(false); openReelPanel(); }}>
-                    <ReelIcon size={17} />
-                    Record a reel
-                  </button>
-                  {/* ⚠️ `isCatalogAuthor`, NOT `canRecordReel`. The menu around this opens for either,
-                      because a baker on a plan with reel capture films their own cakes — but this is
-                      for filming the PRODUCT, and Sandeep asked for template authors only. The two
-                      questions are different: `reel_branding` says whose name is on a video,
-                      `is_catalog_author` says who writes the public catalogue. */}
-                  {isCatalogAuthor && (
-                    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                            onClick={() => { setCaptureMenuOpen(false); setBuildSetupOpen(true); }}>
-                      <LayersIcon size={16} />
-                      Build the cake
-                      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>
-                        {assemblyTotal(buildTimings).toFixed(1)}s
-                      </span>
-                    </button>
-                  )}
-                  {isCatalogAuthor && (
-                    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                            onClick={() => { setCaptureMenuOpen(false); setSpinSetupOpen(true); }}>
-                      <RefreshIcon size={16} />
-                      Spin the cake
-                      {/* ⚠️ THE LABEL IS NOT A TOGGLE, AND IT CANNOT BE. It was written as
-                          `filmSpin ? 'Stop spinning' : 'Spin the cake'`, which is unreachable: the
-                          spin stops on ANY pointerdown, and opening this menu is a pointerdown — so
-                          by the time the item renders, the spin is already off and it always read
-                          "Spin the cake". A ternary whose other branch can never show is a lie
-                          about the control.
-                          The hint is safe HERE and nowhere else: this menu is shut while anyone is
-                          filming, so it is the one place in the designer that can explain the way
-                          out without the explanation ending up in the video. */}
-                      <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{spinTotal(spinPlan)}s</span>
-                    </button>
-                  )}
+                  <CaptureMenuItems
+                    onClose={() => setCaptureMenuOpen(false)}
+                    onPhoto={openPhotoPanel} onReel={openReelPanel}
+                    onBuild={() => setBuildSetupOpen(true)} onSpin={() => setSpinSetupOpen(true)}
+                    canFilmBuild={canFilmBuild} canSpin={isCatalogAuthor}
+                    buildSeconds={assemblyTotal(buildTimings).toFixed(1)} spinSeconds={spinTotal(spinPlan)} />
                 </ActionSheet>
               </div>
             )}
@@ -22647,6 +22831,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onClick={() => setTakeGridWall(v => !v)}
                     title="Vertical grid lines behind the cake while filming" />
             </div>
+            {(takeGrid || takeGridWall) && (
+              <>
+                {/* ⚠️ A CONTROL, NOT A CONSTANT. At the old fixed value a grid line differed from its
+                    ground by 25 of 255 in a delivered video — about a tenth, which is "hardly
+                    visible". How much a faint line reads depends on the cake, the ground and the
+                    screen it is judged on, none of which this code knows. */}
+                <Slider label="Grid strength" value={takeGridStrength} min={STRENGTH_MIN} max={1} step={0.05}
+                        fmt={v => `${Math.round(v * 100)}%`}
+                        onChange={setTakeGridStrength} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+                  How strongly the grid lines are drawn. The back wall stays fainter than the floor.
+                </div>
+              </>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
                 style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
@@ -22739,6 +22937,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onClick={() => setTakeGridWall(v => !v)}
                     title="Vertical grid lines behind the cake while filming" />
             </div>
+            {(takeGrid || takeGridWall) && (
+              <>
+                {/* ⚠️ A CONTROL, NOT A CONSTANT. At the old fixed value a grid line differed from its
+                    ground by 25 of 255 in a delivered video — about a tenth, which is "hardly
+                    visible". How much a faint line reads depends on the cake, the ground and the
+                    screen it is judged on, none of which this code knows. */}
+                <Slider label="Grid strength" value={takeGridStrength} min={STRENGTH_MIN} max={1} step={0.05}
+                        fmt={v => `${Math.round(v * 100)}%`}
+                        onChange={setTakeGridStrength} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+                  How strongly the grid lines are drawn. The back wall stays fainter than the floor.
+                </div>
+              </>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}
                 style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,

@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useLayoutEffect, useRef, useState, useCallback } from 'react';
+import { BuildPiece } from './BuildPiece.jsx';
 import { albedoForLight } from '../shared/albedoForLight.js';
 import * as THREE from 'three';
 import { useThree } from '@react-three/fiber';
@@ -420,22 +421,51 @@ function wallHit(ray, { shape, radius, baseY, height }) {
  * `alt` is a second InstancedMesh rather than a second material on the first: A and B are different
  * GEOMETRIES, and an instanced draw takes one.
  */
-function InstancedShells({ geometry, shellScale, placements, color, softness, gradient, selected, dragHandler = null, userData = null }) {
+function InstancedShells({ geometry, shellScale, placements, color, softness, gradient, selected, dragHandler = null, userData = null,
+  /* ── The ring forming in the air ───────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE RING USED TO ARRIVE ALREADY ASSEMBLED, flying in as one rigid hoop. Sandeep: *"so you are
+   * bringing the entire ring? is it possible to form the ring during this flying?"* It is, and this
+   * is the only place it can be done: a ring is ONE InstancedMesh, so its shells have no components
+   * of their own to wrap — they are matrices in a buffer, and the only way to move one is to write
+   * a different matrix.
+   *
+   * `shellPose(i)` gives shell `i` its own approach. Its TIMING is the ring's, so the border sets
+   * off and lands with everything else on the cake; only the direction each shell comes in on is
+   * its own. They converge, and the ring exists at the moment they land. */
+  shellPose = null, buildReach = 1, buildTime = null,
+}) {
   const ref = useRef(null);
   const matRef = useRef(null);
   const bbox = useMemo(() => geomBBox(geometry, gradient), [geometry, gradient]);
 
+  /* ⚠️ `buildTime` IS IN THE DEPS ON PURPOSE. The pose changes every frame of a take, and this is
+     the effect that writes the matrices — without it in the list the shells would be placed once,
+     at whatever the first frame of the take happened to be, and stay there. Outside a take it is
+     null and this runs exactly as often as it used to. */
   useLayoutEffect(() => {
     const im = ref.current;
     if (!im) return;
     const m = new THREE.Matrix4();
-    placements.forEach((p, i) => im.setMatrixAt(i, shellMatrix(p, m)));
+    const flight = shellPose ? new THREE.Matrix4() : null;
+    const spin = shellPose ? new THREE.Matrix4() : null;
+    placements.forEach((p, i) => {
+      const seat = shellMatrix(p, m);
+      if (!shellPose) { im.setMatrixAt(i, seat); return; }
+      const pose = shellPose(i);
+      if (!pose) { im.setMatrixAt(i, seat); return; }
+      /* The same transform BuildPiece's group applies, composed by hand because there is no group
+         to put a single instance in: turn about the cake's axis, then translate. */
+      spin.makeRotationY(pose.swing);
+      flight.makeTranslation(pose.offX * buildReach, pose.rise * buildReach, pose.offZ * buildReach);
+      im.setMatrixAt(i, flight.multiply(spin).multiply(seat));
+    });
     im.instanceMatrix.needsUpdate = true;
     // Instanced meshes do not compute this themselves, and without it the ring is frustum-culled
     // against the bounds of a single shell sitting at the origin — so it vanishes the moment the
     // camera looks away from the middle of the cake.
     im.computeBoundingSphere();
-  }, [placements, geometry, shellScale]);
+  }, [placements, geometry, shellScale, shellPose, buildReach, buildTime]);
 
   useEffect(() => { if (matRef.current) applyGradient(matRef.current, gradient, bbox, creamAlbedo); }, [gradient, bbox]);
 
@@ -462,7 +492,8 @@ function InstancedShells({ geometry, shellScale, placements, color, softness, gr
 // Render every position, alternating between version A and the alternate B per `pattern`
 // (a repeating cycle like "AB" or "AAB"). B uses its own geometry, rotation, and a radial/
 // height shift relative to A. When B is absent / not active, every shell is A (unchanged).
-function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected, dragHandler = null, userData = null }) {
+function renderShells({ positions, A, B, baseRotation, altRotation, altActive, pattern, dRadialB, dYB, color, softness, gradient, selected, dragHandler = null, userData = null,
+  shellPose = null, buildReach = 1, buildTime = null }) {
   const ryA = baseRotation[1] * DEG, meshA = [baseRotation[0] * DEG, 0, baseRotation[2] * DEG];
   const ryB = altRotation[1] * DEG,  meshB = [altRotation[0] * DEG, 0, altRotation[2] * DEG];
   const L = pattern.length || 1;
@@ -519,6 +550,11 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
     if (!g || !g.ver || !g.placements.length) return null;
     return (
       <InstancedShells key={k} geometry={g.ver.geometry} shellScale={g.ver.shellScale}
+        /* ⚠️ SEEDED BY `g.indices`, THE RING-WIDE INDEX. Shells are grouped here by geometry and
+           colour, so a group's local `i` is not where the shell sits round the ring — seeding on it
+           would give two shells the same bearing whenever the grouping changed. */
+        shellPose={shellPose ? ((i) => shellPose(g.indices[i] ?? i)) : null}
+        buildReach={buildReach} buildTime={buildTime}
         placements={g.placements} color={g.color} softness={softness} gradient={g.gradient} selected={selected}
         dragHandler={dragHandler
           ? (e) => { const i = g.indices[e.instanceId ?? 0]; if (i != null) dragHandler(i)(e); }
@@ -534,7 +570,10 @@ function renderShells({ positions, A, B, baseRotation, altRotation, altActive, p
 // Clones are memoised so re-renders are cheap and geometry/materials stay shared across instances.
 // (Swag `tq` tilt and per-instance selection tint are intentionally omitted — decorations don't
 // swag, and INVARIANTS #5a bans material-tint selection; the ring's card carries selection.)
-function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0], dragHandler = null, forceHandle = false }) {
+function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [0, 0, 0], dragHandler = null, forceHandle = false,
+  /* Each decoration in the ring flies its own way in — see InstancedShells for the same
+     thing done to cream shells, which have no component of their own to wrap. */
+  shellPose = null, buildReach = 1 }) {
   const clones = useMemo(() => {
     if (!scene) return [];
     return positions.map(() => { const c = scene.clone(true); c.scale.setScalar(shellScale); return c; });
@@ -569,7 +608,8 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
   return clones.map((obj, i) => {
     const u = positions[i];
     return (
-      <group key={u.key ?? i}
+      <BuildPiece key={u.key ?? i} pose={shellPose?.(i)} reach={buildReach}>
+      <group
         position={[u.pos[0], u.pos[1] - seatMinY * shellScale, u.pos[2]]}
         rotation={[0, (u.rotY ?? 0) + ry, 0]}
         {...(dragHandler ? { onPointerDown: dragHandler(i) } : {})}>
@@ -577,6 +617,7 @@ function DecorationShells({ positions, scene, shellScale, minY, baseRotation = [
           <primitive object={obj} />
         </group>
       </group>
+      </BuildPiece>
     );
   });
 }
@@ -788,6 +829,9 @@ export function TopDripRing({ topY, radius, color = '#3a2117', colors = null, gl
   );
 }
 function TopPipingRingImpl({
+  /* Each shell's own way in, so the ring FORMS rather than arriving assembled. Null unless a
+     take is filming. See InstancedShells. */
+  shellPose = null, buildReach = 1, buildTime = null,
   topY, radius, glbPath, color = '#ffffff', sizeFactor = 1,
   softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   topRotation       = [0, 0, 0],
@@ -985,12 +1029,14 @@ function TopPipingRingImpl({
   return (
     <group onClick={onClick}>
       {finish === 'element'
-        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={topRotation} dragHandler={dragHandler} />
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={topRotation} dragHandler={dragHandler}
+            shellPose={shellPose} buildReach={buildReach} />
         : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected })
         : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, gradient, selected })
         : renderShells({
+            shellPose, buildReach, buildTime,
             positions, A, B, baseRotation: topRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
             color, softness, gradient, selected, dragHandler,
@@ -1008,6 +1054,9 @@ export function BottomPipingRing(props) {
   return <SafeGlb screen="BottomPipingRing"><BottomPipingRingImpl {...props} /></SafeGlb>;
 }
 function BottomPipingRingImpl({
+  /* Each shell's own way in, so the ring FORMS rather than arriving assembled. Null unless a
+     take is filming. See InstancedShells. */
+  shellPose = null, buildReach = 1, buildTime = null,
   yBase, radius, glbPath, color = '#f5e6c8', sizeFactor = 1, tierHeight = 0,
   softness = PIPING_SOFTNESS_DEFAULT, gradient = null,
   bottomRotation    = [0, 0, 0],
@@ -1187,12 +1236,14 @@ function BottomPipingRingImpl({
   return (
     <group onClick={onClick} {...(heightDrag ? { onPointerDown: heightDrag } : {})}>
       {finish === 'element'
-        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} dragHandler={dragHandler} forceHandle={!!heightDrag} />
+        ? <DecorationShells positions={positions} scene={scene} shellScale={A.shellScale} minY={A.minY} baseRotation={bottomRotation} dragHandler={dragHandler} forceHandle={!!heightDrag}
+            shellPose={shellPose} buildReach={buildReach} />
         : wrapGeo
         ? renderWrap({ wrapGeo, color, softness, gradient, selected, userData: grab })
         : festoonGeos
         ? renderFestoons({ festoonGeos, color, softness, gradient, selected, userData: grab })
         : renderShells({
+            shellPose, buildReach, buildTime,
             positions, A, B, baseRotation: bottomRotation, altRotation, altActive, pattern,
             dRadialB: altRadialOffset - extraRadialOffset, dYB: altYOffset - yOffset,
             color, softness, gradient, selected, dragHandler, userData: grab,
@@ -1648,6 +1699,13 @@ function SecondCreamLayers({ layers, radius, yBase, height, grainKey, grainDensi
 }
 
 export default function CakeTier({
+  /* The build's pose-lookup, and which tier this is so a ring can name itself. Null on every path
+     that is not filming — see BuildPiece.jsx. */
+  buildPose = null,
+  /* The take's clock. It is in the shell-matrix effect's deps, which is what makes a ring FORM
+     rather than freeze at its first frame — see InstancedShells. */
+  buildTime = null,
+  tierIndex = 0,
   radius, height, color, yBase,
   gradient = null,
   // Several colours up the wall — shared/color/stripeMaterial.js. Null = the solid colour or gradient.
@@ -1929,8 +1987,15 @@ export default function CakeTier({
 
   // One <TopPipingRing>/<BottomPipingRing> per stacked layer. A layer is "selected"
   // by its layerId; legacy single-piping callers fall back to the boolean flags.
+  /* ⚠️ A RING FLIES AS A RING, not as a hundred separate shells. A ruffle skirt or a rose border is
+     one thing a baker pipes in one pass, so it arrives as one thing — and a hundred shells each on
+     their own bearing would be confetti, not a cake being built. `buildPose` is null whenever no
+     take is running, and BuildPiece is then an identity group. */
   const renderTops = () => tops.map((p, idx) => (
-    <TopPipingRing key={p.layerId ?? `t${idx}`} topY={topY} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
+    <TopPipingRing key={p.layerId ?? `t${idx}`}
+      shellPose={buildPose ? ((n) => buildPose(`top:${tierIndex}:${p.layerId ?? ''}`, n)) : null}
+      buildReach={radius} buildTime={buildTime}
+      topY={topY} radius={shp.shellRadius ?? radius} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       topRotation={p.rotation ?? [0,0,0]}
@@ -1971,7 +2036,10 @@ export default function CakeTier({
   // does NOT react to layers added later, so an existing swag never jumps when something new is
   // placed; instead the new layer stacks around the swag's reported band.
   const renderBottoms = () => bottoms.map((p, idx) => (
-    <BottomPipingRing key={p.layerId ?? `b${idx}`} yBase={yBase} radius={shp.shellRadius ?? radius} tierHeight={height} glbPath={p.glbUrl} color={p.color}
+    <BottomPipingRing key={p.layerId ?? `b${idx}`}
+      shellPose={buildPose ? ((n) => buildPose(`bot:${tierIndex}:${p.layerId ?? ''}`, n)) : null}
+      buildReach={radius} buildTime={buildTime}
+      yBase={yBase} radius={shp.shellRadius ?? radius} tierHeight={height} glbPath={p.glbUrl} color={p.color}
       gradient={p.gradient ?? null}
       sizeFactor={p.size ?? 1} softness={p.softness ?? PIPING_SOFTNESS_DEFAULT}
       bottomRotation={p.bottomRotation ?? [0,0,0]}

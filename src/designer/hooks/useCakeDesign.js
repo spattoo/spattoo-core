@@ -217,6 +217,7 @@ export function toCanvasConfig(design) {
     writings: normalizeWritings(design),
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     boardGyp: design.boardGyp ?? null,       // gypsophila ringing the foot of the cake
+    boardSand: design.boardSand ?? null,     // a sand drift on the board, around the cake
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
     garnishes: design.garnishes ?? [],
@@ -404,6 +405,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
     boardGyp: templateDesign.boardGyp ?? null,
+    boardSand: templateDesign.boardSand ?? null,
     nameBlocks: templateDesign.nameBlocks ?? null,
   };
 }
@@ -941,6 +943,25 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   function setBoardGyp(gyp) { setDesign(prev => ({ ...prev, boardGyp: gyp })); }
+
+  /* ── Sand on the BOARD ─────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE GEOMETRY COULD ALWAYS DO THIS; THE INTEGRATION COULD NOT. `SandBed` takes a `zone` and
+   * DEFAULTS it to 'board' — `sandSpan` is the only thing that knows how a board drift differs from
+   * a top one — and admin's element row has both zones ticked. Core simply never offered the board:
+   * `addSand` put the drift on the top tier and the card's picker listed tiers only. Sandeep: *"user
+   * should be able to add sand to board also. this is already done in admin. but i think missed
+   * during the integration."*
+   *
+   * A board drift is its own field rather than a tier's, exactly like `boardGrass` and `boardGyp`:
+   * the board is not a tier, and pretending it is one is what `BOARD_TIER` exists to avoid. */
+  function setBoardSand(sand) { setDesign(prev => ({ ...prev, boardSand: sand })); }
+
+  function updateBoardSand(changes) {
+    setDesign(prev => (prev.boardSand
+      ? { ...prev, boardSand: { ...prev.boardSand, ...(typeof changes === 'function' ? changes(prev.boardSand) : changes) } }
+      : prev));
+  }
 
   function updateBoardGyp(changes) {
     setDesign(prev => (prev.boardGyp
@@ -1974,6 +1995,7 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
     setTierSand, updateSand,
     setTierGyp, updateGyp, setBoardGyp, updateBoardGyp,
+    setBoardSand, updateBoardSand,
     setTierRainbows, updateTierRainbows, updateTierClouds,
     updateTierBalloons,
     setNameBlocks, updateNameBlocks,

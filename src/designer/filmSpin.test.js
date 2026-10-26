@@ -26,7 +26,12 @@ const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
  * WebGL context to prove where one menu item lives.
  */
 describe('the hero spin stays out of the frame', () => {
-  const item = code.match(/\{isCatalogAuthor && \([\s\S]{0,600}?Spin the cake[\s\S]{0,400}?\)\}/);
+  /* ⚠️ THE ITEM MOVED INTO `CaptureMenuItems`, a component both the desktop row and the phone's
+     Actions sheet draw — the phone had neither take until then. So the guard it sits behind is that
+     component's `canSpin` prop, and the question "who is that" is answered at the CALL SITES, which
+     is what the next test checks. Matching `{isCatalogAuthor && (` here found nothing and reported
+     the guard as missing, about a guard that had simply been given a name. */
+  const item = code.match(/\{canSpin && \([\s\S]{0,600}?Spin the cake[\s\S]{0,400}?\)\}/);
 
   it('lives behind the Capture menu, which is shut unless it is being used', () => {
     expect(item, 'the spin item should be inside an isCatalogAuthor guard').not.toBeNull();
@@ -39,6 +44,16 @@ describe('the hero spin stays out of the frame', () => {
   it('is for catalogue authors, not for anyone who can record a reel', () => {
     expect(item[0]).not.toMatch(/canRecordReel/);
     expect(code).toMatch(/const isCatalogAuthor = !!bakerData\?\.is_catalog_author/);
+    /* ⚠️ EVERY CALL SITE, NOT JUST ONE. The menu is drawn in two places now — the desktop button row
+       and the phone's Actions sheet — and a spin item that is author-gated on one surface and open
+       on the other is the same bug as having no gate. Both must pass `isCatalogAuthor`. */
+    const sites = [...code.matchAll(/canSpin=\{([^}]*)\}/g)].map(m => m[1].trim());
+    expect(sites.length, 'CaptureMenuItems should be drawn on both surfaces').toBe(2);
+    for (const who of sites) expect(who).toBe('isCatalogAuthor');
+    // And the build's own gate is a DIFFERENT question — Blaze, not authorship.
+    const build = [...code.matchAll(/canFilmBuild=\{([^}]*)\}/g)].map(m => m[1].trim());
+    expect(build.length).toBe(2);
+    for (const who of build) expect(who).toBe('canFilmBuild');
   });
 
   /* ⚠️ THE WAY OUT HAS TO BE INVISIBLE TOO. A "Stop" button on screen is a button in the video, so

@@ -313,12 +313,24 @@ describe('a decoration ring is seated on its own origin, whatever its tilt', () 
  * `shape` this comment is the thing to come back to.
  */
 describe('a renderer is handed the tier footprint, not sand state that shadows it', () => {
-  it('passes SandBed explicit props and never a spread', () => {
-    const el = SOURCE.match(/<SandBed\b[^>]*?\/>/s);
-    expect(el, 'CakeCanvas should render a <SandBed>').not.toBeNull();
-    expect(el[0]).toMatch(/shape=\{tierShape\(/);
-    /* Any spread at all: the sand object and SandBed share `shape`, `size`, `seed` and `colour`,
-       so there is no safe ordering to remember — only an explicit list. */
-    expect(el[0]).not.toMatch(/\{\s*\.\.\./);
+  /* ⚠️ THERE ARE TWO OF THEM NOW — the tier's drift and the board's. This matched only the FIRST
+     `<SandBed>` in the file and asserted it used `tierShape(`; adding the board one above it turned
+     a guard about spreads into a failure about a shape, which is the test being specific about the
+     wrong thing. Both sites are checked, and each is asked the question that applies to it. */
+  it('passes every SandBed explicit props and never a spread', () => {
+    const els = [...SOURCE.matchAll(/<SandBed\b[\s\S]*?\/>/g)].map(m => m[0]);
+    expect(els.length, 'CakeCanvas should render a <SandBed>').toBeGreaterThan(0);
+    for (const el of els) {
+      /* Any spread at all: the sand object and SandBed share `shape`, `size`, `seed` and `colour`,
+         so there is no safe ordering to remember — only an explicit list. */
+      expect(el, 'no spread into SandBed').not.toMatch(/\{\s*\.\.\./);
+      expect(el, 'shape must be passed explicitly').toMatch(/shape=\{/);
+    }
+    // The tier's drift is clipped to that tier's footprint…
+    expect(els.some(e => /shape=\{tierShape\(/.test(e)), 'a tier drift uses tierShape').toBe(true);
+    /* …and the board's goes AROUND the cake, so it is handed the cake's own footprint and SandBed
+       grows the ring itself. Handing it the board's disc would ring the board's edge instead. */
+    expect(els.some(e => /zone=\{ZONES_BOARD\}/.test(e) && /shape=\{bottomShp\}/.test(e)),
+      'the board drift is built from the cake footprint').toBe(true);
   });
 });

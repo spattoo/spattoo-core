@@ -42,12 +42,41 @@ describe('filming is isolated from designing', () => {
     expect(canvas).toMatch(/\{takeLens != null && \(\s*\n?\s*<TakeLens/);
   });
 
-  /* The build's per-piece offset collapses to nothing with no build running: no piece is hidden and
-     nothing is lifted, so the sticker loop behaves exactly as it did. */
+  /* ⚠️ ONE MECHANISM FOR EVERY PIECE, and that is what makes the rest of the cake able to fly at
+     all. The pose used to be threaded into the two sticker components as four props, each applying
+     it its own way — which is why piping, roses, gypsophila and writing sat still while the
+     stickers flew. `BuildPiece` is the wrapper they all share now, so a renderer never has to know
+     the take exists.
+
+     With no build running `poseFor` returns null, BuildPiece renders a plain identity group, and
+     the scene is exactly the tree it was before any of this existed. */
   it('lifts and hides nothing when no build is running', () => {
-    expect(canvas).toMatch(/const build = assembly\s*\?\s*assemblyPose\([^)]*\)\s*:\s*null;/);
-    expect(canvas).toMatch(/if \(build && !build\.visible\) return null;/);
-    expect(canvas).toMatch(/const buildRise = build \? build\.rise \* [^:]+: 0;/);
+    const piece = readFileSync(new URL('./BuildPiece.jsx', import.meta.url), 'utf8');
+    const body = strip(piece);
+    expect(body).toMatch(/if \(pose && !pose\.visible\) return null;/);
+    expect(body).toMatch(/if \(!pose\) return <group>\{children\}<\/group>;/);
+    // ⚠️ ALWAYS A GROUP, even at rest: wrapping only during a take changes the tree shape at the
+    // moment the take starts and remounts every GLB mid-shot.
+    expect(body).not.toMatch(/return <>\{children\}<\/>/);
+    // And the old per-component mechanism is gone, not merely unused.
+    expect(canvas).not.toMatch(/buildRise/);
+    expect(canvas).not.toMatch(/buildSwing/);
+  });
+
+  /* ⚠️ THE PIECES ARE MORE THAN THE STICKERS. Reported after four releases of a build that animated
+     stickers alone: *"piping elements are not flying. also, few other things like roses in this
+     image are not flying."* The roses in that picture ARE a piping ring, so both halves of that
+     sentence were one omission. */
+  it('counts the whole cake as pieces, not just the stickers', () => {
+    const at = canvas.indexOf('const buildIds = useMemo(');
+    expect(at, 'the piece list should exist').toBeGreaterThan(-1);
+    const list = canvas.slice(at, canvas.indexOf('}, [', at));
+    for (const family of ['top:', 'bot:', 'garnish:', 'topper:', 'age:', 'text:', 'sticker:', 'gyp:', 'grass:']) {
+      expect(list, `${family} should be a build piece`).toContain(family);
+    }
+    // Piping is named first, because that is what a baker pipes first and `spread` deals them out
+    // in this order.
+    expect(list.indexOf('top:')).toBeLessThan(list.indexOf('sticker:'));
   });
 
   /* ⚠️ THE LENS IS THE ONE THING A TAKE CHANGES IN THE SCENE, so it has to put it back. Without the
@@ -233,8 +262,8 @@ describe('filming is isolated from designing', () => {
   it('reaches the canvas only inside a take', () => {
     expect(designer).toMatch(/takeGrid=\{takeWindow && takeGrid\}/);
     expect(designer).toMatch(/takeGridWall=\{takeWindow && takeGridWall\}/);
-    expect(canvas).toMatch(/\{takeGrid && <TakeGrid \/>\}/);
-    expect(canvas).toMatch(/\{takeGridWall && <TakeGridWall \/>\}/);
+    expect(canvas).toMatch(/\{takeGrid && <TakeGrid strength=\{takeGridStrength\} \/>\}/);
+    expect(canvas).toMatch(/\{takeGridWall && <TakeGridWall strength=\{takeGridStrength\} \/>\}/);
   });
 
   /* ⚠️ THE HEADER RULE GOES TOO. *"the horizontal line below the baker name is disturbing. can we
@@ -276,6 +305,55 @@ describe('filming is isolated from designing', () => {
     }
     // And it must not write depth, or it reintroduces the swallowed FRONT marker one element later.
     expect(body).toMatch(/depthWrite=\{false\}/);
+  });
+
+  /* ── Who may film a build ──────────────────────────────────────────────────────────────────────
+   *
+   * *"let this feature be available for only users with atleast blaze subscription. we have
+   * watermark optio for reel capture. but this one strictly for blaze."*
+   *
+   * ⚠️ A GATE THAT QUIETLY OPENS IS A REVENUE BUG, and it opens by someone widening a condition
+   * while fixing something else — which is exactly what happened to the header rule's predicate two
+   * changes ago. Asserted on the condition itself, not on the menu item, because the condition is
+   * the thing with a price on it.
+   */
+  it('offers the build only to Blaze, or to a catalogue author', () => {
+    expect(designer).toMatch(/const canFilmBuild = isCatalogAuthor \|\| buildFilm;/);
+    expect(designer).toMatch(/setBuildFilm\(res\?\.ent\?\.build_film === true\);/);
+    // Defaults to locked: a failed entitlement lookup must not hand the feature out.
+    expect(designer).toMatch(/const \[buildFilm,\s*setBuildFilm\]\s*=\s*useState\(false\);/);
+    expect(designer).toMatch(/\{canFilmBuild && \(/);
+  });
+
+  /* ⚠️ NO WATERMARK RUNG, unlike the reel. The reel is given to every paid tier BECAUSE a
+     watermarked one markets us; this one is the showpiece, so there is no cheaper version of it to
+     fall back to. If a `build_film` watermark ever appears, this decision is what it overturns. */
+  it('has no lesser version to fall back to', () => {
+    expect(designer).not.toMatch(/buildFilm\s*\?\s*[^:]{0,80}:\s*[^;]{0,80}watermark/i);
+  });
+
+  /* ── The framing survives the lens ─────────────────────────────────────────────────────────────
+   *
+   * ⚠️ TWO OPPOSITE BUGS LIVE HERE, so both are pinned. Letting the fit run during a take made it
+   * chase the decorations flying above the cake and the camera lurched mid-shot. Switching it off
+   * made the narrowing lens a 1.54x magnification with nothing moving the camera to match, and the
+   * board left the bottom of the frame — *"its cut the board from front. some board elements are
+   * not visible."* Measured on the same take: with the fit off the board reached row 699 of 700;
+   * holding the bounds instead it ends at 642.
+   */
+  it('holds the bounds during a take but still follows the lens', () => {
+    expect(canvas).toMatch(/holdBounds=\{framingHeld\}/);
+    // ⚠️ NOT `enabled={!framingHeld}` — that is the version that cropped the board.
+    expect(canvas).not.toMatch(/enabled=\{!framingHeld\}/);
+    const at = canvas.indexOf('function FitCakeToView(');
+    const body = canvas.slice(at, at + 6000);
+    // The fov is a reason to re-fit; its absence from this list is what cropped the board.
+    expect(body).toMatch(/const fovMoved = [^;]*camera\.fov[^;]*;/);
+    expect(body).toMatch(/if \(!cakeMoved && !aspectMoved && !fovMoved\) return;/);
+    // And a lens move must not be glided on top of — TakeLens already eased it.
+    expect(body).toMatch(/const glide = aspectMoved && !cakeMoved && !fovMoved;/);
+    // The held branch reuses the last bounds rather than walking the cake again.
+    expect(body).toMatch(/const heldBounds = holdBounds \? applied\.current : null;/);
   });
 
   /* The cream wheel owns autoRotate and must keep owning it — the spin briefly shared it, which is

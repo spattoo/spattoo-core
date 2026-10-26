@@ -42,10 +42,36 @@ export const GRID = Object.freeze({
   /* A hair above the floor. The painted floor writes no depth, but the shadow catcher does, and a
      grid at exactly y=0 fights it. */
   y: 0.004,
-  /* Faint. It is a floor, not a subject — loud enough to place the cake, quiet enough that nobody
-     watching the video thinks about it. */
-  opacity: 0.34,
+  /* The DEFAULT line strength. ⚠️ It used to be the only one, at 0.34, and that was too faint to
+     see: measured on a delivered 2732x1542 video, a grid line above the cake differed from its
+     ground by 25 of 255 — about a tenth. Sandeep: *"grid lines are hardly visible. lets the user
+     control the grid line intensity."* The baker sets it now; this is only where the slider starts.
+     Higher, because the old value is not a sensible starting point for a control whose whole
+     purpose is that the lines can be seen. */
+  opacity: 0.6,
 });
+
+/** Where the strength slider starts, and the floor it never drops below while the grid is ON. */
+export const STRENGTH_DEFAULT = GRID.opacity;
+export const STRENGTH_MIN = 0.05;
+
+/* ⚠️ THE BACKDROP STAYS A FIXED FRACTION OF THE FLOOR rather than getting a slider of its own.
+   There is more of it and it is further away, so matching the floor's weight makes the backdrop
+   louder than the cake standing on it — a relationship the baker should not have to maintain by
+   hand across two controls. One knob, both surfaces, the depth cue preserved at every setting. */
+export const WALL_RELATIVE = 0.65;
+
+/** How strongly the floor lines are drawn, for a slider value in 0…1. */
+export function floorOpacity(strength = STRENGTH_DEFAULT) {
+  const v = Number(strength);
+  if (!Number.isFinite(v)) return STRENGTH_DEFAULT;
+  return Math.min(1, Math.max(STRENGTH_MIN, v));
+}
+
+/** And the backdrop, which is always the fainter of the two. */
+export function wallOpacity(strength = STRENGTH_DEFAULT) {
+  return floorOpacity(strength) * WALL_RELATIVE;
+}
 
 /**
  * The grid as line-segment vertices: x, y, z triples, two points per line.
@@ -97,9 +123,9 @@ export const WALL = Object.freeze({
   /* It stands on the far edge of the floor grid, so the two meet in a corner rather than one
      hovering in front of the other. */
   distance: GRID.extent / 2,
-  /* Fainter than the floor: it is further away and there is more of it, so matching the floor's
-     weight makes the backdrop louder than the thing standing on it. */
-  opacity: 0.22,
+  /* Kept for reference and for the default; the live value comes from `wallOpacity`, which derives
+     it from the one strength the baker sets. */
+  opacity: GRID.opacity * 0.65,
 });
 
 /**
