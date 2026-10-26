@@ -366,7 +366,7 @@ CAT_ELEMENTS.push({
     ? '/cdn/elements/files/3D/b87330d0-fc0b-475f-a87c-1ea1d22caa40.glb'
     : '/sample-rosette.glb',
   thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
-  allowed_zones: ['rim', 'board'],
+  allowed_zones: ['rim', 'middle_tier', 'side', 'top_surface', 'board'],   // the real row's five
   /* ⚠️ `gradient: true`, because the real row has it and this one did not — so the whole
      multi-colour editor (stops, Swirl/Vertical/Linear, and now Alternating) was unreachable in the
      harness, and `gradEligible` quietly rendered the popup without it. A fixture that disagrees
@@ -383,14 +383,35 @@ CAT_ELEMENTS.push({
      one attitude for a rim and ANOTHER for a wall, and the pen used to take the rim's for both. With
      `top_rotation` absent, hand-piping on the side looked fine in the harness and lay face-down in
      the app. A fixture that disagrees with the row proves the wrong thing, confidently. */
-  /* ⚠️ `can_coat`, because without it the "Cover the cake" block does not render and the coat —
-     with its three scopes, its ombré, and the tap-the-roses-to-get-the-card-back path — was
-     unreachable in the harness. Same gap `hand_piping` and `gradient` above were added to close:
-     a fixture that cannot express the feature cannot show the bug in it. */
-  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true, can_coat: true,
-                      top_surface: 'hug', rim: 'hug', side: 'hug',
-                      top_rotation: [0, 0, 0], bottom_rotation: [-89, -174, -180] },
-  default_color: '#F5E6C8', sort_order: 16,
+  /* ⚠️ COPIED FROM THE REAL `Classic Shell Border` ROW (9c06bdfe), AND IT HAD DRIFTED BADLY. The
+     numbers below are that row's, verbatim — spacings, rotations, radial offsets, swag settings and
+     the scale range — because a border's whole behaviour IS those numbers, and the stand-in's
+     `r: 1` with two guessed rotations showed a shape no catalogue contains.
+
+     ⚠️ `can_coat` REMOVED, AND THAT IS THE POINT OF THIS EDIT. The stand-in carried it; not one of
+     the ten real shell rows does. That one key puts a "Cover the cake" offer on the card — the
+     rosette-cake packing — so the fixture's most prominent path was one a baker with a real shell
+     border never sees, while the rim RING it should have shown was never reached. Writing the help
+     article for piping borders ran straight into it: a cake covered edge to edge in shells, driven
+     and screenshotted, two minutes from being published as "how a border works".
+     The coat still has a harness — the ROSETTE fixture below carries `can_coat`, with its own note
+     saying it is the element the real coat is modelled on, which is where the flag belongs.
+
+     ⚠️ `hand_piping` KEPT, AND IT IS THE ONE DEPARTURE FROM THE ROW. Classic Shell Border does not
+     carry it; its siblings `Shell Border Stroke` and `Shell Swirl` do, and without it here the
+     Cream Pen path has no harness at all. Marked rather than silent: if you are checking the pen,
+     you are standing on a sibling row's capability, not this one's. */
+  placement_config: { r: 2.2, hand_piping: true,
+                      scale: { min: 2, max: 4, step: 0.25 },
+                      rim: 'hug', side: 'hug', board: 'hug', middle_tier: 'hug', top_surface: 'hug',
+                      top_flip: false, bottom_flip: true,
+                      top_spacing: 1, bottom_spacing: 0.7,
+                      top_rotation: [-102, 0, 0], bottom_rotation: [60, 6, 0],
+                      top_y_offset: 0.11, bottom_y_offset: 0,
+                      top_radial_offset: 0.113, bottom_radial_offset: -0.071,
+                      top_swag_count: 0, top_swag_depth: 0.4, top_swag_tilt: 0.4,
+                      bottom_swag_count: 0, bottom_swag_depth: 0.4, bottom_swag_tilt: 0.4 },
+  default_color: '#fffdd0', sort_order: 16,   // the real row's cream
 });
 
 CAT_ELEMENTS.push({
