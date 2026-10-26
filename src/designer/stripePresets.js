@@ -55,8 +55,8 @@ export const STRIPE_PRESETS = {
     softness: 0.45, wobble: 0.3, weights: [1, 1, 1, 1, 1, 1],
   },
   sunset: {
-    label: 'Sunset ombre (3)',
-    note: 'Three colours, fully blended — the classic ombre, and the far end of the slider. Proves the existing vertical gradient is just this with count 3 and softness 1, which is the case for merging the two rather than shipping both.',
+    label: 'Sunset blend (3)',
+    note: 'Three colours, fully blended — the classic ombre look, and the far end of the slider. Proves the existing vertical gradient is just this with count 3 and softness 1, which is the case for merging the two rather than shipping both.',
     palette: ['#F7DE8E', '#F4A98C', '#EE9BB0'], count: 3,
     softness: 1, wobble: 0.15, weights: [1, 1, 1],
   },

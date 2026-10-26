@@ -71,6 +71,7 @@ const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
 import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, MAX_SWING } from './reel/assemblyTake.js';
+import { secondsLeft, clampDelay, DELAY_MAX, DELAY_DEFAULT } from './reel/takeDelay.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
@@ -424,7 +425,12 @@ export const PIPING_MAX_STOPS = 3;
 
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
                             modes = GRADIENT_MODES, balance, onBalanceChange, pending = false,
-                            label = 'Gradient colors', maxStops = PIPING_MAX_STOPS }) {
+                            /* ⚠️ NAME THE THING BEING COLOURED, NOT THE TECHNIQUE. Every caller
+                               that bothered to pass a label already did — "Stripe colours",
+                               "Chocolates", "Glaze colours" — and only the default fell back to
+                               "Gradient colors", which is the one piece of jargon on a card whose
+                               other headings are "How the colour sits" and "Balance". */
+                            label = 'Blended colours', maxStops = PIPING_MAX_STOPS }) {
   const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
     <div style={s.gradientBlock}>
@@ -784,7 +790,13 @@ const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', materi
 /* How a tier's colour is laid on, as [value, label]. ONE source: the Solid/Ombre/Stripes buttons in
    the Pattern panel render from this, and the Pattern tab's own note reads the label from it too —
    two copies would let the tab say "Ombre" while the row underneath showed "Stripes" selected. */
-const TREATMENT_LABELS = [['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']];
+/* ⚠️ THE LABEL IS "Blended", THE STORED KEY IS STILL `ombre`, AND THAT SPLIT IS THE POINT. Every
+   cake ever saved carries `treatment: 'ombre'`; renaming the key would need a migration and would
+   break designs mid-flight, for a change that is purely about words a baker reads. Sandeep, on the
+   old label: *"i would prefer some simple word than ombre… Blended is better. simple and all bakers
+   can understand."* Ombre is a real decorating term, so this is not a correction — it is choosing
+   the plainer of two right words, and the data has no opinion either way. */
+const TREATMENT_LABELS = [['solid', 'Solid'], ['ombre', 'Blended'], ['stripes', 'Stripes']];
 const treatmentLabel = (t) => TREATMENT_LABELS.find(([k]) => k === t)?.[1] ?? null;
 const catLabel = (cat) => CAT_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
@@ -1028,7 +1040,7 @@ const CAKE_GLYPH = (
    a door with a name and a state, which is enough for the ones that are plainly one thing. */
 const TIER_DOOR_HINTS = {
   frosting: 'The cream, its style and the top edge.',
-  gradient: 'Solid, ombre or stripes.',
+  gradient: 'Solid, blended or stripes.',
   shape:    'The outline of this tier.',
 };
 
@@ -4786,6 +4798,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      baker approves is what their customer gets, so the designer's own lens must not move because
      somebody filmed once. Set it to 42 to film exactly what the editor shows. */
   const [takeLens, setTakeLens] = useState(CINEMATIC_FOV);
+  /* ── The head start, shared by both takes ──────────────────────────────────────────────────────
+   * "so the actual assembling video or the spin video starts after selected number of seconds,
+   * this is useful in case of screen recording" — time to cross to a screen recorder and press
+   * record. One setting for both, because it describes how you are RECORDING, not what you film.
+   * `startAfter` is the chosen seconds; `countdown` is what is on screen, or null for nothing. */
+  const [startAfter, setStartAfter] = useState(DELAY_DEFAULT);
+  const [countdown, setCountdown] = useState(null);
+  const delayTimer = useRef(null);
   /* ⚠️ THE TAKE IS A FIXED LENGTH WHATEVER THE CAKE HOLDS. The first version set a gap between
      pieces, which gave a 1.6s build on a 3-piece cricket cake and 65.7s on a 181-piece space theme.
      `total` is the control now and everything else derives from it. */
@@ -4823,11 +4843,59 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * ⚠️ IT IS NOT PART OF THE DESIGN. This is how the cake is being LOOKED at, not what it is, so it
    * lives in component state and is never written to `design` — a saved cake that spins when you
    * reopen it would be a bug somebody chases through the snapshot for an afternoon. */
+  /* Hold the take for `startAfter` seconds, then begin.
+   *
+   * ⚠️ THE COUNT IS CLEARED AND THE TAKE STARTED IN ONE COMMIT. React batches both setStates, so
+   * the render that first shows the take is the render that no longer shows the number — no frame
+   * can carry both, and a recording never opens on a "1" burned over the cake.
+   *
+   * ⚠️ NOTHING ELSE MOVES WHILE IT COUNTS. The lens and the camera are untouched until `begin` runs,
+   * so the baker's recorder catches the take from its true first frame rather than mid-change.
+   */
+  function armTake(begin) {
+    const wait = clampDelay(startAfter);
+    if (wait <= 0) { begin(); return; }
+    const endsAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + wait * 1000;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    clearInterval(delayTimer.current);
+    setCountdown(secondsLeft(wait * 1000));
+    /* 100ms, not 1000: ticking once a second makes the number change up to a second late, which on
+       a three-second count is a third of it. The value only changes when the ceiling does. */
+    delayTimer.current = setInterval(() => {
+      const left = endsAt - now();
+      if (left > 0) { setCountdown(secondsLeft(left)); return; }
+      clearInterval(delayTimer.current);
+      delayTimer.current = null;
+      setCountdown(null);
+      begin();
+    }, 100);
+  }
+
+  function cancelArmedTake() {
+    clearInterval(delayTimer.current);
+    delayTimer.current = null;
+    setCountdown(null);
+  }
+
+  /* ⚠️ ESC CANCELS THE COUNT, A POINTER DOES NOT — and that asymmetry is the point. A running take
+     stops on any pointerdown because grabbing the cake plainly means "I want to drive now". While
+     it is merely counting, the baker is on their way to another window to press record, and a stray
+     click must not quietly disarm what they just set up. */
+  useEffect(() => {
+    if (countdown == null) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') cancelArmedTake(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [countdown == null]);
+
+  // No timer may outlive the screen.
+  useEffect(() => () => clearInterval(delayTimer.current), []);
+
   function startBuild() {
     // Same reasons as the spin: a selection box on the cake would be filmed, and the canvas is
     // calmer with nothing selected while every piece is moving.
     handleDeselect();
-    setBuild(0);
+    armTake(() => setBuild(0));
   }
 
   function startFilmSpin() {
@@ -4838,7 +4906,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // `handleDeselect`, the same call openReelPanel makes and for the same stated reason:
     // "handles, grips and the piping toolbar are editing furniture that renders IN the scene".
     handleDeselect();
-    setFilmSpin(true);
+    armTake(() => setFilmSpin(true));
   }
 
   /* Esc stops it, and so does taking hold of the cake.
@@ -18935,6 +19003,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               obvious without a word of explanation. Behind the canvas box, never over it. */}
           {framing && <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,26,22,0.55)',
                                         pointerEvents: 'none' }} />}
+          {/* ── The head start, counting down ──────────────────────────────────────────────────
+              Shown only while a take is ARMED and never once it is running: `armTake` clears this
+              and starts the take in the same commit, so no frame of the recording carries it.
+
+              ⚠️ `pointerEvents: 'none'` — the baker is on their way to a screen recorder and must
+              be able to reach anything underneath. Esc cancels; see armTake. */}
+          {countdown != null && (
+            /* ⚠️ CLEAR OF THE CAKE, AND ON ITS OWN GROUND. The first cut put a 72px number dead
+               centre: it covered the subject at the exact moment the baker is framing a recording,
+               and the hint under it was unreadable against a red decoration. The cake owns the
+               middle of this box — so the count sits at the top, on a pill dark enough to read over
+               any cake, any ground and any colour a baker picks. */
+            <div style={{ position: 'absolute', top: 14, left: 0, right: 0, display: 'flex',
+                          justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 16px', borderRadius: 999,
+                            background: 'rgba(20,26,22,0.82)', color: '#fff',
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.18)' }}>
+                <span style={{ fontSize: 26, fontWeight: 700, lineHeight: 1,
+                               fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'center' }}>
+                  {countdown}
+                </span>
+                <span style={{ fontSize: 12, letterSpacing: 0.3, opacity: 0.85 }}>
+                  Starting — Esc to cancel
+                </span>
+              </div>
+            </div>
+          )}
           {/* ⚠️ ALWAYS RENDERED, style toggled — never wrapped conditionally. Giving <CakeCanvas> a
               new parent remounts the R3F root, which throws the scene away and re-downloads every
               topper GLB. The whole preview is a style change on this one box.
@@ -19703,7 +19799,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ) : (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
-                  label={isGlazeTier ? 'Glaze colors' : 'Gradient colors'} maxStops={maxStops}
+                  label={isGlazeTier ? 'Glaze colours' : 'Blended colours'} maxStops={maxStops}
                   onSelectStop={selectGradStop}
                   onAddStop={addGradStop}
                   onRemoveStop={removeGradStop}
@@ -21301,7 +21397,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 /* A drip has no sweep direction to choose — two ganaches meet where
                                    they meet — so the mode row is empty and GradientControls hides
                                    it on `modes.length > 1`. */
-                                label={coatHere ? 'Ombré colours' : isDrip ? 'Chocolates' : 'Gradient colors'}
+                                /* A coat and a tier both blend creams, so they take the same
+                                   label now — the branch that separated them existed only because
+                                   one said "Ombré colours" and the other "Gradient colors". */
+                                label={isDrip ? 'Chocolates' : 'Blended colours'}
                                 /* No mode for a coat: a gradient MODE is a ring's question about
                                    how colour sweeps round a circle, and a coat's answer is always
                                    the same — by position over the whole surface. */
@@ -22410,6 +22509,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               Longer lens, flatter perspective. The camera pulls back {lensDistanceFactor(takeLens).toFixed(2)}× to keep the framing.
             </div>
+            {/* ⚠️ ONE SETTING FOR BOTH TAKES, and it sits beside the lens because that is the other
+                thing both share. It describes how you are RECORDING, not what you are filming:
+                "this is useful in case of screen recording" — time to reach the recorder and press
+                record. Nothing in the scene moves while it counts, so the recording opens on the
+                take's true first frame. */}
+            <Slider label="Start after" value={startAfter} min={0} max={DELAY_MAX} step={1}
+                    fmt={v => (v === 0 ? 'straight away' : `${v}s`)}
+                    onChange={setStartAfter} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
                 style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
@@ -22460,6 +22570,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onChange={setTakeLens} />
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               Longer lens, flatter perspective. The camera pulls back {lensDistanceFactor(takeLens).toFixed(2)}× to keep the framing.
+            </div>
+            {/* ⚠️ ONE SETTING FOR BOTH TAKES, and it sits beside the lens because that is the other
+                thing both share. It describes how you are RECORDING, not what you are filming:
+                "this is useful in case of screen recording" — time to reach the recorder and press
+                record. Nothing in the scene moves while it counts, so the recording opens on the
+                take's true first frame. */}
+            <Slider label="Start after" value={startAfter} min={0} max={DELAY_MAX} step={1}
+                    fmt={v => (v === 0 ? 'straight away' : `${v}s`)}
+                    onChange={setStartAfter} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}
