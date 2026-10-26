@@ -47,6 +47,7 @@ import { REGION_DEFAULTS } from '../geometry/region.js';
 import { spinPose } from '../reel/spinTake.js';
 import { assemblyPose, assemblyDone } from '../reel/assemblyTake.js';
 import { clampLens, lensAt, LENS_GLIDE_S } from '../reel/cinematicLens.js';
+import { gridPositions, GRID, GRID_COLOR } from '../reel/takeGrid.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -5527,6 +5528,29 @@ const FIT_EASE_S = 1.2;
  * somebody filmed a take once. Same bargain `sceneSnapshot` makes for the reel: whatever recording
  * changes, recording restores.
  */
+/* ── The grid floor, for the length of a take ────────────────────────────────────────────────────
+ *
+ * See takeGrid.js for what it is and why it is filming-only. Unlit lines, so it cannot light the
+ * cake, shadow it, or bounce a colour onto it — the take's one hard rule is kept by construction.
+ */
+function TakeGrid() {
+  const geometry = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(gridPositions(), 3));
+    return g;
+  }, []);
+  // A geometry built here is ours to throw away; the take mounts and unmounts this repeatedly.
+  useEffect(() => () => geometry.dispose(), [geometry]);
+  return (
+    <lineSegments geometry={geometry} position={[0, GRID.y, 0]} renderOrder={-1}>
+      {/* ⚠️ `depthWrite` OFF, like the painted floor above it. The floor writes no depth so that it
+          cannot swallow the FRONT marker or a board edge; a grid that DID write depth would
+          reintroduce exactly that, one scene element later. */}
+      <lineBasicMaterial color={GRID_COLOR} transparent opacity={GRID.opacity} depthWrite={false} />
+    </lineSegments>
+  );
+}
+
 function TakeLens({ fov, active = true, onReturned }) {
   const camera = useThree(s => s.camera);
   const was = useRef(null);
@@ -5967,6 +5991,8 @@ export default function CakeCanvas({
      the lens has to stay mounted AFTER the take ends, long enough to glide back — unmounting at the
      end is what made the return a jump. The designer drops `takeLens` to null only once
      `onTakeLensReturned` fires. */
+  /* A grid floor under the cake while filming — see takeGrid.js. Off on every other path. */
+  takeGrid = false,
   takeLensActive = true,
   onTakeLensReturned = null,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
@@ -6261,6 +6287,8 @@ export default function CakeCanvas({
       {/* Only while a take runs — see SpinDirector. */}
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
       {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
+      {/* Scenery for the take only — null on every other path, including a capture. */}
+      {takeGrid && <TakeGrid />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />
       )}

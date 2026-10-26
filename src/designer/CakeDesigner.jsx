@@ -4806,6 +4806,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* ⚠️ TRUE FROM THE MOMENT A TAKE STARTS UNTIL THE LENS IS BACK, which is LATER than the take.
      Unmounting TakeLens the instant the build finished is what made the return a jump — the glide
      needs a component to run in. The canvas tells us when it has arrived. */
+  /* A grid floor under the cake while filming, like the marketing site's. On by default because it
+     was asked for by name; one tap turns it off. ⚠️ It reaches the canvas ONLY inside a take's own
+     window — a baker judging a colour must not be looking at graph paper, and a thumbnail with it
+     in is not the cake they sold. */
+  const [takeGrid, setTakeGrid] = useState(true);
   const [lensReturning, setLensReturning] = useState(false);
   const [startAfter, setStartAfter] = useState(DELAY_DEFAULT);
   const [countdown, setCountdown] = useState(null);
@@ -19111,6 +19116,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
               takeLens={filmSpin || build != null || lensReturning ? takeLens : null}
+              takeGrid={(filmSpin || build != null || lensReturning) && takeGrid}
               takeLensActive={filmSpin || build != null}
               onTakeLensReturned={() => setLensReturning(false)}
               assembly={build == null ? null : { time: build, plan: buildTimings }}
@@ -22545,6 +22551,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
             </div>
+            {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
+                the phone hit-target. The grid is the marketing site's floor, brought here so a cake
+                on film stands in a room rather than in a void; see takeGrid.js. */}
+            <div style={{ margin: '2px 0 10px' }}>
+              <Chip label="Grid floor" active={takeGrid} isMobile={isMobile}
+                    onClick={() => setTakeGrid(v => !v)}
+                    title="Lines on the floor while filming, like the marketing site" />
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
                 style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
@@ -22606,6 +22620,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                     onChange={setStartAfter} />
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
+            </div>
+            {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
+                the phone hit-target. The grid is the marketing site's floor, brought here so a cake
+                on film stands in a room rather than in a void; see takeGrid.js. */}
+            <div style={{ margin: '2px 0 10px' }}>
+              <Chip label="Grid floor" active={takeGrid} isMobile={isMobile}
+                    onClick={() => setTakeGrid(v => !v)}
+                    title="Lines on the floor while filming, like the marketing site" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}

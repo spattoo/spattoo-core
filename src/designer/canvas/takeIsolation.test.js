@@ -221,6 +221,33 @@ describe('filming is isolated from designing', () => {
     });
   });
 
+  /* ── The grid floor is scenery for filming, and nothing else ───────────────────────────────────
+   *
+   * Asked for by name — *"the grid lines for the canvas like in the marketing site? (only for the
+   * video capture)"* — and that parenthesis is the requirement. A baker approves a colour against
+   * the designer's own ground; graph paper under the cake changes what they are judging, and a
+   * thumbnail with it in is not the cake they sold.
+   */
+  it('reaches the canvas only inside a take', () => {
+    expect(designer).toMatch(/takeGrid=\{\(filmSpin \|\| build != null \|\| lensReturning\) && takeGrid\}/);
+    expect(canvas).toMatch(/\{takeGrid && <TakeGrid \/>\}/);
+  });
+
+  /* ⚠️ UNLIT LINES, so it cannot light the cake, shadow it, or bounce a colour onto it. The rule a
+     take must not break is kept by construction rather than by care. */
+  it('cannot change how the cake looks', () => {
+    const at = canvas.indexOf('function TakeGrid(');
+    expect(at, 'TakeGrid should exist').toBeGreaterThan(-1);
+    const body = canvas.slice(at, at + 1200);
+    expect(body).toMatch(/lineBasicMaterial/);
+    for (const forbidden of [/castShadow/, /receiveShadow/, /meshStandardMaterial/, /meshPhysicalMaterial/,
+                             /\bintensity\b/, /toneMapping/, /envMap/]) {
+      expect(body, `TakeGrid must not use ${forbidden}`).not.toMatch(forbidden);
+    }
+    // And it must not write depth, or it reintroduces the swallowed FRONT marker one element later.
+    expect(body).toMatch(/depthWrite=\{false\}/);
+  });
+
   /* The cream wheel owns autoRotate and must keep owning it — the spin briefly shared it, which is
      two things writing the camera every frame. */
   it('leaves the cream spin wheel alone', () => {

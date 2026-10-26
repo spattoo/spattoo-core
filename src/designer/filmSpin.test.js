@@ -107,10 +107,17 @@ describe('the hero spin stays out of the frame', () => {
 
   /* The way out is still Esc, and the panel is the only place that can say so — it is on screen
      exactly when nobody is recording. */
+  /* ⚠️ SLICED TO THE CLOSING TAG, NOT TO A CHARACTER BUDGET. This used to match
+     `[\s\S]{0,2600}?<\/Panel>`, which is a bet that nobody ever adds a control to this panel.
+     Adding two lost the `</Panel>` and the test reported "the setup panel should exist" — a
+     confident claim that the panel had been deleted, about a panel sitting right there. A window
+     measured in characters dates the moment it is written. */
   it('teaches the way out where it is safe to say it', () => {
-    const panel = code.match(/spinSetupOpen && \([\s\S]{0,2600}?<\/Panel>/);
-    expect(panel, 'the setup panel should exist').not.toBeNull();
-    expect(panel[0]).toMatch(/Esc stops it early/);
+    const at = code.indexOf('spinSetupOpen && (');
+    expect(at, 'the setup panel should exist').toBeGreaterThan(-1);
+    const end = code.indexOf('</Panel>', at);
+    expect(end, 'the setup panel should be closed').toBeGreaterThan(at);
+    expect(code.slice(at, end)).toMatch(/Esc stops it early/);
   });
 
   /* ⚠️ NOT FOLDED INTO `creamAutoRotate`, which spins the cake for spin-painting. Same effect on

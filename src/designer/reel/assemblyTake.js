@@ -83,7 +83,9 @@ export const ASSEMBLY_DEFAULTS = Object.freeze({
   /* How differently each piece arrives, 0…1. At 0 every decoration starts at the same height and
      sweeps the same way — one rigid cake floating above the cake. Higher gives each its own height,
      its own swing (including which way round), and its own bearing to come in on. */
-  scatter: 0.55,
+  /* ⚠️ HIGH BY DEFAULT. 0.55 was reported as "a heap" twice over — the variety has to be obvious
+     without anyone going looking for this slider. */
+  scatter: 0.85,
 });
 
 /* ⚠️ A CEILING ON `spread`, because at 1 every piece would have ZERO time to fall: the starts would
@@ -120,6 +122,9 @@ const TAU = Math.PI * 2;
 
 /* A stable number in [0, 1) for piece `i` on channel `salt`.
    ⚠️ NOT `Math.random`. See the header: the same cake must film the same way every time. */
+/** The fractional part, for the low-discrepancy walks in pieceJitter. */
+const frac = (v) => v - Math.floor(v);
+
 function hash01(i, salt) {
   let h = Math.imul((i | 0) + 1, 0x9E3779B1) ^ Math.imul((salt | 0) + 1, 0x85EBCA77);
   h = Math.imul(h ^ (h >>> 15), 0x2C1B3C6D);
@@ -130,24 +135,53 @@ function hash01(i, salt) {
 }
 
 /**
- * How THIS piece differs from the plan's single set of numbers, at full extension.
+ * Where THIS piece starts, as a DIRECTION and a distance from its seat.
  *
- * ⚠️ AT `scatter` 0 THIS IS THE IDENTITY — multipliers of 1 and no reach — so a plan that asks for
- * no variety gets exactly the old, uniform choreography and nothing here can perturb it.
+ * ⚠️ A DIRECTION, NOT A HEIGHT WITH A NUDGE — and the first version got this wrong in a way that
+ * survived two rounds of "it's better now". It varied the height and added a small sideways reach,
+ * which sounds like the same thing and is not: measured at the default setting, every piece started
+ * between 1.3x and 5.7x further UP than ACROSS, so all eight still fell more or less straight down
+ * from more or less the same altitude. Sandeep, twice: *"all are coming as a heap … why all from
+ * top to bottom direction?"* Varying the length of a mostly-vertical vector cannot answer that.
+ *
+ * So each piece gets an ELEVATION — 90° is straight overhead, 10° is almost along the board — plus
+ * an azimuth and its own distance. A piece at 15° flies in low across the table; one at 80° drops
+ * from above; and because the distance varies too they do not set off as a slab.
+ *
+ * ⚠️ AT `scatter` 0 EVERY ELEVATION IS 90° AND EVERY DISTANCE IS 1x, which is exactly the old
+ * uniform choreography — `cos(90°)` is 0, so the sideways terms vanish rather than being special-
+ * cased. A plan that asks for no variety is not perturbed by anything in here.
  */
 function pieceJitter(index, plan) {
   const sc = scatterOf(plan);
-  if (sc <= 0) return { riseMul: 1, swingMul: 1, reach: 0, bearing: 0 };
+  /* ⚠️ `up`/`out` RATHER THAN AN ANGLE, so the uniform case is EXACT. Returning elev = π/2 and
+     letting the caller take its cosine leaves 6.1e-17 behind — `Math.cos(Math.PI / 2)` is not 0 —
+     and a piece at scatter 0 drifted sideways by 8e-17 of a cake. Harmless on screen and wrong in
+     principle: "no variety" has to mean no variety. Resolving the direction here lets that branch
+     return the exact pair. */
+  if (sc <= 0) return { distMul: 1, up: 1, out: 0, az: 0, swingMul: 1 };
   const i = Math.max(0, Math.floor(num(index, 0)));
+  /* ⚠️ SPREAD BY CONSTRUCTION, NOT BY LUCK. Independent hashes are "random" and cluster: with the
+     first version's eight pieces every elevation landed between 57° and 77°, which is a heap with
+     extra steps. These two walk the range in golden-ratio steps — a low-discrepancy sequence, so
+     ANY number of pieces comes out evenly spread, three as well as a hundred and eighty-one, and
+     consecutive pieces are never near each other.
+     The offsets just stop piece 0 always starting at the same place. */
+  const elevFrac = frac(i * 0.6180339887498949 + 0.37);
+  const azFrac   = frac(i * 0.3819660112501051 + 0.11);
+  /* How far DOWN from straight-overhead. At full scatter the shallowest is a few degrees above the
+     board — a piece skimming in across the table — and the steepest still clearly off the vertical,
+     so the set never reads as one column. */
+  const drop = (0.1 + elevFrac * 0.9) * sc;
+  const elev = (Math.PI / 2) * (1 - drop);
   return {
-    // Heights spread either side of the set one. Near the bottom of the range a piece barely rises,
-    // so its reach does the work and it arrives from the side — the answer to "why all from top".
-    riseMul: 1 + (hash01(i, 1) * 2 - 1) * sc * 0.9,
+    up: Math.sin(elev),
+    out: Math.cos(elev),
+    az: azFrac * TAU,
+    // Distances spread too, or a ring of pieces sets off as a slab and lands as one.
+    distMul: 1 + (hash01(i, 4) * 2 - 1) * sc * 0.7,
     // Magnitude AND direction: half the pieces sweep in the other way round the cake.
     swingMul: (hash01(i, 2) < 0.5 ? -1 : 1) * (1 + (hash01(i, 3) * 2 - 1) * sc * 0.6),
-    // How far out it starts, as a fraction of the cake's reach, and on what bearing.
-    reach: sc * (0.35 + hash01(i, 4) * 1.15),
-    bearing: hash01(i, 5) * TAU,
   };
 }
 
@@ -206,10 +240,14 @@ export function pieceStart(index, count, plan = ASSEMBLY_DEFAULTS) {
  */
 export function assemblyPose(index, count, t, plan = ASSEMBLY_DEFAULTS) {
   const j = pieceJitter(index, plan);
-  const high = riseOf(plan) * j.riseMul;
+  /* `rise` is now "how far away it starts", resolved along the piece's own direction. Straight up
+     when the elevation is 90°, which is what scatter 0 gives every piece. */
+  const dist = riseOf(plan) * j.distMul;
+  const high = dist * j.up;
+  const flat = dist * j.out;
   const turn = swingOf(plan) * TAU * j.swingMul;
-  const offX = j.reach * Math.cos(j.bearing);
-  const offZ = j.reach * Math.sin(j.bearing);
+  const offX = flat * Math.cos(j.az);
+  const offZ = flat * Math.sin(j.az);
   const time = Math.max(0, num(t, 0));
   const start = pieceStart(index, count, plan);
   const flight = pieceFlight(plan, count);
