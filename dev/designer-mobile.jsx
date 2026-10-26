@@ -1332,6 +1332,12 @@ const STUBS = {
     premium_themes: false, edible_print_studio: true,
     reel_capture:  PARAMS.get('capture') === 'yes',
     reel_branding: PARAMS.get('branding') !== 'no',
+    /* ⚠️ `?blaze=yes` IS HOW THE PAYING BAKER'S PATH IS REACHED. Filming the build is Blaze-only
+       (migration 135) and catalogue authors keep it regardless, so with the harness's default
+       `is_catalog_author: true` the gate is invisible — pair this with `?author=no` to see what a
+       baker below Blaze actually gets, which is nothing. A gate nobody can see untested is a gate
+       that opens quietly. */
+    build_film:    PARAMS.get('blaze') === 'yes',
   } }),
   /* ⚠️ THE REAL "Fiitball" ROW, copied from the dev database.
    *
@@ -1450,7 +1456,49 @@ const STUBS = {
      where `tierShape`'s flat `?? 1.2` fallback measures every upper tier as the bottom one, and a
      perched figure is seeded outside the wall. Reported as *"fondant doll - is handing in the air."*
      Same two tiers, radius omitted, so the harness can show the fault and the fix. */
-  fetchCakeShapes:     async () => (PARAMS.has('twotier') ? [{
+  /* ⚠️ `?shapes=1` — THE REAL SHAPE LIST, because the fallback is two shapes and hides eleven.
+     With no list the chooser falls back to Round and Rectangle, so Number and Letter cakes — which
+     have their own editing controls and their own help article — could not be reached here at all,
+     and `starting-a-new-cake.md` had to say so. These six rows are copied out of `cake_shapes` on
+     2026-10-26, designs included: `letter_cake` really does default to MOM and `zz_number` to 2027,
+     and both carry the `samples` and `byCount` maps the editor reads, so a guessed shapeConfig
+     would exercise a shape the catalogue does not have. Thirteen rows are active in all; six is
+     enough to cover every FAMILY (circle, rounded_rect, heart, letter, number) plus a multi-tier. */
+  fetchCakeShapes:     async () => (PARAMS.has('shapes') ? [
+    { key: 'round', label: 'Round', sort_order: 1, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'round', width: 2.4, height: 1.45, radius: 1.2,
+        topPipings: [], creamLayers: [], shapeConfig: {}, shapeFamily: 'circle', bottomPipings: [] }] } },
+    { key: 'rect', label: 'Rectangle', sort_order: 2, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 1.56, shape: 'rect', width: 2.16, height: 1.45,
+        topPipings: [], shapeConfig: {}, shapeFamily: 'rounded_rect', bottomPipings: [] }] } },
+    { key: '2t', label: '2 Tier', sort_order: 6, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [
+        { color: '#f5b8c8', depth: 2.4, shape: 'round', width: 2.4, height: 1.45, radius: 1.2,
+          topPipings: [], creamLayers: [], shapeConfig: {}, shapeFamily: 'circle', bottomPipings: [] },
+        { color: '#f5b8c8', depth: 1.8, shape: 'round', width: 1.8, height: 1.37, radius: 0.9,
+          topPipings: [], creamLayers: [], shapeConfig: {}, shapeFamily: 'circle', bottomPipings: [] }] } },
+    { key: 'heart', label: 'Heart', sort_order: 6, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'heart', width: 2.4, height: 1, radius: 1.2,
+        topPipings: [], creamLayers: [], shapeFamily: 'heart', bottomPipings: [],
+        shapeConfig: { tip: 0.23, cleft: 1.1, plump: 1.1 } }] } },
+    { key: 'letter_cake', label: 'Letter cake', sort_order: 12, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'letter', width: 2.4, height: 1.45, radius: 1.2,
+        topPipings: [], creamLayers: [], shapeFamily: 'letter', bottomPipings: [],
+        shapeConfig: { weight: 0, cornerR: 0.15, letters: 'MOM',
+          byCount: { 1: { height: 1.8, thickness: 0.38, pipingScale: 0.8 },
+                     2: { height: 1.8, thickness: 0.38, pipingScale: 0.9 },
+                     3: { height: 1.8, thickness: 0.38, pipingScale: 0.9 } },
+          samples: { 1: 'A', 2: 'MU', 3: 'MOM' } } }] } },
+    { key: 'zz_number', label: 'Number cake', sort_order: 99, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'number', width: 1.8, height: 0.7, radius: 0.9,
+        topPipings: [], creamLayers: [], shapeFamily: 'number', bottomPipings: [],
+        shapeConfig: { weight: 0.02, cornerR: 0.3, digits: '2027',
+          byCount: { 1: { height: 1.8,  thickness: 0.38, pipingScale: 0.75 },
+                     2: { height: 1.75, thickness: 0.38, pipingScale: 0.7 },
+                     3: { height: 1.8,  thickness: 0.38, pipingScale: 0.65 },
+                     4: { height: 1.6,  thickness: 0.36, pipingScale: 0.6 } },
+          samples: { 1: '1', 2: '21', 3: '100', 4: '2027' } } }] } },
+  ] : PARAMS.has('twotier') ? [{
     key: 'round-2',
     label: 'Round · 2 tier',
     design: {
