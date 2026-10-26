@@ -48,7 +48,7 @@ import { spinPose } from '../reel/spinTake.js';
 import { assemblyDone } from '../reel/assemblyTake.js';
 import { BuildPiece, buildLookup } from './BuildPiece.jsx';
 import { clampLens, lensAt, LENS_GLIDE_S } from '../reel/cinematicLens.js';
-import { gridPositions, wallPositions, floorOpacity, wallOpacity, GRID, WALL, GRID_COLOR } from '../reel/takeGrid.js';
+import { gridPositions, wallPositions, floorOpacity, wallOpacity, GRID, WALL, GRID_COLOR, GRID_FADE_S, fadeStep, fadeEase } from '../reel/takeGrid.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -5589,7 +5589,24 @@ const FIT_EASE_S = 1.2;
  * See takeGrid.js for what it is and why it is filming-only. Unlit lines, so it cannot light the
  * cake, shadow it, or bounce a colour onto it — the take's one hard rule is kept by construction.
  */
-function TakeGrid({ strength }) {
+/* The fade both grid surfaces ride in and out on — see GRID_FADE_S in takeGrid.js for why the
+   scenery is eased rather than switched, and why it must finish before the lens does.
+
+   ⚠️ A REF AND A MATERIAL, NOT STATE. This runs every frame; putting the ramp in React state
+   would re-render the whole canvas sixty times a second to animate one number. The opacity is
+   written straight onto the material, which is the same bargain TakeGridWall already makes for its
+   position. */
+function useGridFade(active, fullOpacity) {
+  const mat = useRef(null);
+  const k = useRef(0);
+  useFrame((_, delta) => {
+    k.current = fadeStep(k.current, active, delta, GRID_FADE_S);
+    if (mat.current) mat.current.opacity = fullOpacity * fadeEase(k.current);
+  });
+  return mat;
+}
+
+function TakeGrid({ strength, active = true }) {
   const geometry = useMemo(() => {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.BufferAttribute(gridPositions(), 3));
@@ -5597,12 +5614,15 @@ function TakeGrid({ strength }) {
   }, []);
   // A geometry built here is ours to throw away; the take mounts and unmounts this repeatedly.
   useEffect(() => () => geometry.dispose(), [geometry]);
+  const mat = useGridFade(active, floorOpacity(strength));
   return (
     <lineSegments geometry={geometry} position={[0, GRID.y, 0]} renderOrder={-1}>
       {/* ⚠️ `depthWrite` OFF, like the painted floor above it. The floor writes no depth so that it
           cannot swallow the FRONT marker or a board edge; a grid that DID write depth would
           reintroduce exactly that, one scene element later. */}
-      <lineBasicMaterial color={GRID_COLOR} transparent opacity={floorOpacity(strength)} depthWrite={false} />
+      {/* ⚠️ OPACITY STARTS AT 0 AND IS DRIVEN BY THE RAMP. Mounting at full strength is what the
+          fade exists to stop — the first frame would be the pop, before the ramp ever ran. */}
+      <lineBasicMaterial ref={mat} color={GRID_COLOR} transparent opacity={0} depthWrite={false} />
     </lineSegments>
   );
 }
@@ -5617,7 +5637,7 @@ function TakeGrid({ strength }) {
  * cake halfway through the shot. Taking the camera's horizontal bearing and putting the wall on the
  * opposite side makes it a backdrop by construction, at every angle, with no special cases.
  */
-function TakeGridWall({ strength }) {
+function TakeGridWall({ strength, active = true }) {
   const camera = useThree(s => s.camera);
   const group = useRef(null);
   const geometry = useMemo(() => {
@@ -5638,10 +5658,12 @@ function TakeGridWall({ strength }) {
     g.rotation.set(0, bearing, 0);
   });
 
+  const mat = useGridFade(active, wallOpacity(strength));
+
   return (
     <group ref={group}>
       <lineSegments geometry={geometry} renderOrder={-1}>
-        <lineBasicMaterial color={GRID_COLOR} transparent opacity={wallOpacity(strength)} depthWrite={false} />
+        <lineBasicMaterial ref={mat} color={GRID_COLOR} transparent opacity={0} depthWrite={false} />
       </lineSegments>
     </group>
   );
@@ -5781,9 +5803,24 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true, 
   /* An in-flight glide: { fromPos, toPos, fromAim, toAim, t }. Non-null only while the view is
      easing to a new framing after a RESIZE — see the note on FIT_EASE_S below. */
   const ease = useRef(null);
+  /* Was the last frame inside a take? See the release latch below. */
+  const heldWas = useRef(false);
+  const releaseGlide = useRef(false);
 
   useFrame((_, delta) => {
     if (!enabled) return;
+
+    /* ⚠️ THE END OF A TAKE IS THE FRAME CHANGING, NOT AN EDIT — and reading it as an edit is the
+       second half of the flicker. While a take runs the bounds are frozen (see below); when it
+       ends the real cake is measured again, `cakeMoved` trips, and the rule four lines down sends
+       an edit's SNAP. But the baker did not touch the cake: the take simply finished. Measured on
+       a build take, the picture holds still for two frames after the lens is home and then steps
+       once — the grid leaving, and the camera stepping with it.
+       Latched rather than read inline, because the measurement below runs on a stride: the frame
+       that sees `holdBounds` go false is usually not the frame that re-fits, so noticing it has to
+       outlive the skip. */
+    if (heldWas.current && !holdBounds) releaseGlide.current = true;
+    heldWas.current = holdBounds;
 
     /* ⚠️ THE GLIDE RUNS EVERY FRAME, ABOVE THE STRIDE. Sandeep: "when i am done, there is a
        flickering to come back to normal, needs to be smooth." Two animations were fighting — the
@@ -5825,7 +5862,18 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true, 
        so noticing that the FRAME changed is free. The cake's own bounds stay on the stride. */
     const liveAspect = size.width / Math.max(size.height, 1);
     const frameChanged = applied.current && Math.abs(applied.current.aspect - liveAspect) >= 0.01;
-    if (!frameChanged && ++tick.current % (applied.current ? FIT_STRIDE : 1)) return;
+    /* ⚠️ A TAKE SKIPS THE THROTTLE, AND THE THROTTLE WAS THE REST OF THE FLICKER. The note below
+       says the distance "follows the fov frame by frame instead" of being eased — it did not. The
+       stride is 12 frames, so across a 1.2s lens glide the camera dollied in about six SNAPS of
+       200ms each. Mid-glide they hide inside the movement; the last one does not, because the
+       picture goes still straight after it. Measured on a build take: the step at the end of the
+       glide-in was 1.9 on the same scale the grid pop measured 0.9.
+       And the throttle is protecting nothing here. It exists because measuring is expensive —
+       `setFromObject` walks every mesh — but while `holdBounds` is set the bounds come from
+       `applied.current` and that walk never happens. So during a take the stride costs the whole
+       smoothness of the dolly and buys back no work at all. */
+    const throttled = applied.current && !holdBounds;
+    if (!frameChanged && ++tick.current % (throttled ? FIT_STRIDE : 1)) return;
     if (!(controls ?? orbitRef?.current)) return;
 
     /* ── Held for a take ───────────────────────────────────────────────────────────────────────
@@ -5888,6 +5936,10 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true, 
        distance depends on the fov — `fitDistance` takes it — but a fov change on its own never
        reached this line, so a take narrowed the lens and nothing moved the camera to match. */
     const fovMoved = !!prev && Math.abs((prev.fov ?? camera.fov) - camera.fov) >= 0.02;
+    /* Consumed on the first MEASURED frame after the take, whether or not anything actually moved
+       — left latched, it would turn the baker's next edit into a glide. */
+    const releasing = releaseGlide.current;
+    releaseGlide.current = false;
     if (!cakeMoved && !aspectMoved && !fovMoved) return;
     /* ⚠️ A RESIZE GLIDES; AN EDIT SNAPS. These are different events wearing the same numbers.
        The cake CHANGING — a tier added, a topper stood up — should land immediately: the view is
@@ -5896,7 +5948,7 @@ function FitCakeToView({ groupRef, orbitRef, enabled = true, reserveTop = true, 
        not moved, only the window onto it, and teleporting there is the flicker being fixed. */
     /* A lens move is already eased by TakeLens, so gliding on top of it would lag a second behind
        its own cause — the distance follows the fov frame by frame instead. */
-    const glide = aspectMoved && !cakeMoved && !fovMoved;
+    const glide = (aspectMoved && !cakeMoved && !fovMoved) || releasing;
     applied.current = { halfW, halfH, cy, aspect, fov: camera.fov };
 
     const ctl = controls ?? orbitRef?.current;
@@ -6446,8 +6498,10 @@ export default function CakeCanvas({
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
       {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
       {/* Scenery for the take only — null on every other path, including a capture. */}
-      {takeGrid && <TakeGrid strength={takeGridStrength} />}
-      {takeGridWall && <TakeGridWall strength={takeGridStrength} />}
+      {/* `takeLensActive` points the fade exactly as it points the lens: the room assembles while
+          the camera settles into it, and dissolves while the camera leaves. */}
+      {takeGrid && <TakeGrid strength={takeGridStrength} active={takeLensActive} />}
+      {takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLensActive} />}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />

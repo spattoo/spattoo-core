@@ -271,8 +271,36 @@ describe('filming is isolated from designing', () => {
   it('reaches the canvas only inside a take', () => {
     expect(designer).toMatch(/takeGrid=\{takeWindow && takeGrid\}/);
     expect(designer).toMatch(/takeGridWall=\{takeWindow && takeGridWall\}/);
-    expect(canvas).toMatch(/\{takeGrid && <TakeGrid strength=\{takeGridStrength\} \/>\}/);
-    expect(canvas).toMatch(/\{takeGridWall && <TakeGridWall strength=\{takeGridStrength\} \/>\}/);
+    expect(canvas).toMatch(/\{takeGrid && <TakeGrid strength=\{takeGridStrength\} active=\{takeLensActive\} \/>\}/);
+    expect(canvas).toMatch(/\{takeGridWall && <TakeGridWall strength=\{takeGridStrength\} active=\{takeLensActive\} \/>\}/);
+  });
+
+  /* ⚠️ THE SCENERY IS EASED, NOT SWITCHED, AND THAT WAS THE FLICKER. *"build video is flickering at
+     beginning and ending."* Measured frame by frame on a build take: the picture settles as the
+     lens finishes, holds perfectly still for two frames, then ONE frame changes by thirty times the
+     last real step of the move — and the difference between that pair is the entire grid, arriving
+     and leaving at full strength. 4.2% of the frame at the head, 10.4% at the tail, with the cake
+     not moving at all.
+     It is the fault `takeLens` already records — "unmounting at the end is what made the return a
+     jump" — in the one piece of take scenery that never got the same treatment. Both ride the SAME
+     `active` flag now, so the room assembles as the camera settles into it. */
+  it('fades the grid in and out instead of switching it on', () => {
+    for (const name of ['function TakeGrid(', 'function TakeGridWall(']) {
+      const at = canvas.indexOf(name);
+      expect(at, `${name} should exist`).toBeGreaterThan(-1);
+      const body = canvas.slice(at, at + 1800);
+      // Mounting at full strength would BE the pop: the first frame would carry it.
+      expect(body, name).toMatch(/<lineBasicMaterial ref=\{mat\}[^>]*opacity=\{0\}/);
+      expect(body, name).toMatch(/useGridFade\(active,/);
+    }
+    // And the ramp is driven on a ref, not through React state — this runs every frame.
+    const at = canvas.indexOf('function useGridFade(');
+    expect(at, 'useGridFade should exist').toBeGreaterThan(-1);
+    const hook = canvas.slice(at, at + 700);
+    expect(hook).toMatch(/useFrame\(/);
+    expect(hook).toMatch(/fadeStep\(k\.current, active, delta, GRID_FADE_S\)/);
+    expect(hook).toMatch(/mat\.current\.opacity = fullOpacity \* fadeEase\(k\.current\)/);
+    expect(hook).not.toMatch(/useState/);
   });
 
   /* ⚠️ THE HEADER RULE GOES TOO. *"the horizontal line below the baker name is disturbing. can we
@@ -360,7 +388,19 @@ describe('filming is isolated from designing', () => {
     expect(body).toMatch(/const fovMoved = [^;]*camera\.fov[^;]*;/);
     expect(body).toMatch(/if \(!cakeMoved && !aspectMoved && !fovMoved\) return;/);
     // And a lens move must not be glided on top of — TakeLens already eased it.
-    expect(body).toMatch(/const glide = aspectMoved && !cakeMoved && !fovMoved;/);
+    expect(body).toMatch(/const glide = \(aspectMoved && !cakeMoved && !fovMoved\) \|\| releasing;/);
+    /* ⚠️ THE END OF A TAKE GLIDES. When the hold releases, the real cake is measured again and
+       `cakeMoved` trips — which the rule above would otherwise serve as an EDIT, i.e. a snap. But
+       the baker did not touch the cake; the take finished. Latched, because the measurement runs on
+       a stride and the frame that sees the release is usually not the frame that re-fits. */
+    expect(body).toMatch(/if \(heldWas\.current && !holdBounds\) releaseGlide\.current = true;/);
+    expect(body).toMatch(/const releasing = releaseGlide\.current;\s*\n\s*releaseGlide\.current = false;/);
+    /* ⚠️ AND A TAKE SKIPS THE THROTTLE. The note in the source claims the distance "follows the fov
+       frame by frame"; with the stride in the way it followed in six 200ms SNAPS across a 1.2s
+       glide, and the last of those is a visible step because the picture goes still after it. The
+       throttle protects the bbox walk, and while the bounds are held that walk never happens. */
+    expect(body).toMatch(/const throttled = applied\.current && !holdBounds;/);
+    expect(body).toMatch(/if \(!frameChanged && \+\+tick\.current % \(throttled \? FIT_STRIDE : 1\)\) return;/);
     // The held branch reuses the last bounds rather than walking the cake again.
     expect(body).toMatch(/const heldBounds = holdBounds \? applied\.current : null;/);
   });

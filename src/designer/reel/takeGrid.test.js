@@ -2,7 +2,9 @@ import { describe, it, expect } from 'vitest';
 import {
   gridPositions, gridLineCount, wallPositions, floorOpacity, wallOpacity,
   GRID, WALL, GRID_COLOR, STRENGTH_DEFAULT, STRENGTH_MIN, WALL_RELATIVE,
+  GRID_FADE_S, fadeStep, fadeEase,
 } from './takeGrid.js';
+import { LENS_GLIDE_S } from './cinematicLens.js';
 
 describe('the grid floor a take is filmed on', () => {
   it('draws every line across the full extent, both ways', () => {
@@ -142,5 +144,82 @@ describe('the backdrop behind the cake', () => {
     for (const bad of [{ width: NaN, height: NaN, step: NaN }, { width: -3, height: 0, step: 0 }, {}]) {
       expect(wallPositions(bad).every(Number.isFinite), JSON.stringify(bad)).toBe(true);
     }
+  });
+});
+
+/* ── The fade ────────────────────────────────────────────────────────────────────────────────────
+ * Measured frame by frame on a build take before this existed: the picture eases to a stop as the
+ * lens finishes, holds perfectly still for two frames, then ONE frame changes by thirty times the
+ * last real step of the move. The pair differed by the whole grid — 4.2% of the frame at the head
+ * of the take, 10.4% at the tail — with the cake not moving at all. *"build video is flickering at
+ * beginning and ending."*
+ */
+describe('the grid fading in and out with the camera', () => {
+  /* ⚠️ THE ONE TEST THAT IS A CONSTRAINT RATHER THAN A PREFERENCE. The designer keeps the grid
+     mounted for `takeWindow`, which ends the moment the lens reports it is home. A fade longer than
+     the glide would be cut off part-done and reinstate the pop it was added to remove. */
+  it('always finishes before the lens does', () => {
+    expect(GRID_FADE_S).toBeLessThan(LENS_GLIDE_S);
+    expect(GRID_FADE_S).toBeGreaterThan(0.2);     // and long enough to read as a fade at all
+  });
+
+  it('rises from nothing to full over the fade, and never past either end', () => {
+    let k = 0;
+    const dt = 1 / 60;
+    for (let f = 0; f < Math.ceil(GRID_FADE_S * 60); f++) {
+      const next = fadeStep(k, true, dt);
+      expect(next).toBeGreaterThanOrEqual(k);     // monotonic: a fade never backs up
+      expect(next).toBeLessThanOrEqual(1);
+      k = next;
+    }
+    expect(k).toBeCloseTo(1, 5);
+    // And it stays there rather than overshooting on the frames after.
+    expect(fadeStep(1, true, dt)).toBe(1);
+  });
+
+  it('falls back to nothing over the same span', () => {
+    let k = 1;
+    const dt = 1 / 60;
+    for (let f = 0; f < Math.ceil(GRID_FADE_S * 60); f++) k = fadeStep(k, false, dt);
+    expect(k).toBeCloseTo(0, 5);
+    expect(fadeStep(0, false, dt)).toBe(0);
+  });
+
+  /* ⚠️ THE WHOLE POINT: no single frame may carry a visible step. The pop this replaces moved 10%
+     of the frame in one frame; a fade that jumped would simply be a smaller pop. */
+  it('never steps far in one frame at 60fps', () => {
+    let k = 0;
+    let biggest = 0;
+    for (let f = 0; f < 200; f++) {
+      const next = fadeStep(k, true, 1 / 60);
+      biggest = Math.max(biggest, Math.abs(fadeEase(next) - fadeEase(k)));
+      k = next;
+    }
+    // Smoothstep's steepest point is 1.5x the linear rate; at 0.9s that is about 0.028 per frame.
+    expect(biggest).toBeLessThan(0.05);
+  });
+
+  it('starts and ends flat, so it joins the lens move rather than jolting against it', () => {
+    expect(fadeEase(0)).toBe(0);
+    expect(fadeEase(1)).toBe(1);
+    // The first and last steps of the ramp are the smallest ones — that is what "eased" means here.
+    const step = 1 / 60 / GRID_FADE_S;
+    expect(fadeEase(step) - fadeEase(0)).toBeLessThan(fadeEase(0.5 + step) - fadeEase(0.5));
+    expect(fadeEase(1) - fadeEase(1 - step)).toBeLessThan(fadeEase(0.5) - fadeEase(0.5 - step));
+  });
+
+  it('survives rubbish rather than writing NaN onto a material', () => {
+    for (const bad of [NaN, undefined, null, 'x']) {
+      expect(Number.isFinite(fadeStep(bad, true, 1 / 60))).toBe(true);
+      expect(Number.isFinite(fadeStep(0.5, true, bad))).toBe(true);
+      expect(Number.isFinite(fadeEase(bad))).toBe(true);
+    }
+    expect(Number.isFinite(fadeStep(0.5, true, 1 / 60, 0))).toBe(true);
+  });
+
+  /* A long frame — a phone catching up after a stall — must land ON the end, not past it. */
+  it('clamps a long frame instead of overshooting', () => {
+    expect(fadeStep(0.9, true, 5)).toBe(1);
+    expect(fadeStep(0.1, false, 5)).toBe(0);
   });
 });

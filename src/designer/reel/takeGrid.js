@@ -73,6 +73,54 @@ export function wallOpacity(strength = STRENGTH_DEFAULT) {
   return floorOpacity(strength) * WALL_RELATIVE;
 }
 
+/* ── The grid arrives and leaves with the camera ─────────────────────────────────────────────────
+ *
+ * ⚠️ IT USED TO CUT IN AND OUT, AND THAT WAS THE FLICKER. Sandeep: *"build video is flickering at
+ * beginning and ending (zoom) issues i think."* The zoom was the wrong suspect and an honest one —
+ * the two events land within a frame of each other. Measured frame by frame on a build take, the
+ * picture eases to a stop as the lens finishes gliding, holds perfectly still for two frames, and
+ * then ONE frame changes by thirty times the last real step of the move. The diff of that pair is
+ * the whole grid: every line on the floor and the backdrop, appearing at full strength at the head
+ * of the take and vanishing at full strength at the tail. 4.2% of the frame at the start, 10.4% at
+ * the end, with the cake itself not moving at all.
+ *
+ * It is the same fault `takeLens` already records — *"unmounting at the end is what made the return
+ * a jump"* — in the one piece of take scenery that never got the same treatment. The lens is eased
+ * both ways; the floor it stands on was still being switched.
+ *
+ * So the grid FADES, on the same `active` flag that points the lens, and the two moves become one:
+ * the room assembles as the camera settles into it and dissolves as the camera leaves.
+ */
+
+/* ⚠️ SHORTER THAN THE LENS GLIDE, AND THAT IS A CONSTRAINT, NOT A TASTE. The designer keeps the
+   grid mounted only for `takeWindow`, which ends when the lens reports it is home — so a fade that
+   outlasted the glide would be cut off part-done and reinstate the very pop it removes. Finishing
+   early is invisible; finishing late is the bug. Gated by a test. */
+export const GRID_FADE_S = 0.9;
+
+/**
+ * How far through the fade the next frame is, for a ramp that is `active` or not.
+ *
+ * Kept as arithmetic rather than as a hook so the timing can be tested without a renderer — the
+ * same bargain `gridPositions` makes.
+ */
+export function fadeStep(current, active, delta, seconds = GRID_FADE_S) {
+  const span = Math.max(0.001, Number(seconds) || GRID_FADE_S);
+  const from = Number.isFinite(Number(current)) ? Number(current) : 0;
+  const d = Number.isFinite(Number(delta)) ? Number(delta) : 0;
+  const next = from + (active ? 1 : -1) * (d / span);
+  return Math.min(1, Math.max(0, next));
+}
+
+/**
+ * The ramp's shape. Smoothstep, like the lens's own ease — a linear fade against an eased camera
+ * move reads as two separate things happening, which is what this exists to stop.
+ */
+export function fadeEase(k) {
+  const v = Math.min(1, Math.max(0, Number(k) || 0));
+  return v * v * (3 - 2 * v);
+}
+
 /**
  * The grid as line-segment vertices: x, y, z triples, two points per line.
  *
