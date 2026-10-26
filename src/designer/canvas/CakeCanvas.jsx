@@ -46,6 +46,7 @@ import { ZONES_TOP, SAND_DEFAULTS, sandSpan, sandHeightAt, sandMoundOpts } from 
 import { REGION_DEFAULTS } from '../geometry/region.js';
 import { spinPose } from '../reel/spinTake.js';
 import { assemblyPose, assemblyDone } from '../reel/assemblyTake.js';
+import { clampLens } from '../reel/cinematicLens.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -5426,6 +5427,31 @@ const FIT_EASE_S = 1.2;
  * decorations move together, so there is one re-render per frame either way, and the alternative —
  * a ref the loop reads — would not re-render at all and the pieces would never move.
  */
+/* ── The lens, for the length of a take ──────────────────────────────────────────────────────────
+ *
+ * Mounted only while filming. See cinematicLens.js for why a long lens is most of what "cinematic"
+ * means here, and for the note that `FitCakeToView` dollies the camera back on its own.
+ *
+ * ⚠️ IT PUTS THE OLD LENS BACK ON UNMOUNT, and that is not tidiness. The view a baker approves is
+ * what their customer gets, so the lens the designer renders on must not quietly move because
+ * somebody filmed a take once. Same bargain `sceneSnapshot` makes for the reel: whatever recording
+ * changes, recording restores.
+ */
+function TakeLens({ fov }) {
+  const camera = useThree(s => s.camera);
+  useEffect(() => {
+    if (!camera) return undefined;
+    const was = camera.fov;
+    camera.fov = clampLens(fov);
+    camera.updateProjectionMatrix();
+    return () => {
+      camera.fov = was;
+      camera.updateProjectionMatrix();
+    };
+  }, [camera, fov]);
+  return null;
+}
+
 function AssemblyDirector({ onTick, onDone }) {
   const t0 = useRef(null);
   useFrame(() => {
@@ -5800,6 +5826,8 @@ export default function CakeCanvas({
   assembly = null,
   onAssemblyTick = null,
   onAssemblyDone = null,
+  /* The lens to film this take on, or null to leave the designer's own alone. */
+  takeLens = null,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
   pipingTarget, onPipingStyleSelect, onPipingCancel, pipingStyles = [],
   pipingToolbar,
@@ -6077,6 +6105,7 @@ export default function CakeCanvas({
       {/* Only while a take runs — see SpinDirector. */}
       {spin && <SpinDirector orbitRef={orbitRef} plan={spin} onDone={onSpinDone} />}
       {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
+      {takeLens != null && <TakeLens fov={takeLens} />}
       <OrbitControls
         makeDefault
         ref={orbitRef}

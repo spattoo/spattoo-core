@@ -71,6 +71,7 @@ const SAND_DENSITY_SUM = 0.098;
 import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
 import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, atSpeed } from './reel/assemblyTake.js';
+import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
    rendering a slider short — the take and the panel cannot drift apart silently. */
@@ -4781,6 +4782,10 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const [build, setBuild] = useState(null);
   const [buildPlan, setBuildPlan] = useState({ ...ASSEMBLY_DEFAULTS, speed: 0.5 });
   const [buildSetupOpen, setBuildSetupOpen] = useState(false);
+  /* One lens for both takes. ⚠️ It is applied only WHILE filming and put back after — the view a
+     baker approves is what their customer gets, so the designer's own lens must not move because
+     somebody filmed once. Set it to 42 to film exactly what the editor shows. */
+  const [takeLens, setTakeLens] = useState(CINEMATIC_FOV);
   // One statement of the plan the canvas and the panel both read, so they cannot disagree.
   const buildTimings = useMemo(() => atSpeed(buildPlan, buildPlan.speed), [buildPlan]);
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
@@ -19003,6 +19008,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  the two would both write the azimuth every frame. */
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
+              takeLens={filmSpin || build != null ? takeLens : null}
               assembly={build == null ? null : { time: build, plan: buildTimings }}
               onAssemblyTick={setBuild}
               /* Returns true when the last piece has landed, which stops the director's clock.
@@ -22377,6 +22383,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <Slider label="Drop height" value={buildPlan.rise} min={0.1} max={1.5} step={0.05}
                     fmt={v => `${Math.round(v * 100)}%`}
                     onChange={v => setBuildPlan(p => ({ ...p, rise: v }))} />
+            {/* ⚠️ THE LENS IS MOST OF WHAT "CINEMATIC" MEANS before anyone reaches for a grade. The
+                designer works at 42° — a portrait lens, flattering for a thumbnail, and it splays
+                the cake's near bottom edge so it reads as bulging. A longer lens compresses that
+                away. FitCakeToView dollies the camera back on its own, eased, so the cake stays the
+                same size in frame and the move is itself a shot. */}
+            <Slider label="Lens" value={takeLens} min={LENS_RANGE.min} max={LENS_RANGE.max} step={1}
+                    fmt={v => (v >= 42 ? 'as the editor' : `${v}°`)}
+                    onChange={setTakeLens} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Longer lens, flatter perspective. The camera pulls back {lensDistanceFactor(takeLens).toFixed(2)}× to keep the framing.
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
                 style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
@@ -22417,6 +22434,17 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>{hint}</div>
               </div>
             ))}
+            {/* ⚠️ THE LENS IS MOST OF WHAT "CINEMATIC" MEANS before anyone reaches for a grade. The
+                designer works at 42° — a portrait lens, flattering for a thumbnail, and it splays
+                the cake's near bottom edge so it reads as bulging. A longer lens compresses that
+                away. FitCakeToView dollies the camera back on its own, eased, so the cake stays the
+                same size in frame and the move is itself a shot. */}
+            <Slider label="Lens" value={takeLens} min={LENS_RANGE.min} max={LENS_RANGE.max} step={1}
+                    fmt={v => (v >= 42 ? 'as the editor' : `${v}°`)}
+                    onChange={setTakeLens} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Longer lens, flatter perspective. The camera pulls back {lensDistanceFactor(takeLens).toFixed(2)}× to keep the framing.
+            </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}
                 style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
