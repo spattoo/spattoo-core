@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setMaterialPatch } from './materialPatch.js';
 
 // Multi-colour gradient for a single fused GLB mesh — no submeshes, parts, or UVs required.
 //
@@ -207,15 +208,10 @@ export function applyGradient(mat, gradient, bbox, albedo = (c) => c, mask = nul
   // to do, and pretending otherwise would paint a swirl nobody asked for.
   const active = isGradientActive(gradient) && !isAlternating(gradient);
 
-  if (!active) {
-    if (mat.userData.__gradOn) {            // was on → tear down and recompile to the stock program
-      mat.onBeforeCompile = () => {};
-      mat.customProgramCacheKey = () => 'grad:off';
-      mat.userData.__gradOn = false;
-      mat.needsUpdate = true;
-    }
-    return;
-  }
+  // ⚠️ THE TEARDOWN IS A DEREGISTER, NOT AN ASSIGNMENT. It used to write `onBeforeCompile = () => {}`
+  // and a CONSTANT cache key, which erased whatever stripes or glaze had put there and made every
+  // torn-down material share one program. See materialPatch.js for what that cost.
+  if (!active) { setMaterialPatch(mat, 'gradient', null); return; }
 
   const colors = gradient.colors.filter(Boolean);
   const count = Math.min(3, colors.length);
@@ -235,28 +231,21 @@ export function applyGradient(mat, gradient, bbox, albedo = (c) => c, mask = nul
     u.uGCenter.value.copy(bbox.center);
   }
 
-  // Gaining or losing the mask swaps the snippet, so it needs a recompile just as switching the
-  // gradient on does — otherwise a tier that has just had its first flake added keeps the unmasked
-  // program and paints straight over it.
-  if (!mat.userData.__gradOn || mat.userData.__gradMasked !== masked) {
-    mat.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, mat.userData.__gradUniforms);
+  /* Gaining or losing the mask swaps the snippet, so it needs a recompile just as switching the
+     gradient on does — otherwise a tier that has just had its first flake added keeps the unmasked
+     program and paints straight over it. That is what `variant` carries.
+     The per-material program key that stops two tiers sharing one program — and one tier's colours
+     winning — now lives in materialPatch.js, which is the only writer of it. */
+  setMaterialPatch(mat, 'gradient', {
+    variant: masked ? 'm' : 'p',
+    uniforms: u,
+    inject: (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', VERT_COMMON)
         .replace('#include <begin_vertex>', VERT_BEGIN);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', masked ? FRAG_COMMON_MASKED : FRAG_COMMON)
         .replace('#include <color_fragment>', masked ? FRAG_COLOR_MASKED : FRAG_COLOR);
-    };
-    // Unique per-material key so each gradient material compiles its OWN program. A constant key
-    // ('grad:on') made every gradient material share one WebGLProgram; since onBeforeCompile binds
-    // the custom uniforms (uGColors/…) to whichever material compiled first, the others never upload
-    // their own values and render that first material's colours (GPU/draw-order dependent). Two cake
-    // tiers with different gradients hit exactly this. mat.uuid is stable per instance, so each tier
-    // gets its own program + its own uniforms — no cross-material contamination.
-    mat.customProgramCacheKey = () => `grad:${mat.uuid}:${masked ? 'm' : 'p'}`;
-    mat.userData.__gradOn = true;
-    mat.userData.__gradMasked = masked;
-    mat.needsUpdate = true;
-  }
+    },
+  });
 }

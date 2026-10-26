@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setMaterialPatch } from './materialPatch.js';
 
 /* ── Horizontal colour stripes on a frosted wall ───────────────────────────────────────────────────
  *
@@ -239,16 +240,18 @@ export function applyStripes(material, stripes, bbox, albedo = (c) => c, mask = 
   if (!material) return;
   const active = areStripesActive(stripes) && !!bbox;
 
+  /* ⚠️ IT USED TO PUT BACK THE `onBeforeCompile` IT SAVED ON THE WAY IN, and that is a clobber
+     rather than a cleanup: `TierBody` applies the gradient FIRST and the stripes second, so a
+     striped cake followed by a gradient cake restored the pre-gradient handler over a gradient that
+     had been installed moments earlier in the same frame. The gradient then existed in the design
+     and in nothing else — which is why the colour chips updated and the wall did not, and why the
+     balance dial did nothing. Deregistering a named patch cannot do that. */
   if (!active) {
-    // Put the material back exactly as it was. A stale onBeforeCompile keeps injecting long after
-    // the stripes are gone, and the wall stays striped with nothing in the config to explain it.
     if (material.userData.__stripesPatched) {
-      material.onBeforeCompile = material.userData.__stripesPrevOBC ?? (() => {});
-      delete material.userData.__stripesPrevOBC;
       material.userData.__stripesPatched = false;
       material.userData.__stripeUniforms = null;
-      material.needsUpdate = true;
     }
+    setMaterialPatch(material, 'stripes', null);
     return;
   }
 
@@ -289,20 +292,22 @@ export function applyStripes(material, stripes, bbox, albedo = (c) => c, mask = 
     uSMask:   { value: mask ?? null },
   };
 
-  const prev = material.onBeforeCompile;
-  material.userData.__stripesPrevOBC = prev;
-  material.onBeforeCompile = (shader, renderer) => {
-    prev?.(shader, renderer);
-    Object.assign(shader.uniforms, uniforms);
-    shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', VERT_COMMON)
-      .replace('#include <begin_vertex>', VERT_BEGIN);
-    shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', masked ? FRAG_COMMON_MASKED : FRAG_COMMON)
-      .replace('#include <color_fragment>', masked ? FRAG_COLOR_MASKED : FRAG_COLOR);
-  };
+  /* ⚠️ NO MORE CHAINING ONTO WHATEVER WAS THERE. The composer runs every live patch in paint
+     order, so stripes still land ON TOP of a gradient — a tier carrying both renders as stripes,
+     exactly as before — without this module having to know a gradient exists. */
   material.userData.__stripeUniforms = uniforms;
   material.userData.__stripesPatched = true;
   material.userData.__stripesMasked = masked;
-  material.needsUpdate = true;
+  setMaterialPatch(material, 'stripes', {
+    variant: masked ? 'm' : 'p',
+    uniforms,
+    inject: (shader) => {
+      shader.vertexShader = shader.vertexShader
+        .replace('#include <common>', VERT_COMMON)
+        .replace('#include <begin_vertex>', VERT_BEGIN);
+      shader.fragmentShader = shader.fragmentShader
+        .replace('#include <common>', masked ? FRAG_COMMON_MASKED : FRAG_COMMON)
+        .replace('#include <color_fragment>', masked ? FRAG_COLOR_MASKED : FRAG_COLOR);
+    },
+  });
 }
