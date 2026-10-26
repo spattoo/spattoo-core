@@ -47,7 +47,7 @@ import { REGION_DEFAULTS } from '../geometry/region.js';
 import { spinPose } from '../reel/spinTake.js';
 import { assemblyPose, assemblyDone } from '../reel/assemblyTake.js';
 import { clampLens, lensAt, LENS_GLIDE_S } from '../reel/cinematicLens.js';
-import { gridPositions, GRID, GRID_COLOR } from '../reel/takeGrid.js';
+import { gridPositions, wallPositions, GRID, WALL, GRID_COLOR } from '../reel/takeGrid.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
  *
@@ -5551,6 +5551,66 @@ function TakeGrid() {
   );
 }
 
+/* ── The backdrop, kept behind the cake ──────────────────────────────────────────────────────────
+ *
+ * The vertical half of the grid. See takeGrid.js for the geometry and for why it cannot simply be
+ * nailed to one side of the scene.
+ *
+ * ⚠️ PLACED EVERY FRAME, FROM THE CAMERA'S OWN BEARING. The spin take drives the camera a full
+ * revolution; a fixed wall would swing round into the foreground and stand between the lens and the
+ * cake halfway through the shot. Taking the camera's horizontal bearing and putting the wall on the
+ * opposite side makes it a backdrop by construction, at every angle, with no special cases.
+ */
+function TakeGridWall() {
+  const camera = useThree(s => s.camera);
+  const group = useRef(null);
+  const geometry = useMemo(() => {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.BufferAttribute(wallPositions(), 3));
+    return g;
+  }, []);
+  useEffect(() => () => geometry.dispose(), [geometry]);
+
+  useFrame(() => {
+    const g = group.current;
+    if (!g || !camera) return;
+    // The bearing the camera is standing on, about the cake's own axis.
+    const bearing = Math.atan2(camera.position.x, camera.position.z);
+    g.position.set(-Math.sin(bearing) * WALL.distance, 0, -Math.cos(bearing) * WALL.distance);
+    // The plane is built in XY with its face along +Z, so turning it by the same bearing points
+    // that face back at the camera.
+    g.rotation.set(0, bearing, 0);
+  });
+
+  return (
+    <group ref={group}>
+      <lineSegments geometry={geometry} renderOrder={-1}>
+        <lineBasicMaterial color={GRID_COLOR} transparent opacity={WALL.opacity} depthWrite={false} />
+      </lineSegments>
+    </group>
+  );
+}
+
+/* ── One captured frame per rendered frame ───────────────────────────────────────────────────────
+ *
+ * The build is driven by React state, not by an imperative loop, so it cannot be recorded the way
+ * `TakeDirector` records a reel — there is no place to put `gl.render(); requestFrame();` in
+ * sequence. Instead the canvas's own capture stream is asked for a frame once per rendered frame.
+ *
+ * ⚠️ THE STREAM IS OPENED AT 0 fps AND DRIVEN FROM HERE, for the reason recordReel.js records: an
+ * fps argument makes MediaRecorder sample on its own clock, which double-samples some frames and
+ * misses others, and the result visibly stutters.
+ *
+ * ⚠️ IT CAPTURES THE FRAME BEFORE THIS ONE. A priority-0 `useFrame` runs BEFORE R3F renders, so the
+ * canvas still holds the previous frame when this fires. That is a constant one-frame lag — the
+ * whole video is shifted by about 16ms and nothing within it is out of order — where trying to be
+ * clever about it means taking over the render loop.
+ */
+function TakeFramePump({ onFrame }) {
+  useFrame(() => { onFrame?.(); });
+  return null;
+}
+
 function TakeLens({ fov, active = true, onReturned }) {
   const camera = useThree(s => s.camera);
   const was = useRef(null);
@@ -5993,6 +6053,11 @@ export default function CakeCanvas({
      `onTakeLensReturned` fires. */
   /* A grid floor under the cake while filming — see takeGrid.js. Off on every other path. */
   takeGrid = false,
+  /* The vertical half — a backdrop that follows the camera round. Off on every non-take path. */
+  takeGridWall = false,
+  /* Set only while a take is being recorded to a file — see startBuild. Null otherwise, so the
+     ordinary designer mounts nothing for it. */
+  onTakeFrame = null,
   takeLensActive = true,
   onTakeLensReturned = null,
   selectedPiping, highlightPipingId, onTopPipingSelect, onBottomPipingSelect, onCreamSelect, onCoatSelect,
@@ -6289,6 +6354,8 @@ export default function CakeCanvas({
       {assembly && <AssemblyDirector onTick={onAssemblyTick} onDone={onAssemblyDone} />}
       {/* Scenery for the take only — null on every other path, including a capture. */}
       {takeGrid && <TakeGrid />}
+      {takeGridWall && <TakeGridWall />}
+      {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />
       )}

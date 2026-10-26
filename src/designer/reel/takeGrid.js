@@ -74,3 +74,57 @@ export function gridLineCount({ extent, step } = GRID) {
   const gap = Math.max(0.001, Number(step) || 1);
   return (Math.floor(span / 2 / gap) * 2 + 1) * 2;
 }
+
+/* ── The vertical half ───────────────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"option for vertical grid lines also."* The marketing grid has these too — horizontal
+ * runs at five heights along one wall — and they are most of what makes that scene feel like a room
+ * rather than a floor floating in nothing.
+ *
+ * ⚠️ IT CANNOT BE A FIXED WALL, THOUGH, AND THAT IS THE ONE REAL DIFFERENCE. Their camera is fixed
+ * and looks at the wall; ours ORBITS, so a wall nailed to one side of the scene swings round into
+ * the foreground and ends up standing between the camera and the cake. This one is placed behind
+ * the cake along whatever bearing the camera is on, every frame — always a backdrop, never an
+ * obstruction. See TakeGridWall in CakeCanvas.
+ */
+export const WALL = Object.freeze({
+  /* Wider than the floor grid it stands on, so its ends leave the frame rather than showing as two
+     vertical edges floating in the middle of the shot. */
+  width: 14,
+  /* Tall enough to fill the frame behind a two-tier cake on the long lens. */
+  height: 6,
+  step: 1,
+  /* It stands on the far edge of the floor grid, so the two meet in a corner rather than one
+     hovering in front of the other. */
+  distance: GRID.extent / 2,
+  /* Fainter than the floor: it is further away and there is more of it, so matching the floor's
+     weight makes the backdrop louder than the thing standing on it. */
+  opacity: 0.22,
+});
+
+/**
+ * The backdrop as line-segment vertices in its OWN plane: x across, y up, z always 0.
+ *
+ * The caller stands it up behind the cake and turns it to face the camera, so nothing here needs to
+ * know where anything is — which is what keeps it testable as arithmetic.
+ */
+export function wallPositions({ width, height, step } = WALL) {
+  const w = Math.max(0, Number(width) || 0);
+  const h = Math.max(0, Number(height) || 0);
+  const gap = Math.max(0.001, Number(step) || 1);
+  const half = w / 2;
+  const out = [];
+  // Verticals, which are the ones that were asked for.
+  const cols = Math.floor(half / gap);
+  for (let i = -cols; i <= cols; i++) {
+    const x = i * gap;
+    out.push(x, 0, 0, x, h, 0);
+  }
+  // Horizontals, so it reads as a grid rather than as a fence.
+  const rows = Math.floor(h / gap);
+  for (let j = 0; j <= rows; j++) {
+    const y = j * gap;
+    out.push(-half, y, 0, half, y, 0);
+  }
+  return new Float32Array(out);
+}

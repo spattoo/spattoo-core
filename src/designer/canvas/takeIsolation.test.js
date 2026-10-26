@@ -25,12 +25,14 @@ describe('filming is isolated from designing', () => {
   it('hands the canvas nothing unless a take is running', () => {
     expect(designer).toMatch(/spin=\{filmSpin \? spinPlan : null\}/);
     expect(designer).toMatch(/assembly=\{build == null \? null : \{ time: build, plan: buildTimings \}\}/);
-    /* ⚠️ THE LENS OUTLIVES THE TAKE, ON PURPOSE. `lensReturning` keeps TakeLens mounted after the
-       build finishes so it can GLIDE back; unmounting it the moment the take ended is what made the
-       return a jump. `takeLensActive` is the honest "is a take running" — the two are separate
-       questions and conflating them is the bug. */
-    expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \|\| lensReturning \? takeLens : null\}/);
-    expect(designer).toMatch(/takeLensActive=\{filmSpin \|\| build != null\}/);
+    /* ⚠️ TWO PREDICATES, AND THE DIFFERENCE IS LOAD-BEARING. `filmingTake` is "a take is running";
+       `takeWindow` adds the second or so while the lens glides back, which is still part of the
+       shot. Unmounting TakeLens the moment the build ended is what made the return a jump. Pinned
+       by their DEFINITIONS, so widening either one has to be deliberate. */
+    expect(designer).toMatch(/const filmingTake = filmSpin \|\| build != null;/);
+    expect(designer).toMatch(/const takeWindow = filmingTake \|\| lensReturning;/);
+    expect(designer).toMatch(/takeLens=\{takeWindow \? takeLens : null\}/);
+    expect(designer).toMatch(/takeLensActive=\{filmingTake\}/);
     expect(designer).toMatch(/onTakeLensReturned=\{\(\) => setLensReturning\(false\)\}/);
   });
 
@@ -208,7 +210,7 @@ describe('filming is isolated from designing', () => {
       /* ⚠️ `lensReturning` IS ARMED AT `begin`, NOT AT ARM TIME — so during the count it is still
          false, every take input is null, and the lens has not started moving. A countdown that
          began the zoom would put the move in the recording before the take. */
-      expect(designer).toMatch(/takeLens=\{filmSpin \|\| build != null \|\| lensReturning \? takeLens : null\}/);
+      expect(designer).toMatch(/takeLens=\{takeWindow \? takeLens : null\}/);
       expect(designer).toMatch(/spin=\{filmSpin \? spinPlan : null\}/);
       expect(designer).not.toMatch(/takeLens=\{[^}]*countdown/);
       const arm = designer.slice(designer.indexOf('function armTake('), designer.indexOf('function cancelArmedTake('));
@@ -229,8 +231,36 @@ describe('filming is isolated from designing', () => {
    * thumbnail with it in is not the cake they sold.
    */
   it('reaches the canvas only inside a take', () => {
-    expect(designer).toMatch(/takeGrid=\{\(filmSpin \|\| build != null \|\| lensReturning\) && takeGrid\}/);
+    expect(designer).toMatch(/takeGrid=\{takeWindow && takeGrid\}/);
+    expect(designer).toMatch(/takeGridWall=\{takeWindow && takeGridWall\}/);
     expect(canvas).toMatch(/\{takeGrid && <TakeGrid \/>\}/);
+    expect(canvas).toMatch(/\{takeGridWall && <TakeGridWall \/>\}/);
+  });
+
+  /* ⚠️ THE HEADER RULE GOES TOO. *"the horizontal line below the baker name is disturbing. can we
+     hide while capturing this video."* It defines the header row for somebody WORKING; in a
+     recording it is a stray line across the top with nothing to explain it — the same fault the
+     FRONT marker had when it was being burned into finished reels. */
+  it('hides the header rule for the whole take', () => {
+    expect(designer).toMatch(/\{!isMobile && !takeWindow && \(/);
+  });
+
+  /* ⚠️ THE BACKDROP IS PLACED FROM THE CAMERA EVERY FRAME. The spin take drives a full revolution;
+     a wall fixed to one side of the scene would swing into the foreground halfway through. */
+  it('keeps the backdrop behind the cake at every angle', () => {
+    const at = canvas.indexOf('function TakeGridWall(');
+    expect(at, 'TakeGridWall should exist').toBeGreaterThan(-1);
+    const body = canvas.slice(at, at + 1400);
+    expect(body).toMatch(/Math\.atan2\(camera\.position\.x, camera\.position\.z\)/);
+    expect(body).toMatch(/lineBasicMaterial/);
+    expect(body).toMatch(/depthWrite=\{false\}/);
+  });
+
+  /* ⚠️ RECORDING MOUNTS NOTHING UNLESS A FILE IS BEING WRITTEN, and the designer's ordinary frame
+     loop gains nothing at all. */
+  it('pumps capture frames only while saving a video', () => {
+    expect(designer).toMatch(/onTakeFrame=\{buildSaving \? \(\(\) => takeFrame\.current\?\.\(\)\) : null\}/);
+    expect(canvas).toMatch(/\{onTakeFrame && <TakeFramePump/);
   });
 
   /* ⚠️ UNLIT LINES, so it cannot light the cake, shadow it, or bounce a colour onto it. The rule a

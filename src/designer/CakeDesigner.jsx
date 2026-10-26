@@ -72,6 +72,7 @@ import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
 import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
 import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, MAX_SWING } from './reel/assemblyTake.js';
 import { secondsLeft, clampDelay, DELAY_MAX, DELAY_DEFAULT } from './reel/takeDelay.js';
+import { recordCanvas, pickMimeType, extensionFor, downloadBlob } from './reel/recordReel.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
    module load, so a phase added to the take without a label here fails loudly at import rather than
@@ -4811,6 +4812,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      window — a baker judging a colour must not be looking at graph paper, and a thumbnail with it
      in is not the cake they sold. */
   const [takeGrid, setTakeGrid] = useState(true);
+  /* The vertical half, asked for alongside it. Same window, same isolation. */
+  const [takeGridWall, setTakeGridWall] = useState(true);
+  /* Recording the build to a file. `takeFrame` holds the capture stream's frame request while a
+     recording runs; `buildEnded` is resolved when the last piece lands, which is what tells the
+     recorder to stop. Both null the rest of the time, so nothing is mounted for them. */
+  const [buildSaving, setBuildSaving] = useState(false);
+  const [buildSaveError, setBuildSaveError] = useState(null);
+  const takeFrame = useRef(null);
+  const buildEnded = useRef(null);
   const [lensReturning, setLensReturning] = useState(false);
   const [startAfter, setStartAfter] = useState(DELAY_DEFAULT);
   const [countdown, setCountdown] = useState(null);
@@ -4818,6 +4828,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* ⚠️ THE TAKE IS A FIXED LENGTH WHATEVER THE CAKE HOLDS. The first version set a gap between
      pieces, which gave a 1.6s build on a 3-piece cricket cake and 65.7s on a 181-piece space theme.
      `total` is the control now and everything else derives from it. */
+  /* ── Is a take on screen? ──────────────────────────────────────────────────────────────────────
+   *
+   * Two questions, deliberately separate. `filmingTake` is "the camera is moving or the cake is
+   * assembling"; `takeWindow` adds the second or so afterwards while the lens glides back, which is
+   * still part of the shot as far as anything on screen is concerned.
+   *
+   * ⚠️ NAMED RATHER THAN REPEATED. `filmSpin || build != null` was written out at three call sites
+   * and a fourth was about to join them for the header rule — four copies of one idea is how they
+   * start disagreeing. Everything that must disappear while filming asks this.
+   */
+  const filmingTake = filmSpin || build != null;
+  const takeWindow = filmingTake || lensReturning;
+
   const buildTimings = buildPlan;
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
@@ -4905,6 +4928,53 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // calmer with nothing selected while every piece is moving.
     handleDeselect();
     armTake(() => { setLensReturning(true); setBuild(0); });
+  }
+
+  /* ── The build, straight to a file ─────────────────────────────────────────────────────────────
+   *
+   * *"can we have the option to download this build video."* Until now the only way to keep one was
+   * to point a screen recorder at the designer, which is why the head start exists at all — and a
+   * screen recording carries whatever else is on screen with it.
+   *
+   * ⚠️ NO HEAD START HERE, AND THAT IS NOT AN OVERSIGHT. `startAfter` buys time to reach a recorder
+   * in another window; recording from inside the page has nothing to reach, so honouring it would
+   * put several seconds of a motionless cake at the front of the file.
+   *
+   * ⚠️ IT RECORDS THE CANVAS, SO NOTHING ELSE ON SCREEN IS IN IT. No rail, no header, no buttons —
+   * the three faults a screen recording has. Reuses recordReel.js's recorder rather than a second
+   * one: the stream is opened at 0 fps and driven a frame at a time (see TakeFramePump), which is
+   * the bargain that stopped the reel stuttering.
+   */
+  async function saveBuildVideo() {
+    if (buildSaving) return;
+    const canvasEl = frameRef.current?.querySelector('canvas');
+    if (!canvasEl) { setBuildSaveError('The cake view is not ready yet.'); return; }
+    const mimeType = pickMimeType();
+    if (!mimeType) { setBuildSaveError('This browser cannot record video.'); return; }
+
+    handleDeselect();
+    setBuildSaveError(null);
+    setBuildSaving(true);
+    try {
+      const blob = await recordCanvas(canvasEl, async (requestFrame) => {
+        takeFrame.current = requestFrame;
+        await new Promise((resolve) => {
+          buildEnded.current = resolve;
+          setLensReturning(true);
+          setBuild(0);
+        });
+      }, { mimeType });
+      const name = (bakerData?.name ?? 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      downloadBlob(blob, `${name || 'cake'}-build.${extensionFor(mimeType)}`);
+    } catch (err) {
+      setBuildSaveError(err?.message ?? 'The recording failed.');
+    } finally {
+      /* ⚠️ IN `finally`, LIKE THE RECORDER'S OWN TEARDOWN. A half-cleared pump leaves the next take
+         feeding frames into a stream that has already stopped. */
+      takeFrame.current = null;
+      buildEnded.current = null;
+      setBuildSaving(false);
+    }
   }
 
   function startFilmSpin() {
@@ -17879,7 +17949,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           Out of flow like the two clusters it belongs to, so it costs no layout height: the canvas
           keeps its size and the cake does not move. */}
-      {!isMobile && (
+      {/* ⚠️ NOT WHILE FILMING. Sandeep: *"the horizontal line below the baker name is disturbing.
+          can we hide while capturing this video."* It is a rule that defines the header row for
+          somebody WORKING; in a recording it is a stray line across the top of the shot with
+          nothing on either side of it to explain itself. Same reasoning as the FRONT marker, which
+          was being burned into finished reels and read as a watermark nobody could account for.
+          Hidden for the whole take window, so it does not reappear while the lens is still
+          gliding back. */}
+      {!isMobile && !takeWindow && (
         <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0) }} />
       )}
 
@@ -19115,9 +19192,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  the two would both write the azimuth every frame. */
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
-              takeLens={filmSpin || build != null || lensReturning ? takeLens : null}
-              takeGrid={(filmSpin || build != null || lensReturning) && takeGrid}
-              takeLensActive={filmSpin || build != null}
+              takeLens={takeWindow ? takeLens : null}
+              takeGrid={takeWindow && takeGrid}
+              takeGridWall={takeWindow && takeGridWall}
+              onTakeFrame={buildSaving ? (() => takeFrame.current?.()) : null}
+              takeLensActive={filmingTake}
               onTakeLensReturned={() => setLensReturning(false)}
               assembly={build == null ? null : { time: build, plan: buildTimings }}
               onAssemblyTick={setBuild}
@@ -19126,6 +19205,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               onAssemblyDone={(t) => {
                 if (!assemblyDone(t, buildTimings)) return false;
                 setBuild(null);
+                /* The last piece has landed, so a recording in progress has what it came for.
+                   Resolved here rather than on a timer: the take's own clock is the only thing that
+                   knows when the shot is over. */
+                buildEnded.current?.();
                 return true;
               }}
               creamPaint={creamPaint}
@@ -22554,10 +22637,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
                 the phone hit-target. The grid is the marketing site's floor, brought here so a cake
                 on film stands in a room rather than in a void; see takeGrid.js. */}
-            <div style={{ margin: '2px 0 10px' }}>
+            <div style={{ margin: '2px 0 10px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Chip label="Grid floor" active={takeGrid} isMobile={isMobile}
                     onClick={() => setTakeGrid(v => !v)}
                     title="Lines on the floor while filming, like the marketing site" />
+              {/* The vertical half. It stands on the far edge of the floor grid and follows the
+                  camera round, so it is always behind the cake and never in front of it. */}
+              <Chip label="Back wall" active={takeGridWall} isMobile={isMobile}
+                    onClick={() => setTakeGridWall(v => !v)}
+                    title="Vertical grid lines behind the cake while filming" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
@@ -22565,11 +22653,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                          fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', border: 'none' }}>
                 Start
               </button>
+              {/* ⚠️ A SECOND BUTTON, NOT A MODE. Playing the build and keeping a file are two
+                  different intentions — one is "show me", the other is "give me the video" — and a
+                  checkbox beside Start would make the baker set a switch to find out which one
+                  pressing it does. This one records the canvas only: no rail, no header, none of
+                  what a screen recording drags in. */}
+              <button onClick={() => { setBuildSetupOpen(false); saveBuildVideo(); }}
+                disabled={buildSaving}
+                style={{ padding: '9px 16px', borderRadius: 9, fontWeight: 700, fontSize: 13,
+                         fontFamily: 'inherit', background: '#fff', color: INK,
+                         border: '1px solid #cfcac2',
+                         cursor: buildSaving ? 'default' : 'pointer',
+                         opacity: buildSaving ? 0.6 : 1 }}>
+                {buildSaving ? 'Recording…' : 'Record & save'}
+              </button>
               <span style={{ fontSize: 12, color: '#888' }}>
                 {(canvasConfig.stickers?.length ?? 0)} decorations ·{' '}
                 {assemblyTotal(buildTimings).toFixed(1)}s
               </span>
             </div>
+            {buildSaveError && (
+              <div style={{ fontSize: 12, color: '#b4453c', marginTop: 8 }}>{buildSaveError}</div>
+            )}
           </div>
         </Panel>
       )}
@@ -22624,10 +22729,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
                 the phone hit-target. The grid is the marketing site's floor, brought here so a cake
                 on film stands in a room rather than in a void; see takeGrid.js. */}
-            <div style={{ margin: '2px 0 10px' }}>
+            <div style={{ margin: '2px 0 10px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               <Chip label="Grid floor" active={takeGrid} isMobile={isMobile}
                     onClick={() => setTakeGrid(v => !v)}
                     title="Lines on the floor while filming, like the marketing site" />
+              {/* The vertical half. It stands on the far edge of the floor grid and follows the
+                  camera round, so it is always behind the cake and never in front of it. */}
+              <Chip label="Back wall" active={takeGridWall} isMobile={isMobile}
+                    onClick={() => setTakeGridWall(v => !v)}
+                    title="Vertical grid lines behind the cake while filming" />
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
               <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}
