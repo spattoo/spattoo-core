@@ -77,7 +77,18 @@ const CAT_TYPES = [
   { id: 'et-topper',  slug: 'topper',       name: 'Cake Topper',  sort_order: 0 },
   { id: 'et-foil',    slug: 'food_foil',    name: 'Food Foil',    sort_order: 1 },
   { id: 'et-fly',     slug: 'butterfly',    name: 'Butterfly',    sort_order: 2 },
-  { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3 },
+  /* ⚠️ `default_for_uploads` IS WHAT MAKES AN UPLOAD PLACEABLE, and without it UploadsPanel says
+     "Uploads can't be placed yet — no decoration kind is set up for them" and stops. A baker's own
+     picture becomes an IMAGE TOPPER — Sandeep: "this is how a baker can create his own image
+     topper" — so the flag, the zones and the actions are the real `image_topper` row from
+     element_types, read 2026-10-26. Note `color`, `duplicate` and `delete` are all FALSE on it. */
+  { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3,
+    default_for_uploads: true,
+    placement_rules: {
+      zones: ['top_surface', 'side', 'board'],
+      placement: { side: 'hug', board: { modes: ['stand', 'hug'] }, top_surface: { modes: ['hug', 'stand'] } },
+    },
+    default_allowed_actions: { move: true, color: false, style: false, delete: false, resize: true, fontSize: false, duplicate: false } },
   // The type the scatterable GLB below needs — see its note.
   { id: 'et-scatter', slug: 'scattered_decor', name: 'Scattered',  sort_order: 4 },
   /* ⚠️ RING TYPES, and the SLUGS are the contract. CakeDesigner resolves `drip` and `cream_piping`
@@ -1768,6 +1779,52 @@ CAT_ELEMENTS.push({
   },
   default_color: '#b8933d', sort_order: 0,
 });
+
+/* ⚠️ `?uploads=1` — A BAKER'S OWN PICTURE, END TO END. This is how a baker makes an image topper
+ * of their own, and none of it could be reached: the Proxy answers every unknown method with
+ * `{ items: [] }`, so Uploads was permanently empty and `place()` never ran.
+ *
+ * The flow UploadsPanel actually performs, and what each stub stands in for:
+ *   uploadElementImage(blob, name) → a storage key
+ *   registerUpload({ storage_key, name }) → the row that appears in Uploads
+ *   ensureCutout(id) → the BACKGROUND-REMOVED copy. A placed decoration must carry the cutout,
+ *     not the original, "otherwise the image lands on the frosting inside a photo's worth of
+ *     background". Cached after the first placement, which is why only the first one waits — the
+ *     stub mimics that by filling `cutoutUrl` on the row.
+ *   renameUpload / deleteUpload / unlinkUpload → the row's own controls.
+ *
+ * The cutout here is a VISIBLY different picture (the square loses its backdrop), so a screenshot
+ * can tell a cut image from an uncut one rather than taking the call's word for it.
+ */
+const UP_RAW = c => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#cfd8e3"/><circle cx="32" cy="32" r="18" fill="${c}"/></svg>`)}`;
+const UP_CUT = c => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="18" fill="${c}"/></svg>`)}`;
+const UPLOADS = [];
+if (PARAMS.has('uploads')) {
+  if (PARAMS.get('uploads') !== 'empty') {
+    UPLOADS.push({ id: 'up1', name: 'Bunny', url: UP_RAW('#e07a8c'), cutoutUrl: null, created_at: new Date().toISOString() });
+  }
+  Object.assign(STUBS, {
+    fetchUploads: async () => UPLOADS.map(u => ({ ...u })),
+    uploadElementImage: async (_blob, filename) => `uploads/${filename}`,
+    registerUpload: async ({ storage_key, name }) => {
+      const row = { id: `up${UPLOADS.length + 1}`, name: name || 'Untitled',
+                    url: UP_RAW('#7aa7e0'), cutoutUrl: null, storage_key,
+                    created_at: new Date().toISOString() };
+      UPLOADS.push(row); return { ...row };
+    },
+    /* The cut is cached on the row, so a second placement of the same picture is instant. */
+    ensureCutout: async (id) => {
+      const u = UPLOADS.find(r => r.id === id);
+      if (!u) throw new Error('No such upload.');
+      await new Promise(r => setTimeout(r, 400));          // the wait a baker sees on a first placement
+      u.cutoutUrl = UP_CUT(u.url.includes('e07a8c') ? '#e07a8c' : '#7aa7e0');
+      return { cutoutUrl: u.cutoutUrl };
+    },
+    renameUpload: async (id, name) => { const u = UPLOADS.find(r => r.id === id); if (u) u.name = name; return { ...u }; },
+    deleteUpload: async (id) => { const i = UPLOADS.findIndex(r => r.id === id); if (i >= 0) UPLOADS.splice(i, 1); },
+    unlinkUpload: async (id) => { const u = UPLOADS.find(r => r.id === id); if (u) u.unlinked = true; },
+  });
+}
 
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),
