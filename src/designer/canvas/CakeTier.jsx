@@ -2158,10 +2158,27 @@ export default function CakeTier({
             gradient={effGradient} stripes={effStripes} geoSig={`r${radius}h${height}`} castShadow receiveShadow>
             <cylinderGeometry args={[radius, radius, height, 64]} />
           </TierBody>
-          {/* Top lid: a thin disk that reads as the cake's flat top. Under a vertical gradient its
-              own 0.02-tall frame can't show the blend, so it takes the top (last) stop's colour. */}
-          <mesh position={[0, topY + 0.01, 0]} castShadow>
-            <cylinderGeometry args={[radius - 0.01, radius - 0.01, 0.02, 64]} />
+          {/* ── Top lid: a flat disc AT the rim, not a short cylinder standing on it ───────────
+              ⚠️ IT USED TO BE A 0.02-TALL CYLINDER OF RADIUS `radius - 0.01`, SITTING AT
+              `topY + 0.01` — so it stood 0.02 PROUD of the cake and 0.01 INSIDE its rim. That
+              little upstanding wall faces outward and catches the key light, and the 0.01 ledge
+              under it catches nothing: measured on a rendered tier, the top face read 172, then a
+              5px strip at **197**, then a 1px crease at **123**, then the wall at 144. A bright
+              band with a dark line under it, running right round the cake — which is exactly why
+              the top read as a separate lid resting on the cake rather than part of it. Sandeep:
+              *"why is the top looking disconnected … the color between top and the side
+              intersection rim - its not looking one."*
+
+              A disc has no wall to light and no ledge to shadow, and at the body's own radius its
+              edge IS the body's rim. The 0.002 lift is only to keep it off the cylinder's own cap
+              (coincident faces z-fight); it is a fifth of the old step and far too small to catch
+              a highlight.
+
+              It still takes `capColor`, the gradient's top stop: a flat disc has no vertical extent
+              for a vertical blend to happen across, so asking for one would paint it a single
+              wrong colour. */}
+          <mesh position={[0, topY + 0.002, 0]} rotation={[-Math.PI / 2, 0, 0]} castShadow>
+            <circleGeometry args={[radius, 64]} />
             <meshStandardMaterial color={capColor} roughness={mat.roughness - 0.08} />
           </mesh>
         </>
