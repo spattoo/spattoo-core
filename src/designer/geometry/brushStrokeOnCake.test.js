@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { brushRelief, brushLoad, buildBrushStrokeOnWall, buildBrushStrokeOnFlat, strokeFacesOutward, wallPlacer,
-         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed,
+         wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors, brushGesture, makeBrushBed, variedWidth, BRUSH_WIDTH_RANGE, BRUSH_WIDTH_VARY, endForm, grainFor, pathCoverage, sweptUnder, SWEEP_DEFAULTS,
          buildBrushBand, brushBandCount, brushMaxWidth,
          BRUSH_ON_CAKE_DEFAULTS } from './brushStrokeOnCake.js';
 
@@ -421,9 +421,22 @@ describe('coverage', () => {
          of this test did exactly that and failed a working change. */
       const m = BRUSH_ON_CAKE_DEFAULTS.across;
       const t = g.attributes.aThickness, p = g.attributes.position;
-      let lo = Infinity, hi = -Infinity;
+      /* ⚠️ THE RELEASE END ONLY, BECAUSE THE LANDING DISSOLVES NOW TOO. `heel` gives the start its
+         own torn, fading edge — which is the point of it — so a sweep of the whole centre column
+         measures BOTH ends and reports a band three times the release. The first version of this
+         test did that and failed a working change; the one before it swept every column and made
+         the same mistake with the two sides. The stroke climbs, so the release is the top: measure
+         down from the highest vertex the dissolve touches. */
+      let lo = Infinity, hi = -Infinity, top = -Infinity;
+      for (let v = (m / 2) | 0; v < g.userData.topCount; v += m) top = Math.max(top, p.getY(v));
       for (let v = (m / 2) | 0; v < g.userData.topCount; v += m) {
         if (t.getX(v) > 0.98) continue;                // untouched by the dissolve
+        /* ⚠️ AN ABSOLUTE WINDOW, NOT A FRACTION OF THE STROKE — and a fraction is what the first
+           version used, which quietly biased the very ratio this test exists to measure: a window
+           of `climb·0.5` is three times wider on the long stroke than on the short one, so the two
+           spans could not be compared. The release reaches back `merge` from the end whatever the
+           stroke's length; measure a little more than that and nothing else. */
+        if (p.getY(v) < top - BRUSH_ON_CAKE_DEFAULTS.merge * 1.5) continue;
         lo = Math.min(lo, p.getY(v)); hi = Math.max(hi, p.getY(v));
       }
       return { span: hi - lo, len: climb };
@@ -1116,5 +1129,302 @@ describe('a lid that is not a disc', () => {
     for (let i = 0; i < pos.count; i++) { lowest = Math.min(lowest, pos.getY(i)); maxZ = Math.max(maxZ, pos.getZ(i)); }
     expect(lowest).toBeLessThan(0.9);              // it fell down the front wall
     expect(maxZ).toBeLessThan(1.35);               // and stayed against that wall, not out at R
+  });
+});
+
+describe('grainFor — most strokes are a smooth smear, a few are combed', () => {
+  /* ⚠️ THE TEXTURE WAS THE ERROR, NOT THE SILHOUETTE. Beside the reference photograph our strokes
+     were ribbed end to end — every one equally — and read as corduroy rather than cream, while the
+     photograph is mostly smooth patches with drag lines on about one in four. Three changes had
+     gone into the outline before Sandeep simply said *"no. see this."* */
+  const G = BRUSH_ON_CAKE_DEFAULTS.grain;
+  const sample = (n = 400) => Array.from({ length: n }, (_, i) => grainFor(101 + i * 37));
+
+  it('leaves most of them nearly smooth', () => {
+    const g = sample();
+    expect(g.filter(v => v < G).length / g.length).toBeGreaterThan(0.55);
+  });
+
+  it('and combs a few plainly, so the marks read as an exception rather than a finish', () => {
+    const g = sample();
+    expect(g.filter(v => v > G * 1.5).length / g.length).toBeGreaterThan(0.05);
+    expect(Math.max(...g)).toBeGreaterThan(G * 2);
+  });
+
+  it('never goes negative, whatever the row authored', () => {
+    for (const v of sample()) expect(v).toBeGreaterThanOrEqual(0);
+    expect(grainFor(5, 0)).toBe(0);
+    expect(grainFor(5, -1)).toBe(0);
+    expect(grainFor(5, 'smooth')).toBe(0);
+  });
+
+  /* ⚠️ A ROW THAT TURNS THE LINES OFF GETS THEM OFF — the variation multiplies the authored value,
+     it does not substitute for it, so an admin setting 0 is not quietly overruled. */
+  it('is the same answer for the same seed, and scales with what was authored', () => {
+    expect(grainFor(77)).toBe(grainFor(77));
+    expect(grainFor(77, G * 2)).toBeCloseTo(grainFor(77, G) * 2, 12);
+  });
+});
+
+describe('endForm — a few are slanted, a few rounded, most are square', () => {
+  /* ⚠️ THE FINE NOISE VARIED AND THE END'S CHARACTER DID NOT. Every landing was a ragged horizontal
+     and every release a ragged horizontal: the raggedness differed, the LINE never did. Sandeep:
+     *"everything is ending like same… there can be few like that, but not all… they can be little
+     rounded also (few)."* */
+  const sample = (salt, n = 400) =>
+    Array.from({ length: n }, (_, i) => endForm(101 + i * 37, salt));
+
+  it('gives every stroke its own slant and its own bulge', () => {
+    const f = sample(0);
+    expect(new Set(f.map(x => x.tilt.toFixed(4))).size).toBeGreaterThan(f.length * 0.9);
+    expect(new Set(f.map(x => x.bulge.toFixed(4))).size).toBeGreaterThan(f.length * 0.9);
+  });
+
+  /* ⚠️ MOST ARE SLANTED, A FEW ARE SQUARE — AND THIS TEST ONCE ASSERTED THE OPPOSITE AND PASSED.
+     Sandeep: *"starting and ending does not need to be like a horizontal lines. there can be few
+     like that, but not all."* Few HORIZONTAL. The first implementation cubed the draw, crowding it
+     toward zero, and the test written beside it said "keeps most of them near square" — so the code
+     and its test agreed with each other and both disagreed with the instruction. That is the whole
+     reason this one is phrased around the SLANTED majority: a test that restates the mistake is
+     worse than no test. */
+  it('slants most of them, leaving square ends the occasional one', () => {
+    const t = sample(0).map(x => Math.abs(x.tilt));
+    const square = t.filter(v => v < 0.25).length / t.length;
+    const slanted = t.filter(v => v > 0.5).length / t.length;
+    expect(slanted).toBeGreaterThan(0.6);        // the common stroke is cut on the diagonal
+    expect(square).toBeGreaterThan(0.02);        // and a few still come out square
+  });
+
+  it('reaches both ways, so ends round out as well as scoop in', () => {
+    const b = sample(0).map(x => x.bulge);
+    expect(Math.max(...b)).toBeGreaterThan(0.6);
+    expect(Math.min(...b)).toBeLessThan(-0.6);
+  });
+
+  /* ⚠️ THE TWO ENDS OF ONE STROKE ARE NOT ONE GESTURE MIRRORED — the landing takes a different salt
+     from the release, or a stroke slanted at the top would be slanted identically at the bottom. */
+  it('shapes a stroke\'s start and its finish independently', () => {
+    const start = sample(1), end = sample(0);
+    const same = start.filter((x, i) => Math.abs(x.tilt - end[i].tilt) < 1e-6).length;
+    expect(same).toBeLessThan(start.length * 0.02);
+  });
+
+  it('is the same answer for the same seed, so a cake reopens as the cake that was made', () => {
+    expect(endForm(77, 0)).toEqual(endForm(77, 0));
+  });
+});
+
+describe('the landing is torn, not a guillotine cut', () => {
+  /* ⚠️ THE OTHER END HAD NEVER BEEN LOOKED AT. The release has torn since early on — `tip` is seven
+     fingers of different lengths — while the start was the first cross-section, a dead straight line
+     across the full width of every stroke on the cake. Sandeep, on a row of them: *"with brush,
+     always rectangle is impossible. starting point does not need to be a horizontal line."* */
+  /* ⚠️ `endSlantMax: 0` BY DEFAULT HERE, AND IT HAS TO BE — the end is now CUT on a diagonal as well
+     as faded, and a diagonal cut spreads the landing all by itself. Measuring both at once makes
+     this test say "something made the start uneven", which is not the question; `heel` is the
+     per-column fade specifically. The slant has its own test below. */
+  const landingSpread = (heel, endSlantMax = 0) => {
+    const g = buildBrushStrokeOnWall({ R: 1, baseY: 0, wallH: 1, weight: 0.6, seed: 11, heel,
+      endSlantMax,
+      path: brushGesture({ at: 0, seed: 11, climb: 0.6, climbVar: 0, sweep: 0.012 }) });
+    const m = BRUSH_ON_CAKE_DEFAULTS.across;
+    const t = g.attributes.aThickness, pos = g.attributes.position;
+    /* Per column, the height at which the cream first reaches full thickness — i.e. where this part
+       of the blade actually started laying down. A straight landing puts every column at one height. */
+    const starts = [];
+    for (let j = 0; j < m; j++) {
+      let y = null;
+      for (let v = j; v < g.userData.topCount; v += m) {
+        if (t.getX(v) > 0.9) { y = pos.getY(v); break; }
+      }
+      if (y != null) starts.push(y);
+    }
+    return Math.max(...starts) - Math.min(...starts);
+  };
+
+  it('starts at a different height across the blade, so the edge is not a ruled line', () => {
+    expect(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel)).toBeGreaterThan(0.02);
+  });
+
+  /* ⚠️ AND THE KNOB IS WHAT DOES IT. Without this the test above passes on the stroke's own
+     curvature and would keep passing if `heel` stopped being read at all. */
+  /* ⚠️ A RATIO, NOT A HAND-PICKED NUMBER, because `heel` is a look and looks get retuned — it has
+     already moved 0.5 → 0.9 → 0.55 → 0.35 as the landing was balanced against the band and against
+     the fade. What must stay true is that the knob does something: turn it off and the start is
+     measurably straighter. Pinning the threshold to the current value would make this a test of the
+     tuning rather than of the mechanism, and it would fail on the next honest adjustment. */
+  it('is a ruled line again when the row asks for none', () => {
+    expect(landingSpread(0)).toBeLessThan(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel) * 0.75);
+  });
+
+  it('scales with the stroke, so a broad knife lands over a broader patch', () => {
+    expect(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel * 2))
+      .toBeGreaterThan(landingSpread(BRUSH_ON_CAKE_DEFAULTS.heel));
+  });
+
+  /* ⚠️ THE SLANT IS A DIFFERENT THING FROM THE TEAR, AND THREE ROUNDS WENT BY WITHOUT IT. Torn
+     fingers and a per-column fade both roughen a line that is still SQUARE to the travel; forced to
+     their extremes the ends still rendered horizontal. Cutting the cross-section on a diagonal is
+     what actually slants an end, so this holds that the knob does something no amount of `heel`
+     can: with the fade off entirely, the end still comes out uneven. */
+  it('cuts the end on a diagonal, which no amount of tearing can do', () => {
+    expect(landingSpread(0, BRUSH_ON_CAKE_DEFAULTS.endSlantMax))
+      .toBeGreaterThan(landingSpread(0, 0) * 2);
+  });
+});
+
+describe('variedWidth — no two marks a hand makes are the same breadth', () => {
+  const BASE = 0.30;
+  const spread = (n = 24) => Array.from({ length: n }, (_, i) => variedWidth(BASE, 101 + i * 37));
+
+  it('gives a different breadth per seed, so a row is not one rectangle repeated', () => {
+    const w = spread();
+    expect(new Set(w).size).toBeGreaterThan(w.length * 0.8);
+  });
+
+  /* ⚠️ AROUND THE CARRIED WIDTH, NOT AROUND A CONSTANT — the test that stops this quietly undoing
+     the carry-over. Width follows the previous stroke on purpose (*"its not keeping the same
+     thickness, its resetting"*); drawing from a fixed range would hand the house default back the
+     moment a baker set a broad knife and drew again. */
+  it('scales what was carried in, so a broad knife stays broad', () => {
+    for (const seed of [7, 99, 1234]) {
+      expect(variedWidth(0.70, seed)).toBeGreaterThan(0.70 * (1 - BRUSH_WIDTH_VARY) - 1e-9);
+      expect(variedWidth(0.12, seed)).toBeLessThan(0.12 * (1 + BRUSH_WIDTH_VARY) + 1e-9);
+    }
+  });
+
+  it('stays inside ± the authored spread', () => {
+    for (const w of spread(60)) {
+      expect(w).toBeGreaterThanOrEqual(BASE * (1 - BRUSH_WIDTH_VARY) - 1e-9);
+      expect(w).toBeLessThanOrEqual(BASE * (1 + BRUSH_WIDTH_VARY) + 1e-9);
+    }
+  });
+
+  /* ⚠️ SYMMETRIC ABOUT 1, so a long run does not drift broader or narrower. Each stroke is measured
+     from the width carried IN, never from the one before it compounding. */
+  it('does not drift — the average lands on what was asked for', () => {
+    const w = spread(400);
+    const mean = w.reduce((a, b) => a + b, 0) / w.length;
+    expect(Math.abs(mean - BASE)).toBeLessThan(BASE * 0.04);
+  });
+
+  /* ⚠️ THE TRAP THIS SHIPPED WITH ONCE: feeding the VARIED width back in compounds into a
+     multiplicative random walk, which wanders off the knife the baker chose and can sit against a
+     clamp. Driven in the real app it came back 0.22, 0.27, 0.20, 0.20, 0.20, 0.20. The caller keeps
+     `baseWidth` (the knife) apart from `width` (this mark) and always measures from the base; this
+     holds the difference between the two, so the fix cannot be quietly undone. */
+  it('walks away if its own output is fed back in, which is why the caller keeps a base', () => {
+    let walked = BASE, stable = [];
+    for (let i = 0; i < 40; i++) {
+      walked = variedWidth(walked, 101 + i * 37);              // wrong: compounds
+      stable.push(variedWidth(BASE, 101 + i * 37));            // right: always from the knife
+    }
+    const spreadOf = a => Math.max(...a) - Math.min(...a);
+    expect(spreadOf(stable)).toBeLessThanOrEqual(2 * BASE * BRUSH_WIDTH_VARY + 1e-9);
+    expect(Math.abs(walked - BASE)).toBeGreaterThan(BASE * BRUSH_WIDTH_VARY);
+  });
+
+  it('is the same answer for the same seed, so a cake reopens as the cake that was made', () => {
+    expect(variedWidth(BASE, 4242)).toBe(variedWidth(BASE, 4242));
+  });
+
+  it('never leaves the range the dial offers', () => {
+    expect(variedWidth(BRUSH_WIDTH_RANGE.max, 5)).toBeLessThanOrEqual(BRUSH_WIDTH_RANGE.max);
+    expect(variedWidth(BRUSH_WIDTH_RANGE.min, 5)).toBeGreaterThanOrEqual(BRUSH_WIDTH_RANGE.min);
+  });
+
+  it('falls back to the authored width on anything it cannot read', () => {
+    for (const bad of [null, undefined, 0, -1, NaN, 'wide']) {
+      expect(variedWidth(bad, 3)).toBe(0.30);
+    }
+  });
+});
+
+describe('a sweep: cream dragged across the surface, mixing with what is there', () => {
+  /* ⚠️ THE MERGE IS THE WHOLE FEATURE, and it is the one thing this element has never done. Strokes
+     LAYER — the bed tracks laid cream so a later one rides ON an earlier one and clears it by a
+     seam, because *"it looked like a separate piece than an overlap."* Sandeep, with a lid of three
+     broad bands: *"when its done with multiple colors, overlapping areas merge colors."* */
+  const BAND = [[-1, 0], [1, 0]];
+  const HW = 0.5;
+
+  it('covers solidly through its body and falls off across its edge', () => {
+    expect(pathCoverage(0, 0, BAND, HW)).toBe(1);
+    expect(pathCoverage(0, HW * 0.5, BAND, HW)).toBeGreaterThan(0.5);
+    expect(pathCoverage(0, HW, BAND, HW)).toBe(0);
+    expect(pathCoverage(0, HW * 2, BAND, HW)).toBe(0);
+  });
+
+  /* ⚠️ MEASURED TO THE CENTRELINE, NOT TO THE END POINTS — a sweep is a band along its whole path,
+     so a point beside the middle of a long pass is as covered as one beside its start. */
+  it('covers along the whole pass, not just near its ends', () => {
+    for (const x of [-0.9, -0.3, 0, 0.4, 0.9]) expect(pathCoverage(x, 0, BAND, HW)).toBe(1);
+    expect(pathCoverage(1.8, 0, BAND, HW)).toBe(0);          // past the end is past the sweep
+  });
+
+  it('leaves the wall alone where nothing has been swept', () => {
+    expect(sweptUnder(0, 0, [], '#102030')).toBe('#102030');
+    expect(sweptUnder(0, 5, [{ path: BAND, halfWidth: HW, color: '#ff0000' }], '#102030')).toBe('#102030');
+  });
+
+  /* ⚠️ EACH BAND KEEPS ITS OWN COLOUR ACROSS ITS BODY, and only the seam mixes. Averaging wherever
+     two sweeps meet turns the later one muddy through its middle; in the photograph the bands are
+     their own colour and share a narrow boundary. */
+  it('hands back the earlier colour under its body, and a mixture at its edge', () => {
+    const prior = [{ path: BAND, halfWidth: HW, color: '#ff0000' }];
+    expect(sweptUnder(0, 0, prior, '#ffffff')).toBe('#ff0000');          // solidly inside
+    const seam = sweptUnder(0, HW * 0.8, prior, '#ffffff');
+    expect(seam).not.toBe('#ff0000');
+    expect(seam).not.toBe('#ffffff');
+  });
+
+  /* ⚠️ THE LATEST SWEEP WINS WHERE IT IS SOLID. Laid in order, a third pass over two earlier ones
+     reads as the third colour in its middle — not as an average of all three. */
+  it('resolves a stack in the order it was laid', () => {
+    const priors = [
+      { path: BAND, halfWidth: HW, color: '#ff0000' },
+      { path: BAND, halfWidth: HW, color: '#0000ff' },
+    ];
+    expect(sweptUnder(0, 0, priors, '#ffffff')).toBe('#0000ff');
+  });
+
+  it('refuses a sweep it cannot measure rather than covering everything', () => {
+    expect(pathCoverage(0, 0, BAND, 0)).toBe(0);
+    expect(pathCoverage(0, 0, [[0, 0]], HW)).toBe(0);
+    expect(pathCoverage(0, 0, null, HW)).toBe(0);
+  });
+
+  /* ⚠️ A SWEEP IS A PASS, NOT A MARK, and the defaults have to say so or it is just a wide stroke:
+     no taper (it runs off the rim rather than being lifted), no slanted cut, a definite side edge —
+     a feathered one puts a WHITE GAP at every seam, which the first cut of this did. */
+  /* ⚠️ A SWEEP IS STILL CREAM, AND THE FIRST CUT MADE IT PAINT. Reasoning "a thin even film", its
+     `weight` went to 0.3 and its `grain` to 0.03 and it rendered as flat colour: *"it does not look
+     like cream at all… it looks like color filling, not cream."* A spread film holds every mark of
+     the blade that spread it. Two things have to hold — real relief, and streaks that are not
+     washed out by the width. */
+  it('keeps the body and the knife marks that say cream', () => {
+    expect(SWEEP_DEFAULTS.weight).toBeGreaterThan(0.4);
+    expect(SWEEP_DEFAULTS.grain).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.grain * 3);
+  });
+
+  /* ⚠️ AND THE LANE PITCH IS WHAT `grain` ALONE CANNOT FIX. A sweep is far wider than a mark, so at
+     the shared lane count its streaks come out proportionally coarser and read as soft bands
+     instead of knife marks. The two pitches are held within a factor of two of each other. */
+  it('scales its lanes with its width, so the streaks stay knife-sized', () => {
+    const markPitch  = BRUSH_ON_CAKE_DEFAULTS.width / BRUSH_ON_CAKE_DEFAULTS.lanes;
+    const sweepPitch = SWEEP_DEFAULTS.width / SWEEP_DEFAULTS.lanes;
+    expect(sweepPitch).toBeLessThan(markPitch * 2);
+    expect(sweepPitch).toBeGreaterThan(markPitch * 0.5);
+  });
+
+  it('is authored as a pass: broad, untapered, and not feather-edged', () => {
+    expect(SWEEP_DEFAULTS.width).toBeGreaterThan(BRUSH_ON_CAKE_DEFAULTS.width * 2);
+    /* ⚠️ THE RANGE, NOT `tipWidth` — `tipFor` reads tipMin/tipMax and a `tipWidth` set here is
+       dropped silently. The first cut set the wrong key and every sweep rendered as a wedge; this
+       asserts the key the builder actually consults. */
+    expect(SWEEP_DEFAULTS.tipMin).toBe(1);
+    expect(SWEEP_DEFAULTS.tipMax).toBe(1);
+    expect(SWEEP_DEFAULTS.endSlantMax).toBe(0);
+    expect(SWEEP_DEFAULTS.skirt).toBeLessThanOrEqual(BRUSH_ON_CAKE_DEFAULTS.skirt);
   });
 });

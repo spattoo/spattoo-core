@@ -192,6 +192,27 @@ function closestOnSegments(A, B) {
   return { p, q };
 }
 
+/* How far a footprint reaches from its own centre along a surface direction — the EDGE's version of
+ * the question `separationPush` answers for two pieces.
+ *
+ * ⚠️ THE EDGE CLAMP USED THE PIECE'S LONGEST HALF-EXTENT IN EVERY DIRECTION, and that is the same
+ * fault the Gingko fix removed from sibling collision, left behind at the rim. `CakeTier` normalises
+ * every GLB so its LONGEST axis is STICKER_SIZE, so `(STICKER_SIZE / 2) * scale` is exactly that
+ * longest half-extent — correct for a near-square piece and badly wrong for a thin one. Measured on
+ * the catalogue: Twisted seaweed is 0.016 half-thick and was held 0.140 from the edge, nearly nine
+ * times its own width; a Fluted Scallop Shell is 0.102 on its short axis and was held at 0.140.
+ * Sandeep, with a shell stopped short of clear icing: *"the shell is not freely moving though it
+ * has space."*
+ *
+ * A capsule's reach along `dir` is its axis projection plus its radius, which is exact rather than
+ * conservative, and degenerates to the circle for anything round — two near-spherical pieces keep
+ * the behaviour they have today.
+ */
+export function footprintReach(fp, dir) {
+  const cap = footprintCapsule(fp, 0, 0);
+  return Math.abs(cap.halfLen * (cap.ax * dir.x + cap.az * dir.z)) + cap.r;
+}
+
 /* How far `self` must move so it rests against `sib` instead of through it — {dx, dz}, zero when
  * they are already clear. The direction is between the CLOSEST POINTS, not between the centres, so
  * a leaf pushed off a rose slides along the rose rather than being flung down the line of middles.
@@ -237,6 +258,47 @@ export function deOverlapSeat(shape, zone, pos, siblings, step = STICKER_SIZE) {
     const near = s => angDist(theta, s.theta ?? 0) < 0.15 && Math.abs((pos.y ?? 0) - (s.y ?? 0)) < 0.2;
     while (guard++ < 64 && siblings.some(near)) theta += 0.5;
     return { ...pos, theta: (((theta % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI)) };
+  }
+  /* ⚠️ THE BOARD IS A RING, SO A COPY SEPARATES BY GOING AROUND IT — NOT ACROSS IT.
+   *
+   * The cartesian branch below ends in `topClamp(shape, …, 0.88)`, and `shape` here is the CAKE's
+   * tier, not the board. A board decoration lives OUTSIDE that footprint by definition, so the
+   * clamp dragged every duplicate inward to 88% of the tier radius — i.e. inside the cake, which
+   * is opaque. Measured on a 1.0 tier under a 1.45 board: a piece at r = 1.25 came back at
+   * r = 0.880. The card appeared in the list and the decoration was nowhere on the cake, which is
+   * how it was reported (Twisted seaweed short, Fluted Scallop Shell — both offer a `board` zone).
+   * `boardRingClamp`'s own note says why this one is unrecoverable rather than merely untidy:
+   * standing proud of the board edge is something a baker can see and drag, standing inside the
+   * cake leaves nothing to grab.
+   *
+   * The ring's natural coordinate is (radius, angle), the way a wall's is (theta, y). So walk the
+   * ANGLE about the cake's centre and keep the radius the original already proved valid — which
+   * needs no board shape, and lands the copy on the ring by construction. `addSticker` never asks
+   * for the board zone (it de-overlaps top, side and rim only); `duplicateSticker` does, because it
+   * passes whatever zone the original is in. */
+  if (zone === ZONES.BOARD) {
+    const r = Math.hypot(pos.x ?? 0, pos.z ?? 0);
+    // Dead centre has no angle to turn through, and no radius to keep. Nothing better is available
+    // without the board's own footprint, and leaving the copy on the original is at least visible.
+    if (r <= 1e-6) return { ...pos };
+    /* The angle whose CHORD is one step, not the angle whose ARC is — so a copy comes apart by the
+     * same STICKER_SIZE the top-surface branch separates by, in one turn rather than two. Stepping
+     * by arc undershoots the straight-line gap the `clear` test measures (at r = 1.25 the chord of
+     * step/r is 0.279 against a step of 0.28), so every copy took two turns and landed 0.555 away —
+     * twice as far apart as the same two pieces on the lid. The 1.001 is what puts it over the line
+     * rather than exactly on it. Half a turn is the cap: on a board ring tighter than a decoration
+     * there is no angle that clears, and spinning a copy to the far side is no better than leaving
+     * it beside the original, which the guard already does. */
+    const dTheta = Math.min(Math.PI / 2, 2 * Math.asin(Math.min(1, (step * 1.001) / (2 * r))));
+    let theta = Math.atan2(pos.x ?? 0, pos.z ?? 0), guard = 0;
+    let bx = pos.x ?? 0, bz = pos.z ?? 0;
+    const clear = () => !siblings.some(s => s.x != null && Math.hypot(bx - s.x, bz - (s.z ?? 0)) < step);
+    while (guard++ < 64 && !clear()) {
+      theta += dTheta;
+      bx = Math.sin(theta) * r;
+      bz = Math.cos(theta) * r;
+    }
+    return { ...pos, x: bx, z: bz };
   }
   // Cartesian surfaces (top_surface, rim): one push-away per colliding sibling.
   let x = pos.x ?? 0, z = pos.z ?? 0;
@@ -798,7 +860,9 @@ export function zoneModes(placementConfig, zone, fallback) {
 // May this zone be posed at all? The toggle and the extra chooser tile both hang off this, so an
 // element with one pose grows no controls — the ~50 that exist today are untouched.
 export function zoneHasChoice(placementConfig, zone) {
-  return zoneModes(placementConfig, zone).length > 1;
+  // Through zonePoses, not zoneModes: a zone whose two configured modes collapse to one honoured
+  // pose is not a choice, and saying it is grows a toggle with nothing on the other side of it.
+  return zonePoses(placementConfig, zone).length > 1;
 }
 
 // The placement MODE (the POSITION) for a zone ("hug" | "stand" | "perch" | "verge"), from string or
@@ -828,6 +892,33 @@ export function zoneSeat(placementConfig, zone) {
   const explicit = zoneCfg(placementConfig, zone).seat;
   if (explicit === 'proud' || explicit === 'flush') return explicit;
   return placementConfig?.scatter === true ? 'flush' : 'proud';
+}
+
+// HOW MUCH of the wall's curve a flat piece takes, 0–1, default 1 (follow it exactly).
+//
+// ⚠️ A FRACTION, NOT A RADIUS — so it cannot go stale. `hug` on a round wall wraps a 2D decal around
+// the cylinder by definition, and the wrap is proportional to SIZE: on a normal tier the same
+// plaque sweeps 12° at scale 1 and 49° at scale 4. That is right for a printed transfer and wrong
+// for a stiff one. Sandeep, on a fondant name plaque: *"its bending more than needed."*
+//
+// A number here would have to be re-authored for every size and every tier radius. A fraction is
+// read against whatever curve the wall actually has, so one value holds across the whole scale
+// range: `0.4` means "takes four tenths of the bend the wall asks for", at any size.
+//
+// ⚠️ AND IT NEEDS NO STANDOFF, which is the thing worth knowing before using it. A stiffer piece on
+// a CONVEX wall touches at its CENTRE and lifts at its edges — the cylinder bulges towards it, so
+// the nearest point is the middle. Pushing it out to "clear" the wall would float the whole piece.
+// Nothing is offset; only the radius the strip is built at changes.
+//
+// Absent → 1 → every decal that exists today bends exactly as it did. 0 is a rigid flat piece.
+export function zoneBend(placementConfig, zone) {
+  const raw = zoneCfg(placementConfig, zone).bend;
+  /* ⚠️ `null` AND `''` ARE ABSENT, NOT ZERO — and `Number()` disagrees, which is how the first cut
+     of this made an admin form that writes every key render the whole catalogue rigid. Only a
+     number means a number. */
+  if (raw == null || raw === '') return 1;
+  const v = Number(raw);
+  return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : 1;
 }
 
 // The config-driven, ZONE-DEPENDENT instance fields — the ONE place both the add path
@@ -864,11 +955,45 @@ export function flatPose(zone, mode) {
   return (zone === ZONES.BOARD && (mode === 'hug' || !mode)) ? 'stand' : mode;
 }
 
+/* The poses a zone will ACTUALLY honour — `zoneModes` put through `flatPose`, in order, with
+ * duplicates dropped.
+ *
+ * ⚠️ A PICKER MUST OFFER WHAT THE SEAT WILL HONOUR, NOT WHAT THE CONFIG SAYS. The chooser expanded
+ * `zoneModes` straight into one tile per pose, so a shell configured `board: { modes: ['hug',
+ * 'stand'] }` grew a BOARD HUGGING tile — and ticking it was a no-op you could not see the cause
+ * of: `seatOnSlot` ran the same pose through `flatPose`, which turns a board hug into `stand`, so
+ * the instance came back as standing, `onSlot` matched it to the OTHER tile, and the tick appeared
+ * next door. Sandeep: *"Board hugging is not selectable. i have configured this scallop shell to
+ * hug on the board. but it not selectable from the card popup."* Nothing was broken in the toggle;
+ * the tile should never have existed.
+ *
+ * So both readers ask one question. A board that offers hug and stand offers ONE tile — it stands —
+ * and an element configured to hug the board alone is not a pose chooser at all, which is what
+ * `zoneHasChoice` should say too.
+ *
+ * ⚠️ IT DOES NOT CORRECT THE CONFIG, deliberately. `flatPose`'s note says a board hug may one day
+ * mean something real: a decoration standing on the drum and LEANING on the cake wall is a look
+ * bakers do. That is a pose to build; when it exists, `flatPose` stops coercing and this starts
+ * returning two tiles with no change here. Rewriting the admin's row would throw that intent away.
+ */
+export function zonePoses(placementConfig, zone, fallback) {
+  const seen = new Set();
+  const out = [];
+  for (const mode of zoneModes(placementConfig, zone, fallback)) {
+    const pose = flatPose(zone, mode);
+    if (pose && !seen.has(pose)) { seen.add(pose); out.push(pose); }
+  }
+  return out;
+}
+
 export function zoneSeatFields(placementConfig, zone, mode = null) {
   const allowed = zoneModes(placementConfig, zone, 'hug');
   const picked  = mode && allowed.includes(mode) ? mode : (allowed[0] ?? 'hug');
   return {
     placementMode: flatPose(zone, picked),
     sideProud:     zoneSeat(placementConfig, zone) === 'proud',
+    /* Baked on here with the other two for the same reason: it is ZONE-dependent, so a piece moved
+       off the wall and back must re-derive it rather than carry a stale one. */
+    sideBend:      zoneBend(placementConfig, zone),
   };
 }

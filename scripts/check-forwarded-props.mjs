@@ -34,12 +34,30 @@ function bodyOf(name) {
   return rest.slice(0, next ? next.index : rest.length);
 }
 
-/* What CakeContent expects. Only the ones it DEFAULTS, because those are the ones whose absence
- * cannot be noticed at runtime — a required prop that never arrives throws on first call. */
 const content = bodyOf('CakeContent');
-const required = [...content.matchAll(/\b(on[A-Z]\w*)\s*=\s*NOOP\b/g)].map(m => m[1]);
-if (!required.length) {
-  console.error('✗ check:forwarded-props — found no `onX = NOOP` defaults in CakeContent.');
+const strip = (s) => s.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+/* ⚠️ EVERY HANDLER CakeContent READS OFF `edit`, NOT ONLY THE NOOP-DEFAULTED ONES — and that
+ * widening is why this gate exists in its current form. It used to audit only `onX = NOOP`, on the
+ * reasoning that "a required prop that never arrives throws on first call". That is false whenever
+ * the call site optional-calls it, which most of them do: `onPick={onSandClick}` with the drift
+ * doing `onPick?.()` is a tap that does nothing, exactly as silent as the NOOP case. `onSandClick`
+ * sat unforwarded through two of its five hops and this gate passed, because it has no default.
+ *
+ * The destructure is read with comments STRIPPED: `onFacePose` is named in a comment inside it and
+ * is nobody's prop, which a naive scan reports as a missing hop.
+ */
+const destructure = strip(content.slice(0, content.indexOf('} = edit ?? {};')));
+
+/* ⚠️ RESOLVE RENAMES. `onCloudClick: onCloudClickEdit` means the prop travelling the chain is
+ * `onCloudClick`; auditing the local alias looks for a name no parent ever passes. Three of these
+ * exist, and all three read as missing hops without this. */
+const required = [...new Set(
+  [...destructure.matchAll(/\b(on[A-Z]\w*)\s*(?::\s*on[A-Z]\w*)?/g)].map(m => m[1]),
+)];
+const defaulted = new Set([...content.matchAll(/\b(on[A-Z]\w*)\s*=\s*NOOP\b/g)].map(m => m[1]));
+if (!required.length || !defaulted.size) {
+  console.error('✗ check:forwarded-props — found no editing callbacks on CakeContent\'s `edit`.');
   console.error('  The gate has lost its anchor; fix the pattern rather than deleting the check.');
   process.exit(1);
 }
@@ -80,9 +98,46 @@ const named = (hay, prop) =>
   new RegExp(`\\b${prop}\\b\\s*(?:[=:]|,|$)`, 'm').test(hay);
 
 const bad = [];
+/* The scene's own signature, so a prop packed into `edit` that CakeScene was never GIVEN is caught
+   as the ReferenceError it is rather than as a mystery. That is the 0.1.770 crash: `assembly` was
+   in the edit literal and absent from the signature, and the designer went black on load. */
+/* ⚠️ BY BRACE DEPTH, NOT THE FIRST `}`. The parameter list is one destructuring pattern full of
+   object defaults (`shp = { kind: 'round' }`), so slicing at the first closing brace cuts it off
+   after two lines and reports all twenty-four props missing. */
+const sceneParams = (() => {
+  const open = scene.indexOf('{');
+  let depth = 0;
+  for (let i = open; i < scene.length; i++) {
+    if (scene[i] === '{') depth++;
+    else if (scene[i] === '}' && --depth === 0) return strip(scene.slice(open, i + 1));
+  }
+  return '';
+})();
+if (!/\bfilmGround\b/.test(sceneParams)) {
+  console.error('✗ check:forwarded-props — could not read CakeScene\'s parameter list.');
+  process.exit(1);
+}
+
 for (const prop of required) {
   if (!named(element, prop)) bad.push([prop, 'CakeCanvas never puts it on <CakeScene>']);
   else if (!named(editObj, prop)) bad.push([prop, 'CakeScene never puts it in edit={{ … }}']);
+}
+
+/* ⚠️ ANYTHING IN THE EDIT LITERAL MUST BE A NAME CakeScene CAN ACTUALLY SEE, and "can see" means
+   its own parameters OR its own locals — `gestureOnStickerRef` is a `useRef` declared in the body
+   and handed down, which is perfectly legal and is not a prop. This is the scope question
+   `check:bindings` does not ask: that gate looks for the name anywhere in the FILE, which is why
+   `assembly` passed it while being declared 1300 lines away in a different component. */
+const sceneBody = strip(scene);
+const inScope = (name) =>
+  named(sceneParams, name)
+  || new RegExp(`\\b(?:const|let|var|function)\\s+${name}\\b`).test(sceneBody);
+
+for (const m of strip(editObj).matchAll(/\b([a-z]\w*)\s*(?:,|$)/gm)) {
+  const name = m[1];
+  if (!inScope(name)) {
+    bad.push([name, 'CakeScene packs it into edit but cannot see it — a ReferenceError on render']);
+  }
 }
 
 if (bad.length) {
@@ -94,4 +149,5 @@ if (bad.length) {
   process.exit(1);
 }
 
-console.log(`✓ check:forwarded-props — ${required.length} editing callbacks reach CakeContent`);
+console.log(`✓ check:forwarded-props — ${required.length} editing callbacks reach CakeContent`
+  + ` (${defaulted.size} NOOP-defaulted), and every name in edit={{ … }} is one CakeScene has`);

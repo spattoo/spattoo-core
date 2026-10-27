@@ -37,7 +37,18 @@ import { perimeter, isRoundWall, topContains, snapToRim, wallFractionAt } from '
 
 export const BRUSH_ON_CAKE_DEFAULTS = {
   width:  0.30,   // × R: how broad the stroke is at its widest
-  weight: 0.6,    // 0 … 1: dry stain → loaded impasto
+  /* 0 … 1: dry stain → loaded impasto. This is what a freshly drawn stroke STARTS at; after the
+     first, each one copies the stroke before it, which is what a hand does (see the seeding in
+     CakeDesigner, and the *"its not keeping the same thickness, its resetting"* complaint that put
+     it there).
+     ⚠️ 0.06 IS SANDEEP'S NUMBER, AND IT IS A LONG WAY BELOW WHAT THIS WAS. It stood at 0.6 from the
+     first commit; asked for *"0.6"* and then corrected to *"start the thinkness at 0.06"*, which is
+     a tenth of it. Rendered 0.06 / 0.10 / 0.30 / 0.60 side by side on six strokes at cake distance:
+     0.06 and 0.10 read as colour painted on, with almost no ridge or shadow, while the reference
+     photographs show cream with real body. Set as asked and recorded here rather than argued with —
+     a baker drags the dial from wherever it starts, and the complaint that produced this was about
+     where it starts, not about what the cream can do. */
+  weight: 0.06,
   /* ⚠️ SET BY LOOKING, AND THE FIRST NUMBER WAS HALF WHAT IT NEEDED TO BE. At 0.055 a full-weight
      stroke rendered as a flat coloured decal with a soft edge — the relief was there in the mesh and
      invisible on the cake, which is the worst of both. At this value the ridge catches a highlight,
@@ -144,9 +155,27 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      it when the hand lifted — and the bottom runs out to a point. */
   /* ⚠️ AND THE RANGE STARTS HIGH, because a palette knife does not taper to a point. Beside the
      photograph the pulls keep nearly their full width all the way up and then simply STOP on a
-     ragged edge; at 0.30 ours narrowed as they climbed and read as leaves. 0.60 to 1.00. */
-  tipMin: 0.60,
-  tipMax: 1.00,
+     ragged edge; at 0.30 ours narrowed as they climbed and read as leaves. 0.60 to 1.00.
+     ⚠️ AND 0.60 WAS STILL LOW ENOUGH TO READ AS A TONGUE. Sandeep, with five photographs of real
+     brushed cakes: *"strokes are mostly rectangular in nature. usually it varies."* Both halves of
+     that sentence matter — the shape is a RANGE, so this stays a range, but its floor was letting
+     the unluckier seeds narrow to 60% and come out as petals beside their square neighbours.
+     Rendered six seeds at 0.60 / 0.82 / 0.92 against the references: at 0.60 the blue one visibly
+     narrows toward its end, at 0.92 every one is a rectangle and the variation the line above
+     exists for is gone. 0.82 keeps the spread and puts the middle of it where the photographs are.
+     ⚠️ THIS IS SEED-DERIVED, NOT STORED (`tipFor`), so it reshapes strokes on cakes already saved.
+     That is the point — it is the look being corrected, not a new option — but it is worth knowing
+     before the number is moved again. */
+  /* ⚠️ AND 0.82 WENT TOO FAR THE OTHER WAY — IT MADE RECTANGLES. It was raised from 0.60 on the
+     reading that strokes are *"mostly rectangular in nature"*, and against one photograph of squared
+     blocks that was true. Four more references settled it the other way: a green ombré, a
+     green-and-blue watercolour, a black-and-gold stripe and a pink one, and in every single stroke
+     on all four the mark is BROAD where the knife lands and tapers to a narrow feathered wisp where
+     it lifts. Sandeep: *"starting and ending are nearly same width. leave these rectangles pls.
+     think of random strokes."* 0.25 to 0.95 — most strokes now taper plainly, and the few that draw
+     near the top still come out parallel-sided, which is the squared-block cake. */
+  tipMin: 0.25,
+  tipMax: 0.95,
   /* ⚠️ THE STRIATIONS SET THIS, NOT THE RIDGE. A ridge and a hollow read at a handful of samples;
      the knife marks are four or five lanes across the same band, and three samples per lane turns
      them into a stepped zigzag. Six per lane is where they go round, and there is a test holding
@@ -160,6 +189,24 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      than a silhouette, and `across` rises with the count or the streaks cannot be sampled. */
   tipFingers: 15,
   tipTaper:   0.3,
+  /* ⚠️ HOW FAR A STROKE'S RELEASE MAY WANDER FROM THAT, per stroke, so the ends are not all one
+     shape. `tipTaper` alone made every release the same ragged horizontal — the noise differed and
+     the LINE never did. Added to the authored value (signed), so `tipTaper` stays the middle of the
+     family and an admin moving it still moves them all: at 0.3 ± 0.55 a stroke can come out square
+     (≈0.3), plainly ROUNDED (≈0.85, the middle fingers outrunning the corners), or scooped
+     (≈−0.25, the corners running on instead). Sandeep: *"they can be little rounded also (few)."*
+     "Few" is `endForm`'s doing, not this number's — it biases its draws toward zero. */
+  tipTaperVary: 0.55,
+  /* ⚠️ AND SOME ARE CUT ON THE SLANT. A knife lifted while still travelling sideways leaves a
+     diagonal end, which no amount of per-finger noise can produce — that only ever roughens a line
+     square to the travel. ± this much ramp across the blade. */
+  tipTiltMax: 0.8,
+  /* ⚠️ HOW FAR AN END MAY BE CUT ON THE DIAGONAL, as a fraction of the width that one corner runs
+     on past the other. This is the knob the three earlier attempts were missing: they roughened a
+     line that stayed square to the travel, so even at their extremes the ends rendered horizontal.
+     0.5 means the two corners of the end sit half a width apart along the stroke — plainly slanted
+     without reading as a torn-off corner. */
+  endSlantMax: 0.5,
   /* ⚠️ SHORT EXCURSIONS, OR THE RELEASE IS A COMB. At 0.5 of the width the longest finger runs
      further than the dissolve is deep, so each one stays solid for most of its length and reads as a
      needle — Sandeep, ringing the band of them: *"these spikes look too harsh."* A release is a
@@ -168,7 +215,28 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   tipReach:   0.2,
   tipJitter:  0.8,    // 0 … 1: how unevenly the streaks are spaced — equal pitch reads as a saw
   tipRows:    5,      // cross-sections through the release, so the dissolve has room to happen
-  merge:      0.075,  // × R: how deep the dissolve reaches back from each finger's own end
+  /* × R: how deep the dissolve reaches back from each finger's own end.
+     ⚠️ 0.075 → 0.2, AND IT IS WHAT THE "WHITE" WAS. Sandeep: *"why there is white color near the
+     starting? i understand the intent with the white color, but that should look like merged with
+     the cake color. should not look like white color is added explicitly."* The blend itself was
+     never wrong — rendered on a DARK wall the thin end washes to the wall's colour and not to
+     white, which is one render and settles it. What showed was the RAMP: fading full height to
+     nothing over 0.075R is a slope of about 36°, and a slope catches light. The bright band was a
+     highlight, not pigment. Over 0.2R the ramp lies almost flat, takes no highlight, and the stroke
+     feathers into the cake the way the references do — the green ombré and the pink one both
+     dissolve over a third of their length. */
+  merge:      0.2,
+  /* ⚠️ BUT THE LANDING STAYS CRISPER THAN THE RELEASE, because a knife is loaded when it touches
+     down and empty when it lifts. In every reference the bottom of a stroke meets the board as a
+     definite edge while the top wisps away into nothing; one depth for both would either harden the
+     release or wash the landing out. A fraction of `merge`, so tuning the feather still moves both. */
+  heelMerge:  0.10,
+  /* ⚠️ HOW UNEVENLY THE KNIFE LANDS, × the stroke's own width. The release has torn since early on
+     and the landing never did — it was the first cross-section, a dead straight line across the
+     full width of every stroke on the cake. *"starting point does not need to be a horizontal
+     line."* A fraction of the WIDTH rather than a length, so a broad knife lands over a broader
+     patch and a narrow one does not get a landing longer than the mark itself. */
+  heel:       0.35,
   /* ⚠️ THE KNIFE'S OWN EDGE, AND IT IS NOT DECORATION. brushStroke.js says it outright — *"the
      striations left by the edge of the knife are most of what says chocolate smear rather than
      coloured shape; without them the piece reads as plastic"* — and a perfectly smooth stroke is
@@ -186,7 +254,13 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
   /* ⚠️ A LITTLE, NOT A LOT — a loaded knife wanders, it does not ripple. At 0.22 every stroke had a
      wavy outline and the band read as seaweed; the reference is straight-sided pads with angular
      corners, and the swell is just enough that no two edges are parallel. */
-  breathe: 0.08,  // 0 … 1: how much the width swells and pinches along the stroke
+  /* 0 … 1: how much the width swells and pinches along the stroke.
+     ⚠️ RAISED FROM 0.08, WHICH WAS BARELY THERE. At that value the two long edges were straight to
+     the eye and the whole mark read as a cut rectangle: *"same with the rest of it."* Cream does
+     not leave a ruled line — the blade loads and unloads as it travels, so the band widens and
+     narrows along its length. Swept against the reference photographs; see the note on `tipMin`
+     for the shape this works with. */
+  breathe: 0.35,
   /* ⚠️ THE TEAR IS COHERENT, NOT PER-ROW. brushStroke jitters each point independently, which is
      right at a dozen hand-placed points and becomes WHITE NOISE at forty: adjacent rows alternate
      and the edge comes out as pinking shears — the "row of identical notches… a decorative zigzag,
@@ -207,7 +281,22 @@ export const BRUSH_ON_CAKE_DEFAULTS = {
      hairline marks across one pull, barely cutting — a blade's nicks, not a comb's teeth. 9 at 0.2,
      with `across` raised to keep six samples a lane. */
   lanes:  9,      // how many drag lines across the width
-  grain:  0.2,    // 0 … 1: how deep the lines cut, × the local relief
+  /* 0 … 1: how deep the lines cut, × the local relief.
+     ⚠️ 0.2 → 0.05, AND THIS WAS THE THING WRONG WITH THE WHOLE LOOK. Put beside the reference
+     photograph our strokes were ribbed end to end — a 20% height swing over nine narrow lanes
+     shades hard, so every mark read as corduroy, or as ribbed fondant, rather than as cream. The
+     photograph is mostly SMOOTH: flat matte patches whose form is carried by soft shading and torn
+     edges, with drag lines showing on about one patch in four and faintly even there. Swept
+     0.2 / 0.09 / 0.04 beside it; this is where the surface stops being fabric. Sandeep, having
+     twice said the shapes were not right and then simply: *"no. see this."* It was never the
+     silhouette — three changes had gone into the outline while the texture was the error. */
+  grain:  0.05,
+  /* ⚠️ AND NOT EVERY STROKE IS COMBED, which is the half a single number cannot express. In the
+     photograph some patches carry clear drag lines and most carry none — a blade picks up marks
+     when it is loaded and leaves none when it is not. Per stroke, seeded, biased LOW (`f²`, so most
+     land near the floor and a few go well past the authored value): the same "a few, not all" shape
+     `endForm` uses, and the same reason. */
+  grainVary: 2.4,
   seed:   1,
 };
 
@@ -290,6 +379,162 @@ export function brushRelief(u, ridge = BRUSH_ON_CAKE_DEFAULTS.ridge,
  * rope's own swell note warns about. Fades out along the stroke: the deepest marks are where the
  * cream was thickest.
  */
+/* ── A SWEEP: cream dragged across the surface, mixing with what is already there ────────────────
+ *
+ * A stroke is a MARK; a sweep is a PASS. Sandeep, with a cake whose lid is three broad bands of
+ * colour meeting at two soft seams: *"sweep is done using palette knife… instead of stroke, its a
+ * sweep. when its done with multiple colors, overlapping areas merge colors."*
+ *
+ * ⚠️ THE MERGE IS THE WHOLE FEATURE, AND IT IS THE ONE THING THIS ELEMENT HAS NEVER DONE. Strokes
+ * LAYER: `makeBrushBed` tracks the cream already laid so a later stroke rides ON an earlier one and
+ * clears it by a seam, because *"it looked like a separate piece than an overlap."* That is right
+ * for marks sitting side by side and wrong for a sweep, where the knife drags one colour THROUGH
+ * another and the boundary becomes a blend of the two.
+ *
+ * ⚠️ COMPUTED FROM THE SWEEPS THEMSELVES, NOT FROM A RASTER, and that is what lets this work on the
+ * lid at all. The bed is a grid in the WALL's unrolled space — its own comment says a lid stroke has
+ * no coordinates in it — so a colour bed would have needed a second raster for the top and a third
+ * for anything after it. But a sweep already knows the sweeps laid before it, and the mesh builder
+ * already has each vertex's position in the surface's own flat space, so "what colour is under this
+ * point" is a distance to each earlier centreline. One expression, both surfaces, nothing to keep
+ * in step.
+ *
+ * ⚠️ AND IT BLENDS ON THE SOFT EDGE, NOT OVER THE WHOLE OVERLAP. Averaging wherever two sweeps meet
+ * turns the middle of the later one muddy; in the photograph each band keeps its own colour across
+ * its body and the two mix only in a narrow seam. The weight is the EARLIER sweep's own coverage at
+ * that point — full inside its body, falling off across its edge — so the later colour wins where
+ * the earlier one was thin and the two share the seam where they cross.
+ */
+export const SWEEP_DEFAULTS = Object.freeze({
+  /* × R, and far broader than a mark: a sweep is a pass of the whole blade. */
+  width: 1.1,
+  /* ⚠️ NO TAPER AND NO TORN RELEASE. A sweep is not lifted off the cake — it runs off the EDGE, and
+     the rim is what ends it. A tapering wisp would be a mark again.
+     ⚠️ AND IT IS `tipMin`/`tipMax` THAT SAY SO, NOT `tipWidth`. The builder calls
+     `brushStroke(..., { tipWidth: tipFor(p) })` — `tipFor` reads the RANGE, so a `tipWidth` handed
+     in here is simply dropped on the floor. The first cut set it and nothing happened: every sweep
+     still came out a wedge, which is the one shape this feature exists not to be. Caught by driving
+     the card and looking at what landed, not by reading the defaults back. */
+  tipMin: 1,
+  tipMax: 1,
+  tipReach: 0.04,
+  endSlantMax: 0,
+  heel: 0.12,
+  /* ⚠️ A DEFINITE SIDE EDGE, AND THE FIRST CUT HAD THIS BACKWARDS. Reasoning that "the soft edge IS
+     the seam the colours mix in", I set this to 0.16 — three times a mark's. What that produces is a
+     WHITE GAP wherever two sweeps meet: at a seam both of them are at their thin edges, so both give
+     up their colour to the cake and the bare lid shows through between the bands. The reference
+     covers edge to edge with no cake showing anywhere. A palette-knife pass lays an even film with a
+     fairly definite edge; the blend at a seam comes from the knife DRAGGING one colour through
+     another, which is what `blend` does to the COLOUR, not from making both films transparent. */
+  skirt: 0.04,
+  /* ⚠️ AND THE SIDES ARE CALMER THAN A MARK'S. A stroke's edges swell, pinch and tear because that
+     is what a single pull looks like; a sweep is the blade laid flat and pushed, so its edges are
+     long and even and the interest is in the SEAM rather than the outline. Left at a mark's values
+     the sweeps came out as three enormous wobbly petals. */
+  breathe: 0.1,
+  tear: 0.05,
+  /* ⚠️ THE TEXTURE IS WHAT MAKES IT CREAM, AND THE FIRST CUT KILLED IT. Reasoning that a sweep is
+     "a thin even film", `weight` went to 0.3 and `grain` to 0.03 — which renders as flat colour.
+     Sandeep: *"it does not look like cream at all… it looks like color filling, not cream."* He is
+     right and the photograph says so plainly: the blue band is full of streaks the knife left, and
+     the paler two carry their own fainter ones. A spread film is still cream — it holds every mark
+     of the blade that spread it.
+     ⚠️ SIX TIMES A MARK'S `grain`, WHICH LOOKS WRONG WRITTEN DOWN AND IS NOT. A mark is a small
+     pile of cream and its marks read at a glance; a sweep is a thin film over a wide area, and at a
+     mark's value its streaks disappear into the shading. Swept 0.14 / 0.30 / 0.50 against the
+     photograph: at 0.14 it is still paint, at 0.50 the seams start to shred, at 0.30 the ridges
+     catch a highlight and cast the small shadows that say buttercream. */
+  grain: 0.3,
+  /* ⚠️ AND THE LANES HAVE TO SCALE WITH THE WIDTH, which is the part no amount of `grain` fixes. A
+     sweep is 3.7× a mark's width; at the shared 9 lanes its streaks are 3.7× coarser, so they read
+     as wide soft bands rather than as knife marks. Measured: a mark's lane pitch is 0.033R, this
+     keeps a sweep's at about the same. */
+  lanes: 34,
+  /* Spread rather than piled — a sweep is thinner than a mark — but it still has BODY: at 0.3 the
+     relief was too shallow to catch a highlight and the band read as paint. */
+  weight: 0.55,
+  /* ⚠️ HOW WIDE THE SEAM IS, as a fraction of the earlier sweep's half-width. 0 would butt two flat
+     colours against each other, which is the "separate piece" complaint in a new form. */
+  blend: 0.55,
+});
+
+/** The colour already laid at a point in the surface's own flat space, given the sweeps before it.
+ *
+ * `priors` are `{ path, halfWidth, color }` in that same flat space, earliest first. Returns the hex
+ * of whatever is beneath — the wall where nothing has been swept, otherwise the latest sweep that
+ * covers the point, weighted by how solidly it covers it.
+ */
+export function sweptUnder(x, y, priors, wallColor, blend = SWEEP_DEFAULTS.blend) {
+  if (!priors?.length) return wallColor;
+  let r = null, g = null, b = null;
+  for (const pr of priors) {
+    const cov = pathCoverage(x, y, pr.path, pr.halfWidth, blend);
+    if (cov <= 0) continue;
+    const c = hexToRgb(pr.color);
+    if (r == null) { const w = hexToRgb(wallColor); r = w.r; g = w.g; b = w.b; }
+    r += (c.r - r) * cov; g += (c.g - g) * cov; b += (c.b - b) * cov;
+  }
+  if (r == null) return wallColor;
+  return rgbToHex(r, g, b);
+}
+
+/** 0 … 1: how solidly a sweep of this half-width covers a point — 1 well inside, falling off across
+ *  `blend` of the half-width at its edge, 0 outside. */
+export function pathCoverage(x, y, path, halfWidth, blend = SWEEP_DEFAULTS.blend) {
+  if (!(halfWidth > 0) || !Array.isArray(path) || path.length < 2) return 0;
+  let best = Infinity;
+  for (let i = 1; i < path.length; i++) {
+    const d = distToSegment(x, y, path[i - 1], path[i]);
+    if (d < best) best = d;
+    if (best === 0) break;
+  }
+  const soft = Math.max(1e-6, halfWidth * clamp01(blend));
+  return 1 - smoothstep(halfWidth - soft, halfWidth, best);
+}
+
+function distToSegment(x, y, a, b) {
+  const vx = b[0] - a[0], vy = b[1] - a[1];
+  const wx = x - a[0], wy = y - a[1];
+  const len2 = vx * vx + vy * vy;
+  const t = len2 > 0 ? Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2)) : 0;
+  const px = a[0] + vx * t, py = a[1] + vy * t;
+  return Math.hypot(x - px, y - py);
+}
+
+/** The per-vertex `underAt` a sweep needs, or null for an ordinary stroke.
+ *
+ * ⚠️ ALBEDO, NOT THE HEX, AND THE SINGLE-COLOUR PATH ALREADY LEARNED THIS THE HARD WAY — see the
+ * note on `paintBrushColors`: this scene's light is about 3.25×, so a colour handed over raw renders
+ * three times too bright. Corrected here so the per-vertex answer and the single-colour one are on
+ * the same footing; corrected on one side only, a sweep would wash toward a surface three times
+ * brighter than the sweep it is actually crossing.
+ */
+export function sweepUnderAt(priors, wallColor, blend) {
+  if (!priors?.length) return null;
+  const c = new THREE.Color();
+  return (x, y) => {
+    c.set(creamAlbedo(sweptUnder(x, y, priors, wallColor, blend)));
+    return { r: c.r, g: c.g, b: c.b };
+  };
+}
+
+const hexToRgb = (hex) => { const c = new THREE.Color(hex ?? '#ffffff'); return { r: c.r, g: c.g, b: c.b }; };
+const rgbToHex = (r, g, b) => `#${new THREE.Color(r, g, b).getHexString()}`;
+
+/** How combed THIS stroke is — most nearly smooth, a few carrying clear drag lines.
+ *
+ * ⚠️ A SINGLE `grain` MAKES EVERY STROKE EQUALLY RIBBED, which is not what a blade does and not
+ * what the photograph shows. Biased low on purpose: `f²` puts the bulk of the draws near the floor,
+ * so the common stroke is a smooth smear and a combed one reads as the exception.
+ */
+export function grainFor(seed, grain = BRUSH_ON_CAKE_DEFAULTS.grain, vary = BRUSH_ON_CAKE_DEFAULTS.grainVary) {
+  const g = Number(grain);
+  if (!Number.isFinite(g) || g <= 0) return 0;
+  const f = seedFrac(seed, 59);
+  return g * (0.15 + Math.max(0, vary) * f * f);
+}
+
 export function brushStriation(u, along, { seed = 1, lanes, grain } = {}) {
   const n = lanes ?? BRUSH_ON_CAKE_DEFAULTS.lanes;
   const g = grain ?? BRUSH_ON_CAKE_DEFAULTS.grain;
@@ -340,6 +585,42 @@ function densify(path, want) {
   return out;
 }
 
+/* ── What SHAPE an end is, for this one stroke ───────────────────────────────────────────────────
+ *
+ * ⚠️ THE FINE NOISE VARIED AND THE END'S CHARACTER DID NOT, which is why a row of them still read as
+ * one object repeated. Every landing was a ragged horizontal and every release a ragged horizontal:
+ * the raggedness differed, the LINE never did. Sandeep: *"everything is ending like same. starting
+ * and ending does not need to be like a horizontal lines. there can be few like that, but not all.
+ * need to be bit more random… they can be little rounded also (few)."*
+ *
+ * Two terms, both across the blade, both seeded per stroke and per END (so a stroke's start and its
+ * finish are not the same gesture mirrored):
+ *
+ *   tilt   linear  — one corner runs on, the other stops short: a diagonal cut
+ *   bulge  parabolic — the middle runs on (rounded) or holds back (scooped)
+ *
+ * ⚠️ AND "A FEW", NOT "ALL" — the shape he asked for is a MIX. Both terms are centred on zero and
+ * most draws land near it, so the common stroke is still square-ish and the interesting ones are
+ * occasional. Cubing a signed unit value does that without needing a branch or a table: it keeps
+ * the sign, leaves ±1 reachable, and pushes the bulk of the distribution toward the middle.
+ */
+/* ⚠️ MOST ARE SLANTED, A FEW ARE SQUARE — AND THE FIRST CUT HAD IT EXACTLY BACKWARDS. It cubed a
+   signed unit value, which crowds the draws toward ZERO, so most strokes came out square-ended and
+   a few were shaped. Sandeep had said *"there can be few like that, but not all"* — few HORIZONTAL
+   — and the test written beside it asserted the opposite ("keeps most of them near square") and
+   duly passed. Reading a distribution the wrong way round is not a tuning error; it inverts the
+   instruction.
+   The square root pushes the bulk of the draws AWAY from zero: a definite slant is the common case,
+   a square end the occasional one. `|u|` keeps the sign, so both directions stay reachable. */
+function signedBias(seed, salt) {
+  const u = seedFrac(seed, salt) * 2 - 1;      // -1 … 1, flat
+  return Math.sign(u) * Math.sqrt(Math.abs(u));
+}
+
+export function endForm(seed, salt = 0) {
+  return { tilt: signedBias(seed * 13 + salt, 41), bulge: signedBias(seed * 13 + salt, 43) };
+}
+
 /** How wide this particular stroke is where it was lifted — the same seed always gives the same
  *  answer, so a cake reopens as the cake that was made. */
 export function tipFor({ seed = 1, tipMin, tipMax } = {}) {
@@ -367,7 +648,7 @@ function tearBite(along, seed) {
   return -(run * 0.9 + Math.max(0, v - 0.55) * 0.7); // and a sharper nick inside the run
 }
 
-function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } = {}) {
+function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5, heel = 0 } = {}) {
   const n = stroke.band.length;
   const grid = stroke.band.map(([l, r], i) => {
     const along = n > 1 ? i / (n - 1) : 0;
@@ -427,7 +708,49 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } 
       }
     }
   }
-  return { grid, toTip };
+  /* ── Where the cream actually BEGINS, column by column ────────────────────────────────────────
+   *
+   * ⚠️ THE LANDING WAS A GUILLOTINE CUT, and it is the loudest thing left in the silhouette. The
+   * release already tears — `tip` is seven fingers of different lengths — but the other end was the
+   * first cross-section, a dead straight line across the full width, on every stroke on the cake.
+   * Sandeep, looking at a row of them: *"with brush, always rectangle is impossible. starting point
+   * does not need to be a horizontal line, same with ending, same with the rest of it."*
+   *
+   * ⚠️ SAME MACHINERY AS THE RELEASE, DELIBERATELY. `toTip` is a per-vertex distance that the mesh
+   * turns into a fade; this is the same field measured from the other end, so the landing dissolves
+   * into the cake over the same authored depth (`merge`) rather than needing a second idea of what
+   * a soft edge is. A knife touches down unevenly and the cream catches in patches — that IS a fade
+   * from nothing, not a differently-shaped hard edge.
+   *
+   * ⚠️ TWO SCALES, because one hash per column is white noise and reads as a comb. A slow term says
+   * which part of the blade was carrying cream when it landed, a fast one picks at that edge. */
+  const toHeel = grid.map(row => row.map(() => Infinity));
+  if (heel > 0 && stroke.width > 0) {
+    const reach = heel * stroke.width;
+    /* ⚠️ THE LINE THE LANDING SITS ON IS THIS STROKE'S OWN — see `endForm`. Without it every start
+       was a ragged HORIZONTAL: the noise differed, the line never did, and a row of strokes read as
+       one object repeated. Salt 1 so the landing and the release are not the same gesture mirrored. */
+    const { tilt, bulge } = endForm(seed, 1);
+    for (let j = 0; j < m; j++) {
+      const u = (m > 1 ? j / (m - 1) : 0.5) - 0.5;        // −0.5 … +0.5 across the blade
+      /* ⚠️ THE FORM IS ADDED TO THE NOISE, NOT MIXED WITH IT, and the first cut got that wrong:
+         blending them as `0.62·form + 0.38·noise` with `form` centred on 0.5 squeezed the
+         per-column noise into a third of its span, so the landing came out LESS ragged than before
+         the end shapes existed. Caught by the test that asks whether `heel: 0` is measurably
+         flatter than the default. Both terms get their own full swing instead. */
+      const shape = Math.max(-1, Math.min(1, tilt * u * 2 + bulge * (0.25 - u * u) * 4));
+      const slow = seedFrac(seed * 7 + Math.floor(j / Math.max(2, Math.round(m / 7))), 23);
+      const fast = seedFrac(seed * 7 + j, 11);
+      const grit = 0.65 * slow + 0.35 * fast;            // 0 … 1, this blade's own unevenness
+      const hj = reach * clamp01(0.5 + 0.5 * shape + (grit - 0.5) * 0.9);
+      let d = 0;
+      for (let i = 0; i < grid.length; i++) {
+        if (i > 0) d += Math.hypot(grid[i][j][0] - grid[i - 1][j][0], grid[i][j][1] - grid[i - 1][j][1]);
+        toHeel[i][j] = d - hj;
+      }
+    }
+  }
+  return { grid, toTip, toHeel };
 }
 
 
@@ -443,13 +766,20 @@ function strokeGrid(stroke, m, { seed = 1, breathe = 0, tear = 0, tipRows = 5 } 
  * `place(x, y, h)` is the whole difference: on a wall it wraps round the cylinder, on a lid it lies
  * flat and folds over the rim.
  */
-function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
+function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null, underAt = null }) {
   const m = Math.max(3, p.across | 0);
-  const { grid, toTip } = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe, tear: p.tear,
-                                                 tipRows: p.tipRows });
+  const { grid, toTip, toHeel } = strokeGrid(stroke, m, { seed: p.seed, breathe: p.breathe,
+                                                          tear: p.tear, tipRows: p.tipRows,
+                                                          heel: p.heel });
   const n = grid.length;
   const merge = p.merge * R;        // how deep the dissolve reaches back from each finger's end
+  const heelMerge = Math.max(1e-6, merge * p.heelMerge);   // the landing's own, shorter fade
   const pos = [], idx = [], thick = [];
+  /* ⚠️ WHAT IS UNDER EACH VERTEX, for a sweep that has to MIX rather than cover. A stroke washes to
+     one colour — the wall — so a single `under` was enough; a sweep crossing another must wash to
+     whatever is actually beneath that point, which differs vertex by vertex. Collected here because
+     this is the only place that knows a vertex's position in the surface's own flat space. */
+  const under = underAt ? [] : null;
   /* What lies under each vertex, kept so the rim can be dropped onto it — see the skirt below. */
   const floor = [];
   const maxLift = p.lift * R, skim = (p.skim + Math.max(0, p.layer) * p.layerStep) * R;
@@ -479,7 +809,8 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          where there is no cream to clear. */
       /* The stroke's own profile, as if it had been laid on bare wall. */
       const own = skim + maxLift * load * brushRelief(u, p.ridge, { along, seed: p.seed, skirt: p.skirt })
-                  * brushStriation(u, along, { seed: p.seed, lanes: p.lanes, grain: p.grain });
+                  * brushStriation(u, along, { seed: p.seed, lanes: p.lanes,
+                                               grain: grainFor(p.seed, p.grain, p.grainVary) });
       /* Just clearing the cream already here, and nothing more. */
       const over = bedH + onCream * Math.max(seamMin, bedH * p.seam);
       /* ⚠️ A BLADE LEVELS, IT DOES NOT STACK — the HIGHER of the two, not their sum. Adding the
@@ -572,7 +903,12 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
          for each stroke."* Measured on that band: 16.5% of the mesh's vertices were under 0.4
          saturation, so it was the pigment and not the lighting however much it looked like a shadow.
          Where there is cream beneath, the layer thins into the SAME cream and nothing shows. */
-      const dissolve = smoothstep(0, merge, toTip[i][j]);
+      /* ⚠️ THE NEARER END WINS. A stroke short enough for its landing and its release to meet should
+         fade from both, not be claimed by whichever line is written second — `min` is what makes a
+         stubby mark read as a dab rather than as a rectangle with one soft end. */
+      if (under) { const c = underAt(gx, gy); under.push(c.r, c.g, c.b); }
+      const dissolve = Math.min(smoothstep(0, merge, toTip[i][j]),
+                                smoothstep(0, heelMerge, toHeel[i][j]));
       const cover = side * (dissolve + (1 - dissolve) * onCream);
       thick.push(clamp01(cover));
     }
@@ -632,6 +968,16 @@ function buildStrokeMesh(stroke, p, { R, place, bedAt = null, bedPut = null }) {
      SURFACE (its relief, its colour, its silhouette) wants this bound; the rim is a side wall and
      answers none of those questions. */
   geo.userData.topCount = n * m;
+  /* Carried on the geometry rather than returned beside it, because `paintBrushColors` is handed the
+     geometry alone — by the band, by the lid path and by the wall path, three callers that would
+     otherwise each need a new argument for a thing only a sweep uses. */
+  if (under) geo.userData.under = new Float32Array(under);
+  /* ⚠️ THE CENTRELINE AND HALF-WIDTH, IN THE SURFACE'S OWN FLAT SPACE, so the sweep AFTER this one
+     can ask what it crosses. Taken from the band rather than from the caller's path: the band is
+     what was actually built — already densified, already clamped where a turn was too tight — so a
+     later sweep blends against the shape on the cake rather than the gesture that asked for it. */
+  geo.userData.flatPath = stroke.band.map(([l, r]) => [(l[0] + r[0]) / 2, (l[1] + r[1]) / 2]);
+  geo.userData.flatHalfWidth = stroke.width / 2;
   return geo;
 }
 
@@ -661,6 +1007,56 @@ function pathLength(flat) {
  * mark; it does not leave a wide one. 0.95 rather than 1 so the widest case still reads as a pull
  * rather than as a square.
  */
+/* ── How broad a freshly drawn stroke is ─────────────────────────────────────────────────────────
+ *
+ * ⚠️ NO TWO MARKS A HAND MAKES ARE THE SAME BREADTH, and ours were all exactly `width` until now. A
+ * row of six came out as identical rectangles differing only in their torn top, where every
+ * reference photograph of a brushed cake shows broad slabs beside narrow ones. Sandeep, having
+ * asked for the silhouette first: *"yes pls do the width variation too."*
+ *
+ * ⚠️ IT VARIES AROUND WHAT THE BAKER LAST SET, NOT AROUND A CONSTANT, and that is the whole care in
+ * this function. Width carries over from the previous stroke on purpose — the complaint that put it
+ * there was *"its not keeping the same thickness, its resetting"* — so drawing a fresh width out of
+ * a fixed range would quietly undo that: set a broad knife, draw again, and get the house default
+ * back. Scaling the CARRIED width keeps the baker's choice and still makes the next mark its own.
+ *
+ * ⚠️ AND THE THING IT SCALES IS THE *BASE*, NOT THE LAST MARK. A stroke carries both: `baseWidth` is
+ * the knife, `width` is the breadth that knife happened to leave this time. Feeding the varied
+ * width back in compounds into a random walk — measured, it drifted and stuck: 0.22, 0.27, 0.20,
+ * 0.20, 0.20, 0.20. Dragging the Width dial sets both, because that is a baker choosing a new knife.
+ *
+ * ⚠️ AND IT IS SEEDED, NOT RANDOM. The stroke's own seed decides, so the same cake reopens as the
+ * cake that was made — the rule every other varying thing here follows (`tipFor`, the tear, the
+ * striations). Re-rolling Shuffle gives a new seed and therefore a new breadth, which is the
+ * behaviour a baker expects of that button.
+ */
+export const BRUSH_WIDTH_RANGE = Object.freeze({ min: 0.08, max: 0.9 });
+
+/* ⚠️ A SWEEP NEEDS ITS OWN RANGE, OR IT CANNOT BE ITSELF. A pass is 1.1 × R and a mark's dial stops
+   at 0.9, so a sweep seeded or dialled through the mark's bounds is clamped to narrower than its
+   own default the moment it is created — the one place a shared constant would quietly undo the
+   feature rather than merely annoy. */
+export const SWEEP_WIDTH_RANGE = Object.freeze({ min: 0.35, max: 2.0 });
+
+/* ± this fraction of the carried width. Chosen by rendering six seeds beside the references: at
+   0.15 the row still reads as one repeated rectangle, and at 0.45 the narrow ones stop looking like
+   the same knife. 0.3 gives slabs and strips that plainly came from one hand. */
+export const BRUSH_WIDTH_VARY = 0.3;
+
+export function variedWidth(base, seed, { vary = BRUSH_WIDTH_VARY, range = BRUSH_WIDTH_RANGE } = {}) {
+  const w = Number(base);
+  if (!Number.isFinite(w) || w <= 0) return BRUSH_ON_CAKE_DEFAULTS.width;
+  /* ⚠️ SYMMETRIC ABOUT 1, WHICH IS ONLY HALF OF NOT DRIFTING — and the first cut shipped the other
+     half wrong. Varying the PREVIOUS STROKE'S VARIED width compounds: w₂ = w₁·k₁, w₃ = w₂·k₂, a
+     multiplicative random walk that wanders away from the knife the baker chose and can sit against
+     a clamp. Driving six strokes by hand came back 0.22, 0.27, 0.20, 0.20, 0.20, 0.20 — it varied
+     twice and then collapsed. The caller keeps the BASE width on the stroke (`baseWidth`, the knife)
+     separately from `width` (this mark's breadth) and always measures from the base, so this stays
+     a spread about one value instead of a walk. */
+  const k = 1 + (seedFrac(seed, 7) * 2 - 1) * vary;
+  return Math.min(range.max, Math.max(range.min, +(w * k).toFixed(3)));
+}
+
 export const BRUSH_WIDTH_OF_LENGTH = 0.95;
 export const brushMaxWidth = (len) => Math.max(1e-4, len * BRUSH_WIDTH_OF_LENGTH);
 
@@ -724,13 +1120,29 @@ export function buildBrushStrokeOnWall({ R = 1, baseY = 0, wallH = 1, path = [],
   // `u` is turns-round-the-cake, so it scales by the REAL distance round it — 2πR only when round.
   const flat = densify(path.map(([u, v]) => [u * wall.length, v * wallH]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
+  /* ⚠️ THE RELEASE GETS THIS STROKE'S OWN SHAPE TOO, not just its own noise. `tipTaper` decides how
+     much the middle fingers outrun the corners — so a bulging draw is a ROUNDED end and a negative
+     one is scooped — and `tipTilt` cuts it on the diagonal. Both come from `endForm` (salt 0, the
+     landing takes salt 1), so the two ends of one stroke differ. The authored values stay the
+     centre of the range: a row that tunes `tip_taper` still moves the whole family. */
+  const form = endForm(p.seed, 0);
   const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
-                                     tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
+                                     tipFingers: p.tipFingers,
+                                     tipTaper: p.tipTaper + form.bulge * p.tipTaperVary,
+                                     tipReach: p.tipReach * (1 + form.bulge * 0.35),
+                                     tipTilt: form.tilt * p.tipTiltMax,
+                                     /* ⚠️ THE CUT ITSELF, which is what actually makes an end read
+                                        as diagonal — `tipTilt` only leans the torn fingers, and a
+                                        fifth of a width of fingers cannot slant a line. The landing
+                                        takes its own draw (salt 1) so the two ends disagree. */
+                                     startSlant: endForm(p.seed, 1).tilt * p.endSlantMax,
+                                     endSlant: form.tilt * p.endSlantMax,
                                      tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
   const put = p.bed ? [] : null;
   const geo = buildStrokeMesh(stroke, p, {
+    underAt: sweepUnderAt(p.priors, p.wall, p.blend),
     R,
     // Round the cake and up it: arc length becomes an angle, relief pushes outward.
     /* ⚠️ NOTHING ON A WALL GOES ABOVE THE WALL. `brushGesture` clamps the PATH to 0.97 of the tier,
@@ -820,12 +1232,28 @@ export function buildBrushStrokeOnFlat({ R = 1, y = 0, path = [], shape = null, 
   if (!(R > 0) || (path?.length ?? 0) < 2) return null;
   const flat = densify(path.map(([x, z]) => [x * R, z * R]), p.rows);
   const width = Math.min(p.width * R, brushMaxWidth(pathLength(flat)));
+  /* ⚠️ THE RELEASE GETS THIS STROKE'S OWN SHAPE TOO, not just its own noise. `tipTaper` decides how
+     much the middle fingers outrun the corners — so a bulging draw is a ROUNDED end and a negative
+     one is scooped — and `tipTilt` cuts it on the diagonal. Both come from `endForm` (salt 0, the
+     landing takes salt 1), so the two ends of one stroke differ. The authored values stay the
+     centre of the range: a row that tunes `tip_taper` still moves the whole family. */
+  const form = endForm(p.seed, 0);
   const stroke = brushStroke(flat, { width, seed: p.seed, tipWidth: tipFor(p), frayed: false,
-                                     tipFingers: p.tipFingers, tipTaper: p.tipTaper, tipReach: p.tipReach,
+                                     tipFingers: p.tipFingers,
+                                     tipTaper: p.tipTaper + form.bulge * p.tipTaperVary,
+                                     tipReach: p.tipReach * (1 + form.bulge * 0.35),
+                                     tipTilt: form.tilt * p.tipTiltMax,
+                                     /* ⚠️ THE CUT ITSELF, which is what actually makes an end read
+                                        as diagonal — `tipTilt` only leans the torn fingers, and a
+                                        fifth of a width of fingers cannot slant a line. The landing
+                                        takes its own draw (salt 1) so the two ends disagree. */
+                                     startSlant: endForm(p.seed, 1).tilt * p.endSlantMax,
+                                     endSlant: form.tilt * p.endSlantMax,
                                      tipJitter: p.tipJitter });
   if (!stroke || !stroke.band?.length) return null;
 
   return buildStrokeMesh(stroke, p, {
+    underAt: sweepUnderAt(p.priors, p.wall, p.blend),
     R,
     /* Flat on the lid — and over the rim if the gesture reached it. `drape: false` is the BOARD,
        which has no rim to fall off. */
@@ -998,9 +1426,19 @@ export function paintBrushColors(geo, color, under, { floor = 0, bite = 0.6 } = 
      the same light. Corrected on one end only, a thin stroke would wash toward a surface three times
      brighter than the one it is actually lying on. */
   const a = new THREE.Color(creamAlbedo(color)), b = new THREE.Color(creamAlbedo(under ?? '#ffffff'));
+  /* ⚠️ A SWEEP WASHES TO WHAT IS UNDER IT, WHICH IS NOT ONE COLOUR. A stroke thins toward the wall,
+     so one `under` covers it; a sweep crossing another thins toward THAT sweep where it crosses and
+     toward the wall where it does not. `geo.userData.under` is the per-vertex answer, laid down by
+     the mesh builder which is the only thing that knows where each vertex is on the surface. Absent
+     — every stroke ever drawn — and this is the single colour it has always been. */
+  const perVertex = geo.userData?.under;
+  const bv = new THREE.Color();
   const mix = new THREE.Color();
   const out = new Float32Array(t.count * 3);
   for (let v = 0; v < t.count; v++) {
+    const bHere = perVertex && perVertex.length >= (v + 1) * 3
+      ? bv.setRGB(perVertex[v * 3], perVertex[v * 3 + 1], perVertex[v * 3 + 2])
+      : b;
     /* Even the thinnest film carries some pigment — `floor` is how much, so a dry edge reads as a
        wash rather than as a hole in the stroke. `bite` below 1 because pigment stacks FAST: the
        first scrape of cream hides most of what is under it and the tenth adds almost nothing, so a
@@ -1013,7 +1451,7 @@ export function paintBrushColors(geo, color, under, { floor = 0, bite = 0.6 } = 
        all of its colour over its top third. At 0.9 the tip holds. Not 1: a knife really does run
        out, and the last film of cream really does let a little of the wall through. */
     const k = floor + (1 - floor) * Math.pow(clamp01(t.getX(v)), bite);
-    mix.copy(b).lerp(a, k);
+    mix.copy(bHere).lerp(a, k);
     out[v * 3] = mix.r; out[v * 3 + 1] = mix.g; out[v * 3 + 2] = mix.b;
   }
   geo.setAttribute('color', new THREE.BufferAttribute(out, 3));

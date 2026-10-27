@@ -34,7 +34,7 @@ const lerp = (a, b, t) => a + (b - a) * t;
  * new number. `rnd()` is walked once per finger here and again by `ridgesAlong` below; changing the
  * count for everyone would shift every draw after it and silently reshape every saved chocolate
  * garnish. Defaulted, nothing moves. */
-function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42, jitter = 0, seed = 1) {
+function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42, jitter = 0, seed = 1, tilt = 0) {
   const n = Math.max(3, Math.round(fingers));
   /* ⚠️ THE FINGERS ARE NOT EVENLY SPACED EITHER, and only varying their LENGTH leaves a saw: equal
      pitch reads as a machined edge however random the heights are, which is the same corduroy trap
@@ -56,7 +56,12 @@ function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42,
   for (let i = 1; i < n; i++) {
     const t = Math.min(0.995, Math.max(0.005, pitch(i)));
     const mid = 1 - Math.abs(t - 0.5) * taper;        // longest near the middle, if asked
-    const grab = Math.max(0, mid) * lerp(0.25, 1, rnd()) * reach;
+    /* ⚠️ AND A RELEASE IS NOT ALWAYS SQUARE TO THE TRAVEL. A knife lifted while still moving sideways
+       leaves an end cut on the diagonal; `tilt` ramps the reach from one side of the blade to the
+       other, so one corner runs on and the other stops short. 0 is the old square release, which is
+       what every caller that does not ask for this still gets. */
+    const lean = 1 + tilt * (t - 0.5) * 2;
+    const grab = Math.max(0, mid) * Math.max(0, lean) * lerp(0.25, 1, rnd()) * reach;
     out.push([lerp(l[0], r[0], t) + ux * grab, lerp(l[1], r[1], t) + uy * grab]);
   }
   return out;
@@ -65,6 +70,8 @@ function tipJag(pts, l, r, width, rnd, fingers = 7, taper = 1.6, reachOf = 0.42,
 /* Deterministic wobble. A brushstroke's edge tears rather than curving cleanly, but the same drawing
  * must come back the same on every render and after a save — `Math.random()` here would make a piece
  * that changed shape each time the cake was opened. */
+const smooth01 = (x) => { const t = Math.max(0, Math.min(1, x)); return t * t * (3 - 2 * t); };
+
 function noise(seed) {
   let s = seed * 9301 + 49297;
   return () => { s = (s * 9301 + 49297) % 233280; return s / 233280; };
@@ -77,7 +84,8 @@ function noise(seed) {
  * Returns `{ outline, ridges }` — a closed polygon and the polylines running along it.
  */
 export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade = false, round = false,
-                                    tipWidth, tipFingers, tipTaper, tipReach, tipJitter } = {}) {
+                                    tipWidth, tipFingers, tipTaper, tipReach, tipJitter, tipTilt,
+                                    startSlant = 0, endSlant = 0 } = {}) {
   let pts = (path ?? []).filter(p => Array.isArray(p) && p.length === 2);
   if (pts.length < 2) return null;
 
@@ -112,6 +120,17 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
   const jitter = frayed ? Array.from({ length: pts.length }, () => rnd()) : null;
   const tear = frayed ? Array.from({ length: pts.length }, () => rnd()) : null;
 
+  /* How far this cross-section's two corners are pushed apart ALONG the travel, as a fraction of
+     the width — 0 through the body, ramping to the authored slant at each end. A stroke is cut on
+     the diagonal at its start, its finish, both or neither; `closed` rings are never cut at all. */
+  const slantSpan = 0.22;
+  const slantAt = (t) => {
+    if (closed) return 0;
+    if (t > 1 - slantSpan && endSlant) return endSlant * smooth01((t - (1 - slantSpan)) / slantSpan);
+    if (t < slantSpan && startSlant)   return startSlant * smooth01((slantSpan - t) / slantSpan);
+    return 0;
+  };
+
   const left = [], right = [];
   for (let i = 0; i < pts.length; i++) {
     const t = seg[i] / total;
@@ -128,6 +147,7 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
     const dx = b[0] - a[0], dy = b[1] - a[1];
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len, ny = dx / len;
+    const ux = dx / len, uy = dy / len;        // the way the hand was going, for the slanted ends
 
     /* ⚠️ A TIGHT TURN FOLDS THE INSIDE EDGE THROUGH ITSELF, and that is why a looping stroke
        VANISHED. Offsetting a curve by more than its radius of curvature sends the inner edge past
@@ -148,8 +168,18 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
     const fast = tear ? tear[i] : 0.5;
     const bite = fast > 0.62 ? lerp(0.62, 0.92, fast) : lerp(0.94, 1.03, fast);
     const wr = w * (tear ? bite * lerp(0.9, 1.03, slow) : 1);
-    left.push([pts[i][0] + nx * wl, pts[i][1] + ny * wl]);
-    right.push([pts[i][0] - nx * wr, pts[i][1] - ny * wr]);
+    /* ⚠️ A SLANTED END IS A SLANTED CROSS-SECTION, NOT A ROUGHER ONE. Every attempt before this
+       roughened a line that was still square to the travel — torn fingers reaching a fifth of a
+       width past the end, a per-column fade at the landing — and forced to their extremes they
+       STILL came out horizontal, because none of them moves the line the end sits on. Sandeep,
+       after three rounds of it: *"we have horizontal ends only. this is like simply wasting tim."*
+       He was right, and the probe that settled it took one render.
+       Pushing one corner of the cross-section FORWARD along the travel and the other BACK is a
+       genuine diagonal cut. Ramped over the last few sections (`slantAt`) so the long edges bend
+       into it instead of kinking at the final quad. */
+    const sL = slantAt(t) * width, sR = -sL;
+    left.push([pts[i][0] + nx * wl + ux * sL, pts[i][1] + ny * wl + uy * sL]);
+    right.push([pts[i][0] - nx * wr + ux * sR, pts[i][1] - ny * wr + uy * sR]);
   }
 
   /* ⚠️ THE END OF A PULL IS RAGGED, NOT A STRAIGHT CUT. Left and right are joined by a single
@@ -161,7 +191,7 @@ export function brushStroke(path, { width = 60, seed = 1, frayed = true, blade =
    * by varying amounts, deepest near the middle where the chocolate holds on longest. It is the same
    * seeded noise as the torn edge, so the same drawing comes back the same. */
   const tip = closed ? [] : tipJag(pts, left[left.length - 1], right[right.length - 1], width, rnd,
-                                   tipFingers, tipTaper, tipReach, tipJitter, seed);
+                                   tipFingers, tipTaper, tipReach, tipJitter, seed, tipTilt);
 
   const outline = [...left, ...tip, ...right.slice().reverse()];
   outline.push([...outline[0]]);

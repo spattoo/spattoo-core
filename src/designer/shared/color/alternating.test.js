@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import * as THREE from 'three';
+import { hasMaterialPatch } from './materialPatch.js';
 import {
   ALTERNATE_MODE, isAlternating, alternateStops, alternateColorAt,
   isGradientActive, GRADIENT_MODES, applyGradient,
@@ -71,14 +72,16 @@ describe('alternating piping colours', () => {
       size: new THREE.Vector3(2, 2, 2),
       center: new THREE.Vector3(0, 1, 0),
     };
+    /* Asked of the ONE owner of a material's shader patches rather than of a private flag —
+       see materialPatch.js for why the three treatments stopped keeping their own bookkeeping. */
     const mat = new THREE.MeshPhysicalMaterial();
     applyGradient(mat, alt(RED, BLUE), bbox);
-    expect(mat.userData.__gradOn).toBeFalsy();
+    expect(hasMaterialPatch(mat, 'gradient')).toBe(false);
 
     // …while a sweep on the same material still does.
     const sweep = new THREE.MeshPhysicalMaterial();
     applyGradient(sweep, { mode: 'vertical', colors: [RED, BLUE] }, bbox);
-    expect(sweep.userData.__gradOn).toBe(true);
+    expect(hasMaterialPatch(sweep, 'gradient')).toBe(true);
   });
 
   /* ⚠️ THE GUARD THAT MATTERS MOST. 'alternate' must never reach MODE_INDEX, where an unknown mode

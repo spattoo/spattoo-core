@@ -509,9 +509,35 @@ export function rectSidePlacement(shape, u, off = 0) {
  */
 const _wallSamples = new Map();
 
+/* ── Telling one outline from another ────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE KEY USED TO COUNT THE POINTS, WHICH IS NOT THE SAME AS IDENTIFYING THEM. An `outline`
+ * shape carried `outline?.length` into the cache key and nothing else — so ANY two outlines with
+ * the same number of points shared one perimeter. A region ring is a 44-gon whatever its size,
+ * position or rotation, so two different drifts on one cake collided by construction, and the
+ * second silently got the first one's wall: its sand measured from the wrong edge.
+ *
+ * It surfaced as a test that failed about one run in three — `region.test.js`'s "never lets a
+ * region carry sand off the edge of the cake" — and passed every time it was run alone, because
+ * alone there was nothing in the cache to collide with. A cache keyed on a property that does not
+ * identify its value is an intermittent bug by construction.
+ *
+ * Identity, not a hash: the outline ARRAY is the thing, and a WeakMap lets a discarded ring take
+ * its entry with it. Hashing the coordinates would cost a walk of every point on every call, which
+ * is the walk this cache exists to avoid.
+ */
+const _outlineIds = new WeakMap();
+let _nextOutlineId = 0;
+function outlineKey(outline) {
+  if (!Array.isArray(outline)) return '';
+  let id = _outlineIds.get(outline);
+  if (id === undefined) { id = ++_nextOutlineId; _outlineIds.set(outline, id); }
+  return `${id}:${outline.length}`;
+}
+
 export function wallSamples(shape, n = 256) {
   if (!shape) return null;
-  const key = `${shape.kind}|${shape.radius ?? ''}|${shape.halfW ?? ''}|${shape.halfD ?? ''}|${shape.cornerR ?? ''}|${shape.outline?.length ?? 0}|${n}`;
+  const key = `${shape.kind}|${shape.radius ?? ''}|${shape.halfW ?? ''}|${shape.halfD ?? ''}|${shape.cornerR ?? ''}|${outlineKey(shape.outline)}|${n}`;
   const hit = _wallSamples.get(key);
   if (hit) return hit;
   const per = perimeter(shape);

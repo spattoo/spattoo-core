@@ -113,6 +113,14 @@ describe('wobbleAmplitude', () => {
 describe('applyStripes', () => {
   // Duck-typed stand-in: the module only ever touches these fields.
   const fakeMat = () => ({ userData: {}, needsUpdate: false, onBeforeCompile: undefined });
+  /* Compile the material the way three does, and report what actually reached the shader. */
+  const injected = (m) => {
+    const shader = { uniforms: {},
+      vertexShader: '#include <common>\n#include <begin_vertex>',
+      fragmentShader: '#include <common>\n#include <color_fragment>' };
+    m.onBeforeCompile?.(shader, {});
+    return { stripes: 'uSColors' in shader.uniforms };
+  };
   const bbox = { min: { clone: () => ({ x: 0, y: 0, z: 0 }) },
                  size: { clone: () => ({ x: 2, y: 1.45, z: 2 }) },
                  center: { clone: () => ({ x: 0, y: 0.7, z: 0 }) } };
@@ -126,15 +134,20 @@ describe('applyStripes', () => {
   });
 
   it('UNPATCHES cleanly when the stripes are removed', () => {
-    // A stale onBeforeCompile keeps injecting long after the stripes are gone, and the wall stays
-    // striped with nothing in the design to explain it.
+    // A stale injection keeps striping the wall long after the stripes are gone, with nothing in
+    // the design to explain it.
+    /* ⚠️ IT NO LONGER PUTS BACK A SAVED `onBeforeCompile`, AND THAT IS THE FIX, NOT A REGRESSION.
+       Restoring the handler it found on the way in is a CLOBBER: TierBody applies the gradient
+       first and the stripes second, so a striped cake followed by a gradient cake put back the
+       pre-gradient handler over a gradient installed moments earlier in the same frame. The field
+       has one owner now (materialPatch.js) and this deregisters its own slot — so what has to be
+       true is that the STRIPE SNIPPET is gone, not that some particular function came back. */
     const m = fakeMat();
-    const original = () => {};
-    m.onBeforeCompile = original;
     applyStripes(m, { palette: ['#fff', '#0f0'], count: 6 }, bbox);
+    expect(injected(m).stripes, 'striped to begin with').toBe(true);
     applyStripes(m, null, bbox);
     expect(m.userData.__stripesPatched).toBe(false);
-    expect(m.onBeforeCompile).toBe(original);
+    expect(injected(m).stripes, 'nothing stripes the wall once they are removed').toBe(false);
   });
 
   it('does nothing without a bbox — the shader needs to know where the wall starts', () => {

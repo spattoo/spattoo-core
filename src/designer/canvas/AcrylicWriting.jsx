@@ -176,7 +176,12 @@ export default function AcrylicWriting({
                  medium={writing.style === 'fondant' ? 'fondant' : 'acrylic'} color={writing.color}
                  /* The arch the letters follow. AcrylicWord ignores it on acrylic by design — a
                     perspex topper is one cut piece and cannot follow a curve. */
-                 arc={host ? { radius: host.radius } : null}
+                 /* ⚠️ A RADIUS, NOT MERELY A HOST. `host ? {radius: host.radius} : null` was true
+                    the day an arch was the only host there was; a plaque has no radius, so it
+                    handed down `{ radius: undefined }` — an object, therefore truthy, therefore a
+                    curve with a NaN radius rather than a straight line. The question is whether
+                    this host BENDS, and only a radius answers it. */
+                 arc={host?.radius > 0 ? { radius: host.radius } : null}
                  pose={pose} span={maxW} mount={{}} onRise={setRise} />
   );
 
@@ -185,16 +190,37 @@ export default function AcrylicWriting({
      the letters on a circle centred at `(0, -radius)`, the same convention `warpArc` leaves cream
      in, so switching Look between Piped cream and Fondant moves nothing but the material. */
   if (surface === 'host' && host) {
-    const face = host.face + (cfg.thickness ?? 0.063) * 0.5 + 0.002;
+    /* ⚠️ THE LIFT IS ALONG THE HOST'S OWN NORMAL, which is the whole of what a second host shape
+       needed. This read `position={[centerX, centerY + radius, face]}` with no rotation — correct,
+       and silently arch-only: an arch stands upright facing the viewer, so "off the host" and "+Z"
+       were the same direction and nothing had to say which was meant. A plaque lies face-UP, so
+       the letters have to come off it along +Y instead, or they stand on edge in the icing.
+       The provider now hands back `position` and `rotation`; the lift is applied in the group's
+       LOCAL +Z, which the rotation points at the host's face. For the arch the rotation is
+       identity, so this computes exactly the number it used to — see textPath.js, where the
+       transform is derived from the same fields the twenty arch tests still pin. */
+    const lift = (cfg.thickness ?? 0.063) * 0.5 + 0.002;
+    /* An arch's letters ride a circle centred at `(0, -radius)`, so its box hangs below the group
+       origin; a flat line sits on it. `offset` is the plaque's own seat along its face. */
+    const boxY = host.radius > 0 ? -host.radius + host.maxH / 2 : 0;
+    /* ⚠️ A FLAT HOST HAS TO CENTRE THE WORD ITSELF; AN ARCH ALREADY DID. `arcLetter` leaves an
+       arched line on a circle centred at `(0, -radius)`, so the group origin IS the centre and
+       `y: 0` lands it right. With no arc the word sits on its baseline at y = 0 and grows upward,
+       which on a face-up plaque pushed the name off the disc towards the viewer — visible in the
+       first render as a gold mark lying on the icing in front of it. Half a cap height down puts
+       the letters' own middle on the disc's middle; `offset` is the row's seat along the face. */
+    const wordY = host.radius > 0 ? 0 : -(host.capH ?? 0) * 0.5 + (host.offset ?? 0);
     return (
-      <group position={[host.centerX, host.centerY + host.radius, face]}>
-        {React.cloneElement(word, { mount: { x: 0, z: 0, y: 0, yaw: 0 } })}
-        {/* The same invisible grab plane the wall branches use, sized to the host's own box so a
-            tap anywhere across the arched line opens its card. */}
-        <mesh position={[0, -host.radius + host.maxH / 2, 0.02]} {...grabProps}>
-          <planeGeometry args={[host.maxW, host.maxH]} />
-          <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
-        </mesh>
+      <group position={host.position} rotation={host.rotation}>
+        <group position={[0, 0, lift]}>
+          {React.cloneElement(word, { mount: { x: 0, z: 0, y: wordY, yaw: 0 } })}
+          {/* The same invisible grab plane the wall branches use, sized to the host's own box so a
+              tap anywhere across the line opens its card. */}
+          <mesh position={[0, host.radius > 0 ? boxY : wordY, 0.02]} {...grabProps}>
+            <planeGeometry args={[host.maxW, host.maxH]} />
+            <meshBasicMaterial transparent opacity={0} depthWrite={false} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
       </group>
     );
   }

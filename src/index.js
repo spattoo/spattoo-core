@@ -67,6 +67,11 @@ export { parseNotificationLink, withoutLinkParams } from './notifications/notifi
 export { default as PlanCards } from './billing/PlanCards.jsx';
 export { periodPrice, formatPlanPrice, PERIOD_SUFFIX } from './billing/planPricing.js';
 export { default as AuthGate } from './auth/AuthGate.jsx';
+// The assistant — a floating help button and the panel behind it. Exported for a host that mounts
+// its own shell rather than CakeDesigner (admin, and any future customer surface); the baker app
+// gets it for free because CakeDesigner mounts it.
+export { default as HelpAssistant } from './shared/HelpAssistant.jsx';
+export { default as HelpMarkdown } from './shared/helpMarkdown.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
 // The cake's DEFAULT dimensions — the sizes core actually ships. Exported so a studio can start from
@@ -178,6 +183,7 @@ export { ELEMENT_WIRE_DEFAULTS, WIRE_ANGLE, WIRE_LENGTH, WIRE_BEND, WIRE_WAVES, 
 // the designer (CakeTier) renders (no duplicated drip maths).
 export { buildBrushStrokeOnWall, buildBrushStrokeOnFlat, brushRelief, brushLoad, brushStriation,
          strokeFacesOutward, wallCoordsOf, grabOffset, dragStrokeTo, brushGestureFromDrag, brushTopPath, brushTopFromDrag, paintBrushColors,
+         SWEEP_DEFAULTS, SWEEP_WIDTH_RANGE, pathCoverage, sweptUnder, sweepUnderAt,
          brushGesture, BRUSH_GESTURE_DEFAULTS, makeBrushBed,
          buildBrushBand, brushBandCount, BRUSH_BAND_DEFAULTS, brushBandRings,
          BRUSH_ON_CAKE_DEFAULTS } from './designer/geometry/brushStrokeOnCake.js';
@@ -194,6 +200,18 @@ export { buildDripGeometry, buildDripWeb, DRIP_DEFAULTS, DRIP_WEB_OVERLAP, dripC
 // tuft across thousands of seats, so the admin studio tunes the tuft and previews the field.
 export { buildGrassTuft, grassSeats, grassTriangleCount, GRASS_DEFAULTS } from './designer/geometry/grass.js';
 export { default as GrassPatch } from './designer/canvas/GrassPatch.jsx';
+// Sand on the board — the beach drift. Exported for the admin studio the same way grass is: the
+// studio tunes the generator the designer renders from, never a copy of it (CLAUDE.md, "THE STUDIO
+// IMPORTS THE GEOMETRY, IT DOES NOT CARRY A COPY OF IT").
+export { buildSandGrain, buildSandMound, sandSpan, thinOutward, varyGrainSize, sandTriangleCount,
+         sandHeightAt, sandMoundOpts, SAND_MOUND_SEED,
+         ZONES_TOP, ZONES_BOARD, SAND_DEFAULTS, SAND_COLORS,
+         SAND_PLACEMENTS, sandPlacement } from './designer/geometry/sand.js';
+export { default as SandBed } from './designer/canvas/SandBed.jsx';
+/* A chosen AREA on the surface — deliberately its own module and its own export, because the next
+   thing poured into one is cream, not sand (region.js, "THIS IS NOT A SAND FEATURE"). */
+export { REGION_KINDS, REGION_DEFAULTS, regionRing, ringBounds, ringDepth, ringInradius, shapeExtent,
+         regionSeatShape } from './designer/geometry/region.js';
 
 /* ── The pen's own stamp renderer, so a studio can calibrate the WALL ─────────────────────────────
  *

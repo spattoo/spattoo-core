@@ -38,7 +38,7 @@ describe('one renderer for the cake (INVARIANTS #2)', () => {
 
   it('the capture has no element renderers of its own to fall behind with', () => {
     const capture = bodyOf('CakeThumbnailScene');
-    for (const own of ['<CakeTier', '<StickerFace', '<GrassPatch', '<NameBlocks', '<CreamWriting', '<AgeNumber']) {
+    for (const own of ['<CakeTier', '<StickerFace', '<GrassPatch', '<SandBed', '<NameBlocks', '<CreamWriting', '<AgeNumber']) {
       expect(capture, `${own} belongs in CakeContent, not in a second copy of the scene`).not.toContain(own);
     }
   });
@@ -290,5 +290,47 @@ describe('a decoration ring is seated on its own origin, whatever its tilt', () 
 
   it('still seats the shell on that figure', () => {
     expect(body).toMatch(/position=\{\[u\.pos\[0\], u\.pos\[1\] - seatMinY \* shellScale/);
+  });
+});
+
+/* ── A tier's footprint is not something to spread over ──────────────────────────────────────────
+ *
+ * ⚠️ THIS SHIPPED. `<SandBed shape={tierShape(tier)} … {...tier.sand} />` — and `tier.sand.shape`
+ * is the AREA the baker chose (round/rect/triangle), not the cake's outline. The spread came last,
+ * so the renderer was handed the string 'rect' where a shape object belongs: `surfaceDepth` went
+ * NaN, nothing counted as inside the drift, and `buildSandMound` returned ZERO triangles. The card
+ * opened, every control worked, the state saved — and the cake stayed bare. Sandeep: *"nothing is
+ * getting added to the cake."*
+ *
+ * The collision was written down in two comments BEFORE it was written into the code. That is the
+ * whole argument for a test: a note explaining a trap does not stop anyone walking into it.
+ *
+ * ⚠️ SCOPED TO SAND, AND HERE IS WHAT THAT LEAVES. `GrassPatch` and `GypCloud` spread `tier.grass`
+ * and `tier.gyp` after their own `shape=` in exactly the same way — five more sites. They work
+ * today only because neither of those state objects happens to carry a `shape` key, so the landmine
+ * is there and unexploded. They are left alone deliberately: reordering a working renderer in
+ * another feature's path is a change I cannot verify by looking, and the day either object gains a
+ * `shape` this comment is the thing to come back to.
+ */
+describe('a renderer is handed the tier footprint, not sand state that shadows it', () => {
+  /* ⚠️ THERE ARE TWO OF THEM NOW — the tier's drift and the board's. This matched only the FIRST
+     `<SandBed>` in the file and asserted it used `tierShape(`; adding the board one above it turned
+     a guard about spreads into a failure about a shape, which is the test being specific about the
+     wrong thing. Both sites are checked, and each is asked the question that applies to it. */
+  it('passes every SandBed explicit props and never a spread', () => {
+    const els = [...SOURCE.matchAll(/<SandBed\b[\s\S]*?\/>/g)].map(m => m[0]);
+    expect(els.length, 'CakeCanvas should render a <SandBed>').toBeGreaterThan(0);
+    for (const el of els) {
+      /* Any spread at all: the sand object and SandBed share `shape`, `size`, `seed` and `colour`,
+         so there is no safe ordering to remember — only an explicit list. */
+      expect(el, 'no spread into SandBed').not.toMatch(/\{\s*\.\.\./);
+      expect(el, 'shape must be passed explicitly').toMatch(/shape=\{/);
+    }
+    // The tier's drift is clipped to that tier's footprint…
+    expect(els.some(e => /shape=\{tierShape\(/.test(e)), 'a tier drift uses tierShape').toBe(true);
+    /* …and the board's goes AROUND the cake, so it is handed the cake's own footprint and SandBed
+       grows the ring itself. Handing it the board's disc would ring the board's edge instead. */
+    expect(els.some(e => /zone=\{ZONES_BOARD\}/.test(e) && /shape=\{bottomShp\}/.test(e)),
+      'the board drift is built from the cake footprint').toBe(true);
   });
 });

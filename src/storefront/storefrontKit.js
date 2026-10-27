@@ -181,15 +181,67 @@ export const STOREFRONT_TEXT = {
 // and the cormorant theme silently rendered in a system font (SEC-WEB-7 follow-up, fixed
 // 2026-07-25). Before ADDING a theme with a new family, load that family in the host apps
 // first (and the check-fonts gate forbids re-adding a font CDN to do it).
+/* ── The faces a bakery's NAME can be set in ─────────────────────────────────────────────────────
+ *
+ * The name is a baker's wordmark when they have no logo, and it sits beside the mark when they do —
+ * so it is the one piece of type in the app that is THEIRS, and it was hardcoded to Pacifico in two
+ * places. Sandeep: *"there is no option for users to change the font of the bakery name"*, and then,
+ * once the header stopped hiding the name behind a logo: *"if the baker does not want to upload
+ * logo, then for name, he would still need a font change"*.
+ *
+ * ⚠️ EVERY FACE HERE IS ALREADY SELF-HOSTED BY THE BAKER APP, and that is the whole reason this is
+ * a short list rather than a font picker. `apps/app/app/layout.tsx` instantiates Quicksand,
+ * Montserrat, Pacifico, Cormorant Garamond, Parisienne, Lora and Shantell Sans with next/font and
+ * puts their variables on <html>, so these resolve by their real family names at no extra download,
+ * no CSP entry and no third party seeing the request (SEC-WEB-7). Adding an eighth is not a change
+ * here — it is a change in the host app first, and then here.
+ *
+ * ⚠️ IT IS ALSO WHY THE LIST IS NOT "every Google font": a face nobody loaded renders as a system
+ * fallback and looks like a bug rather than a choice. FONT_THEMES made exactly that mistake once —
+ * its comment claimed the hosts loaded these and none did, so even the default theme rendered in a
+ * fallback until SEC-WEB-7 fixed it. */
+export const BRAND_FONTS = {
+  pacifico:  { key: 'pacifico',  label: 'Flowing script', css: "'Pacifico', cursive" },
+  parisienne:{ key: 'parisienne',label: 'Fine script',    css: "'Parisienne', cursive" },
+  shantell:  { key: 'shantell',  label: 'Handwritten',    css: "'Shantell Sans', 'Comic Sans MS', cursive" },
+  cormorant: { key: 'cormorant', label: 'Classic serif',  css: "'Cormorant Garamond', Georgia, serif" },
+  lora:      { key: 'lora',      label: 'Bookish serif',  css: "'Lora', Georgia, serif" },
+  montserrat:{ key: 'montserrat',label: 'Modern sans',    css: "'Montserrat', system-ui, sans-serif" },
+  quicksand: { key: 'quicksand', label: 'Soft & round',   css: "'Quicksand', system-ui, sans-serif" },
+};
+
+/** The face a name falls back to — the one every font theme already named, so nothing a baker has
+ *  published changes appearance the day this ships. */
+export const DEFAULT_BRAND_FONT = 'pacifico';
+
+/** A baker's chosen face, as a CSS stack. Unknown or absent → the default, so a row written by an
+ *  older client renders exactly as it did. ONE reader for the app header, the settings preview and
+ *  the storefront, so three surfaces cannot disagree about one stored key. */
+export function brandFontCss(baker) {
+  const key = baker?.storefront_customizations?.brand_font;
+  return (BRAND_FONTS[key] ?? BRAND_FONTS[DEFAULT_BRAND_FONT]).css;
+}
+
+export function brandFontKey(baker) {
+  const key = baker?.storefront_customizations?.brand_font;
+  return BRAND_FONTS[key] ? key : DEFAULT_BRAND_FONT;
+}
+
 export const FONT_THEMES = {
-  montserrat: { key: 'montserrat', label: 'Modern',       brandFont: "'Pacifico', cursive", serif: "'Montserrat', system-ui, sans-serif",      font: "'Montserrat', system-ui, sans-serif" },
-  cormorant:  { key: 'cormorant',  label: 'Classic serif', brandFont: "'Pacifico', cursive", serif: "'Cormorant Garamond', Georgia, serif",     font: "'Montserrat', system-ui, sans-serif" },
-  quicksand:  { key: 'quicksand',  label: 'Soft & round',  brandFont: "'Pacifico', cursive", serif: "'Quicksand', system-ui, sans-serif",       font: "'Quicksand', system-ui, sans-serif" },
+  // ⚠️ `brandFont` is the DEFAULT for a theme, not a fixture: a baker's own choice overrides it via
+  // applyFontTheme's third argument. All three named Pacifico and nothing could change it, so the
+  // token existed and the lever behind it did not.
+  montserrat: { key: 'montserrat', label: 'Modern',       brandFont: BRAND_FONTS.pacifico.css, serif: "'Montserrat', system-ui, sans-serif",      font: "'Montserrat', system-ui, sans-serif" },
+  cormorant:  { key: 'cormorant',  label: 'Classic serif', brandFont: BRAND_FONTS.pacifico.css, serif: "'Cormorant Garamond', Georgia, serif",     font: "'Montserrat', system-ui, sans-serif" },
+  quicksand:  { key: 'quicksand',  label: 'Soft & round',  brandFont: BRAND_FONTS.pacifico.css, serif: "'Quicksand', system-ui, sans-serif",       font: "'Quicksand', system-ui, sans-serif" },
 };
 // Overlay a chosen font theme onto template tokens (returns tokens unchanged if none/unknown).
-export function applyFontTheme(tokens, fontKey) {
+export function applyFontTheme(tokens, fontKey, baker = null) {
   const ft = fontKey && FONT_THEMES[fontKey];
-  return ft ? { ...tokens, font: ft.font, serif: ft.serif, brandFont: ft.brandFont } : tokens;
+  const base = ft ? { ...tokens, font: ft.font, serif: ft.serif, brandFont: ft.brandFont } : tokens;
+  // The baker's own wordmark face wins over the theme's default, and only when they have chosen one
+  // — passing no baker leaves every existing call behaving exactly as it did.
+  return baker ? { ...base, brandFont: brandFontCss(baker) } : base;
 }
 
 // ── Sections ────────────────────────────────────────────────────────────────────

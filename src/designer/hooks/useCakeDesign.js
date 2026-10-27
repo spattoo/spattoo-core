@@ -182,6 +182,7 @@ export function toCanvasConfig(design) {
         styleParams:  t.styleParams ?? null,   // the style's per-tier param overrides (Depth/Waviness…) — was dropped here, so the controls did nothing
         dusting:      t.dusting ?? null,        // luster-dust splashes + appearance (per-tier wall treatment)
         grass:        t.grass ?? null,          // piped grass on the top surface (per-tier surface treatment)
+        sand:         t.sand ?? null,           // a drift of crushed-biscuit sand on the top surface
         /* ⚠️ A TIER IS REBUILT FROM THIS LIST, so a field missing here simply never reaches the
            canvas — the state is right, the card is right, and nothing draws. The coat lost a day to
            it and the gypsophila rim ring lost an hour: the board ring rendered (it is a design-level
@@ -216,6 +217,7 @@ export function toCanvasConfig(design) {
     writings: normalizeWritings(design),
     boardGrass: design.boardGrass ?? null,   // piped grass ringing the cake on the board
     boardGyp: design.boardGyp ?? null,       // gypsophila ringing the foot of the cake
+    boardSand: design.boardSand ?? null,     // a sand drift on the board, around the cake
     nameBlocks: design.nameBlocks ?? null,   // fondant letter blocks spelling a name
     piping:   design.piping ?? [],
     garnishes: design.garnishes ?? [],
@@ -403,6 +405,7 @@ export function normalizeDesign(templateDesign, storageBaseUrl = '') {
     // missing here, so a template carrying them loaded as a bare cake (see designSnapshot.test.js).
     boardGrass: templateDesign.boardGrass ?? null,
     boardGyp: templateDesign.boardGyp ?? null,
+    boardSand: templateDesign.boardSand ?? null,
     nameBlocks: templateDesign.nameBlocks ?? null,
   };
 }
@@ -758,6 +761,32 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     }));
   }
 
+  // ── A drift of sand on a tier's top ─────────────────────────────────────────
+  // The same shape as grass above, and for the same reason: one small object the canvas instances,
+  // never thousands of individually selectable rows. Absent/null = no sand, so every existing
+  // design is unchanged and the field costs nothing until a baker asks for it.
+  //
+  // ⚠️ THE AREA LIVES HERE, NOT BESIDE IT. `shape` and `size` say which patch of the top the sand
+  // covers; `region.js` turns the pair into a ring. Keeping them on the sand object means a saved
+  // design carries the area it was drawn with, rather than depending on a default that may move.
+  function setTierSand(index, sand) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => i === index ? { ...t, sand } : t),
+    }));
+  }
+
+  // `changes` may be a function of the current object — the contract the grass setters use, so two
+  // quick presses do not both read the value this component last rendered.
+  function updateSand(index, changes) {
+    setDesign(prev => ({
+      ...prev,
+      tiers: prev.tiers.map((t, i) => (i === index && t.sand)
+        ? { ...t, sand: { ...t.sand, ...(typeof changes === 'function' ? changes(t.sand) : changes) } }
+        : t),
+    }));
+  }
+
   // ── Fondant rainbows ────────────────────────────────────────────────────────
   // A LIST on the tier, not one object and not a design-level field.
   //
@@ -914,6 +943,25 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
   }
 
   function setBoardGyp(gyp) { setDesign(prev => ({ ...prev, boardGyp: gyp })); }
+
+  /* ── Sand on the BOARD ─────────────────────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE GEOMETRY COULD ALWAYS DO THIS; THE INTEGRATION COULD NOT. `SandBed` takes a `zone` and
+   * DEFAULTS it to 'board' — `sandSpan` is the only thing that knows how a board drift differs from
+   * a top one — and admin's element row has both zones ticked. Core simply never offered the board:
+   * `addSand` put the drift on the top tier and the card's picker listed tiers only. Sandeep: *"user
+   * should be able to add sand to board also. this is already done in admin. but i think missed
+   * during the integration."*
+   *
+   * A board drift is its own field rather than a tier's, exactly like `boardGrass` and `boardGyp`:
+   * the board is not a tier, and pretending it is one is what `BOARD_TIER` exists to avoid. */
+  function setBoardSand(sand) { setDesign(prev => ({ ...prev, boardSand: sand })); }
+
+  function updateBoardSand(changes) {
+    setDesign(prev => (prev.boardSand
+      ? { ...prev, boardSand: { ...prev.boardSand, ...(typeof changes === 'function' ? changes(prev.boardSand) : changes) } }
+      : prev));
+  }
 
   function updateBoardGyp(changes) {
     setDesign(prev => (prev.boardGyp
@@ -1386,6 +1434,13 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
           // types. The value is composited into the texture at design time, so it is never an asset —
           // the same element serves "2", "47" and "Amara". Absent → renders as a plain decal.
           textSlots:      element.placement_config?.text_slots ?? null,
+          /* ⚠️ WHERE A MESSAGE MAY BE WRITTEN ON THIS PIECE, copied from the row at add time for the
+             same reason the rainbow copies it: the canvas resolves a hosted message mid-render and
+             must not look an element row back up to do it. Absent → no text may go on it, and the
+             card offers nothing (INVARIANTS #11). A 2D decal can host one too — a fondant name
+             plaque is a disc with a name raised across it, and the name is REAL GEOMETRY rather
+             than paint, which is the only way `TOPPER_FINISHES.gold` can reflect the scene. */
+          textPath:       element.placement_config?.text_path ?? null,
           // Seeded from each slot's authored default, then owned by the customer (like photoUrl).
           textValues:     Object.fromEntries(
                             (element.placement_config?.text_slots ?? []).map(sl => [sl.key, sl.default ?? '']),
@@ -1938,7 +1993,9 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke,
     addDustSplash, applyDustLook, updateDusting, clearDusting, removeLastDustSplash, updateDustSplash, removeDustSplash,
     setTierGrass, updateGrass, setBoardGrass, updateBoardGrass,
+    setTierSand, updateSand,
     setTierGyp, updateGyp, setBoardGyp, updateBoardGyp,
+    setBoardSand, updateBoardSand,
     setTierRainbows, updateTierRainbows, updateTierClouds,
     updateTierBalloons,
     setNameBlocks, updateNameBlocks,

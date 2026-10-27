@@ -40,6 +40,15 @@ const problems = [];
 // with a reason each, because "it does not apply" is a claim somebody should have to write down.
 const NOT_DRAGGED = {
   grass: 'a treatment that covers the top — it has no position of its own',
+  /* Same shape as grass. The sand's AREA is a region centred on the tier's top, sized and shaped
+     from the card — round, rectangle or triangle — and the region carries no x/z, so there is no
+     position to take hold of.
+     ⚠️ THIS ENTRY EXPIRES THE DAY THE CARD GROWS A POSITION. `region.js` already understands `x`,
+     `z` and `rotation`, and the studio drives all three; the designer deliberately exposes neither
+     yet. The moment it does, the sand IS dragged, this line comes out and a registration replaces
+     it — the drag would otherwise be written with no contract, which is exactly the hole #10 law 5
+     was added to close. */
+  sand: 'a drift covering a centred area of the top — the card exposes no position to drag',
   // Same shape as grass, and for the same reason: the ELEMENT is a band or a field on a surface and
   // has no position to drag. If clumps become draggable they go through FinishHandles exactly as
   // grass's patches do, which is not what this contract asks about.

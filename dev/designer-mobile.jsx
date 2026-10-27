@@ -36,9 +36,16 @@ const PARAMS = new URLSearchParams(location.search);
 // exercises the overflow.
 const BAKER_NAME = PARAMS.get('name') || 'Sample Bakery';
 const LOGO_PARAM = PARAMS.get('logo');
+/* `?logo=` takes a URL as well as the two named shapes, because the header's whole question is what
+   SHAPE a logo is: a wide wordmark carries its own name and a round badge hides it at header size.
+   Both stand-ins here are local files, so a real baker's badge could not be looked at without one. */
 const LOGO_SRC = LOGO_PARAM === 'none' ? null
                : LOGO_PARAM === 'wide' ? '/sample-logo-wordmark.png'
+               : /^https?:\/\//i.test(LOGO_PARAM ?? '') ? LOGO_PARAM
                : '/feelings-flavours-logo.png';
+/* `?header=both|logo|name` seeds bakers.storefront_customizations.header_brand, so the three
+   treatments can be driven and compared without a settings round-trip. */
+const HEADER_BRAND_PARAM = PARAMS.get('header');
 
 /* ⚠️ ?catalog=1 — SEVERAL element types, which is the only way to see the picker's grouping.
  *
@@ -70,7 +77,18 @@ const CAT_TYPES = [
   { id: 'et-topper',  slug: 'topper',       name: 'Cake Topper',  sort_order: 0 },
   { id: 'et-foil',    slug: 'food_foil',    name: 'Food Foil',    sort_order: 1 },
   { id: 'et-fly',     slug: 'butterfly',    name: 'Butterfly',    sort_order: 2 },
-  { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3 },
+  /* ⚠️ `default_for_uploads` IS WHAT MAKES AN UPLOAD PLACEABLE, and without it UploadsPanel says
+     "Uploads can't be placed yet — no decoration kind is set up for them" and stops. A baker's own
+     picture becomes an IMAGE TOPPER — Sandeep: "this is how a baker can create his own image
+     topper" — so the flag, the zones and the actions are the real `image_topper` row from
+     element_types, read 2026-10-26. Note `color`, `duplicate` and `delete` are all FALSE on it. */
+  { id: 'et-image',   slug: 'image_topper', name: 'Image Topper', sort_order: 3,
+    default_for_uploads: true,
+    placement_rules: {
+      zones: ['top_surface', 'side', 'board'],
+      placement: { side: 'hug', board: { modes: ['stand', 'hug'] }, top_surface: { modes: ['hug', 'stand'] } },
+    },
+    default_allowed_actions: { move: true, color: false, style: false, delete: false, resize: true, fontSize: false, duplicate: false } },
   // The type the scatterable GLB below needs — see its note.
   { id: 'et-scatter', slug: 'scattered_decor', name: 'Scattered',  sort_order: 4 },
   /* ⚠️ RING TYPES, and the SLUGS are the contract. CakeDesigner resolves `drip` and `cream_piping`
@@ -328,13 +346,28 @@ CAT_ELEMENTS.push({
 });
 
 CAT_ELEMENTS.push({
+  /* ⚠️ THE REAL `Chocolate Drip` ROW, read out of cake_elements on 2026-10-26. The hand-made
+     version this replaces said `color: true` and carried `{ top_drip: true, r: 1 }`; the real row
+     says `color: false` and carries a full `top_drip_config`. That one key is the difference
+     between a card that offers a colour and a card that does not, and the help article written
+     from the old fixture would have told bakers to recolour a drip they cannot recolour. Found by
+     checking the fixture against the row before writing, which is the only reason it did not ship.
+     `move: true` and `duplicate: true` come from the row as well. */
   id: 'e14', name: 'Chocolate drip', description: 'a rim drip with optional flooded top',
   element_type_id: 'et-drip', category_id: 'cat-1',
   image_url: CAT_THUMB('#6b4b34'), thumbnail_url: CAT_THUMB('#6b4b34'), thumb_key: null,
   allowed_zones: ['rim'],
-  allowed_actions: { move: false, color: true, delete: true, resize: true },
-  placement_config: { top_drip: true, r: 1 },
-  default_color: '#4a2c17', sort_order: 14,
+  allowed_actions: { move: true, color: false, delete: true, resize: true, duplicate: true },
+  placement_config: {
+    top_drip: true, top_drip_gloss: 0.71, top_drip_length: 1,
+    top_arrangements_allowed: ['ring'],
+    top_drip_config: {
+      flat: 0.4, seed: 1, count: 27, width: 0.035, length: 0.61, meander: 0,
+      protrude: 0.008, webDepth: 0.16, widthVar: 0.15, lengthVar: 0.6,
+      lipRadius: 0.05, archHeight: 0.1,
+    },
+  },
+  default_color: '#3a2117', sort_order: 14,
 });
 
 // Multi-zone piping: rim AND board → two candidates, so the tile row must survive on a phone.
@@ -359,7 +392,7 @@ CAT_ELEMENTS.push({
     ? '/cdn/elements/files/3D/b87330d0-fc0b-475f-a87c-1ea1d22caa40.glb'
     : '/sample-rosette.glb',
   thumbnail_url: CAT_THUMB('#f0e2d0'), thumb_key: null,
-  allowed_zones: ['rim', 'board'],
+  allowed_zones: ['rim', 'middle_tier', 'side', 'top_surface', 'board'],   // the real row's five
   /* ⚠️ `gradient: true`, because the real row has it and this one did not — so the whole
      multi-colour editor (stops, Swirl/Vertical/Linear, and now Alternating) was unreachable in the
      harness, and `gradEligible` quietly rendered the popup without it. A fixture that disagrees
@@ -376,14 +409,35 @@ CAT_ELEMENTS.push({
      one attitude for a rim and ANOTHER for a wall, and the pen used to take the rim's for both. With
      `top_rotation` absent, hand-piping on the side looked fine in the harness and lay face-down in
      the app. A fixture that disagrees with the row proves the wrong thing, confidently. */
-  /* ⚠️ `can_coat`, because without it the "Cover the cake" block does not render and the coat —
-     with its three scopes, its ombré, and the tap-the-roses-to-get-the-card-back path — was
-     unreachable in the harness. Same gap `hand_piping` and `gradient` above were added to close:
-     a fixture that cannot express the feature cannot show the bug in it. */
-  placement_config: { r: 1, bottom_y_adjustable: true, hand_piping: true, can_coat: true,
-                      top_surface: 'hug', rim: 'hug', side: 'hug',
-                      top_rotation: [0, 0, 0], bottom_rotation: [-89, -174, -180] },
-  default_color: '#F5E6C8', sort_order: 16,
+  /* ⚠️ COPIED FROM THE REAL `Classic Shell Border` ROW (9c06bdfe), AND IT HAD DRIFTED BADLY. The
+     numbers below are that row's, verbatim — spacings, rotations, radial offsets, swag settings and
+     the scale range — because a border's whole behaviour IS those numbers, and the stand-in's
+     `r: 1` with two guessed rotations showed a shape no catalogue contains.
+
+     ⚠️ `can_coat` REMOVED, AND THAT IS THE POINT OF THIS EDIT. The stand-in carried it; not one of
+     the ten real shell rows does. That one key puts a "Cover the cake" offer on the card — the
+     rosette-cake packing — so the fixture's most prominent path was one a baker with a real shell
+     border never sees, while the rim RING it should have shown was never reached. Writing the help
+     article for piping borders ran straight into it: a cake covered edge to edge in shells, driven
+     and screenshotted, two minutes from being published as "how a border works".
+     The coat still has a harness — the ROSETTE fixture below carries `can_coat`, with its own note
+     saying it is the element the real coat is modelled on, which is where the flag belongs.
+
+     ⚠️ `hand_piping` KEPT, AND IT IS THE ONE DEPARTURE FROM THE ROW. Classic Shell Border does not
+     carry it; its siblings `Shell Border Stroke` and `Shell Swirl` do, and without it here the
+     Cream Pen path has no harness at all. Marked rather than silent: if you are checking the pen,
+     you are standing on a sibling row's capability, not this one's. */
+  placement_config: { r: 2.2, hand_piping: true,
+                      scale: { min: 2, max: 4, step: 0.25 },
+                      rim: 'hug', side: 'hug', board: 'hug', middle_tier: 'hug', top_surface: 'hug',
+                      top_flip: false, bottom_flip: true,
+                      top_spacing: 1, bottom_spacing: 0.7,
+                      top_rotation: [-102, 0, 0], bottom_rotation: [60, 6, 0],
+                      top_y_offset: 0.11, bottom_y_offset: 0,
+                      top_radial_offset: 0.113, bottom_radial_offset: -0.071,
+                      top_swag_count: 0, top_swag_depth: 0.4, top_swag_tilt: 0.4,
+                      bottom_swag_count: 0, bottom_swag_depth: 0.4, bottom_swag_tilt: 0.4 },
+  default_color: '#fffdd0', sort_order: 16,   // the real row's cream
 });
 
 CAT_ELEMENTS.push({
@@ -437,6 +491,51 @@ CAT_ELEMENTS.push({
   allowed_actions: { move: false, delete: true, resize: false },
   placement_config: { procedural: 'gypsophila' },
   default_color: '#fdfdfb', sort_order: 42,
+});
+
+/* ⚠️ A DECORATION THAT STANDS ON THE BOARD AND CAN BE DUPLICATED, which no fixture carried.
+ *
+ *   Sandeep: "some elements that are duplicatable, but not getting duplicated on cake … when i clic
+ *   on duplicate, it adds a popupcard but does not add element on the cake" … "those are hiding
+ *   inside the cake."
+ *
+ * Every `board` row here was procedural (gypsophila, cloud, grass, letter blocks) or a ring
+ * (Rosette), and none of them offers Duplicate — so the one combination that broke, a plain GLB
+ * decoration seated on the board with `duplicate: true`, could not be reached from this harness at
+ * all. The copy went through `deOverlapSeat` with the board zone, fell through to the cartesian
+ * branch, and was clamped by `topClamp` against the CAKE's tier — inward, into opaque cake.
+ *
+ * Both rows below are the REAL ones, read off cake_elements: zones, actions and placement_config
+ * copied field for field, including the odd roughness/metalness the GLB studio wrote. Only the
+ * artwork is swapped for dev/'s sample GLB — seating is decided by the config, not by the mesh, and
+ * the real asset lives behind the CDN. A fixture that disagrees with the real row proves the wrong
+ * thing (see the note on Gypsophila above). */
+CAT_ELEMENTS.push({
+  id: 'e-seaweed', name: 'Twisted seaweed short', description: 'a real board row — stands on the drum, duplicatable',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#5f7d5a'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier', 'board'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+  placement_config: { r: 2.5, side: 'hug', board: 'stand', scale: { min: 1, max: 4, step: 0.25 },
+                      metalness: 0.0014750784202671105, roughness: 0.4464324570866578,
+                      middle_tier: 'hug', top_surface: 'stand' },
+  default_color: '#ffffff', sort_order: 60,
+});
+
+CAT_ELEMENTS.push({
+  id: 'e-scallop', name: 'Fluted Scallop Shell', description: 'a real board row — hugs the drum, duplicatable',
+  element_type_id: 'et-topper', category_id: 'cat-1',
+  image_url: '/sample-rosette.glb', thumbnail_url: CAT_THUMB('#efe6d8'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier', 'board'],
+  allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+  /* ⚠️ `board: { modes: [...] }`, THE REAL ROW. Sandeep reconfigured this one to offer both board
+     poses, which is what produced a BOARD HUGGING tile that could not be ticked — a single-mode
+     board renders one tile either way and cannot reproduce it. Two modes is the case. */
+  placement_config: { r: 2.5, side: 'hug', board: { modes: ['hug', 'stand'] },
+                      scale: { min: 1, max: 4, step: 0.25 },
+                      metalness: 0.0015047892092146015, roughness: 0.3782242154294899,
+                      middle_tier: 'hug', top_surface: 'hug' },
+  default_color: '#f4f3f1', sort_order: 61,
 });
 
 CAT_ELEMENTS.push({
@@ -835,6 +934,137 @@ CAT_ELEMENTS.push({
  * Both rows are the LIVE catalogue rows — the same GLB through vite's /cdn proxy, and the same
  * placement_config, `r` and insert — so what happens here is what happens on a baker's cake.
  * Reachable only with ?leafrose=1 (two 800KB models is not something every run should fetch). */
+/* ⚠️ `?groups=1` — A GLB WITH RECOLOURABLE PART GROUPS, which nothing here could show.
+ *
+ * The "Customise colours" swatches (`_model.groups`, one per editable part) are the whole point of
+ * the Recompose Studio, and no fixture in this harness carried them — so the one place that mounts
+ * the real designer at phone width could not render the control at all. That is exactly how it
+ * shipped broken on mobile and right on desktop: a `decorEl` card built its swatches into
+ * `regionCtls` and then had nowhere to put them, and no harness could show the difference.
+ *
+ * ⚠️ IT IS A SINGLE-PER-SLOT TOPPER ON PURPOSE. `placement_config.top_surface.mode` + one slot is
+ * what makes `handleStickerSelect` open a `decorEl` card rather than a `sticker` one, and the bug
+ * lived ONLY on the decorEl path. A fixture that selected as a sticker would have reproduced the
+ * working case and proved nothing — the same trap `?cream=1` above records for the cream row.
+ *
+ * The model is the gingko leaf (already cached by ?leafrose) with groups bolted on: this fixture is
+ * about the CARD, not the mesh, and the swatches recolour by `userData.group` whether or not the GLB
+ * has meshes carrying those names. */
+/* ⚠️ `?plaque=1` — A HOST FOR A MESSAGE THAT IS NOT A RAINBOW, which nothing here could show.
+ *
+ * `placement_config.text_path` lets a message be written ON an element rather than on the cake, and
+ * until now the only element that declared one was the fondant rainbow — so the second host shape
+ * (a flat disc, lying face-up) had no fixture, and neither did the card door that offers it. The
+ * row below mirrors the real "Fondant name plaque" in the dev catalogue.
+ *
+ * ⚠️ THE POINT OF IT IS THE METAL. The name is GEOMETRY, not paint in the decal's texture, which is
+ * the only way TOPPER_FINISHES.gold can reflect the scene — a painted gold does not move when the
+ * cake turns. A 2D `text_slots` version of this exists too and is the right thing for matte piped
+ * lettering; this fixture is the other medium. */
+const PLAQUE_EL = PARAMS.has('plaque');
+if (PLAQUE_EL) {
+  CAT_ELEMENTS.push({
+    id: 'e70', name: 'Fondant name plaque', description: 'a disc that hosts a written name',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/2D/bfca8fe2-2cd5-45c3-a7dd-f2a59dfc7477.png',
+    thumbnail_url: CAT_THUMB('#F7F2E8'), thumb_key: null,
+    /* ⚠️ THE WALL IS HALF OF WHY THIS FIXTURE EXISTS. A bakery puts a name plaque on the SIDE of a
+       cake at least as often as on the top, and the first cut of this row said `['top_surface']` —
+       which made the harness agree with a bug instead of exposing it. Sandeep: *"but why removing
+       and adding on the top? it should work on the side as well."*
+       Both zones, so the message door and the disc's pose are exercised in both. The real row
+       matches. (The remaining question on the wall is the BEND, which `hug` owns — a 2D decal wraps
+       the cylinder by design. Noted, not papered over here.) */
+    allowed_zones: ['top_surface', 'side'],
+    allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: {
+      r: 1, top_surface: 'hug',
+      /* ⚠️ THE OBJECT FORM, FOR `bend`. On a round wall `hug` wraps a decal around the cylinder by
+         definition, and the wrap grows with size — 12° at scale 1, 49° at scale 4 — which is right
+         for a printed transfer and wrong for a stiff fondant disc. *"its bending more than needed."*
+         A FRACTION of whatever curve the wall has, so one value holds across the whole scale range. */
+      side: { mode: 'hug', bend: 0.4 },
+      recolor: { sat: 0.25, method: 'hue_regions', group_defaults: { 0: '#F7F2E8' } },
+      /* ⚠️ `writing` IS THE ROW SAYING WHAT A MESSAGE ON THIS IS MADE OF. It seeded acrylic+gold
+         from inside the card, which read as perspex sitting on fondant — *"it looks more like
+         acrylic, can we have the fondant texture for the letters."* `fondant` is the SAME surface
+         a relief cut-out's walls use, so a fondant letter and a fondant bow match by construction.
+         A starting point, not a lock: Look, colour and font all stay on the card. */
+      text_path: { kind: 'disc', span: 0.72, size: 0.26, inset: 0,
+                   writing: { style: 'fondant', color: '#C79A3B' } },
+      acrylic: { finishes: ['gold', 'silver', 'rose', 'white'], defaultFinish: 'gold' },
+    },
+    default_color: '#F7F2E8', sort_order: 70,
+  });
+}
+
+/* ⚠️ `?dolphin=1` — A GLB WITH A COLOURABLE PART, COPIED FROM THE REAL ROW.
+ *
+ * `?groups=1` already claims to be "a GLB with three editable part groups" and is not: its
+ * `_model.groups` name Hair/Dress/Tail and the GLB it points at is a ginkgo leaf, so `editGroups`
+ * comes out EMPTY and the card shows no swatches at all. A fixture that disagrees with the asset
+ * proves the wrong thing — it reported a card with no colour controls as if that were the design.
+ *
+ * So this one is transcribed from `cake_elements` id 52d3189b (Dolphin) on dev: its GLB, its one
+ * editable group `Body`, its zones, its pose and its scale range. The point of it is the SECOND
+ * LEVEL — tapping the Body swatch opens the colour panel, and that is the thing under test. */
+const DOLPHIN_EL = PARAMS.has('dolphin');
+if (DOLPHIN_EL) {
+  CAT_ELEMENTS.push({
+    id: 'e80', name: 'Dolphin', description: 'a GLB with one colourable part',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/9dda0554-3f7a-4434-82c5-0d106de48b19.glb',
+    thumbnail_url: CAT_THUMB('#4cbfed'), thumb_key: null,
+    allowed_zones: ['top_surface', 'board'],
+    allowed_actions: { move: true, tilt: true, color: true, delete: true, resize: true, gradient: false, duplicate: true },
+    placement_config: {
+      r: 2.5, scale: { min: 2, max: 7 }, top_surface: 'stand',
+      _model: { source: 'glb-read', groups: [
+        { key: 'Body', label: 'Body', editable: true, default: '#4cbfed' },
+      ] },
+    },
+    default_color: null, sort_order: 80,
+  });
+}
+
+const GROUPS_EL = PARAMS.has('groups');
+if (GROUPS_EL) {
+  CAT_ELEMENTS.push({
+    id: 'e60', name: 'Grouped topper', description: 'a GLB with three editable part groups',
+    element_type_id: 'et-topper', category_id: 'cat-1',
+    image_url: '/cdn/elements/files/3D/9e471701-bc50-48d0-bb8c-b4e414501205.glb',
+    thumbnail_url: CAT_THUMB('#7a2c1a'), thumb_key: null,
+    allowed_zones: ['top_surface'],
+    allowed_actions: { move: true, tilt: true, color: false, delete: true, resize: true, gradient: false, duplicate: false },
+    placement_config: {
+      r: 2, scale: { max: 8, min: 1, step: 0.25 }, ready_made: true,
+      top_surface: { mode: 'stand' },
+      /* ⚠️ THIS ONE KEY IS WHY THE FIXTURE REPRODUCES ANYTHING. `single_per_slot` is what
+         `isMultiSlotEl` reads, which is what makes a tap open a `decorEl` card instead of a
+         `sticker` one — and the missing swatches were decorEl-only. Without it the fixture selects
+         as a sticker, the swatches appear on both layouts, and the run reports a passing bug. */
+      single_per_slot: true,
+      /* ⚠️ THESE KEYS DO NOT MATCH THIS GLB, so this fixture shows NO swatches — measured
+         2026-10-24 by driving it: the card comes up with Remove, Spin and Lean and nothing else.
+         The asset at the url above is a ginkgo leaf; `editGroups` reads the instance's `groups`
+         (seeded from here, filtered to `editable`) and the renderer finds no meshes called Hair,
+         Dress or Tail, so the swatch row is empty. It still reproduces what it was BUILT for — the
+         decorEl-vs-sticker split that `single_per_slot` decides — but it cannot show a colourable
+         part. Use `?dolphin=1` for that: it is transcribed from a real row whose GLB agrees with it.
+         Left as it is rather than guessed at: the right fix is this element's real mesh names. */
+      // The shape admin's Recompose Studio writes (lib/glb.js `modelFromParts`): one entry per
+      // customer-facing control, `editable` deciding whether it becomes a swatch at all.
+      _model: { source: 'glb-read', groups: [
+        { key: 'Hair',  label: 'Hair',  editable: true,  default: '#7a2c1a' },
+        { key: 'Dress', label: 'Dress', editable: true,  default: '#5e144b' },
+        { key: 'Tail',  label: 'Tail',  editable: true,  default: '#42d8bd' },
+        { key: 'Skin',  label: 'Skin',  editable: false, default: '#f8be9f' },
+      ] },
+    },
+    default_color: null, sort_order: 60,
+  });
+}
+
 const LEAF_ROSE = PARAMS.has('leafrose');
 if (LEAF_ROSE) {
   CAT_ELEMENTS.push({
@@ -1093,6 +1323,7 @@ const STUBS = {
       // the text is a different size again. A harness that can only show one of the three is how a
       // branch goes unlooked-at for months.
       logo_url: LOGO_SRC, storefront_published: true,
+      storefront_customizations: HEADER_BRAND_PARAM ? { header_brand: HEADER_BRAND_PARAM } : {},
       // ⚠️ A catalogue author, so the reel recorder is REACHABLE here. It is gated on this flag, and
       // a harness that cannot reach a state hides every bug in it — this feature shipped three times
       // before anybody could see it, twice with a defect that one load of this page would have
@@ -1101,6 +1332,19 @@ const STUBS = {
     },
     user: { firstName: 'Asha', lastName: 'Otto' },
   }),
+  /* ⚠️ `?credits=1` — THE CREDITS PILL, and without it the desktop header's right-hand cluster
+     cannot be looked at with its real contents. CreditsPill renders NOTHING unless this answers
+     with `active` and a number ("an empty pill in the header is worse than no pill"), so the Proxy's
+     empty shape means every screenshot of that row has been a row with one item in it. That is how
+     a layout question about the cluster gets answered against a picture of half of it — which
+     happened on 2026-10-23, mocking where the bakery name should sit.
+     `?credits=low` drops it under the escalation threshold, because the pill changes colour at
+     70/90/100 and the crowded case is the coloured one. */
+  fetchAiCredits:      async () => (PARAMS.has('credits')
+                        ? { active: true, unlimited: false,
+                            spendable: PARAMS.get('credits') === 'low' ? 12 : 240,
+                            usedPct:   PARAMS.get('credits') === 'low' ? 94 : 32 }
+                        : {}),
   fetchBakerSettings:  async () => ({ delivery: { home_delivery: true, radius_km: 10 }, lead_time_days: 2 }),
   /* ⚠️ The reel entitlements are BOTH switchable, because they are separate questions and each has
    * a branch nobody could otherwise look at:
@@ -1114,6 +1358,12 @@ const STUBS = {
     premium_themes: false, edible_print_studio: true,
     reel_capture:  PARAMS.get('capture') === 'yes',
     reel_branding: PARAMS.get('branding') !== 'no',
+    /* ⚠️ `?blaze=yes` IS HOW THE PAYING BAKER'S PATH IS REACHED. Filming the build is Blaze-only
+       (migration 135) and catalogue authors keep it regardless, so with the harness's default
+       `is_catalog_author: true` the gate is invisible — pair this with `?author=no` to see what a
+       baker below Blaze actually gets, which is nothing. A gate nobody can see untested is a gate
+       that opens quietly. */
+    build_film:    PARAMS.get('blaze') === 'yes',
   } }),
   /* ⚠️ THE REAL "Fiitball" ROW, copied from the dev database.
    *
@@ -1140,7 +1390,7 @@ const STUBS = {
     ? [{ id: 'cat-messages', name: 'Messages', slug: 'messages', sort_order: 0, element_type_id: 'et-writing' }]
     : PARAMS.has('cream')
     ? [{ id: 'cat-finishes', name: 'Finishes', slug: 'finishes', sort_order: 0, element_type_id: 'et-cream' }]
-    : (PARAMS.has('football') || PARAMS.has('catalog'))
+    : (PARAMS.has('football') || PARAMS.has('catalog') || GROUPS_EL || PLAQUE_EL)
     ? [{ id: 'cat-1', name: 'Sport', slug: 'sport', sort_order: 0, element_type_id: 'et-topper' },
        // The balloon's real home (migration 127), so the harness reaches it the way a customer does.
        { id: 'cat-party', name: 'Party & shapes', slug: 'party-shapes', sort_order: 1, element_type_id: 'et-topper' }] : []),
@@ -1183,7 +1433,7 @@ const STUBS = {
     placement_config: { second_cream: { lift: 0.04, noise: 0.05, fill_side: 'below', height: 0.5,
                                         height_range: { min: 0.15, max: 0.9, step: 0.05 } } },
     default_color: '#D98BA6', sort_order: 0,
-  }] : PARAMS.has('catalog') ? CAT_ELEMENTS : PARAMS.has('football') ? [{
+  }] : (PARAMS.has('catalog') || GROUPS_EL || PLAQUE_EL || DOLPHIN_EL) ? CAT_ELEMENTS : PARAMS.has('football') ? [{
     id: 'fcd54dcb-adc4-4271-bc88-eb35e8ecdfc1', name: 'Fiitball',
     // A GLB the harness can actually serve; the geometry is irrelevant to which CONTROLS appear.
     image_url: '/sample-topper.glb', thumbnail_url: null, thumb_key: null,
@@ -1232,7 +1482,49 @@ const STUBS = {
      where `tierShape`'s flat `?? 1.2` fallback measures every upper tier as the bottom one, and a
      perched figure is seeded outside the wall. Reported as *"fondant doll - is handing in the air."*
      Same two tiers, radius omitted, so the harness can show the fault and the fix. */
-  fetchCakeShapes:     async () => (PARAMS.has('twotier') ? [{
+  /* ⚠️ `?shapes=1` — THE REAL SHAPE LIST, because the fallback is two shapes and hides eleven.
+     With no list the chooser falls back to Round and Rectangle, so Number and Letter cakes — which
+     have their own editing controls and their own help article — could not be reached here at all,
+     and `starting-a-new-cake.md` had to say so. These six rows are copied out of `cake_shapes` on
+     2026-10-26, designs included: `letter_cake` really does default to MOM and `zz_number` to 2027,
+     and both carry the `samples` and `byCount` maps the editor reads, so a guessed shapeConfig
+     would exercise a shape the catalogue does not have. Thirteen rows are active in all; six is
+     enough to cover every FAMILY (circle, rounded_rect, heart, letter, number) plus a multi-tier. */
+  fetchCakeShapes:     async () => (PARAMS.has('shapes') ? [
+    { key: 'round', label: 'Round', sort_order: 1, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'round', width: 2.4, height: 1.45, radius: 1.2,
+        topPipings: [], creamLayers: [], shapeConfig: {}, shapeFamily: 'circle', bottomPipings: [] }] } },
+    { key: 'rect', label: 'Rectangle', sort_order: 2, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 1.56, shape: 'rect', width: 2.16, height: 1.45,
+        topPipings: [], shapeConfig: {}, shapeFamily: 'rounded_rect', bottomPipings: [] }] } },
+    { key: '2t', label: '2 Tier', sort_order: 6, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [
+        { color: '#f5b8c8', depth: 2.4, shape: 'round', width: 2.4, height: 1.45, radius: 1.2,
+          topPipings: [], creamLayers: [], shapeConfig: {}, shapeFamily: 'circle', bottomPipings: [] },
+        { color: '#f5b8c8', depth: 1.8, shape: 'round', width: 1.8, height: 1.37, radius: 0.9,
+          topPipings: [], creamLayers: [], shapeConfig: {}, shapeFamily: 'circle', bottomPipings: [] }] } },
+    { key: 'heart', label: 'Heart', sort_order: 6, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'heart', width: 2.4, height: 1, radius: 1.2,
+        topPipings: [], creamLayers: [], shapeFamily: 'heart', bottomPipings: [],
+        shapeConfig: { tip: 0.23, cleft: 1.1, plump: 1.1 } }] } },
+    { key: 'letter_cake', label: 'Letter cake', sort_order: 12, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'letter', width: 2.4, height: 1.45, radius: 1.2,
+        topPipings: [], creamLayers: [], shapeFamily: 'letter', bottomPipings: [],
+        shapeConfig: { weight: 0, cornerR: 0.15, letters: 'MOM',
+          byCount: { 1: { height: 1.8, thickness: 0.38, pipingScale: 0.8 },
+                     2: { height: 1.8, thickness: 0.38, pipingScale: 0.9 },
+                     3: { height: 1.8, thickness: 0.38, pipingScale: 0.9 } },
+          samples: { 1: 'A', 2: 'MU', 3: 'MOM' } } }] } },
+    { key: 'zz_number', label: 'Number cake', sort_order: 99, design: { ages: [], texts: [], piping: [], writing: null, stickers: [],
+      tiers: [{ color: '#f5b8c8', depth: 2.4, shape: 'number', width: 1.8, height: 0.7, radius: 0.9,
+        topPipings: [], creamLayers: [], shapeFamily: 'number', bottomPipings: [],
+        shapeConfig: { weight: 0.02, cornerR: 0.3, digits: '2027',
+          byCount: { 1: { height: 1.8,  thickness: 0.38, pipingScale: 0.75 },
+                     2: { height: 1.75, thickness: 0.38, pipingScale: 0.7 },
+                     3: { height: 1.8,  thickness: 0.38, pipingScale: 0.65 },
+                     4: { height: 1.6,  thickness: 0.36, pipingScale: 0.6 } },
+          samples: { 1: '1', 2: '21', 3: '100', 4: '2027' } } }] } },
+  ] : PARAMS.has('twotier') ? [{
     key: 'round-2',
     label: 'Round · 2 tier',
     design: {
@@ -1329,6 +1621,210 @@ CAT_ELEMENTS.push({
   },
   default_color: null, sort_order: 10,
 });
+
+/* ── ?library=1 — A STOCKED SHELF, because both template screens are empty here ──────────────────
+ *
+ * Templates ▸ Library and Templates ▸ Catalogue are the two halves of one rule, and this harness
+ * could show neither: the Proxy below answers every unknown method with `{ templates: [] }`, so
+ * Library drew "Nothing in your library yet" and the Catalogue flyout drew nothing at all. A screen
+ * whose only reachable state is empty hides every behaviour it has — the ninth such state this file
+ * has had to be taught, after the catalogue, the GLB, the edge seat, the two-button footer, the
+ * number topper, the cream layer, the texts card and the shell border.
+ *
+ * ⚠️ THE PROPORTIONS ARE THE DEV CATALOGUE'S, read out of `cake_templates` on 2026-10-26: 79 active
+ * rows, 61 of them Spattoo's and 18 the baker's own, 78 `basic` and ONE `photo`, every row
+ * `offering: 'standard'` — so there is no Premium tile to be found anywhere, and a fixture that
+ * invented one would teach the wrong thing about the chip. The repeated names are real too
+ * (`Football` x6, `Dino` x3, `love` x3) and they are the whole argument for a picture-led grid, so
+ * dropping them would make this shelf easier to read than any real one.
+ *
+ * ⚠️ ONE SET, TWO SCREENS. `fetchBakerCatalogue` is everything with an `offered` flag (Library) and
+ * `fetchTemplates` is the offered subset (the Catalogue flyout). They are derived from the same
+ * array on purpose: the rule under test is "a template is in one or the other, never both", and two
+ * independent stubs could satisfy each screen while breaking exactly that.
+ */
+const LIBRARY = PARAMS.has('library');
+/* ⚠️ `daysAgo` IS MIXED ACROSS SOURCES ON PURPOSE. Library splits the shelf into Recent (the last
+   7 days) and Previous, which is a split by DATE and has nothing to do with who made the cake. The
+   first cut of this fixture walked the dates down the list, so all three of the baker's own
+   unchosen designs landed in Previous together — and since only a baker's OWN tile carries a bin,
+   the screenshot showed a Previous row full of bins and a Recent row with none. A fixture that
+   teaches "Previous means mine" is worse than an empty screen. Both kinds now straddle the
+   boundary. */
+const LIB_SEED = [
+  // name                source     offered tiers daysAgo colour      tags
+  ['Football',          'spattoo', true,  1,    2,  '#cfe3d4', ['birthday']],
+  ['Football',          'spattoo', false, 2,    11, '#e8dcc8', ['birthday', 'graduation']],
+  ['Dino',              'spattoo', true,  1,    1,  '#d8e6c0', ['birthday', 'first-birthday']],
+  ['Dino',              'spattoo', false, 1,    19, '#c8dcc0', ['birthday']],
+  ['love',              'spattoo', false, 1,    3,  '#f2d3d8', ['anniversary', 'valentines']],
+  ['love',              'spattoo', false, 2,    26, '#edc9d2', ['wedding', 'anniversary']],
+  ['Floral',            'spattoo', true,  1,    5,  '#f6e4ea', ['floral', 'wedding', 'elegant', 'pink']],
+  ['Mermaid cake',      'spattoo', false, 1,    4,  '#cfe0ea', ['mermaid', 'beach', 'birthday']],
+  ['Jungle theme cake', 'spattoo', false, 1,    33, '#d2e2c4', ['nature', 'fondant', 'whimsical']],
+  ['Rainbow',           'spattoo', false, 2,    41, '#f0e0c8', ['birthday', 'anyone']],
+  ['Animal theme',      'mine',    true,  2,    6,  '#e4d8c4', ['birthday']],
+  ['Dolphin',           'mine',    false, 1,    1,  '#cfe3ea', ['mermaid', 'beach', 'buttercream']],
+  ['Mermaid theme cake','mine',    false, 1,    2,  '#dfd0e4', ['mermaid', 'first-birthday']],
+  /* ⚠️ The `photo` row, and the only one. It is an uploaded picture of finished work, so it has no
+     design and no tier count — `tier_count: null` is what the real `isomalt` row carries — and the
+     grid has to say so before the tap, because tapping a basic template loads it onto the canvas
+     and this one cannot be loaded at all. */
+  ['isomalt',           'mine',    false, null, 15, '#e9e2d6', ['sugar', 'elegant', 'modern']],
+];
+const LIB_ROWS = LIB_SEED.map(([name, source, offered, tiers, daysAgo, colour, tags], i) => ({
+  id: `tpl-${i + 1}`, name, source, offered,
+  tier_count: tiers, offering: 'standard',
+  type: name === 'isomalt' ? 'photo' : 'basic',
+  thumbnail_url: CAT_THUMB(colour), thumbnail_key: null,
+  tag_slugs: tags, search_slugs: tags, attrs: null,
+  /* Recent is a SECTION on the Library shelf, so the dates have to straddle its window rather than
+     all being today — otherwise every tile lands in Recent and the split never draws. */
+  created_at: new Date(Date.now() - daysAgo * 864e5).toISOString(),
+}));
+if (LIBRARY) Object.assign(STUBS, {
+  fetchBakerCatalogue: async () => LIB_ROWS.map(t => ({ ...t })),
+  /* ⚠️ WITHOUT THIS, EVERY TILE IS DEAD AND LOOKS LIKE A BUG. A list row deliberately carries no
+     `design` (lib/templateList.js stopped selecting it so browsing does not ship N designs for the
+     one you open), so `startFromTemplate` fetches it by id — and CakeDesigner says in its own
+     comment that a null here "is what clicking a template does nothing looked like before
+     fetchTemplate was stubbed". Measured here first: tapping a tile did nothing at all until this
+     existed. A `photo` row has no design by definition and keeps returning null, which is the
+     product's behaviour and not a gap in the fixture. */
+  fetchTemplate: async (id) => {
+    const t = LIB_ROWS.find(r => r.id === id);
+    if (!t || t.type === 'photo') return null;
+    return { ...t, design: {
+      tiers: Array.from({ length: t.tier_count ?? 1 }, () => ({
+        color: t.thumbnail_url.includes('cfe3d4') ? '#CFE3D4' : '#F1EEDC',
+        shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
+      })),
+    } };
+  },
+  fetchTemplates:      async () => LIB_ROWS.filter(t => t.offered).map(t => ({ ...t })),
+  /* The route REPLACES the set rather than taking a delta (see bakers.js), so the stub does too —
+     anything missing from `ids` is out of the catalogue, which is exactly how "move to library"
+     works from the flyout side. */
+  updateBakerCatalogue: async (ids) => {
+    const set = new Set(ids ?? []);
+    for (const t of LIB_ROWS) t.offered = set.has(t.id);
+    console.log('[harness] catalogue is now', LIB_ROWS.filter(t => t.offered).map(t => t.name));
+  },
+  /* Only the baker's OWN designs can be deleted — "baker can never delete spattoo templates" — and
+     the stub refuses a Spattoo row rather than quietly succeeding, so the guard is exercised here
+     and not only in the route. */
+  deleteBakerTemplate: async (id) => {
+    const i = LIB_ROWS.findIndex(t => t.id === id);
+    if (i < 0 || LIB_ROWS[i].source !== 'mine') throw new Error('Not your template.');
+    LIB_ROWS.splice(i, 1);
+  },
+});
+
+/* ⚠️ `?themes=1` — THE STOREFRONT THEMES, because the section hides itself without them.
+ * SettingsPanel renders its "Storefront Theme" section only when `themes.length > 0`, and the
+ * Proxy below answers `fetchStorefrontThemes` with `{ templates: [] }` — no `themes` key at all —
+ * so the section, the Preview & customise button and the whole storefront customiser behind it
+ * were unreachable here. That customiser is where a baker turns sections on and off, reorders
+ * them, sets their story photo and picks a hero cake, so four help articles had no door.
+ *
+ * The four rows are the real `storefront_themes` table, read on 2026-10-26: Spotlight, Patisserie,
+ * Aurora and Ink, in that sort order, none premium.
+ */
+if (PARAMS.has('themes')) Object.assign(STUBS, {
+  fetchStorefrontThemes: async () => ({ themes: [
+    { id: 1, key: 'spotlight',  name: 'Spotlight',  sort_order: 1, is_active: true, is_premium: false },
+    { id: 2, key: 'patisserie', name: 'Patisserie', sort_order: 2, is_active: true, is_premium: false },
+    { id: 3, key: 'aurora',     name: 'Aurora',     sort_order: 3, is_active: true, is_premium: false },
+    { id: 4, key: 'ink',        name: 'Ink',        sort_order: 4, is_active: true, is_premium: false },
+  ] }),
+});
+
+/* ⚠️ SAND AND SPRINKLES — two real catalogue rows this harness had no fixture for, which is why
+ * two help articles had to declare them unchecked rather than describe them. Both copied out of
+ * `cake_elements` on 2026-10-26, config and allowed_actions included.
+ *
+ * ⚠️ `Sand` IS `move: false` AND `duplicate: false` ON THE REAL ROW. It is a bed over an area, not
+ * a thing you place and slide, so a fixture that allowed either would put controls on the card
+ * that the catalogue does not give it — the same way the hand-made drip fixture offered a colour
+ * the real drip forbids (see the Chocolate drip row above).
+ *
+ * ⚠️ `Sprinkles` IS A GLB and `scatter: true` / `ready_made: true`. `top_surface: 'stand'` rather
+ * than 'hug' is the real row's value and is what makes them sit ON the lid rather than wrap it.
+ * The image_url is the real key through vite's /cdn proxy, so the mesh is the shipped one.
+ */
+CAT_ELEMENTS.push({
+  id: 'e-sand', name: 'Sand', description: 'a bed of fine, even crumb',
+  element_type_id: 'et-piping', category_id: 'cat-1',
+  image_url: null, thumbnail_url: CAT_THUMB('#d9b584'), thumb_key: null,
+  allowed_zones: ['top_surface', 'board'],
+  allowed_actions: { move: false, color: true, delete: true, resize: true, duplicate: false },
+  placement_config: {
+    procedural: 'sand', board: 'hug', top_surface: 'stand',
+    sand: { rise: 0.055, seed: 11, size: 0.8, shape: 'round', falloff: 0.5, spacing: 0.04, edgeBreak: 0.55 },
+    colors: { pale: '#e8d4ae', sand: '#d9b584', shell: '#efe0c6', golden: '#d2a862', biscuit: '#c89a63' },
+  },
+  default_color: '#d9b584', sort_order: 61,
+});
+CAT_ELEMENTS.push({
+  id: 'e-sprinkles', name: 'Sprinkles', description: 'a scatter over a surface',
+  element_type_id: 'et-glb', category_id: 'cat-1',
+  image_url: '/cdn/elements/files/3D/32c7503e-386b-4a45-85a2-95aeb9473e53.glb',
+  thumbnail_url: CAT_THUMB('#b8933d'), thumb_key: null,
+  allowed_zones: ['top_surface', 'side', 'middle_tier'],
+  allowed_actions: { move: true, tilt: false, color: true, delete: true, resize: true, duplicate: true },
+  placement_config: {
+    r: 0.1, side: 'hug', middle_tier: 'hug', top_surface: 'stand',
+    scatter: true, ready_made: true,
+    scale: { max: 0.3, min: 0.1, step: 0.05 },
+  },
+  default_color: '#b8933d', sort_order: 0,
+});
+
+/* ⚠️ `?uploads=1` — A BAKER'S OWN PICTURE, END TO END. This is how a baker makes an image topper
+ * of their own, and none of it could be reached: the Proxy answers every unknown method with
+ * `{ items: [] }`, so Uploads was permanently empty and `place()` never ran.
+ *
+ * The flow UploadsPanel actually performs, and what each stub stands in for:
+ *   uploadElementImage(blob, name) → a storage key
+ *   registerUpload({ storage_key, name }) → the row that appears in Uploads
+ *   ensureCutout(id) → the BACKGROUND-REMOVED copy. A placed decoration must carry the cutout,
+ *     not the original, "otherwise the image lands on the frosting inside a photo's worth of
+ *     background". Cached after the first placement, which is why only the first one waits — the
+ *     stub mimics that by filling `cutoutUrl` on the row.
+ *   renameUpload / deleteUpload / unlinkUpload → the row's own controls.
+ *
+ * The cutout here is a VISIBLY different picture (the square loses its backdrop), so a screenshot
+ * can tell a cut image from an uncut one rather than taking the call's word for it.
+ */
+const UP_RAW = c => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" fill="#cfd8e3"/><circle cx="32" cy="32" r="18" fill="${c}"/></svg>`)}`;
+const UP_CUT = c => `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="32" r="18" fill="${c}"/></svg>`)}`;
+const UPLOADS = [];
+if (PARAMS.has('uploads')) {
+  if (PARAMS.get('uploads') !== 'empty') {
+    UPLOADS.push({ id: 'up1', name: 'Bunny', url: UP_RAW('#e07a8c'), cutoutUrl: null, created_at: new Date().toISOString() });
+  }
+  Object.assign(STUBS, {
+    fetchUploads: async () => UPLOADS.map(u => ({ ...u })),
+    uploadElementImage: async (_blob, filename) => `uploads/${filename}`,
+    registerUpload: async ({ storage_key, name }) => {
+      const row = { id: `up${UPLOADS.length + 1}`, name: name || 'Untitled',
+                    url: UP_RAW('#7aa7e0'), cutoutUrl: null, storage_key,
+                    created_at: new Date().toISOString() };
+      UPLOADS.push(row); return { ...row };
+    },
+    /* The cut is cached on the row, so a second placement of the same picture is instant. */
+    ensureCutout: async (id) => {
+      const u = UPLOADS.find(r => r.id === id);
+      if (!u) throw new Error('No such upload.');
+      await new Promise(r => setTimeout(r, 400));          // the wait a baker sees on a first placement
+      u.cutoutUrl = UP_CUT(u.url.includes('e07a8c') ? '#e07a8c' : '#7aa7e0');
+      return { cutoutUrl: u.cutoutUrl };
+    },
+    renameUpload: async (id, name) => { const u = UPLOADS.find(r => r.id === id); if (u) u.name = name; return { ...u }; },
+    deleteUpload: async (id) => { const i = UPLOADS.findIndex(r => r.id === id); if (i >= 0) UPLOADS.splice(i, 1); },
+    unlinkUpload: async (id) => { const u = UPLOADS.find(r => r.id === id); if (u) u.unlinked = true; },
+  });
+}
 
 const apiClient = new Proxy(STUBS, {
   get: (t, k) => t[k] ?? (async () => ({ items: [], events: [], templates: [], plans: [], flavours: [] })),
@@ -1443,6 +1939,67 @@ const rimRosesDesign = PARAMS.has('rimroses') ? {
   }),
 } : null;
 
+/* ── `?standing` — a decoration on the top surface in STAND mode ────────────────────────────────
+ *
+ * ⚠️ THIS EXISTS BECAUSE THE OTHER RETURN WENT UNTESTED. `DraggableTopSticker` has two of them:
+ * upright (`isStand || isPerch || isVerge || isInsert`) and flat. Every fixture here seeded a flat
+ * sticker — `?rimroses` is a scatter — so a change that broke only the upright path shipped green
+ * and took every cake with a standing decoration to a black screen with "Cannot access 'e_' before
+ * initialization" (0.1.773). One fixture per RETURN, not one per component.
+ *
+ * Same rosette and the same real size as `?rimroses`, so the two differ in exactly one thing: the
+ * placement mode, and therefore which branch renders. */
+const standingDesign = PARAMS.has('standing') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: [0, 1, 2].map(k => ({
+    id: `st${k}`, elementId: 'e9', name: 'Rosette', imageUrl: '/sample-rosette.glb',
+    zone: 'top_surface', tierIndex: 0, placementMode: 'stand',
+    x: (k - 1) * 0.9, z: 0, y: 0, scale: 3.2,
+    size: 1, rotation: 0, color: '#c41c1c',
+    allowedActions: { move: true, color: true, delete: true, resize: true },
+  })),
+} : null;
+
+/* ── `?piping` — a cake whose decoration is PIPING, not stickers ─────────────────────────────────
+ *
+ * ⚠️ NO FIXTURE HAD A PIPING RING, which is how the build take shipped animating stickers and
+ * nothing else for four releases. Sandeep, filming a rose-ring cake: *"piping elements are not
+ * flying. also, few other things like roses in this image are not flying."* The roses in that
+ * picture ARE a piping ring on an element finish — so the gap and the complaint are the same thing,
+ * and no seeded cake here could have shown it.
+ *
+ * A top ring and a bottom ring, plus two rosettes, so one run shows piping and stickers flying
+ * together and in the same order they were placed. */
+const pipingDesign = PARAMS.has('piping') ? {
+  tiers: [{
+    color: '#F6E7EA', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
+    /* ⚠️ A `glbUrl` IS WHAT MAKES A RING RENDER. Without one the layer is accepted and draws
+       nothing, which is how the first cut of this fixture "passed" while showing a bare cake.
+       A ring of rosettes is also the exact case reported — the roses on that cake are piping. */
+    topPipings:    [{ layerId: 'tp1', glbUrl: '/sample-rosette.glb', color: '#D81E2C', size: 1 }],
+    bottomPipings: [{ layerId: 'bp1', glbUrl: '/sample-rosette.glb', color: '#E8C8D2', size: 1 }],
+  }],
+  stickers: [0, 1].map(k => ({
+    id: `pr${k}`, elementId: 'e9', name: 'Rosette', imageUrl: '/sample-rosette.glb',
+    zone: 'top_surface', tierIndex: 0,
+    x: (k ? 0.5 : -0.5), z: 0, y: 0, scale: 3.2,
+    size: 1, rotation: 0, color: '#c41c1c',
+    allowedActions: { move: true, color: true, delete: true, resize: true },
+  })),
+} : null;
+
+/* ── `?boardsand` — a drift on the BOARD, around the cake ────────────────────────────────────────
+ *
+ * The surface core could not reach until now. `SandBed` has always defaulted to the board zone and
+ * the element row allows it; only the designer's wiring was missing, so no fixture here could show
+ * it either. Deliberately WITHOUT a region: the round/rectangle/triangle patches are a top-surface
+ * question, and on the board the drift IS the ring. */
+const boardSandDesign = PARAMS.has('boardsand') ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  boardSand: { size: 0.55, colour: '#D8C49A', spacing: 0.055, rise: 0.09, falloff: 0.6,
+               edgeBreak: 0.25, seed: 7 },
+} : null;
+
 const stackDesign = PARAMS.has('stack') ? {
   tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
   writings: [{
@@ -1548,5 +2105,5 @@ const styledDesign = STYLE_KEY ? {
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

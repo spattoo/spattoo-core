@@ -6,7 +6,8 @@ import { setContext } from '../telemetry/index.js';
 import { splitMobileNav } from './mobileNav.js';
 import { BUILD } from './buildId.js';
 import { BRUSH_BAND_DEFAULTS, brushBandCount, BRUSH_ON_CAKE_DEFAULTS,
-         brushGestureFromDrag } from './geometry/brushStrokeOnCake.js';
+         brushGestureFromDrag, brushTopFromDrag, variedWidth, BRUSH_WIDTH_RANGE,
+         SWEEP_DEFAULTS, SWEEP_WIDTH_RANGE } from './geometry/brushStrokeOnCake.js';
 import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.js';
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
@@ -20,8 +21,8 @@ import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
 import { useAnyLoading } from './canvas/loadingRegistry.js';
-import { isSinglePerSlot, placementSlots, flatPose, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
-import { corsUrl, assetUrl } from './utils/assetUrl.js';
+import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
+import { corsUrl, assetUrl, elementIs3D } from './utils/assetUrl.js';
 import { registerRenderVariants } from './shared/renderVariants.js';
 import { useTrimmedLogo } from '../shared/useTrimmedLogo.js';
 import { spatulaFramePath } from '../shared/spatulaPath.js';
@@ -30,6 +31,7 @@ import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches 
 import TemplateGrid from './shared/TemplateGrid.jsx';
 import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
+import HelpAssistant from '../shared/HelpAssistant.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 
@@ -58,12 +60,46 @@ import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITIN
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
 import { tierShape, topClampInset, boardRingClamp, shapeReach, isRoundWall, boundingRadius } from './geometry/surface.js';
+import { headerBrandParts, brandNameFontSize, BRAND_NAME_MIN } from '../shared/headerBrand.js';
+import { brandFontCss } from '../storefront/storefrontKit.js';
 import { packCluster, clusterRadii, manualSeat } from './geometry/spherePacking.js';
 import { GRASS_DEFAULTS, nextPatchSpot } from './geometry/grass.js';
+import { SAND_DEFAULTS, SAND_COLORS, sandPlacement, sandMoveTarget,
+         ZONES_TOP, ZONES_BOARD } from './geometry/sand.js';
+/* Density and spacing are the same number read from opposite ends: density = SUM − spacing. The SUM
+   is what makes the dial's own range (0.018…0.08) land on a sensible spacing, and it lives here
+   rather than inline so the control and its inverse cannot drift apart. */
+const SAND_DENSITY_SUM = 0.098;
+import { REGION_KINDS, REGION_DEFAULTS } from './geometry/region.js';
+import { SPIN_DEFAULTS, SPIN_PHASES, spinTotal } from './reel/spinTake.js';
+import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, MAX_SWING } from './reel/assemblyTake.js';
+import { secondsLeft, clampDelay, DELAY_MAX, DELAY_DEFAULT } from './reel/takeDelay.js';
+import { recordCanvas, pickMimeType, extensionFor, downloadBlob } from './reel/recordReel.js';
+import { STRENGTH_DEFAULT, STRENGTH_MIN } from './reel/takeGrid.js';
+import { BACKDROP_LOOKS, BACKDROP_DEFAULT, BACKDROP_STRENGTH_DEFAULT } from './reel/takeBackdrop.js';
+import { GroundSwatches, groundsFor } from './capture/takeUi.jsx';
+import { LENS_GLIDE_S } from './reel/cinematicLens.js';
+import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
+/* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
+   module load, so a phase added to the take without a label here fails loudly at import rather than
+   rendering a slider short — the take and the panel cannot drift apart silently. */
+const SPIN_PHASE_COPY = {
+  turn: { label: 'Turn',   hint: 'One full revolution, level.',            max: 20 },
+  rise: { label: 'Rise',   hint: 'Lifts to look down on the top.',         max: 10 },
+  top:  { label: 'Top',    hint: 'Holds there.',                           max: 10 },
+  back: { label: 'Settle', hint: 'Returns to where it started.',           max: 10 },
+};
+const SPIN_PHASE_LABELS = SPIN_PHASES.map((key) => {
+  const copy = SPIN_PHASE_COPY[key];
+  if (!copy) throw new Error(`spin phase "${key}" has no label — add one to SPIN_PHASE_COPY`);
+  return { key, ...copy };
+});
+import { AreaShapeIcon, areaLabel, hasAreaGlyph } from './shared/AreaShapeIcon.jsx';
 import { GYP_DEFAULTS, GYP_COLOURS, gypPlacement } from './geometry/gypsophila.js';
 import { MEDIA, DEFAULT_MEDIUM } from './geometry/pipingMedia.js';
 import { STICK_LENGTH_RANGE } from './geometry/topperPiece.js';
 import { fillStrokeOnFlat, FILL_PATTERNS } from './geometry/pipingFillOnCake.js';
+import { writingSeedFor } from './geometry/textPath.js';
 import GarnishStudio from './garnish/GarnishStudio.jsx';
 import CreamPatternStudio from './pattern/CreamPatternStudio.jsx';
 import TopperComposer from './topper/TopperComposer.jsx';
@@ -396,7 +432,12 @@ export const PIPING_MAX_STOPS = 3;
 
 function GradientControls({ stops, activeStop, mode, onSelectStop, onAddStop, onRemoveStop, onModeChange,
                             modes = GRADIENT_MODES, balance, onBalanceChange, pending = false,
-                            label = 'Gradient colors', maxStops = PIPING_MAX_STOPS }) {
+                            /* ⚠️ NAME THE THING BEING COLOURED, NOT THE TECHNIQUE. Every caller
+                               that bothered to pass a label already did — "Stripe colours",
+                               "Chocolates", "Glaze colours" — and only the default fell back to
+                               "Gradient colors", which is the one piece of jargon on a card whose
+                               other headings are "How the colour sits" and "Balance". */
+                            label = 'Blended colours', maxStops = PIPING_MAX_STOPS }) {
   const realCount = stops.length - (pending ? 1 : 0);   // gradient is "real" only with ≥2 filled stops
   return (
     <div style={s.gradientBlock}>
@@ -688,6 +729,20 @@ function PenSlider({ label, value, min, max, step, onChange, onCommit, fmt = v =
 // tier at a time, so tapping a number switches which. Hidden on single-tier cakes. Config-free —
 // the SAME picker for any finish (no slug/type branch). Lives in ONE place so the two finish cards
 // don't each carry a copy (the jscpd duplication gate).
+/* The small black-when-chosen pill the take panels and the sand card both use for "which one".
+   ⚠️ ONE DEFINITION. It was written twice within an hour — once for the sand card's surface picker
+   and once for the build video's shape — and two copies of a button style is how two rows on one
+   screen end up disagreeing, which is the complaint FinishTierPicker's own note below records. */
+function pillStyle(active) {
+  return {
+    minWidth: 26, padding: '4px 8px', borderRadius: 7, fontSize: 11, fontWeight: 700,
+    cursor: 'pointer', fontFamily: 'inherit',
+    border: `1.5px solid ${active ? INK : LINE}`,
+    background: active ? INK : SURFACE,
+    color: active ? SURFACE : INK,
+  };
+}
+
 function FinishTierPicker({ tiers, tier, onPick }) {
   if (tiers.length <= 1) return null;
   /* ⚠️ BLACK, like the cards it sits in. Sandeep: "buttons in black". This picker renders directly
@@ -756,7 +811,13 @@ const CAT_LABEL = { occasion: 'Occasion', style: 'Style', color: 'Color', materi
 /* How a tier's colour is laid on, as [value, label]. ONE source: the Solid/Ombre/Stripes buttons in
    the Pattern panel render from this, and the Pattern tab's own note reads the label from it too —
    two copies would let the tab say "Ombre" while the row underneath showed "Stripes" selected. */
-const TREATMENT_LABELS = [['solid', 'Solid'], ['ombre', 'Ombre'], ['stripes', 'Stripes']];
+/* ⚠️ THE LABEL IS "Blended", THE STORED KEY IS STILL `ombre`, AND THAT SPLIT IS THE POINT. Every
+   cake ever saved carries `treatment: 'ombre'`; renaming the key would need a migration and would
+   break designs mid-flight, for a change that is purely about words a baker reads. Sandeep, on the
+   old label: *"i would prefer some simple word than ombre… Blended is better. simple and all bakers
+   can understand."* Ombre is a real decorating term, so this is not a correction — it is choosing
+   the plainer of two right words, and the data has no opinion either way. */
+const TREATMENT_LABELS = [['solid', 'Solid'], ['ombre', 'Blended'], ['stripes', 'Stripes']];
 const treatmentLabel = (t) => TREATMENT_LABELS.find(([k]) => k === t)?.[1] ?? null;
 const catLabel = (cat) => CAT_LABEL[cat] ?? cat.replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
 
@@ -1000,7 +1061,7 @@ const CAKE_GLYPH = (
    a door with a name and a state, which is enough for the ones that are plainly one thing. */
 const TIER_DOOR_HINTS = {
   frosting: 'The cream, its style and the top edge.',
-  gradient: 'Solid, ombre or stripes.',
+  gradient: 'Solid, blended or stripes.',
   shape:    'The outline of this tier.',
 };
 
@@ -1717,6 +1778,26 @@ function ElementGrid({ groups = [], onElementTap, onDragStartSticker }) {
                   fontSize: 10, fontWeight: 800, lineHeight: '16px', textAlign: 'center',
                 }}>→</span>
               )}
+              {/* ⚠️ ONLY THE 3D ONES ARE MARKED. Sandeep: *"i would prefer 3D, its understood as
+                  object. and its short. we dont hav to over explain. and only 3d wil have this.
+                  others are understood as flat."* Measured on the dev catalogue when this was
+                  asked: 221 elements, 82 of them models and 139 flat — so a badge on the minority
+                  is also the quieter grid. A mark on every tile would be a mark that says nothing.
+
+                  ⚠️ THE OPPOSITE CORNER FROM THE STUDIO ARROW, deliberately. Both are corner marks
+                  on the same 64px tile and an element can in principle carry both; stacked in one
+                  corner they would overlap and the tile would start lying about one of them.
+
+                  ⚠️ NOT `aria-hidden`, unlike the arrow. The arrow repeats what the tap already
+                  does; this says something the picture cannot — a thumbnail of a model and a
+                  thumbnail of a print look alike at 64px, which is the whole reason it is here. */}
+              {elementIs3D(el) && (
+                <span title="A 3D model — it turns and catches the light" style={{
+                  position: 'absolute', left: 0, top: 0, height: 16,
+                  padding: '0 4px', borderBottomRightRadius: 8, background: INK, color: '#fff',
+                  fontSize: 9, fontWeight: 800, lineHeight: '16px', letterSpacing: 0.3,
+                }}>3D</span>
+              )}
             </div>
             <span style={{ fontSize: 9, fontWeight: 700, color: '#444', textAlign: 'center', maxWidth: 68 }}>{el.name}</span>
           </div>
@@ -1926,6 +2007,20 @@ function MoreIcon({ size = 20 }) {
 /* The two takes. Same 24-grid, same 1.8 stroke, currentColor — so each takes the colour of whatever
  * it sits in, whether that is a dark button or a white menu row. */
 
+/* Pieces coming down onto a base — the build take's mark. Local to this screen, like ReelIcon:
+   src/shared/icons.jsx is for glyphs more than one surface draws. */
+function LayersIcon({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {/* the base it all lands on */}
+      <path d="M3 17.5l9 4 9-4" />
+      {/* two pieces still on their way down */}
+      <path d="M3 12.5l9 4 9-4" />
+      <path d="M12 2.5l9 4-9 4-9-4 9-4z" />
+    </svg>
+  );
+}
+
 function ReelIcon({ size = 18 }) {
   return (
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -1938,6 +2033,66 @@ function ReelIcon({ size = 18 }) {
 // One shared upward popover for the mobile baker action bar (so the item styling / overlay live in ONE
 // place). align 'left' | 'right' | 'center' positions it against its anchor and keeps it on-screen.
 const SHEET_ITEM = { display: 'block', width: '100%', textAlign: 'left', background: 'transparent', border: 'none', padding: '12px', fontSize: 14, color: INK, cursor: 'pointer', borderRadius: 8, whiteSpace: 'nowrap' };
+/* ── What the Capture menu holds ─────────────────────────────────────────────────────────────────
+ *
+ * ⚠️ ONE COPY, TWO PLACES. The desktop row has a Capture button and the phone reaches the same
+ * things through its Actions sheet — and until this was extracted the phone simply did not have
+ * them: a baker on a phone could take a photo and record a reel, and the two TAKES existed only on
+ * a desktop. Sandeep: *"in mobile view, i dont see this build video option. i dont see spin option
+ * as well … pls make sure all the options available in desktop are available in mobile as well."*
+ *
+ * Written as one component rather than copied into both sheets, because a menu that exists twice is
+ * a menu that will be added to once — which is exactly how the phone fell behind in the first place.
+ */
+function CaptureMenuItems({
+  onClose, onPhoto, onReel, onBuild, onSpin, canFilmBuild, canSpin, buildSeconds, spinSeconds,
+}) {
+  return (<>
+    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+            onClick={() => { onClose(); onPhoto(); }}>
+      <CameraIcon size={17} />
+      Take a photo
+    </button>
+    <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+            onClick={() => { onClose(); onReel(); }}>
+      <ReelIcon size={17} />
+      Record a reel
+    </button>
+    {/* ⚠️ `isCatalogAuthor`, NOT `canRecordReel`. The menu around this opens for either,
+        because a baker on a plan with reel capture films their own cakes — but this is
+        for filming the PRODUCT, and Sandeep asked for template authors only. The two
+        questions are different: `reel_branding` says whose name is on a video,
+        `is_catalog_author` says who writes the public catalogue. */}
+    {canFilmBuild && (
+      <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+              onClick={() => { onClose(); onBuild(); }}>
+        <LayersIcon size={16} />
+        Build the cake
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>
+          {buildSeconds}s
+        </span>
+      </button>
+    )}
+    {canSpin && (
+      <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+              onClick={() => { onClose(); onSpin(); }}>
+        <RefreshIcon size={16} />
+        Spin the cake
+        {/* ⚠️ THE LABEL IS NOT A TOGGLE, AND IT CANNOT BE. It was written as
+            `filmSpin ? 'Stop spinning' : 'Spin the cake'`, which is unreachable: the
+            spin stops on ANY pointerdown, and opening this menu is a pointerdown — so
+            by the time the item renders, the spin is already off and it always read
+            "Spin the cake". A ternary whose other branch can never show is a lie
+            about the control.
+            The hint is safe HERE and nowhere else: this menu is shut while anyone is
+            filming, so it is the one place in the designer that can explain the way
+            out without the explanation ending up in the video. */}
+        <span style={{ marginLeft: 'auto', fontSize: 11, opacity: 0.5 }}>{spinSeconds}s</span>
+      </button>
+    )}
+  </>);
+}
+
 function ActionSheet({ open, onClose, align = 'left', children }) {
   if (!open) return null;
   const pos = align === 'center' ? { left: '50%', transform: 'translateX(-50%)' } : { [align]: 0 };
@@ -2208,19 +2363,34 @@ function SpatulaFrame({ lifted = false, skin = DEFAULT_RAIL_SKIN }) {
 // invisible — an item overflowing a row with no visible boundary looks exactly like an item that was
 // never added.
 //
-// The shape is not lost: SpatulaMarkIcon below carries it into the phone's More button — so the
-// charm lives somewhere it costs nothing instead of paying rent on contested space. The desktop rail
-// still draws it, where there is room for it.
+// The shape survives on the DESKTOP rail, where there is room for it. It briefly survived on the
+// phone too, as the mark on the More button — the charm living somewhere it cost nothing — and that
+// is now gone as well: a spatula is what Spattoo IS, not what "the rest of the menu" MEANS, and the
+// one place a phone has no room to explain itself is a 20px glyph above a six-character label.
+// Sandeep: *"for 'More' instead of spatula, lets have 3 line icon."* Three lines is the one shape
+// every person on a phone already reads as "the rest of it" without being taught.
 //
 // dev/mobile-nav.html holds the comparison this came from, with the numbers live.
 
-/** The spatula, small enough to be an icon. Marks the phone's More button, so the drawer reads as
- *  "the rest of Spattoo" rather than a generic ellipsis. Solid rather than stroked: at 20px the
- *  handle and blade of an outlined spatula collapse into an indistinct stick. */
-function SpatulaMarkIcon({ size = 20 }) {
+/** Three lines: the phone's More button.
+ *
+ *  ⚠️ STROKED AT 1.8, NOT SOLID, because it stands in a ROW. Every other glyph in the strip —
+ *  OrdersIcon, ElementsIcon, DashboardIcon — is `fill: none` on a 1.8 stroke over the same 24 grid,
+ *  and the spatula this replaces was solid: it read heavier than its neighbours and pulled the eye
+ *  to the one slot that is a drawer rather than a destination.
+ *
+ *  ⚠️ IT IS NOT `MoreIcon`, WHICH IS ALSO IN THIS FILE AND ALSO MEANS "more". That one is a
+ *  vertical ellipsis and marks the designer's **Actions** sheet — a short list of things to do to
+ *  the cake in front of you. This marks the nav drawer: the screens that did not fit the bar. Two
+ *  different promises, so two different marks (INVARIANTS #14 — an icon means the same thing
+ *  everywhere, which also means two meanings may not share one). */
+function MenuLinesIcon({ size = 20 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M9.4 2.4h5.2c.75 0 1.3.58 1.3 1.3v6.1c0 1.45-.62 2.3-1.5 3.0l-.55.44v7.2a1.85 1.85 0 0 1-3.7 0v-7.2l-.55-.44c-.88-.7-1.5-1.55-1.5-3.0V3.7c0-.72.55-1.3 1.3-1.3Z" />
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" aria-hidden="true" focusable="false">
+      <line x1="4" y1="7" x2="20" y2="7" />
+      <line x1="4" y1="12" x2="20" y2="12" />
+      <line x1="4" y1="17" x2="20" y2="17" />
     </svg>
   );
 }
@@ -3097,11 +3267,24 @@ export function nameFontSize(name = '') {
  *  so this cannot grow without that header growing with it. */
 const HEADER_LOGO_MAX_H = 40;
 
+/** The same, on DESKTOP, where the row is not fighting a bell, a credits pill and a profile for
+ *  width — and where 40 was never a judgement about desktop at all. It was mobile's number, shared
+ *  because one style served both headers, and the note above says so.
+ *
+ *  ⚠️ IT IS A BADGE LOGO THAT EXPOSES THIS, NOT A WORDMARK. Capping by height suits a mark that is
+ *  wide and short: it spends its budget on width, of which there are 240. A round badge spends 40
+ *  of 240 and then has nowhere to put the rest of itself. Measured on a real one (Velvet & Vanilla,
+ *  640×640): its name block is 43.3% of the badge, so at 40 the two lines share 17.3px — about 8px
+ *  each, which is not reading at any size. At 56 they share 24.2px. Beside it, a baker with NO logo
+ *  gets their name set in Pacifico at 26px, so the branded header was the one that looked unfinished
+ *  — the exact inversion desktopLogoText was written to fix, reappearing from the other side. */
+const DESKTOP_LOGO_MAX_H = 56;
+
 /** The desktop header row. DERIVED from the logo cap plus even breathing room, never picked: at a
  *  hand-chosen 52 a max-height logo sat 14 from the top and ended at 54, pushing its own mark two
  *  pixels through the rule that is supposed to contain it. Tie the two together and the biggest
  *  logo a baker can upload still lands inside the row. */
-const DESKTOP_HEADER_H = HEADER_LOGO_MAX_H + 24;
+const DESKTOP_HEADER_H = DESKTOP_LOGO_MAX_H + 24;
 
 const MOBILE_BAR_H = 56;
 
@@ -3330,7 +3513,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setBoardSand, updateBoardSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.
@@ -3511,8 +3694,17 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     setHandSprinkleIds(prev => prev.slice(0, -1));
   }
 
-  function handleBrushDrawStart(tierIndex, point) {
-    brushDrawing.current = { tierIndex, from: point, id: null };
+  /* ⚠️ THE SURFACE COMES FROM THE TARGET THAT CAUGHT THE PRESS, not from a control. Both the wall
+     and the lid are live while drawing, so whichever one the hand landed on is the surface the
+     whole stroke belongs to — captured on the way DOWN and held for the drag, so a gesture that
+     starts on the lid and runs off the rim stays a lid stroke (and drapes) instead of changing its
+     mind halfway. */
+  function handleBrushDrawStart(tierIndex, point, surface = 'side') {
+    /* ⚠️ THE KIND IS CAPTURED ON THE WAY DOWN, with the surface and for the same reason: one drag
+       lays one thing, and a baker who switches the card mid-gesture should not end up with half a
+       sweep. */
+    brushDrawing.current = { tierIndex, from: point, id: null, surface,
+                             sweep: brushDraw?.kind === 'sweep' };
   }
 
   function handleBrushDrawTo(tierIndex, point) {
@@ -3525,8 +3717,15 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
        sweep comes out compressed on the long sides and stretched on the short ones, so a stroke
        drawn straight down lands leaning. The renderer walks the same outline (wallPlacer), so
        input and output now agree about where "a third of the way round" is. */
-    const g = brushGestureFromDrag(d.from, point,
-      { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height, shape: tierShapeAt(design.tiers, tierIndex) });
+    /* ⚠️ TWO GESTURES, BECAUSE A LID IS NOT A WALL — the same split the renderer already makes.
+       A wall is a cylinder, so its gesture is a turn and a fraction of the height; a lid is a disc
+       with no "round" and no "up", so its gesture is two points in units of R. Both are RELATIVE,
+       so neither goes stale when the tier is resized. */
+    const onTop = d.surface === 'top';
+    const g = onTop
+      ? brushTopFromDrag(d.from, point, { R: t.radius })
+      : brushGestureFromDrag(d.from, point,
+          { R: t.radius, baseY: t.baseY ?? 0, wallH: t.height, shape: tierShapeAt(design.tiers, tierIndex) });
     if (!g) return;                                     // still a tap
     if (d.id === null) {
       const id = `bs${Date.now().toString(36)}${Math.floor(Math.random() * 1e4).toString(36)}`;
@@ -3540,13 +3739,35 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
       const prev = (t.brushStrokes ?? []).at(-1);
       const band = { ...BRUSH_BAND_DEFAULTS, ...(t.brushBand ?? {}) };
       const palette = band.colors?.length ? band.colors : BRUSH_BAND_DEFAULTS.colors;
+      /* ⚠️ DECLARED BEFORE THE RECORD, BECAUSE THE WIDTH IS DERIVED FROM IT. The seed used to be
+         written inline; the breadth of the stroke now comes out of it too, so the two have to agree
+         or a reopened cake would be a different set of marks from the one that was drawn. */
+      const seed = 1 + Math.floor(Math.random() * 9999);
+      /* ⚠️ A SWEEP CARRIES OVER FROM THE LAST SWEEP, A MARK FROM THE LAST MARK. Carrying a sweep's
+         1.1 into the next mark would make it a slab, and a mark's 0.3 into the next sweep would
+         make it a stripe — the two are different tools and a baker alternating between them should
+         find each as they left it. */
+      const isSweep = d.sweep === true;
+      const prevKind = (t.brushStrokes ?? []).filter(x => (x.sweep === true) === isSweep).at(-1);
+      const baseWidth = prevKind?.baseWidth ?? prevKind?.width
+        ?? (isSweep ? SWEEP_DEFAULTS.width : BRUSH_ON_CAKE_DEFAULTS.width);
       updateTierBrushStrokes(tierIndex, list => [...list, {
         id,
-        surface: 'side',
-        color:  prev?.color  ?? palette[0] ?? '#F6DCE2',
-        width:  prev?.width  ?? BRUSH_ON_CAKE_DEFAULTS.width,
-        weight: prev?.weight ?? BRUSH_ON_CAKE_DEFAULTS.weight,
-        seed:   1 + Math.floor(Math.random() * 9999),
+        surface: d.surface ?? 'side',
+        color:  prev?.color  ?? palette[0] ?? '#F6DCE2',   // the colour carries across BOTH, as a palette does
+        /* ⚠️ VARIED, AND VARIED AROUND WHAT WAS CARRIED IN. No two marks a hand makes are the same
+           breadth — a row of ours came out as one rectangle repeated — but width also carries over
+           from the previous stroke on purpose (*"its not keeping the same thickness, its
+           resetting"*). Scaling the carried value keeps the baker's knife and still makes each mark
+           its own; see `variedWidth`. */
+        width:  variedWidth(baseWidth, seed,
+                            isSweep ? { range: SWEEP_WIDTH_RANGE } : undefined),
+        /* The knife, kept apart from the mark it left. Varying from the previous stroke's VARIED
+           width compounds into a walk that drifts off the baker's choice — see `variedWidth`. */
+        baseWidth,
+        weight: prevKind?.weight ?? (isSweep ? SWEEP_DEFAULTS.weight : BRUSH_ON_CAKE_DEFAULTS.weight),
+        ...(isSweep ? { sweep: true } : {}),
+        seed,
         ...g,
       }]);
       /* ⚠️ AND ITS CARD OPENS WITH IT. Sandeep: *"a separate sub popup should be opened (like we do
@@ -4299,6 +4520,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Reels. Two entitlements, because "may record" and "whose name is on it" are different questions
   // — see spattoo-docs/plans/reel-for-bakers.md §2e.
   const [reelCapture,  setReelCapture]  = useState(false);   // may record at all
+  /* Filming the cake assemble itself, and saving it. Blaze and above (migration 135).
+     ⚠️ A DIFFERENT BARGAIN FROM `reelCapture`, deliberately. A reel is on every paid tier because a
+     watermarked one markets us whenever it is posted; this one has no watermark rung — Sandeep:
+     *"we have watermark optio for reel capture. but this one strictly for blaze."* */
+  const [buildFilm,    setBuildFilm]    = useState(false);
   const [reelBranding, setReelBranding] = useState(false);   // their own name, vs "made with Spattoo"
   /* Whether this take carries their name at all — the record panel's tick, held HERE because the
    * 9:16 preview overlay and the recorder both read the composed caption. Reset per panel open would
@@ -4457,6 +4683,12 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // by height — so that margin is spent out of the height budget and the mark reads small. Trimmed
   // once per URL at render, which fixes existing logos without a re-upload or a backfill.
   const logoSrc = useTrimmedLogo(bakerData?.logo_url);
+  // What this header draws — the mark, the name, or both. One accessor for both headers and for the
+  // settings control, so they cannot disagree about what a stored choice means.
+  const brandParts = headerBrandParts(bakerData, !!logoSrc);
+  // The bakery's name is the one piece of type in the app that belongs to the baker, so the face is
+  // theirs too. One reader, shared with the settings preview and the storefront.
+  const brandFont  = brandFontCss(bakerData);
 
   // Any page that docks beside the rail. While one is open the rail floats ABOVE it (lifted, with a
   // shadow) — see dockedPage in shared/rail.js. One list, so a new docked page cannot be forgotten in
@@ -4632,10 +4864,117 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Filled by TakeDirector when the baker is a catalogue author. Null otherwise — and the canvas
   // only mounts the director when it is passed, so every other bakery renders nothing extra.
   const takeRef          = useRef(null);
+  /* ── Spinning the cake for the camera ─────────────────────────────────────────────────────────
+   * A hero shot: the cake turning slowly on its own while somebody films the screen. Sandeep wants
+   * the demo video to open on the mermaid doll cake rotating.
+   *
+   * ⚠️ NO NEW CHROME, AND THAT IS THE REQUIREMENT, NOT A PREFERENCE. *"that button should not
+   * appear in video"* — and a screen recorder captures the screen, not the canvas, so anything
+   * drawn here lands in the file. It lives inside the Capture ⋯ menu, which is SHUT except in the
+   * second it is being used, so by construction there is nothing on screen to film. The reel's own
+   * messages can sit over the designer precisely because the reel captures the canvas; this cannot
+   * borrow that reasoning.
+   *
+   * ⚠️ SEPARATE FROM `creamAutoRotate`, which spins the cake for spin-painting. Same effect on the
+   * controls, different owner and different lifetime — folding them together would mean closing the
+   * cream panel stopped the film shot, or filming left the paint wheel on. */
+  const [filmSpin, setFilmSpin] = useState(false);
+  /* The four phase durations. Tuned against a narration whose length is already known, which is why
+     they are adjustable at all rather than four constants: the take has to fit the words. */
+  const [spinPlan, setSpinPlan] = useState({ ...SPIN_DEFAULTS });
+  /* The settings popover. ⚠️ It opens from the menu and closes the moment the take starts — it is
+     on screen only while nobody is filming, which is the same rule the menu item itself follows. */
+  const [spinSetupOpen, setSpinSetupOpen] = useState(false);
+  /* ── The cake building itself ──────────────────────────────────────────────────────────────────
+   * `build` is the elapsed seconds of a run, or null when none. It lives here rather than in the
+   * canvas because the canvas is the thing being told, not the thing deciding.
+   *
+   * ⚠️ SLOW MOTION IS A DIVISOR ON THE DURATIONS, never a speed change in the editor. Slowing a
+   * clip in post resamples frames that were already captured; stretching these renders every frame
+   * for real at the slower pace. See atSpeed in assemblyTake.js. */
+  const [build, setBuild] = useState(null);
+  const [buildPlan, setBuildPlan] = useState({ ...ASSEMBLY_DEFAULTS });
+  const [buildSetupOpen, setBuildSetupOpen] = useState(false);
+  /* One lens for both takes. ⚠️ It is applied only WHILE filming and put back after — the view a
+     baker approves is what their customer gets, so the designer's own lens must not move because
+     somebody filmed once. Set it to 42 to film exactly what the editor shows. */
+  const [takeLens, setTakeLens] = useState(CINEMATIC_FOV);
+  /* ── The head start, shared by both takes ──────────────────────────────────────────────────────
+   * "so the actual assembling video or the spin video starts after selected number of seconds,
+   * this is useful in case of screen recording" — time to cross to a screen recorder and press
+   * record. One setting for both, because it describes how you are RECORDING, not what you film.
+   * `startAfter` is the chosen seconds; `countdown` is what is on screen, or null for nothing. */
+  /* ⚠️ TRUE FROM THE MOMENT A TAKE STARTS UNTIL THE LENS IS BACK, which is LATER than the take.
+     Unmounting TakeLens the instant the build finished is what made the return a jump — the glide
+     needs a component to run in. The canvas tells us when it has arrived. */
+  /* A grid floor under the cake while filming, like the marketing site's. On by default because it
+     was asked for by name; one tap turns it off. ⚠️ It reaches the canvas ONLY inside a take's own
+     window — a baker judging a colour must not be looking at graph paper, and a thumbnail with it
+     in is not the cake they sold. */
+  const [takeBackdrop, setTakeBackdrop] = useState(BACKDROP_DEFAULT);
+  const [takeBackdropStrength, setTakeBackdropStrength] = useState(BACKDROP_STRENGTH_DEFAULT);
+  const [takeGrid, setTakeGrid] = useState(true);
+  /* The vertical half, asked for alongside it. Same window, same isolation. */
+  const [takeGridWall, setTakeGridWall] = useState(true);
+  /* How strongly the grid is drawn. A control rather than a constant because the constant
+     was too faint to see — see takeGrid.js. */
+  const [takeGridStrength, setTakeGridStrength] = useState(STRENGTH_DEFAULT);
+  /* ── The shape of a saved build video ──────────────────────────────────────────────────────────
+   * ⚠️ `null` IS "AS ON SCREEN", AND IT IS THE DEFAULT. The first version always wrote 9:16 without
+   * asking — Sandeep: *"record and save is always downloading a vertical video. i have not asked
+   * like that. let the user choose at least."* Vertical is the right shape for posting and the
+   * wrong thing to assume, so it is one tap away and nothing is forced. */
+  const [buildShape, setBuildShape] = useState(null);
+  /* True while the camera is being moved into position for a recording, BEFORE a frame is captured.
+     See saveBuildVideo for why the move must not be in the file. */
+  const [takePreRoll, setTakePreRoll] = useState(false);
+  /* Recording the build to a file. `takeFrame` holds the capture stream's frame request while a
+     recording runs; `buildEnded` is resolved when the last piece lands, which is what tells the
+     recorder to stop. Both null the rest of the time, so nothing is mounted for them. */
+  const [buildSaving, setBuildSaving] = useState(false);
+  const [buildSaveError, setBuildSaveError] = useState(null);
+  const takeFrame = useRef(null);
+  const buildEnded = useRef(null);
+  const [lensReturning, setLensReturning] = useState(false);
+  const [startAfter, setStartAfter] = useState(DELAY_DEFAULT);
+  const [countdown, setCountdown] = useState(null);
+  const delayTimer = useRef(null);
+  /* ⚠️ THE TAKE IS A FIXED LENGTH WHATEVER THE CAKE HOLDS. The first version set a gap between
+     pieces, which gave a 1.6s build on a 3-piece cricket cake and 65.7s on a 181-piece space theme.
+     `total` is the control now and everything else derives from it. */
+  /* ── Is a take on screen? ──────────────────────────────────────────────────────────────────────
+   *
+   * Two questions, deliberately separate. `filmingTake` is "the camera is moving or the cake is
+   * assembling"; `takeWindow` adds the second or so afterwards while the lens glides back, which is
+   * still part of the shot as far as anything on screen is concerned.
+   *
+   * ⚠️ NAMED RATHER THAN REPEATED. `filmSpin || build != null` was written out at three call sites
+   * and a fourth was about to join them for the header rule — four copies of one idea is how they
+   * start disagreeing. Everything that must disappear while filming asks this.
+   */
+  const filmingTake = filmSpin || build != null;
+  const takeWindow = filmingTake || lensReturning || takePreRoll;
+
+  const buildTimings = buildPlan;
   const [reelOptsOpen, setReelOptsOpen] = useState(false);
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
   const [framing, setFraming]   = useState(false);
+  /* ⚠️ DECLARED HERE, BELOW `framing`, BECAUSE IT READS IT. Put above, it threw "Cannot access
+     'framing' before initialization" — the same trap `check:tdz` was written for after `orbited`
+     shipped a black screen in 0.1.773.
+     ⚠️ AND IT IS ON FROM THE MOMENT A TAKE PANEL OPENS, not from the moment one starts — see
+     openBuildSetup for the 18.85-per-frame cut the other way round produces. `framing` covers the
+     reel and photo panels (it also means "crop the canvas", which is why the build cannot use it);
+     `buildSetupOpen` covers the build's; `takeWindow` carries it through the take itself, so
+     pressing Start changes nothing on screen. */
+  /* ⚠️ IT HOLDS THROUGH THE LENS RETURN, and the GRADE is what fades rather than the ground
+     being yanked. Measured three ways on a build take: swapping the ground as the take ended cost
+     **18.85** in one frame; letting go a second earlier, inside the movement, 17.38; with the
+     grade held flat the same swap cost only **2.70** — so the gradient was 85% of it, and fading
+     THAT is the fix. It rides the grid's own ramp, so the room assembles and dissolves as one
+     move. See SceneBackground. */
+  const onFilmGround = framing || buildSetupOpen || takeWindow;
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -4655,14 +4994,283 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const primaryColor = INK;
   const accentColor  = '#333333';
 
+  /* Start or stop the hero spin.
+   *
+   * ⚠️ TURNING IT ON CLEARS THE SELECTION, for two reasons that happen to agree. The canvas only
+   * honours `autoRotate` when nothing is selected — so with a tier selected the menu item would
+   * appear to do nothing at all, which is the worst kind of control. And a selection draws a box
+   * and handles ON the cake, which is the one thing a hero shot of that cake must not have in it.
+   *
+   * ⚠️ IT IS NOT PART OF THE DESIGN. This is how the cake is being LOOKED at, not what it is, so it
+   * lives in component state and is never written to `design` — a saved cake that spins when you
+   * reopen it would be a bug somebody chases through the snapshot for an afternoon. */
+  /* Hold the take for `startAfter` seconds, then begin.
+   *
+   * ⚠️ THE COUNT IS CLEARED AND THE TAKE STARTED IN ONE COMMIT. React batches both setStates, so
+   * the render that first shows the take is the render that no longer shows the number — no frame
+   * can carry both, and a recording never opens on a "1" burned over the cake.
+   *
+   * ⚠️ NOTHING ELSE MOVES WHILE IT COUNTS. The lens and the camera are untouched until `begin` runs,
+   * so the baker's recorder catches the take from its true first frame rather than mid-change.
+   */
+  function armTake(begin) {
+    const wait = clampDelay(startAfter);
+    if (wait <= 0) { begin(); return; }
+    const endsAt = (typeof performance !== 'undefined' ? performance.now() : Date.now()) + wait * 1000;
+    const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    clearInterval(delayTimer.current);
+    setCountdown(secondsLeft(wait * 1000));
+    /* 100ms, not 1000: ticking once a second makes the number change up to a second late, which on
+       a three-second count is a third of it. The value only changes when the ceiling does. */
+    delayTimer.current = setInterval(() => {
+      const left = endsAt - now();
+      if (left > 0) { setCountdown(secondsLeft(left)); return; }
+      clearInterval(delayTimer.current);
+      delayTimer.current = null;
+      setCountdown(null);
+      begin();
+    }, 100);
+  }
+
+  function cancelArmedTake() {
+    clearInterval(delayTimer.current);
+    delayTimer.current = null;
+    setCountdown(null);
+  }
+
+  /* ⚠️ ESC CANCELS THE COUNT, A POINTER DOES NOT — and that asymmetry is the point. A running take
+     stops on any pointerdown because grabbing the cake plainly means "I want to drive now". While
+     it is merely counting, the baker is on their way to another window to press record, and a stray
+     click must not quietly disarm what they just set up. */
+  useEffect(() => {
+    if (countdown == null) return undefined;
+    const onKey = (e) => { if (e.key === 'Escape') cancelArmedTake(); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [countdown == null]);
+
+  // No timer may outlive the screen.
+  useEffect(() => () => clearInterval(delayTimer.current), []);
+
+  /* ── Opening the build panel puts the cake on the FILM ground ────────────────────────────────
+   *
+   * ⚠️ NOT WHEN THE TAKE STARTS, AND THAT DISTINCTION IS THE WHOLE POINT. Swapping the ground as
+   * the take begins is a hard cut: measured on a build take, one frame changed by **18.85** on the
+   * same scale the grid pop measured 0.89 — sixty times the flicker that was reported and fixed in
+   * 0.1.781. The reel has never had that problem because it does this on PANEL OPEN and opens on
+   * Studio, which IS the designer's own ground — so the only thing that changes is the editor's
+   * floor/wall seam disappearing, and nothing at all changes once filming starts.
+   *
+   * ⚠️ IT CANNOT JUST SET `framing`, which the reel and photo panels use for this. `framing` also
+   * drives the letterbox crop — it is what collapses the canvas to the 9:16 preview box — so the
+   * build panel would shrink the cake the moment it opened. The ground reads a wider condition
+   * instead (see `onFilmGround`), and `framing` keeps meaning "crop the canvas". */
+  function openBuildSetup() {
+    setTakeGround(DESIGNER_GROUND);
+    setBuildSetupOpen(true);
+  }
+
+  function startBuild() {
+    // Same reasons as the spin: a selection box on the cake would be filmed, and the canvas is
+    // calmer with nothing selected while every piece is moving.
+    handleDeselect();
+    armTake(() => { setLensReturning(true); setBuild(0); });
+  }
+
+  /* ── The build, straight to a file ─────────────────────────────────────────────────────────────
+   *
+   * *"can we have the option to download this build video."* Until now the only way to keep one was
+   * to point a screen recorder at the designer, which is why the head start exists at all — and a
+   * screen recording carries whatever else is on screen with it.
+   *
+   * ⚠️ NO HEAD START HERE, AND THAT IS NOT AN OVERSIGHT. `startAfter` buys time to reach a recorder
+   * in another window; recording from inside the page has nothing to reach, so honouring it would
+   * put several seconds of a motionless cake at the front of the file.
+   *
+   * ⚠️ IT RECORDS THE CANVAS, SO NOTHING ELSE ON SCREEN IS IN IT. No rail, no header, no buttons —
+   * the three faults a screen recording has. Reuses recordReel.js's recorder rather than a second
+   * one: the stream is opened at 0 fps and driven a frame at a time (see TakeFramePump), which is
+   * the bargain that stopped the reel stuttering.
+   */
+  /* ── The build, straight to a file ─────────────────────────────────────────────────────────────
+   *
+   * *"can we have the option to download this build video."* Until this existed the only way to keep
+   * one was to point a screen recorder at the designer, which carries whatever else is on screen.
+   *
+   * ⚠️ THE CAMERA IS PUT IN POSITION BEFORE A SINGLE FRAME IS CAPTURED, and that is the fix for
+   * *"build video is flickering at beginning and ending (zoom)."* Measured on a recorded take: the
+   * board went 158px wide, SHRANK to 144 over the first 0.3s, then grew to 186 by 1.0s. Two camera
+   * moves were fighting — the reframe easing toward the chosen shape while the lens narrowed the
+   * other way — and both were inside the recording. FitCakeToView's own note warns about exactly
+   * this pair: "one eased, the other jumped, and they were not synchronised."
+   *
+   * So the shape and the lens are applied, the camera is given time to come to rest, and only then
+   * does the recorder open. **The file contains the build and nothing else** — no zoom in, no zoom
+   * out — which is what you want in something you are going to post. The on-screen Start still
+   * plays the eased move, because there it IS the experience.
+   *
+   * ⚠️ NO HEAD START HERE. `startAfter` buys time to reach a recorder in another window; recording
+   * from inside the page has nothing to reach, so honouring it would put seconds of a motionless
+   * cake at the front of the file.
+   *
+   * ⚠️ IT RECORDS THE CANVAS, so no rail, header or buttons are in it — the three faults a screen
+   * recording has. Reuses recordReel.js rather than a second recorder, including its 0 fps stream
+   * driven one frame at a time (see TakeFramePump).
+   */
+  async function saveBuildVideo() {
+    if (buildSaving) return;
+    const canvasEl = frameRef.current?.querySelector('canvas');
+    if (!canvasEl) { setBuildSaveError('The cake view is not ready yet.'); return; }
+    const mimeType = pickMimeType();
+    if (!mimeType) { setBuildSaveError('This browser cannot record video.'); return; }
+
+    handleDeselect();
+    setBuildSaveError(null);
+    setBuildSaving(true);
+
+    /* A shape constrains the canvas, and R3F sizes the drawing buffer from its container — so what
+       is on screen IS what records, with no gl.setSize. `null` leaves the canvas as it is. */
+    const shaped = buildShape != null;
+    if (shaped) { setFrameAspect(buildShape); setFraming(true); }
+    // Engage the take's lens now, so its move happens off-camera.
+    setLensReturning(true);
+    setTakePreRoll(true);
+
+    try {
+      /* ⚠️ WAIT FOR THE CANVAS TO STOP RESIZING, not for a fixed number of frames. The container
+         changes shape over an eased transition, so R3F resizes the drawing buffer on EVERY frame of
+         it — and a MediaRecorder whose source changes resolution mid-recording produces a file the
+         browser itself warns about: "the codec description is not supposed to change during the
+         entire recording". */
+      await new Promise((resolve) => {
+        /* ⚠️ SIX FRAMES AND 1.5s WAS NOT ENOUGH, AND IT FAILED IN THE WORST WAY — by settling on an
+           INTERMEDIATE size. Probed frame by frame: the buffer goes 996x740 → **189x106** at 929ms
+           → 567x319 at 3804ms. Two animations overlap here, the setup panel closing and the
+           letterbox arriving, and between them the canvas passes through a tiny plateau that sits
+           still long enough to look settled. The old wait grew the buffer against 189x106 and R3F
+           then resized over the top of it, which is why a recording came out 567x319.
+           So: a much longer stability window, and a deadline past the real settle. */
+        let last = `${canvasEl.width}x${canvasEl.height}`;
+        let still = 0;
+        const deadline = Date.now() + 6000;
+        const tick = () => {
+          const now = `${canvasEl.width}x${canvasEl.height}`;
+          still = now === last ? still + 1 : 0;
+          last = now;
+          if (still >= 24 || Date.now() > deadline) { resolve(); return; }
+          requestAnimationFrame(tick);
+        };
+        requestAnimationFrame(tick);
+      });
+      /* ⚠️ AND THEN FOR THE CAMERA. The buffer settling is not the camera settling: the lens glides
+         for LENS_GLIDE_S and the fit eases to the new shape over its own FIT_EASE_S (1.2s, in
+         CakeCanvas). Recording before both are done is what put the shrink-then-grow in the file. */
+      await new Promise(r => setTimeout(r, LENS_GLIDE_S * 1000 + 1200 + 200));
+
+      /* ⚠️ LAST, AND BEFORE THE RECORDER OPENS. The file is only as big as the drawing buffer, and
+         the buffer is sized from the CSS box — a delivered video came back at 748x420 against the
+         reel's 1080x1920. This multiplies the pixels without touching the layout or the aspect, so
+         nothing on screen moves and the framing cannot shift. Changing it once the recorder is open
+         would change the stream's resolution mid-file, which is the fault the settle-wait above
+         already exists for. */
+      /* ⚠️ GROW UNTIL IT STICKS, because waiting for "settled" cannot work here. Probed frame by
+         frame, the buffer goes 996x740 → 189x106 at ~1s → 567x319 at ~4.5s: the panel closing and
+         the letterbox arriving overlap, and the tiny intermediate size HOLDS FOR THREE AND A HALF
+         SECONDS. Any stability test settles on it, the buffer is grown against the wrong number,
+         and R3F's own resize then lands on top — which is exactly how a recording came out 567x319
+         after the grow was supposedly applied.
+         So the grow is re-applied whenever R3F overrides it, and only when it has held for a while
+         does the recorder open. A loop, because the number of late resizes is not knowable. */
+      for (let attempt = 0; attempt < 12; attempt++) {
+        takeRef.current?.growBuffer?.();
+        let held = 0;
+        const want = `${canvasEl.width}x${canvasEl.height}`;
+        for (let f = 0; f < 20; f++) {
+          await new Promise(r => requestAnimationFrame(r));
+          if (`${canvasEl.width}x${canvasEl.height}` === want) held++; else break;
+        }
+        if (held >= 20) break;
+      }
+
+      const blob = await recordCanvas(canvasEl, async (requestFrame) => {
+        takeFrame.current = requestFrame;
+        await new Promise((resolve) => {
+          buildEnded.current = resolve;
+          setBuild(0);
+        });
+      }, { mimeType });
+      const name = (bakerData?.name ?? 'cake').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      downloadBlob(blob, `${name || 'cake'}-build.${extensionFor(mimeType)}`);
+    } catch (err) {
+      setBuildSaveError(err?.message ?? 'The recording failed.');
+    } finally {
+      /* ⚠️ IN `finally`, like the recorder's own teardown and like closeReelPanel's. A take that
+         THREW must not leave the designer in a letterbox with no way back — the baker's only escape
+         would be guessing that opening and closing the reel panel clears it. Dropping the pre-roll
+         is what sends the lens home, off-camera, after the file is written. */
+      takeFrame.current = null;
+      buildEnded.current = null;
+      takeRef.current?.restoreBuffer?.();
+      setTakePreRoll(false);
+      if (shaped) setFraming(false);
+      setBuildSaving(false);
+    }
+  }
+
+  function startFilmSpin() {
+    /* ⚠️ START, NOT TOGGLE. Stopping is Esc or a pointer — and since ANY pointerdown stops it, the
+       click that opens this menu has already stopped any spin in progress. A toggle here could only
+       ever be in the "off" state when pressed, so calling it one invited a label that can never be
+       true. */
+    // `handleDeselect`, the same call openReelPanel makes and for the same stated reason:
+    // "handles, grips and the piping toolbar are editing furniture that renders IN the scene".
+    handleDeselect();
+    armTake(() => { setLensReturning(true); setFilmSpin(true); });
+  }
+
+  /* Esc stops it, and so does taking hold of the cake.
+   *
+   * ⚠️ THE STOP CANNOT BE A BUTTON. Everything on screen is filmed, so the way out has to be
+   * invisible — Esc is the one key every person already tries, and grabbing a spinning cake plainly
+   * means "I want to drive now". The listener only exists while the cake is spinning, so nothing
+   * here is a key handler the rest of the designer has to reason about. */
+  useEffect(() => {
+    if (!filmSpin && build == null) return undefined;
+    const stop = (e) => {
+      if (e.key && e.key !== 'Escape') return;
+      setFilmSpin(false);
+      setBuild(null);
+    };
+    window.addEventListener('keydown', stop);
+    window.addEventListener('pointerdown', stop);
+    return () => {
+      window.removeEventListener('keydown', stop);
+      window.removeEventListener('pointerdown', stop);
+    };
+  }, [filmSpin, build]);
+
   // ── Reel recording — catalogue authors only ───────────────────────────────────────────────────
   // A per-BAKER flag (bakers.is_catalog_author, migration 070), not a per-user capability: hasCap
   // answers "may this person do X" and this asks "is this bakery one of ours". The same bakeries
   // publish catalogue templates and film them. See spattoo-docs/features/reel-capture.md.
   const isCatalogAuthor = !!bakerData?.is_catalog_author;
+  /* ⚠️ CATALOGUE AUTHORS KEEP IT regardless of plan, the way they keep the reel recorder: they need
+     it to announce catalogue templates, which is a different question from what a subscription
+     buys. For everybody else it is the Blaze entitlement and nothing else. */
+  const canFilmBuild = isCatalogAuthor || buildFilm;
   // Catalogue authors get the recorder regardless of plan — they need it to announce catalogue
   // templates, which is a different question from what a subscription buys.
   const canRecordReel = reelCapture || isCatalogAuthor;
+  /* ⚠️ THE MENU OPENS FOR EITHER REASON. It used to ask only `canRecordReel`, so a baker entitled to
+     film a build but not to record a reel found no Capture button at all — the feature hung off an
+     unrelated flag. True of nobody today, because reel_capture is on for every paid tier and Blaze
+     is one, and that is exactly the kind of coincidence that stops being true when a plan is
+     re-priced. The menu is the door to both things, so it asks about both.
+
+     ⚠️ DECLARED HERE, BELOW `canRecordReel`, BECAUSE IT READS IT. Put above, it threw "Cannot
+     access 'canRecordReel' before initialization" and the designer went black — the same trap
+     check:tdz was written for two releases ago, which is what caught it this time. */
+  const canOpenCapture = canRecordReel || canFilmBuild;
 
   /* The one line burned into every frame. DERIVED, never stored: the preview overlay and the
    * recorder both read this, so they cannot disagree about what the baker is about to publish.
@@ -4737,6 +5345,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   }
 
   function openReelPanel() {
+    // The reel drives the camera itself, so a hero spin left running would fight it for the orbit.
+    setFilmSpin(false);
     // Drop any selection first. Handles, grips and the piping toolbar are editing furniture that
     // renders IN the scene, so whatever was selected when the baker hit Record would have been
     // filmed along with the cake.
@@ -4753,6 +5363,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    * reason — handles and grips render in the scene and would be photographed along with the cake —
    * and everything else it sets is the framing the reel already knows how to draw. */
   function openPhotoPanel() {
+    // Same as the reel: a photo aims the camera, and a turning cake would not hold still for it.
+    setFilmSpin(false);
     handleDeselect();
     setPhotoOptsOpen(true);
     setFraming(true);
@@ -4876,6 +5488,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // burying it at the foot of a screen you open to edit something costs a tap every time.
   const openAccount = useCallback(() => { setProfileOpen(o => !o); }, []);
   const isMobile = windowWidth <= 640;
+  /* ── How much room the bakery's name has in the header's right-hand row ─────────────────────────
+   *
+   * Derived, not measured: every term is a constant this file already owns, so there is no canvas,
+   * no ResizeObserver and no measure-then-render pass — and crucially no dependence on whether the
+   * script face has loaded yet. See brandNameFontSize in shared/headerBrand.js for why measuring
+   * would actually be WRONG here rather than merely heavier.
+   *
+   * The row runs from the rail's right edge to `creditsFloat`'s 16px margin; the bell (38) and the
+   * credits pill (~64) sit ahead of the name with the flex gap (8) between each, plus one more gap
+   * before the name itself. Both are optional, so this is the WORST case — a name that fits beside
+   * both fits beside either. */
+  const brandNameRoom = Math.max(
+    120,
+    windowWidth - (RAIL.padLeft + RAIL.width) - 16 - (38 + 64) - (8 * 3),
+  );
   /* The ceiling handed to both take panels: stop the bottom sheet 10px short of the frame's own
    * bottom edge, so the shot stays visible while it is being described.
    *
@@ -5028,6 +5655,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
         setPrintStudioEnabled(res?.ent?.edible_print_studio === true);
         setReelCapture(res?.ent?.reel_capture === true);
         setReelBranding(res?.ent?.reel_branding === true);
+        setBuildFilm(res?.ent?.build_film === true);
       })
       .catch(() => {});   // a failed lookup leaves the tool hidden, which is the safe way round
     return () => { alive = false; };
@@ -7071,6 +7699,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // topmost one — on a stack, a lower tier's top is mostly hidden under the tier above it. The card
   // lets it be moved to another tier afterwards; this is just where it lands.
   function grassTierIndex() { return Math.max(0, design.tiers.length - 1); }
+  /* Sand lands on the TOP tier, grass's rule: a filler dresses a surface, and the only top fully in
+     view is the topmost one. The card's tier buttons move it afterwards. */
+  function sandTierIndex() { return Math.max(0, design.tiers.length - 1); }
+  function sandTier() { return design.tiers.findIndex(t => t.sand); }
 
   // `el` is the catalogue row when grass is picked from the Decorations grid, and absent when it is
   // picked from the Tools shortcut. The row carries the TUNED parameters an admin authored in the
@@ -7089,6 +7721,40 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                         elementId: el?.id ?? undefined });
     }
     selectExclusive({ type: 'grass' });
+  }
+
+  /* ── A drift of sand on a tier's top ────────────────────────────────────────
+   * Placed the moment it is tapped and edited from the card, exactly like grass: there is nothing
+   * to compose first, so "has sand" and "should show a card" are the same condition.
+   *
+   * `el` is the catalogue row when picked from Decorations and absent from a Tools shortcut — the
+   * optional-row contract addGrass has had since it was written. Defaults first, so a row that
+   * authors only a colour still gets a sensible drift.
+   */
+  function addSand(el) {
+    const i = sandTierIndex();
+    const tuned = el?.placement_config?.sand ?? {};
+    if (!design.tiers[i]?.sand) {
+      setTierSand(i, {
+        shape: REGION_DEFAULTS.kind, size: REGION_DEFAULTS.size,
+        spacing: SAND_DEFAULTS.spacing, rise: SAND_DEFAULTS.rise,
+        falloff: SAND_DEFAULTS.falloff, edgeBreak: SAND_DEFAULTS.edgeBreak,
+        seed: SAND_DEFAULTS.seed,
+        /* ⚠️ BISCUIT, AND THE ROW STILL WINS. Sandeep: *"set default colour is Biscuit."* The
+           authored answer is `default_color` on the element row — this is only the seed a row with
+           nothing authored falls back to, and the two are set together so they cannot disagree
+           (migration 139). */
+        colour: el?.default_color ?? SAND_COLORS.biscuit,
+        ...tuned,
+        /* The top's own span, last, for the reason moveSandToTier applies the board's: `size`
+           means something different on each surface and the surface is what answers it. */
+        ...sandPlacement(ZONES_TOP, el?.placement_config),
+        // The row's id travels with the design — the card cannot ask what the element ALLOWS
+        // without it, and a template bundle finds its elements by scanning for matching uuids.
+        elementId: el?.id ?? undefined,
+      });
+    }
+    selectExclusive({ type: 'sand' });
   }
 
   // ── Gypsophila ──────────────────────────────────────────────────────────────
@@ -7920,6 +8586,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
   const PROCEDURAL_TOOLS = {
     grass: addGrass,
+    /* A filler like grass: it dresses a surface, so it places on tap and is edited from the card.
+       Not a studio — nothing opens. */
+    sand: addSand,
     /* A filler, not an object: it dresses a surface the way grass does, so it places the moment it
        is tapped and is edited from the card. */
     gypsophila: addGypsophila,
@@ -8175,6 +8844,62 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   function setGrassColor(color) {
     if (grassTier >= 0) updateGrass(grassTier, { color });
     if (design.boardGrass) updateBoardGrass({ color });
+  }
+
+  /* ── Which surface is the drift on? ───────────────────────────────────────────────────────────
+   *
+   * ⚠️ THE BOARD IS NOT A TIER, which is what `BOARD_TIER` exists to say. Sand lands on the board
+   * the way grass and gypsophila already do — its own field on the design — so `sandSurface()`
+   * answers "where is it" with a tier index OR the board sentinel, and everything downstream asks
+   * this rather than scanning the tier list and concluding there is no sand. */
+  /* ⚠️ THE ADMIN'S ANSWER, READ OFF THE ROW. Which surfaces an element may sit on is
+     `allowed_zones` in Manage Elements — the sand row already says top AND board, which is why
+     this was reported as missing rather than as unbuilt. Defaulting to TRUE when there is no row
+     would be the usual mistake in the other direction; defaulting to false hides a surface an
+     admin enabled, so the row is asked and only a row that exists can say no. */
+  function sandAllowsBoard(sd) {
+    const row = sd?.elementId ? elementById.get(sd.elementId) : null;
+    if (!row) return true;
+    const zones = row.allowed_zones ?? [];
+    return zones.length === 0 || zones.includes('board');
+  }
+
+  function sandSurface() {
+    if (design.boardSand) return BOARD_TIER;
+    return sandTier();
+  }
+  function sandOn(surface) {
+    return surface === BOARD_TIER ? design.boardSand : design.tiers[surface]?.sand;
+  }
+  function putSand(surface, sd) {
+    if (surface === BOARD_TIER) setBoardSand(sd);
+    else setTierSand(surface, sd);
+  }
+
+  function removeSand(surface) {
+    putSand(surface, null);
+    selectExclusive(null);
+  }
+
+  /* ⚠️ IT MOVES THE DRIFT, IT DOES NOT COPY IT — and with the board in the picture that means
+     clearing whichever surface it was on, not just a tier. Leaving the old one behind is how a
+     baker ends up with two drifts after one tap on "Board". */
+  function moveSandToTier(next) {
+    const cur = sandSurface();
+    const sd = sandOn(cur);
+    /* ⚠️ THE EMPTINESS TEST IS THE DRIFT, NOT THE INDEX — see sandMoveTarget. `BOARD_TIER` is -1
+       and so is "no tier has sand", and the old guard `cur === -1` could not tell them apart, so
+       Board → Top was unreachable while Top → Board worked. */
+    if (sandMoveTarget(cur, next, !!sd) == null) return;
+    /* ⚠️ AND THE SPAN IS THE DESTINATION'S ANSWER, not a number carried across. `size` means the
+       patch's reach on a top and the ring's reach BEYOND the cake on a board (sandSpan), so moving
+       it untouched took the top's 0.8 onto the board as a vast collar. Applied last, exactly as the
+       gypsophila Where pills apply `gypPlacement` — everything the baker tuned that is not the
+       surface's own business comes through `...sd` and survives. */
+    const row = sd.elementId ? elementById.get(sd.elementId) : null;
+    const zone = next === BOARD_TIER ? ZONES_BOARD : ZONES_TOP;
+    putSand(cur, null);
+    putSand(next, { ...sd, ...sandPlacement(zone, row?.placement_config) });
   }
 
   function moveGrassToTier(next) {
@@ -9643,6 +10368,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * answers for everything else, and a card highlighting the right number proves only that a
      * button took a click. */
     window.__design = () => design;
+    /* Load a whole design, the way opening a template does. Switching cakes is the one gesture that
+       cannot be driven from a script — it goes through a template card in a panel — and it is where
+       a wall treatment from the PREVIOUS cake was reported surviving onto the next one. Calls the
+       same `loadDesign` the template path calls. */
+    window.__loadDesign = (d) => { loadDesign(d); return true; };
     /* ⚠️ WHAT IS SELECTED, and which tier's band a card belongs to. A band is reached by CLICKING
        THE STROKES on a 3D wall, which a script cannot aim, and two bands on two tiers look
        identical from the DOM — the strip is covered by whichever card is open, so counting names on
@@ -10787,6 +11517,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   if (design.tiers.some(t => t.grass) || design.boardGrass) {
     decorationCards.unshift({ key: 'grass', type: 'grass', name: 'Grass', thumb: null });
   }
+  // Sand, on grass's condition and for grass's reason: applied the moment it is picked, so "has
+  // sand" and "should show a card" are the same question.
+  if (design.tiers.some(t => t.sand) || design.boardSand) {
+    /* ⚠️ IT CARRIES ITS TIER, unlike the grass card beside it. Grass predates `check:element-delete`
+       and is out of that gate's scope because its body takes no `card`; sand is in scope, and the
+       gate is right to want it there — a remove button that cannot name what it removes is how the
+       balloon card shipped without one at all. */
+    decorationCards.unshift({
+      key: 'sand', type: 'sand', name: 'Sand', thumb: null,
+      /* BOARD_TIER when the drift is on the board — the card's every control asks this, so it is
+         the one place that needs to know the board is not a tier. */
+      tierIndex: design.boardSand ? BOARD_TIER : design.tiers.findIndex(t => t.sand),
+    });
+  }
   // ONE CARD PER RAINBOW, like the writing cards and for the same reason: each carries its own
   // arrangement and its own place on the cake, so a single shared card could only ever edit one of
   // them and would silently be the wrong one. Numbered only when there is more than one, because
@@ -10865,6 +11609,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          : card.type === 'cluster' ? selectedEl.clusterId === card.clusterId
          : card.type === 'foil' ? true
          : card.type === 'grass' ? true
+         : card.type === 'sand' ? true
          : card.type === 'gyp' ? true
          : card.type === 'blocks' ? true
          : card.type === 'cream' ? true
@@ -10943,6 +11688,25 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // what asks for the list, and it still does.
   const stackSingleCard = isMobile && !stackOut && stackHasExpandedCard;
 
+  /* ⚠️ LEVEL 2 REPLACES LEVEL 1 — IT DOES NOT SIT ON TOP OF IT.
+   *
+   * Tapping a part swatch on a decoration's card opens the colour panel, and both are bottom
+   * sheets, so the cake ended up with two of them stacked: the colour panel over the card it was
+   * opened from, each cut off by the other. Sandeep, on a dolphin with a colourable Body: *"when i
+   * click on the color picker, it opens a level2 popup, but the level1 still there. level2 should
+   * replace level1 and on clicking ok on level2, you should go to level1."*
+   *
+   * ⚠️ THIS WAS ACCOMMODATED, NOT OVERLOOKED, which is why it survived — `bottomSheetH` below takes
+   * the TALLER of the two sheets precisely because they could both be up, and that note has to
+   * change with this one or the cake is inset for a sheet that is no longer drawn.
+   *
+   * Only the card is withheld; the selection, the card's state and the stack are untouched, so the
+   * panel's Done (which already only clears `colorOpen` on this path) brings level 1 straight back.
+   * `stackSingleCard` carries `isMobile`, so desktop — where the two are side-by-side columns with
+   * room for both — is not affected. And it is the SINGLE CARD only: opened by the handle, the
+   * stack is a LIST on the right rather than a sheet under this one. */
+  const cardBehindSubPanel = stackSingleCard && showRightPanel;
+
   /* ⚠️ THE FOLD MARK IS HIDDEN WHENEVER "Done" IS ON SCREEN. Sandeep: "there is down arrow button
    * and 'Done' button. both doing the samething. shall we remove the downarrow?"
    *
@@ -11015,22 +11779,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
    * the observer sees ~54px instead of ~368px and the inset follows without a second mechanism. */
   useLayoutEffect(() => {
     const el = pipingPopupRef.current;
-    if (!el || !isMobile || !stackSingleCard) { setStackSheetH(0); return undefined; }
+    if (!el || !isMobile || !stackSingleCard || cardBehindSubPanel) { setStackSheetH(0); return undefined; }
     const read = () => setStackSheetH(Math.round(el.getBoundingClientRect().height));
     read();
     const ro = new ResizeObserver(read);
     ro.observe(el);
     return () => ro.disconnect();
-  }, [isMobile, stackSingleCard, stackDragH, cakeFocus, elementStackOpen, stackShown]);
+  }, [isMobile, stackSingleCard, cardBehindSubPanel, stackDragH, cakeFocus, elementStackOpen, stackShown]);
 
   /* ⚠️ THE TALLER OF THE TWO, NOT WHICHEVER BRANCH IS WRITTEN LAST. Both are bottom sheets and both
      can be up at once: showRightPanel includes `colorOpen`, and a decoration card's own colour
      button opens it while that card is the single docked card — so stackSingleCard and
      showRightPanel are true together. Insetting by one would put the cake straight back behind the
-     other, in exactly the case where two sheets are stacked. */
+     other, in exactly the case where two sheets are stacked.
+     ⚠️ AND THAT CASE IS NOW THE ONE THE CARD STEPS ASIDE FOR (`cardBehindSubPanel`), so the max is
+     between a real sheet and a zero rather than between two real ones. The max stays because the
+     OTHER pairing it was written for — a tier's panel over the docked stack — is untouched, and
+     because a measured height outlives the frame in which its sheet stopped being drawn. */
   const bottomSheetH = Math.max(
     isMobile && showRightPanel ? editSheetH : 0,
-    isMobile && stackSingleCard ? stackSheetH : 0,
+    isMobile && stackSingleCard && !cardBehindSubPanel ? stackSheetH : 0,
   );
 
   const foldMark = (expanded) => (stackSingleCard ? (
@@ -11091,6 +11859,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       : card.type === 'topper'        ? { type: 'topper', id: card.id }
       : card.type === 'garnish'       ? { type: 'garnish', id: card.id }
       : card.type === 'grass'         ? { type: 'grass' }
+      : card.type === 'sand'          ? { type: 'sand' }
       : card.type === 'gyp'           ? { type: 'gyp' }
       : card.type === 'blocks'        ? { type: 'blocks' }
       : card.type === 'sticker'       ? { type: 'sticker', id: card.id }
@@ -12413,7 +13182,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     // is — not by a separate control the customer has to find afterwards. Single-pose zones expand to
     // exactly one tile, which is what every element today already produces.
     const slots = placementSlots(srcEl, design.tiers.length).flatMap(slot => {
-      const poses = zoneModes(pc, slot.zone, 'hug');
+      /* ⚠️ `zonePoses`, NOT `zoneModes` — the poses the SEAT will honour, not the ones the config
+         names. Expanding the raw list grew a BOARD HUGGING tile that could not be ticked: seatOnSlot
+         puts the same pose through flatPose, a board hug becomes `stand`, and the tick appeared on
+         the standing tile instead. One question, asked by the picker and the seat alike. */
+      const poses = zonePoses(pc, slot.zone, 'hug');
       return poses.map(mode => ({ ...slot, mode, poseChoice: poses.length > 1 }));
     }).map(slot => {
       const label = slotLabel(slot, multiTier);
@@ -13072,9 +13845,26 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
          (every instance of the element shares it) rather than any one slot's — so there is no other
          row for it to sit on once the card is one line. */
       if (compact) colourInChooser = true;
+      /* ⚠️ THE PART-GROUP SWATCHES RIDE HERE TOO, AND THEY WENT MISSING FOR WANT OF THIS.
+       *
+       * Sandeep: *"when there are colorable parts in a glb, those colors pickers show up in the card
+       * popup. this is happening in desktop popup as expected, but not happening in mobile view."*
+       *
+       * `regionCtls` is built above for BOTH card types, but it was only ever consumed in the
+       * compact row of the `sticker` branch — and that branch is gated on `c.resize && el.type ===
+       * 'sticker'`, which a decorEl never satisfies: its `c` is built fresh as `{ stick }` alone.
+       * So a hero GLB with Hair/Dress/Tail computed its swatches, had nowhere to put them, and
+       * dropped them on the floor. Desktop was unaffected because the non-compact path pushes its
+       * own `recolor-groups` group, which is gated on the type and not on `c`.
+       *
+       * ⚠️ CONCATENATED, NOT CHOSEN BETWEEN, AND THEY CANNOT BOTH BE FULL. `hasColourControl`
+       * requires `!editGroups.length` — a whole-element wheel beside per-part swatches is two
+       * controls for one job, which is the duplicate the comment below already records. So exactly
+       * one of these is ever non-empty; spreading both is what keeps that true without a second
+       * place deciding which. */
       groups.push({ key: 'place', divider: true, controls: [
         elementPlacementChooser(elementById.get(elId),
-          compact ? { compact: true, leading: supportDoor, trailing: colourCtls } : {}),
+          compact ? { compact: true, leading: supportDoor, trailing: [...regionCtls, ...colourCtls] } : {}),
       ] });
       /* ⚠️ Colour, which this card simply never offered.
        *
@@ -13249,6 +14039,79 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               />
             </div>
           )),
+        });
+      }
+
+      /* ── A MESSAGE WRITTEN ON THIS PIECE ───────────────────────────────────────────────────────
+       *
+       * Gated on the instance carrying `textPath` (placement_config.text_path), never on element
+       * type or slug — exactly like the text slots above and the rainbow's own section, which this
+       * is the second caller of. Absent → nothing renders, because a control that does nothing is
+       * worse than none (INVARIANTS #11).
+       *
+       * ⚠️ IT IS A MESSAGE, NOT A TEXT SLOT, AND THE DIFFERENCE IS THE MEDIUM. A slot is painted
+       * into the decal's texture: cheap, flat, and it can never be metal, because a painted gold
+       * reflects nothing and does not move when the cake turns. A message is an ordinary `writings`
+       * entry — real extruded geometry with a real material — so `TOPPER_FINISHES.gold` is the
+       * mirror gold the Texts card already offers. A fondant name plaque wants the second one.
+       *
+       * ⚠️ SEEDED `acrylic`, AND `fondant` WOULD HAVE BEEN THE WRONG GUESS — it was my first one.
+       * The two are not "cut letters in two colours": `medium === 'fondant'` builds a LIT solid
+       * material from `color`, so it is matte icing and can only ever be a flat colour. The metals
+       * — mirror gold, silver, rose — are MATCAPS, baked, and reached only through the acrylic
+       * path (`drawTopperMatcap(finish)` in AcrylicWord). Seeding fondant gave a white matte name
+       * and no amount of `acrylicFinish` could have coloured it, because nothing on that path
+       * reads it. Gold is the whole reason this is geometry rather than paint, so acrylic it is.
+       * Piped cream is a nozzle's line and a different object again. The baker can still switch
+       * Look — a starting point they can leave — but it must open as the thing they asked for. */
+      /* ⚠️ THE ROW IS THE FALLBACK, BECAUSE AN INSTANCE PLACED BEFORE THIS SHIPPED HAS NO COPY.
+         `textPath` is copied onto the instance at add time, like the rainbow's — fine for anything
+         placed since, and silently wrong for every design saved before it. Sandeep, on a plaque he
+         had already put on a cake: *"there is no way user can enter name."* There was not: the
+         instance carried no path, so the door was gated out and nothing said why. Reading through
+         to the element row means a saved cake gains the control the day the feature ships, which
+         is what a baker expects of a decoration they already own. */
+      const instTextPath = inst?.textPath
+        ?? elementById.get(inst?.elementId)?.placement_config?.text_path
+        ?? null;
+      if (instTextPath?.kind) {
+        const mine = (design.writings ?? []).filter(w => w.on?.id === inst.id);
+        groups.push({
+          key: 'texthost', divider: true, panelLabel: 'Message',
+          controls: [
+            ...mine.map(w => (
+              <button key={w.id}
+                onClick={() => { closeAllPopups(); selectExclusive({ type: 'writing', id: w.id }); }}
+                style={{ ...s.neutralBtn, width: '100%', marginBottom: 6, textAlign: 'left' }}>
+                {w.text?.trim() || 'Untitled message'}
+              </button>
+            )),
+            <button key="add"
+              onClick={() => {
+                /* ⚠️ HEAL THE INSTANCE ON THE WAY PAST, rather than teaching the renderer a second
+                   place to look. The canvas resolves a hosted message from `sticker.textPath` and
+                   nothing else; a plaque placed before this shipped has none, so the message would
+                   be editable in the card and invisible on the cake — the worse half of the bug.
+                   Writing the row's path onto the instance here fixes it once, at the only moment
+                   we know the baker wants a message, and leaves the render path with ONE source. */
+                if (!inst.textPath && instTextPath) updateSticker(inst.id, { textPath: instTextPath });
+                /* ⚠️ THE LOOK COMES FROM THE ROW, NOT FROM HERE. This said `acrylic` + `gold`,
+                   which put an ELEMENT DEFAULT in the one place an admin cannot reach (rule 3) —
+                   and it read as perspex on a fondant disc: *"it looks more like acrylic, can we
+                   have the fondant texture for the letters."* A whitelist, so a row can choose the
+                   material but never which host a message binds to. A row that authors nothing
+                   falls through to DEFAULT_WRITING, which is how the rainbow has always behaved. */
+                const id = addWriting({
+                  ...writingSeedFor(instTextPath),
+                  on: { kind: 'sticker', tierIndex: inst.tierIndex ?? 0, id: inst.id },
+                });
+                focusEditor('decoration');
+                selectExclusive({ type: 'writing', id });
+              }}
+              style={{ ...s.neutralBtn, width: '100%' }}>
+              {mine.length ? 'Add another message' : 'Write a name on it'}
+            </button>,
+          ],
         });
       }
 
@@ -14207,9 +15070,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             dropped: a card that silently loses its first control leaves a baker wondering where the
             message went, and the line also answers "why is there no Curve dial". */}
         {w.on ? (
+          /* ⚠️ THE HOST'S OWN NAME, AND WHAT IT DOES TO THE LINE. This read "ON THE RAINBOW ·
+             follows its curve" when a rainbow was the only thing a message could sit on — and the
+             day a second host shipped it was a label that lied on the new one, about a curve a
+             flat plaque does not have. The caption is derived from the host the message actually
+             carries, so adding a third shape cannot leave this stale. */
           <div style={{ fontSize: 11, fontWeight: 800, color: '#6B8C74', letterSpacing: 0.3,
                         padding: '7px 2px', flexShrink: 0 }}>
-            ON THE RAINBOW · follows its curve
+            {w.on.kind === 'rainbow' ? 'ON THE RAINBOW · follows its curve' : 'ON THE DECORATION'}
           </div>
         ) : (
         <div style={{ display: 'flex', gap: 4, background: '#f6eef1', borderRadius: 9, padding: 3, flexShrink: 0 }}>
@@ -14535,7 +15403,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             each name a cake surface; on a rainbow the element decides where the line sits, and a
             hint that says otherwise is a label that lies. */}
         <div style={{ fontSize: 11, fontWeight: 600, color: '#999', marginTop: 4 }}>
-          {w.on ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+          {w.on ? (w.on.kind === 'rainbow'
+                    ? 'Moves with the rainbow — resize or move the rainbow and the message follows.'
+                    : 'Moves with the decoration — resize or move it and the message follows.')
             : surface === 'side' ? 'Drag the writing around and up the cake side.'
             : surface === 'board' ? 'Drag the writing around the cake board.'
             : 'Drag the writing anywhere on the cake top.'}
@@ -15374,7 +16244,14 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * one is chosen there is nothing on the cake and no third "neither" state to show as selected.
      * Two full-width offers, each saying what it does, and the wall stays bare behind them. */
     if (mode === 'ask') {
-      const choose = (m, extra) => () => { set({ mode: m, ...extra }); setBrushDraw(m === 'draw' ? { tierIndex: i } : null); };
+      /* ⚠️ `kind` TRAVELS WITH THE DRAWING STATE, not with the band's `mode`. `mode` means only
+         "does a ring go round the cake" — that vocabulary was settled once already, when drawing
+         was wrongly folded into it — and both drawing and sweeping leave it meaning "no ring".
+         What a drag LAYS is a property of the hand, so it rides on `brushDraw`. */
+      const choose = (m, extra) => () => {
+        set({ mode: m === 'sweep' ? 'draw' : m, ...extra });
+        setBrushDraw(m === 'draw' || m === 'sweep' ? { tierIndex: i, kind: m === 'sweep' ? 'sweep' : 'stroke' } : null);
+      };
       return (
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
@@ -15391,6 +16268,15 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <span style={{ fontWeight: 800 }}>Draw them myself</span>
             <span style={{ fontSize: 10, color: '#b29aa2' }}>Drag on the cake. Each stroke gets its own card.</span>
           </button>
+          {/* ⚠️ A SWEEP IS A THIRD OFFER, NOT A SETTING ON DRAWING. It is a different gesture with a
+              different result — a mark sits ON the cake, a pass COVERS it and mixes with the passes
+              before it — so a baker chooses it the way they choose the other two, before anything
+              is on the cake. Sandeep: *"just like hand draw option, another option for sweep."* */}
+          <button onClick={choose('sweep')} style={{ ...s.neutralBtn, width: '100%', marginTop: 8,
+                                                     minHeight: 46, flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontWeight: 800 }}>Sweep it on</span>
+            <span style={{ fontSize: 10, color: '#b29aa2' }}>Broad passes of the knife. Where two cross, the colours mix.</span>
+          </button>
           <button onClick={() => { setTierBrushBand(i, null); clearAllSelections(); }}
             style={{ ...s.deleteBtn, width: '100%', marginTop: 10 }}>
             Remove from cake
@@ -15405,13 +16291,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
      * per-stroke card is for. */
     if (mode === 'draw') {
       const drawn = design.tiers[i]?.brushStrokes ?? [];
+      /* Which gesture a drag lays. Held on `brushDraw` rather than on the band, because it is a
+         property of the hand and not of the cake — see the note on `choose`. */
+      const sweeping = brushDraw?.tierIndex === i && brushDraw?.kind === 'sweep';
       return (
         <>
           <div style={{ fontSize: 11, fontWeight: 600, color: '#999', lineHeight: 1.5 }}>
-            Drag down the side of the cake for an upright stroke, or across it for one that sweeps
-            round. Each stroke opens its own card — colour, thickness, width and pattern are set
-            there, and apply to that stroke alone.
+            {sweeping
+              ? <>Drag the knife across the cake for a broad pass — down the side, round it, or
+                  across the top. Where two passes cross, their colours <b>mix</b>. Each one opens
+                  its own card.</>
+              : <>Drag down the side of the cake for an upright stroke, or across it for one that
+                  sweeps round. Drag across the top for a stroke on the lid. Each stroke opens its
+                  own card — colour, thickness, width and pattern are set there, and apply to that
+                  stroke alone.</>}
           </div>
+          {/* ⚠️ THE WAY BACK TO THE OTHER GESTURE, because the fork is only shown while the cake is
+              bare. Without this a baker who swept once could never lay a mark again without
+              removing the element — the same cul-de-sac the band/draw fork had before it gained
+              "Ring the cake too". Whatever is already on the cake stays: the two compose. */}
+          <button onClick={() => setBrushDraw({ tierIndex: i, kind: sweeping ? 'stroke' : 'sweep' })}
+            style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
+            {sweeping ? 'Draw single strokes instead' : 'Sweep it on instead'}
+          </button>
           <div style={{ fontSize: 10.5, color: '#b29aa2', marginTop: 8 }}>
             {drawn.length ? `${drawn.length} drawn. Tap one to change it.` : 'Nothing drawn yet.'}
           </div>
@@ -15522,8 +16424,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           {drawing ? (
             <>
               <div style={{ fontSize: 10.5, color: '#b29aa2', lineHeight: 1.5 }}>
-                Drag down the side for an upright stroke, or across it for one that sweeps round.
-                Each one opens its own card.
+                Drag down the side for an upright stroke, across it for one that sweeps round, or
+                across the top for one on the lid. Each one opens its own card.
               </div>
               <button onClick={() => setBrushDraw(null)}
                 style={{ ...s.neutralBtn, width: '100%', marginTop: 8 }}>
@@ -16600,6 +17502,164 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     );
   }
 
+  /* ── The sand card ───────────────────────────────────────────────────────────────────────────
+   * A drift of crushed-biscuit sand over an AREA of a tier's top. What a baker decides, in the
+   * order they decide it (INVARIANTS #12): which patch, what colour, then how it is made.
+   *
+   * ⚠️ THE COLOURS ARE A SHORT NAMED LIST, NOT A WHEEL. Sandeep: *"color options should be
+   * selective colors only. not a complete color picker."* Sand is a narrow band of real colours and
+   * a free picker invites a blue beach — so this is the ONE decoration card that does not reach for
+   * `ColorWheel`, and the exception is the ask, not an oversight. Overlaid from the element row the
+   * way gold leaf's two are (rule 3), so an admin can retune the palette without a deploy.
+   *
+   * ⚠️ `shape` HERE IS THE AREA, NOT THE CAKE'S. Round/Rectangle/Triangle is the patch the sand
+   * covers; the tier keeps whatever footprint it has, and the sand is clipped to it.
+   */
+  function renderSandBody(card) {
+    // The routing always hands the card over, and the card recomputes its tier every render — so
+    // this is fresh even just after the sand was moved to another tier.
+    const i = card.tierIndex;
+    const onBoard = i === BOARD_TIER;
+    const sd = sandOn(i);
+    if (!sd) return null;
+    /* Every control writes through here, so none of them has to know which surface it is on. */
+    /* ⚠️ IT CALLS `updateSand`, NOT ITSELF. A blind search-and-replace of `updateSand(i, ` across
+       this card rewrote the body of its own definition into `editSand(changes)` — infinite
+       recursion on the first tap of any slider, on the tier path, which is the path that already
+       worked. It builds and reads almost right, which is the whole danger of it. */
+    const editSand = (changes) => (onBoard ? updateBoardSand(changes) : updateSand(i, changes));
+    const surfaceBtn = pillStyle;
+    const el = sd.elementId ? elementById.get(sd.elementId) : null;
+    const colors = el?.placement_config?.colors ?? SAND_COLORS;
+    /* Whether this can be taken off the cake is the ADMIN's call, read off the row — never
+       hardcoded true. The cloud and the rainbow both shipped ignoring it. */
+    const act = instanceActions(sd.elementId);
+    const pct = v => `${Math.round(v * 100)}%`;
+    const modeBtn = (on) => ({ flex: '1 1 70px', minWidth: 70, padding: '7px 0', borderRadius: 8,
+      fontWeight: 700, fontSize: 11.5, cursor: 'pointer', fontFamily: 'inherit',
+      border: `1.5px solid ${LINE}`, background: on ? INK : SURFACE, color: on ? SURFACE : INK });
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {/* ⚠️ THE SENTENCE HAS TO FOLLOW THE SURFACE. It read "banked over part of the top" on
+            every card, including a drift sitting on the board — where there is no part of the top
+            involved and no area to choose. A description that describes the other case is worse
+            than none, because a baker reads it as instructions. */}
+        <div style={{ fontSize: 11, fontWeight: 600, color: '#999' }}>
+          {onBoard
+            ? 'Biscuit crushed to a powder, banked around the foot of the cake.'
+            : 'Biscuit crushed to a powder and banked over part of the top.'}
+        </div>
+
+        {/* ⚠️ THE BOARD IS A SURFACE, NOT A TIER, so it cannot be a FinishTierPicker button — that
+            component is a tier list and foil, cream and dust all share it. It also hides itself on
+            a one-tier cake, which would have made the board unreachable on exactly the cakes most
+            likely to want it.
+
+            ⚠️ AND IT IS OFFERED ONLY WHERE THE ROW ALLOWS IT. Which surfaces an element may sit on
+            is the ADMIN's answer, read off `allowed_zones` — the same row that already says both,
+            and the reason this was reported as missing at all. */}
+        {(design.tiers.length > 1 || sandAllowsBoard(sd)) && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={s.editPanelLabel}>On</span>
+            <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+              {design.tiers.map((_, n) => (
+                <button key={n} style={surfaceBtn(i === n)} onClick={() => moveSandToTier(n)}>
+                  {design.tiers.length > 1 ? `Tier ${n + 1}` : 'Top'}
+                </button>
+              ))}
+              {sandAllowsBoard(sd) && (
+                <button style={surfaceBtn(onBoard)} onClick={() => moveSandToTier(BOARD_TIER)}>
+                  Board
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ⚠️ AREA IS A TOP-SURFACE QUESTION ONLY. Sandeep: *"for sand the shapes circle, rectangle
+            and triangle are only applicable for TOP zone. for board, only around the cake."* A
+            board drift IS the ring round the cake — `sandSpan` gives the board zone its own span
+            and `SandBed` punches the cake out as a hole — so there is no patch to shape, and
+            offering three that do nothing would be three buttons that lie. */}
+        {!onBoard && (
+        <div>
+          <div style={s.editPanelLabel}>Area</div>
+          {/* ⚠️ MARKS, NOT WORDS — and the button keeps its name for anyone who cannot see the mark.
+              A circle, a rectangle and a triangle are not metaphors for the choice, they ARE it, so
+              the word beside one adds nothing a baker needs. The same reasoning DialCell applies to
+              `symbol`: a symbol replaces its caption only where the symbol is the thing. `title`
+              and `aria-label` carry the word, so a screen reader still announces "Triangle" and a
+              kind the geometry gains without a mark falls back to its word rather than to a blank
+              button nobody can tell apart. */}
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Object.keys(REGION_KINDS).map(k => (
+              <button key={k} onClick={() => { if (sd.shape !== k) editSand({ shape: k }); }}
+                title={areaLabel(k)} aria-label={areaLabel(k)}
+                aria-pressed={(sd.shape ?? REGION_DEFAULTS.kind) === k}
+                style={{ ...modeBtn((sd.shape ?? REGION_DEFAULTS.kind) === k),
+                         display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '8px 0' }}>
+                {hasAreaGlyph(k) ? <AreaShapeIcon kind={k} /> : areaLabel(k)}
+              </button>
+            ))}
+          </div>
+        </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+          <span style={s.editPanelLabel}>Colour</span>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {Object.entries(colors).map(([name, hex]) => (
+              <button key={name} onClick={() => editSand({ colour: hex })} title={name}
+                style={{ padding: '5px 12px', borderRadius: 14, fontSize: 11, fontWeight: 700,
+                  cursor: 'pointer', textTransform: 'capitalize', fontFamily: 'inherit',
+                  border: (sd.colour ?? '').toLowerCase() === hex.toLowerCase() ? `2px solid ${INK}` : '1.5px solid #ddd',
+                  background: hex, color: '#4a3a24' }}>{name}</button>
+            ))}
+          </div>
+        </div>
+
+        {/* ⚠️ DENSITY IS INVERTED AND DERIVED, carried across from the grass card exactly: the value
+            is `SAND_DENSITY_SUM − spacing`, the setter writes `spacing` back, and the formatter
+            reads the STORED spacing rather than its own argument. Density is what a person adjusts;
+            spacing is what the geometry wants. At step 0.002 it needs `fmt`, or the dial reads a
+            flat "0.0" across its whole travel. */}
+        <ScrollFadeRow style={s.previewRow} fade="255,255,255">
+          {[
+            { k: 'Size', v: sd.size ?? REGION_DEFAULTS.size, min: 0.15, max: 1.2, step: 0.01,
+              fmt: pct, set: v => editSand({ size: v }) },
+            { k: 'Density', v: SAND_DENSITY_SUM - (sd.spacing ?? SAND_DEFAULTS.spacing),
+              min: 0.018, max: 0.08, step: 0.002,
+              fmt: () => pct((0.08 - (sd.spacing ?? SAND_DEFAULTS.spacing)) / 0.062),
+              set: v => editSand({ spacing: +(SAND_DENSITY_SUM - v).toFixed(3) }) },
+            { k: 'Bank height', v: sd.rise ?? SAND_DEFAULTS.rise, min: 0, max: 0.14, step: 0.005,
+              fmt: v => v.toFixed(2), set: v => editSand({ rise: v }) },
+            { k: 'Thins outward', v: sd.falloff ?? SAND_DEFAULTS.falloff, min: 0, max: 1, step: 0.05,
+              fmt: pct, set: v => editSand({ falloff: v }) },
+            { k: 'Edge wander', v: sd.edgeBreak ?? SAND_DEFAULTS.edgeBreak, min: 0, max: 1, step: 0.05,
+              fmt: v => (v < 0.02 ? 'crisp' : pct(v)), set: v => editSand({ edgeBreak: v }) },
+            /* Seed is not a quantity — nothing is more or less "seeded" — but it is the one control
+               that says "give me a different drift of the same sand", and a baker who does not like
+               where a lobe fell needs it. Shown as a plain number for that reason. */
+            { k: 'Seed', v: sd.seed ?? SAND_DEFAULTS.seed, min: 1, max: 99, step: 1,
+              fmt: v => String(Math.round(v)), set: v => editSand({ seed: Math.round(v) }) },
+          ].map(d => (
+            <DialCell key={d.k} label={d.k} value={d.v} min={d.min} max={d.max} step={d.step}
+                      fmt={d.fmt} onChange={d.set} />
+          ))}
+        </ScrollFadeRow>
+
+        {act.delete && (
+          <button onClick={() => removeSand(card.tierIndex)}
+            style={{ alignSelf: 'flex-start', padding: '6px 14px', borderRadius: 8, fontSize: 11.5,
+              fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit',
+              border: `1.5px solid ${LINE}`, background: SURFACE, color: INK }}>
+            Remove sand
+          </button>
+        )}
+      </div>
+    );
+  }
+
   function renderGrassBody() {
     const i = grassTier;
     const g = design.tiers[i]?.grass;
@@ -17149,12 +18209,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {isMobile && (
         <div style={s.mobileHeader}>
           <div style={s.topLogo}>
-            {logoSrc
-              ? <img src={logoSrc} alt="" style={s.topLogoImg} />
-              : <div style={{ ...s.topLogoText, fontSize: nameFontSize(bakerData?.name ?? '') }}>
-                  {bakerData?.name ?? 'My Bakery'}
-                </div>
-            }
+            {/* Same rule as the desktop row, with the mark pulled in: this bar is 52 tall and shares
+                its width with the bell, the credits pill and the profile, so a full-height logo
+                beside the name would take room from controls that have nowhere to go. */}
+            {brandParts.logo && (
+              <img src={logoSrc} alt="" style={brandParts.name ? s.topLogoImgPaired : s.topLogoImg} />
+            )}
+            {brandParts.name && (
+              <div style={{ ...s.topLogoText, fontFamily: brandFont,
+                            fontSize: nameFontSize(bakerData?.name ?? '') }}>
+                {bakerData?.name ?? 'My Bakery'}
+              </div>
+            )}
           </div>
           {/* flexShrink: 0 — these are fixed-size tap targets. Without it the cluster is what
               collapses when the name is long, and the credits pill silently squeezes to nothing. */}
@@ -17232,20 +18298,24 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
 
           Out of flow like the two clusters it belongs to, so it costs no layout height: the canvas
           keeps its size and the cake does not move. */}
-      {!isMobile && (
+      {/* ⚠️ NOT WHILE FILMING. Sandeep: *"the horizontal line below the baker name is disturbing.
+          can we hide while capturing this video."* It is a rule that defines the header row for
+          somebody WORKING; in a recording it is a stray line across the top of the shot with
+          nothing on either side of it to explain itself. Same reasoning as the FRONT marker, which
+          was being burned into finished reels and read as a watermark nobody could account for.
+          Hidden for the whole take window, so it does not reappear while the lens is still
+          gliding back. */}
+      {!isMobile && !takeWindow && (
         <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0) }} />
       )}
 
-      {!isMobile && (
-        // top is offset by the past-due bar when it is showing: this element is out of flow, so it
-        // is the ONE thing in `page` that a new first child does not push down. See PAST_DUE_BAR_H.
-        <div style={{ ...s.desktopLogo, top: (pastDue ? PAST_DUE_BAR_H : 0) }}>
-          {logoSrc
-            ? <img src={logoSrc} alt="" style={s.topLogoImg} />
-            : <div style={{ ...s.topLogoText, ...s.desktopLogoText }}>{bakerData?.name ?? 'My Bakery'}</div>
-          }
-        </div>
-      )}
+      {/* ⚠️ THE DESKTOP BRAND MOVED TO THE RIGHT-HAND CLUSTER — see `creditsFloat` below. It used to
+          sit here, flush left, and Sandeep read it exactly as what it looked like: "its not really
+          looking like baker's brand name. it looks like some heading of a paragraph." It was not
+          the face or the size. A large flush-left name with a full-bleed rule directly under it is
+          the SHAPE of an h1 followed by an hr, whatever is written in it. Beside the bell and the
+          credits pill the same string reads as whose workbench this is, which is what it is for,
+          and the rule goes back to being the line between chrome and canvas. */}
 
       {/* ── Main ── */}
       <div style={{ ...s.main, ...(isMobile ? { flexDirection: 'column' } : {}) }}>
@@ -18265,7 +19335,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cover the cake on the screen with least room to spare.
               Outside the shrinking wrapper below, so opening a side panel slides the cake and
               leaves the readout where it was. */}
-          {!isMobile && (hasCap('billing:manage') || canManageStore) && (
+          {/* ⚠️ NO LONGER GATED ON THE CAPS, because the BRAND now rides in this row and a baker
+              without billing or store rights still has a name. The gate used to wrap the whole
+              cluster, which was right when it held nothing but furniture; each item keeps its own
+              gate below. */}
+          {!isMobile && (
             <div style={s.creditsFloat}>
               {/* Bell first: credits is a READOUT and belongs closest to the edge where the eye
                   rests, while the bell is a control that gets pressed. Kept in step with the header
@@ -18276,6 +19350,42 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <CreditsPill apiClient={apiClient}
                   onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
               )}
+              {/* ⚠️ THE BRAND IS LAST, SO IT ENDS THE ROW. Sandeep, choosing the order: *"bell
+                  should come left to the name"*, then *"credit pill should also come left to the
+                  name"*. The furniture stays together and the name signs off the row, instead of a
+                  253px name splitting a bell from its pill.
+                  ⚠️ AND IT NEEDS NO `pastDue` OFFSET. The old slot carried
+                  `top: pastDue ? PAST_DUE_BAR_H : 0` because it hung off `page`; this row hangs off
+                  the content area, which is already pushed down — one fewer thing to keep in step.
+                  The mark and the name are different jobs, so the header can carry both: a badge
+                  logo is not legible at any header size, but beside real text it does not have to
+                  be — it is an icon, read by shape and colour, and the name is type. */}
+              {brandParts.logo && (
+                <img src={logoSrc} alt=""
+                     style={brandParts.name ? s.desktopLogoImgPaired : s.desktopLogoImg} />
+              )}
+              {brandParts.name && (() => {
+                const bakerName = bakerData?.name ?? 'My Bakery';
+                const size = brandNameFontSize(bakerName, brandNameRoom);
+                return (
+                  <div style={{ ...s.topLogoText, ...s.desktopLogoText, fontFamily: brandFont,
+                                fontSize: size,
+                                /* ⚠️ SHRINK FIRST, THEN WRAP, NEVER CLIP. At the 15px floor the
+                                   type has stopped giving way, so a name long enough to exhaust
+                                   even that would keep growing LEFT — past the rail and off the
+                                   screen, since this row is `right: 16` with no left bound.
+                                   Measured: ~90 characters at a 760px window. Nothing real is
+                                   close (the longest bakery name in the table is 27), but the
+                                   failure is silent and ugly, and one line prevents it. Wrapping
+                                   only at the floor keeps every ordinary name on one line, and the
+                                   80px band holds two 15px lines with room over. */
+                                ...(size <= BRAND_NAME_MIN
+                                     ? { whiteSpace: 'normal', maxWidth: brandNameRoom, textAlign: 'right' }
+                                     : null) }}>
+                    {bakerName}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -18328,6 +19438,34 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               obvious without a word of explanation. Behind the canvas box, never over it. */}
           {framing && <div style={{ position: 'absolute', inset: 0, background: 'rgba(20,26,22,0.55)',
                                         pointerEvents: 'none' }} />}
+          {/* ── The head start, counting down ──────────────────────────────────────────────────
+              Shown only while a take is ARMED and never once it is running: `armTake` clears this
+              and starts the take in the same commit, so no frame of the recording carries it.
+
+              ⚠️ `pointerEvents: 'none'` — the baker is on their way to a screen recorder and must
+              be able to reach anything underneath. Esc cancels; see armTake. */}
+          {countdown != null && (
+            /* ⚠️ CLEAR OF THE CAKE, AND ON ITS OWN GROUND. The first cut put a 72px number dead
+               centre: it covered the subject at the exact moment the baker is framing a recording,
+               and the hint under it was unreadable against a red decoration. The cake owns the
+               middle of this box — so the count sits at the top, on a pill dark enough to read over
+               any cake, any ground and any colour a baker picks. */
+            <div style={{ position: 'absolute', top: 14, left: 0, right: 0, display: 'flex',
+                          justifyContent: 'center', pointerEvents: 'none', zIndex: 5 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '8px 16px', borderRadius: 999,
+                            background: 'rgba(20,26,22,0.82)', color: '#fff',
+                            boxShadow: '0 2px 10px rgba(0,0,0,0.18)' }}>
+                <span style={{ fontSize: 26, fontWeight: 700, lineHeight: 1,
+                               fontVariantNumeric: 'tabular-nums', minWidth: 22, textAlign: 'center' }}>
+                  {countdown}
+                </span>
+                <span style={{ fontSize: 12, letterSpacing: 0.3, opacity: 0.85 }}>
+                  Starting — Esc to cancel
+                </span>
+              </div>
+            </div>
+          )}
           {/* ⚠️ ALWAYS RENDERED, style toggled — never wrapped conditionally. Giving <CakeCanvas> a
               new parent remounts the R3F root, which throws the scene away and re-downloads every
               topper GLB. The whole preview is a style change on this one box.
@@ -18382,7 +19520,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cameraAngleRef={cameraAngleRef}
               // Non-null only while the reel panel is open. Paints the scene's sky and floor one
               // colour and puts the editing furniture away — see CakeScene's filmGround.
-              filmGround={framing ? takeGround : null}
+              /* ⚠️ THE WHOLE TAKE, NOT JUST THE FRAMING. `framing` is only true once a SHAPE is
+                 chosen, so a build filmed "As on screen" — the default — was shot in the EDITOR's
+                 room: a lit floor meeting a wall at DESIGNER_HORIZON, seam and all. The reel has
+                 been on a cyclorama since the horizon was found in one ("floor and sky are the same
+                 pixels and the faint line across every take is gone"); the build never joined it. */
+              filmGround={onFilmGround ? takeGround : null}
+              filmBackdrop={takeBackdrop}
+              filmBackdropStrength={takeBackdropStrength}
+              /* Same flag that points the grid's fade, so backdrop and grid move together. */
+              backdropActive={filmingTake || takePreRoll || buildSetupOpen || framing}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.
               filmCutout={framing && photoCutout}
               // A photograph frames the cake that is there; the editor's topper headroom is dead
@@ -18398,6 +19545,31 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                  customer set (size, standing or lying) survives being moved. */
               onGarnishMove={(id, patch) => updateGarnish(id, patch)}
               autoRotate={creamAutoRotate}
+              /* ⚠️ NOT `autoRotate`. A turntable spins on one axis forever; this take lifts to a
+                 plan view and settles back, so a director drives it. Left on autoRotate as well,
+                 the two would both write the azimuth every frame. */
+              spin={filmSpin ? spinPlan : null}
+              onSpinDone={() => setFilmSpin(false)}
+              takeLens={takeWindow ? takeLens : null}
+              takeGrid={takeWindow && takeGrid}
+              takeGridWall={takeWindow && takeGridWall}
+              takeGridStrength={takeGridStrength}
+              onTakeFrame={buildSaving ? (() => takeFrame.current?.()) : null}
+              takeLensActive={filmingTake || takePreRoll}
+              onTakeLensReturned={() => setLensReturning(false)}
+              assembly={build == null ? null : { time: build, plan: buildTimings }}
+              onAssemblyTick={setBuild}
+              /* Returns true when the last piece has landed, which stops the director's clock.
+                 The count is the decorations the canvas is actually drawing. */
+              onAssemblyDone={(t) => {
+                if (!assemblyDone(t, buildTimings)) return false;
+                setBuild(null);
+                /* The last piece has landed, so a recording in progress has what it came for.
+                   Resolved here rather than on a timer: the take's own clock is the only thing that
+                   knows when the shot is over. */
+                buildEnded.current?.();
+                return true;
+              }}
               creamPaint={creamPaint}
               onCreamPaint={handleCreamPaint}
               brushDraw={brushDraw}
@@ -18480,6 +19652,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 setToolsOpen(false);
                 focusEditor('decoration');
                 selectExclusive({ type: 'grass' });
+              }}
+              onSandClick={() => {
+                setElementsOpen(false);
+                setToolsOpen(false);
+                focusEditor('decoration');
+                selectExclusive({ type: 'sand' });
               }}
               onGypClick={() => {
                 setElementsOpen(false);
@@ -18746,9 +19924,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 they are one gesture repeated; a stroke somebody DREW is its own gesture, and a wide
                 sweep beside a narrow one is most of what makes a hand-painted wall read as
                 hand-painted. */}
+            {/* The bounds come from the geometry, which is also what `variedWidth` clamps to — two
+                copies of "how broad may a stroke be" is how a seeded width lands outside its dial. */}
+            {/* ⚠️ AND A SWEEP'S BOUNDS ARE ITS OWN. A pass is 1.1 × R where a mark's dial stops at
+                0.9, so sharing the range would clamp a sweep narrower than its own default the
+                moment it was touched — the dial would silently turn a pass back into a mark. */}
             <DialCell label="Width" value={pickedBrushStroke.width ?? BRUSH_ON_CAKE_DEFAULTS.width}
-              min={0.08} max={0.9} step={0.02} fmt={v => v.toFixed(2)}
-              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v })} />
+              min={(pickedBrushStroke.sweep ? SWEEP_WIDTH_RANGE : BRUSH_WIDTH_RANGE).min}
+              max={(pickedBrushStroke.sweep ? SWEEP_WIDTH_RANGE : BRUSH_WIDTH_RANGE).max}
+              step={0.02} fmt={v => v.toFixed(2)}
+              /* Both, because dragging this is a baker choosing a new knife — the next stroke
+                 varies around it rather than around the mark this one happened to leave. */
+              onChange={v => updateBrushStroke(pickedBrush.tier, pickedBrush.id, { width: v, baseWidth: v })} />
           </div>
           {/* ⚠️ THE PATTERN IS A SEED, NOT A DIAL. Sandeep asked for *"color and thickness, pattern
               at stroke level"*. A stroke's pattern is where it tore, where the knife ran dry and
@@ -19066,7 +20253,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 ) : (
                 <GradientControls
                   stops={gradStopsView} activeStop={activeStop} mode={gradMode} pending={gradPending}
-                  label={isGlazeTier ? 'Glaze colors' : 'Gradient colors'} maxStops={maxStops}
+                  label={isGlazeTier ? 'Glaze colours' : 'Blended colours'} maxStops={maxStops}
                   onSelectStop={selectGradStop}
                   onAddStop={addGradStop}
                   onRemoveStop={removeGradStop}
@@ -19523,10 +20710,27 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               ) });
             }
 
-            // Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the canvas
-            // resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range that
-            // ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3).
-            if (caps?.resize && selectedEl?.type === 'sticker') {
+            /* Size — the SAME SizeDial and the SAME bounds helper as the toolbar dial and the canvas
+             * resize grips. This was a hand-rolled slider with a hard-coded 0.25–3.0 range that
+             * ignored placement_config.scale and a photo frame's cake cap (INVARIANTS #1/#3).
+             *
+             * ⚠️ BUT NOT WHEN THE CARD THAT OPENED THIS PANEL IS THE ONE HOLDING THE SIZE DIAL.
+             * Sandeep, after the sheets stopped stacking: *"when i click on color picker here, why
+             * is size coming in level2 popup. size is already there on level1."* It is the same
+             * control — literally, both built from `sizeControlOf` — so a baker who tapped a colour
+             * swatch was handed a tab for something they already had one line up, and the tab strip
+             * existed only to offer it.
+             *
+             * ⚠️ IT IS THE SAME FACT AS THE STACKING FIX, NOT A SECOND ONE. While the two sheets
+             * overlapped, the duplicate was merely redundant; once level 2 REPLACES level 1 it is
+             * worse than that, because the dial it duplicates is now off screen and the tab looks
+             * like the only way to the size. Hiding the card is what makes this worth removing.
+             *
+             * With Colour alone left, `showTabs` (sections.length > 1) drops the strip too, so the
+             * sheet is a colour wheel and nothing else — which is what tapping a colour asked for.
+             * Unscoped paths are untouched: a tier never reaches this branch, and where no card is
+             * showing the dial (desktop, or the panel opened some other way) Size stays. */
+            if (caps?.resize && selectedEl?.type === 'sticker' && !cardBehindSubPanel) {
               const sticker = design.stickers.find(s2 => s2.id === selectedEl.id);
               const ctl = sizeControlOf(sticker);
               if (sticker && ctl) {
@@ -19766,7 +20970,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             </button>
           )}
 
-          {elementStackOpen && stackShown && (
+          {/* ⚠️ WITHHELD WHILE ITS OWN SUB-PANEL IS UP — see `cardBehindSubPanel`. The colour panel
+              is opened FROM this card and is a bottom sheet too, so drawing both stacked them. */}
+          {elementStackOpen && stackShown && !cardBehindSubPanel && (
             <div ref={pipingPopupRef} className="piping-popup-scroll"
               style={isMobile
                 /* ⚠️ THE LIST AND AN EDITOR ARE DIFFERENT SHAPES, and `stackSingleCard` already
@@ -19958,6 +21164,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            : card.type === 'rainbow' ? renderRainbowBody(card)
                            : card.type === 'gyp' ? renderGypBody()
                            : card.type === 'grass' ? renderGrassBody()
+                           : card.type === 'sand' ? renderSandBody(card)
                            : card.type === 'blocks' ? renderBlocksBody()
                            : card.type === 'topper'  ? renderTopperBody(card.topper)
                            : card.type === 'garnish' ? renderGarnishBody(card.garnish)
@@ -20592,6 +21799,18 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            side and blue the other: *"we should allow multi color drip."* Reusing the
                            stop list rather than inventing a second one is what makes the control,
                            the storage and the save path already exist. */
+                        /* ⚠️ A COAT TAKES OVER THIS POPUP. When the tier carries one from this
+                           card there is no ring to colour — the stops belong to the coat, and the
+                           same GradientControls below edits them. Scatter is deliberately absent;
+                           see writeCoatColors.
+
+                           ⚠️ DECLARED ABOVE `gradEligible`, WHICH READS IT. It used to sit sixteen
+                           lines lower, which is a `Cannot access 'coatHere' before initialization`
+                           every time this popup drew its gradient section — `const` is not hoisted.
+                           Found by check:tdz on the day that same mistake, under the name `orbited`,
+                           took the live designer down. */
+                        const coatHere = design.tiers[tierIndex]?.coat?.cardId === card.cardId
+                          ? design.tiers[tierIndex].coat : null;
                         const gradEligible = !!coatHere || isDrip || !!pipingPopupEl?.allowed_actions?.gradient;
                         /* ⚠️ ALTERNATING IS OFFERED ONLY WHERE THERE ARE PIECES TO ALTERNATE, and
                            the test is which RENDER PATH this layer takes, not which zone it is in.
@@ -20604,12 +21823,6 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                            path that can honour it, and these are the three things that bypass it. */
                         const altCapable = !isDrip && !p.wrap && !p.bend
                                         && (p.finish ?? 'cream') !== 'element';
-                        /* ⚠️ A COAT TAKES OVER THIS POPUP. When the tier carries one from this
-                           card there is no ring to colour — the stops belong to the coat, and the
-                           same GradientControls below edits them. Scatter is deliberately absent;
-                           see writeCoatColors. */
-                        const coatHere = design.tiers[tierIndex]?.coat?.cardId === card.cardId
-                          ? design.tiers[tierIndex].coat : null;
                         const gStops  = coatHere
                           ? (coatHere.colors?.length ? coatHere.colors : [color])
                           : (p.gradient?.colors?.length ? p.gradient.colors : [color]);
@@ -20644,7 +21857,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                                 /* A drip has no sweep direction to choose — two ganaches meet where
                                    they meet — so the mode row is empty and GradientControls hides
                                    it on `modes.length > 1`. */
-                                label={coatHere ? 'Ombré colours' : isDrip ? 'Chocolates' : 'Gradient colors'}
+                                /* A coat and a tier both blend creams, so they take the same
+                                   label now — the branch that separated them existed only because
+                                   one said "Ombré colours" and the other "Gradient colors". */
+                                label={isDrip ? 'Chocolates' : 'Blended colours'}
                                 /* No mode for a coat: a gradient MODE is a ring's question about
                                    how colour sweeps round a circle, and a coat's answer is always
                                    the same — by position over the whole surface. */
@@ -20962,20 +22178,37 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 {/* Beside the other things you do to a FINISHED cake, not in a tools or settings
                     menu — those hold things you configure or things that help you make a cake, and
                     this is neither. See spattoo-docs/plans/reel-for-bakers.md §1b. */}
-                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                        onClick={() => { setActionsMenuOpen(false); openReelPanel(); }}>
-                  <ReelIcon size={17} />
-                  Record a reel
-                </button>}
-                {/* Above the reel, not below it, and gated the same way. A photo is the thing most
-                    bakers actually need most days — a reply to "can I see it?" on WhatsApp — where a
-                    reel is what they make when they are posting deliberately. Same panel shape, same
-                    framing, same name-on-the-frame rule. */}
-                {canRecordReel && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                        onClick={() => { setActionsMenuOpen(false); openPhotoPanel(); }}>
+                {/* ── ONE "Capture" ON THE PHONE TOO ───────────────────────────────────────────
+                    The reel and the photo used to sit here as two flat items, and the two TAKES
+                    were not here at all — a baker on a phone could film neither. *"in mobile view,
+                    i dont see this build video option. i dont see spin option as well … pls make
+                    sure all the options available in desktop are available in mobile as well."*
+
+                    Same collapse the desktop row already made, and for the same reason: these are
+                    one KIND of act at several lengths, so they take one slot in the sheet and the
+                    choice moves a tap in. The items themselves are CaptureMenuItems — the one copy
+                    both surfaces draw, because a menu that exists twice is a menu that gets added
+                    to once. */}
+                {canOpenCapture && <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
+                        onClick={() => { setActionsMenuOpen(false); setCaptureMenuOpen(true); }}>
                   <CameraIcon size={17} />
-                  Take a photo
+                  Capture
+                  {/* The shared chevron, not a "›": a literal takes whatever font is loaded, so the
+                      same mark changes shape between screens. check:one-chevron caught it. */}
+                  <span aria-hidden style={{ marginLeft: 'auto', opacity: 0.5, display: 'inline-flex' }}>
+                    <ChevronRightIcon size={16} />
+                  </span>
                 </button>}
+              </ActionSheet>
+              {/* The capture menu itself, anchored to the same button the Actions sheet uses — so on
+                  a phone it opens upward from the bottom row exactly as the Actions sheet does. */}
+              <ActionSheet open={captureMenuOpen} onClose={() => setCaptureMenuOpen(false)} align="right">
+                <CaptureMenuItems
+                  onClose={() => setCaptureMenuOpen(false)}
+                  onPhoto={openPhotoPanel} onReel={openReelPanel}
+                  onBuild={openBuildSetup} onSpin={() => setSpinSetupOpen(true)}
+                  canFilmBuild={canFilmBuild} canSpin={isCatalogAuthor}
+                  buildSeconds={assemblyTotal(buildTimings).toFixed(1)} spinSeconds={spinTotal(spinPlan)} />
               </ActionSheet>
             </div>
           </div>
@@ -21014,7 +22247,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 its click-away overlay live in one place, and a second desktop-only dropdown would be
                 the same widget written twice. It opens UPWARD, which is right: this row sits at the
                 bottom of the window. */}
-            {canRecordReel && (
+            {canOpenCapture && (
               <div style={{ position: 'relative', flex: 1, display: 'flex' }}>
                 <button
                   style={{ ...s.orderBtn, ...brandBtn, width: '100%', whiteSpace: 'nowrap', opacity: 0.6,
@@ -21029,16 +22262,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <span aria-hidden style={{ letterSpacing: 1, opacity: 0.75, fontSize: 15, lineHeight: 1 }}>⋯</span>
                 </button>
                 <ActionSheet open={captureMenuOpen} onClose={() => setCaptureMenuOpen(false)} align="center">
-                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                          onClick={() => { setCaptureMenuOpen(false); openPhotoPanel(); }}>
-                    <CameraIcon size={17} />
-                    Take a photo
-                  </button>
-                  <button style={{ ...SHEET_ITEM, display: 'flex', alignItems: 'center', gap: 10 }}
-                          onClick={() => { setCaptureMenuOpen(false); openReelPanel(); }}>
-                    <ReelIcon size={17} />
-                    Record a reel
-                  </button>
+                  <CaptureMenuItems
+                    onClose={() => setCaptureMenuOpen(false)}
+                    onPhoto={openPhotoPanel} onReel={openReelPanel}
+                    onBuild={openBuildSetup} onSpin={() => setSpinSetupOpen(true)}
+                    canFilmBuild={canFilmBuild} canSpin={isCatalogAuthor}
+                    buildSeconds={assemblyTotal(buildTimings).toFixed(1)} spinSeconds={spinTotal(spinPlan)} />
                 </ActionSheet>
               </div>
             )}
@@ -21177,7 +22406,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <button style={{ ...s.mobileNavSlot, ...(mobileMoreOpen || mobileSecondaryActive ? s.mobileNavSlotOn : {}) }}
                         aria-expanded={mobileMoreOpen} aria-haspopup="menu"
                         onClick={() => { setMobileMoreOpen(o => !o); setNavMenuId(null); }}>
-                  <span style={s.mobileNavIcon}><SpatulaMarkIcon size={20} /></span>
+                  <span style={s.mobileNavIcon}><MenuLinesIcon size={20} /></span>
                   <span style={s.mobileNavLabel}>More</span>
                 </button>
               </div>
@@ -21664,6 +22893,311 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         accentColor={accentColor}
       />
 
+      {/* ── Setting up the build ──────────────────────────────────────────────────────────────────
+          Every decoration lands in turn, in the order it was placed — so the shot replays how the
+          cake was really made. Same rules as the spin's panel: it closes before the take runs,
+          because everything on screen is filmed. */}
+      {buildSetupOpen && (
+        <Panel title="Build the cake" onClose={() => setBuildSetupOpen(false)} maxWidth={360}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 2px 10px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+              The decorations land one at a time, in the order they were placed. Press Start and
+              this closes — Esc stops it early.
+            </p>
+            {/* ⚠️ A TOTAL, NOT A GAP PER PIECE. Real templates hold between 3 and 181 decorations,
+                so a fixed gap made the same setting a 1.6-second build on one cake and a
+                65.7-second one on another. This is also where slow motion lives: a longer total
+                renders every frame for real at the slower pace, where slowing the clip in an editor
+                would resample frames already captured and judder. */}
+            <Slider label="Length" value={buildPlan.total} min={1.5} max={15} step={0.5}
+                    fmt={v => `${v.toFixed(1)}s`}
+                    onChange={v => setBuildPlan(p => ({ ...p, total: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              The whole build, however many decorations the cake has. Longer is slower, and stays sharp.
+            </div>
+            <Slider label="Together or in turn" value={buildPlan.spread} min={0} max={MAX_SPREAD} step={0.05}
+                    fmt={v => (v === 0 ? 'all at once' : `${Math.round(v * 100)}% dealt out`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, spread: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              At nothing, every piece falls together and lands together — the graceful one.
+            </div>
+            {/* ⚠️ THE CEILING WAS 1.5 AND THE DEFAULT 0.55, WHICH IS BARELY OFF THE CAKE — Sandeep:
+                "the elements are coming from very near. they can come from bit far". It is a
+                fraction of the cake's own reach, never a world distance, so the shot reads the same
+                on a 6" round and on a sheet (INVARIANTS #8). */}
+            <Slider label="Drop height" value={buildPlan.rise} min={0.1} max={MAX_RISE} step={0.05}
+                    fmt={v => `${v.toFixed(2)}× the cake`}
+                    onChange={v => setBuildPlan(p => ({ ...p, rise: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              How high above its place each decoration starts. Higher means it flies in from further.
+            </div>
+            {/* ⚠️ WITHOUT THIS EVERY PIECE ARRIVES IDENTICALLY — same height, same sweep — so the
+                decorations read as one rigid cake floating above the cake rather than as many
+                pieces. Sandeep: "many elements starting from same point. can it be random? and why
+                all have to come from top?" Each piece gets its own height, its own swing and which
+                way round, and its own bearing to fly in on; a low piece with a long bearing comes
+                in across the board instead of from overhead. Hashed from the piece's index, never
+                Math.random, so the same cake films the same way every time. */}
+            <Slider label="Vary how they arrive" value={buildPlan.scatter} min={0} max={1} step={0.05}
+                    fmt={v => (v === 0 ? 'all alike' : `${Math.round(v * 100)}%`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, scatter: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              At nothing, every decoration starts at the same height and sweeps the same way.
+            </div>
+            {/* The other half of "from further": a piece can come round the cake rather than
+                straight down. Its SEAT is what turns, so it arrives facing exactly as designed. */}
+            <Slider label="Fly in around the cake" value={buildPlan.swing} min={0} max={MAX_SWING} step={0.05}
+                    fmt={v => (v === 0 ? 'straight down' : `${Math.round(v * 360)}°`)}
+                    onChange={v => setBuildPlan(p => ({ ...p, swing: v }))} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              How far each decoration travels around the cake on its way in. 360° is a full circle.
+            </div>
+            {/* ⚠️ THE LENS IS MOST OF WHAT "CINEMATIC" MEANS before anyone reaches for a grade. The
+                designer works at 42° — a portrait lens, flattering for a thumbnail, and it splays
+                the cake's near bottom edge so it reads as bulging. A longer lens compresses that
+                away. FitCakeToView dollies the camera back on its own, eased, so the cake stays the
+                same size in frame and the move is itself a shot. */}
+            <Slider label="Lens" value={takeLens} min={LENS_RANGE.min} max={LENS_RANGE.max} step={1}
+                    fmt={v => (v >= 42 ? 'as the editor' : `${v}°`)}
+                    onChange={setTakeLens} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Longer lens, flatter perspective. The camera pulls back {lensDistanceFactor(takeLens).toFixed(2)}× to keep the framing.
+            </div>
+            {/* ⚠️ ONE SETTING FOR BOTH TAKES, and it sits beside the lens because that is the other
+                thing both share. It describes how you are RECORDING, not what you are filming:
+                "this is useful in case of screen recording" — time to reach the recorder and press
+                record. Nothing in the scene moves while it counts, so the recording opens on the
+                take's true first frame. */}
+            <Slider label="Start after" value={startAfter} min={0} max={DELAY_MAX} step={1}
+                    fmt={v => (v === 0 ? 'straight away' : `${v}s`)}
+                    onChange={setStartAfter} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
+            </div>
+            {/* ── What the cake is filmed against ──────────────────────────────────────────────
+                ⚠️ THE BUILD WAS THE ONLY TAKE WITHOUT THIS, and that is what "it does not look
+                visually professional" turned out to be. `filmGround` was gated on `framing`, which
+                is only true once a SHAPE is chosen — so a build filmed on the default "As on
+                screen" was shot in the EDITOR's room: a lit floor meeting a wall at
+                DESIGNER_HORIZON, with the join visible as a straight line across the picture behind
+                the cake. Measured on empty background above the cake: the brightness steps 17.8 of
+                255 across it. Small, but it is a STRAIGHT EDGE, and a straight line across the
+                backdrop is the clearest single tell that a video came out of software rather than a
+                camera — which is why photographers shoot on one curved sweep of paper with no join.
+                The reel has been on that cyclorama since the same line was found in one; the build
+                never joined it. It does now, for the whole take window.
+
+                ⚠️ THE SWATCHES ARE THE SHARED ONES. `GroundSwatches` already serves the reel and
+                the photo panels, and the label matches the reel's — a third copy of a swatch row is
+                how "Slate" becomes two different greys (TAKE_GROUNDS' own note). */}
+            <div style={s.editPanelLabel}>Background</div>
+            <div style={{ margin: '4px 0 8px' }}>
+              <GroundSwatches grounds={groundsFor(brandPrimary)} value={takeGround} onPick={setTakeGround} />
+            </div>
+            {/* ⚠️ A GRADE, NOT A PICTURE. Sandeep asked for "a background - a gradient one may be",
+                with three reference images. A photograph behind an orbiting camera reads as a
+                sticker — takeGrid records the same trap for geometry: "a grid with a back edge would
+                show its own edge the moment they turned past it". A texture on `scene.background`
+                is drawn across the viewport and does NOT move with the camera, so it behaves like a
+                paper sweep and the orbit cannot catch its edge. Generated FROM the swatch above, so
+                the baker makes one colour decision rather than two that can disagree. */}
+            <div style={{ margin: '2px 0 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {BACKDROP_LOOKS.map(l => (
+                <Chip key={l.key} label={l.label} active={takeBackdrop === l.key} isMobile={isMobile}
+                      onClick={() => setTakeBackdrop(l.key)} title={l.hint} />
+              ))}
+            </div>
+            {takeBackdrop !== 'flat' && (
+              <>
+                <Slider label="Background depth" value={takeBackdropStrength} min={0.1} max={1} step={0.05}
+                        fmt={v => `${Math.round(v * 100)}%`}
+                        onChange={setTakeBackdropStrength} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+                  How far the shading travels from the colour above. It never lights the cake.
+                </div>
+              </>
+            )}
+            {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
+                the phone hit-target. The grid is the marketing site's floor, brought here so a cake
+                on film stands in a room rather than in a void; see takeGrid.js. */}
+            <div style={{ margin: '2px 0 10px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip label="Grid floor" active={takeGrid} isMobile={isMobile}
+                    onClick={() => setTakeGrid(v => !v)}
+                    title="Lines on the floor while filming, like the marketing site" />
+              {/* The vertical half. It stands on the far edge of the floor grid and follows the
+                  camera round, so it is always behind the cake and never in front of it. */}
+              <Chip label="Back wall" active={takeGridWall} isMobile={isMobile}
+                    onClick={() => setTakeGridWall(v => !v)}
+                    title="Vertical grid lines behind the cake while filming" />
+            </div>
+            {(takeGrid || takeGridWall) && (
+              <>
+                {/* ⚠️ A CONTROL, NOT A CONSTANT. At the old fixed value a grid line differed from its
+                    ground by 25 of 255 in a delivered video — about a tenth, which is "hardly
+                    visible". How much a faint line reads depends on the cake, the ground and the
+                    screen it is judged on, none of which this code knows. */}
+                <Slider label="Grid strength" value={takeGridStrength} min={STRENGTH_MIN} max={1} step={0.05}
+                        fmt={v => `${Math.round(v * 100)}%`}
+                        onChange={setTakeGridStrength} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+                  How strongly the grid lines are drawn. The back wall stays fainter than the floor.
+                </div>
+              </>
+            )}
+            {/* ⚠️ THE SHAPE IS ASKED, NOT ASSUMED. The first version always wrote 9:16 — *"record and
+                save is always downloading a vertical video. i have not asked like that. let the
+                user choose at least."* Vertical is the right shape for posting and the wrong thing
+                to decide for somebody. "As on screen" is the default because it is what the button
+                did before, and because it is the one answer that surprises nobody. */}
+            {/* ⚠️ ITS OWN ROW, ABOVE THE BUTTONS — it was dropped INSIDE the action row, between
+                Start and Record & save. Four pills then wrapped into three lines inside a single
+                flex item and shouldered the two buttons apart to different heights. Sandeep:
+                *"align the buttons."* It is a SETTING, like the grid chips above it, and it is
+                chosen before either button is pressed — narrating text goes before the thing it
+                narrates, never beside the action (INVARIANTS #11). Same spacing as that chip row,
+                so the panel's settings all read as one column. */}
+            <div style={{ margin: '2px 0 4px', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span style={s.editPanelLabel}>Video shape</span>
+              <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+                {[['As on screen', null], ['Vertical', 9 / 16], ['Square', 1], ['Wide', 16 / 9]].map(([label, v]) => (
+                  <button key={label} onClick={() => setBuildShape(v)}
+                          style={pillStyle(buildShape === v)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            {/* ⚠️ IT ONLY GOVERNS THE FILE, and sitting between the two buttons implied it governed
+                both. Every other setting in this panel carries its line; this one has to, because
+                the question it raises — does picking Vertical change what Start plays? — has no
+                answer on screen otherwise. */}
+            <div style={{ fontSize: 11, color: '#999', margin: '0 0 10px' }}>
+              The shape of the saved file. Start plays the build on screen as it is.
+            </div>
+            {/* ⚠️ WRAPS, because a phone is 375px and this row carries two buttons and a count. */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4, flexWrap: 'wrap' }}>
+              {/* ⚠️ A TRANSPARENT BORDER, NOT `none`. Record & save carries a 1px edge and this one
+                  did not, so the two buttons came out 34px and 36px against `alignItems: center`
+                  and sat a pixel out of true — visible, and the other half of *"align the buttons."*
+                  Matching the BOX rather than nudging a margin keeps them level whatever either
+                  one's padding becomes later. */}
+              <button onClick={() => { setBuildSetupOpen(false); startBuild(); }}
+                style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
+                         fontSize: 13, cursor: 'pointer', fontFamily: 'inherit',
+                         border: '1px solid transparent' }}>
+                Start
+              </button>
+
+              {/* ⚠️ A SECOND BUTTON, NOT A MODE. Playing the build and keeping a file are two
+                  different intentions — one is "show me", the other is "give me the video" — and a
+                  checkbox beside Start would make the baker set a switch to find out which one
+                  pressing it does. This one records the canvas only: no rail, no header, none of
+                  what a screen recording drags in. */}
+              <button onClick={() => { setBuildSetupOpen(false); saveBuildVideo(); }}
+                disabled={buildSaving}
+                style={{ padding: '9px 16px', borderRadius: 9, fontWeight: 700, fontSize: 13,
+                         fontFamily: 'inherit', background: '#fff', color: INK,
+                         border: '1px solid #cfcac2',
+                         cursor: buildSaving ? 'default' : 'pointer',
+                         opacity: buildSaving ? 0.6 : 1 }}>
+                {buildSaving ? 'Recording…' : 'Record & save'}
+              </button>
+              <span style={{ fontSize: 12, color: '#888' }}>
+                {(canvasConfig.stickers?.length ?? 0)} decorations ·{' '}
+                {assemblyTotal(buildTimings).toFixed(1)}s
+              </span>
+            </div>
+            {buildSaveError && (
+              <div style={{ fontSize: 12, color: '#b4453c', marginTop: 8 }}>{buildSaveError}</div>
+            )}
+          </div>
+        </Panel>
+      )}
+
+      {/* ── Setting up the hero spin ──────────────────────────────────────────────────────────────
+          Four durations, tuned against a narration whose length is already known — the take has to
+          fit the words, which is the whole reason these are adjustable rather than four constants.
+
+          ⚠️ IT CLOSES BEFORE THE TAKE RUNS. Everything on screen is filmed, so this panel exists
+          only while nobody is recording: open it, set the phases, press Start, and it is gone
+          before the camera moves. Same rule as the menu item it opens from.
+
+          ⚠️ `Slider`, not four number boxes — it is THE bounded number in this codebase, and it
+          carries the label, the live value and the units that make "4" read as four seconds. */}
+      {spinSetupOpen && (
+        <Panel title="Spin the cake" onClose={() => setSpinSetupOpen(false)} maxWidth={360}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, padding: '4px 2px 10px' }}>
+            <p style={{ margin: '0 0 6px', fontSize: 12, color: '#888', lineHeight: 1.5 }}>
+              The cake turns once, lifts to look down on the top, holds, then settles back where it
+              started. Press Start and this closes — Esc stops it early.
+            </p>
+            {SPIN_PHASE_LABELS.map(({ key, label, hint, max }) => (
+              <div key={key}>
+                <Slider label={label} value={spinPlan[key]} min={0} max={max} step={0.5}
+                        fmt={v => `${v}s`}
+                        onChange={v => setSpinPlan(p => ({ ...p, [key]: v }))} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>{hint}</div>
+              </div>
+            ))}
+            {/* ⚠️ THE LENS IS MOST OF WHAT "CINEMATIC" MEANS before anyone reaches for a grade. The
+                designer works at 42° — a portrait lens, flattering for a thumbnail, and it splays
+                the cake's near bottom edge so it reads as bulging. A longer lens compresses that
+                away. FitCakeToView dollies the camera back on its own, eased, so the cake stays the
+                same size in frame and the move is itself a shot. */}
+            <Slider label="Lens" value={takeLens} min={LENS_RANGE.min} max={LENS_RANGE.max} step={1}
+                    fmt={v => (v >= 42 ? 'as the editor' : `${v}°`)}
+                    onChange={setTakeLens} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Longer lens, flatter perspective. The camera pulls back {lensDistanceFactor(takeLens).toFixed(2)}× to keep the framing.
+            </div>
+            {/* ⚠️ ONE SETTING FOR BOTH TAKES, and it sits beside the lens because that is the other
+                thing both share. It describes how you are RECORDING, not what you are filming:
+                "this is useful in case of screen recording" — time to reach the recorder and press
+                record. Nothing in the scene moves while it counts, so the recording opens on the
+                take's true first frame. */}
+            <Slider label="Start after" value={startAfter} min={0} max={DELAY_MAX} step={1}
+                    fmt={v => (v === 0 ? 'straight away' : `${v}s`)}
+                    onChange={setStartAfter} />
+            <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+              Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
+            </div>
+            {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
+                the phone hit-target. The grid is the marketing site's floor, brought here so a cake
+                on film stands in a room rather than in a void; see takeGrid.js. */}
+            <div style={{ margin: '2px 0 10px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <Chip label="Grid floor" active={takeGrid} isMobile={isMobile}
+                    onClick={() => setTakeGrid(v => !v)}
+                    title="Lines on the floor while filming, like the marketing site" />
+              {/* The vertical half. It stands on the far edge of the floor grid and follows the
+                  camera round, so it is always behind the cake and never in front of it. */}
+              <Chip label="Back wall" active={takeGridWall} isMobile={isMobile}
+                    onClick={() => setTakeGridWall(v => !v)}
+                    title="Vertical grid lines behind the cake while filming" />
+            </div>
+            {(takeGrid || takeGridWall) && (
+              <>
+                {/* ⚠️ A CONTROL, NOT A CONSTANT. At the old fixed value a grid line differed from its
+                    ground by 25 of 255 in a delivered video — about a tenth, which is "hardly
+                    visible". How much a faint line reads depends on the cake, the ground and the
+                    screen it is judged on, none of which this code knows. */}
+                <Slider label="Grid strength" value={takeGridStrength} min={STRENGTH_MIN} max={1} step={0.05}
+                        fmt={v => `${Math.round(v * 100)}%`}
+                        onChange={setTakeGridStrength} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+                  How strongly the grid lines are drawn. The back wall stays fainter than the floor.
+                </div>
+              </>
+            )}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 4 }}>
+              <button onClick={() => { setSpinSetupOpen(false); startFilmSpin(); }}
+                style={{ ...brandBtn, padding: '9px 18px', borderRadius: 9, fontWeight: 700,
+                         fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', border: 'none' }}>
+                Start
+              </button>
+              <span style={{ fontSize: 12, color: '#888' }}>{spinTotal(spinPlan)} seconds in all</span>
+            </div>
+          </div>
+        </Panel>
+      )}
+
       {/* Reel options — catalogue authors only. Not mounted at all otherwise, so the panel is not
           a thing every other baker's designer carries around unrendered. */}
       {/* ── The reel's own voice ──────────────────────────────────────────────────────────────────
@@ -21974,6 +23508,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           renderNowRef={thumbRenderNowRef} viewDir={thumbViewDir(thumbView)} />
       )}
 
+      {/* ── The assistant ───────────────────────────────────────────────────────────────────────
+          Bottom-right of every baker screen. It is mounted HERE, once, because this component IS
+          the baker app — BakerApp.tsx renders CakeDesigner and every screen (orders, calendar,
+          settings, the storefront editor) lives inside it. One mount is therefore "available
+          everywhere", which is what Sandeep asked for: *"the cartoon sits in the right bottom
+          corner"*, reachable from the calendar as much as from the canvas.
+
+          ⚠️ BAKER ONLY, FOR NOW. *"baker first- then customer needs to login to access this
+          feature."* Every one of the 58 help articles is `audience: baker` and describes the baker
+          app; showing them to a customer on a storefront link would answer their question with
+          instructions for a screen they cannot open. A customer corpus does not exist yet.
+
+          ⚠️ AND IT HIDES DURING A FILM OR A FRAMING. `onFilmGround` is already the "the screen is
+          a photo right now" flag; a floating button over a shot is in the shot. */}
+      {orderMode === 'baker' && (
+        <HelpAssistant
+          apiClient={apiClient}
+          isMobile={isMobile}
+          bottomInset={isMobile ? MOBILE_BAR_H : 0}
+          hidden={onFilmGround}
+        />
+      )}
+
       {/* Floating sticker ghost while pointer-dragging from elements panel */}
       {dragGhost && (
         <div style={{
@@ -22107,7 +23664,9 @@ const s = {
   // rule. Centred, every one of them sits in the middle of the row by construction.
   desktopLogo: {
     position: 'absolute', top: 0, left: RAIL.padLeft + RAIL.width + 16, height: DESKTOP_HEADER_H, zIndex: 6,
-    display: 'flex', alignItems: 'center', pointerEvents: 'none',
+    // `gap` does the spacing when the mark and the name are both drawn, and costs nothing when only
+    // one of them is — so neither branch needs its own margin.
+    display: 'flex', alignItems: 'center', gap: 14, pointerEvents: 'none',
   },
   desktopHeaderRule: {
     position: 'absolute', left: RAIL.padLeft + RAIL.width, right: 0, height: DESKTOP_HEADER_H,
@@ -22127,13 +23686,20 @@ const s = {
   // `minWidth: 0` is what lets it: a flex item will not shrink below its content width without it,
   // and the ellipsis would never appear.
   topLogo: {
-    display: 'flex', alignItems: 'center', justifyContent: 'flex-start',
+    display: 'flex', alignItems: 'center', justifyContent: 'flex-start', gap: 9,
     flexShrink: 1, minWidth: 0, maxWidth: '100%',
   },
   // 40 not 34: off-flow the desktop logo no longer competes with the rail for height, and
   // most uploads carry transparent padding, so a chunk of this box is margin, not mark.
   // Capped at 40 rather than higher because mobileHeader shares this and is only 52 tall.
   topLogoImg: { maxHeight: HEADER_LOGO_MAX_H, maxWidth: 240, objectFit: 'contain', display: 'block' },
+  // The desktop header's logo. Separate from topLogoImg for the same reason desktopLogoText is
+  // separate from topLogoText: the two rows are not the same problem. See DESKTOP_LOGO_MAX_H.
+  desktopLogoImg: { maxHeight: DESKTOP_LOGO_MAX_H, maxWidth: 280, objectFit: 'contain', display: 'block' },
+  // The mark when the NAME is beside it: smaller, because the two share one row and the name is now
+  // carrying the legibility. 32 on a phone keeps the 52px bar's controls their width.
+  topLogoImgPaired: { maxHeight: 32, maxWidth: 120, objectFit: 'contain', display: 'block', flexShrink: 0 },
+  desktopLogoImgPaired: { maxHeight: 48, maxWidth: 180, objectFit: 'contain', display: 'block', flexShrink: 0 },
   // Fallback when a baker has not uploaded a logo. Sized for a header line, not the
   // old 64px rail box — hence one line with an ellipsis rather than centred wrapping.
   // ⚠️ NEVER TRUNCATED. This is the bakery's identity, and the same name their customers meet coming
@@ -22181,17 +23747,31 @@ const s = {
     // to serve a minority is the worse trade. Change layout.tsx if that ever stops being true.
     fontFamily: "'Pacifico', cursive",
     fontWeight: 400,
-    fontSize: 26,
-    maxWidth: 420,
-    // Desktop keeps the single line it always had. topLogoText dropped nowrap so the PHONE can wrap
-    // a long name instead of truncating it; here the slot is absolutely positioned and 64px tall, so
-    // a second line of 26px Pacifico would spill over the header rule and onto the canvas.
-    // ⚠️ Which means desktop still truncates a very long name at 420px — the same identity problem
-    // the phone just stopped having, in a place with four times the room. Left as-is deliberately
-    // rather than fixed blind; see the note in plans/, and it wants its own look.
-    whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-    /* ⚠️ THE PADDING IS LOAD-BEARING, and the equal negative margins cancel it visually.
-     * `overflow: hidden` (needed for the ellipsis above) clips at the CONTENT BOX, and Pacifico's
+    /* ⚠️ NO SIZE AND NO CAP HERE ANY MORE — BOTH COME FROM THE CALL SITE.
+     *
+     * This was `fontSize: 26` with `maxWidth: 420` and `overflow:hidden/textOverflow:ellipsis`, and
+     * the note that used to sit here admitted what that cost: "desktop still truncates a very long
+     * name at 420px — the same identity problem the phone just stopped having, in a place with four
+     * times the room. Left as-is deliberately rather than fixed blind."
+     *
+     * Sandeep, offered a smaller cap when the name moved into the header's right-hand row: *"why
+     * should we truncate. its the baker's identity."* Quite. So nothing is clipped: `fontSize` is
+     * `brandNameFontSize(name, brandNameRoom)`, which steps the type down by the width actually
+     * available and stops at 15px. A name is always whole; the type gives way instead.
+     *
+     * `nowrap` STAYS, and is now the only half of the old trio left. The shrink keeps the name on
+     * one line, and a row of header furniture is the wrong place to grow a second one — the phone
+     * header wraps because it has a column to itself, which this does not. */
+    whiteSpace: 'nowrap',
+    /* ⚠️ ITS REASON HAS GONE, AND IT IS KEPT ON PURPOSE. The clip this was compensating for left
+     * with `overflow: hidden` above, so the padding and its cancelling negative margins now net to
+     * nothing — visually identical with or without. Kept rather than deleted because the pair is
+     * only correct TOGETHER: anyone re-adding a clip here (a cap, an ellipsis, a `contain`) gets
+     * the fix already in place instead of rediscovering it, and the note below records the axis
+     * mistake that cost a day the first time. Removing them is safe; removing one is not.
+     *
+     * The original reasoning, which is what makes the pair readable:
+     * `overflow: hidden` clips at the CONTENT BOX, and Pacifico's
      * ink does not fit inside a 1.2 line-height box. The padding moves the clip edge out; the
      * negative margin puts the wordmark back exactly where it was, so nothing else in the header
      * moves. Removing either one alone re-breaks it or shifts the mark.

@@ -27,6 +27,10 @@ const stub = {
     primary_color: '#2C4433', accent_color: '#C9A227',
     instagram_handle: 'thirtyonebakers', website_url: 'https://example.com',
     storefront_theme_id: 1, storefront_published: false,
+    /* ⚠️ A LOGO, AND A BADGE ONE. "In the header" exists because a round mark with the bakery's
+       name set inside it cannot be read at header size — with no logo the control renders inert
+       ("upload a logo to use these") and the one thing it is for cannot be looked at here. */
+    logo_url: '/feelings-flavours-logo.png',
   } }),
   fetchStorefrontThemes: async () => ({ themes: [{ id: 1, name: 'Spotlight' }] }),
   updateBakerSettings: async () => { await wait(200); },

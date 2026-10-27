@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zoneSeat, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { isSinglePerSlot, placementSlots, hugScale, isDynamicHug, wallClampY, sideSeatOffset, DEFAULT_HUG_FILL, facingOffsetRadians, degToRad3, radToDeg3, scaleRangeOf, tierAbove, occludedTopFrac, stickerSizeControl, clampSizeValue, STICKER_SCALE_RANGE, HUG_MUL_RANGE, seatedHitBox, contentFoot, hitVolume, HIT_SOLID_MIN_DEPTH, zoneCfg, zoneMode, zoneModes, zoneHasChoice, zonePoses, zoneSeat, zoneBend, zoneInsert, zoneSeatFields, clampLean, LEAN_LIMIT, LEAN_STEP, LEAN_STEP_DEG, LEAN_LIMIT_DEG, surfaceFit, surfaceFitMax, frameTopMaxScale, insertSeat, DEFAULT_INSERT_DEPTH, DEFAULT_INSERT_LEAN_DEG, flatPose, edgeSeatSeed, deOverlapSeat } from './placement.js';
+import { occupantFootprint, footprintReach } from './placement.js';
 import { TIER_RADII, STICKER_SIZE, ZONES, PLACEMENT_MODES } from './constants.js';
 import { topContains, tierShape, topClamp, snapToRim } from './geometry/surface.js';
 import { scaledOutline } from './geometry/shapes.js';
@@ -528,7 +529,7 @@ describe('zoneSeat', () => {
 // into placementMode).
 describe('zoneSeatFields — placementMode + sideProud, config-driven, from either config form', () => {
   it('derives mode via zoneMode (never the raw object) and proud from the default', () => {
-    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true, sideBend: 1 });
   });
   it('reads the OBJECT form without leaking the object into placementMode', () => {
     const f = zoneSeatFields({ side: { mode: 'hug', seat: 'proud' } }, 'side');
@@ -540,7 +541,45 @@ describe('zoneSeatFields — placementMode + sideProud, config-driven, from eith
     expect(zoneSeatFields({ scatter: true, side: 'hug' }, 'side').sideProud).toBe(false);
   });
   it('falls back to hug when the zone is unconfigured', () => {
-    expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+    expect(zoneSeatFields({}, 'side')).toEqual({ placementMode: 'hug', sideProud: true, sideBend: 1 });
+  });
+});
+
+describe('zoneBend — how much of the wall\'s curve a flat piece takes', () => {
+  /* ⚠️ A FRACTION, NOT A RADIUS, and that is the reason this function exists rather than a number on
+     the row. `hug` wraps a decal around the cylinder by definition and the wrap grows with SIZE —
+     the same plaque sweeps 12° at scale 1 and 49° at scale 4 — so an authored radius would be wrong
+     at every size but one. Reported as *"its bending more than needed."* */
+  it('bends with the wall unless the row says otherwise — nothing on a cake today moves', () => {
+    expect(zoneBend({ side: 'hug' }, 'side')).toBe(1);
+    expect(zoneBend({}, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug' } }, 'side')).toBe(1);
+  });
+
+  it('reads the fraction off either config form', () => {
+    expect(zoneBend({ side: { mode: 'hug', bend: 0.4 } }, 'side')).toBe(0.4);
+    expect(zoneBend({ side: { mode: 'hug', bend: 0 } }, 'side')).toBe(0);     // rigid: a flat plaque
+  });
+
+  it('is per ZONE, so a piece moved off the wall is not still half-bent', () => {
+    const pc = { side: { mode: 'hug', bend: 0.4 }, top_surface: 'hug' };
+    expect(zoneBend(pc, 'side')).toBe(0.4);
+    expect(zoneBend(pc, 'top_surface')).toBe(1);
+  });
+
+  /* ⚠️ A JUNK VALUE MEANS "UNCHANGED", NEVER "RIGID". Clamping to 0 would let one mistyped row — or
+     one older saved design — render every decal on a cake flat, which is the loudest possible way
+     for an optional tuning key to fail. */
+  it('falls back to a full bend on anything it cannot read, and clamps the rest', () => {
+    expect(zoneBend({ side: { mode: 'hug', bend: 'quite a lot' } }, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug', bend: null } }, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug', bend: 7 } }, 'side')).toBe(1);
+    expect(zoneBend({ side: { mode: 'hug', bend: -3 } }, 'side')).toBe(0);
+  });
+
+  it('is carried onto the instance by zoneSeatFields, so a re-seat re-derives it', () => {
+    expect(zoneSeatFields({ side: { mode: 'hug', bend: 0.4 } }, 'side').sideBend).toBe(0.4);
+    expect(zoneSeatFields({ side: { mode: 'hug', bend: 0.4 } }, 'top_surface').sideBend).toBe(1);
   });
 });
 
@@ -624,7 +663,7 @@ describe('zoneSeatFields — an explicitly picked pose', () => {
   });
 
   it('with no pose asked for, answers exactly as before', () => {
-    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true });
+    expect(zoneSeatFields({ side: 'hug' }, 'side')).toEqual({ placementMode: 'hug', sideProud: true, sideBend: 1 });
   });
 });
 
@@ -863,6 +902,64 @@ describe('edgeSeatSeed — every footprint has a front edge, not just one carryi
   });
 });
 
+// ── Duplicating a decoration that stands on the BOARD ───────────────────────────────────────────
+// Regression: Duplicate added the card and put nothing on the cake. The copy went through
+// `deOverlapSeat` with the original's zone, and the board fell through to the cartesian branch,
+// whose last act is `topClamp(shape, …, 0.88)` — against the CAKE's tier, the only shape the
+// function is given. A board decoration is outside that footprint by definition, so every copy was
+// pulled in to 88% of the tier radius and buried inside opaque cake. Reported on Twisted seaweed
+// short and Fluted Scallop Shell; both carry a `board` zone in placement_config.
+describe('deOverlapSeat — a board copy separates AROUND the ring, never across it', () => {
+  const CAKE = { kind: 'round', radius: 1 };
+  const SEAT = { x: 0, z: 1.25 };               // on the ring: outside the cake, on the board
+
+  it('keeps the copy outside the cake, at the radius the original proved valid', () => {
+    const dup = deOverlapSeat(CAKE, ZONES.BOARD, { ...SEAT }, [SEAT]);
+    expect(Math.hypot(dup.x, dup.z)).toBeCloseTo(Math.hypot(SEAT.x, SEAT.z), 12);
+    expect(Math.hypot(dup.x, dup.z)).toBeGreaterThan(CAKE.radius);   // what the bug broke
+  });
+
+  // Separated by the SAME amount a pair on the lid would be: one turn of the ring whose chord is
+  // one sticker width. Stepping by arc instead undershoots the straight-line gap the clear test
+  // measures, so each copy took two turns and came apart twice as far as the top-surface branch.
+  it('comes apart by exactly one sticker width, as it would on the lid', () => {
+    const dup = deOverlapSeat(CAKE, ZONES.BOARD, { ...SEAT }, [SEAT]);
+    expect(Math.hypot(dup.x - SEAT.x, dup.z - SEAT.z)).toBeCloseTo(STICKER_SIZE, 2);
+  });
+
+  it('stays on the ring for a whole run of copies, each one width clear of the last', () => {
+    const sibs = [{ ...SEAT }];
+    for (let i = 0; i < 4; i++) {
+      const dup = deOverlapSeat(CAKE, ZONES.BOARD, { ...SEAT }, sibs);
+      expect(Math.hypot(dup.x, dup.z)).toBeCloseTo(1.25, 12);
+      const nearest = Math.min(...sibs.map(s => Math.hypot(dup.x - s.x, dup.z - s.z)));
+      expect(nearest).toBeCloseTo(STICKER_SIZE, 2);
+      sibs.push({ x: dup.x, z: dup.z });
+    }
+  });
+
+  it('a rect footprint goes round the same way (a sheet cake has a board too)', () => {
+    const sheet = { kind: 'rect', halfW: 1, halfD: 0.7 };
+    const seat = { x: 1.3, z: 0 };
+    const dup = deOverlapSeat(sheet, ZONES.BOARD, { ...seat }, [seat]);
+    expect(Math.hypot(dup.x, dup.z)).toBeCloseTo(1.3, 12);
+  });
+
+  it('dead centre has no angle to turn through, and still returns a finite seat', () => {
+    const dup = deOverlapSeat(CAKE, ZONES.BOARD, { x: 0, z: 0 }, [{ x: 0, z: 0 }]);
+    expect(Number.isFinite(dup.x)).toBe(true);
+    expect(Number.isFinite(dup.z)).toBe(true);
+  });
+
+  it('leaves the other zones exactly as they were', () => {
+    const top = deOverlapSeat(CAKE, ZONES.TOP_SURFACE, { x: 0, z: 0 }, [{ x: 0, z: 0 }]);
+    expect(top.z).toBeCloseTo(0, 12);
+    expect(top.x).toBeGreaterThan(0);                       // pushed off the sibling, as before
+    const side = deOverlapSeat(null, ZONES.SIDE, { theta: 0, y: 0.5 }, [{ theta: 0, y: 0.5 }]);
+    expect(side.theta).toBeCloseTo(0.5, 12);
+  });
+});
+
 describe('contentFoot — a 2D decal\'s box stops at its artwork', () => {
   it('sizes to the furthest content, symmetric about the centre', () => {
     // Artwork spanning -0.3..0.4 across and -0.2..0.5 up on a 1-unit square
@@ -889,5 +986,99 @@ describe('contentFoot — a 2D decal\'s box stops at its artwork', () => {
     const box = seatedHitBox({ size: 1, ...foot });
     expect(box.width).toBeCloseTo(0.4, 6);
     expect(box.height).toBeCloseTo(0.7, 6);
+  });
+});
+
+// ── A picker must offer what the seat will honour ────────────────────────────────────────────────
+// Reported: a Fluted Scallop Shell configured to hug the board grew a BOARD HUGGING tile that could
+// not be ticked. Nothing was wrong with the toggle — `seatOnSlot` runs the chosen pose through
+// `flatPose`, a board hug becomes `stand`, so the instance came back standing, `onSlot` matched it
+// to the OTHER tile, and the tick appeared next door. The tile should never have existed.
+describe('zonePoses — the poses a zone actually honours', () => {
+  const board = modes => ({ board: { modes } });
+
+  it('collapses a board hug into standing, so two configured modes offer one tile', () => {
+    expect(zonePoses(board(['hug', 'stand']), ZONES.BOARD)).toEqual(['stand']);
+    expect(zonePoses(board(['stand', 'hug']), ZONES.BOARD)).toEqual(['stand']);
+  });
+
+  it('a board configured to hug alone still offers standing — what the renderer does', () => {
+    expect(zonePoses({ board: 'hug' }, ZONES.BOARD)).toEqual(['stand']);
+    expect(zonePoses({}, ZONES.BOARD, 'hug')).toEqual(['stand']);
+  });
+
+  // flatPose is scoped to the board on purpose: top_surface has a REAL hug (the hero pose that
+  // auto-sizes to the tier wall), so "flat" must not imply "cannot hug".
+  it('leaves every other zone alone, poses and order intact', () => {
+    expect(zonePoses({ top_surface: { modes: ['stand', 'hug'] } }, ZONES.TOP_SURFACE)).toEqual(['stand', 'hug']);
+    expect(zonePoses({ side: { modes: ['hug'] } }, ZONES.SIDE)).toEqual(['hug']);
+    expect(zonePoses({ rim: { modes: ['perch', 'verge'] } }, ZONES.RIM)).toEqual(['perch', 'verge']);
+  });
+
+  it('agrees with the seat, which is the whole point', () => {
+    for (const zone of [ZONES.BOARD, ZONES.TOP_SURFACE, ZONES.SIDE]) {
+      for (const pose of zonePoses({ [zone]: { modes: ['hug', 'stand'] } }, zone)) {
+        expect(flatPose(zone, pose)).toBe(pose);     // a pose the seat will not change
+      }
+    }
+  });
+});
+
+describe('zoneHasChoice — one honoured pose is not a choice', () => {
+  it('is false when two configured board modes collapse to one', () => {
+    expect(zoneHasChoice({ board: { modes: ['hug', 'stand'] } }, ZONES.BOARD)).toBe(false);
+  });
+
+  it('stays true where the poses are genuinely different', () => {
+    expect(zoneHasChoice({ top_surface: { modes: ['stand', 'hug'] } }, ZONES.TOP_SURFACE)).toBe(true);
+  });
+});
+
+// ── How far a piece reaches toward the edge ──────────────────────────────────────────────────────
+// Reported: a scallop shell on the top surface would not travel into clear icing. The edge clamp
+// used (STICKER_SIZE / 2) * scale — which, because CakeTier normalises every GLB so its LONGEST
+// axis is STICKER_SIZE, is that longest half-extent applied in every direction. Measured on the
+// catalogue: Twisted seaweed is 0.016 half-thick and was held 0.140 off the rim.
+describe('footprintReach — the edge asks the shape, as collision already does', () => {
+  const at = (hx, hy, yaw = 0, scale = 1) =>
+    occupantFootprint({ scale, rotation: yaw, placementMode: 'hug' }, { hx, hy, hz: 0.03 });
+  const X = { x: 1, z: 0 }, Z = { x: 0, z: 1 };
+
+  it('gives a thin piece its thin reach, not its long one (Twisted seaweed)', () => {
+    const fp = at(0.016, 0.140);
+    expect(footprintReach(fp, X)).toBeCloseTo(0.016, 3);   // was 0.140 — nearly 9x too much
+    expect(footprintReach(fp, Z)).toBeCloseTo(0.140, 3);
+  });
+
+  it('turns with the piece (Fluted Scallop Shell, the reported one)', () => {
+    expect(footprintReach(at(0.140, 0.102), X)).toBeCloseTo(0.140, 3);
+    expect(footprintReach(at(0.140, 0.102), Z)).toBeCloseTo(0.102, 3);
+    // rotated a quarter turn, the long axis now points along z
+    expect(footprintReach(at(0.140, 0.102, Math.PI / 2), X)).toBeCloseTo(0.102, 3);
+  });
+
+  it('never exceeds the old margin, so nothing can newly overhang the rim', () => {
+    for (const [hx, hy] of [[0.016, 0.140], [0.140, 0.102], [0.140, 0.134], [0.14, 0.14]]) {
+      for (const yaw of [0, 0.4, 1.1, Math.PI / 2, 2.6]) {
+        for (const dir of [X, Z, { x: 0.707, z: 0.707 }]) {
+          expect(footprintReach(at(hx, hy, yaw), dir)).toBeLessThanOrEqual(0.140 + 1e-9);
+        }
+      }
+    }
+  });
+
+  it('is a circle for anything round — two near-spherical pieces are unchanged', () => {
+    const ball = at(0.14, 0.14);
+    for (const dir of [X, Z, { x: 0.6, z: 0.8 }]) expect(footprintReach(ball, dir)).toBeCloseTo(0.14, 3);
+  });
+
+  it('scales with the instance, the way the old margin did', () => {
+    expect(footprintReach(at(0.140, 0.102, 0, 2), X)).toBeCloseTo(0.280, 3);
+  });
+
+  // An unmeasured 2D sticker has no GLB box; it must keep exactly the circle it always had.
+  it('leaves an unmeasured sticker as the circle it was', () => {
+    const fp = occupantFootprint({ scale: 1 }, null);
+    for (const dir of [X, Z]) expect(footprintReach(fp, dir)).toBeCloseTo(STICKER_SIZE / 4, 4);
   });
 });

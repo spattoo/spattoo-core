@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { curveForArc, archTextPath, textPathFor, arcLetter, WARP_SWEEP_AT_ONE } from './textPath.js';
+import { curveForArc, archTextPath, textPathFor, arcLetter, WARP_SWEEP_AT_ONE, discTextPath, DISC_TEXT_DEFAULTS, writingSeedFor, WRITING_SEED_KEYS } from './textPath.js';
 import { RAINBOW_DEFAULTS, rainbowBands } from './rainbow.js';
 
 const CAKE = { radius: 1.2, topY: 1.5, boardY: 0 };
@@ -175,5 +175,132 @@ describe('the face a message is pressed onto', () => {
     const p = archTextPath(RAINBOW_DEFAULTS, CAKE);
     expect(p.face).toBeCloseTo(standoff + thickness / 2, 10);
     expect(p.face).toBeGreaterThan(p.standoff);
+  });
+});
+
+describe('discTextPath — a flat plaque, wherever its face points', () => {
+  /* ⚠️ THE TWO POSES ARE THE WHOLE POINT OF THE SIGNATURE, and the first cut only had one. It
+     hardcoded face-up, because a plaque lies on the cake top — and the same element also goes on
+     the SIDE, where the disc faces radially outward. Sandeep: *"it should work on the side as
+     well."* Banning the side was the easy answer, not the correct one. */
+  const LAY  = [-Math.PI / 2, 0, 0];      // on the top: the disc's face points at the sky
+  const WALL = [0, 0, 0];                 // on the wall: its face points out of the cylinder
+  const host = { center: [0.4, 1.2, -0.3], diameter: 1.0, rotation: LAY };
+
+  it('passes the host\'s own facing through, because only the placement knows it', () => {
+    // The renderer lifts the letters along the group's LOCAL +Z, which this rotation aims at the
+    // face. Compute it here and a plaque on the wall gets a name laid flat in the air beside it.
+    expect(discTextPath(host).rotation).toEqual(LAY);
+    expect(discTextPath({ ...host, rotation: WALL }).rotation).toEqual(WALL);
+  });
+
+  it('sits where the disc sits, never where a slot said', () => {
+    expect(discTextPath(host).position).toEqual([0.4, 1.2, -0.3]);
+  });
+
+  it('turns with the plaque, in either pose', () => {
+    expect(discTextPath({ ...host, rotation: [-Math.PI / 2, 1.1, 0] }).rotation[1]).toBeCloseTo(1.1, 6);
+    expect(discTextPath({ ...host, rotation: [0, 1.1, 0] }).rotation[1]).toBeCloseTo(1.1, 6);
+  });
+
+  /* ⚠️ SIZING IS THE PROVIDER'S JOB, ORIENTATION IS THE CALLER'S — so moving a plaque from the top
+     to the wall must not change how much name fits on it. If these ever diverge, somebody has put
+     a zone branch back inside the measurement. */
+  it('measures a disc the same whichever way it faces', () => {
+    const top  = discTextPath(host);
+    const wall = discTextPath({ ...host, rotation: WALL });
+    expect(wall.maxW).toBeCloseTo(top.maxW, 12);
+    expect(wall.capH).toBeCloseTo(top.capH, 12);
+    expect(wall.maxH).toBeCloseTo(top.maxH, 12);
+  });
+
+  it('copies the pose rather than aliasing the caller\'s array', () => {
+    // The canvas rebuilds this every frame from live sticker state; handing back its own array
+    // lets a later mutation there silently re-point an already-rendered name.
+    const rot = [-Math.PI / 2, 0.5, 0];
+    const p = discTextPath({ ...host, rotation: rot });
+    rot[1] = 99;
+    expect(p.rotation[1]).toBeCloseTo(0.5, 6);
+  });
+
+  it('keeps a margin of fondant round the word', () => {
+    // 1.0 across, so a full-diameter line would touch the rim at both ends and read as crammed.
+    const p = discTextPath(host);
+    expect(p.maxW).toBeLessThan(host.diameter);
+    expect(p.maxW).toBeCloseTo(0.72, 6);
+  });
+
+  it('leaves room for a descender below the cap height', () => {
+    const p = discTextPath(host);
+    expect(p.maxH).toBeGreaterThan(p.capH);   // a plain capH box clips the tail of a 'g'
+  });
+
+  it('is straight — a flat face justifies no bend, and a cut word cannot bend', () => {
+    expect(discTextPath(host).curve).toBe(0);
+  });
+
+  it('scales every measurement with the disc', () => {
+    const small = discTextPath({ ...host, diameter: 0.5 });
+    const big   = discTextPath({ ...host, diameter: 2.0 });
+    expect(big.maxW / small.maxW).toBeCloseTo(4, 6);
+    expect(big.capH / small.capH).toBeCloseTo(4, 6);
+  });
+
+  it('an explicit undefined in the row does not beat the seed', () => {
+    // The same trap ARCH_TEXT_DEFAULTS records: an admin form that writes every key.
+    const p = discTextPath(host, { span: undefined, size: undefined });
+    expect(p.maxW).toBeCloseTo(0.72, 6);
+  });
+
+  it('answers null for a disc it cannot measure, rather than a path at the origin', () => {
+    expect(discTextPath({ center: [0, 0, 0], diameter: 0, rotation: LAY })).toBe(null);
+    expect(discTextPath({ diameter: 1, rotation: LAY })).toBe(null);
+    expect(discTextPath(null)).toBe(null);
+    // and a host that forgot to say which way it faces, rather than guessing face-up for it
+    expect(discTextPath({ center: [0, 0, 0], diameter: 1 })).toBe(null);
+  });
+
+  it('is reachable through textPathFor, which is the only reader', () => {
+    const p = textPathFor({ kind: 'disc', size: 0.3 }, host, null);
+    expect(p?.kind).toBe('disc');
+    expect(p.capH).toBeCloseTo(0.3, 6);
+  });
+});
+
+describe('writingSeedFor — what a message written on this element is made of', () => {
+  /* ⚠️ THE MATERIAL IS THE ELEMENT'S, SO THE ROW SAYS IT. The plaque's door seeded acrylic+gold in
+     core — an ELEMENT DEFAULT somewhere an admin cannot reach (rule 3) — and it read as perspex on
+     a fondant disc. Sandeep: *"it looks more like acrylic, can we have the fondant texture for the
+     letters."* */
+  it('hands the row\'s look through', () => {
+    expect(writingSeedFor({ kind: 'disc', writing: { style: 'fondant', color: '#C79A3B' } }))
+      .toEqual({ style: 'fondant', color: '#C79A3B' });
+  });
+
+  /* ⚠️ NOTHING AUTHORED → NOTHING SEEDED, so addWriting falls through to DEFAULT_WRITING (cream).
+     The fondant rainbow has never authored one and must not move. */
+  it('seeds nothing when the row is silent, on any shape of junk', () => {
+    expect(writingSeedFor({ kind: 'arch' })).toEqual({});
+    expect(writingSeedFor({ kind: 'arch', writing: null })).toEqual({});
+    expect(writingSeedFor({ kind: 'arch', writing: 'fondant' })).toEqual({});
+    expect(writingSeedFor({ kind: 'arch', writing: ['fondant'] })).toEqual({});
+    expect(writingSeedFor(null)).toEqual({});
+  });
+
+  /* ⚠️ A WHITELIST, AND THIS IS THE TEST THAT MATTERS. `on` binds a message to its host: a row able
+     to set it could point this plaque's message at a different decoration, and `id` would collide
+     two messages onto one record. Both are the canvas's to decide, never an admin form's. */
+  it('refuses the keys that decide WHICH host and WHICH message', () => {
+    const seed = writingSeedFor({ kind: 'disc', writing: {
+      style: 'fondant', on: { kind: 'sticker', id: 'somebody-elses' }, id: 'w-collide', text: 'hi',
+    } });
+    expect(seed).toEqual({ style: 'fondant' });
+    expect(WRITING_SEED_KEYS).not.toContain('on');
+    expect(WRITING_SEED_KEYS).not.toContain('id');
+  });
+
+  it('skips a key the row left null rather than writing null over the default', () => {
+    expect(writingSeedFor({ kind: 'disc', writing: { style: 'fondant', color: null, font: undefined } }))
+      .toEqual({ style: 'fondant' });
   });
 });

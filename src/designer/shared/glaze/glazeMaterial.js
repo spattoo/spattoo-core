@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { setMaterialPatch } from '../color/materialPatch.js';
 import { GLAZE_VERT_COMMON, GLAZE_VERT_BEGIN, GLAZE_FRAG_COMMON, GLAZE_FRAG_COLOR } from './glazeShader.js';
 
 // ── Chocolate glaze — object-space marble on a tier's body material ───────────────────────────────
@@ -57,15 +58,10 @@ function ensureUniforms(mat) {
 export function applyGlaze(mat, glaze, bbox) {
   const active = isGlazeMarbleActive(glaze);
 
-  if (!active) {
-    if (mat.userData.__glazeOn) {              // was on → tear down and recompile to the stock program
-      mat.onBeforeCompile = () => {};
-      mat.customProgramCacheKey = () => 'glaze:off';
-      mat.userData.__glazeOn = false;
-      mat.needsUpdate = true;
-    }
-    return;
-  }
+  /* ⚠️ THIS USED TO ASSIGN `() => {}` AND A CONSTANT KEY. It runs LAST of the three, so on a glazed
+     cake followed by a gradient cake it erased the gradient that had just been applied in the same
+     frame — and the constant key put every torn-down material on one shared program. */
+  if (!active) { mat.userData.__glazeOn = false; setMaterialPatch(mat, 'glaze', null); return; }
 
   const colors = glaze.colors.filter(Boolean);
   const count = Math.min(5, colors.length);
@@ -84,20 +80,18 @@ export function applyGlaze(mat, glaze, bbox) {
     u.uGlCenter.value.copy(bbox.center);
   }
 
-  if (!mat.userData.__glazeOn) {
-    mat.onBeforeCompile = (shader) => {
-      Object.assign(shader.uniforms, mat.userData.__glazeUniforms);
+  /* The per-material program key — so two glaze tiers never share one program and one tier's
+     colours win — is materialPatch.js's job now, and it is the only writer of it. */
+  mat.userData.__glazeOn = true;
+  setMaterialPatch(mat, 'glaze', {
+    uniforms: u,
+    inject: (shader) => {
       shader.vertexShader = shader.vertexShader
         .replace('#include <common>', GLAZE_VERT_COMMON)
         .replace('#include <begin_vertex>', GLAZE_VERT_BEGIN);
       shader.fragmentShader = shader.fragmentShader
         .replace('#include <common>', GLAZE_FRAG_COMMON)
         .replace('#include <color_fragment>', GLAZE_FRAG_COLOR);
-    };
-    // Per-material key so each glaze tier compiles its OWN program with its OWN uniforms — same reasoning
-    // as gradientMaterial (a constant key made tiers share one program and one tier's colours won).
-    mat.customProgramCacheKey = () => 'glaze:' + mat.uuid;
-    mat.userData.__glazeOn = true;
-    mat.needsUpdate = true;
-  }
+    },
+  });
 }
