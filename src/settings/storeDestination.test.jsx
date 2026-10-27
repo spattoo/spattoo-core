@@ -60,30 +60,53 @@ describe('the rail', () => {
     expect(designer).toMatch(/mobileSecondary\.filter\(i => i\.menu\)\.map/);
   });
 
-  /* Sandeep: "calendar is an important feature and it deserves an independant menu." It was a view
-     inside the Orders submenu; it is a destination now, directly below Orders. */
-  it('gives Calendar its own item, and only one door to it', () => {
-    expect(designer).toMatch(/id: 'calendar', label: 'Calendar', icon: <CalendarIcon/);
-    expect(designer).toMatch(/if \(id === 'calendar'\)\s+openOrdersPanel\('calendar'\)/);
-    // Out of the submenu, not duplicated into it — a second door to the same room is worse than a
-    // longer walk to one.
-    expect(designer).not.toMatch(/id: 'orders-calendar'/);
+  /* ── Where the calendar lives, and the two asks that pulled it both ways ───────────────────────
+   *
+   * It began as a view inside the Orders submenu. Then: *"calendar is an important feature and it
+   * deserves an independant menu"* — so it became a rail destination of its own, directly below
+   * Orders.
+   *
+   * ⚠️ THAT MADE IT LESS VISIBLE ON A PHONE, NOT MORE, and the reason is `MOBILE_PRIMARY`. The
+   * strip holds six slots (new · elements · templates · orders · dashboard · More) and a top-level
+   * item that is not in that list falls through to the More SHEET. So the independent menu bought
+   * prominence on the rail and spent it on the phone: *"in mobile view, can we move the calendar
+   * option as a sub menu under orders? it is in the more option now and not very much visible. this
+   * is a very helpful feature."*
+   *
+   * Orders IS in MOBILE_PRIMARY, so under it the calendar is one tap from the bar instead of two
+   * through More. Measured in the harness at 390px: tapping Orders draws New Order · Orders ·
+   * Calendar in the strip, and Calendar is gone from the More sheet.
+   *
+   * ⚠️ STILL ONE DOOR. The rule the independent item was given has not changed — "a second door to
+   * the same room is worse than a longer walk to one" — so it moved rather than being copied, and
+   * the standalone rail item is gone from the desktop rail too. The alternative that keeps both
+   * asks is a strip SLOT for the calendar, which costs whichever item it displaces; that is a
+   * product call, not a refactor. */
+  it('puts Calendar under Orders, and keeps only one door to it', () => {
+    expect(designer).toMatch(/id: 'orders-calendar', label: 'Calendar',  view: 'calendar'/);
+    // Moved, not duplicated: no standalone rail destination beside the submenu entry.
+    expect(designer).not.toMatch(/id: 'calendar', label: 'Calendar', icon: <CalendarIcon/);
+    expect(designer).not.toMatch(/if \(id === 'calendar'\)\s+openOrdersPanel/);
   });
 
-  /* ⚠️ GATED ON THE HOST METHOD, not the capability alone. OrdersPanel decides a calendar exists at
-     all from `typeof apiClient?.fetchOrdersCalendar === 'function'` and silently falls back to the
-     list — so an ungated item would open the list while saying Calendar. */
+  /* ⚠️ GATED ON THE HOST METHOD, not the capability alone — the gate moved in with the item.
+     OrdersPanel decides a calendar exists at all from
+     `typeof apiClient?.fetchOrdersCalendar === 'function'` and silently falls back to the list, so
+     an ungated entry would open the list while saying Calendar. */
   it('appears only where a calendar can actually be drawn', () => {
-    expect(designer).toMatch(/\.\.\.\(apiClient\?\.fetchOrdersCalendar\s*\n?\s*\? \[\{ id: 'calendar'/);
+    expect(designer).toMatch(/\.filter\(item => item\.view !== 'calendar' \|\| !!apiClient\?\.fetchOrdersCalendar\)/);
     const deps = designer.match(/\.filter\(item => hasCap\(item\.requires\)\), \[([^\]]*)\]/)?.[1] ?? '';
     expect(deps, 'the rail memo must depend on apiClient now that it gates an item').toContain('apiClient');
   });
 
-  /* ⚠️ THE LIT ITEM FOLLOWS THE PANEL, not the request. OrdersPanel owns `view` and its own toggle
-     changes it without telling anyone — so lighting Calendar from `ordersInitialView` would be
-     correct until the baker pressed that toggle, then quietly wrong. */
+  /* ⚠️ THE LIT ROW FOLLOWS THE PANEL, not the request. OrdersPanel owns `view` and its own toggle
+     changes it without telling anyone — so lighting from `ordersInitialView` would be correct until
+     the baker pressed that toggle, then quietly wrong.
+     ⚠️ AND IT HAS TO SAY *WHICH* VIEW. With one view item in the menu, "the panel is open" read the
+     same as "this row is where you are"; with two, both rows lit at once and the menu stopped
+     answering the question it exists to answer. */
   it('lights whichever view is actually on screen', () => {
-    expect(designer).toMatch(/id === 'calendar'\s+\? \(ordersPanelOpen && ordersView === 'calendar'\)/);
+    expect(designer).toMatch(/active: ordersPanelOpen && ordersView === item\.view/);
     expect(designer).toMatch(/onViewChange=\{setOrdersView\}/);
     expect(orders).toMatch(/useEffect\(\(\) => \{ onViewChange\?\.\(view\); \}, \[view, onViewChange\]\)/);
   });

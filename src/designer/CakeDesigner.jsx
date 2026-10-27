@@ -3363,6 +3363,15 @@ const WHEEL_DODGE_STACK  = EDIT_POPUP_W + EDIT_POPUP_RIGHT + 20;
 const ORDERS_MENU = [
   { id: 'orders-new',      label: 'New Order', action: 'newOrder', requires: 'order:manage' },
   { id: 'orders-list',     label: 'Orders',    view: 'list' },
+  /* ⚠️ THE CALENDAR LIVES HERE NOW, which is where the rail item above it always said it belonged:
+     "the calendar is a VIEW of the same orders, so it belongs under Orders rather than as its own
+     rail destination". It was still a top-level rail item, and on a phone the strip holds six slots
+     — so it fell through to the More sheet. Sandeep: *"in mobile view, can we move the calendar
+     option as a sub menu under orders? it is in the more option now and not very much visible. this
+     is a very helpful feature."*
+     Orders is in MOBILE_PRIMARY, so the strip draws this submenu directly: one tap from the bar
+     instead of two through More. */
+  { id: 'orders-calendar', label: 'Calendar',  view: 'calendar', requires: 'order:view' },
 ];
 
 // The rail's menu surface — the ONE place that knows a rail flyout is dark and hover-highlights.
@@ -5475,9 +5484,19 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      exist without either routing through Orders' dispatcher or forking the call sites. The wiring
      lives here, where the handlers are in scope; ORDERS_MENU stays data. */
   const ordersMenu = ORDERS_MENU.filter(item => hasCap(item.requires))
+    /* ⚠️ GATED ON THE HOST METHOD, not only on the capability — the gate the standalone rail item
+       carried, moved in with it. OrdersPanel decides whether a calendar exists at all with
+       `typeof apiClient?.fetchOrdersCalendar === 'function'` and falls back to the list without
+       one, so an ungated entry would open the list while saying Calendar: the dead-button rule
+       with the failure hidden. */
+    .filter(item => item.view !== 'calendar' || !!apiClient?.fetchOrdersCalendar)
     .map(item => ({
       ...item,
-      ...(item.view ? { active: ordersPanelOpen } : null),
+      /* ⚠️ WHICH view, not just whether the panel is open. With one view item that read the same;
+         with two, both rows lit at once and the menu stopped saying where you were. `ordersView` is
+         the panel's own live value — see railItemActive on why the asked-for view is the wrong one
+         to read. */
+      ...(item.view ? { active: ordersPanelOpen && ordersView === item.view } : null),
       open: item.action === 'newOrder' ? () => startOrderForDate() : () => openOrdersPanel(item.view),
     }));
 
@@ -5686,13 +5705,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     // Orders rather than as its own rail destination. Declared as `menu` config — any nav item gets
     // a submenu the same way.
     { id: 'orders',     label: 'Orders',      icon: <OrdersIcon size={20} />,    requires: 'order:view', menu: ordersMenu },
-    /* ⚠️ GATED ON THE HOST METHOD, not only on the capability. OrdersPanel decides whether a
-       calendar exists at all with `typeof apiClient?.fetchOrdersCalendar === 'function'` and falls
-       back to the list when it does not — so without the same gate here this item would open the
-       list while saying Calendar, which is the dead-button rule with the failure hidden. */
-    ...(apiClient?.fetchOrdersCalendar
-      ? [{ id: 'calendar', label: 'Calendar', icon: <CalendarIcon size={20} />, requires: 'order:view' }]
-      : []),
     { id: 'customers',  label: 'Customers',   icon: <CustomersIcon size={20} />, requires: 'customer:manage' },
     ...(INVITE_UI_ENABLED ? [{ id: 'invite', label: 'Invite', icon: <InviteIcon size={20} />, requires: 'customer:manage' }] : []),
     /* ⚠️ NOT FOR A CUSTOMER. Sandeep: "for customer login - 'share' option is not needed."
@@ -5984,7 +5996,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     if (id === 'tools')     openTools();
     if (id === 'templates') openTemplates();
     if (id === 'dashboard') setDashboardOpen(true);
-    if (id === 'calendar')  openOrdersPanel('calendar');
     if (id === 'customers') setCustomersPanelOpen(true);
     if (id === 'invite')    { setInviteLiveSessionId(null); setShareDraftDesign(null); setInvitePanelOpen(true); }
 
@@ -5999,11 +6010,6 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
     : id === 'templates' ? templatesOpen
     : id === 'tools'     ? toolsOpen
     : id === 'codesign'  ? codesignPanelOpen
-    /* ⚠️ READS THE PANEL'S LIVE VIEW, not the one the rail asked for. OrdersPanel owns `view` and
-       its own toggle changes it without the rail being told — so lighting this from
-       `ordersInitialView` would be right until the baker pressed that toggle, and then quietly
-       wrong. `onViewChange` reports it back instead. */
-    : id === 'calendar'  ? (ordersPanelOpen && ordersView === 'calendar')
     : id === 'dashboard' ? dashboardOpen
     : id === 'customers' ? customersPanelOpen
     : id === 'invite'    ? invitePanelOpen
