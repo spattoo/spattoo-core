@@ -25,6 +25,22 @@ function useSections() {
   return rows;
 }
 
+/* A stand-in for Appu, to prove the slot works before the character exists: a dot that changes
+   colour per state. ?appu=1 turns it on. The real one replaces this file's import, not the panel. */
+const MOOD_COLOUR = {
+  idle: '#9BB5A2', listening: '#60a5fa', thinking: '#f59e0b', thinking_long: '#ef4444',
+  answered: '#22c55e', empty: '#a78bfa', failed: '#ef4444', escalated: '#0ea5e9',
+};
+function StandInCharacter({ state, size = 26 }) {
+  console.log('[harness] appu state →', state);
+  return (
+    <span title={state} style={{
+      width: size, height: size, borderRadius: '50%', display: 'inline-block',
+      background: MOOD_COLOUR[state] ?? '#ccc', transition: 'background 0.2s',
+    }} />
+  );
+}
+
 function App() {
   const rows = useSections();
   const [mobile, setMobile] = useState(width ? width < 768 : window.innerWidth < 768);
@@ -63,7 +79,12 @@ function App() {
       {/* MOBILE_BAR_H in the designer is 56; the harness has no nav strip, so the inset is passed
           anyway to check the button clears it. */}
       <HelpAssistant
-        apiClient={{ searchHelp, sendHelpFeedback: async (id) => { console.log('[harness] feedback for', id); return { ok: true }; } }}
+        apiClient={{
+          searchHelp,
+          sendHelpFeedback: async (id) => { console.log('[harness] feedback for', id); return { ok: true }; },
+          escalateHelp:    async (id, note) => { console.log('[harness] escalate', id, JSON.stringify(note)); await new Promise(r => setTimeout(r, 400)); return { ok: true }; },
+        }}
+        character={q.get('appu') ? StandInCharacter : null}
         isMobile={mobile} bottomInset={mobile ? 56 : 0} />
       {mobile && (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56,

@@ -20,10 +20,11 @@
  * corpus has a closest match to a question it cannot answer. The server returns an empty list below
  * its floor, and this surface has to be honest about it instead of filling the space.
  */
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Panel, PANEL, Z } from './Panel.jsx';
 import { AssistantIcon } from './icons.jsx';
 import HelpMarkdown from './helpMarkdown.jsx';
+import { ASSISTANT, THINKING_LONG_MS, assistantState } from './assistantState.js';
 
 /* The articles' own dates are ISO. "Checked 26 Oct 2026" is what a baker can act on; a bare
    `2026-10-26` reads as a version string. */
@@ -46,6 +47,13 @@ const EXAMPLES = [
 export default function HelpAssistant({
   apiClient,
   isMobile = false,
+  /* ⚠️ THE SLOT APPU DROPS INTO. Rendered in the panel header and given the current state, so a
+     character can hold an expression per moment — *"appu will have proper animations /
+     expressions … like scraching the head while search is taking long"*. A component, not a
+     config: an animated character owns its own rendering, and anything this file knew about it
+     would be a thing to change twice. Nothing renders here when it is absent, which is how the
+     dummy icon ships first without the panel needing to know a character is coming. */
+  character: Character = null,
   /* How far up from the bottom edge to sit. The phone's nav strip is in the host's layout, not
      here, so the host passes its height — a shared component guessing at another surface's
      furniture is how the button ends up half behind it. */
@@ -63,11 +71,32 @@ export default function HelpAssistant({
      against "the last thing" — a baker can ask again while the first answer is still on screen. */
   const [questionId, setQuestionId] = useState(null);
   const [toldUs, setToldUs] = useState(false);
+  const [escalation, setEscalation] = useState(null);   // null | 'asking' | 'sent'
+  const [longWait, setLongWait] = useState(false);
+  const [note, setNote] = useState('');
   const inputRef = useRef(null);
+
+  /* ⚠️ A WAIT WORTH SHOWING. Measured: a search takes 1.5–3s, median 2.3, most of it the server
+     reading 6.5MB of vectors. Past the threshold the state becomes THINKING_LONG, which is what a
+     character reacts to — and when that read is fixed, this simply stops firing. */
+  useEffect(() => {
+    if (state !== 'asking') { setLongWait(false); return undefined; }
+    const t = setTimeout(() => setLongWait(true), THINKING_LONG_MS);
+    return () => clearTimeout(t);
+  }, [state]);
 
   /* A host that has not wired the endpoint gets no button at all — the same rule NotificationBell
      follows. Better than a button that opens a panel which can only apologise. */
   if (!apiClient?.searchHelp) return null;
+
+  const mood = assistantState({
+    phase: state, typing: !!q.trim(), sections, longWait, escalated: escalation === 'sent',
+  });
+
+  /* Answered-with-nothing, answered-and-told-it-missed, or answered-at-all — but never after an
+     error, and never before a question has been asked. `escalateHelp` absent (an older host) draws
+     nothing, the same rule the button itself follows. */
+  const canEscalate = !!apiClient?.escalateHelp && !!questionId && state === 'answered';
 
   async function ask(text) {
     const question = String(text ?? '').trim();
@@ -77,6 +106,7 @@ export default function HelpAssistant({
     setState('asking');
     setToldUs(false);
     setQuestionId(null);
+    setEscalation(null);
     try {
       const r = await apiClient.searchHelp(question);
       setSections(Array.isArray(r?.sections) ? r.sections : []);
@@ -89,7 +119,7 @@ export default function HelpAssistant({
 
   function reset() {
     setQ(''); setAsked(''); setSections([]); setState('idle');
-    setQuestionId(null); setToldUs(false);
+    setQuestionId(null); setToldUs(false); setEscalation(null);
     inputRef.current?.focus();
   }
 
@@ -98,6 +128,20 @@ export default function HelpAssistant({
   function tellUs() {
     setToldUs(true);
     if (questionId) apiClient.sendHelpFeedback?.(questionId).catch(() => {});
+  }
+
+  /* ⚠️ NEVER AUTOMATIC. The baker presses this. Every question is already logged with whether it
+     landed — that is us deciding what to write next. This is them asking a person and waiting for
+     a reply, and firing it on a miss would mail somebody about questions the baker went on to
+     answer themselves. */
+  function escalate() {
+    if (!questionId || escalation) return;
+    setEscalation('asking');
+    apiClient.escalateHelp(questionId, note.trim())
+      .then(() => setEscalation('sent'))
+      /* Optimistic on failure too: the server records the request even when the email does not
+         leave, so telling the baker it failed would be both discouraging and wrong. */
+      .catch(() => setEscalation('sent'));
   }
 
   return (
@@ -120,7 +164,7 @@ export default function HelpAssistant({
       <Panel
         open={open}
         onClose={() => setOpen(false)}
-        title="Help"
+        title={Character ? <span style={S.titleRow}><Character state={mood} size={26} />Help</span> : 'Help'}
         subtitle="Ask how to do something, in your own words"
         width={420}
         isMobile={isMobile}
@@ -222,6 +266,38 @@ export default function HelpAssistant({
             </div>
           </div>
         )}
+
+        {/* ── Asking a person ──────────────────────────────────────────────────────────────────
+            ⚠️ OFFERED, NEVER AUTOMATIC, and offered in three places for different reasons: after
+            nothing was found (a dead end must have an exit), after the baker says the answer
+            missed (they have just told us), and quietly beside a good answer (somebody with a cake
+            due tomorrow should not have to fail twice before reaching a person). NOT offered after
+            a request error — that is our outage, and the right offer there is to try again. */}
+        {canEscalate && escalation === 'sent' && (
+          <div style={S.sent}>
+            <strong style={{ color: PANEL.ink }}>Sent to the Spattoo team.</strong>
+            <div style={{ marginTop: 4 }}>We will reply by email.</div>
+          </div>
+        )}
+
+        {canEscalate && escalation !== 'sent' && (
+          <div style={S.escalate}>
+            {escalation === 'asking' ? (
+              <div style={S.note}>Sending…</div>
+            ) : (
+              <>
+                <textarea
+                  style={S.noteBox}
+                  rows={2}
+                  value={note}
+                  placeholder="Anything else we should know? (optional)"
+                  onChange={e => setNote(e.target.value)}
+                />
+                <button type="button" style={S.askBtn} onClick={escalate}>Ask the Spattoo team</button>
+              </>
+            )}
+          </div>
+        )}
       </Panel>
     </>
   );
@@ -276,6 +352,20 @@ const S = {
   cardTitle: { fontSize: 11, fontWeight: 700, color: PANEL.muted, letterSpacing: 0.3, marginBottom: 2 },
   cardHeading: { fontSize: 14.5, fontWeight: 700, color: PANEL.ink, marginBottom: 7 },
   checked: { fontSize: 10.5, color: PANEL.muted, marginTop: 8, paddingTop: 7, borderTop: `1px solid ${PANEL.line}` },
+  titleRow: { display: 'inline-flex', alignItems: 'center', gap: 9 },
+  escalate: {
+    marginTop: 14, paddingTop: 13, borderTop: `1px solid ${PANEL.line}`,
+    display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start',
+  },
+  noteBox: {
+    width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13,
+    padding: '9px 11px', borderRadius: 10, resize: 'vertical',
+    border: `1px solid ${PANEL.line}`, background: '#fff', color: PANEL.ink,
+  },
+  sent: {
+    marginTop: 14, paddingTop: 13, borderTop: `1px solid ${PANEL.line}`,
+    fontSize: 13, lineHeight: 1.5, color: PANEL.body,
+  },
   feedbackRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
   tellUs: {
     fontFamily: 'inherit', fontSize: 12, color: PANEL.muted,
