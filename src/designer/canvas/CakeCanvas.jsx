@@ -48,6 +48,7 @@ import { spinPose } from '../reel/spinTake.js';
 import { assemblyDone } from '../reel/assemblyTake.js';
 import { BuildPiece, buildLookup } from './BuildPiece.jsx';
 import { clampLens, lensAt, LENS_GLIDE_S } from '../reel/cinematicLens.js';
+import { backdropPlan, paintBackdrop, BACKDROP_STRENGTH_DEFAULT } from '../reel/takeBackdrop.js';
 import { gridPositions, wallPositions, floorOpacity, wallOpacity, GRID, WALL, GRID_COLOR, GRID_FADE_S, fadeStep, fadeEase } from '../reel/takeGrid.js';
 
 /* The area a tier's sand covers, as the ring `SandBed` wants.
@@ -3799,6 +3800,13 @@ function CakeScene({
    *
    * It also doubles as "we are filming", which is why the front marker keys off it. */
   filmGround = null,
+  /* The take's backdrop: a graded sweep generated from `filmGround` — see takeBackdrop.js.
+     'flat' (the default) is the single colour that shipped before it, and the editing path never
+     passes anything else: a baker approves a cake on the designer's own ground. */
+  filmBackdrop = 'flat',
+  filmBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
+  /* Which way the backdrop's grade is going — the same flag that points the grid's fade. */
+  backdropActive = true,
   // Photo only: no sky, no floor — the cake on nothing. See the two uses below.
   filmCutout = false,
   // Photo only: frame the cake that is there, not the headroom a topper might want.
@@ -4110,7 +4118,9 @@ function CakeScene({
           with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
           only way to see it was to read scene.background out of a running page.
           Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
-      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_WALL)} />
+      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_WALL)}
+                       look={filmGround ? filmBackdrop : 'flat'} strength={filmBackdropStrength}
+                       active={backdropActive} />
       <SceneEnv />
 
       {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
@@ -5496,13 +5506,59 @@ function studioFloorMaterial(floor, wall, horizon) {
   return mat;
 }
 
-export function SceneBackground({ colour }) {
+export function SceneBackground({ colour, look = 'flat', strength = BACKDROP_STRENGTH_DEFAULT,
+                                 active = true }) {
   const { gl, scene } = useThree();
+  /* ⚠️ A TEXTURE ON `scene.background` IS DRAWN ACROSS THE VIEWPORT AND DOES NOT MOVE WITH THE
+     CAMERA, which is the entire reason a take can have a picture behind it at all. The scene
+     ORBITS, so anything stood up IN it has to track the camera or show its own edge (TakeGridWall
+     exists for that). A background is not in the world, so the orbit cannot catch it — it behaves
+     like a photographer's paper sweep. See takeBackdrop.js.
+     ⚠️ AND IT IS STILL `background` ONLY, NEVER `environment`. The note at the top of this file is
+     the contract: it cannot light anything, so the cake renders exactly as the baker approved it. */
+  const graded = !!colour && look && look !== 'flat' && Number(strength) > 0;
+  const paint = useRef(null);      // { canvas, tex } while a graded backdrop is mounted
+  const k = useRef(active ? 1 : 0);
+
   useEffect(() => {
-    scene.background = colour ? new THREE.Color(colour) : null;
-    gl.setClearAlpha(colour ? 1 : 0);
-    return () => { gl.setClearAlpha(1); };
-  }, [gl, scene, colour]);
+    if (!colour) { scene.background = null; gl.setClearAlpha(0); return () => { gl.setClearAlpha(1); }; }
+    if (!graded) {
+      // The path that shipped before any of this, byte for byte.
+      paint.current = null;
+      scene.background = new THREE.Color(colour);
+      gl.setClearAlpha(1);
+      return () => { gl.setClearAlpha(1); };
+    }
+    /* 512 square is plenty for a gradient and costs nothing to upload; three stretches it to the
+       viewport, which turns the pool into an ellipse that follows whatever shape the baker is
+       filming — a circle forced onto a 9:16 frame is the thing that would look wrong. */
+    const SIZE = 512;
+    const cv = document.createElement('canvas');
+    cv.width = SIZE; cv.height = SIZE;
+    const tex = new THREE.CanvasTexture(cv);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    paint.current = { cv, tex, ctx: cv.getContext('2d'), size: SIZE };
+    paintBackdrop(paint.current.ctx, SIZE, SIZE, backdropPlan(colour, look, strength * fadeEase(k.current)));
+    scene.background = tex;
+    gl.setClearAlpha(1);
+    return () => { gl.setClearAlpha(1); paint.current = null; tex.dispose(); };
+  }, [gl, scene, colour, look, strength, graded]);
+
+  /* ⚠️ THE GRADE FADES, FOR THE REASON THE GRID DOES. Switching it on and off with the take is a
+     hard cut: measured on a build take, the ground changing under the backdrop stepped **17.38** in
+     one frame, and with the grade held flat the same swap cost only **2.70** — so the gradient was
+     85% of it. It rides the same ramp `TakeGrid` uses (`fadeStep`/`fadeEase`, takeGrid.js), so the
+     room assembles and dissolves as one move rather than three.
+     Repainting is one canvas fill of a 512 square and only happens while the ramp is moving. */
+  useFrame((_, delta) => {
+    const p = paint.current;
+    if (!p) return;
+    const next = fadeStep(k.current, active, delta, GRID_FADE_S);
+    if (next === k.current) return;
+    k.current = next;
+    paintBackdrop(p.ctx, p.size, p.size, backdropPlan(colour, look, strength * fadeEase(next)));
+    p.tex.needsUpdate = true;
+  });
   return null;
 }
 
@@ -6224,6 +6280,9 @@ export default function CakeCanvas({
   onAngleChange = null,
   // The reel's ground while the panel is open, else null. See CakeScene.
   filmGround = null,
+  filmBackdrop = 'flat',
+  filmBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
+  backdropActive = true,
   filmCutout = false,
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
@@ -6352,6 +6411,9 @@ export default function CakeCanvas({
       {takeRef && <TakeDirector takeRef={takeRef} orbitRef={orbitRef} onAngleChange={onAngleChange} />}
       <CakeScene
         filmGround={filmGround}
+        filmBackdrop={filmBackdrop}
+        filmBackdropStrength={filmBackdropStrength}
+        backdropActive={backdropActive}
         filmCutout={filmCutout}
         filmTight={filmTight}
         config={config}

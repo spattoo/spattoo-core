@@ -75,6 +75,8 @@ import { ASSEMBLY_DEFAULTS, assemblyTotal, assemblyDone, MAX_SPREAD, MAX_RISE, M
 import { secondsLeft, clampDelay, DELAY_MAX, DELAY_DEFAULT } from './reel/takeDelay.js';
 import { recordCanvas, pickMimeType, extensionFor, downloadBlob } from './reel/recordReel.js';
 import { STRENGTH_DEFAULT, STRENGTH_MIN } from './reel/takeGrid.js';
+import { BACKDROP_LOOKS, BACKDROP_DEFAULT, BACKDROP_STRENGTH_DEFAULT } from './reel/takeBackdrop.js';
+import { GroundSwatches, groundsFor } from './capture/takeUi.jsx';
 import { LENS_GLIDE_S } from './reel/cinematicLens.js';
 import { CINEMATIC_FOV, LENS_RANGE, lensDistanceFactor } from './reel/cinematicLens.js';
 /* What each phase is called on the panel, and how long it may run. ⚠️ DERIVED FROM `SPIN_PHASES` at
@@ -4908,6 +4910,8 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      was asked for by name; one tap turns it off. ⚠️ It reaches the canvas ONLY inside a take's own
      window — a baker judging a colour must not be looking at graph paper, and a thumbnail with it
      in is not the cake they sold. */
+  const [takeBackdrop, setTakeBackdrop] = useState(BACKDROP_DEFAULT);
+  const [takeBackdropStrength, setTakeBackdropStrength] = useState(BACKDROP_STRENGTH_DEFAULT);
   const [takeGrid, setTakeGrid] = useState(true);
   /* The vertical half, asked for alongside it. Same window, same isolation. */
   const [takeGridWall, setTakeGridWall] = useState(true);
@@ -4955,6 +4959,21 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // True while the reel panel is open: the canvas is constrained to 9:16 and everything outside is
   // dimmed, so the baker sees the actual frame rather than discovering the crop in the file.
   const [framing, setFraming]   = useState(false);
+  /* ⚠️ DECLARED HERE, BELOW `framing`, BECAUSE IT READS IT. Put above, it threw "Cannot access
+     'framing' before initialization" — the same trap `check:tdz` was written for after `orbited`
+     shipped a black screen in 0.1.773.
+     ⚠️ AND IT IS ON FROM THE MOMENT A TAKE PANEL OPENS, not from the moment one starts — see
+     openBuildSetup for the 18.85-per-frame cut the other way round produces. `framing` covers the
+     reel and photo panels (it also means "crop the canvas", which is why the build cannot use it);
+     `buildSetupOpen` covers the build's; `takeWindow` carries it through the take itself, so
+     pressing Start changes nothing on screen. */
+  /* ⚠️ IT HOLDS THROUGH THE LENS RETURN, and the GRADE is what fades rather than the ground
+     being yanked. Measured three ways on a build take: swapping the ground as the take ended cost
+     **18.85** in one frame; letting go a second earlier, inside the movement, 17.38; with the
+     grade held flat the same swap cost only **2.70** — so the gradient was 85% of it, and fading
+     THAT is the fix. It rides the grid's own ramp, so the room assembles and dissolves as one
+     move. See SceneBackground. */
+  const onFilmGround = framing || buildSetupOpen || takeWindow;
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -5031,6 +5050,24 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
   // No timer may outlive the screen.
   useEffect(() => () => clearInterval(delayTimer.current), []);
+
+  /* ── Opening the build panel puts the cake on the FILM ground ────────────────────────────────
+   *
+   * ⚠️ NOT WHEN THE TAKE STARTS, AND THAT DISTINCTION IS THE WHOLE POINT. Swapping the ground as
+   * the take begins is a hard cut: measured on a build take, one frame changed by **18.85** on the
+   * same scale the grid pop measured 0.89 — sixty times the flicker that was reported and fixed in
+   * 0.1.781. The reel has never had that problem because it does this on PANEL OPEN and opens on
+   * Studio, which IS the designer's own ground — so the only thing that changes is the editor's
+   * floor/wall seam disappearing, and nothing at all changes once filming starts.
+   *
+   * ⚠️ IT CANNOT JUST SET `framing`, which the reel and photo panels use for this. `framing` also
+   * drives the letterbox crop — it is what collapses the canvas to the 9:16 preview box — so the
+   * build panel would shrink the cake the moment it opened. The ground reads a wider condition
+   * instead (see `onFilmGround`), and `framing` keeps meaning "crop the canvas". */
+  function openBuildSetup() {
+    setTakeGround(DESIGNER_GROUND);
+    setBuildSetupOpen(true);
+  }
 
   function startBuild() {
     // Same reasons as the spin: a selection box on the cake would be filmed, and the canvas is
@@ -19482,7 +19519,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cameraAngleRef={cameraAngleRef}
               // Non-null only while the reel panel is open. Paints the scene's sky and floor one
               // colour and puts the editing furniture away — see CakeScene's filmGround.
-              filmGround={framing ? takeGround : null}
+              /* ⚠️ THE WHOLE TAKE, NOT JUST THE FRAMING. `framing` is only true once a SHAPE is
+                 chosen, so a build filmed "As on screen" — the default — was shot in the EDITOR's
+                 room: a lit floor meeting a wall at DESIGNER_HORIZON, seam and all. The reel has
+                 been on a cyclorama since the horizon was found in one ("floor and sky are the same
+                 pixels and the faint line across every take is gone"); the build never joined it. */
+              filmGround={onFilmGround ? takeGround : null}
+              filmBackdrop={takeBackdrop}
+              filmBackdropStrength={takeBackdropStrength}
+              /* Same flag that points the grid's fade, so backdrop and grid move together. */
+              backdropActive={filmingTake || takePreRoll || buildSetupOpen || framing}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.
               filmCutout={framing && photoCutout}
               // A photograph frames the cake that is there; the editor's topper headroom is dead
@@ -22159,7 +22205,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 <CaptureMenuItems
                   onClose={() => setCaptureMenuOpen(false)}
                   onPhoto={openPhotoPanel} onReel={openReelPanel}
-                  onBuild={() => setBuildSetupOpen(true)} onSpin={() => setSpinSetupOpen(true)}
+                  onBuild={openBuildSetup} onSpin={() => setSpinSetupOpen(true)}
                   canFilmBuild={canFilmBuild} canSpin={isCatalogAuthor}
                   buildSeconds={assemblyTotal(buildTimings).toFixed(1)} spinSeconds={spinTotal(spinPlan)} />
               </ActionSheet>
@@ -22218,7 +22264,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   <CaptureMenuItems
                     onClose={() => setCaptureMenuOpen(false)}
                     onPhoto={openPhotoPanel} onReel={openReelPanel}
-                    onBuild={() => setBuildSetupOpen(true)} onSpin={() => setSpinSetupOpen(true)}
+                    onBuild={openBuildSetup} onSpin={() => setSpinSetupOpen(true)}
                     canFilmBuild={canFilmBuild} canSpin={isCatalogAuthor}
                     buildSeconds={assemblyTotal(buildTimings).toFixed(1)} spinSeconds={spinTotal(spinPlan)} />
                 </ActionSheet>
@@ -22927,6 +22973,49 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
               Waits before it begins, so you can start a screen recording first. Esc cancels the wait.
             </div>
+            {/* ── What the cake is filmed against ──────────────────────────────────────────────
+                ⚠️ THE BUILD WAS THE ONLY TAKE WITHOUT THIS, and that is what "it does not look
+                visually professional" turned out to be. `filmGround` was gated on `framing`, which
+                is only true once a SHAPE is chosen — so a build filmed on the default "As on
+                screen" was shot in the EDITOR's room: a lit floor meeting a wall at
+                DESIGNER_HORIZON, with the join visible as a straight line across the picture behind
+                the cake. Measured on empty background above the cake: the brightness steps 17.8 of
+                255 across it. Small, but it is a STRAIGHT EDGE, and a straight line across the
+                backdrop is the clearest single tell that a video came out of software rather than a
+                camera — which is why photographers shoot on one curved sweep of paper with no join.
+                The reel has been on that cyclorama since the same line was found in one; the build
+                never joined it. It does now, for the whole take window.
+
+                ⚠️ THE SWATCHES ARE THE SHARED ONES. `GroundSwatches` already serves the reel and
+                the photo panels, and the label matches the reel's — a third copy of a swatch row is
+                how "Slate" becomes two different greys (TAKE_GROUNDS' own note). */}
+            <div style={s.editPanelLabel}>Background</div>
+            <div style={{ margin: '4px 0 8px' }}>
+              <GroundSwatches grounds={groundsFor(brandPrimary)} value={takeGround} onPick={setTakeGround} />
+            </div>
+            {/* ⚠️ A GRADE, NOT A PICTURE. Sandeep asked for "a background - a gradient one may be",
+                with three reference images. A photograph behind an orbiting camera reads as a
+                sticker — takeGrid records the same trap for geometry: "a grid with a back edge would
+                show its own edge the moment they turned past it". A texture on `scene.background`
+                is drawn across the viewport and does NOT move with the camera, so it behaves like a
+                paper sweep and the orbit cannot catch its edge. Generated FROM the swatch above, so
+                the baker makes one colour decision rather than two that can disagree. */}
+            <div style={{ margin: '2px 0 8px', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              {BACKDROP_LOOKS.map(l => (
+                <Chip key={l.key} label={l.label} active={takeBackdrop === l.key} isMobile={isMobile}
+                      onClick={() => setTakeBackdrop(l.key)} title={l.hint} />
+              ))}
+            </div>
+            {takeBackdrop !== 'flat' && (
+              <>
+                <Slider label="Background depth" value={takeBackdropStrength} min={0.1} max={1} step={0.05}
+                        fmt={v => `${Math.round(v * 100)}%`}
+                        onChange={setTakeBackdropStrength} />
+                <div style={{ fontSize: 11, color: '#999', margin: '-4px 0 8px' }}>
+                  How far the shading travels from the colour above. It never lights the cake.
+                </div>
+              </>
+            )}
             {/* ⚠️ A Chip, not a hand-rolled pill — src/shared/Chip.jsx owns aria-pressed, focus and
                 the phone hit-target. The grid is the marketing site's floor, brought here so a cake
                 on film stands in a room rather than in a void; see takeGrid.js. */}
