@@ -107,8 +107,13 @@ export default function HelpAssistant({
         onClose={() => setOpen(false)}
         title="Help"
         subtitle="Ask how to do something, in your own words"
-        width={460}
+        width={420}
         isMobile={isMobile}
+        /* ⚠️ A CHAT WIDGET, NOT A DIALOG. Sandeep: *"surface should be opening popup to the right
+           bottom, like a chat bot. not in the middle of the screen."* It opens out of the button
+           it belongs to, and the app behind stays lit and usable — which matters more here than
+           anywhere, because the answer is usually instructions for the screen underneath it. */
+        dock
         /* Above the designer's studios: the assistant is reachable from inside one, and a panel
            that opens behind the thing it was opened from is a dead button. */
         zIndex={Z.overStudio}

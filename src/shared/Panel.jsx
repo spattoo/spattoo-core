@@ -76,13 +76,37 @@ export const PANEL = {
 const PANEL_CSS = `
   @keyframes spattooPanelUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
   @keyframes spattooPanelIn { from { opacity: 0; transform: scale(.98) } to { opacity: 1; transform: none } }
+  /* Rises from the corner it is docked to, which is where the button that opened it sits. */
+  @keyframes spattooPanelDock { from { opacity: 0; transform: translateY(12px) } to { opacity: 1; transform: none } }
   .spattoo-panel ::placeholder { color: ${PANEL.muted}; opacity: 1; }
   .spattoo-panel-body::-webkit-scrollbar { width: 10px; }
   .spattoo-panel-body::-webkit-scrollbar-thumb { background: ${PANEL.line}; border-radius: 99px;
     border: 3px solid ${PANEL.surface}; }
 `;
 
-const overlayStyle = (isMobile, zIndex = Z.panel, scrim = true) => ({
+/* ── `dock` — a panel that behaves like a chat widget instead of a dialog ────────────────────────
+ *
+ * Sandeep: *"surface should be opening popup to the right bottom, like a chat bot. not in the
+ * middle of the screen."*
+ *
+ * A centred panel over a scrim says *answer me before you carry on*. That is right for saving a
+ * template and wrong for help: the whole reason somebody opens help is to do the thing they were
+ * already doing, and a dialog takes away the screen they wanted to look at while reading about it.
+ *
+ * So docking changes three things together, because changing only the position would leave a
+ * dialog that happens to sit in the corner:
+ *   - it sits in the bottom-right corner rather than the middle,
+ *   - no scrim, so the app behind stays lit,
+ *   - and the overlay stops swallowing clicks, so the app behind stays USABLE.
+ *
+ * ⚠️ THE THIRD IS THE ONE THAT MAKES IT A CHAT WIDGET. `inset: 0` covers the viewport; without
+ * `pointerEvents: 'none'` the page behind would look available and ignore every press. That also
+ * removes backdrop-click-to-close — there is no backdrop left to click — so the close button and
+ * Esc are the ways out, and both still work.
+ *
+ * Phones are unaffected: a bottom sheet already is the corner, and there is nowhere to dock to.
+ * Opt-in; every existing panel keeps the centred dialog it was written for. */
+const overlayStyle = (isMobile, zIndex = Z.panel, scrim = true, dock = false) => ({
   position: 'fixed', inset: 0, zIndex,
   /* ⚠️ A panel that LEAVES ROOM to show something must not then blur it. The take panels frame the
      shot in the space above the sheet, and the scrim's 4px blur was landing squarely on it — the
@@ -92,14 +116,17 @@ const overlayStyle = (isMobile, zIndex = Z.panel, scrim = true) => ({
   ...(scrim
     ? { background: PANEL.scrim, backdropFilter: 'blur(4px)', WebkitBackdropFilter: 'blur(4px)' }
     : { background: 'transparent' }),
-  display: 'flex', justifyContent: 'center',
-  alignItems: isMobile ? 'flex-end' : 'center',
+  display: 'flex',
+  justifyContent: dock && !isMobile ? 'flex-end' : 'center',
+  alignItems: isMobile || dock ? 'flex-end' : 'center',
   padding: isMobile ? 0 : 16,
+  ...(dock && !isMobile ? { pointerEvents: 'none' } : null),
   fontFamily: PANEL.font,
 });
 
-const sheetStyle = (isMobile, width, maxHeight) => ({
+const sheetStyle = (isMobile, width, maxHeight, dock = false) => ({
   background: PANEL.surface,
+  ...(dock && !isMobile ? { pointerEvents: 'auto' } : null),
   fontFamily: PANEL.font,
   display: 'flex', flexDirection: 'column',
   overflow: 'hidden',                       // so the header band's corners are clipped, not squared
@@ -110,9 +137,15 @@ const sheetStyle = (isMobile, width, maxHeight) => ({
     ? { width: '100%', maxHeight: maxHeight || '92vh', borderRadius: `${PANEL.radius}px ${PANEL.radius}px 0 0`,
         boxShadow: '0 -4px 40px rgba(20,24,21,0.20)',
         animation: 'spattooPanelUp 0.28s cubic-bezier(0.32,0.72,0,1)', paddingTop: 8 }
-    : { width, maxWidth: 'calc(100vw - 32px)', maxHeight: 'calc(100vh - 32px)',
-        borderRadius: PANEL.radius, boxShadow: PANEL.shadow,
-        animation: 'spattooPanelIn 0.18s cubic-bezier(0.2,0.7,0.3,1)' }),
+    : { width, maxWidth: 'calc(100vw - 32px)',
+        /* Docked, it is shorter than a dialog on purpose: it sits over work somebody is still
+           looking at, so it must not become a full-height column down one side of the screen. */
+        maxHeight: dock ? 'min(620px, calc(100vh - 110px))' : 'calc(100vh - 32px)',
+        borderRadius: PANEL.radius,
+        boxShadow: dock ? '0 14px 44px rgba(20,24,21,0.26)' : PANEL.shadow,
+        animation: dock
+          ? 'spattooPanelDock 0.2s cubic-bezier(0.2,0.7,0.3,1)'
+          : 'spattooPanelIn 0.18s cubic-bezier(0.2,0.7,0.3,1)' }),
 });
 
 const grab = { width: 36, height: 4, borderRadius: 2, background: '#D8DCD8',
@@ -204,6 +237,9 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
                         // Whether to dim and blur everything behind the panel. Off for a panel whose
                         // whole point is what is visible behind it.
                         scrim = true,
+                        // Sit in the bottom-right corner like a chat widget rather than centred as
+                        // a dialog, and leave the app behind lit and clickable. See `overlayStyle`.
+                        dock = false,
                         // ── Work in progress must not be dismissable by accident ────────────────
                         // A backdrop click and Esc are for a panel somebody opened and does not
                         // want. They are the wrong gesture for one holding eight fields of typing:
@@ -247,7 +283,11 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
   return (
     <Takeover>
     <div
-      style={overlayStyle(isMobile, zIndex, scrim)}
+      /* ⚠️ `dock` DROPS THE SCRIM ON DESKTOP ONLY. On a phone the panel is a bottom sheet that
+         covers most of the screen, so there is no "app behind" left to keep usable — and dropping
+         the scrim there left an invisible backdrop that still swallowed every press and closed the
+         sheet on the first tap outside it. Caught by probing the phone width, not by reading. */
+      style={overlayStyle(isMobile, zIndex, dock && !isMobile ? false : scrim, dock)}
       onPointerDown={(e) => { pressedBackdrop.current = e.target === e.currentTarget; }}
       onClick={(e) => {
         if (onClose && !guardUnsaved && pressedBackdrop.current && e.target === e.currentTarget) onClose();
@@ -257,9 +297,13 @@ export function Panel({ open = true, onClose, title, subtitle, width = 420, isMo
       <div
         className="spattoo-panel"
         role="dialog"
-        aria-modal="true"
+        /* ⚠️ NOT modal when docked ON DESKTOP, and that is not a detail: aria-modal tells a screen
+           reader the rest of the page is unavailable, and docked it demonstrably is — measured, a
+           click behind reaches the app and the panel stays open. On a phone the same component is
+           a bottom sheet with a scrim that really does block, so it stays modal there. */
+        aria-modal={dock && !isMobile ? undefined : 'true'}
         aria-label={typeof title === 'string' ? title : undefined}
-        style={sheetStyle(isMobile, width, maxHeightMobile)}
+        style={sheetStyle(isMobile, width, maxHeightMobile, dock)}
       >
         {isMobile && <div style={grab} />}
         {(title || (onClose && showClose)) && (
