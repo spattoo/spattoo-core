@@ -1,6 +1,6 @@
 {
   "name": "@spattoo/designer",
-  "version": "0.1.790",
+  "version": "0.1.791",
   "private": true,
   "type": "module",
   "main": "./dist/spattoo-designer.umd.cjs",
