@@ -59,6 +59,10 @@ export default function HelpAssistant({
   const [state, setState] = useState('idle');     // idle | asking | answered | error
   const [asked, setAsked] = useState('');
   const [sections, setSections] = useState([]);
+  /* The id of the asked question, so a verdict can be reported against this one rather than
+     against "the last thing" — a baker can ask again while the first answer is still on screen. */
+  const [questionId, setQuestionId] = useState(null);
+  const [toldUs, setToldUs] = useState(false);
   const inputRef = useRef(null);
 
   /* A host that has not wired the endpoint gets no button at all — the same rule NotificationBell
@@ -71,9 +75,12 @@ export default function HelpAssistant({
     setQ(question);
     setAsked(question);
     setState('asking');
+    setToldUs(false);
+    setQuestionId(null);
     try {
       const r = await apiClient.searchHelp(question);
       setSections(Array.isArray(r?.sections) ? r.sections : []);
+      setQuestionId(r?.questionId ?? null);
       setState('answered');
     } catch {
       setState('error');
@@ -82,7 +89,15 @@ export default function HelpAssistant({
 
   function reset() {
     setQ(''); setAsked(''); setSections([]); setState('idle');
+    setQuestionId(null); setToldUs(false);
     inputRef.current?.focus();
+  }
+
+  /* ⚠️ OPTIMISTIC, AND IT NEVER REPORTS A FAILURE. The baker has said their piece; whether our row
+     was found is our problem, and an error over a feedback tap teaches them not to tap it again. */
+  function tellUs() {
+    setToldUs(true);
+    if (questionId) apiClient.sendHelpFeedback?.(questionId).catch(() => {});
   }
 
   return (
@@ -188,7 +203,23 @@ export default function HelpAssistant({
                 </div>
               );
             })}
-            <button type="button" style={S.again} onClick={reset}>Ask something else</button>
+            {/* ⚠️ THE ONLY WAY WE LEARN ABOUT THE COMMON FAILURE. A card can score well, be from
+                the right article, and still not contain the answer — measured, that is most of
+                the misses, and no score can see it. Without this control a baker who got a useless
+                card just closes the panel and we never find out.
+
+                Quiet on purpose: it sits under the answers, in the muted tone, because it is not
+                an action anybody came here to take. */}
+            <div style={S.feedbackRow}>
+              <button type="button" style={S.again} onClick={reset}>Ask something else</button>
+              {toldUs ? (
+                <span style={S.thanks}>Thank you — we will write that one.</span>
+              ) : (
+                <button type="button" style={S.tellUs} onClick={tellUs}>
+                  This did not answer my question
+                </button>
+              )}
+            </div>
           </div>
         )}
       </Panel>
@@ -245,6 +276,13 @@ const S = {
   cardTitle: { fontSize: 11, fontWeight: 700, color: PANEL.muted, letterSpacing: 0.3, marginBottom: 2 },
   cardHeading: { fontSize: 14.5, fontWeight: 700, color: PANEL.ink, marginBottom: 7 },
   checked: { fontSize: 10.5, color: PANEL.muted, marginTop: 8, paddingTop: 7, borderTop: `1px solid ${PANEL.line}` },
+  feedbackRow: { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 },
+  tellUs: {
+    fontFamily: 'inherit', fontSize: 12, color: PANEL.muted,
+    padding: '9px 4px', border: 'none', background: 'none', cursor: 'pointer',
+    textDecoration: 'underline', textUnderlineOffset: 3,
+  },
+  thanks: { fontSize: 12, color: PANEL.body, padding: '9px 4px' },
   again: {
     fontFamily: 'inherit', fontSize: 13, fontWeight: 700, color: PANEL.body,
     padding: '10px 14px', borderRadius: 10,

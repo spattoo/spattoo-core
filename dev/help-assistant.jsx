@@ -40,7 +40,7 @@ function App() {
   const searchHelp = async (question) => {
     await new Promise(r => setTimeout(r, 350));          // the round trip, so "Looking…" is visible
     if (forced === 'error') throw new Error('stub');
-    if (forced === 'empty') return { ok: true, question, sections: [] };
+    if (forced === 'empty') return { ok: true, question, sections: [], questionId: 'stub-id' };
     const words = question.toLowerCase().match(/[a-z]+/g)?.filter(w => w.length > 3) ?? [];
     const scored = (rows ?? []).map((r) => {
       const hay = `${r.doc_title} ${r.heading ?? ''} ${r.body}`.toLowerCase();
@@ -48,7 +48,7 @@ function App() {
     }).filter(s => s.score > 0.2).sort((a, b) => b.score - a.score);
     const seen = new Set();
     const sections = scored.filter(s => !seen.has(s.doc_slug) && seen.add(s.doc_slug)).slice(0, 4);
-    return { ok: true, question, sections };
+    return { ok: true, question, sections, questionId: 'stub-id' };
   };
 
   return (
@@ -62,7 +62,9 @@ function App() {
       </div>
       {/* MOBILE_BAR_H in the designer is 56; the harness has no nav strip, so the inset is passed
           anyway to check the button clears it. */}
-      <HelpAssistant apiClient={{ searchHelp }} isMobile={mobile} bottomInset={mobile ? 56 : 0} />
+      <HelpAssistant
+        apiClient={{ searchHelp, sendHelpFeedback: async (id) => { console.log('[harness] feedback for', id); return { ok: true }; } }}
+        isMobile={mobile} bottomInset={mobile ? 56 : 0} />
       {mobile && (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56,
                       background: '#0b0b0d', color: 'rgba(255,255,255,0.5)', fontSize: 10,
