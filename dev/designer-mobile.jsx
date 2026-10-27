@@ -1694,11 +1694,27 @@ if (LIBRARY) Object.assign(STUBS, {
   fetchTemplate: async (id) => {
     const t = LIB_ROWS.find(r => r.id === id);
     if (!t || t.type === 'photo') return null;
+    /* ⚠️ EACH TEMPLATE CARRIES A GLB, because a design of bare tiers loads nothing and measures
+       nothing. Loading one template after another is the reported slowdown, and what a load
+       actually costs is the MODELS it brings — `retainedGlb.js` measured one textured topper at
+       16.3 MB of texture. A fixture whose templates are plain cream would report a flat line and
+       call the bug absent. Each gets its own `elementId` so they are different pieces, but the
+       same GLB url, which is the common case: a catalogue of cakes drawn from one element set. */
     return { ...t, design: {
       tiers: Array.from({ length: t.tier_count ?? 1 }, () => ({
         color: t.thumbnail_url.includes('cfe3d4') ? '#CFE3D4' : '#F1EEDC',
         shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth',
       })),
+      stickers: [{
+        id: `sk-${t.id}`, elementId: 'e9', name: t.name,
+        /* ⚠️ A DISTINCT URL PER TEMPLATE, and that is the whole point of the fixture. `retainedGlb`
+           keys its cache by URL, so eight templates sharing one model reuse one entry and measure
+           a flat line — which is what the first run of this showed and why it looked like there
+           was no bug. A real catalogue is eight DIFFERENT cakes with different pieces. Same file,
+           different query, so each is a separate entry without needing eight real models. */
+        imageUrl: `/sample-rosette.glb?tpl=${t.id}`,
+        zone: 'top_surface', tierIndex: 0, x: 0, z: 0, scale: 1,
+      }],
     } };
   },
   fetchTemplates:      async () => LIB_ROWS.filter(t => t.offered).map(t => ({ ...t })),
