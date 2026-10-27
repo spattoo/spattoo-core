@@ -72,6 +72,7 @@ export default function HelpAssistant({
   const [questionId, setQuestionId] = useState(null);
   const [toldUs, setToldUs] = useState(false);
   const [escalation, setEscalation] = useState(null);   // null | 'asking' | 'sent'
+  const [declined, setDeclined] = useState(null);       // null | 'business' | 'others' | 'security'
   const [longWait, setLongWait] = useState(false);
   const [note, setNote] = useState('');
   const inputRef = useRef(null);
@@ -90,7 +91,8 @@ export default function HelpAssistant({
   if (!apiClient?.searchHelp) return null;
 
   const mood = assistantState({
-    phase: state, typing: !!q.trim(), sections, longWait, escalated: escalation === 'sent',
+    phase: state, typing: !!q.trim(), sections, longWait,
+    escalated: escalation === 'sent', declined: !!declined,
   });
 
   /* Answered-with-nothing, answered-and-told-it-missed, or answered-at-all — but never after an
@@ -107,10 +109,12 @@ export default function HelpAssistant({
     setToldUs(false);
     setQuestionId(null);
     setEscalation(null);
+    setDeclined(null);
     try {
       const r = await apiClient.searchHelp(question);
       setSections(Array.isArray(r?.sections) ? r.sections : []);
       setQuestionId(r?.questionId ?? null);
+      setDeclined(r?.outOfScope ?? null);
       setState('answered');
     } catch {
       setState('error');
@@ -119,7 +123,7 @@ export default function HelpAssistant({
 
   function reset() {
     setQ(''); setAsked(''); setSections([]); setState('idle');
-    setQuestionId(null); setToldUs(false); setEscalation(null);
+    setQuestionId(null); setToldUs(false); setEscalation(null); setDeclined(null);
     inputRef.current?.focus();
   }
 
@@ -209,7 +213,25 @@ export default function HelpAssistant({
           </div>
         )}
 
-        {state === 'answered' && sections.length === 0 && (
+        {/* ── Asked something we do not answer ─────────────────────────────────────────────────
+            ⚠️ A DIFFERENT SENTENCE FROM "nothing is written about that yet", because they are
+            different facts. An empty result means we have no article and the baker should try
+            again differently — telling them that about a question we will never answer invites
+            them to keep rephrasing. This says what we do, and offers the person who can answer. */}
+        {state === 'answered' && declined && (
+          <div style={S.note}>
+            <strong style={{ color: PANEL.ink }}>I only help with using Spattoo.</strong>
+            <div style={{ marginTop: 5 }}>
+              {declined === 'others'
+                ? 'I can only show you your own bakery — never another bakery\u2019s work, orders or customers.'
+                : declined === 'security'
+                  ? 'I will not help with passwords or keys that are not yours.'
+                  : 'For anything about Spattoo the company, the team can answer you directly.'}
+            </div>
+          </div>
+        )}
+
+        {state === 'answered' && !declined && sections.length === 0 && (
           /* ⚠️ IT NAMES WHAT IT UNDERSTOOD. "Nothing found" alone leaves a baker unable to tell a
              gap in the help from a question we misread, and those need opposite responses from
              them. */

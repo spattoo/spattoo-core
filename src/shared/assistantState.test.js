@@ -28,6 +28,12 @@ describe('what the assistant is doing', () => {
     expect(assistantState({ phase: 'error' })).toBe(ASSISTANT.FAILED);
   });
 
+  it('tells "I have nothing written" apart from "I do not answer that"', () => {
+    /* Opposite admissions, opposite faces: one invites a rephrase, the other settles it. */
+    expect(assistantState({ phase: 'answered', sections: [] })).toBe(ASSISTANT.EMPTY);
+    expect(assistantState({ phase: 'answered', sections: [], declined: true })).toBe(ASSISTANT.DECLINED);
+  });
+
   it('answers when there are sections', () => {
     expect(assistantState({ phase: 'answered', sections: [{}, {}] })).toBe(ASSISTANT.ANSWERED);
   });
@@ -47,6 +53,7 @@ describe('what the assistant is doing', () => {
       assistantState({ phase: 'asking', longWait: true }),
       assistantState({ phase: 'answered', sections: [{}] }),
       assistantState({ phase: 'answered', sections: [] }),
+      assistantState({ phase: 'answered', sections: [], declined: true }),
       assistantState({ phase: 'error' }),
       assistantState({ phase: 'answered', escalated: true }),
     ]);

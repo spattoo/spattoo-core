@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import HelpAssistant from '../src/shared/HelpAssistant.jsx';
+/* The same module the API runs, imported straight from the backend checkout beside this one, so
+   the harness cannot drift from the server about what is declined. */
+import { outOfScope } from '../../spattoo-backend/src/services/helpScope.js';
 
 /* ── The assistant panel, driven by REAL article text ────────────────────────────────────────────
  *
@@ -29,7 +32,7 @@ function useSections() {
    colour per state. ?appu=1 turns it on. The real one replaces this file's import, not the panel. */
 const MOOD_COLOUR = {
   idle: '#9BB5A2', listening: '#60a5fa', thinking: '#f59e0b', thinking_long: '#ef4444',
-  answered: '#22c55e', empty: '#a78bfa', failed: '#ef4444', escalated: '#0ea5e9',
+  answered: '#22c55e', empty: '#a78bfa', declined: '#78716c', failed: '#ef4444', escalated: '#0ea5e9',
 };
 function StandInCharacter({ state, size = 26 }) {
   console.log('[harness] appu state →', state);
@@ -57,6 +60,9 @@ function App() {
     await new Promise(r => setTimeout(r, 350));          // the round trip, so "Looking…" is visible
     if (forced === 'error') throw new Error('stub');
     if (forced === 'empty') return { ok: true, question, sections: [], questionId: 'stub-id' };
+    /* The harness runs the REAL guard, so what it declines here is what the server declines. */
+    const declined = outOfScope(question);
+    if (declined) return { ok: true, question, sections: [], questionId: 'stub-id', outOfScope: declined };
     const words = question.toLowerCase().match(/[a-z]+/g)?.filter(w => w.length > 3) ?? [];
     const scored = (rows ?? []).map((r) => {
       const hay = `${r.doc_title} ${r.heading ?? ''} ${r.body}`.toLowerCase();

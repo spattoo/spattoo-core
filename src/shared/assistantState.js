@@ -32,6 +32,11 @@ export const ASSISTANT = Object.freeze({
   ANSWERED: 'answered',
   /** Nothing cleared the answer floor. Not an error: we looked and we have nothing. */
   EMPTY: 'empty',
+  /** We did not look. The question is not one this assistant answers — see helpScope.js.
+   *  ⚠️ A SEPARATE STATE FROM EMPTY, because they are opposite admissions and want opposite
+   *  faces: empty is "I have nothing written about that" (apologetic, go on and rephrase), and
+   *  this is "I do not answer that" (polite, settled, do not rephrase). */
+  DECLINED: 'declined',
   /** The request itself failed. Ours, not theirs. */
   FAILED: 'failed',
   /** Handed to a person; a reply is coming by email. */
@@ -54,7 +59,7 @@ export const ASSISTANT_STATES = Object.freeze(Object.values(ASSISTANT));
  * Pure, so a character's expressions can be exercised without a panel, a network or a baker — the
  * same reason helpRank.js is pure.
  */
-export function assistantState({ phase = 'idle', typing = false, sections = [], longWait = false, escalated = false } = {}) {
+export function assistantState({ phase = 'idle', typing = false, sections = [], longWait = false, escalated = false, declined = false } = {}) {
   if (phase === 'asking') return longWait ? ASSISTANT.THINKING_LONG : ASSISTANT.THINKING;
   if (phase === 'error')  return ASSISTANT.FAILED;
   if (phase === 'answered') {
@@ -62,6 +67,7 @@ export function assistantState({ phase = 'idle', typing = false, sections = [], 
        thing the baker is waiting on — a character still shrugging at an empty result would be
        reacting to news that has been superseded. */
     if (escalated) return ASSISTANT.ESCALATED;
+    if (declined) return ASSISTANT.DECLINED;
     return sections.length ? ASSISTANT.ANSWERED : ASSISTANT.EMPTY;
   }
   /* Typing only reads as LISTENING before anything has been asked. Mid-conversation the previous
