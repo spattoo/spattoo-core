@@ -341,6 +341,12 @@ export const OCCASIONS = [
   ['new_job',       'New job or promotion'],
   ['festival',      'Festival'],
   ['farewell',      'Farewell'],
+  // The other end of the same journey as `farewell`, and the gap that made it obvious: the cake
+  // for somebody leaving had a name, the cake for them coming back did not. "Welcome home" rather
+  // than "Trip" because it is what gets piped on the cake, because "trip" names the journey and so
+  // is ambiguous about which end of it, and because it does not assume abroad — a student home
+  // from university is the same occasion. Same reasoning as `new_home` above. See migration 142.
+  ['welcome_home',  'Welcome home'],
   ['corporate',     'Office do'],
   // A MOTIVE, not an event, and it earns the place twice: it covers Valentine's without pinning a
   // date, and unlike `other` it is a real signal — the suggester can argue "rich and a little
@@ -416,11 +422,14 @@ export const RECIPIENTS = [
 const LIKELY_OCCASIONS = {
   // A child's cake is a birthday until proven otherwise. Graduation covers finishing school.
   child:      ['birthday', 'graduation', 'festival', 'other'],
-  adult:      ['birthday', 'anniversary', 'new_job', 'graduation', 'new_home', 'farewell', 'love', 'festival', 'other'],
+  adult:      ['birthday', 'anniversary', 'new_job', 'graduation', 'new_home', 'farewell', 'welcome_home', 'love', 'festival', 'other'],
   // The pair-shaped milestones. A baby shower belongs here rather than under `child` — it is thrown
   // for the parents, and there is no child yet.
   couple:     ['anniversary', 'wedding', 'engagement', 'baby_shower', 'new_home', 'love', 'festival', 'other'],
-  family:     ['festival', 'new_home', 'anniversary', 'birthday', 'other'],
+  // `welcome_home` sits here and under `adult`: the cake is for the person coming back, and it is
+  // the family that orders it. Left out of `couple` and `colleagues`, where it is not the shape of
+  // the occasion — it still appears for them, one group down, like any other.
+  family:     ['festival', 'new_home', 'anniversary', 'birthday', 'welcome_home', 'other'],
   friends:    ['birthday', 'farewell', 'graduation', 'new_job', 'new_home', 'festival', 'other'],
   // An office cake is one of four things, and a wedding is not among them.
   colleagues: ['corporate', 'farewell', 'new_job', 'festival', 'other'],
@@ -477,10 +486,17 @@ export function rankedOccasions(recipient) {
   return [...likely, ...other];
 }
 
+/* ⚠️ DERIVED FROM `OCCASIONS`, BECAUSE A HAND-KEPT COPY HAD ALREADY DRIFTED. This map was written
+   out by hand and was missing five of the fourteen keys — bridal_shower, new_home, graduation,
+   new_job and love. `buildInstructions` falls back to the raw key, so a baker reading an order
+   wrote down "Occasion: new_home" rather than "Occasion: New home". Nobody added a label when 059
+   added the occasions, and nothing could have caught it: the fallback made it look deliberate.
+
+   Derived, the two lists cannot disagree. `other` is the one deliberate difference and says so:
+   the picker offers "Just because", which reads wrong in prose on a baker's order sheet. */
 export const OCCASION_LABEL = {
-  birthday: 'Birthday', anniversary: 'Anniversary', wedding: 'Wedding',
-  engagement: 'Engagement', baby_shower: 'Baby shower', festival: 'Festival',
-  farewell: 'Farewell', corporate: 'Office do', other: 'No special occasion',
+  ...Object.fromEntries(OCCASIONS),
+  other: 'No special occasion',
 };
 
 // Occasion, who it is for and the message have no column on an order, and inventing three would be
