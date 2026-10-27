@@ -254,6 +254,11 @@ export default function HelpAssistant({
                       best answer. Rendering the article title in the small muted style and nothing
                       in the heading style left those cards with their most important line as the
                       smallest — so when there is no heading, the title IS the heading. */}
+                  {/* ⚠️ A FAQ ANSWER SAYS SO. Two corpora are indexed: the help articles, written
+                      for a baker mid-task, and the website's FAQ, written for somebody deciding
+                      whether to sign up. Passing a sales answer off as instructions would be a
+                      small lie, and the voices are different enough to notice. */}
+                  {sec.audience === 'faq' && <div style={S.fromFaq}>From our FAQ</div>}
                   {sec.heading ? (
                     <>
                       <div style={S.cardTitle}>{sec.doc_title}</div>
@@ -370,6 +375,12 @@ const S = {
   card: {
     border: `1px solid ${PANEL.line}`, borderRadius: 12, padding: '12px 13px 11px',
     background: '#fff',
+  },
+  fromFaq: {
+    display: 'inline-block', fontSize: 9.5, fontWeight: 700, letterSpacing: 0.4,
+    textTransform: 'uppercase', color: PANEL.muted,
+    border: `1px solid ${PANEL.line}`, background: PANEL.tint,
+    padding: '2px 7px', borderRadius: 20, marginBottom: 6,
   },
   cardTitle: { fontSize: 11, fontWeight: 700, color: PANEL.muted, letterSpacing: 0.3, marginBottom: 2 },
   cardHeading: { fontSize: 14.5, fontWeight: 700, color: PANEL.ink, marginBottom: 7 },

@@ -28,7 +28,8 @@ function helpSectionsPlugin() {
               const kv = /^([a-z_]+):\s*(.*)$/.exec(line.trim());
               if (kv) meta[kv[1]] = kv[2].trim();
             }
-            if (meta.audience !== 'baker') continue;
+            // Mirrors the backfill: help articles and the generated FAQ, both named explicitly.
+            if (meta.audience !== 'baker' && meta.audience !== 'faq') continue;
             if (meta.status && meta.status !== 'live') continue;
             /* Mirrors spattoo-api scripts/backfill-help-index.mjs: the trailing *"Checked against
                the app on …"* paragraph is a note to US about how the article was verified, and 54
@@ -50,7 +51,7 @@ function helpSectionsPlugin() {
             const flush = () => {
               const b = buf.join('\n').trim();
               if (b) out.push({ doc_slug: meta.id ?? file.replace(/\.md$/, ''), doc_title: meta.title ?? file,
-                                heading, body: b, position: position++,
+                                heading, body: b, position: position++, audience: meta.audience ?? null,
                                 checked_against_app: meta.checked_against_app ?? null });
               buf = [];
             };
