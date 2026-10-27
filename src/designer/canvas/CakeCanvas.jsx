@@ -4627,6 +4627,15 @@ function CakeContent({ config, scene, edit = null }) {
     (config.tiers ?? []).forEach((t, ti) => {
       for (const p of (t.topPipings ?? (t.topPiping ? [t.topPiping] : []))) ids.push(`top:${ti}:${p.layerId ?? ''}`);
       for (const p of (t.bottomPipings ?? (t.bottomPiping ? [t.bottomPiping] : []))) ids.push(`bot:${ti}:${p.layerId ?? ''}`);
+      /* ⚠️ THE PROCEDURAL DECOR WAS NEVER IN THE RUNNING ORDER AT ALL, which is a different fault
+         from the one below it. A `writing` was enumerated and never posed; a cloud was never
+         enumerated, so it had no slot to ask about and sat finished on the cake through the whole
+         build. Sandeep: *"clouds and 'welcome home' text are not flying. these are procedural
+         controls."* Rainbows and balloons were in the same state and are listed with them — all
+         three are tier-scoped pieces a baker places, and a cloud ARRIVING is the shot. */
+      for (const c of (t.clouds ?? []))   ids.push(`cloud:${ti}:${c.id}`);
+      for (const r of (t.rainbows ?? [])) ids.push(`rainbow:${ti}:${r.id}`);
+      for (const ba of (t.balloons ?? [])) ids.push(`balloon:${ti}:${ba.id}`);
       if (t.grass) ids.push(`grass:${ti}`);
       if (t.gyp) ids.push(`gyp:${ti}`);
       if (t.sand) ids.push(`sand:${ti}`);
@@ -4685,6 +4694,7 @@ function CakeContent({ config, scene, edit = null }) {
           `ringWidth` is how far across the board-to-cake gap it reaches, so it means the same thing
           on a 6" round and a sheet. Seated at board height (the tier stack starts at 0.1). */}
       {boardGrass && board && (
+        <BuildPiece pose={poseFor('grass:board')} reach={(bottomTier?.radius ?? 1)}>
         <GrassPatch
           {...boardGrass}
           onPick={onGrassClick}
@@ -4695,6 +4705,7 @@ function CakeContent({ config, scene, edit = null }) {
           hole={boardGrassHole(bottomShp, boundingRadius(bottomShp),
             boardClearanceFor(bottomTier, boardGrass.height ?? 0.16))}
         />
+        </BuildPiece>
       )}
 
       {/* Gypsophila ringing the FOOT of the cake. The band is the bottom tier's own outline grown
@@ -4710,6 +4721,7 @@ function CakeContent({ config, scene, edit = null }) {
           The shape is the BOARD's own footprint and the cake is a hole in it, exactly as the board
           gypsophila below is built — sand belongs around the cake, not under it. */}
       {boardSand && bottomShp && (
+        <BuildPiece pose={poseFor('sand:board')} reach={(bottomTier?.radius ?? 1)}>
         <SandBed
           /* ⚠️ THE CAKE'S FOOTPRINT, NOT THE BOARD'S. On the board zone SandBed grows the ring
              itself (`outwardBand(shape, amount)`) and punches the cake out as a hole, so `shape` is
@@ -4733,9 +4745,11 @@ function CakeContent({ config, scene, edit = null }) {
              The card hides the Area control there for the same reason. */
           onPick={onSandClick}
         />
+        </BuildPiece>
       )}
 
       {boardGyp && bottomShp && (
+        <BuildPiece pose={poseFor('gyp:board')} reach={(bottomTier?.radius ?? 1)}>
         <GypCloud
           {...boardGyp}
           onPick={onGypClick}
@@ -4748,6 +4762,7 @@ function CakeContent({ config, scene, edit = null }) {
             radiusOf: (st) => glbHalfCache[st.imageUrl]?.hx,
           })}
         />
+        </BuildPiece>
       )}
 
       {tierData.map((tier, i) => (
@@ -4812,6 +4827,7 @@ function CakeContent({ config, scene, edit = null }) {
               cake has smooth buttercream underneath and grass over it. Rendered from the resolved
               tierData so it fits the tier's real footprint, round or sheet. */}
           {tier.grass && (
+            <BuildPiece pose={poseFor(`grass:${i}`)} reach={(bottomTier?.radius ?? 1)}>
             <GrassPatch
               shape={tierShape(tier)}
               topY={tier.baseY + tier.height}
@@ -4819,6 +4835,7 @@ function CakeContent({ config, scene, edit = null }) {
               onPick={onGrassClick}
               {...tier.grass}
             />
+            </BuildPiece>
           )}
           {/* A drift of sand on this tier's top, confined to the area the baker chose. Outside
               CakeTier for grass's reason: a treatment laid ON the finished top, not part of the
@@ -4827,6 +4844,7 @@ function CakeContent({ config, scene, edit = null }) {
               on the region's identity, so an object literal would rebuild a 40,000-cell lattice on
               every render — once per frame while a dial is being dragged. */}
           {tier.sand && (
+            <BuildPiece pose={poseFor(`sand:${i}`)} reach={(bottomTier?.radius ?? 1)}>
             /* ⚠️ EVERY PROP NAMED, NEVER `{...tier.sand}` — and this is not tidiness, it is the bug
                that shipped. The sand object's `shape` is the AREA (round/rect/triangle) and
                SandBed's `shape` is the CAKE'S FOOTPRINT. Spread after the explicit prop, the area
@@ -4849,6 +4867,7 @@ function CakeContent({ config, scene, edit = null }) {
               region={sandRegion(tier.sand)}
               onPick={onSandClick}
             />
+            </BuildPiece>
           )}
           {/* ── Gypsophila on this tier ──────────────────────────────────────────────────────────
               ⚠️ `avoid` IS WHAT IS ALREADY STANDING HERE, and it is the whole reason this is wired
@@ -4857,7 +4876,8 @@ function CakeContent({ config, scene, edit = null }) {
               whatever it finds and fills the gaps between — a rose, a candle, a topper, all the
               same, because it asks what is there and never what it is (INVARIANTS #3b: "ONE rule…
               and it is not per-element"). */}
-          {tier.gyp && (() => {
+          {tier.gyp && (
+            <BuildPiece pose={poseFor(`gyp:${i}`)} reach={(bottomTier?.radius ?? 1)}>{(() => {
             const shp = tierShape(tier);
             /* ── On the WALL ──────────────────────────────────────────────────────────────────
              * The other half of what a florist does with baby's breath, and the one surface
@@ -4948,7 +4968,8 @@ function CakeContent({ config, scene, edit = null }) {
                 />
               )}
             </>);
-          })()}
+           })()}</BuildPiece>
+          )}
           {/* Fondant rainbows belonging to THIS tier. The generator asks for { radius, topY, boardY }
               and has never cared whether that describes a whole cake or one tier of one — so tier 2's
               rainbow is the same code given tier 2's numbers: its radius, its top, and the surface it
@@ -4964,6 +4985,7 @@ function CakeContent({ config, scene, edit = null }) {
               click, and a click fell through to the cake behind. Which reads as "it cannot be moved".
               stopPropagation, or the tier underneath also takes the click and selects itself. */}
           {(tier.rainbows ?? []).map(rb => (
+            <BuildPiece key={`rb-build-${rb.id}`} pose={poseFor(`rainbow:${i}:${rb.id}`)} reach={(bottomTier?.radius ?? 1)}>
             <DraggableGenerated
               key={`rb-hit-${rb.id}`}
               onClick={() => onRainbowClickEdit?.(i, rb.id)}
@@ -5019,6 +5041,7 @@ function CakeContent({ config, scene, edit = null }) {
               cake={rainbowCakeFor(tier, i, tierData, board)}
             />
             </DraggableGenerated>
+            </BuildPiece>
           ))}
           {/* The brushstroke band on THIS tier's wall. Not draggable and not clickable — it is a
               treatment of the whole wall like dusting or foil, not a thing placed on it, so it
@@ -5036,6 +5059,7 @@ function CakeContent({ config, scene, edit = null }) {
               whole cake or one tier of one. A cloud on the board is a cloud on the BOTTOM tier
               standing outside it, which is why there is no separate board list to keep in step. */}
           {(tier.clouds ?? []).map(cl => (
+            <BuildPiece key={`cl-build-${cl.id}`} pose={poseFor(`cloud:${i}:${cl.id}`)} reach={(bottomTier?.radius ?? 1)}>
             <DraggableGenerated
               key={`cl-hit-${cl.id}`}
               onClick={() => onCloudClickEdit?.(i, cl.id)}
@@ -5091,11 +5115,13 @@ function CakeContent({ config, scene, edit = null }) {
                         baseY: tier.baseY, boardY: board ? BOARD_TOP_Y : tier.baseY }}
               />
             </DraggableGenerated>
+            </BuildPiece>
           ))}
           {/* Fondant balloons belonging to THIS tier — on picks, standing OFF the lid rather than
               lying against it, which is why their only freedoms are round and out. The height they
               float at is the pick's, authored on the element row; nothing here invents a stick. */}
           {(tier.balloons ?? []).map(ba => (
+            <BuildPiece key={`ba-build-${ba.id}`} pose={poseFor(`balloon:${i}:${ba.id}`)} reach={(bottomTier?.radius ?? 1)}>
             <DraggableGenerated
               key={`ba-hit-${ba.id}`}
               onClick={() => onBalloonClickEdit?.(i, ba.id)}
@@ -5132,6 +5158,7 @@ function CakeContent({ config, scene, edit = null }) {
                 cake={{ radius: tier.radius, topY: tier.baseY + tier.height, boardY: tier.baseY }}
               />
             </DraggableGenerated>
+            </BuildPiece>
           ))}
           {selectedPiping?.tierIndex === i && pipingToolbar && (
             <Html
@@ -5192,9 +5219,17 @@ function CakeContent({ config, scene, edit = null }) {
           return textPathFor(host.textPath, host,
             rainbowCakeFor(ht, w.on.tierIndex, tierData, board));
         })();
+        /* ⚠️ THE BUILD FLIES THIS TOO, AND FOR A WHILE IT ONLY LOOKED LIKE IT DID. `writing:<id>` has
+           been pushed into `buildIds` since the take shipped, so the message has always HELD a slot
+           in the running order — it just never asked for its pose, so it sat finished on the cake
+           while everything around it flew in. Sandeep, watching a "welcome home" cake build:
+           *"clouds and 'welcome home' text are not flying."*
+           Worse than the piece not moving: an id in `buildIds` counts toward `count`, and
+           `pieceStart` spreads the schedule across `i / (count - 1)`. A slot that never arrives is a
+           SILENT BEAT in the film, and it shifts the timing of every piece behind it. */
         return (
+        <BuildPiece key={w.id} pose={poseFor(`writing:${w.id}`)} reach={(bottomTier?.radius ?? 1)}>
         <Renderer
-          key={w.id}
           writing={w}
           hostPath={hostPath}
           topY={stackY}
@@ -5212,6 +5247,7 @@ function CakeContent({ config, scene, edit = null }) {
           onOrbitEnable={orbitEnableFor(`__writing__${w.id}`)}
           selected={selectedWritingId === w.id}
         />
+        </BuildPiece>
         );
       })}
 
@@ -5219,12 +5255,14 @@ function CakeContent({ config, scene, edit = null }) {
           highest tier. Each block is its own placement, so the arrangement IS the data — see
           nameBlockRun. */}
       {nameBlocks?.blocks?.length > 0 && topTier && board && (
+        <BuildPiece pose={poseFor('nameblocks')} reach={(bottomTier?.radius ?? 1)}>
         <NameBlocks
           {...nameBlocks}
           blocks={nameBlocks.blocks}
           surfaceRadius={nameBlocks.zone === 'top' ? topTier.radius : board.radius}
           y={nameBlocks.zone === 'top' ? stackY : 0.1}
         />
+        </BuildPiece>
       )}
 
       {/* Freehand cream-pen strokes. Committed strokes are part of the cake and always drawn; the
