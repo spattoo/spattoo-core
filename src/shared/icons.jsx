@@ -170,3 +170,21 @@ export function ChevronRightIcon({ size = 18 }) {
     </svg>
   );
 }
+
+// ── The assistant's placeholder ──────────────────────────────────────────────────────────────────
+// A speech bubble with a question in it: ask something and get an answer back.
+//
+// ⚠️ THIS IS A DUMMY AND IS MEANT TO BE REPLACED. Sandeep: *"lets do help first. use a dummy icon
+// for now. we ll build the cartoon later"* — the entry point is eventually a funny cartoon
+// character, and the character is a separate decision. A line glyph is what goes there until then,
+// rather than a half-drawn mascot that would have to be defended.
+export function AssistantIcon({ size = 20 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      <path d="M20.5 11.3a8 8 0 0 1-8.5 8 9.2 9.2 0 0 1-2.6-.4L4.5 20.5l1.1-3.4A8 8 0 1 1 20.5 11.3Z" />
+      <path d="M9.7 9.3a2.4 2.4 0 1 1 3.5 2.3c-.7.4-1.2.9-1.2 1.7" />
+      <path d="M12 16.1h.01" />
+    </svg>
+  );
+}

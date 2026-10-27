@@ -67,6 +67,11 @@ export { parseNotificationLink, withoutLinkParams } from './notifications/notifi
 export { default as PlanCards } from './billing/PlanCards.jsx';
 export { periodPrice, formatPlanPrice, PERIOD_SUFFIX } from './billing/planPricing.js';
 export { default as AuthGate } from './auth/AuthGate.jsx';
+// The assistant — a floating help button and the panel behind it. Exported for a host that mounts
+// its own shell rather than CakeDesigner (admin, and any future customer surface); the baker app
+// gets it for free because CakeDesigner mounts it.
+export { default as HelpAssistant } from './shared/HelpAssistant.jsx';
+export { default as HelpMarkdown } from './shared/helpMarkdown.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';
 // The cake's DEFAULT dimensions — the sizes core actually ships. Exported so a studio can start from

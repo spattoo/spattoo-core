@@ -31,6 +31,7 @@ import { AGE_FILTER_MAX, matchesTemplateSearch, matchesFilters, templateMatches 
 import TemplateGrid from './shared/TemplateGrid.jsx';
 import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
+import HelpAssistant from '../shared/HelpAssistant.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 
@@ -23505,6 +23506,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {!saveModal && (
         <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef}
           renderNowRef={thumbRenderNowRef} viewDir={thumbViewDir(thumbView)} />
+      )}
+
+      {/* ── The assistant ───────────────────────────────────────────────────────────────────────
+          Bottom-right of every baker screen. It is mounted HERE, once, because this component IS
+          the baker app — BakerApp.tsx renders CakeDesigner and every screen (orders, calendar,
+          settings, the storefront editor) lives inside it. One mount is therefore "available
+          everywhere", which is what Sandeep asked for: *"the cartoon sits in the right bottom
+          corner"*, reachable from the calendar as much as from the canvas.
+
+          ⚠️ BAKER ONLY, FOR NOW. *"baker first- then customer needs to login to access this
+          feature."* Every one of the 58 help articles is `audience: baker` and describes the baker
+          app; showing them to a customer on a storefront link would answer their question with
+          instructions for a screen they cannot open. A customer corpus does not exist yet.
+
+          ⚠️ AND IT HIDES DURING A FILM OR A FRAMING. `onFilmGround` is already the "the screen is
+          a photo right now" flag; a floating button over a shot is in the shot. */}
+      {orderMode === 'baker' && (
+        <HelpAssistant
+          apiClient={apiClient}
+          isMobile={isMobile}
+          bottomInset={isMobile ? MOBILE_BAR_H : 0}
+          hidden={onFilmGround}
+        />
       )}
 
       {/* Floating sticker ghost while pointer-dragging from elements panel */}
