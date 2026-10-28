@@ -64,6 +64,24 @@ export function setMaterialPatch(mat, slot, patch) {
   if (patch) bag[slot] = patch; else delete bag[slot];
   const after = patchSignature(bag);
 
+  /* ⚠️ NO PATCHES LEFT → GIVE THE MATERIAL BACK TO THREE.JS, rather than leaving an inert pair of
+     overrides installed. Deleting the OWN properties restores `Material.prototype`'s no-op
+     `onBeforeCompile` and its default `customProgramCacheKey`, which returns the same string for
+     every material — so unpatched materials share one program again.
+     ⚠️ THIS DOES NOT WEAKEN THE `mat.uuid` RULE BELOW. That rule exists because a patch's uniform
+     bag is held BY IDENTITY, so two patched materials sharing a program would render the first
+     one's colours. With no patch there is no uniform bag, and nothing to collide.
+     ⚠️ MEASURED, because it is the whole cost of a decorated cake. Loading the "Animal theme"
+     template compiled 27 shader programs, 22 of them used exactly once — and 13 of those were
+     byte-identical apart from `spat:<uuid>:none`. Every decoration that had ever been offered a
+     gradient was pinned to its own program by a teardown that cleared the patch and left the key. */
+  if (!PATCH_ORDER.some(s => bag[s])) {
+    delete mat.onBeforeCompile;
+    delete mat.customProgramCacheKey;
+    if (before !== after) mat.needsUpdate = true;
+    return;
+  }
+
   /* ⚠️ READS THE LIVE BAG RATHER THAN CLOSING OVER IT, so a patch registered after this function
      ran is still injected by the program compiled later. */
   mat.onBeforeCompile = (shader, renderer) => {
