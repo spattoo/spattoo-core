@@ -248,46 +248,25 @@ const CSS = `
 const FRAME = {
   full: { box: '0 46 430 460', x0: 0,  w: 430, h: 460 },
   head: { box: '46 66 304 400', x0: 46, w: 304, h: 400 },
-  /* Room beside him for the bubble, and the bottom cut at the line he leans on. */
-  peek: { box: '0 40 560 466', x0: 0,  w: 560, h: 466 },
 };
-
-/* ⚠️ THE BUBBLE IS THE AFFORDANCE. Appu peeking in a corner is a picture; the three dots are what
-   say TALK TO ME, and rule 7 is judged at rest on a phone, where there is no hover to reveal
-   anything. It is drawn as ONE path — body and tail together — because an ellipse with a separate
-   tail shows the ellipse's own stroke running through the join. */
-const BUBBLE = (
-  <g>
-    <path
-      d="M546 108 C546 139 508 164 462 164 C442 164 424 160 410 153 L392 196 L388 147
-         C381 136 378 122 378 108 C378 77 416 52 462 52 C508 52 546 77 546 108 z"
-      fill="#fff" stroke={SAGE} strokeWidth="9"
-    />
-    <circle cx="424" cy="108" r="11" fill={SAGE} stroke="none" />
-    <circle cx="462" cy="108" r="11" fill={SAGE} stroke="none" />
-    <circle cx="500" cy="108" r="11" fill={SAGE} stroke="none" />
-  </g>
-);
 
 /**
  * @param state  one of ASSISTANT (see assistantState.js)
  * @param size   rendered height in px. Measured: the full figure stops reading below ~96.
- * @param crop   'full' (default), 'head' under ~96px, or 'peek' for the corner. See FRAME.
- * @param bubble draw the three-dot speech bubble beside him. Needs crop='peek'.
+ * @param crop   'full' (default) or 'head' — use 'head' under ~96px. See FRAME.
  * @param facing 'left' (default) or 'right'. See FACING.
  * @param apron  the collar under his chin. The baker's own primary where a host has one.
  */
 export default function Appu({
-  state = ASSISTANT.IDLE, size = 64, crop = 'full', bubble = false, facing = 'left', apron = SAGE,
+  state = ASSISTANT.IDLE, size = 64, crop = 'full', facing = 'left', apron = SAGE,
 }) {
   const pose = POSE[state] ?? POSE[ASSISTANT.IDLE];
   const frame = FRAME[crop] ?? FRAME.full;
   /* ⚠️ HE LOOKS INTO THE SCREEN. Sandeep: *"since this image goes on the right side bottom on the
      desktop, it should be looking to left side"*. The reference faces right because it is a
      standalone sticker; sitting in the bottom-right corner, facing right means facing out of the
-     window, away from everything the baker is working on. Mirroring the whole group — bubble
-     included, which then sits to his upper LEFT and points inward — is the one change, so the
-     geometry stays traceable against the reference exactly as drawn. */
+     window, away from everything the baker is working on. Mirroring the whole group is the one
+     change, so the geometry stays checkable against the reference exactly as traced. */
   const mirror = facing === 'left' ? `translate(${2 * frame.x0 + frame.w} 0) scale(-1 1)` : undefined;
   const id = useId();
   return (
@@ -315,7 +294,6 @@ export default function Appu({
         {GESTURE[pose.gesture]}
       </g>
       {MARKS[state] ?? null}
-      {bubble ? BUBBLE : null}
       </g>
     </svg>
   );

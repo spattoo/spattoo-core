@@ -90,6 +90,9 @@ export default function HelpAssistant({
      follows. Better than a button that opens a panel which can only apologise. */
   if (!apiClient?.searchHelp) return null;
 
+  /* ⚠️ COMPUTED BUT NOT YET SHOWN. Appu is pinned to IDLE everywhere until Sandeep has signed off
+     the other eight poses — *"only the idle one for now. we will integrate others later"*. Swap
+     ASSISTANT.IDLE for `mood` at the two <Character> sites to turn the whole set on. */
   const mood = assistantState({
     phase: state, typing: !!q.trim(), sections, longWait,
     escalated: escalation === 'sent', declined: !!declined,
@@ -162,7 +165,13 @@ export default function HelpAssistant({
           onPointerLeave={e => { e.currentTarget.style.transform = ''; }}
         >
           {Character
-            ? <Character state={ASSISTANT.IDLE} size={isMobile ? 104 : 124} crop="peek" bubble />
+            ? <>
+                {/* ⚠️ IDLE ONLY, DELIBERATELY. Sandeep approved this pose; the other eight are
+                    drawn and reachable but not signed off — *"only the idle one for now. we will
+                    integrate others later"*. The state machine stays wired, pinned here. */}
+                <Character state={ASSISTANT.IDLE} size={isMobile ? 92 : 108} />
+                <span style={S.fabLabel}>Ask me</span>
+              </>
             : <AssistantIcon size={isMobile ? 22 : 24} />}
         </button>
       )}
@@ -171,7 +180,7 @@ export default function HelpAssistant({
         open={open}
         onClose={() => setOpen(false)}
         title={Character
-          ? <span style={S.titleRow}><span style={S.characterChip}><Character state={mood} size={26} crop="head" /></span>Help</span>
+          ? <span style={S.titleRow}><span style={S.characterChip}><Character state={ASSISTANT.IDLE} size={26} crop="head" /></span>Help</span>
           : 'Help'}
         subtitle="Ask how to do something, in your own words"
         width={420}
@@ -375,6 +384,20 @@ const S = {
     width: 'auto', height: 'auto', borderRadius: 0, right: 10,
     background: 'none', border: 'none', boxShadow: 'none', overflow: 'visible',
     pointerEvents: 'none',
+    flexDirection: 'column', gap: 4,
+  },
+  /* ⚠️ THE LABEL IS NOW THE AFFORDANCE. The three-dot bubble used to say "talk to me" and Sandeep
+     removed it: *"otherwise user would not know why is this character"*. A character alone in a
+     corner is decoration — two words make it a control, and rule 7 is judged at rest on a phone
+     where no hover reveals anything.
+     ⚠️ It needs its own pointerEvents. The button is `none` so his empty corners stay transparent
+     to clicks (see Appu's CSS), and pointer-events INHERITS — without this the words are dead. */
+  fabLabel: {
+    pointerEvents: 'auto',
+    font: '700 12px/1 inherit', letterSpacing: '0.01em', color: PANEL.ink,
+    background: '#fff', border: `1px solid ${PANEL.line}`, borderRadius: 999,
+    padding: '5px 11px', whiteSpace: 'nowrap',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
   },
 
   askRow: { display: 'flex', gap: 7, alignItems: 'stretch' },
