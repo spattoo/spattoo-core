@@ -234,10 +234,11 @@ export default function HelpAssistant({
         )}
 
         {/* ── Asked something we do not answer ─────────────────────────────────────────────────
-            ⚠️ A DIFFERENT SENTENCE FROM "nothing is written about that yet", because they are
-            different facts. An empty result means we have no article and the baker should try
-            again differently — telling them that about a question we will never answer invites
-            them to keep rephrasing. This says what we do, and offers the person who can answer. */}
+            ⚠️ A DIFFERENT SENTENCE FROM "I could not find an answer to that", because they are
+            different facts. An empty result means the search came back with nothing and the baker
+            should try again differently — saying that about a question we will never answer invites
+            them to keep rephrasing forever. This says what we do, and offers the person who can
+            answer. */}
         {state === 'answered' && declined && (
           <div style={S.note}>
             <strong style={{ color: PANEL.ink }}>I only help with using Spattoo.</strong>
@@ -252,14 +253,21 @@ export default function HelpAssistant({
         )}
 
         {state === 'answered' && !declined && sections.length === 0 && (
-          /* ⚠️ IT NAMES WHAT IT UNDERSTOOD. "Nothing found" alone leaves a baker unable to tell a
-             gap in the help from a question we misread, and those need opposite responses from
-             them. */
+          /* ⚠️ IT SAYS WE DID NOT FIND IT, NOT THAT IT IS NOT WRITTEN. The earlier copy — "Nothing
+             is written about that yet" — is a claim about our documentation, and it is sometimes
+             FALSE: retrieval misses. The sprinkles answer existed, scored 0.561 of 352 sections,
+             and was still discarded by the per-doc cap; correct and wrong answers overlap at
+             0.43–0.57, so a real article can fall under the floor. Telling a baker nothing is
+             written when it is there stops them looking — and it contradicted the very next line,
+             which asks them to rephrase.
+             ⚠️ IT STILL NAMES WHAT IT UNDERSTOOD. "Not found" alone leaves a baker unable to tell
+             a gap in the help from a question we misread, and those need opposite responses.
+             ⚠️ The second option matches the button below it word for word. Two different phrases
+             for one action reads as two actions. */
           <div style={S.note}>
-            <strong style={{ color: PANEL.ink }}>Nothing is written about that yet.</strong>
+            <strong style={{ color: PANEL.ink }}>I could not find an answer to that.</strong>
             <div style={{ marginTop: 5 }}>
-              We looked for “{asked}”. Try asking it a different way — or tell us, and it becomes
-              the next help article we write.
+              We looked for “{asked}”. Try asking it in different words — or ask the Spattoo team.
             </div>
           </div>
         )}
