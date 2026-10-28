@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Section, Field } from './controls.jsx';
 import { Slider } from '../shared/Slider.jsx';
 import Chip from '../shared/Chip.jsx';
 import { GroundSwatches, groundsFor } from '../designer/capture/takeUi.jsx';
-import { BACKDROP_LOOKS } from '../designer/reel/takeBackdrop.js';
+import { BACKDROP_LOOKS, backdropPlan, paintBackdrop } from '../designer/reel/takeBackdrop.js';
+import { GRID_COLOR, floorOpacity, wallOpacity } from '../designer/reel/takeGrid.js';
+import { previewSegments } from '../designer/studioPreview.js';
 import { STRENGTH_MIN as GRID_STRENGTH_MIN } from '../designer/reel/takeGrid.js';
 import {
   STUDIO_LOOK_DEFAULT, normaliseStudioLook, hasStudioLook, studioLookPayload,
@@ -31,6 +33,62 @@ import { INK } from '../shared/tokens.js';
  * back. A form that silently forgot the swatch while they were looking would be the one failure
  * this cannot afford. INVARIANTS #13's unsaved-work rule is about work; this is a preference.
  */
+/* ── The room, small ─────────────────────────────────────────────────────────────────────────────
+ *
+ * Sandeep: *"on this screen, can we at least show an image preview kind of it. for example user
+ * does not know what 'pool' look means."* and then *"instead there should be only one preview box,
+ * based on your selection that changes. for example if you select look and then grid lines it
+ * shows both on the preview."*
+ *
+ * ⚠️ ONE BOX, NOT FOUR SWATCHES. The first version put a painted tile on each Look, which answered
+ * "what is Pool" and nothing else — a baker still could not see Pool WITH their grid on, which is
+ * the room they are actually choosing. Four tiles also meant four pictures of settings the baker
+ * is not on. One box that is the current answer is both smaller and more honest.
+ *
+ * ⚠️ IT IS PAINTED BY THE RENDERER'S OWN FUNCTIONS. See studioPreview.js — the backdrop, the line
+ * colour, the opacities and the grid's world coordinates all come from the modules the scene uses,
+ * and the camera is the only thing this owns. INVARIANTS #15.
+ */
+function StudioPreview({ look, width = 260, height = 150 }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    const c = ref.current;
+    if (!c) return;
+    /* Device resolution: at 1× a radial gradient over this size bands visibly, and the banding is
+       the first thing you see rather than the shape. */
+    const dpr = Math.min(3, (typeof window !== 'undefined' && window.devicePixelRatio) || 1);
+    const w = Math.round(width * dpr), h = Math.round(height * dpr);
+    if (c.width !== w) c.width = w;
+    if (c.height !== h) c.height = h;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;                       // no 2D context (jsdom, a blocked canvas) — draw nothing
+    ctx.clearRect(0, 0, w, h);
+    paintBackdrop(ctx, w, h, backdropPlan(look.ground, look.backdrop, look.backdropStrength));
+
+    const seg = previewSegments({ floor: look.grid, wall: look.gridWall, w, h });
+    ctx.lineWidth = Math.max(1, dpr * 0.6);
+    ctx.strokeStyle = GRID_COLOR;
+    /* ⚠️ THE WALL IS DRAWN FIRST AND FAINTER, as it is in the scene — `wallOpacity` keeps it behind
+       the floor rather than competing with it, and painting it after would put the far surface in
+       front of the near one. */
+    for (const [set, alpha] of [[seg.wall, wallOpacity(look.gridStrength)],
+                                [seg.floor, floorOpacity(look.gridStrength)]]) {
+      if (!set.length) continue;
+      ctx.globalAlpha = alpha;
+      ctx.beginPath();
+      for (const [x1, y1, x2, y2] of set) { ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); }
+      ctx.stroke();
+    }
+    ctx.globalAlpha = 1;
+  }, [look.ground, look.backdrop, look.backdropStrength, look.grid, look.gridWall,
+      look.gridStrength, width, height]);
+
+  return (
+    <canvas ref={ref} aria-hidden
+            style={{ width, height, display: 'block', borderRadius: 10, border: '1.5px solid #D8E0DA' }} />
+  );
+}
+
 export function StudioLookSection({ apiClient, brandPrimary = null, onChanged }) {
   const [look, setLook] = useState(null);       // null while loading — not the default, which is a real answer
   const [busy, setBusy] = useState(false);
@@ -100,6 +158,11 @@ export function StudioLookSection({ apiClient, brandPrimary = null, onChanged })
             halves of one rule: the form stops it happening, the renderer stops it mattering. */}
         {on && (
           <>
+            {/* ⚠️ ABOVE THE CONTROLS, NOT BELOW THEM. INVARIANTS #11 — a control and what it changes
+                must be visible at the same time, "effect above control" being the second-best
+                arrangement after side by side. Below the four controls it would be off the bottom
+                of a phone while the baker was pressing the thing that changes it. */}
+            <StudioPreview look={look} />
             <Field label="Look" hint="How the colour is shaded behind the cake.">
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {BACKDROP_LOOKS.map(l => (
