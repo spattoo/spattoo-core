@@ -263,11 +263,15 @@ export default function HelpAssistant({
              ⚠️ IT STILL NAMES WHAT IT UNDERSTOOD. "Not found" alone leaves a baker unable to tell
              a gap in the help from a question we misread, and those need opposite responses.
              ⚠️ The second option matches the button below it word for word. Two different phrases
-             for one action reads as two actions. */
+             for one action reads as two actions.
+             ⚠️ "I looked", NOT "we looked". Appu speaks as I about what HE did; "we" is the Spattoo
+             team, and it is reserved for what the TEAM will do — "we will reply by email", "we will
+             write that one". Mixing them makes the character a spokesperson for a company one
+             sentence after introducing itself as a helper. */
           <div style={S.note}>
             <strong style={{ color: PANEL.ink }}>I could not find an answer to that.</strong>
             <div style={{ marginTop: 5 }}>
-              We looked for “{asked}”. Try asking it in different words — or ask the Spattoo team.
+              I looked for “{asked}”. Try asking it in different words — or ask the Spattoo team.
             </div>
           </div>
         )}
