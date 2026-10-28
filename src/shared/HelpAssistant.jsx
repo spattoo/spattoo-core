@@ -262,8 +262,9 @@ export default function HelpAssistant({
              which asks them to rephrase.
              ⚠️ IT STILL NAMES WHAT IT UNDERSTOOD. "Not found" alone leaves a baker unable to tell
              a gap in the help from a question we misread, and those need opposite responses.
-             ⚠️ The second option matches the button below it word for word. Two different phrases
-             for one action reads as two actions.
+             ⚠️ IT DOES NOT TELL THEM TO ASK A PERSON. Appu OFFERS that himself, immediately
+             below — *"shall i ask spattoo team to get back to you on this? if yes then it should
+             escalate"*. An instruction plus a button is two steps; a question with a yes is one.
              ⚠️ "I looked", NOT "we looked". Appu speaks as I about what HE did; "we" is the Spattoo
              team, and it is reserved for what the TEAM will do — "we will reply by email", "we will
              write that one". Mixing them makes the character a spokesperson for a company one
@@ -271,7 +272,7 @@ export default function HelpAssistant({
           <div style={S.note}>
             <strong style={{ color: PANEL.ink }}>I could not find an answer to that.</strong>
             <div style={{ marginTop: 5 }}>
-              I looked for “{asked}”. Try asking it in different words — or ask the Spattoo team.
+              I looked for “{asked}”. Try asking it in different words.
             </div>
           </div>
         )}
@@ -334,8 +335,8 @@ export default function HelpAssistant({
             a request error — that is our outage, and the right offer there is to try again. */}
         {canEscalate && escalation === 'sent' && (
           <div style={S.sent}>
-            <strong style={{ color: PANEL.ink }}>Sent to the Spattoo team.</strong>
-            <div style={{ marginTop: 4 }}>We will reply by email.</div>
+            <strong style={{ color: PANEL.ink }}>I have asked the Spattoo team.</strong>
+            <div style={{ marginTop: 4 }}>They will reply by email.</div>
           </div>
         )}
 
@@ -345,14 +346,22 @@ export default function HelpAssistant({
               <div style={S.note}>Sending…</div>
             ) : (
               <>
+                {/* ⚠️ APPU ASKS; THE BUTTON ANSWERS HIM. It used to be a bare instruction and a
+                    button labelled with the same words — two steps for one decision, and neither
+                    of them in his voice. One question with a yes is the whole interaction.
+                    ⚠️ THERE IS NO "NO". Not answering is the no, and a button whose only job is to
+                    hide an offer is clutter. The panel's own ✕ is the exit.
+                    ⚠️ The sentence works in all THREE places this block appears — after nothing was
+                    found, after the baker says the answer missed, and beside a good answer. */}
+                <div style={S.offer}>Shall I ask the Spattoo team to get back to you on this?</div>
                 <textarea
                   style={S.noteBox}
                   rows={2}
                   value={note}
-                  placeholder="Anything else we should know? (optional)"
+                  placeholder="Anything else they should know? (optional)"
                   onChange={e => setNote(e.target.value)}
                 />
-                <button type="button" style={S.askBtn} onClick={escalate}>Ask the Spattoo team</button>
+                <button type="button" style={S.askBtn} onClick={escalate}>Yes, ask them</button>
               </>
             )}
           </div>
@@ -469,6 +478,8 @@ const S = {
     marginTop: 14, paddingTop: 13, borderTop: `1px solid ${PANEL.line}`,
     display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start',
   },
+  /* Appu's question, so it carries the weight of the body text rather than a label's. */
+  offer: { color: PANEL.ink, fontWeight: 600, lineHeight: 1.45 },
   noteBox: {
     width: '100%', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 13,
     padding: '9px 11px', borderRadius: 10, resize: 'vertical',
