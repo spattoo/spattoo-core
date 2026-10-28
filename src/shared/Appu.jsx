@@ -3,13 +3,41 @@
  * The assistant's face. He peeks over a line in the bottom-right corner, reacts to what the
  * assistant is doing, and says nothing — the words are the panel's job.
  *
- * ── TRACED FROM SANDEEP'S OWN REFERENCE ─────────────────────────────────────────────────────────
- * Six rounds of drawing this from the reference's "vocabulary" were rejected — *"they are not
- * same"*, *"somehow i did not like any of them"*, *"most of them are not showing real emotion"* —
- * before Sandeep said *"ok lets generate ourselves then, we are close. you can trace the sticker if
- * you want."* So the geometry below is traced from the reference he supplied, by MEASUREMENT rather
- * than by eye: see the note above HEAD. Everything here is still our own vector drawing — no image
- * is downloaded, bundled or shipped, and this file is the entire asset.
+ * ── AUTO-TRACED FROM SANDEEP'S REFERENCE ────────────────────────────────────────────────────────
+ * ⚠️ BODY IS HIS ARTWORK, NOT MY APPROXIMATION OF IT. Nine rounds of hand-drawing this from the
+ * reference were rejected: *"they are not same"*, *"somehow i did not like any of them"*, *"most of
+ * them are not showing real emotion"*, *"character is not correct... see the hair"*, *"you are
+ * taking more attempts because you are not focusing on whats asked"*. Measuring the features fixed
+ * their SIZES and never fixed the drawing, because a bounding box cannot tell you which way a line
+ * bends. Every round traded one flaw for another.
+ *
+ * So BODY below is the reference's own ink, auto-traced: threshold the image, take its largest
+ * connected component, walk the boundary (Moore tracing), simplify (Ramer-Douglas-Peucker at 0.7px)
+ * and punch out the enclosed gaps with fill-rule evenodd. The head, the hair, the hands, the arms
+ * and the line are therefore pixel-faithful — they are not a drawing OF the reference, they ARE it.
+ *
+ * ⚠️ THE FACE IS DELIBERATELY EMPTY. The eyes, mouth and cowlick are their own connected
+ * components in that image, so taking only the largest one leaves a blank face — which is exactly
+ * what nine changing expressions need. Those we still draw, at the positions measured from the
+ * same image: eyes 20x38 at (153,293) and (248,247), mouth 62x70 at (215,336), blush 31x36 at
+ * (129,345) and (284,271).
+ *
+ * ⚠️ NONZERO WITH REVERSED HOLES, AND JACOB'S STOPPING CRITERION. Two tracing bugs each produced
+ * a plausible-looking wrong figure. Stopping the boundary walk on "we are back at the start pixel"
+ * cuts it short wherever a thin stroke makes the boundary pass that pixel twice — the contour then
+ * closed across the arms and filled the gaps between them solid. Stop instead when the start is
+ * re-entered FROM THE SAME DIRECTION, and the contour went from 3163 points to 6326. With the
+ * complete contour, fill-rule evenodd then cancels most of the figure to white, because the walk
+ * traverses both sides of every stroke: nonzero fills it, and a hole punches through only if it
+ * winds the opposite way, so the hole contours are reversed.
+ *
+ * ⚠️ POLYGONS, NOT SMOOTHED CURVES. Catmull-Rom through the traced points overshoots wherever the
+ * contour reverses sharply — the tip of an 8px arm, a 7-point hole — and the arms came out as a
+ * star of spikes. At 0.7px tolerance on a 625-wide trace shown at ~124px, a segment is a seventh
+ * of a display pixel: straight and curved are indistinguishable.
+ *
+ * ⚠️ TO RE-TRACE, the reference goes in as a PNG and the two scripts are in the feature doc. Do not
+ * hand-edit BODY.
  *
  * ⚠️ THE HAIR IS THE SIGNATURE AND IT HAS RULES. Three SEPARATE strokes, each starting outside the
  * head on the left and sweeping up across the crown, never touching. The first draft drew them
@@ -53,25 +81,7 @@ const CORAL = '#E8927C';
  * ⚠️ THE HANDS ARE AT THE CHEEKS, elbows splayed down to the table. Not clasped in the middle:
  * chin-on-hands is what the pose actually is.
  */
-const HEAD = 'M200 130 C276 138 330 216 330 294 C330 374 274 442 197 442 C121 442 66 374 66 294 C66 216 124 138 200 130 z';
-
-/* ⚠️ THE HAIR IS WHAT MAKES THE SILHOUETTE, AND IT STANDS CLEAR OF THE SKULL. Measured off the
-   sticker, its outer sweep passes x=20 at y=394, where the head's own left edge is x=93 — about
-   70px of white between them. Three attempts failed on exactly that gap: trimmed to the crown, the
-   figure measured 281x348 against the sticker's 415x440, the same face inside a smaller, more
-   timid shape; run full-height but tangent to the outline, the strokes fused with it into one
-   thick edge; moved on TOP of the head to separate them, they became long hair over the cheek.
-   ⚠️ The head's left edge runs (133,150) (88,200) (66,286) (93,380) — a stroke inside that line is
-   painted over by the head's white fill and simply disappears, which is why only the innermost
-   sweep may cross it, and only above the crown where there is no fill to hide it.
-   ⚠️ The gaps ARE the effect — three separate strokes, never touching. */
-const HAIR = (
-  <>
-    <path d="M28 404 C10 254 62 130 196 92" strokeWidth="10" />
-    <path d="M62 392 C46 262 96 142 226 110" strokeWidth="9.5" />
-    <path d="M98 358 C88 254 132 156 254 134" strokeWidth="9" />
-  </>
-);
+const BODY = 'M156 56L161 56L166 61L164 69L152 69L151 71L146 72L136 80L134 80L133 83L125 89L124 92L117 99L106 117L99 134L97 135L97 140L95 142L95 147L93 149L93 155L91 157L90 168L88 172L88 187L90 189L103 174L107 173L111 169L116 153L121 143L123 142L125 136L132 128L134 123L143 114L143 112L163 93L182 81L186 81L187 79L201 75L213 76L217 79L219 86L216 91L207 86L201 86L192 89L191 91L186 92L177 97L175 100L172 100L168 105L159 111L153 117L153 119L146 125L137 139L135 140L135 142L133 143L131 150L126 156L117 176L97 196L97 198L88 209L88 212L80 222L79 226L75 230L73 235L73 241L71 243L71 246L66 257L66 261L64 263L64 268L59 283L59 293L57 296L57 332L59 335L59 345L61 347L64 363L66 364L66 369L68 370L68 374L70 375L74 385L78 387L82 384L90 383L95 384L100 389L102 389L108 395L117 408L117 410L119 411L122 421L121 427L127 431L131 431L143 437L155 437L158 439L189 439L192 437L202 437L207 434L222 431L223 429L229 428L230 426L240 423L243 420L246 420L248 417L251 417L252 415L256 414L263 408L262 400L264 389L270 376L279 366L279 364L284 361L288 356L293 353L296 353L299 350L307 352L310 349L315 338L315 335L317 333L317 328L319 327L322 312L324 310L327 282L326 254L324 249L324 241L322 239L317 219L315 218L315 215L308 201L306 200L295 183L276 165L272 164L267 159L262 156L259 156L251 150L238 147L236 145L223 144L219 142L199 142L197 144L183 148L182 150L179 150L177 153L171 156L153 174L151 178L145 178L143 176L143 168L149 160L158 151L160 151L164 146L172 140L174 140L176 137L180 137L181 135L186 134L194 129L198 129L199 127L204 126L207 123L222 120L225 118L231 118L235 123L235 130L223 131L222 134L218 135L231 135L236 137L243 137L250 140L256 140L261 143L265 143L271 146L272 148L276 149L277 151L280 151L281 154L283 154L294 163L316 191L318 197L325 208L325 212L327 213L327 217L329 219L329 223L334 235L334 242L336 244L336 259L338 261L338 290L336 294L336 304L334 308L334 314L332 317L331 325L329 327L327 340L325 341L325 345L317 362L318 385L316 387L316 391L314 392L314 396L312 397L309 404L300 416L327 445L327 447L333 454L334 458L336 459L338 471L340 473L412 473L415 479L414 483L339 484L332 492L326 493L311 492L308 489L305 489L302 486L298 486L296 484L96 484L77 492L62 495L49 494L45 492L42 487L38 484L0 484L0 473L40 473L47 459L56 450L56 448L74 433L74 426L71 424L69 421L69 417L67 416L67 406L69 401L62 386L60 385L60 381L58 380L58 375L56 374L56 370L51 359L51 352L49 348L49 337L47 332L47 300L49 298L49 286L51 283L51 277L48 277L48 280L44 288L44 292L39 302L39 307L37 308L37 315L35 317L35 324L33 326L32 337L30 341L28 366L30 370L30 382L32 384L33 393L28 397L25 396L22 392L22 388L20 385L20 342L22 338L22 328L24 326L24 321L27 314L27 308L29 307L31 294L33 293L36 282L38 280L38 276L47 259L47 256L54 243L56 242L58 235L60 234L65 224L80 204L80 160L82 157L87 135L96 118L96 115L98 114L107 96L110 94L116 86L116 84L127 73L141 62L156 56L161 56L166 61L164 69L152 69L151 71L146 72L136 80L134 80L133 83L125 89L124 92L117 99L106 117L99 134L97 135L97 140L95 142L95 147L93 149L93 155L91 157L90 168L88 172L88 187L90 189L103 174L107 173L111 169L116 153L121 143L123 142L125 136L132 128L134 123L143 114L143 112L163 93L182 81L186 81L187 79L201 75L213 76L217 79L219 86L216 91L207 86L201 86L192 89L191 91L186 92L177 97L175 100L172 100L168 105L159 111L153 117L153 119L146 125L137 139L135 140L135 142L133 143L131 150L126 156L117 176L97 196L97 198L88 209L88 212L80 222L79 226L75 230L73 235L73 241L71 243L71 246L66 257L66 261L64 263L64 268L59 283L59 293L57 296L57 332L59 335L59 345L61 347L64 363L66 364L66 369L68 370L68 374L70 375L74 385L78 387L82 384L90 383L95 384L100 389L102 389L108 395L117 408L117 410L119 411L122 421L121 427L127 431L131 431L143 437L155 437L158 439L189 439L192 437L202 437L207 434L222 431L223 429L229 428L230 426L240 423L243 420L246 420L248 417L251 417L252 415L256 414L263 408L262 400L264 389L270 376L279 366L279 364L284 361L288 356L293 353L296 353L299 350L307 352L310 349L315 338L315 335L317 333L317 328L319 327L322 312L324 310L327 282L326 254L324 249L324 241L322 239L317 219L315 218L315 215L308 201L306 200L295 183L276 165L272 164L267 159L262 156L259 156L251 150L238 147L236 145L223 144L219 142L199 142L197 144L183 148L182 150L179 150L177 153L171 156L153 174L151 178L145 178L143 176L143 168L149 160L158 151L160 151L164 146L172 140L174 140L176 137L180 137L181 135L186 134L194 129L198 129L199 127L204 126L207 123L222 120L225 118L231 118L235 123L235 130L223 131L222 134L218 135L231 135L236 137L243 137L250 140L256 140L261 143L265 143L271 146L272 148L276 149L277 151L280 151L281 154L283 154L294 163L316 191L318 197L325 208L325 212L327 213L327 217L329 219L329 223L334 235L334 242L336 244L336 259L338 261L338 290L336 294L336 304L334 308L334 314L332 317L331 325L329 327L327 340L325 341L325 345L317 362L318 385L316 387L316 391L314 392L314 396L312 397L309 404L300 416L327 445L327 447L333 454L334 458L336 459L338 471L340 473L412 473L415 479L414 483L339 484L332 492L326 493L311 492L308 489L305 489L302 486L298 486L296 484L96 484L77 492L62 495L49 494L45 492L42 487L38 484L0 484L0 473L40 473L47 459L56 450L56 448L74 433L74 426L71 424L69 421L69 417L67 416L67 406L69 401L62 386L60 385L60 381L58 380L58 375L56 374L56 370L51 359L51 352L49 348L49 337L47 332L47 300L49 298L49 286L51 283L51 277L48 277L48 280L44 288L44 292L39 302L39 307L37 308L37 315L35 317L35 324L33 326L32 337L30 341L28 366L30 370L30 382L32 384L33 393L28 397L25 396L22 392L22 388L20 385L20 342L22 338L22 328L24 326L24 321L27 314L27 308L29 307L31 294L33 293L36 282L38 280L38 276L47 259L47 256L54 243L56 242L58 235L60 234L65 224L80 204L80 160L82 157L87 135L96 118L96 115L98 114L107 96L110 94L116 86L116 84L127 73L141 62L155 57ZM265 424L264 425L262 425L260 428L257 429L255 431L252 431L251 433L246 435L246 438L254 442L256 444L258 444L261 447L263 447L265 450L267 450L271 453L273 453L274 455L278 456L279 458L282 458L290 464L293 464L296 467L298 467L299 469L306 470L308 472L325 472L325 468L323 467L323 465L321 463L320 460L314 451L312 450L312 448L311 448L309 445L307 444L307 442L305 441L303 437L301 437L300 436L300 434L298 433L298 431L297 431L296 429L293 427L289 429L286 429L285 431L279 431L276 429L272 428L269 423L265 423L264 425L262 425L261 426L260 428L257 429L255 431L252 431L251 433L246 435L246 438L254 442L256 444L258 444L261 447L263 447L265 450L267 450L271 453L273 453L274 455L278 456L279 458L282 458L290 464L293 464L296 467L298 467L299 469L306 470L308 472L325 472L325 468L323 467L323 465L321 463L320 460L314 451L312 450L312 448L311 448L309 445L307 444L307 442L305 441L303 437L301 437L300 436L300 434L298 433L298 431L296 430L296 429L293 427L289 429L286 429L285 431L279 431L276 429L272 428L269 423L265 423ZM82 443L80 443L80 444L78 445L78 446L74 449L73 451L69 454L68 456L67 456L67 457L62 462L60 466L58 467L58 469L56 472L88 472L89 470L95 469L96 467L101 466L103 464L106 464L107 462L111 461L114 458L117 458L118 456L122 455L123 453L128 452L129 450L133 450L133 447L131 446L129 446L128 445L123 445L122 443L118 443L116 442L105 451L94 451L91 448L89 448L88 447L88 445L83 442L82 443L80 443L80 444L78 445L78 446L74 449L73 451L69 454L68 456L67 456L67 457L62 462L60 466L58 467L58 469L56 472L88 472L89 470L95 469L96 467L101 466L103 464L106 464L107 462L111 461L114 458L117 458L118 456L122 455L123 453L128 452L129 450L133 450L133 447L131 446L129 446L128 445L123 445L122 443L118 443L116 442L105 451L94 451L91 448L89 448L88 447L88 445L83 442ZM216 446L213 448L208 448L203 451L190 451L186 453L170 453L170 472L222 472L222 457L221 456L221 451L220 450L220 445L217 445L213 448L208 448L203 451L190 451L186 453L170 453L170 472L222 472L222 457L221 456L221 451L220 450L220 445L217 445ZM303 362L300 364L298 364L296 367L294 367L293 369L290 370L288 374L286 375L286 377L284 378L281 382L279 387L275 391L274 394L272 396L272 408L274 411L274 413L277 415L277 416L283 416L284 414L286 414L288 411L289 411L294 406L300 398L300 396L302 394L305 388L305 385L307 383L307 365L304 361L300 364L298 364L296 367L294 367L293 369L290 370L288 374L286 375L286 377L284 378L281 382L279 387L275 391L274 394L272 396L272 408L274 411L274 413L277 415L277 416L283 416L284 414L286 414L288 411L289 411L294 406L300 398L300 396L302 394L305 388L305 385L307 383L307 365L304 361ZM84 398L82 398L81 400L79 401L78 405L76 406L76 413L80 419L80 421L83 423L85 427L87 428L87 430L88 430L90 433L94 436L104 436L109 429L109 417L108 416L108 414L106 413L106 411L104 410L102 406L100 405L99 403L96 403L95 401L91 400L89 398L87 398L86 397L82 398L81 400L79 401L78 405L76 406L76 413L80 419L80 421L83 423L85 427L87 428L87 430L88 430L90 433L94 436L104 436L106 434L109 429L109 417L108 416L108 414L106 413L106 411L104 410L102 406L100 405L99 403L96 403L95 401L85 397ZM248 457L248 462L250 465L250 472L273 472L273 471L270 470L269 468L267 467L265 467L264 465L261 465L258 462L255 461L254 459L252 459L248 456L248 462L250 465L250 472L273 472L273 471L270 470L269 468L267 467L265 467L264 465L261 465L258 462L255 461L254 459L252 459L248 456ZM142 460L136 463L135 465L132 465L130 467L127 468L126 470L122 471L123 472L141 472L142 471L142 465L144 463L144 459L136 463L135 465L132 465L130 467L127 468L126 470L122 471L123 472L141 472L142 471L142 465L144 463L144 459L143 459ZM230 444L230 451L231 452L231 456L232 457L232 470L233 472L234 471L238 471L238 465L235 457L235 451L233 446L233 443L230 443L230 451L231 452L231 456L232 457L232 470L233 472L234 471L238 471L238 465L235 457L235 451L233 446L233 443L230 443ZM155 454L154 455L154 466L152 467L152 472L159 472L160 470L160 454L156 453L154 455L154 466L152 467L152 472L159 472L160 470L160 454L156 453Z';
 
 const eye = (x, y, rx, ry) =>
   <ellipse cx={x} cy={y} rx={rx} ry={ry} fill={INK} stroke="none" transform={`rotate(-12 ${x} ${y})`} />;
@@ -102,69 +112,79 @@ const BROW = {
   flat:    <><path d="M137 262 H171" strokeWidth="7" /><path d="M232 216 H266" strokeWidth="7" /></>,
 };
 
-/* 62 wide and 70 TALL — an open oval, not a shallow smile. The single biggest correction. */
+/* ⚠️ A CRESCENT SMILE, NOT A HOLE. The reference's mouth is an upper-lip line RISING TO THE RIGHT
+   with the opening bulging down-LEFT under it, and a tongue catching the light at the bottom. Drawn
+   as an upright oval — which is what the blob measurement's 62x70 bounding box invites — it reads
+   as a mouth hanging open in surprise, and that one shape made every happy pose look startled. The
+   box was right; the shape inside it was not. A bounding box cannot tell you which way a curve
+   bends, and that is the whole expression — but it DOES fix the size, and redrawing the shape
+   without re-checking the box produced a crescent 1.7x too big, which read as a different fault.
+   ⚠️ The tongue is what makes it a SMILE rather than a shout; it sits low and LEFT, in the bulge. */
 const MOUTH = {
-  smile:     <><path d="M186 312 C190 298 240 296 244 318 C248 348 232 370 214 369 C196 368 183 340 186 312 z" fill={INK} strokeWidth="5" />
-               <path d="M199 349 C206 340 226 341 231 350 C224 360 206 359 199 349 z" fill="#fff" stroke="none" /></>,
-  openSmile: <><path d="M182 308 C188 292 244 290 248 316 C252 350 234 374 214 373 C194 372 178 340 182 308 z" fill={INK} strokeWidth="5" />
-               <path d="M197 351 C205 341 228 342 234 352 C226 364 205 363 197 351 z" fill="#fff" stroke="none" /></>,
-  grin:      <><path d="M176 304 C184 286 250 284 254 314 C258 354 236 382 214 380 C192 378 172 340 176 304 z" fill={INK} strokeWidth="5" />
-               <path d="M194 355 C204 344 230 345 237 356 C228 370 203 369 194 355 z" fill="#fff" stroke="none" /></>,
+  smile:     <><path d="M186 330 C198 318 222 306 240 302 C248 330 238 368 212 369 C196 370 182 350 186 330 z" fill={INK} strokeWidth="5" />
+               <ellipse cx="206" cy="357" rx="13" ry="6.5" fill="#fff" stroke="none" transform="rotate(-14 206 357)" /></>,
+  openSmile: <><path d="M182 330 C196 316 224 302 244 298 C254 330 244 374 212 375 C194 376 178 352 182 330 z" fill={INK} strokeWidth="5" />
+               <ellipse cx="206" cy="361" rx="15" ry="7" fill="#fff" stroke="none" transform="rotate(-14 206 361)" /></>,
+  grin:      <><path d="M178 328 C194 312 228 296 250 292 C262 330 250 382 210 383 C190 384 174 354 178 328 z" fill={INK} strokeWidth="5" />
+               <ellipse cx="204" cy="366" rx="17" ry="8" fill="#fff" stroke="none" transform="rotate(-14 204 366)" /></>,
   flat:      <path d="M186 332 H244" strokeWidth="8" />,
   wavy:      <path d="M184 330 C196 314 208 346 218 330 C228 314 236 344 246 332" strokeWidth="8" />,
   oh:        <ellipse cx="215" cy="336" rx="22" ry="29" fill={INK} stroke="none" />,
 };
 
 /* The left hand rests at the cheek in every pose; only the right one acts. */
-const HandBlob = ({ x, y, flip = false }) => (
-  <path
-    transform={`translate(${x} ${y}) scale(${flip ? -1.3 : 1.3} 1.3)`}
-    d="M0 0 C-21 6 -23 36 -5 44 C15 52 29 30 21 12 C17 2 9 -3 0 0 z"
-    fill="#fff" strokeWidth="7"
-  />
+/* ⚠️ THE RESTING HANDS ARE PART OF THE TRACE and cannot move — they are the reference's own ink.
+   A gesture is therefore an EXTRA hand, raised beside the head well above them (y<260, where the
+   traced ones sit near y 400), which is what a person resting on a table and raising one hand
+   actually looks like. Trying instead to erase the traced hands and redraw them took the head's
+   own chin with them. */
+const RaisedHand = ({ x, y }) => (
+  <path transform={`translate(${x} ${y}) scale(1.15)`}
+        d="M0 0 C-26 8 -28 44 -6 54 C18 64 36 37 26 15 C21 2 11 -4 0 0 z"
+        fill="#fff" stroke={INK} strokeWidth="9" />
 );
 
-const LEFT_HAND = <><HandBlob x={104} y={366} /><path d="M86 432 C70 448 56 462 44 470" strokeWidth="9" /></>;
-
-const HANDS = {
-  rest:    <><HandBlob x={281} y={344} flip /><path d="M296 414 C312 432 324 452 334 468" strokeWidth="9" /></>,
-  chin:    <g className="appu-act"><HandBlob x={286} y={330} flip /><path d="M300 402 C316 424 328 446 338 466" strokeWidth="9" /></g>,
-  scratch: <g className="appu-act"><HandBlob x={300} y={176} flip /><path d="M304 220 C322 290 330 380 336 466" strokeWidth="9" /></g>,
-  wave:    <g className="appu-act"><HandBlob x={306} y={196} flip /><path d="M308 240 C324 300 332 384 338 466" strokeWidth="9" /></g>,
-  shrug:   <g className="appu-act"><HandBlob x={310} y={318} flip /><path d="M310 378 C322 406 332 438 338 466" strokeWidth="9" /></g>,
-  palm:    <g className="appu-act">
-             <path d="M292 352 C274 352 268 372 268 392 L268 418 C268 432 282 440 296 440 C312 440 324 430 324 416 L324 384 C324 364 310 352 292 352 z" fill="#fff" strokeWidth="8" />
-             <path d="M280 362 V388 M296 356 V388 M312 364 V390" strokeWidth="6" />
-             <path d="M300 440 C314 450 326 458 336 466" strokeWidth="9" /></g>,
-  point:   <g className="appu-act"><HandBlob x={300} y={300} flip /><path d="M330 300 L372 268" strokeWidth="8" />
-             <path d="M300 346 C316 382 328 426 336 466" strokeWidth="9" /></g>,
+/* ⚠️ A SHORT STUB THAT MEETS THE SKULL, NOT A STICK TO THE TABLE. Run down to the ground line the
+   raised arm becomes a thin pole with a circle on top — a lollipop beside his face. The traced head
+   is an ellipse at (197,291) with radii 140x149, so each stub below ends ON that edge and reads as
+   an arm coming from behind him. Stroke 11 to match the weight of the traced ink; 9 looked like
+   wire next to it. */
+const GESTURE = {
+  none:    null,
+  scratch: <g className="appu-act"><path d="M346 206 C340 226 336 240 333 252" strokeWidth="11" />
+             <RaisedHand x={352} y={166} /></g>,
+  wave:    <g className="appu-act"><path d="M358 164 C352 190 345 212 340 236" strokeWidth="11" />
+             <RaisedHand x={362} y={122} /></g>,
+  palm:    <g className="appu-act"><path d="M340 292 C337 312 334 328 331 342" strokeWidth="11" />
+             <path d="M344 228 C324 228 316 248 316 268 L316 296 C316 312 332 320 348 320 C366 320 378 310 378 294 L378 258 C378 238 364 228 344 228 z"
+                   fill="#fff" strokeWidth="8" />
+             <path d="M330 240 V268 M348 234 V268 M366 242 V270" strokeWidth="6" /></g>,
+  point:   <g className="appu-act"><path d="M344 236 C339 252 335 264 332 274" strokeWidth="11" />
+             <RaisedHand x={348} y={194} /><path d="M380 190 L424 156" strokeWidth="8" /></g>,
 };
 
-/* Shrug lifts BOTH hands — the one gesture that is symmetrical. A one-armed shrug reads as a wave. */
-const SHRUG_LEFT = <g className="appu-act"><HandBlob x={78} y={318} /><path d="M72 378 C60 406 50 438 44 466" strokeWidth="9" /></g>;
-
+/* All on the hair-free side of the head, clear of the traced outline (which reaches x=338). */
 const MARKS = {
-  [ASSISTANT.THINKING]:      <g className="appu-dots"><circle cx="66" cy="150" r="9" fill={SAGE} /><circle cx="42" cy="118" r="14" fill={SAGE} /></g>,
-  [ASSISTANT.THINKING_LONG]: <g className="appu-dots"><circle cx="66" cy="150" r="9" fill={SAGE} /><circle cx="42" cy="118" r="14" fill={SAGE} /></g>,
-  [ASSISTANT.ANSWERED]:      <g className="appu-marks"><path d="M344 150 L358 120" stroke={SAGE} strokeWidth="9" /><path d="M372 182 L404 168" stroke={SAGE} strokeWidth="9" /></g>,
-  [ASSISTANT.FAILED]:        <g className="appu-marks"><path d="M66 128 L48 104" stroke={CORAL} strokeWidth="9" /><path d="M96 96 L90 66" stroke={CORAL} strokeWidth="9" /></g>,
-  [ASSISTANT.ESCALATED]:     <g className="appu-marks"><path d="M352 248 h54 l-27 22 z" fill={SAGE} stroke="none" /></g>,
-  [ASSISTANT.DECLINED]:      <g className="appu-marks"><path d="M58 196 C40 186 36 168 40 150" stroke={SAGE} strokeWidth="7" /><path d="M48 240 C28 236 20 218 22 200" stroke={SAGE} strokeWidth="7" /></g>,
+  [ASSISTANT.THINKING]:      <g className="appu-dots"><circle cx="350" cy="126" r="9" fill={SAGE} /><circle cx="388" cy="92" r="14" fill={SAGE} /></g>,
+  [ASSISTANT.THINKING_LONG]: <g className="appu-dots"><circle cx="350" cy="126" r="9" fill={SAGE} /><circle cx="388" cy="92" r="14" fill={SAGE} /></g>,
+  [ASSISTANT.ANSWERED]:      <g className="appu-marks"><path d="M356 142 L370 112" stroke={SAGE} strokeWidth="9" /><path d="M384 176 L416 162" stroke={SAGE} strokeWidth="9" /></g>,
+  [ASSISTANT.FAILED]:        <g className="appu-marks"><path d="M352 136 L338 106" stroke={CORAL} strokeWidth="9" /><path d="M382 118 L378 86" stroke={CORAL} strokeWidth="9" /></g>,
+  [ASSISTANT.ESCALATED]:     <g className="appu-marks"><path d="M366 250 h54 l-27 22 z" fill={SAGE} stroke="none" /></g>,
+  [ASSISTANT.DECLINED]:      <g className="appu-marks"><path d="M372 196 C390 186 394 168 390 150" stroke={SAGE} strokeWidth="7" /></g>,
 };
 
 const POSE = {
-  /* ⚠️ IDLE IS CHIN-ON-HANDS, WAITING. Sandeep, of the reference: *"this is the ideal one. waiting
-     if someone asks something. hands near chin"*. It is the pose a baker sees most, so it is the
-     one that has to be warm rather than merely neutral. */
-  [ASSISTANT.IDLE]:          { eyes: 'open',   brow: 'none',    mouth: 'smile',     hands: 'rest' },
-  [ASSISTANT.LISTENING]:     { eyes: 'up',     brow: 'raised',  mouth: 'openSmile', hands: 'rest' },
-  [ASSISTANT.THINKING]:      { eyes: 'side',   brow: 'raised',  mouth: 'flat',      hands: 'chin' },
-  [ASSISTANT.THINKING_LONG]: { eyes: 'squint', brow: 'none',    mouth: 'wavy',      hands: 'scratch' },
-  [ASSISTANT.ANSWERED]:      { eyes: 'happy',  brow: 'none',    mouth: 'grin',      hands: 'wave' },
-  [ASSISTANT.EMPTY]:         { eyes: 'down',   brow: 'worried', mouth: 'wavy',      hands: 'shrug' },
-  [ASSISTANT.DECLINED]:      { eyes: 'open',   brow: 'flat',    mouth: 'flat',      hands: 'palm' },
-  [ASSISTANT.FAILED]:        { eyes: 'wide',   brow: 'worried', mouth: 'oh',        hands: 'shrug' },
-  [ASSISTANT.ESCALATED]:     { eyes: 'happy',  brow: 'none',    mouth: 'openSmile', hands: 'point' },
+  /* ⚠️ IDLE IS THE REFERENCE POSE, UNCHANGED — resting on folded hands, waiting. It is the one a
+     baker sees most and the one Sandeep approved the artwork on, so it adds nothing of its own. */
+  [ASSISTANT.IDLE]:          { eyes: 'open',   brow: 'none',    mouth: 'smile',     gesture: 'none' },
+  [ASSISTANT.LISTENING]:     { eyes: 'up',     brow: 'raised',  mouth: 'openSmile', gesture: 'none' },
+  [ASSISTANT.THINKING]:      { eyes: 'side',   brow: 'raised',  mouth: 'flat',      gesture: 'none' },
+  [ASSISTANT.THINKING_LONG]: { eyes: 'squint', brow: 'none',    mouth: 'wavy',      gesture: 'scratch' },
+  [ASSISTANT.ANSWERED]:      { eyes: 'happy',  brow: 'none',    mouth: 'grin',      gesture: 'wave' },
+  [ASSISTANT.EMPTY]:         { eyes: 'down',   brow: 'worried', mouth: 'wavy',      gesture: 'none' },
+  [ASSISTANT.DECLINED]:      { eyes: 'open',   brow: 'flat',    mouth: 'flat',      gesture: 'palm' },
+  [ASSISTANT.FAILED]:        { eyes: 'wide',   brow: 'worried', mouth: 'oh',        gesture: 'none' },
+  [ASSISTANT.ESCALATED]:     { eyes: 'happy',  brow: 'none',    mouth: 'openSmile', gesture: 'point' },
 };
 
 const CSS = `
@@ -193,22 +213,22 @@ const CSS = `
    render him, not this stylesheet. Second time; the first cost a confusing half-hour. */
 .appu-root  { animation: appuRise 420ms cubic-bezier(.34,1.3,.5,1) both; pointer-events: none; }
 .appu-root path, .appu-root circle, .appu-root ellipse { pointer-events: auto; }
-.appu-body  { animation: appuBreathe 3.6s ease-in-out infinite; transform-origin: 200px 440px; }
-.appu-eyes  { animation: appuBlink 5.2s infinite; transform-origin: 200px 270px; }
+.appu-body  { animation: appuBreathe 3.6s ease-in-out infinite; transform-origin: 200px 480px; }
+.appu-eyes  { animation: appuBlink 5.2s infinite; transform-origin: 200px 275px; }
 
 /* ⚠️ ONLY THESE TWO LOOP. Work is still happening and the loop is the message; everything else
    plays once and settles, because a character churning in the corner of a screen somebody is
    working on becomes something to resent within a day. */
-.appu-thinking .appu-act      { animation: appuTap 1.1s ease-in-out infinite; transform-origin: 300px 420px; }
-.appu-thinking_long .appu-act { animation: appuScratch 620ms ease-in-out infinite; transform-origin: 320px 440px; }
+.appu-thinking .appu-act      { animation: appuTap 1.1s ease-in-out infinite; transform-origin: 380px 440px; }
+.appu-thinking_long .appu-act { animation: appuScratch 620ms ease-in-out infinite; transform-origin: 380px 442px; }
 .appu-thinking .appu-dots circle,
 .appu-thinking_long .appu-dots circle { animation: appuThink 1.4s ease-in-out infinite; }
 .appu-thinking .appu-dots circle:last-child,
 .appu-thinking_long .appu-dots circle:last-child { animation-delay: .35s; }
 
-.appu-answered  .appu-act { animation: appuWave 760ms ease-in-out 2; transform-origin: 320px 440px; }
+.appu-answered  .appu-act { animation: appuWave 760ms ease-in-out 2; transform-origin: 384px 442px; }
 .appu-empty     .appu-act { animation: appuShrug 520ms ease-out both; }
-.appu-declined  .appu-act { animation: appuNo 620ms ease-in-out 1; transform-origin: 300px 450px; }
+.appu-declined  .appu-act { animation: appuNo 620ms ease-in-out 1; transform-origin: 380px 444px; }
 /* ⚠️ BOTH ANIMATIONS, COMMA-SEPARATED. A second animation declaration on .appu-body REPLACES the
    breathing, so a shake alone left him frozen the moment it finished — permanently still, in the
    one state where looking inert is worst. */
@@ -226,11 +246,10 @@ const CSS = `
    head CROP of the same drawing rather than a second, simpler drawing of him — one geometry, two
    framings, so a change to his face cannot reach one size and miss the other. */
 const FRAME = {
-  full: { box: '0 55 420 445', w: 420, h: 445 },
-  head: { box: '48 112 302 346', w: 302, h: 346 },
-  /* Room to his upper right for the bubble, and the bottom edge cut at the line he leans on so he
-     sits ON the screen's edge rather than floating above it. */
-  peek: { box: '0 36 548 448', w: 548, h: 448 },
+  full: { box: '0 46 430 460', x0: 0,  w: 430, h: 460 },
+  head: { box: '46 66 304 400', x0: 46, w: 304, h: 400 },
+  /* Room beside him for the bubble, and the bottom cut at the line he leans on. */
+  peek: { box: '0 40 560 466', x0: 0,  w: 560, h: 466 },
 };
 
 /* ⚠️ THE BUBBLE IS THE AFFORDANCE. Appu peeking in a corner is a picture; the three dots are what
@@ -254,36 +273,50 @@ const BUBBLE = (
  * @param state  one of ASSISTANT (see assistantState.js)
  * @param size   rendered height in px. Measured: the full figure stops reading below ~96.
  * @param crop   'full' (default), 'head' under ~96px, or 'peek' for the corner. See FRAME.
- * @param bubble draw the three-dot speech bubble to his upper right. Needs crop='peek'.
+ * @param bubble draw the three-dot speech bubble beside him. Needs crop='peek'.
+ * @param facing 'left' (default) or 'right'. See FACING.
  * @param apron  the collar under his chin. The baker's own primary where a host has one.
  */
 export default function Appu({
-  state = ASSISTANT.IDLE, size = 64, crop = 'full', bubble = false, apron = SAGE,
+  state = ASSISTANT.IDLE, size = 64, crop = 'full', bubble = false, facing = 'left', apron = SAGE,
 }) {
   const pose = POSE[state] ?? POSE[ASSISTANT.IDLE];
   const frame = FRAME[crop] ?? FRAME.full;
+  /* ⚠️ HE LOOKS INTO THE SCREEN. Sandeep: *"since this image goes on the right side bottom on the
+     desktop, it should be looking to left side"*. The reference faces right because it is a
+     standalone sticker; sitting in the bottom-right corner, facing right means facing out of the
+     window, away from everything the baker is working on. Mirroring the whole group — bubble
+     included, which then sits to his upper LEFT and points inward — is the one change, so the
+     geometry stays traceable against the reference exactly as drawn. */
+  const mirror = facing === 'left' ? `translate(${2 * frame.x0 + frame.w} 0) scale(-1 1)` : undefined;
   const id = useId();
   return (
     <svg viewBox={frame.box} height={size} width={size * frame.w / frame.h} aria-hidden="true"
          focusable="false" className={`appu-root appu-${state}`} fill="none" stroke={INK}
          strokeLinecap="round" strokeLinejoin="round" key={`${id}-${state}`}>
       <style>{CSS}</style>
+      <g transform={mirror}>
       <g className="appu-body">
-        {HAIR}
-        <path d={HEAD} fill="#fff" strokeWidth="10" />
+        {/* ⚠️ A WHITE FACE BEHIND THE TRACE. The traced shape is ink only — its face is a hole, so
+            on anything but a white page he would be see-through. Kept inside the outline (the head
+            measures x 57..338, y 142..440) so no white shows outside him. */}
+        <ellipse cx="197" cy="291" rx="130" ry="138" fill="#fff" stroke="none" />
+        <path d={BODY} fill={INK} fillRule="nonzero" stroke="none" />
+        {/* The cowlick traced as its own component, so it is drawn rather than part of BODY. */}
         <path d="M221 180 C228 166 242 166 248 178" strokeWidth="7" />
+        {/* ⚠️ THE COLLAR IS IN THE TRACE ALREADY — its gaps between the arms ARE the straps. Drawing
+            our own sage bars on top of them made a picket fence. `apron` tints that gap instead. */}
+        <path d="M178 450 H214 V468 H178 z" fill={apron} stroke="none" opacity="0.85" />
         <ellipse cx="129" cy="345" rx="16" ry="18" fill={BLUSH} stroke="none" />
         <ellipse cx="284" cy="271" rx="16" ry="18" fill={BLUSH} stroke="none" />
         {BROW[pose.brow]}
         <g className="appu-eyes">{EYES[pose.eyes]}</g>
         {MOUTH[pose.mouth]}
-        {pose.hands === 'shrug' ? SHRUG_LEFT : LEFT_HAND}
-        {HANDS[pose.hands]}
+        {GESTURE[pose.gesture]}
       </g>
-      <path d="M124 452 C170 462 228 458 268 446" stroke={apron} strokeWidth="9" />
-      <path d="M24 476 H416" strokeWidth="11" />
       {MARKS[state] ?? null}
       {bubble ? BUBBLE : null}
+      </g>
     </svg>
   );
 }
