@@ -16,7 +16,7 @@ import CakeTier from './CakeTier';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
-import { baseColourOf } from '../studioBackdrop.js';
+import { baseColourOf, wallTilt } from '../studioBackdrop.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
 import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
@@ -5920,6 +5920,9 @@ function TakeGrid({ strength, active = true }) {
  * are what the lines already use, so the board lands where a baker has already seen lines land, and
  * a change to one moves the other.
  */
+/* Scratch vector for the camera's facing — allocated once, not per frame. */
+const FACING = new THREE.Vector3();
+
 /** Loads a backdrop just to ask what colour it ends on. See `studioBackdrop.js`. */
 function useBackdropFloor(image) {
   const [hex, setHex] = useState(null);
@@ -5971,7 +5974,28 @@ export function StudioWall({ image, dim = 0 }) {
     if (!g || !camera) return;
     const bearing = Math.atan2(camera.position.x, camera.position.z);
     g.position.set(-Math.sin(bearing) * WALL.distance, 0, -Math.cos(bearing) * WALL.distance);
-    g.rotation.set(0, bearing, 0);
+
+    /* ── It faces the lens, and it pivots on its own base to do it ───────────────────────────────
+     *
+     * ⚠️ A BOARD LEFT BOLT UPRIGHT FANS OUT, AND IT READS AS A TENT. The designer's camera looks
+     * DOWN at the cake, and a vertical plane seen by a pitched camera keystones: the panel lines in
+     * a wall photograph splay outward towards the top of the frame, hard, because the board has to
+     * span a 42° lens. It is what a real camera does to a real wall — and it is wrong here anyway,
+     * because this is not a wall being photographed, it is a backdrop standing behind the subject,
+     * and a photographer's backdrop faces the lens. Squared up, the panels are panels.
+     *
+     * ⚠️ PIVOTED AT THE BASE, WHICH IS THE WHOLE TRICK. The tilt is applied at the group's origin,
+     * and the origin is on the floor — so the board leans back from a base line that never leaves
+     * y = 0. That keeps Sandeep's requirement intact (*"cake should still look like its on the same
+     * horizontal plane as it is now… so the image stands there"*) while removing the fan. Nothing
+     * else in the scene can tell it leans: it is unlit, casts nothing, and is behind everything. */
+    /* ⚠️ `asin(dir.y)`, NOT `asin(-dir.y)`, AND THE SIGN WAS WRONG FIRST TIME. A positive rotation
+       about +X carries the plane's +Z normal towards -Y — it tilts the board's face DOWNWARD, which
+       ADDS to the camera's own pitch instead of cancelling it. The first render came back a
+       sunburst, twice the fan it started with. The camera looks down, so `dir.y` is negative, and
+       the board has to lean its top TOWARDS the lens by that same angle. */
+    const dir = camera.getWorldDirection(FACING);
+    g.rotation.set(wallTilt(dir.y), bearing, 0, 'YXZ');
 
     /* ── Big enough to cover the view, from wherever the camera happens to be ──────────────────
      *

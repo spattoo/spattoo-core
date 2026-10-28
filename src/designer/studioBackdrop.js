@@ -51,3 +51,19 @@ export function baseColourOf(img, makeCanvas) {
   const hex = (v) => Math.round(v / n).toString(16).padStart(2, '0');
   return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
+
+/* ── How far the board leans back to face the lens ───────────────────────────────────────────────
+ *
+ * The designer's camera looks DOWN at the cake. A board left bolt upright keystones under it: the
+ * vertical panel lines in a wall photograph splay outwards towards the top of the frame, and it
+ * reads as a tent rather than a wall. A photographer's backdrop faces the lens, so this one does
+ * too — tilted by the camera's own pitch, about a pivot ON THE FLOOR so its base never leaves y = 0.
+ *
+ * ⚠️ THE SIGN IS THE WHOLE FUNCTION, AND IT WAS WRONG FIRST TIME. A positive rotation about +X
+ * carries a plane's +Z normal towards -Y — it tilts the face DOWN, ADDING to the camera's pitch.
+ * The render came back a sunburst, twice the fan it started with, and looked every bit as
+ * deliberate as the right answer would have. Hence a test rather than a comment.
+ */
+export function wallTilt(dirY) {
+  return Math.asin(Math.max(-1, Math.min(1, dirY)));
+}

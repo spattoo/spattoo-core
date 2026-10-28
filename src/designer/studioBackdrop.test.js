@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { baseColourOf, BASE_BAND } from './studioBackdrop.js';
+import { baseColourOf, BASE_BAND, wallTilt } from './studioBackdrop.js';
 
 /* ── What the floor under a standing backdrop is ────────────────────────────────────────────────
  *
@@ -89,5 +89,42 @@ describe('the colour a backdrop ends on', () => {
     expect(baseColourOf({ width: 10, height: 10 }, tainted)).toBeNull();
     /* And a fully transparent band is "no answer", not #000000. */
     expect(baseColourOf({ width: 10, height: 10 }, fakeCanvas(solid(0, 0, 0, 0), seen))).toBeNull();
+  });
+});
+
+describe('the lean that stops a backdrop fanning out', () => {
+  /* ⚠️ ASKED AS GEOMETRY, NOT AS ARITHMETIC. `asin(dir.y)` and `asin(-dir.y)` are both plausible
+     one-liners and only one of them points the board at the camera; the wrong one rendered a
+     sunburst that looked entirely intentional. So the test builds the board's normal, applies the
+     tilt, and checks it actually AIMS AT THE LENS. */
+  /* A +Z normal rotated about +X by t becomes (0, -sin t, cos t) — the minus is the same right-hand
+     rule that made the board lean the wrong way in the first place, and it caught this test out
+     before it caught the code. */
+  const normalAfter = (tilt) => ({ y: -Math.sin(tilt), z: Math.cos(tilt) });
+
+  it('aims the board at a camera that is looking down', () => {
+    /* A camera pitched 20° below horizontal: its forward direction dips, so the board's face must
+       rise by the same 20° to meet it. */
+    const pitch = -20 * Math.PI / 180;
+    const n = normalAfter(wallTilt(Math.sin(pitch)));
+    /* The camera's view direction is (0, sin(pitch), -1·cos(pitch)); the board's normal must be its
+       exact opposite, so the dot product is -1. */
+    const dot = n.y * Math.sin(pitch) + n.z * -Math.cos(pitch);
+    expect(dot).toBeCloseTo(-1, 6);
+  });
+
+  it('leans back, never forward — the wrong sign doubles the fan instead of cancelling it', () => {
+    expect(wallTilt(Math.sin(-20 * Math.PI / 180))).toBeLessThan(0);
+    expect(wallTilt(Math.sin(-40 * Math.PI / 180)))
+      .toBeLessThan(wallTilt(Math.sin(-20 * Math.PI / 180)));
+  });
+
+  it('stands straight up for a camera at eye level', () => {
+    expect(wallTilt(0)).toBe(0);
+  });
+
+  it('survives a direction that is a hair outside the unit range', () => {
+    expect(Number.isNaN(wallTilt(-1.0000001))).toBe(false);
+    expect(wallTilt(-1.0000001)).toBeCloseTo(-Math.PI / 2, 6);
   });
 });
