@@ -1979,14 +1979,25 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     setDesign(prev => ({ ...prev, stickers: [...prev.stickers, ...stickers] }));
   }
 
+  /* ⚠️ A COUNTER, NOT A FLAG, AND IT IS WHAT LETS THE CACHES BE SWEPT AT THE RIGHT MOMENT. Every
+     wholesale replacement bumps it — a template pick, reopening an order, a live-session apply —
+     and `CakeDesigner` hangs an effect off it. An effect, because it has to run AFTER the commit
+     that unmounts the outgoing pieces and mounts the incoming ones: that is the only point at
+     which the models the new design does not use have been released and the ones it does use have
+     been retained. Sweeping inside this function would run a commit too early and free nothing.
+     See `releaseUnusedGlbs` in shared/retainedGlb.js. */
+  const [loadGeneration, setLoadGeneration] = useState(0);
+
   function loadDesign(templateDesign) {
     setDesign(normalizeDesign(templateDesign, storageBaseUrl));
+    setLoadGeneration(n => n + 1);
   }
 
   const canvasConfig = useMemo(() => toCanvasConfig(design), [design]);
 
   return {
     design,
+    loadGeneration,
     setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, setTopPiping, setBottomPiping,
     addPipingLayer, updatePipingLayer, removePipingLayer,
     addCreamLayer, updateCreamLayer, removeCreamLayer, duplicateCreamLayer,

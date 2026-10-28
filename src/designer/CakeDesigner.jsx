@@ -12,7 +12,9 @@ import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
-import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius } from './canvas/CakeCanvas';
+import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius,
+         releaseUnusedStickerArt } from './canvas/CakeCanvas';
+import { releaseUnusedGlbs } from './shared/retainedGlb.js';
 import { configureStrokeMeshes } from './canvas/strokeMesh.js';
 import { shellBand, wallYoBounds, stackedYoBounds, clampYo } from './geometry/boardBands.js';
 import { CAMERA_POSITION, CAMERA_POSITION_MOBILE, PIPING_FRONT_ANGLE, TIER_RADII, BOTTOM_H, BOTTOM_BASE, BEND_ANCHOR_FRAC, ELEMENT_SLUGS, ZONES, STICKER_SIZE } from './constants';
@@ -3513,7 +3515,34 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* The same one-time wiring the env map needs, for the same reason: a cream STYLE row names its
      stroke mesh by R2 key and is loaded long before any host is known. See canvas/strokeMesh.js. */
   configureStrokeMeshes(cfAssetsBase);
-  const { design, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setBoardSand, updateBoardSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  const { design, loadGeneration, setTierColor, setTierCoat, setTierFrostingType, setTierFrostingStyle, setTierStyleParam, setTierCavity, setTierSpiral, setTierWafer, setTierBrushBand, updateTierBrushStrokes, updateBrushStroke, removeBrushStroke, setTierGradient, setTierGlaze, setTierStripes, setTierCornerR, setTierShape, setTierShapeConfig, addPipingLayer, updatePipingLayer, removePipingLayer, addCreamLayer, updateCreamLayer, removeCreamLayer, addText, updateText, duplicateText, removeText, addAge, updateAge, duplicateAge, removeAge, addWriting, updateWriting, removeWriting, addSticker, updateSticker, removeSticker, duplicateSticker, groupStickers, ungroupStickers, moveGroupStickers, moveStickersBy, scaleStickers, scaleGroupBy, addStroke, updateStroke, setStrokeFill, removeStroke, removeStrokeById, clearPiping, addGarnish, updateGarnish, duplicateGarnish, fanGarnish, removeGarnish, addTopper, updateTopper, removeTopper, addDustSplash, applyDustLook, updateDusting, clearDusting, updateDustSplash, removeDustSplash, addFoilFlake, updateFoil, updateFoilFlake, removeFoilFlake, clearFoil, setTierGrass, updateGrass, setBoardGrass, updateBoardGrass, setTierSand, updateSand, setBoardSand, updateBoardSand, setTierGyp, updateGyp, setBoardGyp, updateBoardGyp, updateTierRainbows, updateTierClouds, updateTierBalloons, setNameBlocks, updateNameBlocks, resetDesign, loadDesign, canvasConfig } = useCakeDesign();
+  /* ── Give the last design's models back, instead of waiting out the grace ───────────────────
+   *
+   * The GLB and sticker-art caches hold a decoration for two minutes after its last user goes, so
+   * that add / remove / re-add does not re-parse. A wholesale replacement is not that: load six
+   * templates inside the grace and six templates' models are resident at once, and texture is
+   * almost all of the cost — `retainedGlb.js` measures 16.3 of a model's 16.6 MB in its maps.
+   * Sandeep: *"when loading a new template its a new template, so we dont have to retain that."*
+   *
+   * ⚠️ AN EFFECT ON THE LOAD COUNTER, so it runs after the commit that swaps the design — the only
+   * moment when the outgoing models have been released and the incoming ones retained. Both sweeps
+   * respect ref counts, so anything the new design also uses is pinned and never re-parsed.
+   *
+   * ⚠️ AND A SETTLE DELAY, because a model is loaded through Suspense. A piece whose GLB is still
+   * in flight has not retained its entry yet, so sweeping in the same tick could free something
+   * about to be used and make it fetch twice. Two seconds is far short of the two-minute grace it
+   * replaces and long enough for the incoming pieces to have mounted. Cancelled on a re-load so
+   * flipping quickly through templates sweeps once, after the last one. */
+  useEffect(() => {
+    if (!loadGeneration) return undefined;
+    const t = setTimeout(() => {
+      const models = releaseUnusedGlbs();
+      const art = releaseUnusedStickerArt();
+      if (models || art) console.debug(`[design] freed ${models} model(s), ${art} artwork(s)`);
+    }, 2000);
+    return () => clearTimeout(t);
+  }, [loadGeneration]);
+
   // Seed a starting design once on mount — the customer resuming a baker's shared invite (the
   // design_snapshot handed over at OTP verify), or any host that pre-loads a design. Reuses the same
   // loadDesign() hydration as template-pick and order-reopen; runs once so later edits aren't clobbered.

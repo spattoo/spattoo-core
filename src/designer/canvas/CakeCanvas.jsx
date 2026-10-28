@@ -1030,6 +1030,16 @@ const stickerAlbedoCache = makeRefCountedCache({
   },
 });
 
+/* The albedo half of a wholesale design swap — see `releaseUnusedGlbs` for the models.
+ *
+ * ⚠️ BOTH CACHES OR NEITHER. These two hold the two halves of a decoration's cost: the GLB cache
+ * its models, this one the 2D artwork. They were written separately and have the same lifetime for
+ * the same reason, so a template load that swept only one would give back half of what it should
+ * and look like a fix that did not work. */
+export function releaseUnusedStickerArt() {
+  return stickerAlbedoCache.sweepUnused();
+}
+
 /* Pin the loaded artwork for as long as this component is mounted. `useTexture` still does the
    loading and the suspending; this only decides when the result may be let go. Both the albedo and
    the relief bake call it on the same URL, so a relief sticker holds two refs and drops both

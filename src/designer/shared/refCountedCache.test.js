@@ -111,3 +111,48 @@ describe('makeRefCountedCache — share expensive bakes, reclaim when idle', () 
     expect(dispose).toHaveBeenCalledTimes(1);
   });
 });
+
+/* ── sweepUnused — giving a design's models back without waiting out the grace ──────────────────
+ *
+ * The TTL above is for churn: add a decoration, remove it, add it back, and it is still there.
+ * Loading a TEMPLATE is a clean break, and six of them inside the grace kept six templates' models
+ * resident at once. These hold the two halves of the rule that makes an early sweep safe. */
+describe('sweepUnused', () => {
+  it('frees what nothing is using and leaves what is pinned', () => {
+    const gone = [];
+    const c = makeRefCountedCache({ ttlMs: 120000, dispose: v => gone.push(v) });
+    c.get('outgoing', () => 'outgoing-model');
+    c.get('shared',   () => 'shared-model');
+    c.retain('shared');            // the incoming design uses this one too
+    c.retain('outgoing'); c.release('outgoing');   // the old design let this one go
+
+    expect(c.sweepUnused()).toBe(1);
+    expect(gone).toEqual(['outgoing-model']);
+  });
+
+  it('is a no-op while everything is still mounted — which is why it must run AFTER the swap', () => {
+    const gone = [];
+    const c = makeRefCountedCache({ ttlMs: 120000, dispose: v => gone.push(v) });
+    c.get('a', () => 'model-a'); c.retain('a');
+    c.get('b', () => 'model-b'); c.retain('b');
+
+    /* Swept BEFORE the design is replaced, the outgoing pieces are still mounted and every entry
+       is pinned. Nothing is freed — the bug this would have been, had the sweep run too early. */
+    expect(c.sweepUnused()).toBe(0);
+    expect(gone).toEqual([]);
+  });
+
+  it('a model the new design re-uses survives and is never re-parsed', () => {
+    let parsed = 0;
+    const c = makeRefCountedCache({ ttlMs: 120000, dispose: () => {} });
+    const factory = () => { parsed++; return 'rosette'; };
+
+    c.get('rosette', factory); c.retain('rosette');   // old design mounts it
+    c.retain('rosette');                               // new design mounts it too
+    c.release('rosette');                              // old design unmounts
+
+    expect(c.sweepUnused()).toBe(0);
+    c.get('rosette', factory);                         // still cached
+    expect(parsed).toBe(1);
+  });
+});

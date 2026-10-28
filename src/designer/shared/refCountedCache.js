@@ -82,5 +82,31 @@ export function makeRefCountedCache({ ttlMs = 120000, dispose = () => {} } = {})
       e.refs = Math.max(0, e.refs - 1);
       if (e.refs === 0) { e.disposeAt = Date.now() + ttlMs; schedule(); }
     },
+    /* Give back everything nothing is using, NOW, instead of waiting out the grace.
+     *
+     * ⚠️ THE GRACE IS FOR CHURN, AND A CLEAN BREAK IS NOT CHURN. The TTL above exists so that
+     * add / remove / re-add of a scattered decoration does not re-parse — the user is still working
+     * on the same cake and the entry is very likely coming back. Loading a TEMPLATE is the opposite
+     * case: the design is replaced wholesale, and whatever the outgoing one used is unlikely to
+     * return. Sandeep, 2026-10-27: *"when loading a new template its a new template, so we dont
+     * have to retain that."* Six templates inside the grace kept six templates' models resident.
+     *
+     * ⚠️ IT STILL RESPECTS `refs`, AND THAT IS WHAT MAKES IT SAFE TO CALL AT ANY TIME. Only entries
+     * nothing is mounted against go. A model the INCOMING design also uses was retained as its
+     * pieces mounted, so it is pinned here and is neither disposed nor re-parsed — which is why the
+     * caller must sweep AFTER the new design is on screen, not before. Swept before, the outgoing
+     * pieces are still mounted, every entry is pinned, and this frees nothing at all.
+     *
+     * Returns how many entries were freed, so a caller can log or assert rather than guess. */
+    sweepUnused() {
+      let freed = 0;
+      for (const [key, e] of map) {
+        if (e.refs > 0) continue;
+        try { dispose(e.value); } catch { /* best-effort, same as sweep() */ }
+        map.delete(key); freed++;
+      }
+      schedule();
+      return freed;
+    },
   };
 }
