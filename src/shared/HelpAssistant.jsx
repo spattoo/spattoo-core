@@ -168,8 +168,13 @@ export default function HelpAssistant({
             ? <>
                 {/* ⚠️ IDLE ONLY, DELIBERATELY. Sandeep approved this pose; the other eight are
                     drawn and reachable but not signed off — *"only the idle one for now. we will
-                    integrate others later"*. The state machine stays wired, pinned here. */}
-                <Character state={ASSISTANT.IDLE} size={isMobile ? 92 : 108} />
+                    integrate others later"*. The state machine stays wired, pinned here.
+                    ⚠️ AND THAT IS WHY 80 IS ALLOWED. Appu's own ~96px floor is the size at which
+                    NINE poses stay apart from one another; one pose needs only to be legible, and
+                    measured against the sticker the face, blush and hands still read at 68. Below
+                    ~60 he becomes narrower than the "Ask me" pill and the pair looks wrong.
+                    ⚠️ Re-raise this to ~96 on the day the other eight are turned on. */}
+                <Character state={ASSISTANT.IDLE} size={isMobile ? 68 : 80} />
                 <span style={S.fabLabel}>Ask me</span>
               </>
             : <AssistantIcon size={isMobile ? 22 : 24} />}

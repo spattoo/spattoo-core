@@ -252,7 +252,8 @@ const FRAME = {
 
 /**
  * @param state  one of ASSISTANT (see assistantState.js)
- * @param size   rendered height in px. Measured: the full figure stops reading below ~96.
+ * @param size   rendered height in px. Measured: NINE poses stop being distinguishable from one
+ *               another below ~96; a single pose on its own still reads at 68.
  * @param crop   'full' (default) or 'head' — use 'head' under ~96px. See FRAME.
  * @param facing 'left' (default) or 'right'. See FACING.
  * @param apron  the collar under his chin. The baker's own primary where a host has one.
