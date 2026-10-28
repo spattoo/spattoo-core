@@ -71,10 +71,13 @@ export function setMaterialPatch(mat, slot, patch) {
      ⚠️ THIS DOES NOT WEAKEN THE `mat.uuid` RULE BELOW. That rule exists because a patch's uniform
      bag is held BY IDENTITY, so two patched materials sharing a program would render the first
      one's colours. With no patch there is no uniform bag, and nothing to collide.
-     ⚠️ MEASURED, because it is the whole cost of a decorated cake. Loading the "Animal theme"
-     template compiled 27 shader programs, 22 of them used exactly once — and 13 of those were
-     byte-identical apart from `spat:<uuid>:none`. Every decoration that had ever been offered a
-     gradient was pinned to its own program by a teardown that cleared the patch and left the key. */
+     ⚠️ AND IT IS THE NO-OP PATH THAT WAS COSTING THE MOST, which is not where anybody would look.
+     `StickerModel` calls `applyGradient` on every material of every 3D decoration whether or not
+     one is set (CakeCanvas.jsx), and with no gradient that lands here as `setMaterialPatch(mat,
+     'gradient', null)`. So a material that had NEVER been patched still left with a key of its
+     own. Measured on the "Animal theme" template, which uses no gradient at all: 27 shader
+     programs, 22 used exactly once, 13 byte-identical apart from `spat:<uuid>:none`. Every cake
+     carrying 3D decorations was paying it. */
   if (!PATCH_ORDER.some(s => bag[s])) {
     delete mat.onBeforeCompile;
     delete mat.customProgramCacheKey;

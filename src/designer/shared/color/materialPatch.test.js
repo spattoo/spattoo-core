@@ -80,11 +80,11 @@ describe('three treatments, one material', () => {
      the first one's colours. A material with no patch has no bag: nothing is injected, no defines
      are set, the uniforms sit unused in `userData`, and it is a plain MeshStandardMaterial again.
      Sharing one program across those is simply what three.js does for every ordinary material.
-     ⚠️ AND IT IS MOST OF WHAT A DECORATED CAKE COSTS. Loading the "Animal theme" template measured
-     27 shader programs, 22 used exactly once, 13 of them byte-identical apart from
-     `spat:<uuid>:none` — every decoration ever offered a gradient pinned to its own compile by a
-     teardown that cleared the patch and left the key behind. Returning them to three.js: 27 → 14
-     programs, and the load settled in 4.2s instead of 11.1s (median of 3, same machine), with the
+     ⚠️ AND THE COST LANDED ON CAKES WITH NO GRADIENT AT ALL. `StickerModel` calls `applyGradient`
+     on every material of every 3D decoration regardless, so the inactive path ran constantly and
+     pinned each one. Measured on "Animal theme", which uses no gradient: 27 programs, 22 used
+     once, 13 byte-identical apart from `spat:<uuid>:none`. Returning them to three.js gives 27 →
+     14 programs and a load that settles in 4.2s instead of 11.1s (median of 3, same machine),
      render pixel-identical. */
   it('puts UNPATCHED materials back on one shared program', () => {
     const states = [
