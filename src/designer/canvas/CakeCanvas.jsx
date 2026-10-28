@@ -16,6 +16,7 @@ import CakeTier from './CakeTier';
 import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
+import { baseColourOf } from '../studioBackdrop.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
 import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
@@ -3920,6 +3921,9 @@ function CakeScene({
   studioGround = null,
   studioBackdrop = 'flat',
   studioBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
+  /* POC: a picture behind the cake instead of a colour. See SceneBackground. */
+  studioImage = null,
+  studioImageDim = 0,
   /* The take's backdrop: a graded sweep generated from `filmGround` — see takeBackdrop.js.
      'flat' (the default) is the single colour that shipped before it, and the editing path never
      passes anything else: a baker approves a cake on the designer's own ground. */
@@ -4232,7 +4236,27 @@ function CakeScene({
   /* The cyclorama's colour, from whichever asked for one. Named once because three places below
      have to agree about it — the sky, the floor and whether there is a horizon at all — and the
      first version of the studio look had them disagree: a painted floor under a swept sky. */
-  const sweepGround = filmGround || studioGround;
+  /* ── The floor a standing backdrop needs ────────────────────────────────────────────────────
+   *
+   * ⚠️ A BOARD ON A GREY FLOOR IS A BOARD ON A GREY FLOOR. Standing the picture in the scene fixed
+   * the floating cake, and immediately showed the next fault: the picture's own floor stopped in a
+   * hard line and ours carried on in grey underneath it — *"cake looks like floating and not
+   * matching with the ambiance in image"* answered in the vertical and reopened in the horizontal.
+   * So the ground takes the colour the picture ENDS on, and the join disappears. See
+   * `studioBackdrop.js` for why it is the bottom band and not the average.
+   *
+   * ⚠️ IT IS A GROUND LIKE ANY OTHER, which is what makes it cheap: it goes in at `studioGround`'s
+   * place, so the sweep, the shadow catcher, the FRONT marker's lift and the header's re-inking all
+   * already handle it. Nothing new had to learn about backdrops. */
+  const backdropFloor = useBackdropFloor(studioImage);
+  /* ⚠️ THE ROOM, HOWEVER IT WAS CHOSEN. A floor read off a backdrop is a chosen ground in every way
+     that matters downstream — the backdrop's shading, the FRONT marker's ink and its lift over the
+     shadow catcher all ask "is the baker standing on a sweep?", and the answer is yes whether the
+     colour came from a swatch or from the bottom of a photograph. Asking `studioGround` alone is how
+     the marker went unreadable on the tiled floor in the first render. */
+  const roomGround = studioGround || backdropFloor;
+  const sweepGround = filmGround || roomGround;
+
 
   return (
     <>
@@ -4247,7 +4271,7 @@ function CakeScene({
           act with its own panel open, and the ground on screen while recording must be the one in
           that panel. Otherwise the baker's own room, and failing that the editing wall. */}
       <SceneBackground colour={filmCutout ? null : (sweepGround || DESIGNER_WALL)}
-                       look={filmGround ? filmBackdrop : (studioGround ? studioBackdrop : 'flat')}
+                       look={filmGround ? filmBackdrop : (roomGround ? studioBackdrop : 'flat')}
                        strength={filmGround ? filmBackdropStrength : studioBackdropStrength}
                        active={backdropActive} />
       <SceneEnv />
@@ -4301,8 +4325,8 @@ function CakeScene({
           while they work — and it was being burned into finished reels, where it reads as a stray
           watermark nobody can explain. */}
       {board && !filmGround && (
-        <FrontMarker frontZ={boardFrontZ(board)} colour={studioInk(studioGround)?.marker}
-                     lift={studioGround ? 0.05 : undefined} />
+        <FrontMarker frontZ={boardFrontZ(board)} colour={studioInk(roomGround)?.marker}
+                     lift={roomGround ? 0.05 : undefined} />
       )}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
@@ -5870,6 +5894,126 @@ function TakeGrid({ strength, active = true }) {
  * cake halfway through the shot. Taking the camera's horizontal bearing and putting the wall on the
  * opposite side makes it a backdrop by construction, at every angle, with no special cases.
  */
+/* ── A backdrop board standing where the wall grid stands ────────────────────────────────────────
+ *
+ * Sandeep, 2026-10-28: *"cake should still look like its on the same horizontal plane as it is now.
+ * only the place where vertical grid lines are placed, that should be replaced with image. so the
+ * image stands there."*
+ *
+ * ⚠️ THIS IS NOT A BACKGROUND, AND THAT DISTINCTION IS THE WHOLE FEATURE. The first attempt put the
+ * picture on `scene.background`, which is drawn across the viewport and is not IN the world: the
+ * cake then hangs in front of a photograph with nothing under it — *"cake looks like floating and
+ * not matching with the ambiance in image"*. A board standing in the scene has a base, and that
+ * base is at y = 0, which is the floor the cake already stands on. Nothing about the cake's ground,
+ * its shadow or its horizon changes; the board simply occupies the place the wall grid occupied.
+ *
+ * ⚠️ IT TURNS WITH THE CAMERA, exactly as `TakeGridWall` does and for the same reason — so it is
+ * always behind the cake and never edge-on, and the orbit can never catch its side. That also
+ * disposes of the sticker problem a flat background had: the board faces you at every angle, so a
+ * photograph taken straight-on reads straight-on from everywhere.
+ *
+ * ⚠️ `meshBasicMaterial`, SO IT CANNOT TOUCH THE CAKE. Unlit, like the grid lines it replaces: it
+ * takes no light, casts no shadow and bounces nothing. The cake renders exactly as the baker
+ * approved it — the contract at the top of this file, kept by construction rather than by care.
+ *
+ * ⚠️ AND IT IS THE GRID'S OWN GEOMETRY, not a size invented here. `WALL.width`/`height`/`distance`
+ * are what the lines already use, so the board lands where a baker has already seen lines land, and
+ * a change to one moves the other.
+ */
+/** Loads a backdrop just to ask what colour it ends on. See `studioBackdrop.js`. */
+function useBackdropFloor(image) {
+  const [hex, setHex] = useState(null);
+  useEffect(() => {
+    if (!image) { setHex(null); return undefined; }
+    let live = true;
+    const img = new Image();
+    /* ⚠️ `crossOrigin` AND `corsUrl` TOGETHER, NEVER ONE OF THEM. The header alone is not enough:
+       a plain <img> elsewhere on the page can have already cached this url WITHOUT the CORS header,
+       and the browser then serves that entry to this request too — the image loads, the canvas is
+       tainted, `getImageData` throws, and the floor silently falls back to grey. `corsUrl` makes it
+       a different cache entry. See `assetUrl.js`; `check:cors` caught exactly this. */
+    img.crossOrigin = 'anonymous';
+    img.onload = () => {
+      if (!live) return;
+      setHex(baseColourOf(img, (w, h) => {
+        const c = document.createElement('canvas'); c.width = w; c.height = h; return c;
+      }));
+    };
+    img.onerror = () => { if (live) setHex(null); };
+    img.src = corsUrl(image);
+    return () => { live = false; };
+  }, [image]);
+  return hex;
+}
+
+export function StudioWall({ image, dim = 0 }) {
+  const camera = useThree(s => s.camera);
+  const group = useRef(null);
+  const [tex, setTex] = useState(null);
+  const aspectRef = useRef(1);     // the picture's own shape, read by the frame loop above
+
+  useEffect(() => {
+    if (!image) { setTex(null); return undefined; }
+    let live = true, loaded = null;
+    new THREE.TextureLoader().load(image, (t) => {
+      if (!live) { t.dispose(); return; }
+      t.colorSpace = THREE.SRGBColorSpace;
+      loaded = t;
+      aspectRef.current = (t.image?.width ?? 1) / (t.image?.height ?? 1);
+      setTex(t);
+    });
+    return () => { live = false; setTex(null); if (loaded) loaded.dispose(); };
+  }, [image]);
+
+  const board = useRef(null);
+  useFrame(() => {
+    const g = group.current;
+    if (!g || !camera) return;
+    const bearing = Math.atan2(camera.position.x, camera.position.z);
+    g.position.set(-Math.sin(bearing) * WALL.distance, 0, -Math.cos(bearing) * WALL.distance);
+    g.rotation.set(0, bearing, 0);
+
+    /* ── Big enough to cover the view, from wherever the camera happens to be ──────────────────
+     *
+     * ⚠️ A FIXED SIZE CANNOT WORK, AND GUESSING ONE PUT THE EDGES IN SHOT. The board stands at
+     * `WALL.distance` from the CENTRE, but the camera is further away again — about 12 units, not
+     * 5 — and the view widens with distance. A 9-unit board sized for the nearer figure left its
+     * left and right edges visible in the frame, which is the one thing a backdrop may never do.
+     * So it is measured instead: how much the lens sees AT the board, every frame, which also
+     * means zooming or orbiting can never expose an edge.
+     *
+     * ⚠️ AND IT KEEPS THE PICTURE'S OWN SHAPE. Cover, never stretch: whichever of width or height
+     * falls short decides the scale and the other overflows out of frame. A squashed bakery is
+     * worse than a cropped one. */
+    const m = board.current;
+    if (!m) return;
+    const d = camera.position.distanceTo(g.position);
+    const visH = 2 * d * Math.tan((camera.fov * Math.PI) / 360);
+    const visW = visH * camera.aspect;
+    const h = Math.max(visH, visW / Math.max(0.01, aspectRef.current));
+    const w = h * aspectRef.current;
+    m.scale.set(w, h, 1);
+    /* Base on the floor — half its height up, because a plane is built about its centre. That is
+       what puts the image in the room instead of in front of it. */
+    m.position.set(0, h / 2, 0);
+  });
+
+  if (!tex) return null;
+  return (
+    <group ref={group}>
+      {/* A unit plane; the frame-covering size and the base-on-the-floor lift are both set each
+          frame above, because both depend on where the camera is. */}
+      <mesh ref={board} renderOrder={-1}>
+        <planeGeometry args={[1, 1]} />
+        {/* `color` dims it by multiplication — one texture serves every strength, and a sharp
+            photograph can be pushed back so the cake wins the picture. */}
+        <meshBasicMaterial map={tex} toneMapped={false} depthWrite={false}
+                           color={new THREE.Color().setScalar(1 - Math.min(0.9, Math.max(0, dim)))} />
+      </mesh>
+    </group>
+  );
+}
+
 function TakeGridWall({ strength, active = true }) {
   const camera = useThree(s => s.camera);
   const group = useRef(null);
@@ -6464,6 +6608,9 @@ export default function CakeCanvas({
   studioGround = null,
   studioBackdrop = 'flat',
   studioBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
+  /* POC: a picture behind the cake instead of a colour. See SceneBackground. */
+  studioImage = null,
+  studioImageDim = 0,
   filmCutout = false,
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
@@ -6597,6 +6744,8 @@ export default function CakeCanvas({
         studioGround={studioGround}
         studioBackdrop={studioBackdrop}
         studioBackdropStrength={studioBackdropStrength}
+        studioImage={studioImage}
+        studioImageDim={studioImageDim}
         backdropActive={backdropActive}
         filmCutout={filmCutout}
         filmTight={filmTight}
@@ -6751,7 +6900,11 @@ export default function CakeCanvas({
           studio grid straight back out the moment it appeared. The fade belongs to the take; the
           room does not. */}
       {takeGrid && <TakeGrid strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />}
-      {takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />}
+      {/* The board REPLACES the lines rather than standing with them — lines drawn over a
+          photograph read as a mistake, and both occupy the same plane. */}
+      {studioImage
+        ? <StudioWall image={studioImage} dim={studioImageDim} />
+        : (takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />)}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />
