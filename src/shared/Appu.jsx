@@ -246,8 +246,8 @@ const CSS = `
    head CROP of the same drawing rather than a second, simpler drawing of him — one geometry, two
    framings, so a change to his face cannot reach one size and miss the other. */
 const FRAME = {
-  full: { box: '0 46 430 460', x0: 0,  w: 430, h: 460 },
-  head: { box: '46 66 304 400', x0: 46, w: 304, h: 400 },
+  full: { box: '-16 46 450 460', x0: -16, w: 450, h: 460 },
+  head: { box: '40 110 316 345', x0: 40, w: 316, h: 345 },
 };
 
 /**
@@ -276,6 +276,14 @@ export default function Appu({
          strokeLinecap="round" strokeLinejoin="round" key={`${id}-${state}`}>
       <style>{CSS}</style>
       <g transform={mirror}>
+      {/* ⚠️ THE TRACED HEAD IS AN EGG, AND SANDEEP ASKED FOR A CIRCLE. Measured off the traced path
+          it is 280 wide by 298 tall — 6.4% taller than wide, which is small enough to look like a
+          mistake rather than a style. 298/280 = 1.064 horizontally about the head's centre x=198
+          makes it round. This is the ONE place we knowingly depart from the reference.
+          ⚠️ It wraps EVERYTHING, so the eyes, mouth and blush stretch with the skull and stay in
+          register. Applied to the body path alone, the face would sit in the wrong place. The
+          ground line and hands widen 6.4% too, which at this size is invisible. */}
+      <g transform="translate(198 0) scale(1.064 1) translate(-198 0)">
       <g className="appu-body">
         {/* ⚠️ A WHITE FACE BEHIND THE TRACE. The traced shape is ink only — its face is a hole, so
             on anything but a white page he would be see-through. Kept inside the outline (the head
@@ -295,6 +303,7 @@ export default function Appu({
         {GESTURE[pose.gesture]}
       </g>
       {MARKS[state] ?? null}
+      </g>
       </g>
     </svg>
   );
