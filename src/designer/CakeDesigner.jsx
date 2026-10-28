@@ -12,6 +12,7 @@ import { GRADIENT_MODES, ALTERNATE_MODE } from './shared/color/gradientMaterial.
 import { INK, INK_MUTED, INK_TINT, SURFACE, LINE, DANGER, DANGER_FIELD, DANGER_LINE } from '../shared/tokens.js';
 import PasswordChecklist from '../auth/PasswordChecklist.jsx';
 import { isPasswordValid } from '../auth/passwordPolicy.js';
+import { STUDIO_LOOK_DEFAULT, normaliseStudioLook, studioRoomFrom, studioInk, takeSeedFrom } from './studioLook.js';
 import CakeCanvas, { CakeThumbnailCanvas, CakePreview, configureEnvMap, boardOf, rainbowSupportRadius,
          releaseUnusedStickerArt } from './canvas/CakeCanvas';
 import { releaseUnusedGlbs } from './shared/retainedGlb.js';
@@ -5004,6 +5005,29 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
      THAT is the fix. It rides the grid's own ramp, so the room assembles and dissolves as one
      move. See SceneBackground. */
   const onFilmGround = framing || buildSetupOpen || takeWindow;
+  /* ── The studio a baker dressed for themselves ──────────────────────────────────────────────────
+   *
+   * Sandeep: *"so a baker can customize the studio. we would save these settings and the baker
+   * would see theie selected look&feel."* Loaded once; `STUDIO_LOOK_DEFAULT` is the plain editing
+   * room, so every path below works unchanged for a baker who has never opened the setting — and
+   * for a host that does not serve it at all, which is every customer session and every harness.
+   *
+   * ⚠️ FETCHED, NOT PASSED IN. It belongs to the signed-in PERSON (baker_appusers, the way a rail
+   * skin does — migration 120 borrowing 060: "a tour is a fact about a PERSON, not about a
+   * bakery"), so the host cannot hand it over with the bakery profile without making it a bakery
+   * fact. A host with no `fetchStudioLook` simply never has one. */
+  const [studioLook, setStudioLook] = useState(STUDIO_LOOK_DEFAULT);
+  useEffect(() => {
+    if (!apiClient?.fetchStudioLook) return undefined;
+    let alive = true;
+    apiClient.fetchStudioLook()
+      .then(r => { if (alive) setStudioLook(normaliseStudioLook(r?.look ?? r)); })
+      .catch(() => {});        // a look that will not load is not worth a message; the room stays plain
+    return () => { alive = false; };
+  }, [apiClient]);
+  /* What the canvas is handed, which is not quite what was stored — `studioRoomFrom` drops a grid
+     that has no ground under it. See its note. */
+  const studioRoom = useMemo(() => studioRoomFrom(studioLook), [studioLook]);
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -5314,6 +5338,28 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // Which ground the preview is showing, so the overlay can pick its contrast the same way the
   // recorder does. Mirrors what was handed to setGround; the scene holds a THREE.Color, not a hex.
   const [takeGround, setTakeGround] = useState(DESIGNER_GROUND);
+  /* ── A take starts in the baker's own studio ────────────────────────────────────────────────────
+   *
+   * The other half of the setting: having dressed the studio once, a baker should not re-dress it
+   * before every video. These are the panel's STARTING values and nothing more — every control in
+   * it still moves freely, and a take is where somebody tries something different.
+   *
+   * ⚠️ ON THE LOOK ARRIVING, NOT ON MOUNT. The fetch resolves after the first render, so seeding in
+   * `useState` would seed from the default every time and silently ignore the saved look. It runs
+   * once because the look is fetched once; if it ever reloads, the cost is a take panel returning
+   * to the baker's own studio, which is where it should have been.
+   *
+   * ⚠️ AND A DELIBERATE "NO GRID" SURVIVES. `takeSeedFrom` carries `grid: false` through rather
+   * than falling back to the take's own both-on default — see its note. */
+  useEffect(() => {
+    const seed = takeSeedFrom(studioLook, DESIGNER_GROUND);
+    setTakeGround(seed.ground);
+    setTakeBackdrop(seed.backdrop);
+    setTakeBackdropStrength(seed.backdropStrength);
+    setTakeGrid(seed.grid);
+    setTakeGridWall(seed.gridWall);
+    setTakeGridStrength(seed.gridStrength);
+  }, [studioLook]);
   // True while any decoration is still resolving. The same registry the canvas spinner reads —
   // deliberately not a second notion of "is it ready", which would drift from the visible one.
   const decorLoading = useAnyLoading();
@@ -5962,6 +6008,14 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
              entry would open a page showing the rail they are already looking at. */
           ...(railSkinCount > 1
             ? [{ id: 'appearance', label: 'Menu bar', open: () => setSettingsScope('appearance'), active: settingsScope === 'appearance' }]
+            : []),
+          /* The room they design in. Its own entry for the same reason "Menu bar" has one — the
+             studio went in beside the rail skin first and inherited that entry's condition, which
+             is false on every account today, so it had no door at all.
+             ⚠️ ONLY WHEN THE HOST SERVES IT. An entry that opens an empty page is worse than no
+             entry; every customer session and every harness without the stub is such a host. */
+          ...(apiClient?.fetchStudioLook
+            ? [{ id: 'studio', label: 'Your studio', open: () => setSettingsScope('studio'), active: settingsScope === 'studio' }]
             : []),
           /* ⚠️ NOTHING TEMPLATE-SHAPED LIVES HERE ANY MORE. "Manage templates" was a Settings entry
              for months, and briefly became "Spattoo templates" + "My templates". Both are gone: the
@@ -18341,7 +18395,22 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           Hidden for the whole take window, so it does not reappear while the lens is still
           gliding back. */}
       {!isMobile && !takeWindow && (
-        <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0) }} />
+        /* ⚠️ THE BAND GAINS A GROUND ONLY WHEN THE STUDIO DOES, and that is the whole of the fix.
+           This rule has always been "the line between chrome and canvas" with nothing but a 1px
+           border to say so — fine while the canvas behind it was always pale, and unreadable the
+           moment a baker picked a dark ground: the brand name, the bell and the credits pill are
+           all dark ink sitting straight on the 3D scene. Found by rendering it, not by reading it.
+
+           ⚠️ THE CHROME'S OWN COLOUR, NOT A TINT OF THEIRS. The alternative was to re-ink the three
+           things in this band off `luminanceOf(ground)` — which is what reelCaption does for a
+           caption, and what every rail skin has to carry by hand because a 9px label on a mid-oak
+           handle measured 2.61:1. Three surfaces, one of which (the credits pill) already changes
+           colour by threshold, is three chances to get a contrast wrong. Keeping the chrome on the
+           chrome's ground is one chance, and the studio starts where the rule says it starts.
+
+           Absent for a baker who has chosen nothing, so nothing moves for anyone who has not. */
+        <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0),
+                      ...(studioRoom.ground ? { background: DESIGNER_WALL } : {}) }} />
       )}
 
       {/* ⚠️ THE DESKTOP BRAND MOVED TO THE RIGHT-HAND CLUSTER — see `creditsFloat` below. It used to
@@ -19362,7 +19431,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         {/* ── Canvas area ── */}
         {/* data-tour: the cake itself is a WebGL canvas with no addressable parts, so the tour
             spotlights this whole area — which is exactly what "drag to spin it" refers to. */}
-        <div data-tour="canvas" style={{ ...s.canvasArea, ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
+        <div data-tour="canvas" style={{ ...s.canvasArea,
+                                         ...(studioRoom.ground ? s.canvasAreaStudio(studioRoom.ground) : {}),
+                                         ...(isMobile ? { order: -1, overflow: 'hidden' } : {}) }}>
 
           {/* Credits, top-right over the canvas — where every tool that meters usage puts them, and
               where a baker looks for "what have I got left" without hunting a sidebar.
@@ -19563,6 +19634,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               filmGround={onFilmGround ? takeGround : null}
               filmBackdrop={takeBackdrop}
               filmBackdropStrength={takeBackdropStrength}
+              /* ── The baker's own room, the rest of the time ──────────────────────────────────
+                 A separate prop from `filmGround`, which doubles as "we are filming" — see
+                 CakeScene. Null unless the baker dressed the studio in Settings, so a baker who
+                 never opened that screen sees exactly the room they saw yesterday. */
+              studioGround={studioRoom.ground}
+              studioBackdrop={studioRoom.backdrop}
+              studioBackdropStrength={studioRoom.backdropStrength}
               /* Same flag that points the grid's fade, so backdrop and grid move together. */
               backdropActive={filmingTake || takePreRoll || buildSetupOpen || framing}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.
@@ -19586,9 +19664,13 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               spin={filmSpin ? spinPlan : null}
               onSpinDone={() => setFilmSpin(false)}
               takeLens={takeWindow ? takeLens : null}
-              takeGrid={takeWindow && takeGrid}
-              takeGridWall={takeWindow && takeGridWall}
-              takeGridStrength={takeGridStrength}
+              /* ⚠️ ONE PAIR OF PROPS, TWO OWNERS. While a take is open the panel's own chips drive
+                 the grid; the rest of the time it is the baker's saved studio. Not two sets of
+                 grid props — the canvas draws one grid and should be told what it is, not asked
+                 to arbitrate between two sources. */
+              takeGrid={takeWindow ? takeGrid : studioRoom.grid}
+              takeGridWall={takeWindow ? takeGridWall : studioRoom.gridWall}
+              takeGridStrength={takeWindow ? takeGridStrength : studioRoom.gridStrength}
               onTakeFrame={buildSaving ? (() => takeFrame.current?.()) : null}
               takeLensActive={filmingTake || takePreRoll}
               onTakeLensReturned={() => setLensReturning(false)}
@@ -20096,7 +20178,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               sheet is open: you can rotate the cake to check the colour you just picked. */}
           {/* Lifts above whichever sheet is taller, for the same reason the canvas does — otherwise
               "Drag to rotate" sits behind the decoration card it is telling you about. */}
-          <div style={{ ...s.rotateHint, ...(bottomSheetH ? { bottom: bottomSheetH + 12 } : {}) }}>
+          {/* The hint's grey was chosen against the pale floor; on a dark studio it is nearly gone.
+              One derived pair for this and the FRONT marker — see studioInk. */}
+          <div style={{ ...s.rotateHint, ...(bottomSheetH ? { bottom: bottomSheetH + 12 } : {}),
+                        ...(studioInk(studioRoom.ground) ? { color: studioInk(studioRoom.ground).hint } : {}) }}>
             Drag to rotate
           </div>
 
@@ -23369,6 +23454,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
         onUpgrade={() => { setSettingsScope(null); setBillingPanelOpen(true); }}
         // The rail redraws itself from the server's answer; the panel does not own what it looks like.
         onRailSkinChanged={refreshRailSkin}
+        /* ⚠️ THE ROOM CHANGES WHILE THEY ARE LOOKING AT THE SWATCH. Settings opens over the canvas,
+           so a baker picking a ground sees the cake behind it change — which is the whole reason
+           this is a live preference rather than a form with a Save button. Without this it would
+           take a reload, and a swatch that appears to do nothing gets tapped again. */
+        onStudioLookChanged={setStudioLook}
         apiClient={apiClient}
         primaryColor={primaryColor}
         accentColor={accentColor}
@@ -24213,6 +24303,9 @@ const s = {
     // top, floor at the bottom, like the frame the strip sits beside.
     background:`linear-gradient(to bottom, ${DESIGNER_WALL}, ${DESIGNER_GROUND})`,
   },
+  /* The same strip, for a baker who dressed the studio. One flat colour rather than a gradient,
+     because that is what the 3D scene behind it now is — a cyclorama has no horizon to match. */
+  canvasAreaStudio: (ground) => ({ background: ground }),
   hint: {
     position:'absolute', top:14, left:'50%', transform:'translateX(-50%)',
     zIndex:10, background:'rgba(107,45,66,0.7)', color:'#fff',

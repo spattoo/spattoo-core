@@ -136,6 +136,7 @@ function sandRegion(sand) {
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
 import { cakeBody, clampOutsideBody } from '../geometry/cakeBody.js';
+import { studioInk } from '../studioLook.js';
 import { textPathFor } from '../geometry/textPath.js';
 import { cleanTriangles } from '../geometry/glbClean.js';
 import { outwardBand, rimBand } from './useSeatedInstances.js';
@@ -3661,17 +3662,28 @@ function CameraSnapper({ snapCameraRef, turnCameraRef, orbitRef }) {
  */
 const FRONT_MARKER_GAP = 0.22;
 
-function FrontMarker({ frontZ }) {
+/* ⚠️ `lift` EXISTS BECAUSE 0.002 IS NOT ENOUGH OVER THE SWEEP'S FLOOR, and that was found by
+ * rendering it: on every studio ground, light and dark, FRONT simply was not there. The editing
+ * room reaches the marker over a painted floor that writes no depth; the sweep reaches it over the
+ * shadow catcher alone, and at two millimetres the marker loses. Measured by raising it — at 0.05
+ * it draws cleanly on a cream ground.
+ *
+ * ⚠️ AND THE EDITING CASE KEEPS ITS 0.002 EXACTLY. That number is the other half of a pair the
+ * floor's own note records — "a catcher raised even 2 mm covered the FRONT marker" — so the two
+ * were tuned against each other and a baker who has chosen nothing must get the proven one. */
+function FrontMarker({ frontZ, colour = '#8a7a66', lift = 0.002 }) {
   return (
     <Text
       font={textFont}          // SEC-WEB-7 — bundled; omitting it re-introduces the jsdelivr fetch
-      position={[0, 0.002, frontZ + FRONT_MARKER_GAP]}
+      position={[0, lift, frontZ + FRONT_MARKER_GAP]}
       rotation={[-Math.PI / 2, 0, 0]}
       fontSize={0.11}
       // Deeper than the #c8b8a2 it was: on the #e5e2de studio floor that sat only just below the floor and
       // read as faint, and #a3927c was still asked to go a step darker. Still the same warm family, so it
       // guides without competing with the cake.
-      color="#8a7a66"
+      /* The default is the colour this was tuned to on the pale editing floor; a baker who dressed
+         the studio dark gets the lighter one. See studioInk — derived, not authored per ground. */
+      color={colour}
       anchorX="center"
       anchorY="middle"
       letterSpacing={0.06}
@@ -3877,6 +3889,21 @@ function CakeScene({
    *
    * It also doubles as "we are filming", which is why the front marker keys off it. */
   filmGround = null,
+  /* ── The baker's OWN room, while editing ────────────────────────────────────────────────────────
+   *
+   * The ground a baker chose in Settings, or null for the editing room as it has always been. It
+   * dresses the scene exactly as `filmGround` does — one colour edge to edge, no horizon join — and
+   * it is a SEPARATE prop on purpose.
+   *
+   * ⚠️ `filmGround` DOUBLES AS "WE ARE FILMING", which is why the FRONT marker keys off it (see
+   * below) and why the lens, the countdown and the recorder all read it. Reusing it to paint a
+   * chosen room would have taken the FRONT marker off every baker who picked a swatch, for a
+   * reason that has nothing to do with filming. Two names, because they are two questions.
+   *
+   * See studioLook.js for what a look is and why the grid is no longer filming-only. */
+  studioGround = null,
+  studioBackdrop = 'flat',
+  studioBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
   /* The take's backdrop: a graded sweep generated from `filmGround` — see takeBackdrop.js.
      'flat' (the default) is the single colour that shipped before it, and the editing path never
      passes anything else: a baker approves a cake on the designer's own ground. */
@@ -4186,6 +4213,11 @@ function CakeScene({
 
   const onFloorClick = e => { e.stopPropagation(); if (!gestureOnStickerRef.current) onDeselect(); };
 
+  /* The cyclorama's colour, from whichever asked for one. Named once because three places below
+     have to agree about it — the sky, the floor and whether there is a horizon at all — and the
+     first version of the studio look had them disagree: a painted floor under a swept sky. */
+  const sweepGround = filmGround || studioGround;
+
   return (
     <>
       <SceneLights shadows />
@@ -4195,8 +4227,12 @@ function CakeScene({
           with every pixel at alpha 255. The build was clean, the prop arrived as `true`, and the
           only way to see it was to read scene.background out of a running page.
           Absence has to be a VALUE somebody sets, so one component owns the background outright. */}
-      <SceneBackground colour={filmCutout ? null : (filmGround || DESIGNER_WALL)}
-                       look={filmGround ? filmBackdrop : 'flat'} strength={filmBackdropStrength}
+      {/* ⚠️ ONE SWEEP, WHOEVER ASKED FOR IT. Filming wins when both are set — a take is a deliberate
+          act with its own panel open, and the ground on screen while recording must be the one in
+          that panel. Otherwise the baker's own room, and failing that the editing wall. */}
+      <SceneBackground colour={filmCutout ? null : (sweepGround || DESIGNER_WALL)}
+                       look={filmGround ? filmBackdrop : (studioGround ? studioBackdrop : 'flat')}
+                       strength={filmGround ? filmBackdropStrength : studioBackdropStrength}
                        active={backdropActive} />
       <SceneEnv />
 
@@ -4206,7 +4242,7 @@ function CakeScene({
           nothing for it to fall on. */}
       {/* ⚠️ The floor goes with the sky. A cutout with the floor still in shot is a cake sitting on
           a grey slab on a transparent background — so no floor at all for a cutout. */}
-      {!filmCutout && (filmGround ? (
+      {!filmCutout && (sweepGround ? (
         <mesh rotation={[-Math.PI / 2, 0, 0]} receiveShadow onClick={onFloorClick}>
           {/* WHILE FILMING: a shadow catcher over a flat ground, so floor and sky are the same pixels and
               no take carries a horizon. MUCH bigger than the editing floor, so its edge is never in a
@@ -4248,7 +4284,10 @@ function CakeScene({
       {/* ⚠️ Not while filming. It is an editing aid — it tells the baker which way the cake faces
           while they work — and it was being burned into finished reels, where it reads as a stray
           watermark nobody can explain. */}
-      {board && !filmGround && <FrontMarker frontZ={boardFrontZ(board)} />}
+      {board && !filmGround && (
+        <FrontMarker frontZ={boardFrontZ(board)} colour={studioInk(studioGround)?.marker}
+                     lift={studioGround ? 0.05 : undefined} />
+      )}
 
       {/* THE CAKE. Every element the design contains is drawn by CakeContent — the same component the
           off-screen capture and the read-only previews render, so what a customer sees and what the
@@ -6405,6 +6444,10 @@ export default function CakeCanvas({
   filmBackdrop = 'flat',
   filmBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
   backdropActive = true,
+  /* The baker's own room while editing — see CakeScene's note on why this is not filmGround. */
+  studioGround = null,
+  studioBackdrop = 'flat',
+  studioBackdropStrength = BACKDROP_STRENGTH_DEFAULT,
   filmCutout = false,
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
@@ -6535,6 +6578,9 @@ export default function CakeCanvas({
         filmGround={filmGround}
         filmBackdrop={filmBackdrop}
         filmBackdropStrength={filmBackdropStrength}
+        studioGround={studioGround}
+        studioBackdrop={studioBackdrop}
+        studioBackdropStrength={studioBackdropStrength}
         backdropActive={backdropActive}
         filmCutout={filmCutout}
         filmTight={filmTight}
@@ -6684,8 +6730,12 @@ export default function CakeCanvas({
       {/* Scenery for the take only — null on every other path, including a capture. */}
       {/* `takeLensActive` points the fade exactly as it points the lens: the room assembles while
           the camera settles into it, and dissolves while the camera leaves. */}
-      {takeGrid && <TakeGrid strength={takeGridStrength} active={takeLensActive} />}
-      {takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLensActive} />}
+      {/* ⚠️ A GRID THAT IS NOT PART OF A TAKE IS SIMPLY ON. `takeLensActive` points the fade at the
+          lens, and outside a take there is no lens, so it is false — which would fade a baker's own
+          studio grid straight back out the moment it appeared. The fade belongs to the take; the
+          room does not. */}
+      {takeGrid && <TakeGrid strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />}
+      {takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />

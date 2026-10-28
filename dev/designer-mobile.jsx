@@ -1417,6 +1417,23 @@ const STUBS = {
   /* Counted so a test can prove the Decorations panel's refresh actually RE-FETCHES, rather than
      inferring it from the button having been clicked. The stub returns the same rows either way;
      what is being asserted is that the request happened at all. */
+  /* ── The baker's own studio ────────────────────────────────────────────────────────────────────
+     `?studio=` takes a ground hex (without the #) and dresses the editing room with it:
+     `?studio=2b2b2b&grid=1&wall=1&look=pool`. Absent, the host serves NO look at all — which is
+     also what a customer session and every other harness do, and is the state that must leave the
+     editing room exactly as it was. The setter stores it on window so a run can assert the save
+     happened rather than inferring it from the UI not erroring. */
+  ...(PARAMS.has('studio') ? {
+    fetchStudioLook: async () => ({ look: {
+      ground: `#${PARAMS.get('studio')}`,
+      backdrop: PARAMS.get('look') ?? 'pool',
+      backdropStrength: Number(PARAMS.get('depth') ?? 0.55),
+      grid: PARAMS.has('grid'),
+      gridWall: PARAMS.has('wall'),
+      gridStrength: Number(PARAMS.get('lines') ?? 0.45),
+    } }),
+    setStudioLook: async (look) => { window.__studioSaved = look; return { look }; },
+  } : {}),
   fetchElements:       async () => ((window.__elementFetches = (window.__elementFetches ?? 0) + 1),
                         PARAMS.has('writing') ? [{
     id: 'writing-el-1', name: 'Texts',

@@ -96,8 +96,17 @@ describe('finding it at all', () => {
   /* A skin saves the moment it is tapped, so the page has nothing to Save — the same immediate
      contract PrivacyDataSection's actions have. A button that changes nothing on screen while
      implying the choice is unsaved is the dead-control rule with the failure hidden. */
+  /* ⚠️ ASSERTED AS "APPEARANCE IS EXCLUDED", NOT AS THE WHOLE EXPRESSION. This pinned the
+     condition verbatim and broke the day the studio page joined it — a page with the identical
+     immediate-save contract, added to the same exclusion for the same reason. The question is
+     whether THIS page can show the button, so that is what it asks. */
   it('does not offer a Save button for a choice that is already saved', () => {
-    expect(panel).toMatch(/\{!showAppearance \|\| showSettings \|\| showStore \? \(/);
+    const at = panel.indexOf('showStore ? (');
+    expect(at, 'the Save button should still be conditional').toBeGreaterThan(-1);
+    const cond = panel.slice(panel.lastIndexOf('{', at), at + 13);
+    expect(cond).toMatch(/!showAppearance/);
+    expect(cond).toMatch(/showSettings/);
+    expect(cond).toMatch(/showStore/);
   });
 });
 

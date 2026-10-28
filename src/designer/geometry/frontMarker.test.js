@@ -93,8 +93,12 @@ describe('this test still describes the real code', () => {
     expect(src).toMatch(/const FRONT_MARKER_GAP = 0\.22;/);
   });
 
+  /* ⚠️ THE SUBJECT IS `boardFrontZ(board)`, NOT THE WHOLE LINE. This asserted the element verbatim
+     and broke the day the marker gained a `colour` and a `lift` for the baker's own studio — a
+     correct change, failing a test that was pinning formatting. The question it is here to ask is
+     which thing the marker is measured from, so that is what it asks. */
   it('measures from the board, not from the cake', () => {
-    expect(src).toMatch(/<FrontMarker frontZ=\{boardFrontZ\(board\)\} \/>/);
+    expect(src).toMatch(/<FrontMarker\s+frontZ=\{boardFrontZ\(board\)\}/);
     expect(src).toMatch(/export function boardFrontZ\(board\) \{\s*return board\.kind === 'rect' \? board\.halfD : board\.radius;/);
   });
 
