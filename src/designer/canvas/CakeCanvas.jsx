@@ -135,6 +135,7 @@ function sandRegion(sand) {
 }
 import GypCloud from './GypCloud.jsx';
 import { wallOccupants } from '../geometry/wallSeats.js';
+import { cakeBody, clampOutsideBody } from '../geometry/cakeBody.js';
 import { textPathFor } from '../geometry/textPath.js';
 import { cleanTriangles } from '../geometry/glbClean.js';
 import { outwardBand, rimBand } from './useSeatedInstances.js';
@@ -2310,7 +2311,7 @@ function StickerHitMesh({ volume, onPointerEnter, onPointerLeave, onPointerDown,
 // Gated in the MOVE handler rather than at pointer-down on purpose: selection, long-press, the
 // toolbar and orbit-blocking all still behave exactly as before. A pinned decoration can still be
 // picked up, looked at and edited — it just does not go anywhere.
-function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
+function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'round', radius }, body = [], reliefSampler = null, pipingBands = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null }) {
   const { camera, gl } = useThree();
   const didDrag           = useRef(false);
   const startPos          = useRef({ x: 0, y: 0 });
@@ -2474,6 +2475,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
     if (![p.x, p.y, p.z].every(Number.isFinite)) return;
     onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
   }, [sticker.freeHand, sticker.freePos, sticker.id]);
+  useSolidStop(sticker, body, onMove);
 
   /* The wall's outward group IS the face: its local +Z points out of the cylinder. See
      useFacePoseReport — the pose is read off the object rather than rebuilt from these locals. */
@@ -2576,9 +2578,7 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
               if (!fd) return;
               const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
               if (!hit) return;
-              const g = fd.grab ?? { x: 0, y: 0, z: 0 };
-              onMove(sticker.id, { freePos: {
-                x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+              onMove(sticker.id, { freePos: freeHandPos(hit, fd.grab, freeHandStop(sticker, body), body) });
               didDrag.current = true;
               return;
             }
@@ -2666,13 +2666,81 @@ function DraggableSideSticker({ sticker, radius, baseY, height, shp = { kind: 'r
  * is looking at: the decoration follows the pointer exactly, and depth is left to the gizmo's third
  * arm rather than guessed from a 2D gesture.
  */
+/* ── Free hand, and the one rule it does NOT release ─────────────────────────────────────────────
+ *
+ * Free hand stands the seating rules down so the baker decides where a piece goes. It does not make
+ * the cake hollow: a fondant monkey is a body, and a body is stopped by icing. A decoration that
+ * genuinely goes IN — a flower on a wire, a pick — says so on its row (`placement_config.pierces`)
+ * and gets nothing in its way, which is INVARIANTS #3b's config flag rather than a branch on what
+ * the element is. Returns null when there is nothing to stop this piece, so a caller can skip the
+ * whole question. See geometry/cakeBody.js.
+ *
+ * ⚠️ THE MEASUREMENT IS THE ONE THE SEATED DRAG USES. `occupantFootprint` + `footprintReach` is how
+ * far this piece reaches THE WAY IT IS GOING — the answer that stopped a Gingko leaf being held off
+ * a rim by its width. A second size rule here would stop a hand-placed piece at a different
+ * distance from a seated one on the same cake. Before the GLB has loaded the cache is empty and
+ * `occupantFootprint` falls back to its nominal half-size, which is the same fallback every other
+ * caller gets; the next move re-asks with the measurement.
+ */
+function freeHandStop(sticker, body) {
+  if (sticker?.freeHand !== true || sticker.pierces === true || !body?.length) return null;
+  const half = glbHalfCache[sticker.imageUrl];
+  const fp = occupantFootprint(sticker, half);
+  return {
+    hy: (half?.hy ?? STICKER_SIZE / 2) * (sticker.scale ?? 1),
+    reachAt: dir => footprintReach(fp, dir),
+  };
+}
+
+/* Where a free-hand drag has put the piece — the grabbed point on the camera plane, pushed back out
+   of the cake if it went in. Clamped HERE, where the value is written, not at the render: a piece
+   whose stored position disagrees with its picture leaves its own gizmo somewhere it is not
+   (INVARIANTS, "clamp where the value is WRITTEN"). It is also why this is not left to the
+   correcting effect below — that writes a second time after the frame, so pushing into a wall
+   would alternate between in and out on every move instead of simply stopping. */
+function freeHandPos(hit, grab, stop, body) {
+  const g = grab ?? { x: 0, y: 0, z: 0 };
+  const raw = { x: hit.x - g.x, y: hit.y - g.y, z: hit.z - g.z };
+  const p = stop ? clampOutsideBody(body, raw, stop) : raw;
+  return { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) };
+}
+
+/* The same rule for every OTHER way a free position can be written — the card's move gizmo, and the
+   one-time seed when free hand is first switched on. The drag clamps its own value, so this never
+   fires during one; it exists so the gizmo's arrows cannot walk a piece in through the wall, which
+   is the half a drag-only clamp would miss. A clamped position is its own fixed point, so the
+   correction settles in one write and cannot loop. */
+function useSolidStop(sticker, body, onMove) {
+  const fp = sticker.freeHand === true ? (sticker.freePos ?? null) : null;
+  useEffect(() => {
+    if (!fp) return;
+    const stop = freeHandStop(sticker, body);
+    const out = stop ? clampOutsideBody(body, fp, stop) : null;
+    /* ⚠️ THE TERMS, PUBLISHED, for the same reason `__footSeat` publishes its own just below: "it
+       went nowhere" and "it was already clear" look identical on a render, and this has already
+       cost one wrong diagnosis. Driving the harness, `window.__solidStop` said the clamp WAS
+       running and WAS returning a different position — which is what turned the hunt from "why is
+       nothing wired" into "what is it computing", and the answer was a piece being let out through
+       the bottom of a tier onto the board. */
+    if (import.meta.env?.DEV && typeof window !== 'undefined') {
+      window.__solidStop = { id: sticker.id, fp, out, slabs: body ?? [],
+                             reach: stop ? { hy: +stop.hy.toFixed(4), x: +stop.reachAt({ x: 1, z: 0 }).toFixed(4) } : null,
+                             freeHand: sticker.freeHand, pierces: sticker.pierces };
+    }
+    if (!stop || !out) return;
+    if (Math.abs(out.x - fp.x) < 1e-3 && Math.abs(out.y - fp.y) < 1e-3 && Math.abs(out.z - fp.z) < 1e-3) return;
+    onMove(sticker.id, { freePos: { x: +out.x.toFixed(4), y: +out.y.toFixed(4), z: +out.z.toFixed(4) } });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fp?.x, fp?.y, fp?.z, sticker.id, sticker.scale, sticker.pierces, body]);
+}
+
 function freeDragPlane(camera, at) {
   const n = new THREE.Vector3();
   camera.getWorldDirection(n);
   return new THREE.Plane().setFromNormalAndCoplanarPoint(n, new THREE.Vector3(at.x, at.y, at.z));
 }
 
-function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
+function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], topRadius = Infinity, shp = { kind: 'round', radius: topRadius }, hole = null, body = [], selected, onSelect, onLongPress, onMove, onGroupMove, onMoveMany, moveSet, allStickers, onOrbitEnable, toolbar, resize = null, canMove = true, onFacePose = null, surfaceLift = null }) {
   const { camera, gl } = useThree();
   const didDrag         = useRef(false);
   const startPos        = useRef({ x: 0, y: 0 });
@@ -2986,6 +3054,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
     if (![p.x, p.y, p.z].every(Number.isFinite)) return;
     onMove(sticker.id, { freePos: { x: +p.x.toFixed(4), y: +p.y.toFixed(4), z: +p.z.toFixed(4) } });
   }, [sticker.freeHand, sticker.freePos, sticker.id]);
+  useSolidStop(sticker, body, onMove);
   const footYaw = footSeat ? surfaceYaw(sticker) : 0;
   const footX = footSeat ? (footSeat.x * Math.cos(footYaw) + footSeat.z * Math.sin(footYaw)) * effScale : 0;
   const footZ = footSeat ? (-footSeat.x * Math.sin(footYaw) + footSeat.z * Math.cos(footYaw)) * effScale : 0;
@@ -3109,9 +3178,7 @@ function DraggableTopSticker({ sticker, topY, topBands = [], sideBands = [], top
         if (!fd) return;
         const hit = planePoint(pointerRay(ev, gl.domElement, camera), fd.plane);
         if (!hit) return;
-        const g = fd.grab ?? { x: 0, y: 0, z: 0 };
-        onMove(sticker.id, { freePos: {
-          x: +(hit.x - g.x).toFixed(4), y: +(hit.y - g.y).toFixed(4), z: +(hit.z - g.z).toFixed(4) } });
+        onMove(sticker.id, { freePos: freeHandPos(hit, fd.grab, freeHandStop(sticker, body), body) });
         didDrag.current = true;
         return;
       }
@@ -4583,6 +4650,11 @@ function CakeContent({ config, scene, edit = null }) {
   }, []);
   const { texts = [], ages = [], stickers = [], writings = [], piping = [], garnishes = [], toppers = [], boardGrass = null, boardGyp = null, boardSand = null, nameBlocks = null } = config;
   const { tierData, stackY, bottomTier, bottomShp, topTier, board } = scene;
+  /* What a hand-placed decoration may not be pushed into. One memo, because both draggables need
+     the same answer and a free-hand piece can be dragged into ANY tier, not only the one whose zone
+     it was dropped on. Empty while there are no tiers, which `clampOutsideBody` treats as no
+     constraint — the honest answer for a cake with nothing on it. See geometry/cakeBody.js. */
+  const solidBody = useMemo(() => cakeBody(tierData, board), [tierData, board]);
   const {
     orbitRef = null, gestureOnStickerRef = null,
     selectedGarnishId = null, onGarnishSelect = NOOP, onGarnishMove = null,
@@ -5387,6 +5459,7 @@ function CakeContent({ config, scene, edit = null }) {
               baseY={tier.baseY}
               height={tier.height}
               shp={tierShape(tier)}
+              body={solidBody}
               reliefSampler={tierReliefSampler(tier)}
               pipingBands={resolveSidePipingBands({
                 topPipings:    tier.topPipings ?? (tier.topPiping ? [tier.topPiping] : []),
@@ -5444,6 +5517,7 @@ function CakeContent({ config, scene, edit = null }) {
             shp={isBoard ? (boardShp ?? tierShape(tier)) : tierShape(tier)}
             // The cake's own footprint is what a board decoration must not stand in.
             hole={isBoard ? tierShape(bottomTier) : null}
+            body={solidBody}
             selected={isSelected}
             onSelect={(id, ctrlKey) => onStickerSelect(id, ctrlKey)}
             onLongPress={onStickerLongPress}

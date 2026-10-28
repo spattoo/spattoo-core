@@ -1395,6 +1395,17 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
              Authored per row (`placement_config.free_hand`), because most decorations should keep
              being seated for them. */
           freeHand:      element.placement_config?.free_hand === true,
+          /* ⚠️ THE OTHER HALF OF FREE HAND, AND OFF BY DEFAULT. With the seating rules released, the
+             cake stops being empty space the piece can be pushed through — a fondant monkey is a
+             body and is stopped by the icing. Some decorations genuinely go IN: a flower on a wire,
+             a pick. Sandeep: *"there elements like fondant monkey that dont get inserted into cake,
+             so should be stopped by walls. there are elements like flowers, can be inserted."*
+             Solid is the common case, so the row only speaks up for the exception.
+             ⚠️ NOT `insert`, AND THE NAME IS THE POINT. `<zone>.insert` already means the per-zone
+             SEATING modifier that buries, leans and fan-spins an automatically placed piece, and
+             `insertDepth` is its instance half. A second meaning on that stem would read as the
+             same feature. This one is a permission, not a pose. See geometry/cakeBody.js. */
+          pierces:       element.placement_config?.pierces === true,
           footSeat:      element.placement_config?.perch?.foot
                       ?? element.placement_config?.verge?.foot ?? null,
           // Pixel-recolour region descriptor for a 2D image sticker (e.g. recolour only a card

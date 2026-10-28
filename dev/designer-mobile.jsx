@@ -1111,6 +1111,8 @@ if (PARAMS.has('bow')) {
     placement_config: { r: 4, scale: { max: 9, min: 1.6, step: 0.5 }, material: 'satin',
       // ?freehand=1 — the row switches on the move gizmo and the seating rules stand down
       ...(PARAMS.has('freehand') ? { free_hand: true } : {}),
+      // ?pierces=1 — and the row declares it may go INTO the cake, so the solid stop stands down
+      ...(PARAMS.has('pierces') ? { pierces: true } : {}),
       metalness: 0, roughness: 0.4,
       rim: 'verge', side: { mode: 'hug', seat: 'proud' },
       // The row as it is in the catalogue today. `seat: 'hang'` is what this change adds; flip it

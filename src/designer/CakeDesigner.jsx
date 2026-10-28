@@ -10324,6 +10324,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     window.__placeTestPattern = placeTestPattern;
     window.__loadElements = loadElementsIfNeeded;   // call first, wait a beat, then place
     window.__getStickers = () => design.stickers;   // assert spawn/patternId/selection from tests
+    /* Patch one placed decoration, through the SAME updateSticker the card's controls call — so a
+       harness drives the real writer rather than a stand-in beside it. Written for the free-hand
+       solid stop (`geometry/cakeBody.js`): the move gizmo's arrows are three dragged meshes in the
+       scene, which is the one free-position writer a script cannot reach, and it is exactly the one
+       that could otherwise walk a piece in through a wall. */
+    window.__patchSticker = (id, patch) => { updateSticker(id, patch); return true; };
     /* Which copy of a decoration's artwork the cake is textured from. The ≤512 copies come from the
        catalogue (`render_key`, api migration 132) and are registered as rows load, so there is no
        way to exercise the SELECTION from a harness whose database has none. Takes the same rows
