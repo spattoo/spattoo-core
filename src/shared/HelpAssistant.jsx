@@ -171,10 +171,12 @@ export default function HelpAssistant({
                     integrate others later"*. The state machine stays wired, pinned here.
                     ⚠️ AND THAT IS WHY 80 IS ALLOWED. Appu's own ~96px floor is the size at which
                     NINE poses stay apart from one another; one pose needs only to be legible, and
-                    measured against the sticker the face, blush and hands still read at 68. Below
-                    ~60 he becomes narrower than the "Ask me" pill and the pair looks wrong.
+                    measured against the sticker the face, blush and hands still read at 52. At
+                    44 the mouth and hands close up and he is a smudge.
+                    ⚠️ THE PILL SCALES WITH HIM. Left at its original weight he ends up narrower
+                    than his own label and the pair reads as a mistake.
                     ⚠️ Re-raise this to ~96 on the day the other eight are turned on. */}
-                <Character state={ASSISTANT.IDLE} size={isMobile ? 68 : 80} />
+                <Character state={ASSISTANT.IDLE} size={isMobile ? 52 : 60} />
                 <span style={S.fabLabel}>Ask me</span>
               </>
             : <AssistantIcon size={isMobile ? 22 : 24} />}
@@ -399,9 +401,9 @@ const S = {
      to clicks (see Appu's CSS), and pointer-events INHERITS — without this the words are dead. */
   fabLabel: {
     pointerEvents: 'auto',
-    font: '700 12px/1 inherit', letterSpacing: '0.01em', color: PANEL.ink,
+    font: '700 11px/1 inherit', letterSpacing: '0.01em', color: PANEL.ink,
     background: '#fff', border: `1px solid ${PANEL.line}`, borderRadius: 999,
-    padding: '5px 11px', whiteSpace: 'nowrap',
+    padding: '5px 10px', whiteSpace: 'nowrap',
     boxShadow: '0 2px 8px rgba(0,0,0,0.10)',
   },
 
