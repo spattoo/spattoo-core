@@ -162,7 +162,7 @@ export default function HelpAssistant({
           onPointerLeave={e => { e.currentTarget.style.transform = ''; }}
         >
           {Character
-            ? <Character state={ASSISTANT.IDLE} size={isMobile ? 40 : 44} crop="head" />
+            ? <Character state={ASSISTANT.IDLE} size={isMobile ? 104 : 124} crop="peek" bubble />
             : <AssistantIcon size={isMobile ? 22 : 24} />}
         </button>
       )}
@@ -360,7 +360,22 @@ const S = {
   /* 48 still clears the 44px target floor, and a 52px circle crowds a 375px screen that already
      carries a five-slot nav strip. */
   fabMobile: { width: 48, height: 48, right: 12 },
-  fabCharacter: { background: '#fff', border: `1px solid ${PANEL.line}` },
+  /* ⚠️ HE IS NOT A BUTTON WITH A FACE ON IT, HE IS SITTING THERE. Sandeep, after the first attempt
+     cropped his head into the icon's disc: *"'right bottom' meaning it should come on the right
+     bottom side of the screen"* — the reference is the whole figure leaning on a line with a
+     speech bubble, and a circle around it throws away the pose, the hands and the line, which are
+     most of what makes him read as a character rather than a logo.
+     So: no disc, no border, no shadow, no fill. The drawing carries its own ground line, and the
+     frame is cut at that line so he sits ON the screen's edge instead of floating above it. */
+  /* ⚠️ AND HIS BOX MUST NOT EAT THE CORNER. A 52px disc could afford to be a rectangle; the peeking
+     figure is ~150x124 of mostly empty space over the designer's canvas. `pointerEvents: 'none'`
+     here with `auto` on the drawing (see Appu's CSS) means only the painted parts of him are
+     clickable — the event still bubbles through to this button's onClick. */
+  fabCharacter: {
+    width: 'auto', height: 'auto', borderRadius: 0, right: 10,
+    background: 'none', border: 'none', boxShadow: 'none', overflow: 'visible',
+    pointerEvents: 'none',
+  },
 
   askRow: { display: 'flex', gap: 7, alignItems: 'stretch' },
   input: {

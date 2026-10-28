@@ -183,7 +183,16 @@ const CSS = `
 @keyframes appuPop     { from { transform: scale(0.4); opacity: 0 } to { transform: none; opacity: 1 } }
 @keyframes appuThink   { 0%,100% { opacity: .25; transform: translateY(6px) } 50% { opacity: 1; transform: none } }
 
-.appu-root  { animation: appuRise 420ms cubic-bezier(.34,1.3,.5,1) both; }
+/* ⚠️ ONLY THE DRAWING IS CLICKABLE. A host that makes him a control sets pointer-events none on
+   the control's own box; none here and auto on the SHAPES then hit-tests the painted geometry, so
+   the empty corners of his frame stay transparent to clicks and the canvas underneath keeps
+   working. It has to be per-shape: pointer-events inherits, so none on the button alone left the
+   shapes inheriting none and the svg box still swallowing the corner — measured, not assumed.
+   ⚠️ NO BACKTICKS IN THIS BLOCK. It sits inside a template literal, so one closes the CSS string
+   and the whole file stops parsing — and the tests stay green while it happens, because they
+   render him, not this stylesheet. Second time; the first cost a confusing half-hour. */
+.appu-root  { animation: appuRise 420ms cubic-bezier(.34,1.3,.5,1) both; pointer-events: none; }
+.appu-root path, .appu-root circle, .appu-root ellipse { pointer-events: auto; }
 .appu-body  { animation: appuBreathe 3.6s ease-in-out infinite; transform-origin: 200px 440px; }
 .appu-eyes  { animation: appuBlink 5.2s infinite; transform-origin: 200px 270px; }
 
@@ -219,15 +228,38 @@ const CSS = `
 const FRAME = {
   full: { box: '0 55 420 445', w: 420, h: 445 },
   head: { box: '48 112 302 346', w: 302, h: 346 },
+  /* Room to his upper right for the bubble, and the bottom edge cut at the line he leans on so he
+     sits ON the screen's edge rather than floating above it. */
+  peek: { box: '0 36 548 448', w: 548, h: 448 },
 };
+
+/* ⚠️ THE BUBBLE IS THE AFFORDANCE. Appu peeking in a corner is a picture; the three dots are what
+   say TALK TO ME, and rule 7 is judged at rest on a phone, where there is no hover to reveal
+   anything. It is drawn as ONE path — body and tail together — because an ellipse with a separate
+   tail shows the ellipse's own stroke running through the join. */
+const BUBBLE = (
+  <g>
+    <path
+      d="M546 108 C546 139 508 164 462 164 C442 164 424 160 410 153 L392 196 L388 147
+         C381 136 378 122 378 108 C378 77 416 52 462 52 C508 52 546 77 546 108 z"
+      fill="#fff" stroke={SAGE} strokeWidth="9"
+    />
+    <circle cx="424" cy="108" r="11" fill={SAGE} stroke="none" />
+    <circle cx="462" cy="108" r="11" fill={SAGE} stroke="none" />
+    <circle cx="500" cy="108" r="11" fill={SAGE} stroke="none" />
+  </g>
+);
 
 /**
  * @param state  one of ASSISTANT (see assistantState.js)
  * @param size   rendered height in px. Measured: the full figure stops reading below ~96.
- * @param crop   'full' (default) or 'head' — use 'head' under ~96px. See FRAME.
+ * @param crop   'full' (default), 'head' under ~96px, or 'peek' for the corner. See FRAME.
+ * @param bubble draw the three-dot speech bubble to his upper right. Needs crop='peek'.
  * @param apron  the collar under his chin. The baker's own primary where a host has one.
  */
-export default function Appu({ state = ASSISTANT.IDLE, size = 64, crop = 'full', apron = SAGE }) {
+export default function Appu({
+  state = ASSISTANT.IDLE, size = 64, crop = 'full', bubble = false, apron = SAGE,
+}) {
   const pose = POSE[state] ?? POSE[ASSISTANT.IDLE];
   const frame = FRAME[crop] ?? FRAME.full;
   const id = useId();
@@ -251,6 +283,7 @@ export default function Appu({ state = ASSISTANT.IDLE, size = 64, crop = 'full',
       <path d="M124 452 C170 462 228 458 268 446" stroke={apron} strokeWidth="9" />
       <path d="M24 476 H416" strokeWidth="11" />
       {MARKS[state] ?? null}
+      {bubble ? BUBBLE : null}
     </svg>
   );
 }
