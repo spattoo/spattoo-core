@@ -156,19 +156,23 @@ export default function HelpAssistant({
           onClick={() => setOpen(true)}
           aria-label="Help — ask how to do something"
           style={{ ...S.fab, bottom: `calc(${bottomInset + 14}px + env(safe-area-inset-bottom, 0px))`,
-                   ...(isMobile ? S.fabMobile : null) }}
+                   ...(isMobile ? S.fabMobile : null), ...(Character ? S.fabCharacter : null) }}
           onPointerDown={e => { e.currentTarget.style.transform = 'scale(0.94)'; }}
           onPointerUp={e => { e.currentTarget.style.transform = ''; }}
           onPointerLeave={e => { e.currentTarget.style.transform = ''; }}
         >
-          <AssistantIcon size={isMobile ? 22 : 24} />
+          {Character
+            ? <Character state={ASSISTANT.IDLE} size={isMobile ? 40 : 44} crop="head" />
+            : <AssistantIcon size={isMobile ? 22 : 24} />}
         </button>
       )}
 
       <Panel
         open={open}
         onClose={() => setOpen(false)}
-        title={Character ? <span style={S.titleRow}><Character state={mood} size={26} />Help</span> : 'Help'}
+        title={Character
+          ? <span style={S.titleRow}><span style={S.characterChip}><Character state={mood} size={26} crop="head" /></span>Help</span>
+          : 'Help'}
         subtitle="Ask how to do something, in your own words"
         width={420}
         isMobile={isMobile}
@@ -333,12 +337,21 @@ export default function HelpAssistant({
 const S = {
   /* ⚠️ IT LOOKS PRESSABLE AT REST, ON A PHONE (rule 7). Its own dark surface, a border and a
      shadow — hover and the press scale are feedback on top of that, never what makes it legible. */
+  /* ⚠️ THE TRIGGER IS APPU WHEN THERE IS AN APPU. Sandeep's reference for him was a peeking figure
+     with *"something like this on the right bottom"* — this button IS the bottom-right thing, so
+     the character belongs on it rather than a generic speech icon. What does NOT change is the
+     footprint: 52 on desktop, 48 on a phone, clearing the 44px target floor without crowding a
+     375px screen that already carries a five-slot nav strip. Those were measured; the artwork
+     inside them is the part that was a placeholder.
+     ⚠️ And he needs a LIGHT disc — he is drawn in INK, and on the icon's near-black circle his
+     outline disappears and leaves a pale blob with two dark marks for eyes. */
   fab: {
     position: 'fixed', right: 14, zIndex: Z.toast,
     width: 52, height: 52, borderRadius: '50%',
     display: 'flex', alignItems: 'center', justifyContent: 'center',
     background: '#0b0b0d', color: '#fff',
     border: '1px solid rgba(255,255,255,0.12)',
+    overflow: 'hidden',
     boxShadow: '0 6px 20px rgba(0,0,0,0.26)',
     cursor: 'pointer', padding: 0,
     transition: 'transform 0.12s ease, box-shadow 0.12s ease',
@@ -347,6 +360,7 @@ const S = {
   /* 48 still clears the 44px target floor, and a 52px circle crowds a 375px screen that already
      carries a five-slot nav strip. */
   fabMobile: { width: 48, height: 48, right: 12 },
+  fabCharacter: { background: '#fff', border: `1px solid ${PANEL.line}` },
 
   askRow: { display: 'flex', gap: 7, alignItems: 'stretch' },
   input: {
@@ -386,6 +400,14 @@ const S = {
   cardHeading: { fontSize: 14.5, fontWeight: 700, color: PANEL.ink, marginBottom: 7 },
   checked: { fontSize: 10.5, color: PANEL.muted, marginTop: 8, paddingTop: 7, borderTop: `1px solid ${PANEL.line}` },
   titleRow: { display: 'inline-flex', alignItems: 'center', gap: 9 },
+  /* ⚠️ THE CHARACTER NEEDS A LIGHT GROUND. He is drawn in INK on white, and the panel header is
+     near-black — dropped straight onto it his outline vanishes and all that is left is a pale blob
+     with two dark marks where the eyes should be. The chip is the host's job, not his: he keeps one
+     drawing that works anywhere, and whoever mounts him supplies a surface he reads against. */
+  characterChip: {
+    width: 30, height: 30, borderRadius: '50%', background: '#fff',
+    display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flex: '0 0 auto',
+  },
   escalate: {
     marginTop: 14, paddingTop: 13, borderTop: `1px solid ${PANEL.line}`,
     display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'flex-start',

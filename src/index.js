@@ -71,6 +71,7 @@ export { default as AuthGate } from './auth/AuthGate.jsx';
 // its own shell rather than CakeDesigner (admin, and any future customer surface); the baker app
 // gets it for free because CakeDesigner mounts it.
 export { default as HelpAssistant } from './shared/HelpAssistant.jsx';
+export { default as Appu } from './shared/Appu.jsx';
 export { default as HelpMarkdown } from './shared/helpMarkdown.jsx';
 export { useCakeDesign, toCanvasConfig, TIER_RADII, FROSTING_TYPES } from './designer/hooks/useCakeDesign.js';
 export { ZONES, PLACEMENT_MODES, ELEMENT_KINDS, ELEMENT_SLUGS } from './designer/constants.js';

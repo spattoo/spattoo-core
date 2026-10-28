@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import HelpAssistant from '../src/shared/HelpAssistant.jsx';
+import Appu from '../src/shared/Appu.jsx';
 /* The same module the API runs, imported straight from the backend checkout beside this one, so
    the harness cannot drift from the server about what is declined. */
 import { outOfScope } from '../../spattoo-backend/src/services/helpScope.js';
@@ -90,7 +91,7 @@ function App() {
           sendHelpFeedback: async (id) => { console.log('[harness] feedback for', id); return { ok: true }; },
           escalateHelp:    async (id, note) => { console.log('[harness] escalate', id, JSON.stringify(note)); await new Promise(r => setTimeout(r, 400)); return { ok: true }; },
         }}
-        character={q.get('appu') ? StandInCharacter : null}
+        character={q.get('standin') ? StandInCharacter : Appu}
         isMobile={mobile} bottomInset={mobile ? 56 : 0} />
       {mobile && (
         <div style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: 56,

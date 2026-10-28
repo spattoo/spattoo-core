@@ -35,6 +35,7 @@ import TemplateGrid from './shared/TemplateGrid.jsx';
 import { REQUIRED_TAG_CATEGORIES, missingRequiredCategories, requiredTagMessage, ageRangeProblem } from '../shared/tagRequirements.js';
 import { Slider } from '../shared/Slider.jsx';
 import HelpAssistant from '../shared/HelpAssistant.jsx';
+import Appu from '../shared/Appu.jsx';
 import { CHROME_STOPS, chromeGradient } from '../shared/chrome.js';
 import { RAIL, RAIL_RIGHT, RAIL_FLYOUT_LEFT, RAIL_OVER_PAGE_Z, RAIL_LIFTED_SHADOW } from '../shared/rail.js';
 
@@ -23650,6 +23651,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
       {orderMode === 'baker' && (
         <HelpAssistant
           apiClient={apiClient}
+          character={Appu}
           isMobile={isMobile}
           bottomInset={isMobile ? MOBILE_BAR_H : 0}
           hidden={onFilmGround}
