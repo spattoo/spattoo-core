@@ -5042,6 +5042,11 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* What the canvas is handed, which is not quite what was stored — `studioRoomFrom` drops a grid
      that has no ground under it. See its note. */
   const studioRoom = useMemo(() => studioRoomFrom(studioLook), [studioLook]);
+  /* The header row's ink, when the baker has dressed the studio — the band that used to sit behind
+     it is gone, so the name and the bell read off the ground instead. Null for a plain room, which
+     leaves every colour exactly as it was tuned. */
+  const chromeInk = studioInk(studioRoom.ground)?.chrome ?? null;
+
   /* POC only, and deliberately NOT part of `studioLook` yet: a backdrop handed in by whoever is
      judging it — the harness (`?bgimage=`) or admin's Studio Backdrop page — so it can be seen on a
      real cake before anybody designs a setting, an upload path or a catalogue row around it.
@@ -18430,20 +18435,20 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
            chrome's ground is one chance, and the studio starts where the rule says it starts.
 
            Absent for a baker who has chosen nothing, so nothing moves for anyone who has not. */
-        /* ⚠️ POC: THE BAND GOES WHEN THE WALL CARRIES THE NAME. Sandeep: *"above the wall, there is
-           white line break area where there is baker name originally. can we extend the wall till
-           there, lets not have that white area at all."* The band is painted OVER the top of the
-           canvas, so dropping its colour does not move anything — it uncovers the studio that was
-           always behind it, and the wall simply reaches the top of the page.
-           ⚠️ AND IT TAKES THE RULE WITH IT. A 1px line ruled across a bakery wall reads as a fault,
-           not as chrome; the whole point of removing the band is that there is no longer an edge
-           there. What stays in the row is the bell and the credits pill, which is also the reason
-           this is safe to try: the NAME was the thing that needed a ground to sit on, and it has
-           moved onto the wall. On a DARK studio ground the remaining two still have the contrast
-           problem the band was introduced to solve — see the note above. */
+        /* ⚠️ A CHOSEN STUDIO HAS NO BAND AND NO RULE — IT RUNS TO THE TOP OF THE PAGE. Sandeep:
+           *"removing the white banner for the baker name. lets merge that with studio. if grid
+           wall lines are opted, it ll extend till top."* The band was painted OVER the top of the
+           canvas, so taking it away moves nothing: it uncovers the studio that was always behind
+           it, and the wall — grid lines and all — reaches the top.
+           ⚠️ AND THE RULE GOES WITH IT. A 1px line ruled across a baker's chosen wall reads as a
+           fault rather than as chrome, and the band's whole purpose was to give that line a ground
+           to end on. Without the band there is no edge there to define.
+           ⚠️ THE ROW IS INKED INSTEAD OF BACKED, which is the trade this file turned down a day
+           ago and is right now: it was three surfaces then, it is two now (the credits pill brings
+           its own). `studioInk().chrome` is that ink, and the measurement is in its note.
+           Unchanged for a baker who has chosen nothing — no studio, band exactly as it was. */
         <div style={{ ...s.desktopHeaderRule, top: (pastDue ? PAST_DUE_BAR_H : 0),
-                      ...(studioWallSign ? { borderBottom: 'none' }
-                          : studioRoom.ground ? { background: DESIGNER_WALL } : {}) }} />
+                      ...(studioRoom.ground ? { borderBottom: 'none' } : {}) }} />
       )}
 
       {/* ⚠️ THE DESKTOP BRAND MOVED TO THE RIGHT-HAND CLUSTER — see `creditsFloat` below. It used to
@@ -19484,7 +19489,8 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                   rests, while the bell is a control that gets pressed. Kept in step with the header
                   cluster above — two placements of the same furniture, the trap Chef's Desk already
                   taught us to watch for. */}
-              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink} />}
+              {canManageStore && <NotificationBell apiClient={apiClient} onOpenLink={openNotificationLink}
+                                                   colour={chromeInk ?? undefined} />}
               {hasCap('billing:manage') && (
                 <CreditsPill apiClient={apiClient}
                   onOpen={() => { setBuyCreditsOpen(true); setSettingsOpen(false); setProfileOpen(false); }} />
@@ -19509,6 +19515,9 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                 return (
                   <div style={{ ...s.topLogoText, ...s.desktopLogoText, fontFamily: brandFont,
                                 fontSize: size,
+                                /* The band behind this row is gone once a studio is chosen, so the
+                                   name inks off the ground instead of off nothing. See studioInk. */
+                                ...(chromeInk ? { color: chromeInk } : {}),
                                 /* ⚠️ SHRINK FIRST, THEN WRAP, NEVER CLIP. At the 15px floor the
                                    type has stopped giving way, so a name long enough to exhaust
                                    even that would keep growing LEFT — past the rail and off the

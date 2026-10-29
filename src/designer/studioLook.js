@@ -154,9 +154,25 @@ export function takeSeedFrom(look, fallbackGround) {
 export function studioInk(ground) {
   if (!ground) return null;                       // the plain room keeps the colours it was tuned with
   return luminanceOf(ground) > 0.55
-    ? { marker: '#8a7a66', hint: '#999' }         // a light ground: exactly what it has always been
-    : { marker: '#bda98c', hint: '#8f8d88' };
+    ? { marker: '#8a7a66', hint: '#999', chrome: '#333333' }   // a light ground: as it has always been
+    : { marker: '#bda98c', hint: '#8f8d88', chrome: '#F3F0EB' };
 }
+
+/* ⚠️ `chrome` IS THE HEADER ROW, AND IT IS WHY THE BAND COULD GO. Sandeep: *"removing the white
+ * banner for the baker name. lets merge that with studio."* That band was painted over the top of
+ * the canvas precisely so the bakery name and the bell would keep a ground to sit on — the note at
+ * its render site weighed re-inking against painting, and chose painting because it was THREE
+ * surfaces to get right rather than one.
+ *
+ * It is two now. The credits pill carries its own background and already switches by threshold, so
+ * only the name and the bell are bare on the scene, and one more field here is cheaper than a strip
+ * of chrome across the studio. Measured on the bell's own bounding box at 1000px: on `#2b2b2b` the
+ * band gave 6.43:1 and its removal dropped the bell to 2.01:1, below the 3:1 an icon needs. Inked,
+ * it is back above it — which is the whole reason this field exists rather than the band.
+ *
+ * ⚠️ SAME THRESHOLD AS THE MARKER, DELIBERATELY. One reading of "is this a dark room" for every
+ * piece of ink in the studio, or a mid-grey ground flips the marker and not the header and nobody
+ * can see why. */
 
 /** What goes over the wire on a save — only the fields the server stores, already normalised. */
 export function studioLookPayload(look) {
