@@ -94,15 +94,37 @@ export const NOMINAL_MM_PER_UNIT = (8 * 25.4) / 2.4;   // ≈ 84.7
  */
 export const WRITING_FIT = Object.freeze({ cream: 0.8, acrylic: 0.4 });
 
+/* ⚠️ WHICH LOOKS ARE CUT FROM A SHEET, and it lives HERE because `writingFit` below needs it and a
+ * pure module cannot import the designer. `WRITING_LOOKS` in CakeDesigner builds its `cut` flags
+ * from this object rather than repeating them, so there is one answer to "is this cut" and a new
+ * Look cannot be added to one list and forgotten in the other — which is exactly how fondant came
+ * to be sized like cream. A test pins the two together. */
+export const WRITING_CUT = Object.freeze({ cream: false, acrylic: true, fondant: true });
+
 /* The colour a fondant message starts at — plain white paste, before any gel is kneaded through it,
  * which is what a baker reaches for and the one shade that reads as fondant rather than as a choice
  * somebody already made for them. A seed, not a rule: it is the ColorWheel's starting position and
  * the renderer's fallback, so the two cannot disagree about an untouched message. */
 export const FONDANT_WRITING_COLOR = '#F4EFE6';
 
-// The starting size for a message of this material — the cream one for a message that does not say,
-// because an absent `style` has always meant cream (see DEFAULT_WRITING).
-export const writingFit = (style) => WRITING_FIT[style] ?? WRITING_FIT.cream;
+/* The starting size for a message of this material — the cream one for a message that does not say,
+ * because an absent `style` has always meant cream (see DEFAULT_WRITING).
+ *
+ * ⚠️ IT ROUTES BY CUT-NESS, NOT BY LOOKING THE STYLE UP. `WRITING_FIT` has no `fondant` key on
+ * purpose — `writingStyleSwitch` already explains why there must not be a second cut number: *"a
+ * fondant word cut with the same cutters at the same scale wants the same answer. A second entry
+ * here would be two numbers nobody could tell apart."* But a plain `WRITING_FIT[style]` lookup then
+ * fell THROUGH to cream's 0.8 for fondant, so the one place that chose 0.4 deliberately was
+ * contradicted by the fallback, and a fondant message that never had its dial touched rendered at
+ * exactly twice the intended size.
+ *
+ * ⚠️ AND IT ONLY SHOWED ON FONDANT because cut letters are sized by WIDTH alone — `height = span /
+ * probe.width` in AcrylicWord — with no `maxH` clamp, where piped cream takes `min(maxW/w, maxH/h)`
+ * and is held back by the height. Measured on a 1.2-radius top, "We" in Parisienne: cap height 0.45
+ * at fit 0.4, and 0.90 at 0.8 — three quarters of the cake's radius for a two-letter word.
+ * Reported as *"why suddenly texts element showing too big"*. */
+export const writingFit = (style) =>
+  (WRITING_CUT[style] ? WRITING_FIT.acrylic : WRITING_FIT.cream);
 
 // ── Sheet (rectangular) cakes ─────────────────────────────────────────────────
 // Standard US bakery sheet/square sizes, full width × depth in inches, scaled to

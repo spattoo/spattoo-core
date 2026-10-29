@@ -59,7 +59,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, writingFit, FONDANT_WRITING_COLOR,
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, WRITING_CUT, writingFit, FONDANT_WRITING_COLOR,
          THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
@@ -633,15 +633,20 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
  * `!== 'acrylic'` meant "cream only" and would have silently switched itself on for fondant — a
  * Curve dial on a cutter-cut letter, a Thickness slider writing a field the builder does not read.
  */
+/* ⚠️ `cut` COMES FROM `WRITING_CUT`, NOT FROM A LITERAL HERE. The same fact decides the card's
+   controls and the starting SIZE (`writingFit`), and that one lives in constants.js because it must
+   be reachable from a pure module. Written out twice, fondant was marked cut here and absent there,
+   so its default size fell through to cream's — twice the intended size, on the one Look whose
+   letters have no height clamp to hide it. */
 const WRITING_LOOKS = {
-  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: false },
-  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: true  },
+  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.cream },
+  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: WRITING_CUT.acrylic },
   /* Fondant goes everywhere cream does — it is paste, and a flat letter sits on a drum as happily as
      on the cake. On the TOP it is the one Look with a choice to make, because both readings are real
      things bakers do: HUG (lying on the icing, the common one) or STAND (propped upright on prongs).
      Sandeep: "fondant letters can go on both side,top and board. on top, fondant letters can hug or
      stand." Acrylic has no such choice — a perspex sheet lying flat on a cake top is not a thing. */
-  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: true  },
+  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.fondant },
 };
 const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
 const writingSurfaces = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).surfaces;
