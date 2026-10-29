@@ -26,6 +26,14 @@ const listeners = new Set();
 let nextPingId = 1;
 const pending = new Map();     // id → { label, since }
 
+/* ⚠️ TWO COUNTS, BECAUSE TWO CANVASES ASK DIFFERENT QUESTIONS. The live canvas's count answers
+ * "is the baker's cake still loading" and drives the spinner. The capture canvas's count answers
+ * "can a thumbnail be taken yet", which nothing used to ask because that canvas was simply kept
+ * mounted the whole session — a second cake on the GPU for every baker, so that three buttons
+ * could capture instantly. Now it mounts only when a capture is coming, so somebody has to be
+ * able to WAIT for it. */
+let captureInFlight = 0;
+
 /* ⚠️ THE COUNT IS THE ONLY THING THE SPINNER KNOWS, so it is the only thing worth watching when the
    spinner will not go away. "Still loading" and "finished, but the count never came back down" are
    the same picture on screen and completely different bugs — one is the network, the other is a
@@ -83,9 +91,12 @@ const emit = () => {
  * still mounts, still loads and still captures; it simply stops driving a spinner that is telling
  * the baker about their own cake. Whatever needs the thumbnail waits on the capture itself, which
  * is what `thumbRenderNowRef` has always been for. */
-export function LoadingPing({ label = 'unlabelled', counts = true }) {
+export function LoadingPing({ label = 'unlabelled', channel = 'live' }) {
   useEffect(() => {
-    if (!counts) return undefined;
+    if (channel === 'capture') {
+      captureInFlight += 1;
+      return () => { captureInFlight = Math.max(0, captureInFlight - 1); };
+    }
     const now = typeof performance === 'undefined' ? 0 : performance.now();
     if (inFlight === 0) busySince = typeof performance === 'undefined' ? null : now;
     inFlight += 1;
@@ -98,9 +109,44 @@ export function LoadingPing({ label = 'unlabelled', counts = true }) {
       if (inFlight === 0) busySince = null;
       emit();
     };
-  }, [label]);
+  }, [label, channel]);
   return null;
 }
+
+/**
+ * Resolve once the capture canvas has nothing left in flight.
+ *
+ * ⚠️ IT RESOLVES, IT NEVER REJECTS, AND IT ALWAYS GIVES UP EVENTUALLY. Two of the three callers are
+ * money paths — placing an order and sharing a draft — and a thumbnail is the least important thing
+ * either of them does. A picture that is a little early is a blemish; an order that will not submit
+ * because a canvas is sulking is a lost cake. The caller is told whether it waited successfully so
+ * it can decide, and `captureThumbnailBlob` already refuses to upload an empty frame.
+ *
+ * ⚠️ A TIMER, NOT `requestAnimationFrame`. A hidden or minimised tab stops rAF completely, and a
+ * baker who switches away mid-save is the ordinary case, not the exotic one — this file already
+ * carries that scar. A timer keeps running, throttled, and the timeout still fires.
+ *
+ * `settle` readings of zero rather than one: the count dips through zero between boundaries
+ * resolving and their replacements mounting, and capturing in that gap is how a half-built cake
+ * gets photographed.
+ */
+export function whenCaptureIdle({ timeoutMs = 8000, settle = 3, everyMs = 50 } = {}) {
+  return new Promise(resolve => {
+    const started = Date.now();
+    let zeros = 0;
+    const id = setInterval(() => {
+      zeros = captureInFlight === 0 ? zeros + 1 : 0;
+      if (zeros >= settle) { clearInterval(id); resolve({ ready: true, waitedMs: Date.now() - started }); }
+      else if (Date.now() - started > timeoutMs) {
+        clearInterval(id);
+        resolve({ ready: false, timedOut: true, stillLoading: captureInFlight, waitedMs: Date.now() - started });
+      }
+    }, everyMs);
+  });
+}
+
+/** What the capture canvas still has in flight. For a probe, and for the tests. */
+export function captureState() { return { inFlight: captureInFlight }; }
 
 /** What the spinner currently believes, for a console or a probe. See `publish`. */
 export function loadingState() {

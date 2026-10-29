@@ -2220,7 +2220,7 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
     /* `counts` — the capture canvas loads the same decorations into its own React root, and its
        boundaries were holding the page spinner for sixteen seconds after the cake was drawn. The
        spinner speaks for the live scene; see loadingRegistry. */
-    <SafeGlb screen="CakeCanvas" counts={sceneKind === 'live'}
+    <SafeGlb screen="CakeCanvas" channel={sceneKind === 'live' ? 'live' : 'capture'}
              label={`${sceneKind} ${isGlb ? 'glb' : 'img'} ${String(imageUrl ?? '').split('/').pop()}`}>
       {isGlb
         ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} recolourable={recolourable} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />

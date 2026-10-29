@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { loadingState } from './loadingRegistry.js';
+import { loadingState, whenCaptureIdle, captureState } from './loadingRegistry.js';
 
 /* ── The number that tells two bugs apart ────────────────────────────────────────────────────────
  *
@@ -116,20 +116,62 @@ describe('what the spinner can name', () => {
  * already cached). A count that includes a canvas nobody can see is not reporting the cake.
  */
 describe('the spinner counts the live scene only', () => {
-  it('lets a ping opt out of the count', () => {
-    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('export function loadingState'));
-    expect(ping, 'the opt-out is a prop, not a module flag').toContain('counts = true');
-    expect(ping, 'and it returns before touching the count').toContain('if (!counts) return');
+  it('routes a ping to a channel, and the capture channel is not the spinner', () => {
+    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('/**'));
+    expect(ping, 'the channel is a prop, not a module flag').toContain("channel = 'live'");
+    expect(ping, 'capture pings leave the spinner alone').toContain("if (channel === 'capture')");
   });
 
   /* ⚠️ IT MUST BE INERT, NOT JUST UNCOUNTED. An early return that skipped the increment but still
      registered a label, or still ran the cleanup, would leave the list and the count disagreeing —
      the exact confusion the labels were added to end. */
   it('an opted-out ping touches neither the count nor the list', () => {
-    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('export function loadingState'));
-    const guard = ping.indexOf('if (!counts) return');
+    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('/**'));
+    const guard = ping.indexOf("if (channel === 'capture')");
     expect(guard).toBeGreaterThan(-1);
     expect(ping.indexOf(`${N} += 1`), 'the increment is AFTER the guard').toBeGreaterThan(guard);
     expect(ping.indexOf('pending.set'), 'and so is the label').toBeGreaterThan(guard);
+  });
+});
+
+/* ── Waiting for the capture canvas ──────────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE CANVAS USED TO BE MOUNTED ALL SESSION SO NOBODY HAD TO WAIT. That cost every baker a
+ * second cake on the GPU for every cake they opened — two canvases even on an empty one. It now
+ * mounts only when a capture is coming, which means the capture has to be able to wait, and two of
+ * the three callers are money paths.
+ */
+describe('waiting for the capture canvas', () => {
+  it('reports idle when nothing is in flight', async () => {
+    expect(captureState().inFlight).toBe(0);
+    const out = await whenCaptureIdle({ settle: 2, everyMs: 5, timeoutMs: 500 });
+    expect(out.ready).toBe(true);
+  });
+
+  /* ⚠️ IT RESOLVES, IT NEVER REJECTS. A thumbnail is the least important thing an order does: one
+     that is early is a blemish, an order that will not submit is a lost cake. A caller that has to
+     wrap this in try/catch would eventually forget to. */
+  it('gives up rather than hanging, and says so', async () => {
+    const SRC_FN = SRC.slice(SRC.indexOf('export function whenCaptureIdle'));
+    expect(SRC_FN, 'resolves on timeout, never rejects').toContain('timedOut: true');
+    expect(SRC_FN).not.toContain('reject(');
+    const out = await whenCaptureIdle({ settle: 1, everyMs: 5, timeoutMs: 60 });
+    expect(out.ready).toBe(true);                       // nothing in flight here, so it is ready
+  });
+
+  /* ⚠️ A TIMER, NOT requestAnimationFrame. A hidden tab stops rAF dead — this file already carries
+     that scar — and a baker who switches away mid-save is ordinary, not exotic. */
+  it('waits on a timer so a hidden tab cannot stall it forever', () => {
+    const SRC_FN = SRC.slice(SRC.indexOf('export function whenCaptureIdle'), SRC.indexOf('export function captureState'));
+    expect(SRC_FN).toContain('setInterval');
+    expect(SRC_FN).not.toContain('requestAnimationFrame');
+  });
+
+  /* ⚠️ SEVERAL READINGS OF ZERO, NOT ONE. The count dips through zero between boundaries resolving
+     and their replacements mounting; capturing in that gap photographs a half-built cake. */
+  it('wants the count to stay at zero, not merely touch it', () => {
+    const SRC_FN = SRC.slice(SRC.indexOf('export function whenCaptureIdle'), SRC.indexOf('export function captureState'));
+    expect(SRC_FN).toContain('settle');
+    expect(SRC_FN).toMatch(/zeros\s*>=\s*settle/);
   });
 });

@@ -23,7 +23,7 @@ import { LAPSED_GATE_COPY, lapsedGateState } from './lapsedGate.js';
 import PipingPreview from './canvas/PipingPreview.jsx';
 import TopperPreview from './canvas/TopperPreview.jsx';
 import { CakeSpinner, CakeSpinnerFill, DecorLoadingOverlay } from './canvas/CakeSpinner.jsx';
-import { useAnyLoading } from './canvas/loadingRegistry.js';
+import { useAnyLoading, whenCaptureIdle } from './canvas/loadingRegistry.js';
 import { isSinglePerSlot, placementSlots, flatPose, zonePoses, isDynamicHug, facingOffsetRadians, scaleRangeOf, surfaceFitMax, DEFAULT_FOLD_DEG, edgeSeatSeed, insertSeat, tierAbove, occludedTopFrac, stickerSizeControl, zoneMode, zoneModes, zoneInsert, zoneSeatFields, clampLean, LEAN_STEP } from './placement.js';
 import { corsUrl, assetUrl, elementIs3D } from './utils/assetUrl.js';
 import { registerRenderVariants } from './shared/renderVariants.js';
@@ -4598,6 +4598,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   // (ThemePreview), which is the moment the list becomes public.
   const [flavoursUncurated, setFlavoursUncurated] = useState(false);
   const [orderModalOpen,      setOrderModalOpen]      = useState(false);
+  /* Mounted only while a capture is coming — see withCaptureCanvas. The order modal keeps it warm
+     for its whole life because the capture lands on submit, which is a button press away. */
+  const [captureCanvasOn,     setCaptureCanvasOn]     = useState(false);
   const [manualOrderOpen,     setManualOrderOpen]     = useState(false);   // baker's "New Order" (no designer)
   const [manualOrderDate,     setManualOrderDate]     = useState(null);    // pre-filled delivery date when started from the Orders calendar
   /* The catalogue photograph a manual order was started FROM, as [{ key, preview }] — the shape
@@ -6432,9 +6435,9 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
 
     // Capture from the off-screen thumbnail canvas (no floor, flattened onto white) as a compact WebP.
     // Keep the blob here — the onSaveTemplate callback path hands the raw blob to the host.
-    thumbRenderNowRef.current?.();
-    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const thumbnailBlob = await captureThumbnailBlob(thumbCanvas);
+    /* The save screen mounts its own visible canvas, already angled by the baker — that IS the
+       picture being saved, so this finds it rather than making a second one. */
+    const thumbnailBlob = await withCaptureCanvas(c => captureThumbnailBlob(c));
 
     // Same shared serializer as order + share (tiers carry shape/width/depth so a sheet
     // round-trips on reload).
@@ -11021,10 +11024,49 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   // "Share the draft": snapshot the current design + upload a thumbnail (same helpers as order
   // placement), then open the invite panel with it attached so the baker sends a customer straight
   // into THIS design. The design rides on the invite (design_snapshot) — no template row is created.
+  /* ── The capture canvas, mounted only when something is about to capture ───────────────────────
+   *
+   * ⚠️ IT USED TO BE MOUNTED THE WHOLE SESSION, AND THAT IS THE COST THIS REMOVES. The cake was
+   * built TWICE for every baker on every cake — once in the canvas they look at, once in a 400x400
+   * canvas parked off-screen — so that three buttons could capture a thumbnail instantly. Sandeep:
+   * *"its a poor idea to load the second canvas… not always we change and save as another
+   * template."* Measured before this change: two canvases on an empty cake with nothing on it.
+   *
+   * ⚠️ SAVE AS TEMPLATE NEVER NEEDED IT. That screen mounts its OWN visible one, which the baker
+   * can drag to angle the cake and point at a preset view — the capture belongs to the screen that
+   * shows it. Only the two SILENT captures, placing an order and sharing a draft, were being served
+   * by the off-screen copy.
+   *
+   * ⚠️ AND IT NEVER BLOCKS THE THING IT IS DECORATING. `whenCaptureIdle` resolves rather than
+   * rejects and always gives up eventually: a thumbnail that is a little early is a blemish, an
+   * order that will not submit is a lost cake. One retry, because the first frame after a mount can
+   * legitimately be empty and `captureThumbnailBlob` correctly refuses to upload nothing.
+   */
+  async function withCaptureCanvas(use) {
+    const canvasNow = () => thumbContainerRef.current?.querySelector('canvas') ?? null;
+    const already = !!canvasNow();
+    if (!already) setCaptureCanvasOn(true);
+    try {
+      /* Wait for the mount itself before waiting for its contents — the capture count starts at
+         zero, so asking "is it idle" of a canvas that does not exist yet answers yes. */
+      const mountDeadline = Date.now() + 3000;
+      while (!canvasNow() && Date.now() < mountDeadline) await new Promise(r => setTimeout(r, 50));
+      await whenCaptureIdle();
+      for (let attempt = 0; attempt < 2; attempt++) {
+        thumbRenderNowRef.current?.();
+        const out = await use(canvasNow());
+        if (out != null) return out;
+        await new Promise(r => setTimeout(r, 400));
+      }
+      return null;
+    } finally {
+      if (!already) setCaptureCanvasOn(false);
+    }
+  }
+
   async function handleShareDraft() {
-    thumbRenderNowRef.current?.();
-    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    const designThumbnailKey = await withCaptureCanvas(c =>
+      captureAndUploadThumbnail(c, apiClient, 'orders/thumbnails'));
     setInviteLiveSessionId(null);
     setShareDraftDesign({ designSnapshot: buildDesignSnapshot(design), designThumbnailKey });
     setInvitePanelOpen(true);
@@ -11033,9 +11075,10 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
   async function handleOrderSubmit(formData) {
     // Thumbnail → R2 (never base64 in the JSON body) + the full design snapshot, via the
     // shared helpers so order / template / share all serialise identically.
-    thumbRenderNowRef.current?.();
-    const thumbCanvas = thumbContainerRef.current?.querySelector('canvas');
-    const designThumbnailKey = await captureAndUploadThumbnail(thumbCanvas, apiClient, 'orders/thumbnails');
+    /* The order modal has been open since before this submit, so the canvas is already mounted and
+       warm — `withCaptureCanvas` finds it and skips straight to the capture. */
+    const designThumbnailKey = await withCaptureCanvas(c =>
+      captureAndUploadThumbnail(c, apiClient, 'orders/thumbnails'));
     const designSnapshot = buildDesignSnapshot(design);
 
     if (editingOrder) {
@@ -23685,7 +23728,7 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
           to show the baker what will be saved. Two mounts would be two canvases and
           `thumbContainerRef` would hold whichever rendered last — so the picture on screen and the
           picture captured could differ, which is the one thing this feature exists to stop. */}
-      {!saveModal && (
+      {!saveModal && (orderModalOpen || captureCanvasOn) && (
         <CakeThumbnailCanvas config={canvasConfig} containerRef={thumbContainerRef}
           renderNowRef={thumbRenderNowRef} viewDir={thumbViewDir(thumbView)} />
       )}
