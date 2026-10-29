@@ -5678,8 +5678,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
    *
    * Only while FRAMING and only on a phone: on desktop the panel is centred and the frame is parked
    * beside it, so there is nothing to get out of the way of. */
+  /* ⚠️ `VH`, NOT A LITERAL `vh` — this is a MOBILE-ONLY height and it was the one place still
+     asking for the large viewport. The constant at the top of this file exists for exactly this:
+     on iOS Safari `100vh` is the height the page would have with the toolbars hidden, so a sheet
+     measured against it runs past the bottom of what is actually on screen and its last rows sit
+     behind the toolbar. Every other mobile height here already uses `VH`; this one was missed. */
   const takeSheetMaxH = (isMobile && framing && frameBottom > 0)
-    ? `calc(100vh - ${Math.round(frameBottom) + 10}px)`
+    ? `calc(100${VH} - ${Math.round(frameBottom) + 10}px)`
     : undefined;
   // Capability gate for nav/chrome. Unknown caps (not loaded / no /me) → show all,
   // preserving existing baker apps. '*' = super admin. Enforcement is server-side;
