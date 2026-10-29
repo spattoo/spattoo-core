@@ -158,6 +158,22 @@ export function tourMayRun({ isCustomer, tourSeen, choseScratch }) {
    ("yes i mean 900px version"). `fde91ba9` had this same number right about the RHYTHM and wrong
    about the role — it pinned the gap there and let the column overflow a short blade. */
 const RAIL_NAV_GAP = 20;
+/* ⚠️ THE RAIL STOPS GROWING, AND THAT IS A SHAPE DECISION RATHER THAN A LAYOUT ONE. It is drawn as
+ * a spatula, and a spatula has proportions: `SpatulaFrame` gives the head a fixed 259px (a 194px
+ * blade under a 65px shoulder) and lets the HANDLE take whatever is left. On a landscape window
+ * that is a utensil. On a portrait tablet it is a 1,081px handle on the same small head — a stick.
+ * Sandeep, on a Lenovo Idea Tab Plus held upright: *"we need to fix the spatula. it is fine on the
+ * horizontal."*
+ *
+ * ⚠️ 840 IS MEASURED, NOT PICKED. It is what the rail renders at on the 900px window this file's
+ * nav rhythm was already tuned against (see `sidebarNav` — "spread UNTIL the 900px rhythm"), which
+ * is the proportion that was approved. Its own content needs 791 (52 of cap clearance + 565 of
+ * items + a 174 bottom group), so 840 clears the content and leaves the head its full depth.
+ *
+ * ⚠️ IT IS A CEILING, NEVER A FLOOR. A short window still shrinks the rail and the nav still
+ * scrolls — that is the whole of `fde91ba9`'s bug, where a fixed pitch hid Share off the bottom
+ * with no scrollbar to say so. `maxHeight` cannot cause that; only a `height` could. */
+const RAIL_MAX_H = 840;
 /* The plain customer bar's width — see sidebarPlain for why 52. Declared beside the gap so the two
    numbers defining that bar's footprint sit together, and so the flyout can anchor to its real edge. */
 const PLAIN_RAIL_W = 52;
@@ -24174,6 +24190,13 @@ const s = {
     position: 'relative', overflow: 'visible',
     display: 'flex', flexShrink: 0, flex: 1,
     minHeight: 0,             // see sidebarNav — the rail must be allowed to shrink, not grow
+    /* ⚠️ AND NOW IT IS ALSO STOPPED FROM GROWING. `flex: 1` alone made the rail the window's
+       height, which is right up to a point and wrong past it — see RAIL_MAX_H for the number and
+       why a stretched handle stops reading as a spatula. The slack it used to absorb showed up as
+       one hole between the last nav item and Chef's Desk, because the gap between items is capped
+       and the bottom group is pinned to the blade. */
+    maxHeight: RAIL_MAX_H,
+    alignSelf: 'flex-start',  // anchored at the top once capped, rather than floating mid-column
   },
   sidebarInner: {
     position: 'relative', zIndex: 1,
