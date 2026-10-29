@@ -4883,6 +4883,37 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const pickedBrushStroke = pickedBrush
     ? (design.tiers[pickedBrush.tier]?.brushStrokes ?? []).find(st => st.id === pickedBrush.id) ?? null
     : null;
+
+  /* ── A new cake clears what was being EDITED, not just what was on the cake ────────────────────
+   *
+   * ⚠️ THE PEN IS A SELECTED TOOL, AND THE SELECTION OUTLIVED THE DESIGN. Sandeep: *"i used brush
+   * stokes on a cake. then i clicked on new cake and added this drapped ribbon. i clicked on cake
+   * and this brush stroke small popup appeared. this is not cleared when new cake is added."* With
+   * the pen still selected, the next tap on the cake is not a tap — it DRAWS, and the stroke it
+   * makes opens its own card. So the stale thing was never the card; it was the tool behind it.
+   *
+   * ⚠️ IT KEYS ON `loadGeneration`, THE COUNTER THE DESIGN SWAP ALREADY BUMPS, so one effect covers
+   * New Cake, loading a template, and a customer resuming a shared invite — three doors into the
+   * same state. Keying on `design` instead would fire on every edit and make the cake unselectable.
+   *
+   * ⚠️ ONLY WHAT POINTS AT THE OLD DESIGN. `penStyle` is a PREFERENCE — the colour and nozzle a
+   * baker set — and survives, the way their studio look does. What goes is everything holding an id
+   * or an index into a design that no longer exists: the picked piece, its Undo snapshot, a brush
+   * half-drawn, and the pending placements waiting for a tap that will now land on a different cake.
+   */
+  useEffect(() => {
+    if (!loadGeneration) return;
+    selectExclusive(null);
+    setPickedStrokeId(null);
+    setPickedBefore(null);
+    setPickedBrush(null);
+    setPickedBrushBefore(null);
+    setBrushDraw(null);
+    setPenMove(false);
+    setPendingCream(null);
+    setPendingTopper(null);
+    setPendingGarnish(null);
+  }, [loadGeneration]);
   const brushChanged = !!pickedBrushStroke && !!pickedBrushBefore
     && ['color', 'weight', 'width'].some(
       k => JSON.stringify(pickedBrushStroke[k]) !== JSON.stringify(pickedBrushBefore[k]));

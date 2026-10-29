@@ -1982,8 +1982,18 @@ export function useCakeDesign({ storageBaseUrl = '' } = {}) {
     if (shapeConfig && Object.keys(shapeConfig).length) {
       design = { ...design, tiers: design.tiers.map((t, i) => i === 0 ? { ...t, shapeConfig: { ...(t.shapeConfig ?? {}), ...shapeConfig } } : t) };
     }
+    /* ⚠️ BOTH BRANCHES BUMP THE COUNTER, and the plain one did not. `loadGeneration` says of itself
+       that "every wholesale replacement bumps it", but only the authored-snapshot path went through
+       `loadDesign` — so a plain round New Cake, which is most of them, replaced the whole design and
+       told nobody. Two things were listening and neither ran: the GLB/artwork sweep kept the old
+       cake's models resident, and CakeDesigner's editing state kept pointing at a design that no
+       longer existed. Sandeep: *"i used brush stokes on a cake. then i clicked on new cake … this
+       brush stroke small popup appeared. this is not cleared when new cake is added."* The pen was
+       still the selected tool, so the next tap on the cake drew rather than selected.
+       ⚠️ NOT COLLAPSED INTO ONE `loadDesign` CALL. That path normalises, which an authored snapshot
+       needs and a freshly built starter has already had done to it. */
     if (def.design) loadDesign(design);
-    else setDesign(design);
+    else { setDesign(design); setLoadGeneration(n => n + 1); }
   }
 
   function addStickerBatch(stickers) {
