@@ -2138,7 +2138,15 @@ const styledDesign = STYLE_KEY ? {
   }],
 } : null;
 
+/* ?bgimage=<file>&bgdim=0.3 — POC: a picture behind the cake instead of a colour. Drop a file in
+   dev/ and name it here. Orbit the cake: a wall or a wash reads as a paper sweep, a room with
+   perspective in it reads as a sticker. That difference is the whole point of looking. */
+const bgPoc = PARAMS.has('bgimage')
+  ? { image: `/${PARAMS.get('bgimage')}`, dim: Number(PARAMS.get('bgdim') ?? 0),
+      far: Number(PARAMS.get('bgfar') ?? 1) }
+  : null;
+
 createRoot(document.getElementById('root')).render(
-  <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate}
+  <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate} studioBackdropPoc={bgPoc}
                 initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

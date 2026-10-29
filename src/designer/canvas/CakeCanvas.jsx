@@ -3924,6 +3924,7 @@ function CakeScene({
   /* POC: a picture behind the cake instead of a colour. See SceneBackground. */
   studioImage = null,
   studioImageDim = 0,
+  studioImageFar = 1,
   /* The take's backdrop: a graded sweep generated from `filmGround` — see takeBackdrop.js.
      'flat' (the default) is the single colour that shipped before it, and the editing path never
      passes anything else: a baker approves a cake on the designer's own ground. */
@@ -5949,7 +5950,7 @@ function useBackdropFloor(image) {
   return hex;
 }
 
-export function StudioWall({ image, dim = 0 }) {
+export function StudioWall({ image, dim = 0, far = 1 }) {
   const camera = useThree(s => s.camera);
   const group = useRef(null);
   const [tex, setTex] = useState(null);
@@ -5972,8 +5973,17 @@ export function StudioWall({ image, dim = 0 }) {
   useFrame(() => {
     const g = group.current;
     if (!g || !camera) return;
+    /* ── How far back the wall stands ───────────────────────────────────────────────────────────
+     *
+     * ⚠️ THE GRID'S DISTANCE IS NOT A ROOM'S DISTANCE. Sandeep, seeing a panelled wall at the grid's
+     * own 5 units: *"the background wall is too close."* The lines are a drawing aid and belong just
+     * behind the cake, where they can measure it; a wall is a wall, and there is floor between a
+     * cake and the back of a bakery. Pushing the board back does NOT shrink the picture — it is
+     * sized to cover the frame from wherever it stands — so the wall stays the same size while the
+     * floor between the cake and it grows, and that gap is what reads as depth. */
+    const stand = WALL.distance * Math.max(1, far);
     const bearing = Math.atan2(camera.position.x, camera.position.z);
-    g.position.set(-Math.sin(bearing) * WALL.distance, 0, -Math.cos(bearing) * WALL.distance);
+    g.position.set(-Math.sin(bearing) * stand, 0, -Math.cos(bearing) * stand);
 
     /* ── It faces the lens, and it pivots on its own base to do it ───────────────────────────────
      *
@@ -6635,6 +6645,7 @@ export default function CakeCanvas({
   /* POC: a picture behind the cake instead of a colour. See SceneBackground. */
   studioImage = null,
   studioImageDim = 0,
+  studioImageFar = 1,
   filmCutout = false,
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
@@ -6770,6 +6781,7 @@ export default function CakeCanvas({
         studioBackdropStrength={studioBackdropStrength}
         studioImage={studioImage}
         studioImageDim={studioImageDim}
+        studioImageFar={studioImageFar}
         backdropActive={backdropActive}
         filmCutout={filmCutout}
         filmTight={filmTight}
@@ -6927,7 +6939,7 @@ export default function CakeCanvas({
       {/* The board REPLACES the lines rather than standing with them — lines drawn over a
           photograph read as a mistake, and both occupy the same plane. */}
       {studioImage
-        ? <StudioWall image={studioImage} dim={studioImageDim} />
+        ? <StudioWall image={studioImage} dim={studioImageDim} far={studioImageFar} />
         : (takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />)}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (

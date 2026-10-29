@@ -3510,7 +3510,9 @@ function RailSubmenu({ label, items, open, anchorStyle = null, containerRef, onS
 }
 
 // ── Main designer ─────────────────────────────────────────────────────────────
-function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, initialLink = null, legalBase = DEFAULT_LEGAL_BASE }) {
+function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbnails', onOrder, onQuoteRequested, onShareStore, onSaveTemplate, cfAssetsBase, orderMode = 'baker', initialDesign = null, liveSessionId = null, initialLink = null, legalBase = DEFAULT_LEGAL_BASE,
+                            /* POC: { image, dim } for a backdrop being judged. See below. */
+                            studioBackdropPoc = null }) {
   // Point the scenes' env map at the host's R2 assets base (runs before children
   // render, so CakeScene/CakeThumbnailScene read the resolved URL this pass).
   configureEnvMap(cfAssetsBase);
@@ -5029,6 +5031,13 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   /* What the canvas is handed, which is not quite what was stored — `studioRoomFrom` drops a grid
      that has no ground under it. See its note. */
   const studioRoom = useMemo(() => studioRoomFrom(studioLook), [studioLook]);
+  /* POC only, and deliberately NOT part of `studioLook` yet: a backdrop handed in by whoever is
+     judging it — the harness (`?bgimage=`) or admin's Studio Backdrop page — so it can be seen on a
+     real cake before anybody designs a setting, an upload path or a catalogue row around it.
+     A prop rather than a stored field, so there is nothing to migrate when it is thrown away. */
+  const studioBackdropImage = studioBackdropPoc?.image ?? null;
+  const studioBackdropDim = studioBackdropPoc?.dim ?? 0;
+  const studioBackdropFar = studioBackdropPoc?.far ?? 1;
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -19642,6 +19651,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               studioGround={studioRoom.ground}
               studioBackdrop={studioRoom.backdrop}
               studioBackdropStrength={studioRoom.backdropStrength}
+              /* POC: a picture behind the cake. Not in the saved look yet — the harness and the
+                 admin studio pass it, so it can be judged before it becomes a setting. */
+              studioImage={studioBackdropImage}
+              studioImageDim={studioBackdropDim}
+              studioImageFar={studioBackdropFar}
               /* Same flag that points the grid's fade, so backdrop and grid move together. */
               backdropActive={filmingTake || takePreRoll || buildSetupOpen || framing}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.
