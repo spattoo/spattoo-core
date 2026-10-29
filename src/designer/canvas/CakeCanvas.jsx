@@ -1,4 +1,4 @@
-import { useRef, useMemo, useEffect, useState, useCallback, useSyncExternalStore, Suspense } from 'react';
+import { useRef, useMemo, useEffect, useState, useCallback, useContext, useSyncExternalStore, createContext, Suspense } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
 import { OrbitControls, Text3D, Text, Center, Html, useGLTF, useTexture, Billboard, RoundedBox } from '@react-three/drei';
 import { useRetainedGlb, disposeGlbInstance, disposeGlbGeometries } from '../shared/retainedGlb.js';
@@ -2199,6 +2199,9 @@ function ElementWire({ wire }) {
 }
 
 function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, curveRadius, bend = 1, bendRadius, baseRotation, seatProud = false, fondant = false, recolourable = false, roughness = null, metalness = null, surface = null, printFinish = null, flipX = false, foldable = false, fold, spine, standUp = false, recolor, relief = null, stickerScale = 1, reliefRadius = null, photoUrl, photoMask, photoTransform, photoOverlay, borderWidth, textSlots = null, textValues = null, calendar = null, calendarValues = null, calendarLayout = null, onSeat, onDepth, onVExtent }) {
+  /* Which of the two canvases this copy is in — the label the loading probe reports. See
+     SceneKindContext: the same decoration mounts in both, and only the root tells them apart. */
+  const sceneKind = useContext(SceneKindContext);
   // ⚠️ BEFORE the imageUrl guard, which is the whole reason this branch exists here rather than
   // deeper down: a calendar element carries no image_url, so the guard below would render nothing at
   // all and the decoration would vanish the moment it was placed. Config-gated on
@@ -2214,7 +2217,11 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
     // shared loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
     // whole page (see loadingRegistry). Suspense clears the ping when the asset resolves
     // (cached assets resolve synchronously → never counted). Type/zone-agnostic.
-    <SafeGlb screen="CakeCanvas" label={`${isGlb ? 'glb' : 'img'} ${String(imageUrl ?? '').split('/').pop()}`}>
+    /* `counts` — the capture canvas loads the same decorations into its own React root, and its
+       boundaries were holding the page spinner for sixteen seconds after the cake was drawn. The
+       spinner speaks for the live scene; see loadingRegistry. */
+    <SafeGlb screen="CakeCanvas" counts={sceneKind === 'live'}
+             label={`${sceneKind} ${isGlb ? 'glb' : 'img'} ${String(imageUrl ?? '').split('/').pop()}`}>
       {isGlb
         ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} recolourable={recolourable} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
         : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} bend={bend} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
@@ -5631,6 +5638,19 @@ function CakeContent({ config, scene, edit = null }) {
 // capture without it reads as a cake floating in mid-air — and board-level finishes (a grass ring,
 // letter blocks at the foot) had nothing to stand on. Only the ROOM is left out: the floor plane and
 // the studio background belong to the editor, not to the cake.
+/* ── Which canvas a boundary belongs to ──────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE SAME DECORATION MOUNTS TWICE, IN TWO SEPARATE REACT ROOTS. The live canvas draws the cake
+ * and a 400x400 canvas parked off-screen at -9999 draws it again for thumbnail capture — each
+ * `<Canvas>` is its own R3F root — so every asset has TWO Suspense boundaries and the page spinner
+ * counts both. Measured on a real template 2026-10-29: six boundaries for three assets, five
+ * released in 0.6s, and one held for SIXTY-TWO SECONDS after every byte had arrived, with no
+ * network event releasing it — it cleared when the tab was switched, i.e. on a re-render.
+ *
+ * The probe could name the ASSET but not the ROOT, and the root is the question. This says which.
+ */
+const SceneKindContext = createContext('live');
+
 function CakeThumbnailScene({ config, shadows = false, lights = null }) {
   return (
     <>
@@ -5648,7 +5668,10 @@ function CakeThumbnailScene({ config, shadows = false, lights = null }) {
           `apartment` fallback so the wall isn't left IBL-less (brown) on local dev. IBL only —
           no `background` prop — so the capture stays transparent. */}
       <SceneEnv />
-      <CakeContent config={config} scene={resolveCakeScene(config)} />
+      {/* Everything below is the capture root, not the live one — see SceneKindContext. */}
+      <SceneKindContext.Provider value="thumb">
+        <CakeContent config={config} scene={resolveCakeScene(config)} />
+      </SceneKindContext.Provider>
     </>
   );
 }

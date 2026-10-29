@@ -64,8 +64,28 @@ const emit = () => {
 };
 
 // Invisible Suspense fallback: counts one in-flight asset for its lifetime.
-export function LoadingPing({ label = 'unlabelled' }) {
+/* ⚠️ THE SPINNER IS ABOUT THE BAKER'S CAKE, AND ONLY ONE CANVAS DRAWS THAT. Measured on a real
+ * jungle template, 2026-10-29: twenty-four boundaries, twelve in the live canvas and twelve in the
+ * 400x400 thumbnail-capture canvas parked off-screen at -9999. The live twelve were all resolved at
+ * 26s — the cake was finished and on screen — and the spinner ran another SIXTEEN SECONDS for the
+ * capture canvas nobody can see. Every asset was already in cache; not one byte was fetched. So
+ * this was never download speed, which is what it looked like for weeks:
+ *
+ *   0.3s  24 pending = 12 live + 12 thumb
+ *   26s   12 pending =  0 live + 12 thumb   ← the cake is done
+ *   42s    0
+ *
+ * It also explains the two things that made no sense. Switching to a phone width cleared it at once
+ * — that remounts the tree and flushes the second root. And a cake could sit "loading" having
+ * fetched nothing at all.
+ *
+ * ⚠️ `counts={false}` IS NOT "DO NOT LOAD", it is "do not speak for the cake". The capture canvas
+ * still mounts, still loads and still captures; it simply stops driving a spinner that is telling
+ * the baker about their own cake. Whatever needs the thumbnail waits on the capture itself, which
+ * is what `thumbRenderNowRef` has always been for. */
+export function LoadingPing({ label = 'unlabelled', counts = true }) {
   useEffect(() => {
+    if (!counts) return undefined;
     const now = typeof performance === 'undefined' ? 0 : performance.now();
     if (inFlight === 0) busySince = typeof performance === 'undefined' ? null : now;
     inFlight += 1;

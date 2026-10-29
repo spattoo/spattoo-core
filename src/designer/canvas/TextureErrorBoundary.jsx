@@ -28,10 +28,10 @@ export class TextureErrorBoundary extends Component {
 /* `label` names this boundary in the loading probe. It defaults to `screen`, which every call site
    already passes, so naming is free — and a caller with something sharper to say (a decoration's
    own url) says it. See loadingRegistry: a count cannot be acted on, a name can. */
-export function SafeGlb({ screen = 'CakeCanvas', label, children }) {
+export function SafeGlb({ screen = 'CakeCanvas', label, counts = true, children }) {
   return (
     <TextureErrorBoundary screen={screen}>
-      <Suspense fallback={<LoadingPing label={label ?? screen} />}>{children}</Suspense>
+      <Suspense fallback={<LoadingPing label={label ?? screen} counts={counts} />}>{children}</Suspense>
     </TextureErrorBoundary>
   );
 }

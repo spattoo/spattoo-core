@@ -1974,6 +1974,39 @@ const rimRosesDesign = PARAMS.has('rimroses') ? {
   }),
 } : null;
 
+
+/* ── `?race=N` — N decorations, N DISTINCT assets, all fetched at once ──────────────────────────
+ *
+ * ⚠️ EVERY OTHER FIXTURE HERE SHARES ONE URL, AND THAT IS WHY NONE OF THEM COULD REPRODUCE THIS.
+ * `?rimroses` places five roses and issues ONE request: same `imageUrl`, so one fetch, one Suspense
+ * boundary's worth of work. The fault Sandeep hit on 2026-10-29 — a cake fully drawn with the
+ * spinner still counting, cleared instantly by resizing the window — came from a template with SIX
+ * DISTINCT assets in flight. Measured on the harness first: five roses, 2 requests, spinner cleared
+ * 0.9s after the last byte at both widths. The fixture could not lose the race because there was no
+ * race.
+ *
+ * So this one gives each decoration its own URL — one file, N query strings. `useGLTF` keys its
+ * cache on the url STRING, so `?race=1` and `?race=2` are two assets as far as Suspense is
+ * concerned while costing one file on disk: identical work, distinct cache keys, N boundaries
+ * resolving independently. (Eight copies of the same .glb was the first version; a query string
+ * does the same job without a megabyte of duplicates in the repo.) Pair it with a throttled route
+ * and the ordering is wide open.
+ */
+const RACE_N = PARAMS.has('race') ? Math.min(8, Math.max(1, Number(PARAMS.get('race')) || 6)) : 0;
+const raceDesign = RACE_N ? {
+  tiers: [{ color: '#F1EEDC', shape: 'round', frostingType: 'buttercream', frostingStyle: 'smooth' }],
+  stickers: Array.from({ length: RACE_N }, (_, k) => {
+    const a = (k / RACE_N) * 2 * Math.PI;
+    return {
+      id: `race${k}`, elementId: 'e9', name: `Race ${k + 1}`, imageUrl: `/sample-rosette-3d.glb?race=${k + 1}`,
+      zone: 'top_surface', tierIndex: 0,
+      x: 1.02 * Math.sin(a), z: 1.02 * Math.cos(a), y: 0, scale: 3.2,
+      size: 1, rotation: 0, color: '#c41c1c',
+      allowedActions: { move: true, color: true, delete: true, resize: true },
+    };
+  }),
+} : null;
+
 /* ── `?standing` — a decoration on the top surface in STAND mode ────────────────────────────────
  *
  * ⚠️ THIS EXISTS BECAUSE THE OTHER RETURN WENT UNTESTED. `DraggableTopSticker` has two of them:
@@ -2148,5 +2181,5 @@ const bgPoc = (PARAMS.has('bgimage') || PARAMS.has('sign'))
 
 createRoot(document.getElementById('root')).render(
   <CakeDesigner apiClient={apiClient} cfAssetsBase={PARAMS.get('assets') ?? ''} onSaveTemplate={onSaveTemplate} studioBackdropPoc={bgPoc}
-                initialDesign={reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
+                initialDesign={raceDesign ?? reloadDesign ?? stripes2Design ?? rainbow2Design ?? boardSandDesign ?? pipingDesign ?? standingDesign ?? rimRosesDesign ?? sideStickerDesign ?? stackDesign ?? styledDesign ?? stripedDesign} />,
 );

@@ -105,3 +105,31 @@ describe('what the spinner can name', () => {
     expect(pub).not.toContain('import.meta.env');
   });
 });
+
+/* ── Whose loading the spinner speaks for ────────────────────────────────────────────────────────
+ *
+ * ⚠️ THE FAULT THIS PREVENTS LOOKED EXACTLY LIKE A SLOW NETWORK FOR WEEKS. The same cake is drawn
+ * by TWO React roots — the live canvas and a 400x400 thumbnail-capture canvas parked off-screen at
+ * -9999 — so every decoration had two boundaries and the page spinner counted both. Measured on a
+ * real template 2026-10-29: the live twelve resolved at 26s with the cake on screen, and the
+ * spinner ran sixteen more seconds for the capture canvas, having fetched nothing (every asset was
+ * already cached). A count that includes a canvas nobody can see is not reporting the cake.
+ */
+describe('the spinner counts the live scene only', () => {
+  it('lets a ping opt out of the count', () => {
+    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('export function loadingState'));
+    expect(ping, 'the opt-out is a prop, not a module flag').toContain('counts = true');
+    expect(ping, 'and it returns before touching the count').toContain('if (!counts) return');
+  });
+
+  /* ⚠️ IT MUST BE INERT, NOT JUST UNCOUNTED. An early return that skipped the increment but still
+     registered a label, or still ran the cleanup, would leave the list and the count disagreeing —
+     the exact confusion the labels were added to end. */
+  it('an opted-out ping touches neither the count nor the list', () => {
+    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('export function loadingState'));
+    const guard = ping.indexOf('if (!counts) return');
+    expect(guard).toBeGreaterThan(-1);
+    expect(ping.indexOf(`${N} += 1`), 'the increment is AFTER the guard').toBeGreaterThan(guard);
+    expect(ping.indexOf('pending.set'), 'and so is the label').toBeGreaterThan(guard);
+  });
+});
