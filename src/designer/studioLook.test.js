@@ -1,16 +1,34 @@
 import { describe, it, expect } from 'vitest';
 import { STUDIO_LOOK_DEFAULT, normaliseStudioLook, hasStudioLook, studioRoomFrom, takeSeedFrom, studioLookPayload, studioInk } from './studioLook.js';
 import { luminanceOf } from './reel/reelCaption.js';
-import { BACKDROP_DEFAULT, BACKDROP_STRENGTH_DEFAULT } from './reel/takeBackdrop.js';
+import { BACKDROP_STRENGTH_DEFAULT } from './reel/takeBackdrop.js';
 import { STRENGTH_DEFAULT as GRID_STRENGTH_DEFAULT, STRENGTH_MIN } from './reel/takeGrid.js';
 
 const DESIGNER_GROUND = '#f2efe9';
 
 describe('normaliseStudioLook — it crosses a wire, so nothing is trusted', () => {
-  it('nothing chosen is the plain room, not a colour that looks like it', () => {
-    expect(normaliseStudioLook(null).ground).toBe(null);
+  /* ⚠️ "NEVER CHOSE" AND "CHOSE NONE" ARE DIFFERENT ANSWERS, and this pair is the whole of what
+     makes a default possible. They used to collapse to the same null, which is why changing
+     STUDIO_LOOK_DEFAULT alone would have moved nothing on screen. */
+  it('nothing chosen is the default room', () => {
+    expect(normaliseStudioLook(null)).toEqual(STUDIO_LOOK_DEFAULT);
     expect(normaliseStudioLook(undefined)).toEqual(STUDIO_LOOK_DEFAULT);
     expect(normaliseStudioLook('not an object')).toEqual(STUDIO_LOOK_DEFAULT);
+    expect(normaliseStudioLook({})).toEqual(STUDIO_LOOK_DEFAULT);
+  });
+
+  it('an explicit None is a decision and keeps the plain room', () => {
+    expect(normaliseStudioLook({ ground: null }).ground).toBe(null);
+    expect(normaliseStudioLook({ grid: false }).grid).toBe(false);
+    expect(normaliseStudioLook({ gridWall: false }).gridWall).toBe(false);
+  });
+
+  /* The round trip that None depends on: the payload writes the key, so the next load reads a
+     decision rather than an absence. */
+  it('a saved None survives a reload', () => {
+    const saved = studioLookPayload({ ground: null });
+    expect('ground' in saved).toBe(true);
+    expect(normaliseStudioLook(saved).ground).toBe(null);
   });
 
   it('keeps a real choice', () => {
@@ -28,7 +46,7 @@ describe('normaliseStudioLook — it crosses a wire, so nothing is trusted', () 
 
   it('refuses a backdrop nobody offers', () => {
     expect(normaliseStudioLook({ ground: '#ffffff', backdrop: 'hologram' }).backdrop)
-      .toBe(BACKDROP_DEFAULT);
+      .toBe(STUDIO_LOOK_DEFAULT.backdrop);
   });
 
   /* ⚠️ ONE BAD FIELD MUST NOT DISCARD THE CHOICE. Falling back wholesale would turn a half-written
@@ -37,7 +55,7 @@ describe('normaliseStudioLook — it crosses a wire, so nothing is trusted', () 
     const l = normaliseStudioLook({ ground: '#2b2b2b', backdrop: 'nope', backdropStrength: 'x',
                                     gridStrength: 99 });
     expect(l.ground).toBe('#2b2b2b');
-    expect(l.backdrop).toBe(BACKDROP_DEFAULT);
+    expect(l.backdrop).toBe(STUDIO_LOOK_DEFAULT.backdrop);
     expect(l.backdropStrength).toBe(BACKDROP_STRENGTH_DEFAULT);
     expect(l.gridStrength).toBe(1);                   // clamped, not discarded
   });
@@ -49,15 +67,20 @@ describe('normaliseStudioLook — it crosses a wire, so nothing is trusted', () 
     expect(normaliseStudioLook({ gridStrength: NaN }).gridStrength).toBe(GRID_STRENGTH_DEFAULT);
   });
 
-  it('treats a truthy non-true as off, because a toggle is a toggle', () => {
-    expect(normaliseStudioLook({ grid: 'yes', gridWall: 1 })).toMatchObject({ grid: false, gridWall: false });
+  /* ⚠️ A NON-BOOLEAN IS NOT A DECISION, so it takes the default like every other bad field rather
+     than silently meaning "off". It used to mean off, which was right when the default WAS off and
+     indistinguishable from it; now the two differ and the rule has to be the same one the backdrop
+     and the dials already follow. */
+  it('does not trust a toggle that is not a boolean', () => {
+    expect(normaliseStudioLook({ ground: '#2b2b2b', grid: 'yes', gridWall: 1 }))
+      .toMatchObject({ grid: STUDIO_LOOK_DEFAULT.grid, gridWall: STUDIO_LOOK_DEFAULT.gridWall });
   });
 });
 
 describe('hasStudioLook — the ground is the switch', () => {
-  it('is off until a ground is chosen', () => {
-    expect(hasStudioLook(normaliseStudioLook(null))).toBe(false);
-    expect(hasStudioLook(normaliseStudioLook({ grid: true, gridWall: true }))).toBe(false);
+  it('is on by default, and off only when somebody turned it off', () => {
+    expect(hasStudioLook(normaliseStudioLook(null))).toBe(true);
+    expect(hasStudioLook(normaliseStudioLook({ ground: null }))).toBe(false);
     expect(hasStudioLook(normaliseStudioLook({ ground: '#2b2b2b' }))).toBe(true);
   });
 
@@ -69,8 +92,14 @@ describe('hasStudioLook — the ground is the switch', () => {
 });
 
 describe('studioRoomFrom — what the canvas is actually handed', () => {
-  it('is the plain room when nothing was chosen', () => {
-    expect(studioRoomFrom(null)).toEqual({ ...STUDIO_LOOK_DEFAULT, grid: false, gridWall: false });
+  it('is the default room when nothing was chosen, grid included', () => {
+    expect(studioRoomFrom(null)).toEqual(STUDIO_LOOK_DEFAULT);
+    expect(studioRoomFrom(null).grid).toBe(true);
+  });
+
+  it('is the plain room when the baker turned it off', () => {
+    expect(studioRoomFrom({ ground: null }))
+      .toEqual({ ...STUDIO_LOOK_DEFAULT, ground: null, grid: false, gridWall: false });
   });
 
   /* ⚠️ THE ROW CAN SAY THIS, SO THE RENDERER MUST NOT. Lines on the editing room's painted floor
@@ -90,10 +119,12 @@ describe('studioRoomFrom — what the canvas is actually handed', () => {
 });
 
 describe('takeSeedFrom — where a take STARTS', () => {
-  it('a baker who chose nothing gets the take defaults, grid and all', () => {
-    const seed = takeSeedFrom(null, DESIGNER_GROUND);
+  /* A baker who turned the studio OFF still films with the take's own defaults — the take panel has
+     always dressed itself, and switching the editing room to plain is not a statement about video. */
+  it('a baker with no studio gets the take defaults, grid and all', () => {
+    const seed = takeSeedFrom({ ground: null }, DESIGNER_GROUND);
     expect(seed).toEqual({
-      ground: DESIGNER_GROUND, backdrop: BACKDROP_DEFAULT,
+      ground: DESIGNER_GROUND, backdrop: STUDIO_LOOK_DEFAULT.backdrop,
       backdropStrength: BACKDROP_STRENGTH_DEFAULT,
       grid: true, gridWall: true, gridStrength: GRID_STRENGTH_DEFAULT,
     });

@@ -29,19 +29,38 @@
  * (migration 120, borrowing 060: *"a tour is a fact about a PERSON, not about a bakery"*).
  */
 
-import { BACKDROP_LOOKS, BACKDROP_DEFAULT, BACKDROP_STRENGTH_DEFAULT } from './reel/takeBackdrop.js';
+import { BACKDROP_LOOKS, BACKDROP_STRENGTH_DEFAULT } from './reel/takeBackdrop.js';
+/* The studio's own ground, so the default look is the room the designer already paints rather than
+   a colour that happens to resemble it — the trap `TAKE_GROUNDS` records above its 'studio' entry. */
+import { DESIGNER_GROUND } from './constants.js';
 import { STRENGTH_DEFAULT as GRID_STRENGTH_DEFAULT, STRENGTH_MIN as GRID_STRENGTH_MIN } from './reel/takeGrid.js';
 /* ⚠️ `luminanceOf` IS REUSED, NOT REWRITTEN. It already carries the sRGB coefficients and the note
    about why green dominates; a second copy here would be the same answer twice, and the one that
    drifts. It lives in reelCaption because a caption needed it first. */
 import { luminanceOf } from './reel/reelCaption.js';
 
-/** Nothing chosen: the editing room as it has always been, and the take panels on their own defaults. */
+/** What a baker who has never opened Settings sees: the studio ground, swept, with a grid floor.
+ *
+ * ⚠️ THIS REVERSES "A LOOK IS A THING SOMEBODY CHOSE" — the second reversal on this file, and by
+ * the same person as the first. Sandeep: *"lets make the floor grid lines default. so the default
+ * settings (color, floor lines, line strength) shown in the image are default settings."* The note
+ * above still describes why the room used to start plain, and it was right at the time; what
+ * changed is the judgement that the grid helps a baker place a cake rather than distracts them.
+ *
+ * ⚠️ THREE FIELDS MOVED, AND ONLY THREE. `ground` to the studio's own colour (`TAKE_GROUNDS`'
+ * 'studio' entry, which exists precisely so picking it leaves the scene as it was), `backdrop` to
+ * sweep, `grid` on. Both strengths are untouched because the screen he photographed already had
+ * them at their defaults — 0.55 and 0.6 — so changing them would have been inventing a number
+ * nobody asked for.
+ *
+ * ⚠️ `gridWall` STAYS OFF. "Back wall" was not selected in that screenshot, and a wall grid behind
+ * the cake is a second decision: `takeGrid.js` notes it reads as stripes on wallpaper at this
+ * camera height unless somebody wants it. */
 export const STUDIO_LOOK_DEFAULT = Object.freeze({
-  ground: null,
-  backdrop: BACKDROP_DEFAULT,
+  ground: DESIGNER_GROUND,
+  backdrop: 'sweep',
   backdropStrength: BACKDROP_STRENGTH_DEFAULT,
-  grid: false,
+  grid: true,
   gridWall: false,
   gridStrength: GRID_STRENGTH_DEFAULT,
 });
@@ -62,15 +81,23 @@ const clamp = (v, lo, hi, fallback) =>
  */
 export function normaliseStudioLook(raw) {
   const r = (raw && typeof raw === 'object') ? raw : {};
+  /* ⚠️ "NEVER CHOSE" AND "CHOSE NONE" ARE DIFFERENT ANSWERS, and telling them apart is the whole of
+     what makes a default possible here. Both used to collapse to null, so `ground` and `grid`
+     ignored STUDIO_LOOK_DEFAULT entirely — changing the constant alone would have moved nothing.
+     A MISSING key takes the default; a key that is present and empty is a decision and wins. So a
+     baker who picks None keeps the plain room, and one who has never opened Settings gets the grid.
+     ⚠️ Which makes `studioLookPayload` load-bearing: it has to write these keys EXPLICITLY, or a
+     saved "None" comes back as "never chose" and the room they turned off returns. */
   const ground = typeof r.ground === 'string' && HEX.test(r.ground.trim())
     ? r.ground.trim().toLowerCase()
-    : null;
+    : ('ground' in r ? null : STUDIO_LOOK_DEFAULT.ground);
+  const bool = (v, fallback) => (typeof v === 'boolean' ? v : fallback);
   return {
     ground,
     backdrop: BACKDROP_KEYS.has(r.backdrop) ? r.backdrop : STUDIO_LOOK_DEFAULT.backdrop,
     backdropStrength: clamp(r.backdropStrength, 0, 1, STUDIO_LOOK_DEFAULT.backdropStrength),
-    grid: r.grid === true,
-    gridWall: r.gridWall === true,
+    grid: bool(r.grid, STUDIO_LOOK_DEFAULT.grid),
+    gridWall: bool(r.gridWall, STUDIO_LOOK_DEFAULT.gridWall),
     gridStrength: clamp(r.gridStrength, GRID_STRENGTH_MIN, 1, STUDIO_LOOK_DEFAULT.gridStrength),
   };
 }
@@ -98,7 +125,13 @@ export function hasStudioLook(look) {
  */
 export function studioRoomFrom(look) {
   const l = normaliseStudioLook(look);
-  if (!hasStudioLook(l)) return { ...STUDIO_LOOK_DEFAULT, grid: false, gridWall: false };
+  /* ⚠️ `ground: null` HAS TO BE SPELLED OUT. Spreading the default was right while its ground WAS
+     null; now that the default dresses the room, spreading it here handed a ground back to the one
+     baker who had just turned the ground off — the plain room with a ground in it. Caught by the
+     test, not by reading. */
+  if (!hasStudioLook(l)) {
+    return { ...STUDIO_LOOK_DEFAULT, ground: null, grid: false, gridWall: false };
+  }
   return l;
 }
 
@@ -177,5 +210,8 @@ export function studioInk(ground) {
 /** What goes over the wire on a save — only the fields the server stores, already normalised. */
 export function studioLookPayload(look) {
   const l = normaliseStudioLook(look);
+  /* ⚠️ `ground: null` IS WRITTEN, NOT OMITTED. It is how "I turned the studio off" survives a
+     reload now that a missing key means "give me the default" — omit it and the next load hands
+     them back the very room they switched off. */
   return l.ground ? l : { ...STUDIO_LOOK_DEFAULT, ground: null };
 }
