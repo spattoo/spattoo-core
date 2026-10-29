@@ -5038,6 +5038,7 @@ function CakeDesignerInner({ apiClient, supabase, thumbnailBucket = 'cake-thumbn
   const studioBackdropImage = studioBackdropPoc?.image ?? null;
   const studioBackdropDim = studioBackdropPoc?.dim ?? 0;
   const studioBackdropFar = studioBackdropPoc?.far ?? 1;
+  const studioWallSign = studioBackdropPoc?.sign ?? false;
   const [reelBusy, setReelBusy]         = useState(false);
   const dragStickerRef   = useRef(null);  // element being pointer-dragged
   const [dragGhost, setDragGhost] = useState(null); // { x, y, el } for floating preview
@@ -19656,6 +19657,11 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               studioImage={studioBackdropImage}
               studioImageDim={studioBackdropDim}
               studioImageFar={studioBackdropFar}
+              /* POC: the bakery's name on the wall, in the baker's own brand face — the SAME
+                 `brandFontCss` the header reads, so the two can never show one bakery in two
+                 typefaces. */
+              studioSignName={studioWallSign ? (bakerData?.name ?? '') : ''}
+              studioSignFont={brandFont}
               /* Same flag that points the grid's fade, so backdrop and grid move together. */
               backdropActive={filmingTake || takePreRoll || buildSetupOpen || framing}
               // No sky and no floor — the cake on nothing. Only ever true for a photo.

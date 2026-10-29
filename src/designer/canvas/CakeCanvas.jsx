@@ -17,6 +17,7 @@ import { SafeGlb } from './TextureErrorBoundary.jsx';
 import { SafeEnvironment } from './safeEnvironment.jsx';
 import { neutraliseBakedColour } from './bakedColour.js';
 import { baseColourOf, wallTilt } from '../studioBackdrop.js';
+import { paintSign, signFontSpec } from '../studioSign.js';
 import { stickFor, stickLift } from '../geometry/elementStick.js';
 import { wireFor, wireLift, wireStandoff } from '../geometry/elementWire.js';
 import CreamWriting from './CreamWriting.jsx';
@@ -3925,6 +3926,8 @@ function CakeScene({
   studioImage = null,
   studioImageDim = 0,
   studioImageFar = 1,
+  studioSignName = '',
+  studioSignFont = 'sans-serif',
   /* The take's backdrop: a graded sweep generated from `filmGround` — see takeBackdrop.js.
      'flat' (the default) is the single colour that shipped before it, and the editing path never
      passes anything else: a baker approves a cake on the designer's own ground. */
@@ -6048,6 +6051,89 @@ export function StudioWall({ image, dim = 0, far = 1 }) {
   );
 }
 
+
+/* ── The bakery's name on the studio wall ────────────────────────────────────────────────────────
+ *
+ * Sandeep, 2026-10-29: *"i want the baker name to appear on the wall."* It stands where the wall
+ * grid stands and shares its geometry exactly, so the name is on the same plane as the lines and
+ * moves with them.
+ *
+ * ⚠️ EDITING ONLY, NEVER WHILE FILMING, and that is not a style choice. What a reel may carry is
+ * the `reel_branding` ENTITLEMENT, resolved in `reelCaption.js`: a baker without it gets our mark,
+ * one with it chooses, and *"a UI is not an entitlement check."* A name painted into the scene
+ * would walk straight past that and burn the bakery's name into every take. The FRONT marker is
+ * excluded from takes for the same class of reason — it *"was being burned into finished reels,
+ * where it reads as a stray watermark nobody can explain."*
+ *
+ * ⚠️ IT IS A PAINTED TEXTURE, NOT 3D TEXT, so it can use the baker's OWN face. See `studioSign.js`.
+ *
+ * ⚠️ AND IT WAITS FOR THE FONT BEFORE PAINTING. `document.fonts.load` has to resolve first or the
+ * browser quietly falls back down the CSS stack — Pacifico renders as some default cursive, the
+ * sign is wrong, and nothing anywhere errors. The repaint on `document.fonts.ready` covers the case
+ * where the face arrives after the first paint.
+ */
+function StudioWallSign({ name, cssFamily, colour = GRID_COLOR, strength, active = true }) {
+  const camera = useThree(s => s.camera);
+  const group = useRef(null);
+  const [sign, setSign] = useState(null);
+
+  useEffect(() => {
+    if (!name || typeof document === 'undefined') { setSign(null); return undefined; }
+    let live = true, made = null;
+    const paint = () => {
+      if (!live) return;
+      const out = paintSign({
+        name, cssFamily, colour, wallWidth: WALL.width,
+        makeCanvas: (w, h) => { const c = document.createElement('canvas'); c.width = w; c.height = h; return c; },
+      });
+      if (!out || !live) return;
+      const tex = new THREE.CanvasTexture(out.canvas);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.anisotropy = 4;
+      if (made) made.dispose();
+      made = tex;
+      setSign({ tex, width: out.width, height: out.height });
+    };
+    /* The size in the spec matters to the loader, so it is the size the sign is painted at. */
+    document.fonts?.load?.(signFontSpec(cssFamily, 160))?.then(paint, paint) ?? paint();
+    document.fonts?.ready?.then(paint);
+    return () => { live = false; if (made) made.dispose(); setSign(null); };
+  }, [name, cssFamily, colour]);
+
+  useFrame(() => {
+    const g = group.current;
+    if (!g || !camera) return;
+    /* The grid wall's own placement, to the letter — same distance, same bearing, same upright
+       plane. Anything else and the name would drift off the lines it is painted on. */
+    const bearing = Math.atan2(camera.position.x, camera.position.z);
+    g.position.set(-Math.sin(bearing) * WALL.distance, 0, -Math.cos(bearing) * WALL.distance);
+    g.rotation.set(0, bearing, 0);
+  });
+
+  if (!sign) return null;
+  /* ⚠️ MOST OF THE WALL IS NEVER IN SHOT, AND PUTTING THE SIGN HALFWAY UP IT LOST THE SIGN. `WALL`
+     is 6 units tall, so "high on the wall" sounds like 3.9 — and the first render came back with no
+     name anywhere, because the frame's top edge crosses the wall at y ≈ 2.95. Projected from the
+     designer's own resting camera (0, 5.721, 6.188) aiming at (0, 1.403, 0) on a 42° lens, the wall
+     is visible from its base at 32% down the frame up to y = 2.95 at the very top. 1.9 put the
+     name's TOP through the ceiling — the projection locates the sign's centre, and the lettering
+     has height of its own — so it sits lower, with its whole box inside the band and still clear
+     above a two-tier cake at every bearing. */
+  const SIGN_Y = 1.45;
+  return (
+    <group ref={group}>
+      <mesh position={[0, SIGN_Y, 0]} renderOrder={-1}>
+        <planeGeometry args={[sign.width, sign.height]} />
+        {/* Unlit and never depth-writing, exactly like the lines it sits among: it takes no light,
+            casts nothing, and cannot touch the cake. Its opacity rides the baker's own line
+            strength so turning the lines down turns the name down with them. */}
+        <meshBasicMaterial map={sign.tex} transparent toneMapped={false} depthWrite={false}
+                           opacity={active ? Math.min(1, wallOpacity(strength) * 3.2) : 0} />
+      </mesh>
+    </group>
+  );
+}
+
 function TakeGridWall({ strength, active = true }) {
   const camera = useThree(s => s.camera);
   const group = useRef(null);
@@ -6646,6 +6732,8 @@ export default function CakeCanvas({
   studioImage = null,
   studioImageDim = 0,
   studioImageFar = 1,
+  studioSignName = '',
+  studioSignFont = 'sans-serif',
   filmCutout = false,
   filmTight = false,
   cameraPosition = CAMERA_POSITION,
@@ -6782,6 +6870,8 @@ export default function CakeCanvas({
         studioImage={studioImage}
         studioImageDim={studioImageDim}
         studioImageFar={studioImageFar}
+        studioSignName={studioSignName}
+        studioSignFont={studioSignFont}
         backdropActive={backdropActive}
         filmCutout={filmCutout}
         filmTight={filmTight}
@@ -6941,6 +7031,11 @@ export default function CakeCanvas({
       {studioImage
         ? <StudioWall image={studioImage} dim={studioImageDim} far={studioImageFar} />
         : (takeGridWall && <TakeGridWall strength={takeGridStrength} active={takeLens != null ? takeLensActive : true} />)}
+      {/* The name rides with the wall grid and is kept out of every take — see StudioWallSign. */}
+      {!studioImage && takeGridWall && !filmGround && (
+        <StudioWallSign name={studioSignName} cssFamily={studioSignFont} strength={takeGridStrength}
+                        active={takeLens != null ? takeLensActive : true} />
+      )}
       {onTakeFrame && <TakeFramePump onFrame={onTakeFrame} />}
       {takeLens != null && (
         <TakeLens fov={takeLens} active={takeLensActive} onReturned={onTakeLensReturned} />

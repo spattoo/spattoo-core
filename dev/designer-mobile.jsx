@@ -2141,9 +2141,9 @@ const styledDesign = STYLE_KEY ? {
 /* ?bgimage=<file>&bgdim=0.3 — POC: a picture behind the cake instead of a colour. Drop a file in
    dev/ and name it here. Orbit the cake: a wall or a wash reads as a paper sweep, a room with
    perspective in it reads as a sticker. That difference is the whole point of looking. */
-const bgPoc = PARAMS.has('bgimage')
-  ? { image: `/${PARAMS.get('bgimage')}`, dim: Number(PARAMS.get('bgdim') ?? 0),
-      far: Number(PARAMS.get('bgfar') ?? 1) }
+const bgPoc = (PARAMS.has('bgimage') || PARAMS.has('sign'))
+  ? { image: PARAMS.has('bgimage') ? `/${PARAMS.get('bgimage')}` : null, dim: Number(PARAMS.get('bgdim') ?? 0),
+      far: Number(PARAMS.get('bgfar') ?? 1), sign: PARAMS.has('sign') }
   : null;
 
 createRoot(document.getElementById('root')).render(
