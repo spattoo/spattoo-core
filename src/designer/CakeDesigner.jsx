@@ -8157,6 +8157,29 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     updateTierBalloons(tierIndex, cur => cur.map(b => (b.id === id ? { ...b, ...patch } : b)));
   }
 
+  /* ⚠️ THE ADMIN TICK WAS ALREADY READ — THERE WAS JUST NOTHING TO SHOW. `instanceActions` has
+     returned `duplicate` off the catalogue row since it was written, and the balloon card offers
+     it; the cloud card only ever rendered `delete`, so ticking "duplicatable" on Puffy or Flat
+     cloud saved a value nobody drew a button for. Sandeep: *"flat cloud and puffy cloud, both do
+     not have duplicate button on the card. both are duplicatable in admin. but its not taking from
+     admin i think."* Half right: it IS taken from admin, which is why Remove obeys the row.
+
+     ⚠️ THE COPY IS VISIBLY A SECOND CLOUD, not a redraw of the first. `addCloud` already turns each
+     new one further round (`yaw: cur.length * 0.9`) for exactly this reason — a duplicate landing
+     at the same yaw, surface and standoff is invisible, and the baker presses it again. Same
+     reasoning as `duplicateBalloon`, which offsets theta and float.
+     ⚠️ READ FROM THE LIVE LIST INSIDE THE UPDATER, or two quick presses both see the same list and
+     the second copy lands exactly on the first. */
+  function duplicateCloud(tierIndex, id) {
+    const copyId = `cl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    updateTierClouds(tierIndex, cur => {
+      const src = cur.find(c => c.id === id);
+      if (!src) return cur;
+      return [...cur, { ...src, id: copyId, yaw: (src.yaw ?? 0) + 0.9 }];
+    });
+    selectExclusive({ type: 'cloud', tierIndex, id: copyId });
+  }
+
   function removeCloud(tierIndex, id) {
     updateTierClouds(tierIndex, cur => cur.filter(c => c.id !== id));
     clearAllSelections();
@@ -16853,16 +16876,28 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
             style={{ width: 40, height: 28, border: '1px solid #D9D5CE', borderRadius: 6, padding: 0, cursor: 'pointer' }} />
         </div>
 
-        {/* Gated on the row like the balloon's, not hard-coded: admin's "deletable" tick was dead
-            config here. Unticking it is the only thing that takes this button away. */}
-        {instanceActions(cl.elementId).delete && (
-          <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
-            <button onClick={() => removeCloud(card.tierIndex, cl.id)}
-              style={{ ...s.deleteBtn, flex: 1 }}>
-              Remove from cake
-            </button>
-          </div>
-        )}
+        {/* Gated on the row like the balloon's, not hard-coded: admin's ticks were dead config here.
+            Unticking one is the only thing that takes its button away. */}
+        {(() => {
+          const act = instanceActions(cl.elementId);
+          if (!act.delete && !act.duplicate) return null;
+          return (
+            <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>
+              {act.duplicate && (
+                <button onClick={() => duplicateCloud(card.tierIndex, cl.id)}
+                  style={{ ...s.neutralBtn, flex: 1 }}>
+                  Duplicate
+                </button>
+              )}
+              {act.delete && (
+                <button onClick={() => removeCloud(card.tierIndex, cl.id)}
+                  style={{ ...s.deleteBtn, flex: 1 }}>
+                  Remove from cake
+                </button>
+              )}
+            </div>
+          );
+        })()}
       </>
     );
   }
