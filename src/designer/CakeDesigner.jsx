@@ -59,7 +59,7 @@ import ReelOptions from './reel/ReelOptions.jsx';
 import { captionText, captionColours, CAPTION } from './reel/reelCaption.js';
 import PhotoOptions from './photo/PhotoOptions.jsx';
 import { shapeByKey, photoFilename } from './photo/photoShapes.js';
-import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, WRITING_CUT, writingFit, FONDANT_WRITING_COLOR,
+import { DESIGNER_GROUND, DESIGNER_WALL, WRITING_FIT, WRITING_CUT, writingFit, FONDANT_WRITING_COLOR, NOMINAL_MM_PER_UNIT,
          THUMB_VIEWS, THUMB_VIEW_DEFAULT, THUMB_EL_MIN, THUMB_EL_MAX, thumbViewDir, BOARD_TOP_Y } from './constants.js';
 import { MAX_STRIPES, stripeColors, areStripesActive, STRIPE_DEFAULTS } from './shared/color/stripeMaterial.js';
 import { STRIPE_PRESETS } from './stripePresets.js';
@@ -639,17 +639,27 @@ function StripeControls({ palette, activeStop, pending, onSelectStop, onAddStop,
    so its default size fell through to cream's — twice the intended size, on the one Look whose
    letters have no height clamp to hide it. */
 const WRITING_LOOKS = {
-  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.cream },
-  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: WRITING_CUT.acrylic },
+  cream:   { label: 'Piped cream', surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.cream,   bends: true  },
+  acrylic: { label: 'Acrylic',     surfaces: ['top', 'side'],          cut: WRITING_CUT.acrylic, bends: false },
   /* Fondant goes everywhere cream does — it is paste, and a flat letter sits on a drum as happily as
      on the cake. On the TOP it is the one Look with a choice to make, because both readings are real
      things bakers do: HUG (lying on the icing, the common one) or STAND (propped upright on prongs).
      Sandeep: "fondant letters can go on both side,top and board. on top, fondant letters can hug or
      stand." Acrylic has no such choice — a perspex sheet lying flat on a cake top is not a thing. */
-  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.fondant },
+  fondant: { label: 'Fondant',     surfaces: ['top', 'side', 'board'], cut: WRITING_CUT.fondant, bends: true  },
 };
 const SURFACE_LABELS = { top: 'Top', side: 'Side', board: 'Board' };
 const writingSurfaces = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).surfaces;
+/* ⚠️ CAN THIS MATERIAL FOLLOW A CURVE? A SECOND QUESTION, AND NOT THE OPPOSITE OF `cut`. Cream
+   bends because a nozzle travels a path; FONDANT bends because the letters are laid along the curve
+   one at a time (`arcLetter` turns each glyph); acrylic cannot, because it is one sheet cut flat —
+   *"acrylic wont bend like arch."* So two of the three are cut and two of the three bend, and they
+   are not the same two. Written as a bare "is it not the acrylic one" test this would have been the
+   exact pattern `writingLooks.test.js` forbids — and rightly, because that spelling used to mean
+   "cream only" and switched itself on for fondant the day a third Look arrived. The test greps the
+   source, so it catches the shape even in a comment. A fourth material is a row here. */
+const writingBends = (style) => (WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).bends !== false;
+
 /* Is this Look cut from a sheet? The question every control on the card actually asks. */
 const writingIsCut = (style) => !!(WRITING_LOOKS[style] ?? WRITING_LOOKS.cream).cut;
 /* The top-surface pose, fondant's only extra decision. 'hug' lies on the icing; 'stand' goes up on
@@ -15220,6 +15230,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
     const w = activeWriting ?? {};
     const isMultiline = (w.text ?? '').includes('\n');
     const surface = w.surface ?? 'top';
+    /* ⚠️ THE SAME ANSWER `AcrylicWriting` REACHES, because the Thickness dial has to show the sheet
+       the renderer will actually use. A cut word STANDS on the top unless it is fondant hugging;
+       the side and the board lay it flat, and the two poses carry different default thicknesses
+       (3mm standing to hold the word up, thinner lying down where a 3mm edge reads as bent rod). */
+    const cutStanding = surface === 'top'
+      && (w.style !== 'fondant' || writingTopPose(w) === 'stand');
     /* A surface this material no longer offers is still shown while a message is ON it, so an
      * existing design (or an order being looked at) stays legible and editable instead of showing a
      * chooser with nothing selected. New messages simply never reach it. */
@@ -15383,6 +15399,16 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
               cakeColors={[...new Set(collectElementColors(design))].filter(c => c.toLowerCase() !== (w.color ?? FONDANT_WRITING_COLOR).toLowerCase())}
               width={152} />
           </div>
+          {/* ⚠️ LUSTRE, NOT A MIRROR, AND THAT DISTINCTION IS THE WHOLE CONTROL. Sandeep asked for
+              the Looks to carry the same controls, and fondant had no metal at all. But acrylic's
+              Gold is a MATCAP — a baked mirror — and he already rejected exactly that on paste:
+              *"it looks more like acrylic, can we have the fondant texture for the letters."* What a
+              baker actually does is brush edible lustre dust onto the paste, so this keeps the
+              fondant surface and makes the colour SHIMMER, the same toggle piped cream carries.
+              Asked and answered before building: *"Edible lustre — shimmer, not mirror."* */}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 10, cursor: 'pointer' }}>
+            <Chip on={!!w.metallic} onClick={() => setWriting({ metallic: !w.metallic })} label="Metallic" />
+          </label>
         </>}
 
 {/* ⚠️ CREAM ONLY. Colour/Gold/Silver tint piped icing; an acrylic finish is a MATERIAL chosen
@@ -15479,6 +15505,43 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                it is the SHEET, seeded in ACRYLIC_DEFAULTS and overlaid by an admin — not something a
                customer should drag. It also wrote `thickness` while the acrylic builder reads
                `sheet`, so it moved a number nothing consumed. */
+            /* ── The same control, the same name, a different number underneath ────────────────
+               ⚠️ EVERY LOOK NOW CARRIES THICKNESS, SPACING AND LINE GAP. Sandeep: *"piping, acrylic
+               and fondant options vary a lot in terms of controls … can you make all of them have
+               controls?"* They always meant something for a cut word — the cut builder reads
+               `sheet`, `tracking` and `lineGap` already — they were simply never offered, so a
+               customer typing their own message got whatever the row said and could not change it.
+               ⚠️ AND THE FIELD DIFFERS BY MATERIAL, WHICH IS WHY THIS IS TWO BRANCHES AND NOT ONE
+               WIDENED GATE. On cream Thickness is the NOZZLE's bead; on a cut word it is the SHEET
+               the letters come out of. Writing one field for both is the exact bug this card
+               already carried once — it wrote `thickness` while the cut builder read `sheet`, so
+               the dial moved a number nothing consumed.
+               ⚠️ NOTHING HERE DISTURBS AN EXISTING TEMPLATE. Each reads `w.<field> ?? <the default
+               the renderer already used>`, so a saved design that never set one renders exactly as
+               it did — the value only exists once a baker moves the dial. */
+            ...(writingIsCut(w.style) ? [
+              { k: 'Thickness', dial: 'size',
+                v: w.sheet ?? (cutStanding ? ACRYLIC_DEFAULTS.sheetStand : ACRYLIC_DEFAULTS.sheetFlat),
+                min: 0.015, max: 0.1, step: 0.005,
+                fmt: v => `${(v * NOMINAL_MM_PER_UNIT).toFixed(1)}mm`,
+                set: v => setWriting({ sheet: v }) },
+              /* ⚠️ LOOSER ONLY, AND THE FLOOR IS THE FACE'S OWN VALUE. `topperFaces.js` records what
+                 tightening costs: chasing zero bridges welded a Parisienne topper into "Bithday" —
+                 correct by every measure and unreadable. Those per-face numbers are a legibility
+                 and cuttability calibration, not a taste, so the dial starts there and only opens
+                 up. Loosening adds bridges on acrylic and costs fondant nothing at all, since
+                 fondant letters are cut one at a time and never needed to hold together. */
+              { k: 'Spacing', dial: 'size', v: w.tracking ?? faceFit(w.font),
+                min: faceFit(w.font), max: faceFit(w.font) + 0.3, step: 0.02,
+                fmt: v => (Math.abs(v - faceFit(w.font)) < 1e-6 ? 'normal'
+                                                                : `+${Math.round((v - faceFit(w.font)) * 100)}%`),
+                set: v => setWriting({ tracking: v }) },
+              ...(isMultiline ? [
+                { k: 'Line gap', dial: 'size', v: w.lineGap ?? ACRYLIC_DEFAULTS.lineGap,
+                  min: 1, max: 2.2, step: 0.05,
+                  fmt: v => `${v.toFixed(2)}×`, set: v => setWriting({ lineGap: v }) },
+              ] : []),
+            ] : []),
             ...(!writingIsCut(w.style) ? [
               { k: 'Thickness', dial: 'size', v: w.thickness ?? 0.03, min: 0.008, max: 0.07, step: 0.002,
                 fmt: v => v.toFixed(3), set: v => setWriting({ thickness: v }) },
@@ -15545,7 +15608,12 @@ const selectedText = design.texts.find(t => t.id === selectedTextId) ?? null;
                bend IS that element's shape — `writingSurface` takes it from the host and the dial's
                value is never read. A control that cannot change anything is worse than no control
                (INVARIANTS #11), so it goes rather than sitting there doing nothing. */
-            ...(surface !== 'side' && !writingIsCut(w.style) && !w.on ? [
+            /* ⚠️ CREAM AND FONDANT, NEVER ACRYLIC. Fondant is the one cut material that can follow
+               a curve — the letters are laid along it one at a time, which is `arcLetter` turning
+               each glyph rather than `warpArc` bending a stroke. A perspex topper is cut from one
+               sheet in one piece and cannot: *"acrylic wont bend like arch. so we dont need acrylic
+               bend."* Offering it there would be a dial that shows a shape the cutter cannot make. */
+            ...(surface !== 'side' && writingBends(w.style) && !w.on ? [
               { k: 'Curve', dial: 'offset', v: w.curve ?? 0, min: -1, max: 1, step: 0.05,
                 fmt: v => (v === 0 ? 'flat' : `${Math.round(v * 100)}%`), set: v => setWriting({ curve: v }) },
             ] : []),
