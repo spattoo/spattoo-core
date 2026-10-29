@@ -17,6 +17,14 @@ import { useEffect, useSyncExternalStore } from 'react';
 let inFlight = 0;
 let busySince = null;          // when the count last left zero
 const listeners = new Set();
+/* ⚠️ WHICH BOUNDARIES, NOT JUST HOW MANY — because a count cannot be acted on. Sandeep, 2026-10-29:
+ * the cake was fully drawn, the spinner stayed for two minutes, and switching the window to a phone
+ * width cleared it at once. That says the assets had ARRIVED and some boundary never released, and
+ * at that point "6 in flight" is the one fact that does not help: six of WHAT. Every ping carries
+ * the label its `SafeGlb` already had, so the stuck one can be named instead of guessed at.
+ * A Map keyed by a unique id, because two decorations legitimately share a label. */
+let nextPingId = 1;
+const pending = new Map();     // id → { label, since }
 
 /* ⚠️ THE COUNT IS THE ONLY THING THE SPINNER KNOWS, so it is the only thing worth watching when the
    spinner will not go away. "Still loading" and "finished, but the count never came back down" are
@@ -38,10 +46,15 @@ const listeners = new Set();
 function publish() {
   if (typeof window === 'undefined') return;
   window.__loadingInFlight = inFlight;                       // the bare number, as before
+  const now = performance.now();
   window.__spattooLoading = {
     inFlight,
-    busyMs: busySince == null ? 0 : Math.round(performance.now() - busySince),
-    at: Math.round(performance.now()),
+    busyMs: busySince == null ? 0 : Math.round(now - busySince),
+    at: Math.round(now),
+    /* Longest-waiting first: the one at the top is the one holding the spinner up. */
+    pending: [...pending.values()]
+      .map(p => ({ label: p.label, waitingMs: Math.round(now - p.since) }))
+      .sort((a, b) => b.waitingMs - a.waitingMs),
   };
 }
 
@@ -51,23 +64,34 @@ const emit = () => {
 };
 
 // Invisible Suspense fallback: counts one in-flight asset for its lifetime.
-export function LoadingPing() {
+export function LoadingPing({ label = 'unlabelled' }) {
   useEffect(() => {
-    if (inFlight === 0) busySince = typeof performance === 'undefined' ? null : performance.now();
+    const now = typeof performance === 'undefined' ? 0 : performance.now();
+    if (inFlight === 0) busySince = typeof performance === 'undefined' ? null : now;
     inFlight += 1;
+    const id = nextPingId++;
+    pending.set(id, { label, since: now });
     emit();
     return () => {
       inFlight = Math.max(0, inFlight - 1);
+      pending.delete(id);
       if (inFlight === 0) busySince = null;
       emit();
     };
-  }, []);
+  }, [label]);
   return null;
 }
 
 /** What the spinner currently believes, for a console or a probe. See `publish`. */
 export function loadingState() {
-  return { inFlight, busyMs: busySince == null ? 0 : Math.round(performance.now() - busySince) };
+  const now = typeof performance === 'undefined' ? 0 : performance.now();
+  return {
+    inFlight,
+    busyMs: busySince == null ? 0 : Math.round(now - busySince),
+    pending: [...pending.values()]
+      .map(p => ({ label: p.label, waitingMs: Math.round(now - p.since) }))
+      .sort((a, b) => b.waitingMs - a.waitingMs),
+  };
 }
 
 // true while any decoration is still loading. Drives the single page-level overlay.

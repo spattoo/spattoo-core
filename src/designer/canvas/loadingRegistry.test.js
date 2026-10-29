@@ -30,7 +30,7 @@ const SINCE = 'busy' + 'Since';
 
 describe('what the spinner knows', () => {
   it('reports nothing in flight before anything mounts', () => {
-    expect(loadingState()).toEqual({ inFlight: 0, busyMs: 0 });
+    expect(loadingState()).toEqual({ inFlight: 0, busyMs: 0, pending: [] });
   });
 
   /* ⚠️ THE GATE WAS THE BUG. A probe that exists only in a dev build cannot diagnose a production
@@ -71,5 +71,37 @@ describe('what the spinner knows', () => {
   it('drives the overlay from the same count', () => {
     expect(SRC).toContain('useSyncExternalStore');
     expect(SRC).toContain(`${N} > 0`);
+  });
+});
+
+/* ── Naming the boundary that will not let go ────────────────────────────────────────────────────
+ *
+ * ⚠️ A COUNT CANNOT BE ACTED ON. 2026-10-29: a cake finished drawing, the spinner stayed for 130
+ * seconds, and resizing the window to a phone width cleared it instantly — so the assets had
+ * arrived and a boundary never released. "6 in flight" was the only thing the probe could say, and
+ * six of WHAT is the whole question. These assert the labelling as source, for the same reason the
+ * rest of this file does: `LoadingPing` is a React effect and there is no renderer here.
+ */
+describe('what the spinner can name', () => {
+  it('records a label and how long it has waited, longest first', () => {
+    const pub = SRC.slice(SRC.indexOf('function publish'), SRC.indexOf('const emit'));
+    expect(pub).toContain('pending');
+    expect(pub, 'longest-waiting first — the top line is the one holding the spinner up')
+      .toContain('sort');
+    expect(pub).toContain('waitingMs');
+  });
+
+  /* ⚠️ KEYED BY A UNIQUE ID, NOT BY THE LABEL. Two decorations legitimately share one — a cake with
+     four of the same flower is four boundaries — and keying by label would let the fourth mount
+     erase the first's entry, so the count and the list would disagree about the same moment. */
+  it('keys each ping separately, so repeats do not overwrite each other', () => {
+    const ping = SRC.slice(SRC.indexOf('export function LoadingPing'), SRC.indexOf('export function loadingState'));
+    expect(ping).toContain('nextPingId++');
+    expect(ping, 'the entry goes when the boundary does').toContain('pending.delete(id)');
+  });
+
+  it('still publishes in every build, labels included', () => {
+    const pub = SRC.slice(SRC.indexOf('function publish'), SRC.indexOf('const emit'));
+    expect(pub).not.toContain('import.meta.env');
   });
 });

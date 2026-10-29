@@ -2214,7 +2214,7 @@ function StickerFace({ imageUrl, color, groupColors, gradient, clipY, curved, cu
     // shared loading count (it draws nothing); a single canvas overlay shows ONE spinner for the
     // whole page (see loadingRegistry). Suspense clears the ping when the asset resolves
     // (cached assets resolve synchronously → never counted). Type/zone-agnostic.
-    <SafeGlb screen="CakeCanvas">
+    <SafeGlb screen="CakeCanvas" label={`${isGlb ? 'glb' : 'img'} ${String(imageUrl ?? '').split('/').pop()}`}>
       {isGlb
         ? <StickerModel imageUrl={imageUrl} color={color} groupColors={groupColors} gradient={gradient} clipY={clipY} bendRadius={bendRadius} baseRotation={baseRotation} seatProud={seatProud} fondant={fondant} recolourable={recolourable} roughness={roughness} metalness={metalness} surface={surface} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />
         : <StickerTexture imageUrl={imageUrl} curved={curved} curveRadius={curveRadius} bend={bend} foldable={foldable} fold={fold} spine={spine} standUp={standUp} recolor={recolor} relief={relief} stickerScale={stickerScale} reliefRadius={reliefRadius} color={color} groupColors={groupColors} roughness={roughness} metalness={metalness} printFinish={printFinish} photoUrl={photoUrl} photoMask={photoMask} photoTransform={photoTransform} photoOverlay={photoOverlay} borderWidth={borderWidth} textSlots={textSlots} textValues={textValues} onSeat={onSeat} onDepth={onDepth} onVExtent={onVExtent} />

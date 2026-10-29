@@ -25,10 +25,13 @@ export class TextureErrorBoundary extends Component {
 // its own. Every GLB call site goes through this — stickers, piping rings, cream-pen stamps, the
 // style picker tiles. A 404 on any one of them then costs that decoration, not the whole canvas:
 // R3F re-throws an uncaught error out of the canvas into the app boundary, which is a dead screen.
-export function SafeGlb({ screen = 'CakeCanvas', children }) {
+/* `label` names this boundary in the loading probe. It defaults to `screen`, which every call site
+   already passes, so naming is free — and a caller with something sharper to say (a decoration's
+   own url) says it. See loadingRegistry: a count cannot be acted on, a name can. */
+export function SafeGlb({ screen = 'CakeCanvas', label, children }) {
   return (
     <TextureErrorBoundary screen={screen}>
-      <Suspense fallback={<LoadingPing />}>{children}</Suspense>
+      <Suspense fallback={<LoadingPing label={label ?? screen} />}>{children}</Suspense>
     </TextureErrorBoundary>
   );
 }
